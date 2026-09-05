@@ -37,7 +37,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_time_series_table;
+    extern const SettingsBool enable_time_series_table;
 }
 
 namespace ErrorCodes
@@ -81,11 +81,11 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
     const ContextPtr & local_context,
     LoadingStrictnessLevel mode)
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::allow_experimental_time_series_table])
+    if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::enable_time_series_table])
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "Experimental TimeSeries table engine "
-                        "is not enabled (the setting 'allow_experimental_time_series_table')");
+                        "is not enabled (the setting 'enable_time_series_table')");
     }
 
     std::vector<Target> targets;

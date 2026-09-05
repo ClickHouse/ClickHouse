@@ -92,7 +92,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
-    extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool allow_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
     extern const SettingsMap additional_table_filters;
 }
@@ -1843,10 +1843,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// the single-key shape just identified, which stays on the regular `IN` path.
                 /// Otherwise enabling `rewrite_in_to_join` alone would change query acceptance even
                 /// though no correlated rewrite happens.
-                if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+                if (!scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
                     throw Exception(
                         ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
+                        "Setting 'rewrite_in_to_join' requires 'allow_correlated_subqueries' to also be enabled");
 
                 /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
 

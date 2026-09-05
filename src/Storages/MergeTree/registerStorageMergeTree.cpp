@@ -49,7 +49,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
-    extern const SettingsBool allow_experimental_unique_key;
+    extern const SettingsBool enable_unique_key;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool create_table_empty_primary_key_by_default;
@@ -761,11 +761,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             /// Gate on CREATE only; ATTACH must load existing metadata regardless of session setting.
             if (args.mode <= LoadingStrictnessLevel::CREATE
-                && !local_settings[Setting::allow_experimental_unique_key])
+                && !local_settings[Setting::enable_unique_key])
             {
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "UNIQUE KEY is an experimental feature. "
-                    "Set the session setting `allow_experimental_unique_key = 1` to enable it.");
+                    "Set the session setting `enable_unique_key = 1` to enable it.");
             }
 
             /// Reject expression-style elements at parse time: runtime consumers

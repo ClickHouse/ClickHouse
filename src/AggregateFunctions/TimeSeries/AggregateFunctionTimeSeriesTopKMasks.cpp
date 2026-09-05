@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_experimental_time_series_aggregate_functions;
-    extern const SettingsBool allow_experimental_time_series_table;
+    extern const SettingsBool enable_time_series_table;
 }
 
 
@@ -30,7 +30,7 @@ namespace
         const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
     {
         if (settings && (*settings)[Setting::allow_experimental_time_series_aggregate_functions] == 0
-            && (*settings)[Setting::allow_experimental_time_series_table] == 0)
+            && (*settings)[Setting::enable_time_series_table] == 0)
             throw Exception(
                 ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
                 "Aggregate function {} is experimental and disabled by default. "

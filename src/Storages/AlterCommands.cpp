@@ -65,7 +65,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_json_lazy_type_hints;
+    extern const SettingsBool enable_json_lazy_type_hints;
     extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -1423,7 +1423,7 @@ bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
 bool isJSONLazyMetadataConversion(const IDataType * from, const IDataType * to, const ContextPtr & context)
 {
-    if (!context || !context->getSettingsRef()[Setting::allow_experimental_json_lazy_type_hints])
+    if (!context || !context->getSettingsRef()[Setting::enable_json_lazy_type_hints])
         return false;
 
     /// Identical types are byte-identical, not a lazy conversion.
@@ -1530,7 +1530,7 @@ bool isNamedTupleSubfieldAddition(
         }
         if (isJSONLazyMetadataConversion(old_elem, new_elem, context))
         {
-            nested_lazy_settings.emplace("allow_experimental_json_lazy_type_hints");
+            nested_lazy_settings.emplace("enable_json_lazy_type_hints");
             continue;
         }
         if (!isTrueMetadataOnlyConversion(old_elem, new_elem))
@@ -1557,7 +1557,7 @@ std::set<std::string_view> getLazyMetadataConversionSettings(
     }
 
     if (isJSONLazyMetadataConversion(from, to, context))
-        settings.emplace("allow_experimental_json_lazy_type_hints");
+        settings.emplace("enable_json_lazy_type_hints");
 
     return settings;
 }

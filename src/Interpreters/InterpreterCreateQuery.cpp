@@ -122,7 +122,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_database_materialized_postgresql;
+    extern const SettingsBool enable_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
@@ -397,11 +397,11 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     }
 
     if (create.storage->engine->name == "MaterializedPostgreSQL"
-        && !getContext()->getSettingsRef()[Setting::allow_experimental_database_materialized_postgresql] && !internal && !create.attach)
+        && !getContext()->getSettingsRef()[Setting::enable_database_materialized_postgresql] && !internal && !create.attach)
     {
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                         "MaterializedPostgreSQL is an experimental database engine. "
-                        "Enable allow_experimental_database_materialized_postgresql to use it");
+                        "Enable enable_database_materialized_postgresql to use it");
     }
 
     bool need_write_metadata = !create.attach || !default_db_disk->existsFile(metadata_file_path);

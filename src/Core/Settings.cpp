@@ -4801,9 +4801,9 @@ Approximate probability of failing internal (for replication) PostgreSQL queries
     DECLARE(UInt64, glob_expansion_max_elements, 1000, R"(
 Maximum number of allowed addresses (For external storages, table functions, etc).
 )", 0) \
-    DECLARE(Bool, allow_experimental_url_wildcard_from_index_pages, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_url_wildcard_from_index_pages, false, R"(
 Allow experimental wildcard expansion for `url()` and `ENGINE = URL` from HTTP index pages.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_url_wildcard_from_index_pages) \
     DECLARE(UInt64, url_wildcard_max_directories_to_read, 100000, R"(
 Maximum number of directories that can be traversed while expanding URL wildcards from index pages.
 )", 0) \
@@ -6348,9 +6348,9 @@ For how many elements it is allowed to preallocate space in all hash tables in t
     DECLARE(Bool, kafka_disable_num_consumers_limit, false, R"(
 Disable limit on kafka_num_consumers that depends on the number of available CPU cores.
 )", 0) \
-    DECLARE(Bool, allow_experimental_kafka_offsets_storage_in_keeper, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_kafka_offsets_storage_in_keeper, false, R"(
 Allow experimental feature to store Kafka related offsets in ClickHouse Keeper. When enabled a ClickHouse Keeper path and replica name can be specified to the Kafka table engine. As a result instead of the regular Kafka engine, a new type of storage engine will be used that stores the committed offsets primarily in ClickHouse Keeper
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_kafka_offsets_storage_in_keeper) \
     DECLARE(Bool, enable_software_prefetch_in_aggregation, true, R"(
 Enable use of software prefetch in aggregation
 )", 0) \
@@ -6560,9 +6560,9 @@ Connect timeout in seconds. Now supported only for MySQL
 Read/write timeout in seconds. Now supported only for MySQL
 )", 0)  \
     \
-    DECLARE(Bool, allow_experimental_correlated_subqueries, true, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_correlated_subqueries, true, R"(
 Allow to execute correlated subqueries.
-)", BETA) \
+)", BETA, allow_experimental_correlated_subqueries) \
     \
     DECLARE(SetOperationMode, union_default_mode, SetOperationMode::Unspecified, R"(
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](/reference/statements/select/union) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
@@ -8102,9 +8102,9 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
 )", 0) \
-    DECLARE(Bool, allow_experimental_geo_types_in_iceberg, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_geo_types_in_iceberg, false, R"(
 Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
-)", 0) \
+)", 0, allow_experimental_geo_types_in_iceberg) \
     DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
 Enables showing data lake catalogs in system tables.
 )", 0) \
@@ -8135,9 +8135,9 @@ Defines a rows limit for a single inserted data file in delta lake.
     DECLARE(NonZeroUInt64, delta_lake_insert_max_bytes_in_data_file, 1_GiB, R"(
 Defines a bytes limit for a single inserted data file in delta lake.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_delta_lake_writes, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_delta_lake_writes, false, R"(
 Enables delta-kernel writes feature.
-)", BETA, allow_delta_lake_writes) \
+)", BETA, allow_experimental_delta_lake_writes) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
@@ -8317,21 +8317,21 @@ but makes distributed index analysis less efficient if large tables are used in 
     DECLARE(Bool, distributed_index_analysis_for_non_shared_merge_tree, false, R"(
 Enable distributed index analysis even for non SharedMergeTree (cloud only engine).
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_database_iceberg, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
 
 Cloud default value: `1`.
-)", BETA, allow_database_iceberg) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_unity_catalog, false, R"(
+)", BETA, allow_experimental_database_iceberg) \
+    DECLARE_WITH_ALIAS(Bool, allow_database_unity_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
 
 Cloud default value: `1`.
-)", BETA, allow_database_unity_catalog) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_glue_catalog, false, R"(
+)", BETA, allow_experimental_database_unity_catalog) \
+    DECLARE_WITH_ALIAS(Bool, allow_database_glue_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
 
 Cloud default value: `1`.
-)", BETA, allow_database_glue_catalog) \
+)", BETA, allow_experimental_database_glue_catalog) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_analyzer, true, R"(
 Allow the analyzer.
 )", IMPORTANT, enable_analyzer) \
@@ -8730,12 +8730,12 @@ instead of glob listing. 0 means disabled.
     DECLARE(Bool, ignore_on_cluster_for_replicated_database, false, R"(
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_nullable_tuple_type, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_nullable_tuple_type, false, R"(
 Allows creation of [Nullable](/reference/data-types/nullable) [Tuple](/reference/data-types/tuple) columns in tables.
 
 This setting does not control whether extracted tuple subcolumns can be `Nullable` (for example, from Dynamic, Variant, JSON, or Tuple columns).
 Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted tuple subcolumns can be `Nullable`.
-)", BETA, enable_nullable_tuple_type) \
+)", BETA, allow_experimental_nullable_tuple_type) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     DECLARE(UInt64, shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms, 50, R"(
@@ -8825,23 +8825,23 @@ If false (default), AI functions refuse to use a named-collection `endpoint` tha
     /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \
     /* ####################################################### */ \
     \
-    DECLARE(Bool, allow_experimental_materialized_postgresql_table, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_materialized_postgresql_table, false, R"(
 Allows to use the MaterializedPostgreSQL table engine. Disabled by default, because this feature is experimental
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_funnel_functions, false, R"(
+)", EXPERIMENTAL, allow_experimental_materialized_postgresql_table) \
+    DECLARE_WITH_ALIAS(Bool, enable_funnel_functions, false, R"(
 Enable experimental functions for funnel analysis.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_funnel_functions) \
     DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
 Enable experimental functions for natural language processing.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_time_series_table, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
 - 1 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is enabled.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_time_series_table) \
     DECLARE(Bool, time_series_prefer_recent_samples_table, true, R"(
 Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
 )", EXPERIMENTAL) \
@@ -8856,9 +8856,9 @@ Reserved: this setting has no effect yet — the value is not read until the UNI
 write path that constructs the probe is wired up. Declared now so the lever ships with the
 implementation.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_unique_key, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_unique_key, false, R"(
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_unique_key) \
     DECLARE(Bool, enable_alp_codec, false, R"(
 Enables the `ALP` compression codec.
 )", BETA) \
@@ -8892,12 +8892,12 @@ The lower limit of per-key average rows in the right table to determine whether 
     DECLARE(UInt64, join_to_sort_maximum_table_rows, 10000, R"(
 The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_join_right_table_sorting, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_join_right_table_sorting, false, R"(
 If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_json_lazy_type_hints, false, R"(
+)", EXPERIMENTAL, allow_experimental_join_right_table_sorting) \
+    DECLARE_WITH_ALIAS(Bool, enable_json_lazy_type_hints, false, R"(
 Enable experimental lazy type hints for JSON type. This feature allows optimizing JSON type conversions by deferring type hint evaluation.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_json_lazy_type_hints) \
     DECLARE(Bool, allow_metadata_only_named_tuple_alter, false, R"(
 If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is metadata-only (no data mutation).
 Set to false to force the old full-mutation behavior.
@@ -8983,9 +8983,9 @@ Below the threshold: leapfrog intersection (favors sparse posting lists). At or 
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \
     \
-    DECLARE(Bool, allow_experimental_database_materialized_postgresql, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_database_materialized_postgresql, false, R"(
 Allow to create database with Engine=MaterializedPostgreSQL(...).
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_database_materialized_postgresql) \
     \
     DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, false, R"(
 Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Nullable(Tuple(...))`.
@@ -9001,18 +9001,18 @@ Changes made with `SET` or query-level `SETTINGS` do not change extracted subcol
 To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracted_subcolumns` in startup profile configuration (for example, users.xml) and restart the server.
 )", 0) \
     \
-    DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_database_hms_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
+)", EXPERIMENTAL, allow_experimental_database_hms_catalog) \
+    DECLARE_WITH_ALIAS(Bool, enable_kusto_dialect, false, R"(
 Enable the Kusto Query Language (KQL) dialect - an alternative to SQL.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
+)", EXPERIMENTAL, allow_experimental_kusto_dialect) \
+    DECLARE_WITH_ALIAS(Bool, enable_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_polyglot_dialect, false, R"(
+)", EXPERIMENTAL, allow_experimental_prql_dialect) \
+    DECLARE_WITH_ALIAS(Bool, enable_polyglot_dialect, false, R"(
 Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_polyglot_dialect) \
     DECLARE(Bool, enable_json_ast_dialect, false, R"(
 Enable the `clickhouse_json` value of the `dialect` setting.
 
@@ -9041,12 +9041,12 @@ Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
     DECLARE_WITH_ALIAS(Bool, allow_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
 )", BETA, allow_experimental_insert_into_iceberg) \
-    DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
-Allow to clean up old data files during Iceberg compaction.
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, enable_cleanup_old_data_files_compaction, false, R"(
+Allow to clean up old data files during Iceberg compaction.
+)", EXPERIMENTAL, allow_experimental_cleanup_old_data_files_compaction) \
     DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 30, R"(
 Minimum number of manifest files required to trigger manifest-only compaction via OPTIMIZE TABLE ... MANIFEST.
 If the current number of manifest files is less than or equal to this threshold, compaction is skipped.
@@ -9058,9 +9058,9 @@ Allow to use 'ALTER TABLE ... EXECUTE remove_orphan_files()' for iceberg tables.
     DECLARE(UInt64, iceberg_orphan_files_older_than_seconds, 259200, R"(
 Default age threshold in seconds for orphan file removal in Iceberg tables. Files newer than this are not considered orphans. Used when the older_than argument is omitted from the remove_orphan_files() procedure call. Default is 259200 (3 days).
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_expire_snapshots, false, R"(
+    DECLARE_WITH_ALIAS(Bool, allow_expire_snapshots, false, R"(
 Allow to execute experimental Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_expire_snapshots) \
     DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
 Write full paths (including s3://) into iceberg metadata files.
 )", EXPERIMENTAL) \
@@ -9121,15 +9121,15 @@ order. Only shapes where no exchange survives between the read and the sort are 
     DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
 Serialize the distributed query plan for execution at replicas.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_table_engine, false, R"(
 Experimental table engine for integration with YTsaurus.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_ytsaurus_table_function, false, R"(
+)", EXPERIMENTAL, allow_experimental_ytsaurus_table_engine) \
+    DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_table_function, false, R"(
 Experimental table engine for integration with YTsaurus.
-)", EXPERIMENTAL) \
-DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
+)", EXPERIMENTAL, allow_experimental_ytsaurus_table_function) \
+DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_dictionary_source, false, R"(
 Experimental dictionary source for integration with YTsaurus.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_ytsaurus_dictionary_source) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
 )", EXPERIMENTAL) \
@@ -9194,9 +9194,9 @@ Specifies the name of a TimeSeries table used by the 'promql' dialect.
     DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
 Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
 )", EXPERIMENTAL, evaluation_time) \
-    DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_paimon_storage_engine) \
     DECLARE(Int64, paimon_target_snapshot_id, -1, R"(
 Query-level targeted snapshot read for Paimon incremental mode. When >0, the reader will only fetch the delta
 for the specified snapshot_id without advancing the committed watermark.
@@ -9208,9 +9208,9 @@ Maximum number of Paimon snapshots to consume per incremental read. 0 means no l
     DECLARE(Bool, use_paimon_partition_pruning, false, R"(
 Use Paimon partition pruning for Paimon table functions
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_object_storage_queue_hive_partitioning, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_object_storage_queue_hive_partitioning, false, R"(
 Allow to use hive partitioning with S3Queue/AzureQueue engines
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_object_storage_queue_hive_partitioning) \
 DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "greedy", R"(
 Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
  - 'greedy' - basic greedy algorithm - works fast but might not produce the best join order
@@ -9219,9 +9219,9 @@ Specifies which JOIN order algorithms to attempt during query plan optimization.
  - 'dphyp' - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
 Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_database_paimon_rest_catalog) \
     DECLARE(UInt64, webassembly_udf_max_fuel, 100'000, R"(
 Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel. The value is scaled by 1024 before being passed to the runtime, so `webassembly_udf_max_fuel = 1` corresponds to approximately 1024 fuel units. Set to 0 for no finite limit. Applies only to functions whose per-function setting `webassembly_udf_enable_fuel` is true, which is the default.
 )", EXPERIMENTAL) \
@@ -9234,9 +9234,9 @@ Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 t
     DECLARE(UInt64, webassembly_udf_max_instances, 32, R"(
 Maximum number of WebAssembly UDF instances that can run in parallel per function.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_eval_table_function, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_eval_table_function, false, R"(
 Enable experimental table function `eval`.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, allow_experimental_eval_table_function) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

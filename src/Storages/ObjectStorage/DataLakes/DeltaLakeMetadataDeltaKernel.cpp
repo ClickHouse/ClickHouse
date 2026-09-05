@@ -48,7 +48,7 @@ namespace FailPoints
 namespace Setting
 {
     extern const SettingsBool delta_lake_log_metadata;
-    extern const SettingsBool allow_experimental_delta_lake_writes;
+    extern const SettingsBool allow_delta_lake_writes;
     extern const SettingsBool delta_lake_reload_schema_for_consistency;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
@@ -622,7 +622,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> /* catalog */)
 {
-    if (!context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
+    if (!context->getSettingsRef()[Setting::allow_delta_lake_writes])
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
