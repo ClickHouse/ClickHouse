@@ -18,6 +18,7 @@ namespace Setting
     extern const SettingsBool allow_aggregate_partitions_independently;
     extern const SettingsBool allow_limit_by_partitions_independently;
     extern const SettingsBool allow_distinct_partitions_independently;
+    extern const SettingsBool allow_parallel_distinct;
     extern const SettingsBool allow_window_partitions_independently;
     extern const SettingsBool force_window_partitions_independently;
     extern const SettingsBool allow_creating_set_partitions_independently;
@@ -243,6 +244,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     limit_by_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_limit_by_in_order];
     limit_by_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_limit_by_partitions_independently];
     distinct_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_distinct_partitions_independently];
+    parallel_distinct = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_parallel_distinct];
     window_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_window_partitions_independently];
     force_window_partitions_independently = from[Setting::force_window_partitions_independently];
     creating_set_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_creating_set_partitions_independently];

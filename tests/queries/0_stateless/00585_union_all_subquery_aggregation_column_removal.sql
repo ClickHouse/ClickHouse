@@ -107,7 +107,8 @@ UNION ALL
 GROUP BY domain
 ORDER BY domain
 LIMIT 10
-);
+)
+ORDER BY total, domain;
 
 
 SELECT DISTINCT total, domain FROM

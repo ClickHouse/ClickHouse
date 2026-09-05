@@ -1,0 +1,135 @@
+1
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Distinct)
+    DistinctTransform
+      Resize 8 → 1
+        (Union)
+          (Distinct)
+          DistinctTransform × 4
+            (Expression)
+            ExpressionTransform × 4
+              (ReadFromSystemNumbers)
+              NumbersRange × 4 0 → 1
+          (Distinct)
+          DistinctTransform × 4
+            (Expression)
+            ExpressionTransform × 4
+              (ReadFromSystemNumbers)
+              NumbersRange × 4 0 → 1
+(Expression)
+ExpressionTransform
+  (Offset)
+  Offset
+    (Expression)
+    ExpressionTransform
+      (Distinct)
+      DistinctTransform
+        Resize 4 → 1
+          (Distinct)
+          DistinctTransform × 4
+            (Expression)
+            ExpressionTransform × 4
+              (ReadFromSystemNumbers)
+              NumbersRange × 4 0 → 1
+(Offset)
+Offset
+  (Expression)
+  ExpressionTransform
+    (Distinct)
+    DistinctTransform
+      Resize 4 → 1
+        (Distinct)
+        DistinctTransform × 4
+          (Expression)
+          ExpressionTransform × 4
+            (ReadFromSystemNumbers)
+            NumbersRange × 4 0 → 1
+(Expression)
+ExpressionTransform
+  (Offset)
+  Offset
+    (Expression)
+    ExpressionTransform
+      (Distinct)
+      DistinctTransform
+        Resize 8 → 1
+          (Union)
+            (Distinct)
+            DistinctTransform × 4
+              (Expression)
+              ExpressionTransform × 4
+                (ReadFromSystemNumbers)
+                NumbersRange × 4 0 → 1
+            (Distinct)
+            DistinctTransform × 4
+              (Expression)
+              ExpressionTransform × 4
+                (ReadFromSystemNumbers)
+                NumbersRange × 4 0 → 1
+(Offset)
+Offset
+  (Expression)
+  ExpressionTransform
+    (Distinct)
+    DistinctTransform
+      Resize 8 → 1
+        (Union)
+          (Distinct)
+          DistinctTransform × 4
+            (Expression)
+            ExpressionTransform × 4
+              (ReadFromSystemNumbers)
+              NumbersRange × 4 0 → 1
+          (Distinct)
+          DistinctTransform × 4
+            (Expression)
+            ExpressionTransform × 4
+              (ReadFromSystemNumbers)
+              NumbersRange × 4 0 → 1
+(Expression)
+ExpressionTransform
+  (LimitBy)
+  LimitByTransform
+    (Expression)
+    ExpressionTransform
+      (Distinct)
+      DistinctTransform
+        Resize 8 → 1
+          (Union)
+            (Distinct)
+            DistinctTransform × 4
+              (Expression)
+              ExpressionTransform × 4
+                (ReadFromSystemNumbers)
+                NumbersRange × 4 0 → 1
+            (Distinct)
+            DistinctTransform × 4
+              (Expression)
+              ExpressionTransform × 4
+                (ReadFromSystemNumbers)
+                NumbersRange × 4 0 → 1
+(Expression)
+ExpressionTransform
+  (LimitBy)
+  LimitByTransform
+    (Expression)
+    ExpressionTransform
+      (Distinct)
+      DistinctTransform
+        Resize 8 → 1
+          (Union)
+            (Distinct)
+            DistinctTransform × 4
+              (Expression)
+              ExpressionTransform × 4
+                (ReadFromSystemNumbers)
+                NumbersRange × 4 0 → 1
+            (Distinct)
+            DistinctTransform × 4
+              (Expression)
+              ExpressionTransform × 4
+                (ReadFromSystemNumbers)
+                NumbersRange × 4 0 → 1

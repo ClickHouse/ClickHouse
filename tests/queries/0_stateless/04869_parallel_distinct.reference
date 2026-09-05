@@ -1,0 +1,26 @@
+-- the pipeline scatters by hash and deduplicates every stream
+1	1
+-- and merges into one stream when the optimization is disabled
+0	1
+-- constant DISTINCT columns are not scattered
+0
+-- a LIMIT keeps the single stream, so it keeps returning the first values of the input
+0
+-- the limits on the size of the DISTINCT set stay global
+1
+-- the same result with and without the optimization
+1500	1124250	0	1499
+1500	1124250	0	1499
+-- several columns, including LowCardinality
+16000	10289989	19691
+16000	10289989	19691
+-- DISTINCT *
+16000
+16000
+-- DISTINCT of a Nullable column
+1486	1
+1486	1
+-- a globally sorted input keeps its order
+1
+-- ORDER BY after DISTINCT still sorts
+1

@@ -7,6 +7,8 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ColumnsHashing.h>
 
+#include <atomic>
+#include <memory>
 #include <optional>
 #include <unordered_map>
 
@@ -52,6 +54,19 @@ private:
     size_t rows_observed = 0;
     size_t new_indices_observed = 0;
 };
+
+/// When several `DistinctTransform`s deduplicate disjoint parts of one input in parallel, every one of
+/// them holds a set of its own, while `max_rows_in_distinct` and `max_bytes_in_distinct` limit the size
+/// of the whole `DISTINCT` set. The parts are disjoint, so their sizes add up to the size of the whole,
+/// and the transforms accumulate them here and check the limits against the total.
+struct DistinctSharedSetSize
+{
+    std::atomic<UInt64> rows{0};
+    std::atomic<UInt64> bytes{0};
+    std::atomic_bool limit_reached{false};
+};
+
+using DistinctSharedSetSizePtr = std::shared_ptr<DistinctSharedSetSize>;
 
 /// Preliminary per-stream deduplication (the preliminary `DISTINCT`, see `DistinctStep`, or the
 /// pre-deduplication in front of a set fill, see `CreatingSetStep`) pays off only when it removes
@@ -104,6 +119,7 @@ public:
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
         const Names & columns_,
+        DistinctSharedSetSizePtr shared_set_size_ = nullptr,
         bool allow_abandoning_ = false,
         bool skip_null_keys_ = false);
 
@@ -121,6 +137,14 @@ private:
 
     /// Restrictions on the maximum size of the output data.
     SizeLimits set_size_limits;
+
+    /// Set when this transform deduplicates one part of an input that is deduplicated in parallel;
+    /// then the limits above are checked against the size of the whole set rather than of this part.
+    DistinctSharedSetSizePtr shared_set_size;
+
+    /// The size of this transform's set that is already accounted for in `shared_set_size`.
+    UInt64 accounted_set_rows = 0;
+    UInt64 accounted_set_bytes = 0;
 
     using LCDictionaryKey = ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKey;
     using LCDictionaryKeyHash = ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKeyHash;

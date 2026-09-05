@@ -74,6 +74,13 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(properties->sort_description, distinct_step->getColumnNames()));
         }
 
+        /// Nothing downstream relies on the order the final DISTINCT produces unless its input is
+        /// globally sorted (the case right below), so everywhere else it is free to deduplicate its
+        /// input streams in parallel, which reorders them.
+        if (optimization_settings.parallel_distinct && !distinct_step->isPreliminary()
+            && properties->sort_scope != SortingProperty::SortScope::Global)
+            distinct_step->enableParallelDistinct();
+
         /// Distinct never breaks global order
         if (properties->sort_scope == SortingProperty::SortScope::Global)
             return *properties;

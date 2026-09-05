@@ -325,6 +325,13 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             /// Add distinct transform
             SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
+            /// `SETTINGS limit` and `offset` are applied after the final set-operation DISTINCT, and
+            /// an outer query can apply an `OFFSET`, a negative or fractional `LIMIT`, or a `LIMIT BY`
+            /// over the derived table. All of them consume the stream order of this DISTINCT, so it
+            /// must not repartition its input in those cases.
+            const bool has_order_sensitive_post_distinct_limit
+                = (settings_limit_offset_needed && !options.settings_limit_offset_done) || options.is_subquery;
+
             /// UNION concatenates its branches' streams instead of merging them, so a preliminary
             /// DISTINCT runs in parallel and shrinks what the final single-stream DISTINCT must merge.
             if (preliminaryDistinctIsUseful(max_threads))
@@ -344,7 +351,8 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
                 limits,
                 0,
                 result_header->getNames(),
-                false);
+                false,
+                has_order_sensitive_post_distinct_limit);
 
             query_plan.addStep(std::move(distinct_step));
         }

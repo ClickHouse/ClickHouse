@@ -3517,12 +3517,21 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
 
         SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
+        /// The final DISTINCT may be followed by a limit, offset, or LIMIT BY that selects rows according
+        /// to its input order. `limit_for_distinct` covers the usual positive integer LIMIT case, but
+        /// negative and fractional limits and offsets are applied only after the full result is read. The
+        /// same operators can be applied by an outer query, where they are not visible in `query`. Do not
+        /// let parallel DISTINCT reorder the input of either case.
+        const bool has_order_sensitive_post_distinct_limit
+            = !pre_distinct && (query.limitLength() || query.limitOffset() || query.limitBy() || options.is_subquery);
+
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentHeader(),
             limits,
             limit_for_distinct,
             columns,
-            pre_distinct);
+            pre_distinct,
+            has_order_sensitive_post_distinct_limit);
 
         if (pre_distinct)
             distinct_step->setStepDescription("Preliminary DISTINCT");
