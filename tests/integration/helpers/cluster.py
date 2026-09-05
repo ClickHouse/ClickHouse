@@ -234,7 +234,7 @@ def run_and_check(
             logging.debug("Env:%s", env)
         if not nothrow:
             raise Exception(
-                f"Command [{shell_args}] return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
+                f"Command [{shell_args}] return non-zero code {res.returncode}: {err}"
             )
     return out
 
@@ -4456,7 +4456,7 @@ class ClickHouseCluster:
 
             if not sanitizer_assert_instance:
                 # Search for sinitizer signs in docker.log if it's still empty
-                with open(self.docker_logs_path, "r") as f:
+                with open(self.docker_logs_path, "r", errors="replace") as f:
                     for line in f:
                         if SANITIZER_SIGN in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
@@ -6156,7 +6156,7 @@ class ClickHouseInstance:
             status = handle.status
             if status == "exited":
                 raise Exception(
-                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
                 )
 
             deadline = start_time + timeout
@@ -6169,7 +6169,7 @@ class ClickHouseInstance:
             if current_time >= deadline:
                 raise Exception(
                     f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. "
-                    f"Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                    f"Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
                 )
 
             socket_timeout = min(timeout, deadline - current_time)
