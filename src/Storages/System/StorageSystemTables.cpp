@@ -663,7 +663,7 @@ protected:
                             {
                                 try
                                 {
-                                    if (auto total_rows = table.second->totalRows(context))
+                                    if (auto total_rows = table.second->isDataLake() ? std::nullopt : table.second->totalRows(context))
                                         res_columns[res_index]->insert(*total_rows);
                                     else
                                         res_columns[res_index]->insertDefault();
@@ -681,7 +681,7 @@ protected:
                             {
                                 try
                                 {
-                                    if (auto total_bytes = table.second->totalBytes(context))
+                                    if (auto total_bytes = table.second->isDataLake() ? std::nullopt : table.second->totalBytes(context))
                                         res_columns[res_index]->insert(*total_bytes);
                                     else
                                         res_columns[res_index]->insertDefault();
@@ -944,7 +944,9 @@ protected:
                 {
                     try
                     {
-                        auto total_rows = table ? table->totalRows(context_without_sequential_consistency) : std::nullopt;
+                        auto total_rows = table && !table->isDataLake()
+                            ? table->totalRows(context_without_sequential_consistency)
+                            : std::nullopt;
                         if (total_rows)
                             res_columns[res_index]->insert(*total_rows);
                         else
@@ -963,7 +965,9 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes = table ? table->totalBytes(context_without_sequential_consistency) : std::nullopt;
+                        auto total_bytes = table && !table->isDataLake()
+                            ? table->totalBytes(context_without_sequential_consistency)
+                            : std::nullopt;
                         if (total_bytes)
                             res_columns[res_index]->insert(*total_bytes);
                         else
