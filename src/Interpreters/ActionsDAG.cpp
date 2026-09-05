@@ -2206,6 +2206,14 @@ bool ActionsDAG::hasNonDeterministic() const
     return false;
 }
 
+bool ActionsDAG::isSuitableForConstantFolding() const
+{
+    for (const auto & node : nodes)
+        if (node.type == ActionType::FUNCTION && node.function_base && !node.function_base->isSuitableForConstantFolding())
+            return false;
+    return true;
+}
+
 bool ActionsDAG::hasInputNameShadowedByComputedNode() const
 {
     std::unordered_set<std::string_view> input_names;

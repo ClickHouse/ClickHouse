@@ -60,8 +60,8 @@ INSERT INTO t_in_empty_set_storage VALUES (1);
 SELECT count() FROM t_in_empty_set WHERE a IN t_in_empty_set_storage;
 SELECT count() FROM t_in_empty_set ARRAY JOIN [b] AS x WHERE a IN t_in_empty_set_storage;
 
--- An empty subquery set is not folded either: each shard still runs index analysis against it, which
--- needs the function in the plan. Folding it away leaves one `0-element set` report instead of two.
+-- An empty subquery set is not folded either: the function and `CreatingSets` step remain in the plan.
+-- Once the set is ready and empty, each shard skips index analysis, so there are no set reports.
 SET serialize_query_plan = 0, enable_parallel_replicas = 0, prefer_localhost_replica = 1, optimize_skip_unused_shards = 0;
 SELECT count() FROM (
     EXPLAIN indexes = 1, distributed = 1
