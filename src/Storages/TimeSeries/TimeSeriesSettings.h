@@ -7,6 +7,7 @@
 
 namespace DB
 {
+class ASTCreateQuery;
 class ASTStorage;
 class SettingsChanges;
 struct TimeSeriesSettingsImpl;
@@ -53,5 +54,27 @@ private:
 
 /// Checks that the combination of settings is consistent.
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings);
+
+/// Whether a CREATE TABLE ... ENGINE=TimeSeries query has `recent_samples_ttl_seconds` in its SETTINGS clause.
+bool hasExplicitTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);
+
+/// Returns the value of `recent_samples_ttl_seconds` from the SETTINGS clause of a
+/// CREATE TABLE ... ENGINE=TimeSeries query, or the setting's default value if the query
+/// doesn't specify it (the normalization pins an explicit value into every query except
+/// the initial CREATE query, so an absent setting means a new table getting the default).
+/// A non-zero result means the query enables the optional "recent samples" target table.
+UInt64 getTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);
+
+/// Returns the value of `version` from the SETTINGS clause of a CREATE TABLE ... ENGINE=TimeSeries query,
+/// or the latest version if the query doesn't specify it (the normalization pins an explicit version
+/// into every query, so an absent setting means a new table getting the latest version).
+UInt64 getTimeSeriesSettingVersion(const ASTCreateQuery & query);
+
+/// Whether a CREATE TABLE ... ENGINE=TimeSeries query has `version` in its SETTINGS clause.
+bool hasExplicitTimeSeriesSettingVersion(const ASTCreateQuery & query);
+
+/// Sets `version` in the SETTINGS clause of a CREATE TABLE ... ENGINE=TimeSeries query,
+/// creating the SETTINGS clause if the query doesn't have one yet.
+void setTimeSeriesSettingVersion(ASTCreateQuery & query, UInt64 version);
 
 }

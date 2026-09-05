@@ -2412,14 +2412,20 @@ SELECT toTimeOrZero('12:30:45'), toTimeOrZero('invalid')
 
     /// toTime64OrZero documentation
     FunctionDocumentation::Description description_toTime64OrZero = R"(
-Converts an input value to a value of type Time64 but returns `00:00:00.000` in case of an error.
-Like [`toTime64`](#toTime64) but returns `00:00:00.000` instead of throwing an exception on conversion errors.
+Converts an input value to a value of type `Time64` but returns the zero `Time64` value (`00:00:00`) if an invalid argument is received.
+The same as [`toTime64`](#toTime64) but returns the zero `Time64` value if an invalid argument is received.
+
+See also:
+- [`toTime64`](#toTime64).
+- [`toTime64OrNull`](#toTime64OrNull).
 )";
-    FunctionDocumentation::Syntax syntax_toTime64OrZero = "toTime64OrZero(x)";
-    FunctionDocumentation::Arguments arguments_toTime64OrZero = {
+    FunctionDocumentation::Syntax syntax_toTime64OrZero = "toTime64OrZero(x[, precision])";
+    FunctionDocumentation::Arguments arguments_toTime64OrZero =
+    {
         {"x", "A string representation of a time with subsecond precision.", {"String"}},
+        {"precision", "Optional. The subsecond precision of the returned value.", {"UInt8"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value_toTime64OrZero = {"Returns a Time64 value if successful, otherwise `00:00:00.000`.", {"Time64"}};
+    FunctionDocumentation::ReturnedValue returned_value_toTime64OrZero = {"Returns a Time64 value if successful, otherwise the zero Time64 value (`00:00:00`) at the requested precision.", {"Time64"}};
     FunctionDocumentation::Examples examples_toTime64OrZero = {
     {
     "Usage example",
@@ -3657,10 +3663,11 @@ See also:
 - [`toTime64`](#toTime64)
 - [`toTime64OrZero`](#toTime64OrZero)
     )";
-    FunctionDocumentation::Syntax syntax_toTime64OrNull = "toTime64OrNull(x)";
+    FunctionDocumentation::Syntax syntax_toTime64OrNull = "toTime64OrNull(x[, precision])";
     FunctionDocumentation::Arguments arguments_toTime64OrNull =
     {
-        {"x", "A string representation of a time with subsecond precision.", {"String"}}
+        {"x", "A string representation of a time with subsecond precision.", {"String"}},
+        {"precision", "Optional. The subsecond precision of the returned value.", {"UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime64OrNull = {"Returns a Time64 value if successful, otherwise `NULL`.", {"Time64", "NULL"}};
     FunctionDocumentation::Examples examples_toTime64OrNull = {

@@ -53,15 +53,15 @@ export const quickStartsData = [
   },
   {
     "id": "create-your-first-service-on-cloud",
-    "title": "创建您的第一个 Cloud 服务并加载示例数据",
-    "description": "创建一个 ClickHouse Cloud 服务，浏览 SQL 控制台并加载示例数据集，即可在几分钟内开始查询真实数据。",
-    "href": "/zh/get-started/quickstarts/create-your-first-service-on-cloud",
+    "title": "ClickHouse Cloud 快速入门",
+    "description": "ClickHouse Cloud 快速入门指南",
     "useCases": [
       "all"
     ],
     "products": [
       "cloud"
-    ]
+    ],
+    "href": "/zh/get-started/setup/cloud"
   },
   {
     "id": "creating-tables",
@@ -101,7 +101,7 @@ export const quickStartsData = [
   },
   {
     "id": "obtain-your-cloud-connection-details",
-    "title": "获取您的 Cloud 连接详情",
+    "title": "获取您的 Cloud 连接信息",
     "description": "了解如何查找 ClickHouse Cloud 服务的主机名、端口和凭据，以便从外部客户端、命令行客户端 和应用程序进行连接。",
     "href": "/zh/get-started/quickstarts/obtain-your-cloud-connection-details",
     "useCases": [

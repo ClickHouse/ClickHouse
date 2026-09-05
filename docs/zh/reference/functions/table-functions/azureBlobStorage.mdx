@@ -51,7 +51,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 | 参数                               | 说明                                                                                                                                                                                                                                                                                                                                                            |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `connection_string`              | 包含内嵌凭据 (账户名 + 账户密钥或 SAS token) 的连接字符串。使用这种形式时，**不应**再单独传递 `account_name` 和 `account_key`。参见[配置连接字符串](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)。 |
-| `storage_account_url`            | 存储账户端点 URL，例如 `https://myaccount.blob.core.windows.net/`。使用这种形式时，**必须**同时传递 `account_name` 和 `account_key`。                                                                                                                                                                                                                                                  |
+| `storage_account_url`            | 存储账户端点 URL，例如 `https://myaccount.blob.core.windows.net/`。使用这种形式时，**必须**同时传递 `account_name` 和 `account_key`。                                                                                                                                                                                                                                                   |
 | `container_name`                 | 容器名称。                                                                                                                                                                                                                                                                                                                                                         |
 | `blobpath`                       | 文件路径。在只读模式下支持以下通配符：`*`、`**`、`?`、`{abc,def}` 和 `{N..M}`，其中 `N`、`M` 为数字，`'abc'`、`'def'` 为字符串。                                                                                                                                                                                                                                                                   |
 | `account_name`                   | 存储账户名称。使用不带 SAS 的 `storage_account_url` 时**必需**；使用 `connection_string` 时**不得**传递。                                                                                                                                                                                                                                                                             |
@@ -59,7 +59,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 | `format`                         | 文件的[格式](/zh/reference/formats/index)。                                                                                                                                                                                                                                                                                                                            |
 | `compression`                    | 支持的值：`none`、`gzip/gz`、`brotli/br`、`xz/LZMA`、`zstd/zst`。默认会根据文件扩展名自动检测压缩方式 (等同于设置为 `auto`) 。                                                                                                                                                                                                                                                                   |
 | `structure`                      | 表的结构。格式为 `'column1_name column1_type, column2_name column2_type, ...'`。                                                                                                                                                                                                                                                                                       |
-| `partition_strategy`             | 可选。支持的值：`WILDCARD` 或 `HIVE`。`WILDCARD` 要求路径中包含 `{_partition_id}`，该占位符会被替换为分区键。`HIVE` 不允许使用通配符，假定该路径是表根路径，并生成 Hive 风格的分区目录，以 Snowflake IDs 作为文件名、以文件格式作为扩展名。如果路径包含 `{_partition_id}` 占位符，则默认使用 `WILDCARD`——这是唯一与此类路径兼容的策略。否则，默认值取决于 `file_like_engine_default_partition_strategy` 设置 (`compatibility` 设置早于 `26.6` 时为 `WILDCARD`，否则为 `HIVE`)。                   |
+| `partition_strategy`             | 可选。支持的值：`WILDCARD` 或 `HIVE`。`WILDCARD` 要求路径中包含 `{_partition_id}`，该占位符会被替换为分区键。`HIVE` 不允许使用通配符，假定该路径是表根路径，并生成 Hive 风格的分区目录，以 Snowflake IDs 作为文件名、以文件格式作为扩展名。未显式指定策略时，包含 `{_partition_id}` 的路径使用 `WILDCARD`。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不含 glob 的路径会在 `file_like_engine_default_partition_strategy` 为 `HIVE` 时使用 `HIVE`；否则不使用分区策略。                  |
 | `partition_columns_in_data_file` | 可选。仅在 `HIVE` 分区策略下使用。用于告知 ClickHouse 是否应预期分区列会写入数据文件中。默认为 `false`。                                                                                                                                                                                                                                                                                            |
 | `extra_credentials`              | 使用 `client_id` 和 `tenant_id` 进行身份验证。如果提供了 `extra_credentials`，其优先级高于 `account_name` 和 `account_key`。                                                                                                                                                                                                                                                          |
 
@@ -157,7 +157,7 @@ LIMIT 5;
   ### 按分区写入数据
 </div>
 
-路径中包含 `{_partition_id}` 意味着使用 `WILDCARD` 分区策略。对于不含该占位符的路径，当 `compatibility` 为 `26.6` 或更高版本 (包括当前默认值) 时，默认分区策略为 `HIVE`；请参阅 `file_like_engine_default_partition_strategy` 设置。
+路径中包含 `{_partition_id}` 意味着使用 `WILDCARD` 分区策略。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不含 glob 的路径会在 `file_like_engine_default_partition_strategy` 为 `HIVE` 时使用 `HIVE`；否则不使用分区策略。
 
 ```sql
 INSERT INTO TABLE FUNCTION azureBlobStorage(
@@ -211,7 +211,9 @@ FROM azureBlobStorage(
 
 仅支持 `INSERT` 查询。
 
-`WILDCARD`：将文件路径中的 `{_partition_id}` 通配符替换为实际分区键。当路径包含 `{_partition_id}` 占位符时默认选用它 (这是唯一与此类路径兼容的策略) ；否则，在 `compatibility` 设置早于 `26.6` 时默认选用它；其余情况下默认值为 `HIVE` (参见 `file_like_engine_default_partition_strategy` 设置) 。
+`WILDCARD`：将文件路径中的 `{_partition_id}` 通配符替换为实际分区键。当路径包含 `{_partition_id}` 时默认选用它。
+
+未设置 `partition_strategy` 时，包含其他 glob 的路径不使用分区策略，并会忽略 `PARTITION BY`。不包含 glob 的路径会在 `file_like_engine_default_partition_strategy` 为 `HIVE` 时使用 `HIVE`；否则不使用分区策略。
 
 `HIVE` 对读写均采用 Hive 风格分区。它按以下格式生成文件：`<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`。
 

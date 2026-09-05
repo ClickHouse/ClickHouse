@@ -115,6 +115,18 @@ Estas son las cantidades que se pueden restringir:
 
 Si se supera el límite durante al menos un intervalo de tiempo, se lanza una excepción con un mensaje que indica qué restricción se ha superado, para qué intervalo y cuándo comienza el nuevo intervalo (cuándo se pueden volver a enviar consultas).
 
+<Note>
+  **Consultas excluidas de la contabilización de QUOTAS**
+
+  Para permitir inspeccionar la configuración y el uso de las QUOTAS incluso cuando una QUOTA se ha agotado, las consultas `SELECT` que leen exclusivamente de una de las siguientes tablas del sistema no se cargan a las QUOTAS ni están sujetas a límites de complejidad de las consultas:
+
+  * `system.quotas`
+  * `system.quota_limits`
+  * `system.quota_usage`
+  * `system.quotas_usage`
+  * `system.one`
+</Note>
+
 Las QUOTAS pueden usar la función de &quot;clave de QUOTA&quot; para hacer un seguimiento de los recursos de varias claves de forma independiente. Este es un ejemplo de ello:
 
 ```xml

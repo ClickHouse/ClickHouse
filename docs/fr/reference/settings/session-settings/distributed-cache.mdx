@@ -38,6 +38,16 @@ N&#39;a d&#39;effet que dans ClickHouse Cloud. Paramètre de test, ne le modifie
 
 N&#39;a d&#39;effet que dans ClickHouse Cloud. Permet de contourner le pool de connexions du cache distribué
 
+<div id="distributed_cache_client_id">
+  ## distributed_cache_client_id
+</div>
+
+<CloudOnlyBadge />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nouveau paramètre (tests d’intégration continue uniquement) permettant de surcharger l’ID client du cache distribué pour chaque requête."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": ""},{"label": "Nouveau paramètre (tests d’intégration continue uniquement) permettant de surcharger l’ID client du cache distribué pour chaque requête."}]}]} />
+
+N’a d’effet que dans ClickHouse Cloud. Ce paramètre, utilisé uniquement pour les tests d’intégration continue, surcharge, lorsqu’il n’est pas vide, l’ID client du cache distribué configuré dans le registry pour les requêtes de cette requête. Il permet aux tests de répartir les données entre un ensemble limité d’ID client tout en conservant les mêmes données sur le même ID client. Il nécessite l’activation de `ci_mode` dans la config du client de cache distribué : dans le cas contraire (ce qui est le comportement par défaut, notamment en production), une requête qui effectue une lecture ou une écriture via le cache distribué échoue avec `SUPPORT_IS_DISABLED`, au lieu de revenir silencieusement à l’ID client configuré. Les requêtes qui n’atteignent jamais le cache distribué ne sont pas affectées ; la valeur y est donc ignorée.
+
 <div id="distributed_cache_connect_backoff_max_ms">
   ## distributed_cache_connect_backoff_max_ms
 </div>
@@ -188,7 +198,7 @@ N’a d’effet que dans ClickHouse Cloud. Nombre minimal d’octets pour effect
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4194304"},{"label": "Nouveau paramètre permettant de fermer puis de rouvrir une connexion au cache distribué lors d'un seek, lorsque trop d'octets en transit devraient sinon être ignorés. La valeur par défaut est de 4 Mio ; 0 restaure le comportement précédent (toujours réutiliser la connexion via l'identifiant de plage de lecture)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "Nouveau paramètre permettant de fermer puis de rouvrir une connexion au cache distribué lors d'un seek, lorsque trop d'octets en transit devraient sinon être ignorés. La valeur par défaut est de 4 Mio ; 0 restaure le comportement précédent (toujours réutiliser la connexion via l'identifiant de plage de lecture)."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "4194304"},{"label": "Nouveau paramètre permettant de fermer puis de rouvrir une connexion au cache distribué lors d'un seek, lorsque trop d'octets en transit devraient sinon être ignorés. La valeur par défaut est de 4 Mio ; 0 restaure le comportement précédent (toujours réutiliser la connexion via l'identifiant de plage de lecture)."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "4194304"},{"label": "Nouveau paramètre permettant de fermer puis de rouvrir une connexion au cache distribué lors d'un seek, lorsque trop d'octets en transit devraient sinon être ignorés. La valeur par défaut est de 4 Mio ; 0 restaure le comportement précédent (toujours réutiliser la connexion via l'identifiant de plage de lecture)."}]}]} />
 
 N&#39;a d&#39;effet que dans ClickHouse Cloud. Lors d&#39;un seek depuis la position actuelle d&#39;un stream de cache distribué ouvert, si le nombre estimé d&#39;octets en transit qui devraient être ignorés pour continuer à réutiliser la connexion (via le mécanisme d&#39;identifiant de plage de lecture) dépasse cette valeur, fermez la connexion et ouvrez-en une nouvelle. Cela évite de purger une grande quantité de données inutilisées lorsque les seeks sont fréquents. 0 désactive ce comportement et réutilise toujours la connexion.
 

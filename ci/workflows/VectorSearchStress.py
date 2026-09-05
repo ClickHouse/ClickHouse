@@ -7,6 +7,7 @@ workflow = Workflow.Config(
     name="VectorSearchStress",
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[JobConfigs.vector_search_stress_job],
     artifacts=[],
     secrets=SECRETS,
