@@ -229,6 +229,69 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
     return nullptr;
 }
 
+std::vector<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
+{
+    Stack stack;
+    std::vector<ReadFromMergeTree *> reading_steps;
+    traverseQueryPlan(
+        stack,
+        root,
+        [&](auto & frame_node)
+        {
+            if (auto * reading_step = typeid_cast<ReadFromMergeTree *>(frame_node.step.get()))
+                reading_steps.push_back(reading_step);
+        });
+    return reading_steps;
+}
+
+/// Hand every read in the parallel replicas plan the analysis the single-node plan already produced for
+/// the same read. The plans are built from the same query and differ only where the replicas step is
+/// substituted, so their reads pair up in traversal order; the storage identity of each pair is checked
+/// and the whole transplant is skipped if anything does not line up. Without this only the matched read
+/// gets an analysis and the rest scan everything - on TPC-H q03, 1045 marks against 614.
+void transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan::Node & replicas_root)
+{
+    auto single_node_reads = collectReadingSteps(single_node_root);
+    auto replicas_reads = collectReadingSteps(replicas_root);
+
+    if (single_node_reads.size() != replicas_reads.size())
+    {
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "Single-node plan has {} reads and the replicas plan {}; not transplanting index analysis",
+            single_node_reads.size(),
+            replicas_reads.size());
+        return;
+    }
+
+    for (size_t i = 0; i < single_node_reads.size(); ++i)
+    {
+        if (&single_node_reads[i]->getMergeTreeData() != &replicas_reads[i]->getMergeTreeData())
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Read {} is {} in the single-node plan and {} in the replicas plan; not transplanting index analysis",
+                i,
+                single_node_reads[i]->getStorageID().getNameForLogs(),
+                replicas_reads[i]->getStorageID().getNameForLogs());
+            return;
+        }
+    }
+
+    for (size_t i = 0; i < single_node_reads.size(); ++i)
+    {
+        /// Index analysis is lazy, so a read the single-node plan has not needed yet has no result to
+        /// hand over. Produce it here, the same way the matched read step does: it is one analysis per
+        /// read either way, and this way it is done once and shared instead of being repeated by the
+        /// replicas plan.
+        auto analyzed = single_node_reads[i]->getAnalyzedResult();
+        if (!analyzed)
+            analyzed = single_node_reads[i]->selectRangesToRead();
+        if (analyzed)
+            replicas_reads[i]->setAnalyzedResult(analyzed);
+    }
+}
+
 /// Transplant the sets from the single-replica plan to the parallel-replicas plan once we decided to enable parallel replicas.
 ///
 /// Both walks use `forEachSubquerySet` rather than a plain `traverseQueryPlan`, which follows only
@@ -315,6 +378,13 @@ void considerEnablingParallelReplicas(
 
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
+    ///
+    /// Collecting here, before the analysis forced below, is early enough. The sets worth adopting are
+    /// already filled: `optimizePrimaryKeyConditionAndLimit` runs earlier in this same pass and ends in
+    /// `applyFilters`, where `buildIndexes` constructs the `KeyCondition` that calls
+    /// `buildOrderedSetInplace` for every `IN` whose left argument maps to key columns. The
+    /// `selectRangesToRead` below reuses those `indexes` (it builds them only `if (!indexes)`), so it
+    /// adds no set that collecting later would catch.
     auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
     if (!plan_with_parallel_replicas)
         return;
@@ -419,6 +489,8 @@ void considerEnablingParallelReplicas(
                         optimization_settings.automatic_parallel_replicas_min_bytes_per_replica);
                     return;
                 }
+
+                transplantAnalysisToAllReads(*query_plan.getRootNode(), *plan_with_parallel_replicas->getRootNode());
 
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
                 if (!local_replica_plan_reading_step)
