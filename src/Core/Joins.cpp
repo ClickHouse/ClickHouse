@@ -72,7 +72,9 @@ const char * toString(JoinAlgorithm join_algorithm)
         case JoinAlgorithm::PARALLEL_HASH: return "PARALLEL_HASH";
         case JoinAlgorithm::DIRECT: return "DIRECT";
         case JoinAlgorithm::FULL_SORTING_MERGE: return "FULL_SORTING_MERGE";
+        case JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE: return "PARALLEL_FULL_SORTING_MERGE";
         case JoinAlgorithm::GRACE_HASH: return "GRACE_HASH";
+        case JoinAlgorithm::IE_JOIN: return "IE_JOIN";
     }
 }
 
@@ -82,6 +84,7 @@ const char * toString(JoinOrderAlgorithm join_order_algorithm)
     {
         case JoinOrderAlgorithm::GREEDY: return "GREEDY";
         case JoinOrderAlgorithm::DPSIZE: return "DPSIZE";
+        case JoinOrderAlgorithm::DPSUB: return "DPSUB";
         case JoinOrderAlgorithm::DPHYP:  return "DPHYP";
     }
 }

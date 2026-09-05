@@ -1,0 +1,168 @@
+---
+description: 'Dataset que contiene 10 millones de vectores del conjunto de datos LAION 5B'
+sidebarTitle: 'conjunto de datos LAION 5B'
+slug: /getting-started/example-datasets/laion-5b-dataset
+title: 'conjunto de datos LAION 5B'
+keywords: ['búsqueda semántica', 'similitud vectorial', 'vecinos más cercanos aproximados', 'embeddings']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="introduction">
+  ## Introducción
+</div>
+
+El [conjunto de datos LAION 5b](https://laion.ai/blog/laion-5b/) contiene 5,85 mil millones de embeddings de imagen y texto, además de los metadatos de imagen asociados. Los embeddings se generaron con el modelo `Open AI CLIP` [ViT-L/14](https://huggingface.co/sentence-transformers/clip-ViT-L-14). La dimensión de cada vector de embedding es `768`.
+
+Este conjunto de datos puede utilizarse para modelar aspectos de diseño, dimensionamiento y rendimiento de una aplicación real de búsqueda vectorial a gran escala. El conjunto de datos puede utilizarse tanto para la búsqueda de texto a imagen como para la búsqueda de imagen a imagen.
+
+<div id="dataset-details">
+  ## Detalles del conjunto de datos
+</div>
+
+El conjunto de datos completo puede descargarse con [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader).
+
+ClickHouse ha puesto a disposición un subconjunto de 10 millones de vectores en un bucket público de `S3`.
+El subconjunto se almacena en un archivo `Parquet`.
+
+Recomendamos a los usuarios que primero realicen un ejercicio de dimensionamiento para estimar los requisitos de almacenamiento y memoria de este conjunto de datos, consultando la [documentación](/es/reference/engines/table-engines/mergetree-family/annindexes).
+
+<div id="steps">
+  ## Pasos
+</div>
+
+<Steps>
+  <Step title="Crear tabla" id="create-table">
+    Cree la tabla `laion_5b_10m` para almacenar los embeddings y sus atributos asociados:
+
+    ```sql
+    CREATE TABLE laion_5b_10m
+    (
+        id UInt32,
+        image_path String,
+        caption String,
+        NSFW Nullable(String) default 'unknown',
+        similarity Float32,
+        LICENSE Nullable(String),
+        url String,
+        key String,
+        status LowCardinality(String),
+        width Int32,
+        height Int32,
+        original_width Int32,
+        original_height Int32,
+        exif Nullable(String),
+        md5 String,
+        vector Array(Float32) CODEC(NONE)
+    ) ENGINE = MergeTree ORDER BY (id)
+    ```
+
+    El `id` es simplemente un entero incremental. Los atributos adicionales pueden usarse en predicados para comprender
+    la búsqueda de similitud vectorial combinada con posfiltrado/prefiltrado, como se explica en la [documentación](/es/reference/engines/table-engines/mergetree-family/annindexes)
+  </Step>
+
+  <Step title="Cargar datos" id="load-table">
+    Para cargar el conjunto de datos, ejecute la siguiente sentencia SQL:
+
+    ```sql
+    INSERT INTO laion_5b_10m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet', NOSIGN);
+    ```
+
+    La carga de 10 millones de filas en la tabla tardará unos minutos.
+  </Step>
+
+  <Step title="Ejecute una búsqueda de similitud vectorial de fuerza bruta" id="run-a-brute-force-vector-similarity-search">
+    La búsqueda KNN (k - vecinos más próximos) o la búsqueda por fuerza bruta consiste en calcular la distancia entre cada vector del conjunto de datos
+    y el vector de embedding de búsqueda, y luego ordenar las distancias para obtener los vecinos más próximos. Podemos usar uno de los vectores
+    del propio conjunto de datos como vector de búsqueda. Por ejemplo:
+
+    ```sql title="Query"
+    SELECT id, url 
+    FROM laion_5b_10m
+    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_10m WHERE id = 9999) ) ASC
+    LIMIT 20
+
+    The vector in the row with id = 9999 is the embedding for an image of a Deli restaurant.
+    ```
+
+    Anota la latencia de la consulta para compararla con la de una consulta ANN (mediante un índice vectorial).
+    Con 10 millones de filas, la consulta anterior sin un índice vectorial podría tardar desde unos segundos hasta varios minutos en completarse.
+  </Step>
+
+  <Step title="Crear un índice de similitud vectorial" id="build-vector-similarity-index">
+    Ejecute el siguiente SQL para definir y crear un índice de similitud vectorial en la columna `vector` de la tabla `laion_5b_10m`:
+
+    ```sql
+    ALTER TABLE laion_5b_10m ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 768, 'bf16', 64, 512);
+
+    ALTER TABLE laion_5b_10m MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 2;
+    ```
+
+    Los parámetros y las consideraciones de rendimiento para la creación y búsqueda de índices se describen en la [documentación](/es/reference/engines/table-engines/mergetree-family/annindexes).
+    La instrucción anterior utiliza los valores 64 y 512, respectivamente, para los hiperparámetros de HNSW `M` y `ef_construction`.
+    Debe seleccionar cuidadosamente los valores óptimos de estos parámetros evaluando el tiempo de creación del índice y la calidad de los resultados de búsqueda
+    correspondientes a los valores seleccionados.
+
+    La creación y el guardado del índice pueden llevar un tiempo considerable para el subconjunto de 10 millones de filas, en función del número de núcleos de CPU disponibles y del ancho de banda de almacenamiento.
+  </Step>
+
+  <Step title="Realice una búsqueda ANN" id="perform-ann-search">
+    Una vez creado el índice de similitud vectorial, las consultas de búsqueda vectorial usarán automáticamente el índice:
+
+    ```sql title="Query"
+    SELECT id, url 
+    FROM laion_5b_10m
+    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_10m WHERE id = 9999) ) ASC
+    LIMIT 20
+
+    ```
+
+    La primera carga del índice vectorial en memoria podría tardar unos segundos o minutos.
+  </Step>
+
+  <Step title="Generar embeddings para la consulta de búsqueda" id="generating-embeddings-for-search-query">
+    Los vectores de embedding del conjunto de datos `LAION 5b` se generaron con el modelo `OpenAI CLIP` `ViT-L/14`.
+
+    A continuación, se incluye un script de Python de ejemplo que muestra cómo generar mediante programación
+    vectores de embedding mediante las API de `CLIP`. A continuación, el vector de embedding de búsqueda
+    se pasa como argumento a la función [`cosineDistance()`](/es/reference/functions/regular-functions/distance-functions#cosineDistance) en la consulta `SELECT`.
+
+    Para instalar el paquete `clip`, consulte el [repositorio de GitHub de OpenAI](https://github.com/openai/clip).
+
+    ```python
+    import torch
+    import clip
+    import numpy as np
+    import sys
+    import clickhouse_connect
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, preprocess = clip.load("ViT-L/14", device=device)
+
+    # Search for images that contain both a dog and a cat
+    text = clip.tokenize(["a dog and a cat"]).to(device)
+
+    with torch.no_grad():
+        text_features = model.encode_text(text)
+        np_arr = text_features.detach().cpu().numpy()
+
+        # Pass ClickHouse credentials here
+        chclient = clickhouse_connect.get_client()
+
+        params = {'v1': list(np_arr[0])}
+        result = chclient.query("SELECT id, url FROM laion_5b_10m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
+                                parameters=params)
+
+        # Write the results to a simple HTML page that can be opened in the browser. Some URLs may have become obsolete.
+        print("<html>")
+        for r in result.result_rows:
+            print("<img src = ", r[1], 'width="200" height="200">')
+        print("</html>")
+    ```
+
+    El resultado de la búsqueda anterior se muestra a continuación:
+
+    <Image img="/images/getting-started/example-datasets/laion5b_visualization_1.webp" alt="Resultados de la búsqueda por similitud vectorial" size="md" />
+  </Step>
+</Steps>

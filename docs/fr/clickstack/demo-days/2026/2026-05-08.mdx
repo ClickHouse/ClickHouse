@@ -1,0 +1,62 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/05/2026-05-08
+title: 'Demo days - 2026-05-08'
+sidebarTitle: '2026-05-08'
+description: 'ClickStack demo days du 08/05/2026'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="improved-handling-of-secrets-in-webhooks">
+  ## Gestion améliorée des secrets dans les webhooks
+</div>
+
+*Démo par [@dhable](https://github.com/dhable)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aD7sT5dc470" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les URL et les headers des webhooks contiennent souvent des identifiants visibles en clair. Une URL de webhook Slack contient le token secret dans le chemin, et un webhook HTTP nécessite généralement un header Authorization pour l’authentification. Jusqu’à cette version, l’API interne de HyperDX utilisée pour lister et modifier les webhooks renvoyait systématiquement toutes ces informations à chaque requête, ce qui signifiait que n’importe quel membre authentifié de l’équipe pouvait lire les secrets simplement en appelant l’API.
+
+Cette modification applique le même modèle de masquage que celui déjà utilisé par l’API publique. Les URL de webhook sont renvoyées avec le chemin remplacé par `****`, afin que le token Slack (ou toute autre clé intégrée au chemin) ne quitte jamais le serveur. Les headers sont eux aussi masqués par défaut, car nous n’avons aucun moyen fiable de déterminer lesquels contiennent des secrets : toutes les valeurs sont donc remplacées par `****`, et seuls les noms des headers restent visibles.
+
+Le formulaire de modification traite la valeur masquée comme « aucun changement » : si vous la laissez telle quelle, la valeur enregistrée reste en place ; si vous la modifiez, la nouvelle valeur est enregistrée ; si vous l’effacez, le champ est entièrement supprimé. Cela rend le workflow clair dans le cas le plus courant (la modification d’un seul champ) sans jamais faire transiter le véritable secret par le navigateur.
+
+**PR associées :** [#2239](https://github.com/hyperdxio/hyperdx/pull/2239) [HDX-4173] Masquer les champs sensibles dans les réponses de l’API interne des webhooks
+
+<div id="extra-metadata-in-alerts">
+  ## Métadonnées supplémentaires dans les alertes
+</div>
+
+*Démo par [@dhable](https://github.com/dhable)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/evEd7Cc9e1c" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Suite à une demande de la communauté sur Slack, il est désormais possible d&#39;ajouter du contexte libre aux alertes : un endroit où consigner l&#39;historique des seuils, des liens vers des runbooks ou des notes pour l&#39;équipe d&#39;astreinte. C&#39;est aussi utile comme source de référence pour les résumés générés par l&#39;IA : tout LLM répondant à une alerte déclenchée dispose maintenant du raisonnement de l&#39;opérateur pour s&#39;appuyer dessus, au lieu de devoir déduire l&#39;intention à partir de la seule requête.
+
+Le champ de note prend en charge le rendu Markdown ; les sections repliables, les listes et les liens fonctionnent donc tous. Il fait partie de la configuration de l&#39;alerte et apparaît partout où l&#39;alerte est affichée. L&#39;UX n&#39;est pas encore figée : la prise en charge du Markdown n&#39;est qu&#39;un point de départ, et les retours sur la façon dont cela devrait être rendu sont les bienvenus.
+
+Au passage, cette PR améliore aussi l&#39;UX des alertes déclenchées dans les recherches enregistrées. L&#39;icône de cloche du bouton Alerts affiche un point rouge lorsqu&#39;une alerte est déclenchée, la boîte de dialogue met en évidence l&#39;alerte active au lieu de simplement pointer vers elle, et le langage visuel est désormais aligné sur celui déjà utilisé par les tuiles de tableau de bord pour ce même état.
+
+**PR associées :** [#2210](https://github.com/hyperdxio/hyperdx/pull/2210) [HDX-3044] Ajout d&#39;un champ de note facultatif aux alertes
+
+<div id="possible-themes">
+  ## Thèmes possibles
+</div>
+
+*Démo par [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JZYGz6ZOPf4" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Il s’agissait d’une expérimentation de hackathon qui introduisait trois thèmes inspirés des IDE dans la ClickStack UI : Nord (bleus arctiques), Catppuccin (pastel) et One Dark (style Atom), chacun décliné en version claire et sombre. Nous avons essayé d’utiliser des tokens de couleur générés à partir de ces thèmes sources, ce qui nous a menés presque jusqu’au résultat souhaité, malgré quelques imperfections restantes sur les couleurs de la barre latérale et le contraste des lignes, qui auraient encore nécessité un peu de travail.
+
+La PR a finalement été fermée au lieu d’être fusionnée. L’équipe s’oriente vers ClickUI, qui ne prend actuellement en charge qu’un seul thème, et maintenir plusieurs jeux parallèles de tokens représenterait un travail récurrent, surtout dès lors qu’on commence à vérifier correctement le contraste pour chaque combinaison. Il a donc été décidé d’attendre que ClickUI prenne lui-même en charge plusieurs thèmes.
+
+Nous avons estimé qu’un aspect de la logique de conception issue de cette expérimentation méritait d’être retenu si l’idée devait être reprise plus tard. Lors de la première itération, le logo HyperDX était recoloré selon le thème, ce qui faisait perdre l’identité de la marque. L’approche la plus propre : un thème clair affiche le logo sombre, un thème sombre affiche le logo clair, et le logotype HyperDX vert reste, lui, inchangé.
+
+**PR associées :** [#2191](https://github.com/hyperdxio/hyperdx/pull/2191) feat: add IDE-inspired themes (Nord, Catppuccin, One Dark)

@@ -1,0 +1,71 @@
+<test>
+    <!-- Benchmark for the `parallel_full_sorting_merge` join algorithm added in
+         https://github.com/ClickHouse/ClickHouse/pull/109005. It shards a full
+         sorting merge join by the hash of the join keys into independent
+         per-shard merge joins that run in parallel (up to `max_threads`), keeping
+         the low, streaming memory of a merge join.
+
+         Three shapes are covered:
+           - `pfsm_*` use `ORDER BY tuple()`, so neither side is sorted by the join
+             key: the pre-join sort is a full parallel sort that is scattered into
+             shards (each shard sorts from scratch).
+           - `pfsm_sorted_*` use `ORDER BY k` and join on `k`, so both sides are read
+             in order: an already-sorted side is not scattered (an order-preserving
+             scatter into the per-shard merges can deadlock the pipeline), so the
+             join falls back to a single merge join, like `full_sorting_merge`.
+           - `pfsm_payload_*` are key-only joins plus a wide payload column carried
+             through the join, so the scatter and the per-shard sorts move much more
+             data per row than the key itself: this measures how the scatter overhead
+             scales with the payload rather than with the key.
+
+         `full_sorting_merge` (single merge) and `parallel_hash` are included on the
+         same data as a reference, mirroring the benchmark in the PR. Each query
+         carries `join_algorithm` in its own `SETTINGS` clause rather than a
+         test-wide `<settings>` block, so the query using the new value is run only
+         on the new server (as a "partial" query) instead of failing the
+         precondition on a server that does not have the value yet. -->
+
+    <create_query>CREATE TABLE pfsm_left (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE pfsm_right (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>INSERT INTO pfsm_left SELECT number FROM numbers_mt(20000000)</fill_query>
+    <fill_query>INSERT INTO pfsm_right SELECT number FROM numbers_mt(20000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE pfsm_left FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE pfsm_right FINAL</fill_query>
+
+    <create_query>CREATE TABLE pfsm_sorted_left (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE pfsm_sorted_right (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO pfsm_sorted_left SELECT number FROM numbers_mt(20000000)</fill_query>
+    <fill_query>INSERT INTO pfsm_sorted_right SELECT number FROM numbers_mt(20000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE pfsm_sorted_left FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE pfsm_sorted_right FINAL</fill_query>
+
+    <create_query>CREATE TABLE pfsm_payload_left (k UInt64, s String) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE pfsm_payload_right (k UInt64, s String) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>INSERT INTO pfsm_payload_left SELECT number, hex(sipHash128(number)) FROM numbers_mt(5000000)</fill_query>
+    <fill_query>INSERT INTO pfsm_payload_right SELECT number, hex(sipHash128(number + 1)) FROM numbers_mt(5000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE pfsm_payload_left FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE pfsm_payload_right FINAL</fill_query>
+
+    <!-- Unsorted input: a full parallel sort scattered into shards. -->
+    <query>SELECT count() FROM pfsm_left AS a JOIN pfsm_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_full_sorting_merge'</query>
+    <query>SELECT count() FROM pfsm_left AS a JOIN pfsm_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+    <query>SELECT count() FROM pfsm_left AS a JOIN pfsm_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+
+    <!-- Read-in-order input (join on the ORDER BY key): not scattered, falls back to a single merge join. -->
+    <query>SELECT count() FROM pfsm_sorted_left AS a JOIN pfsm_sorted_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_full_sorting_merge'</query>
+    <query>SELECT count() FROM pfsm_sorted_left AS a JOIN pfsm_sorted_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+
+    <!-- Unsorted input with a payload carried through the join: the scatter and the per-shard
+         sorts have to move the payload columns too, not just the key. Fewer rows than the
+         key-only case to keep the total volume comparable. -->
+    <query>SELECT sum(length(a.s)) + sum(length(b.s)) FROM pfsm_payload_left AS a JOIN pfsm_payload_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_full_sorting_merge'</query>
+    <query>SELECT sum(length(a.s)) + sum(length(b.s)) FROM pfsm_payload_left AS a JOIN pfsm_payload_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+    <query>SELECT sum(length(a.s)) + sum(length(b.s)) FROM pfsm_payload_left AS a JOIN pfsm_payload_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+
+    <drop_query>DROP TABLE IF EXISTS pfsm_left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pfsm_right</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pfsm_sorted_left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pfsm_sorted_right</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pfsm_payload_left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pfsm_payload_right</drop_query>
+</test>

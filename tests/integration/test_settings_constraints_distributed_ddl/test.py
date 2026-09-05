@@ -8,8 +8,8 @@ Scenario
 - node1 (initiator): NO constraints on max_memory_usage
 - node2 (worker):    max_memory_usage constrained to MIN 5_000_000_000
 
-The initiator sets max_memory_usage = 1 in its session and then issues
-CREATE TABLE ... ON CLUSTER. The DDL entry serializes max_memory_usage = 1.
+The initiator issues CREATE TABLE ... ON CLUSTER with a low max_memory_usage
+that is below node2's MIN constraint. The DDL entry serializes that value.
 When node2 replays this entry, it should ideally clamp or reject the
 setting, not silently apply it in violation of local constraints.
 
@@ -67,12 +67,16 @@ def test_ddl_worker_clamps_settings_constraints():
     # Verify no constraint on node1
     node1.query("SET max_memory_usage = 1")  # Should succeed
 
-    # From node1: run ON CLUSTER DDL with max_memory_usage=1
-    # This creates the DDL entry with the setting serialized in it
+    # From node1: run ON CLUSTER DDL with a low max_memory_usage that is still
+    # below node2's MIN constraint (5_000_000_000), so node2 clamps it. The
+    # value must leave node1 (unconstrained initiator) enough headroom to run
+    # the CREATE TABLE itself, otherwise the per-cpu untracked memory flushes
+    # would trip an early memory limit exception on node1.
+    # This creates the DDL entry with the setting serialized in it.
     node1.query(
         f"CREATE TABLE {table_name} ON CLUSTER test_cluster (x Int64) ENGINE = MergeTree ORDER BY x",
         settings={
-            "max_memory_usage": "1",
+            "max_memory_usage": "10000000",
             "distributed_ddl_entry_format_version": "2",
             "distributed_ddl_task_timeout": "60",
         },

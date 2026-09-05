@@ -1,0 +1,199 @@
+---
+sidebarTitle: 'Buenas prácticas'
+description: 'Describe las buenas prácticas que deben seguirse al trabajar con Kafka ClickPipes.'
+slug: /integrations/clickpipes/kafka/best-practices
+title: 'Buenas prácticas'
+doc_type: 'guide'
+keywords: ['buenas prácticas de Kafka', 'ClickPipes', 'compresión', 'autenticación', 'escalado']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="compression">
+  ## Compresión de mensajes
+</div>
+
+Recomendamos encarecidamente usar compresión en sus topics de Kafka. La compresión puede suponer un ahorro significativo en los costes de transferencia de datos, prácticamente sin afectar al rendimiento.
+Para obtener más información sobre la compresión de mensajes en Kafka, le recomendamos empezar por esta [guía](https://www.confluent.io/blog/apache-kafka-message-compression/).
+
+<div id="limitations">
+  ## Limitaciones
+</div>
+
+* [`DEFAULT`](/es/reference/statements/create/table#default) no se admite.
+* De forma predeterminada, los mensajes individuales están limitados a 16 MB (sin comprimir) cuando se usa el tamaño de réplica más pequeño (XS), y a 32 MB (sin comprimir) con réplicas de mayor tamaño.  Los mensajes que superen este límite se rechazarán con un error.  Si necesita mensajes más grandes, póngase en contacto con el soporte técnico.
+
+<div id="delivery-semantics">
+  ## Semántica de entrega
+</div>
+
+ClickPipes para Kafka garantiza la entrega al menos una vez de forma predeterminada y realiza el seguimiento del progreso de la ingestión mediante los offsets del grupo de consumidores de Kafka. También admite opcionalmente semántica de exactamente una vez, en la que cada registro de Kafka se inserta en ClickHouse exactamente una vez, incluso tras reinicios de pods, reequilibrios de consumidores y errores de inserción.
+
+Para garantizar la entrega exactamente una vez, ClickPipes registra el progreso de cada partición en su almacén de estado interno mediante dos valores:
+
+* **Marca de agua** — el offset hasta el que se confirma que todos los registros de la partición se han insertado en ClickHouse. Al reiniciarse, ClickPipes descarta cualquier registro que esté en esa marca o por debajo de ella, por lo que los datos ya insertados nunca se vuelven a enviar.
+* **Rangos pendientes** — los rangos de offsets de los bloques de inserción enviados a ClickHouse pero aún no confirmados. Tras un error, ClickPipes reproduce exactamente esos rangos.
+
+Cada bloque de inserción abarca un rango contiguo de offsets e incluye un [token de deduplicación](/es/concepts/features/operations/insert/deduplicating-inserts-on-retries) determinista con el formato `topic:partition:firstOffset-lastOffset`. Durante la reproducción, ClickPipes vuelve a generar el mismo rango de offsets y, por tanto, el mismo token, de modo que ClickHouse rechaza el duplicado. Como el token depende únicamente del rango de offsets, una reproducción se deduplica incluso cuando el bloque reconstruido no es idéntico byte a byte.
+
+<Note>
+  **Ventana de deduplicación**
+
+  La deduplicación de tokens está limitada por [`replicated_deduplication_window`](/es/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) de la tabla de destino (los 10.000 bloques de inserción más recientes de forma predeterminada) y [`replicated_deduplication_window_seconds`](/es/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) (una hora de forma predeterminada). Las canalizaciones de alto rendimiento pueden agotar rápidamente la ventana basada en el número de bloques, por lo que recomendamos verificar y, si es necesario, aumentar ambos ajustes en la tabla de destino para cubrir el mayor retraso de reproducción previsto. Los datos reproducidos después de que su token haya salido de la ventana pueden volver a insertarse, por lo que en ese caso no se garantiza la entrega exactamente una vez.
+</Note>
+
+La principal contrapartida es el tamaño de las partes. Los bloques de inserción más grandes generan menos [partes](/es/concepts/core-concepts/parts), pero de mayor tamaño, en ClickHouse, lo que reduce la sobrecarga de las combinaciones. ClickPipes mantiene en memoria las filas de una partición mientras crea un bloque, por lo que el tamaño de parte que puede alcanzar depende de la memoria disponible para la canalización; cuando la memoria es limitada, crea bloques más pequeños y la tabla acumula más partes. Asignar más memoria a la canalización permite crear bloques más grandes y, por tanto, menos partes.
+
+Una canalización funciona mejor cuando el número de particiones se aproxima al número de «workers» internos de inserción, ya que cada worker gestiona aproximadamente una partición y dispone de la holgura de memoria necesaria para crear bloques grandes. Tanto el número de workers como la memoria disponible escalan con el tamaño y el número de réplicas, que se configuran en **Configuración** -&gt; **Configuración avanzada** -&gt; **Escalado**.
+
+<div id="authentication">
+  ## Autenticación
+</div>
+
+Para las fuentes de datos del protocolo Apache Kafka, ClickPipes admite autenticación [SASL/PLAIN](https://docs.confluent.io/platform/current/kafka/authentication_sasl/authentication_sasl_plain.html) con cifrado TLS, así como `SASL/SCRAM-SHA-256` y `SASL/SCRAM-SHA-512`. Según la fuente de streaming (Redpanda, MSK, etc.), se habilitarán todos o solo algunos de estos mecanismos de autenticación en función de la compatibilidad. Si sus requisitos de autenticación son distintos, [háganos llegar sus comentarios](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="warpstream-settings">
+  ## Tamaño de fetch de Warpstream
+</div>
+
+ClickPipes dependen de la configuración de Kafka `max.fetch_bytes` para limitar el tamaño de los datos procesados en un único nodo de ClickPipes en un momento dado. En algunas circunstancias,
+Warpstream no respeta esta configuración, lo que puede provocar fallos inesperados en los pipes. Recomendamos encarecidamente establecer la configuración específica de Warpstream `kafkaMaxFetchPartitionBytesUncompressedOverride`
+en 8 MB (o menos) al configurar su agente de WarpStream para evitar fallos en ClickPipes.
+
+<div id="iam">
+  ### IAM
+</div>
+
+ClickPipes admite los siguientes métodos de autenticación de AWS MSK
+
+* autenticación [SASL/SCRAM-SHA-512](https://docs.aws.amazon.com/msk/latest/developerguide/msk-password.html)
+* autenticación mediante [credenciales de IAM o acceso basado en roles](https://docs.aws.amazon.com/msk/latest/developerguide/how-to-use-iam-access-control.html)
+
+Al usar la autenticación de IAM para conectarse a un bróker de MSK, el rol de IAM debe tener los permisos necesarios.
+A continuación, se muestra un ejemplo de la política de IAM necesaria para las API de Apache Kafka para MSK:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:Connect"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-west-2:12345678912:cluster/clickpipes-testing-brokers/b194d5ae-5013-4b5b-ad27-3ca9f56299c9-10"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:DescribeTopic",
+                "kafka-cluster:ReadData"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-west-2:12345678912:topic/clickpipes-testing-brokers/*"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:AlterGroup",
+                "kafka-cluster:DescribeGroup"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-east-1:12345678912:group/clickpipes-testing-brokers/*"
+            ]
+        }
+    ]
+}
+```
+
+<div id="configuring-a-trusted-relationship">
+  #### Configurar una relación de confianza
+</div>
+
+Si te autenticas en MSK con un ARN de rol de IAM, tendrás que añadir una relación de confianza para tu instancia de ClickHouse Cloud, de modo que se pueda asumir el rol.
+
+<Note>
+  El acceso basado en roles solo funciona para las instancias de ClickHouse Cloud desplegadas en AWS.
+</Note>
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        ...
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::12345678912:role/CH-S3-your-clickhouse-cloud-role"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+```
+
+<div id="custom-certificates">
+  ### Certificados personalizados
+</div>
+
+ClickPipes for Kafka admite la carga de certificados personalizados para brókeres de Kafka que utilizan certificados de servidor no públicos.
+También admite la carga de certificados y claves de cliente para la autenticación basada en TLS mutuo (mTLS).
+
+<div id="performance">
+  ## Rendimiento
+</div>
+
+<div id="batching">
+  ### Procesamiento por lotes
+</div>
+
+ClickPipes inserta datos en ClickHouse en lotes. Esto evita crear demasiadas partes en la base de datos, lo que puede provocar problemas de rendimiento en el clúster.
+
+Los lotes se insertan cuando se cumple alguno de los siguientes criterios:
+
+* El tamaño del lote ha alcanzado el máximo (100,000 filas o 28MB por 1GB de memoria del pod de Kubernetes)
+* El lote ha permanecido abierto durante el tiempo máximo permitido (5 segundos)
+
+<div id="latency">
+  ### Latencia
+</div>
+
+La latencia (definida como el tiempo transcurrido entre que se produce el mensaje de Kafka y que el mensaje está disponible en ClickHouse) depende de varios factores (por ejemplo, la latencia del bróker, la latencia de red y el tamaño/formato del mensaje). El [procesamiento por lotes](#batching) descrito en la sección anterior también influye en la latencia. Recomendamos siempre probar su caso de uso concreto con cargas típicas para determinar la latencia esperada.
+
+ClickPipes no ofrece ninguna garantía con respecto a la latencia. Si tiene requisitos específicos de baja latencia, [contáctenos](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="scaling">
+  ### Escalado
+</div>
+
+ClickPipes for Kafka está diseñado para escalar horizontal y verticalmente. De forma predeterminada, creamos un grupo de consumidores con un solo consumidor. Esto se puede configurar durante la creación del ClickPipe o en cualquier otro momento en **Settings** -&gt; **Advanced Settings** -&gt; **Scaling**.
+
+ClickPipes ofrece alta disponibilidad mediante una arquitectura distribuida entre zonas de disponibilidad.
+Esto requiere escalar a al menos dos consumidores.
+
+La tolerancia a fallos está garantizada por diseño, independientemente del número de consumidores en ejecución.
+Si un consumidor o su infraestructura subyacente falla,
+el ClickPipe reiniciará automáticamente el consumidor y continuará procesando mensajes.
+
+<div id="benchmarks">
+  ### Benchmarks
+</div>
+
+A continuación se muestran algunos benchmarks informales de ClickPipes for Kafka que pueden servir para hacerse una idea general del rendimiento de referencia. Es importante tener en cuenta que hay muchos factores que pueden afectar al rendimiento, como el tamaño de los mensajes, los tipos de datos y el formato de los datos. Los resultados pueden variar, y lo que mostramos aquí no garantiza el rendimiento real.
+
+Detalles del benchmark:
+
+* Usamos servicios de producción de ClickHouse Cloud con recursos suficientes para garantizar que el throughput no estuviera limitado por el procesamiento de inserción del lado de ClickHouse.
+* El servicio de ClickHouse Cloud, el cluster de Kafka (Confluent Cloud) y el ClickPipe se ejecutaban en la misma región (`us-east-2`).
+* El ClickPipe se configuró con una sola réplica de tamaño L (4 GiB de RAM y 1 vCPU).
+* Los datos de muestra incluían datos anidados con una combinación de tipos de datos `UUID`, `String` e `Int`. Otros tipos de datos, como `Float`, `Decimal` y `DateTime`, pueden ofrecer un rendimiento inferior.
+* No hubo diferencias apreciables de rendimiento al usar datos comprimidos y sin comprimir.
+
+| Tamaño de la réplica | Tamaño del mensaje | Formato de los datos | Rendimiento |
+| -------------------- | ------------------ | -------------------- | ----------- |
+| Grande (L)           | 1.6kb              | JSON                 | 63mb/s      |
+| Grande (L)           | 1.6kb              | Avro                 | 99mb/s      |

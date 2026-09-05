@@ -1,0 +1,258 @@
+---
+title: 'Configuration reference'
+sidebarTitle: 'Configuration reference'
+description: 'Every ClickHouse Connector configuration key: the VM config.yaml and the Helm chart values, with defaults'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuration', 'reference']
+doc_type: 'reference'
+---
+
+This page lists every configuration key you may need to touch, with its default and meaning: first the VM configuration file, then the Helm chart values. For task-oriented guidance, see the [configuration guide](/products/bring-your-own-cloud/connector/configuration).
+
+## VM configuration file {#vm-configuration-file}
+
+On a Linux VM the connector reads `/etc/clicklink/config.yaml`, written by `clicklink clctl init` and kept across re-runs unless `--force` is passed. Keys omitted from the file fall back to the compiled defaults below. Credentials never live in this file.
+
+### Top-level keys {#vm-top-level}
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `pcm_infra_uuid` | minted by `init` | Unique identifier for this connector deployment, carried on every upstream request. Preserved across re-runs, including `--force`. Do not edit. |
+| `cloud` | detected by `init` | Cloud provider label for this host. Required; the daemons refuse to start when empty. |
+| `region` | detected by `init` | Region label for this host. Required; the daemons refuse to start when empty. |
+| `api` | | Upstream API connection block, see [api](#vm-api). |
+| `instances` | `{}` | Map of ClickHouse instances by name, see [instances](#vm-instances). |
+| `scraper` | | Scraper daemon block, see [scraper](#vm-scraper). |
+| `troubleshooter` | | Troubleshooter daemon block, see [troubleshooter](#vm-troubleshooter). |
+| `observability` | | Shared logging and port block, see [observability](#vm-observability). |
+
+### api {#vm-api}
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `api.endpoint` | from the enrollment bundle | Your org connector API endpoint, `https://<subdomain>.<connector domain>`. |
+| `api.access_key_file` | `/etc/clicklink/access-key` (written by `init`) | File holding the HMAC access key (mode 0600). |
+| `api.secret_key_file` | `/etc/clicklink/secret-key` (written by `init`) | File holding the HMAC secret key (mode 0600). |
+| `api.tls.enabled` | `true` | Present the mTLS client certificate on API connections. |
+| `api.tls.cert_file` | `/etc/clicklink/tls/client.crt` | mTLS client certificate leaf; rewritten automatically on renewal. |
+| `api.tls.key_file` | `/etc/clicklink/tls/client.key` | mTLS client private key. |
+| `api.tls.ca_file` | `/etc/clicklink/tls/ca.crt` | Extra CA chain added to the system roots for server verification; `init` installs the enrollment bundle's chain here. |
+| `api.retry.max_retries` | `5` | Retry attempts per API request. |
+| `api.retry.initial_delay` | `1s` | First retry backoff delay. |
+| `api.retry.max_delay` | `30s` | Backoff ceiling. |
+| `api.retry.jitter_factor` | `0.25` | Random jitter applied to backoff delays. |
+
+### instances {#vm-instances}
+
+Each entry under `instances.<name>` describes one ClickHouse native-protocol target:
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `host` | | Hostname or IP of the ClickHouse native listener. |
+| `port` | | Native protocol port (typically `9440` with TLS, `9000` plaintext). |
+| `database` | | Database the connector's sessions default to. |
+| `secure` | `false` | Use TLS on the native connection. |
+| `max_open_conns` | unset | Cap on open connections to this instance. |
+| `max_idle_conns` | unset | Cap on idle pooled connections to this instance. |
+| `namespace` | | Kubernetes namespace of the instance, used to scope the troubleshooter's Kubernetes reads. |
+| `cluster` | `default` | ClickHouse cluster name used for distributed queries. |
+
+### scraper {#vm-scraper}
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `scraper.enabled` | `false` (`init` writes `true`) | Run the scraper daemon. |
+| `scraper.labels.platform` | | Label injected into every emitted metric. Required when the scraper is enabled. |
+| `scraper.labels.env` | | Environment label, for example `production`. Required. |
+| `scraper.labels.region` | | Region label. Required. |
+| `scraper.scrape.interval` | `2m` | How often each instance is scraped. |
+| `scraper.scrape.timeout` | `30s` | Per-scrape query timeout. |
+| `scraper.scrape.tables` | see below | System tables scraped per instance. The default set is `metric_log`, `asynchronous_metric_log`, `tables`, `warnings`, `server_settings`; `query_log` is deliberately excluded so raw SQL text never leaves your boundary by default. |
+| `scraper.buffer.path` | `/var/lib/clicklink/buffer` | On-disk spool for at-least-once delivery while the API endpoint is unreachable. |
+| `scraper.buffer.retention` | `168h` | Maximum age of spooled data. |
+| `scraper.buffer.max_size_mb` | `1024` | Spool size cap in MB. |
+| `scraper.sender.bandwidth_limit_mb` | `1.0` | Upload rate limit in MB/s. |
+| `scraper.observability.health_port` | `8082` | Scraper health endpoint port. |
+| `scraper.observability.metrics_port` | `9092` | Scraper metrics port. |
+| `scraper.access_directory` | `/etc/clicklink/access/scraper` | Root of the scraper's per-instance access bundles. |
+
+### troubleshooter {#vm-troubleshooter}
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `troubleshooter.enabled` | `false` (`init` writes `true`) | Run the troubleshooter daemon. |
+| `troubleshooter.poll_interval` | `5s` | Session-state poll interval. |
+| `troubleshooter.command_timeout` | `60s` | Per-command execution timeout. |
+| `troubleshooter.session_timeout` | `4h` | Default support-session duration. |
+| `troubleshooter.session_file_path` | `/var/lib/clicklink/session.json` | Session state file, shared with the `clicklink clctl troubleshoot session` commands. |
+| `troubleshooter.access_directory` | `/etc/clicklink/access/troubleshooter` | Root of the troubleshooter's per-instance access bundles. |
+| `troubleshooter.allowed_tables` | see [default table allowlist](#default-table-allowlist) | System tables the troubleshooter may `SELECT` from. |
+| `troubleshooter.max_open_conns` | `5` | Cap on open ClickHouse connections. |
+| `troubleshooter.max_idle_conns` | `5` | Cap on idle pooled connections. |
+| `troubleshooter.redaction.workers` | `4` | Parallel redaction workers. |
+| `troubleshooter.redaction.patterns_file` | `/etc/clicklink/redaction-patterns.yaml` | Customer-editable redaction patterns; the daemon refuses to start when the file is present but invalid. |
+| `troubleshooter.redaction.metrics_per_pattern` | `false` | Emit a per-pattern match counter metric. |
+| `troubleshooter.redaction.metrics_per_pattern_cap` | `50` | Cap on distinct pattern names in the per-pattern metric. |
+| `troubleshooter.audit_log.path` | `/var/log/clicklink/troubleshoot-audit.log` | Append-only NDJSON audit log of every accepted or blocked command. |
+| `troubleshooter.audit_log.max_size_mb` | `128` | Rotate the active log file above this size. |
+| `troubleshooter.audit_log.max_files` | `5` | Rotated files kept. |
+| `troubleshooter.audit_log.max_age` | `168h` | Rotated files older than this are pruned. |
+| `troubleshooter.gateway.enabled` | `false` | Serve the session gateway (support sessions over OIDC). |
+| `troubleshooter.gateway.listen_addr` | `":8443"` (written by `init`) | Gateway listen address. |
+| `troubleshooter.gateway.audience` | `clicklink-clctl` (written by `init`) | Audience claim required on operator tokens. |
+| `troubleshooter.gateway.required_hosted_domain` | `""` | Optional hosted-domain claim guard; tokens from outside the domain are rejected before the allowlist lookup. |
+| `troubleshooter.gateway.allowed_operators_file` | `/etc/clicklink/allowed-operators.txt` (written by `init`) | Newline-delimited operator email allowlist. Empty means closed. |
+| `troubleshooter.gateway.rate_limit_per_minute` | `0` (disabled) | Per-operator request rate limit. |
+| `troubleshooter.gateway.handler_timeout` | unset | Server-side request timeout. |
+| `troubleshooter.gateway.jwks_uri` | `""` | JWKS endpoint for a non-Google identity provider; empty uses Google's. |
+| `troubleshooter.gateway.issuer` | `""` | Issuer claim to pin when `jwks_uri` is set. |
+| `troubleshooter.gateway.tls.enabled` | `false` (`init` writes `true` on a VM when support sessions are enabled) | Serve the gateway over TLS with the self-signed certificate the daemon mints when none exists; operators pin its fingerprint. |
+| `troubleshooter.gateway.tls.cert_file` | `/var/lib/clicklink/gateway/tls/server.crt` | Gateway serving certificate. |
+| `troubleshooter.gateway.tls.key_file` | `/var/lib/clicklink/gateway/tls/server.key` | Gateway serving key. |
+| `troubleshooter.gateway.tls.self_signed_dns_names` | `[]` (`init` prefills the host) | SANs for the self-signed certificate the daemon mints itself when none exists; entries that parse as IP addresses become IP SANs. |
+
+### observability {#vm-observability}
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `observability.enabled` | `true` | Serve health and metrics endpoints. |
+| `observability.log_level` | `info` | Log level. |
+| `observability.health_port` | `8080` | Shared health port base. |
+| `observability.metrics_port` | `9090` | Shared metrics port base. |
+
+Per-component `observability` blocks overlay this base: the scraper uses `8082`/`9092`, the troubleshooter `8084`/`9094`, and the gateway listens on `8443` when enabled.
+
+### Default table allowlist {#default-table-allowlist}
+
+The troubleshooter's default `allowed_tables` set, identical to the chart's `troubleshooter.allowedTables` default:
+
+```text
+system.build_options    system.clusters       system.columns
+system.databases        system.tables         system.parts
+system.parts_columns    system.parts_summary  system.detached_parts
+system.processes        system.merges         system.mutations
+system.replicas         system.replication_queue
+system.metrics          system.events         system.asynchronous_metrics
+system.disks            system.storage_policies
+system.settings         system.settings_profiles
+system.settings_profile_elements
+system.functions        system.formats        system.table_engines
+system.users            system.roles          system.grants
+```
+
+## Helm chart values {#helm-chart-values}
+
+On Kubernetes the connector is configured through the `clicklink-connector` chart's values. `clicklink clctl init` stages a `clicklink-values.yaml` overlay with everything below filled in and keeps it across re-runs unless `--force` is passed. The tables list the chart defaults; standard workload knobs (`resources`, `nodeSelector`, `tolerations`, `affinity`, `serviceAccount.annotations`, `env`, `imagePullSecrets`) exist on each component with empty defaults and are not repeated per table.
+
+### cluster {#helm-cluster}
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `cluster.pcmInfraUuid` | `""` (`init` fills it) | Unique identifier for this connector deployment. Required when any component is enabled; preserved across re-runs. |
+| `cluster.region` | `""` (`init` fills it) | Region label. Required. |
+| `cluster.cloud` | `""` (`init` fills it) | Cloud provider label. Required. |
+
+### image {#helm-image}
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `image.repository` | pre-set in the published chart | Connector image repository. The published chart points at the public registry image (multi-arch, cosign-signed); set it only to override, for example an in-boundary mirror. Inspect the published value with `helm show values`. |
+| `image.tag` | `""` (tracks the chart's `appVersion`; `init` pins the CLI version) | Image tag. |
+| `image.pullPolicy` | `IfNotPresent` | Kubernetes image pull policy. |
+
+### api {#helm-api}
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `api.endpoint` | `""` (`init` fills it) | Your org connector API endpoint, shared by both components. |
+| `api.tls.enabled` | `true` | Present the mTLS client certificate on API connections. |
+| `api.tls.caFile` | `""` (system roots) | CA appended to the system roots for server verification. Set to `/etc/clicklink/secrets/mtls/ca.crt` (or re-run `init` with `--api-private-ca`) when the endpoint serves a private-CA certificate. |
+
+### secrets {#helm-secrets}
+
+The chart consumes pre-created Secrets; `init` creates them before install.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `secrets.mtlsSecretName` | `clicklink-mtls` | `kubernetes.io/tls` Secret holding the mTLS client key, certificate, and CA chain. |
+| `secrets.hmacSecretName` | `clicklink-hmac` | Opaque Secret holding the `access-key` and `secret-key` for request signing. |
+| `secrets.mtlsWriteback` | `true` | Let the daemons write the automatically renewed mTLS leaf back into the mTLS Secret. Grants the component ServiceAccounts `update` on that one Secret by exact name; without it, renewed certificates have nowhere durable to land. |
+
+### scraper {#helm-scraper}
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `scraper.enabled` | `false` (`init` writes `true`) | Deploy the scraper. |
+| `scraper.replicaCount` | `1` | Scraper replicas. |
+| `scraper.logLevel` | `info` | Log level. |
+| `scraper.ports.health` | `8082` | Health endpoint port. |
+| `scraper.ports.metrics` | `9092` | Metrics port. |
+| `scraper.instances` | `{}` | Map of ClickHouse instances, same shape as the VM [instances](#vm-instances) fields. |
+| `scraper.labels.platform`, `scraper.labels.env`, `scraper.labels.region` | `""` | Labels injected into every emitted metric. All three are required when the scraper is enabled; the chart errors at render time otherwise. |
+| `scraper.config` | `{}` | Passthrough for any `scraper` config key not modeled above (scrape interval, buffer, sender, and so on, same schema as the VM [scraper](#vm-scraper) block). |
+| `scraper.bufferSizeLimit` | `2Gi` | Size cap of the scraper's scratch volume; the scraper has no durable on-disk state. |
+| `scraper.rbac.extraSecretNames` | `[]` | Additional Secret names the scraper ServiceAccount may `get`, exact names only. |
+| `scraper.accessBundles` | `{}` | Per-instance access bundles keyed by instance name, each with `secretName` and `serviceAccountName`. Mounted at `/etc/clicklink/access/scraper/<instance>/`; created by `clicklink clctl scraper access provision --target helm`. |
+
+### troubleshooter {#helm-troubleshooter}
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `troubleshooter.enabled` | `false` (`init` writes `true`) | Deploy the troubleshooter (a single-replica StatefulSet). |
+| `troubleshooter.logLevel` | `info` | Log level. |
+| `troubleshooter.ports.health` | `8084` | Health endpoint port. |
+| `troubleshooter.ports.metrics` | `9094` | Metrics port. |
+| `troubleshooter.instances` | `{}` | Map of ClickHouse instances, same shape as `scraper.instances`. |
+| `troubleshooter.sessionTimeout` | `4h` | Default support-session duration. |
+| `troubleshooter.allowedTables` | the [default table allowlist](#default-table-allowlist) | Tables the troubleshooter's ClickHouse user may `SELECT`. This is the security review surface to edit in your overlay; a hardcoded denylist (`query_log`, `text_log`) applies in the command validator regardless of what is listed here. |
+| `troubleshooter.auditLog.path` | `/var/log/clicklink/troubleshoot-audit.log` | Audit log location, on the state volume so the trail survives pod rescheduling. |
+| `troubleshooter.auditLog.maxSizeMb` | `128` | Rotate above this size. |
+| `troubleshooter.auditLog.maxFiles` | `5` | Rotated files kept. |
+| `troubleshooter.auditLog.maxAge` | `168h` | Rotated files older than this are pruned. |
+| `troubleshooter.redaction.workers` | `4` | Parallel redaction workers. |
+| `troubleshooter.redaction.patternsConfigMap` | `""` | Name of a ConfigMap whose `redaction-patterns.yaml` key holds custom patterns; the chart mounts it at `/etc/clicklink/redaction-patterns.yaml`. When empty, only the built-in patterns apply. |
+| `troubleshooter.redaction.metricsPerPattern` | `false` | Emit a per-pattern match counter metric. |
+| `troubleshooter.redaction.metricsPerPatternCap` | `50` | Cap on distinct pattern names in the per-pattern metric. |
+| `troubleshooter.config` | `{}` | Passthrough for any `troubleshooter` config key not modeled above (poll interval, command timeout, connection caps, and so on). |
+| `troubleshooter.rbac.extraSecretNames` | `[]` | Additional Secret names the troubleshooter ServiceAccount may `get`, exact names only. |
+| `troubleshooter.accessBundles` | `{}` | Per-instance access bundles, same shape as `scraper.accessBundles`, mounted at `/etc/clicklink/access/troubleshooter/<instance>/`. |
+
+### persistence {#helm-persistence}
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `persistence.enabled` | `true` | Back the troubleshooter's state directory with a PersistentVolumeClaim so session state and the audit trail survive restarts. |
+| `persistence.storageClass` | `""` (cluster default) | StorageClass for the claim; `init` fills it from `--storage-class` or the detected default. |
+| `persistence.size` | `5Gi` | Claim size. |
+| `persistence.accessModes` | `[ReadWriteOnce]` | Claim access modes. |
+
+### clctl.gateway {#helm-clctl-gateway}
+
+The session gateway for [support sessions](/products/bring-your-own-cloud/connector/support-sessions).
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `clctl.gateway.enabled` | `false` | Serve the session gateway inside the troubleshooter. |
+| `clctl.gateway.listenAddr` | `":8443"` | Pod-local listen address. |
+| `clctl.gateway.port` | `8443` | Container port exposed through the troubleshooter Service and Ingress; matches `listenAddr`'s port. |
+| `clctl.gateway.audience` | `clicklink-clctl` | Audience claim required on operator tokens. The session client defaults to the same value, so the two only need coordinating when you change this. |
+| `clctl.gateway.requiredHostedDomain` | `""` | Optional hosted-domain claim the gateway requires, rejecting tokens from outside your workspace before the allowlist lookup. |
+| `clctl.gateway.allowedOperators` | `[]` (closed) | Operator email allowlist, rendered into a ConfigMap; rotation is a values change plus `helm upgrade`. |
+| `clctl.gateway.jwksUri` | `""` | JWKS endpoint override for non-Google identity providers; empty uses Google's. |
+| `clctl.gateway.issuer` | `""` | Issuer claim to pin. Required for any real deployment that sets `jwksUri`. |
+| `clctl.gateway.jwksEgressCIDRs` | `[]` | CIDRs the gateway needs to reach for JWKS validation under the default-deny NetworkPolicy; empty blocks every token check. |
+| `clctl.gateway.ingressFromSelector` | `{}` | NetworkPolicy ingress source for the gateway port; empty allows any pod in the chart's namespace. Set it to your Ingress controller's namespace label when using an Ingress. |
+| `clctl.gateway.rateLimit.requestsPerMinute` | `30` | Per-operator request rate limit. |
+| `clctl.gateway.ingress.enabled` | `false` | Render an Ingress for the gateway. When disabled, operators reach the gateway with `kubectl port-forward`; no ingress controller or cert-manager is needed. |
+| `clctl.gateway.ingress.className`, `hosts`, `tls`, `annotations` | `""`, `[]`, `[]`, `{}` | Standard Ingress fields; `tls` references `kubernetes.io/tls` Secrets. |
+
+### networkPolicy {#helm-networkpolicy}
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `networkPolicy.enabled` | `true` | Emit a default-deny NetworkPolicy with an egress allowlist. Enforcement requires an enforcing CNI. |
+| `networkPolicy.allowEgressCIDRs` | `[]` | CIDRs behind your connector API endpoint. Under an enforcing CNI the connector has no egress until this is filled in. |
+| `networkPolicy.allowEgressPorts` | `[443]` | Ports opened to `allowEgressCIDRs`; override when the endpoint listens on a non-default port. |
+| `networkPolicy.clickhouseNamespaces` | `[]` | Namespaces of your ClickHouse Services, matched by the `kubernetes.io/metadata.name` label. Empty allows no in-cluster ClickHouse access. |
+| `networkPolicy.metricsScrapeSelector` | `{}` | Restrict metrics-scrape ingress to a specific Prometheus namespace by label; empty allows scrape from any pod in the chart's namespace. |
+| `networkPolicy.kubeletProbeCIDRs` | `[]` | CIDRs kubelet health probes originate from (node IPs). Empty allows probe ingress from any source, matching most CNIs' kubelet exemption; set explicitly under strict default-deny. |
+| `networkPolicy.apiserverCIDRs` | `[]` | Kubernetes API server CIDRs. Empty emits no API server egress rule, and the daemons fail their first token request on managed Kubernetes until it is set. |

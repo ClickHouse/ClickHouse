@@ -1,0 +1,72 @@
+---
+title: JSON Extract の例
+description: "JSONから基本型を抽出する簡単な例"
+date: 2021-09-01
+tags: ['データフォーマット']
+keywords: ['JSON', '基本型の抽出']
+---
+
+<div id="json-extract-example">
+  ## JSON Extract の例
+</div>
+
+これは、[JSONExtract](/ja/reference/functions/regular-functions/json-functions) 関数の使い方を示す簡単な例です。
+
+テーブルを作成します。
+
+```sql
+CREATE TABLE default.json_extract_example
+(
+    `rawJSON` String EPHEMERAL,
+    `a1` String DEFAULT JSONExtractString(rawJSON, 'a1'),
+    `a2` Boolean DEFAULT JSONExtractBool(rawJSON, 'a2'),
+    `a3.aa1` Float DEFAULT JSONExtractFloat(JSONExtractRaw(rawJSON, 'a3'), 'aa1'),
+    `a3.aa2` UInt8 DEFAULT JSONExtractUInt(JSONExtractRaw(rawJSON, 'a3'), 'aa2')
+)
+ENGINE = MergeTree
+ORDER BY (a1, a2)
+```
+
+JSONのraw文字列を追加します:
+
+```sql
+INSERT INTO default.json_extract_example (rawJSON) VALUES ('{"a1": "XX", "a2": true, "a3":{"aa1":23.11,"aa2":12}}');
+```
+
+データをクエリする:
+
+```
+SELECT *
+FROM json_extract_example
+FORMAT Pretty
+```
+
+出力結果:
+
+```
+┏━━━━┳━━━━━━┳━━━━━━━━┳━━━━━━━━┓
+┃ a1 ┃ a2   ┃ a3.aa1 ┃ a3.aa2 ┃
+┡━━━━╇━━━━━━╇━━━━━━━━╇━━━━━━━━┩
+│ XX │ true │  23.11 │     12 │
+└────┴──────┴────────┴────────┘
+```
+
+それぞれ元のJSON型のまま格納されます：
+
+```sql
+SELECT
+    toTypeName(a1),
+    toTypeName(a2),
+    toTypeName(a3.aa1),
+    toTypeName(a3.aa2)
+FROM default.json_extract_example
+FORMAT Pretty
+```
+
+```
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┓
+┃ toTypeName(a1) ┃ toTypeName(a2) ┃ toTypeName(a3.aa1) ┃ toTypeName(a3.aa2) ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
+│ String         │ Bool           │ Float32            │ UInt8              │
+└────────────────┴────────────────┴────────────────────┴────────────────────┘
+```

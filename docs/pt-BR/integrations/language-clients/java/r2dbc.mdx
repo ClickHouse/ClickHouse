@@ -1,0 +1,89 @@
+---
+sidebarTitle: 'Driver R2DBC'
+keywords: ['clickhouse', 'java', 'driver', 'integrar', 'r2dbc']
+description: 'Driver R2DBC do ClickHouse'
+slug: /integrations/java/r2dbc
+title: 'Driver R2DBC'
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+<div id="r2dbc-driver">
+  ## Driver R2DBC
+</div>
+
+[R2DBC](https://r2dbc.io/) é um wrapper do cliente Java assíncrono para ClickHouse.
+
+<div id="environment-requirements">
+  ### Requisitos do ambiente
+</div>
+
+* [OpenJDK](https://openjdk.java.net) versão &gt;= 8
+
+<div id="setup">
+  ### Setup
+</div>
+
+```xml
+<dependency>
+    <groupId>com.clickhouse</groupId>
+    <!-- altere para clickhouse-r2dbc_0.9.1 para SPI 0.9.1.RELEASE -->
+    <artifactId>clickhouse-r2dbc</artifactId>
+    <version>0.7.1</version>
+    <!-- use o uber jar com todas as dependências incluídas; altere o classifier para http ou grpc para um jar menor -->
+    <classifier>all</classifier>
+    <exclusions>
+        <exclusion>
+            <groupId>*</groupId>
+            <artifactId>*</artifactId>
+        </exclusion>
+    </exclusions>
+</dependency>
+```
+
+<div id="connect-to-clickhouse">
+  ### Conecte-se ao ClickHouse
+</div>
+
+```java showLineNumbers
+ConnectionFactory connectionFactory = ConnectionFactories
+    .get("r2dbc:clickhouse:http://{username}:{password}@{host}:{port}/{database}");
+
+    Mono.from(connectionFactory.create())
+        .flatMapMany(connection -> connection
+```
+
+<div id="query">
+  ### Consulta
+</div>
+
+```java showLineNumbers
+connection
+    .createStatement("select domain, path,  toDate(cdate) as d, count(1) as count from clickdb.clicks where domain = :domain group by domain, path, d")
+    .bind("domain", domain)
+    .execute()
+    .flatMap(result -> result
+    .map((row, rowMetadata) -> String.format("%s%s[%s]:%d", row.get("domain", String.class),
+        row.get("path", String.class),
+        row.get("d", LocalDate.class),
+        row.get("count", Long.class)))
+    )
+    .doOnNext(System.out::println)
+    .subscribe();
+```
+
+<div id="insert">
+  ### Inserção
+</div>
+
+```java showLineNumbers
+connection
+    .createStatement("insert into clickdb.clicks values (:domain, :path, :cdate, :count)")
+    .bind("domain", click.getDomain())
+    .bind("path", click.getPath())
+    .bind("cdate", LocalDateTime.now())
+    .bind("count", 1)
+    .execute();
+```

@@ -104,15 +104,44 @@ private:
                 throw;
             }
 
-            for (i = 0; i < old_size; ++i)
+            /// Zero-sized nested state (aggregate over Nothing): the zero-byte arena
+            /// allocation does not advance, so new_state aliases old_state. There is no
+            /// data to migrate, and merge() with aliasing source/destination is undefined.
+            if (nested_size_of_data != 0)
             {
-                nested_func->merge(&new_state[i * nested_size_of_data],
-                        &old_state[i * nested_size_of_data],
-                        &arena);
+                try
+                {
+                    for (i = 0; i < old_size; ++i)
+                    {
+                        nested_func->merge(&new_state[i * nested_size_of_data],
+                                &old_state[i * nested_size_of_data],
+                                &arena);
+                    }
+                }
+                catch (...)
+                {
+                    for (i = 0; i < new_size; ++i)
+                    {
+                        nested_func->destroy(&new_state[i * nested_size_of_data]);
+                    }
+
+                    throw;
+                }
             }
 
             state.array_of_aggregate_datas = new_state;
             state.dynamic_array_size = new_size;
+
+            /// The old states are unreachable after the swap (`destroyImpl` walks only
+            /// `array_of_aggregate_datas`), so free what they own here. `destroy` is noexcept,
+            /// and for a zero-sized nested state `new_state` aliases them - see above.
+            if (nested_size_of_data != 0)
+            {
+                for (i = 0; i < old_size; ++i)
+                {
+                    nested_func->destroy(&old_state[i * nested_size_of_data]);
+                }
+            }
         }
 
         return state;
@@ -259,10 +288,17 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         const AggregateFunctionForEachData & rhs_state = data(rhs);
         AggregateFunctionForEachData & state = ensureAggregateData(place, rhs_state.dynamic_array_size, *arena);
+
+        /// Zero-sized nested state (aggregate over Nothing): every element aliases the same
+        /// zero-byte arena slot (alignedAlloc(0) does not advance), so nested_state ==
+        /// rhs_nested_state. There is nothing to merge, and merge() with aliasing
+        /// source/destination is undefined.
+        if (nested_size_of_data == 0)
+            return;
 
         const char * rhs_nested_state = rhs_state.array_of_aggregate_datas;
         char * nested_state = state.array_of_aggregate_datas;

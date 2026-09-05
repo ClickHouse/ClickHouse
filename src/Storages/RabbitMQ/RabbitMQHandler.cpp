@@ -66,6 +66,37 @@ int RabbitMQHandler::startBlockingLoop()
     return uv_run(loop, UV_RUN_DEFAULT);
 }
 
+bool RabbitMQHandler::startBlockingLoopWithTimeout(uint64_t timeout_ms)
+{
+    LOG_DEBUG(log, "Started blocking loop with {}ms timeout.", timeout_ms);
+
+    bool timed_out = false;
+
+    uv_timer_t timer;
+    uv_timer_init(loop, &timer);
+    timer.data = &timed_out;
+
+    uv_timer_start(
+        &timer,
+        [](uv_timer_t * t)
+        {
+            *static_cast<bool *>(t->data) = true;
+            uv_stop(t->loop);
+        },
+        timeout_ms,
+        /* repeat = */ 0);
+
+    uv_run(loop, UV_RUN_DEFAULT);
+
+    uv_timer_stop(&timer);
+    /// Close the timer handle so libuv can release its resources.
+    /// The close callback runs on the next NOWAIT tick below.
+    uv_close(reinterpret_cast<uv_handle_t *>(&timer), nullptr);
+    uv_run(loop, UV_RUN_NOWAIT);
+
+    return !timed_out;
+}
+
 void RabbitMQHandler::stopLoop()
 {
     LOG_DEBUG(log, "Stopping background loop.");

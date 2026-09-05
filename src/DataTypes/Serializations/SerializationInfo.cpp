@@ -1,6 +1,10 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+#include <algorithm>
+
 #include <Columns/ColumnSparse.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
@@ -28,6 +32,7 @@ constexpr auto KEY_VERSION = "version";
 constexpr auto KEY_NUM_ROWS = "num_rows";
 constexpr auto KEY_COLUMNS = "columns";
 constexpr auto KEY_NUM_DEFAULTS = "num_defaults";
+constexpr auto KEY_EXACT_NUM_DEFAULTS = "exact_num_defaults";
 constexpr auto KEY_KIND = "kind";
 constexpr auto KEY_NAME = "name";
 
@@ -36,6 +41,9 @@ constexpr auto KEY_STRING_SERIALIZATION_VERSION = "string";
 constexpr auto KEY_NULLABLE_SERIALIZATION_VERSION = "nullable";
 constexpr auto KEY_MAP_SERIALIZATION_VERSION = "map";
 constexpr auto KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES = "propagate_types_serialization_versions_to_nested_types";
+constexpr auto KEY_MISSING_COLUMNS = "missing_columns";
+constexpr auto KEY_MISSING_COL_NAME = "name";
+constexpr auto KEY_MISSING_COL_TYPE = "type";
 
 void writeJSONKey(std::string_view key, WriteBuffer & out)
 {
@@ -63,31 +71,55 @@ void writeJSONKeyValue(std::string_view key, bool value, WriteBuffer & out)
 
 }
 
-void SerializationInfo::Data::add(const IColumn & column)
+void SerializationInfo::Data::add(const IColumn & column, bool exact)
 {
+    bool was_empty = (num_rows == 0);
     size_t rows = column.size();
-    double ratio = column.getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
-
     num_rows += rows;
-    num_defaults += static_cast<size_t>(ratio * static_cast<double>(rows));
+
+    if (exact)
+    {
+        num_defaults += column.getNumberOfDefaultRows();
+        /// First exact contribution into a fresh `Data` starts exact tracking.
+        if (was_empty)
+            exact_num_defaults = true;
+    }
+    else
+    {
+        /// Sampled estimate: cheap, but unfit for trivial-count / pruning consumers.
+        double ratio = column.getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
+        num_defaults += static_cast<size_t>(ratio * static_cast<double>(rows));
+    }
 }
 
 void SerializationInfo::Data::add(const Data & other)
 {
+    /// On the first contribution into a fresh `Data` take exactness from `other`.
+    /// The default value of `exact_num_defaults` is false and would otherwise pin
+    /// the merged result to non exact even when every input is exact.
+    bool was_empty = (num_rows == 0);
     num_rows += other.num_rows;
     num_defaults += other.num_defaults;
+    exact_num_defaults = was_empty ? other.exact_num_defaults : (exact_num_defaults && other.exact_num_defaults);
 }
 
 void SerializationInfo::Data::remove(const Data & other)
 {
     num_rows -= other.num_rows;
     num_defaults -= other.num_defaults;
+    exact_num_defaults = exact_num_defaults && other.exact_num_defaults;
 }
 
 void SerializationInfo::Data::addDefaults(size_t length)
 {
+    /// Every added row is known to be a default. Seed exactness on the first
+    /// contribution so a part synthesised entirely from defaults reports exact
+    /// stats.
+    bool was_empty = (num_rows == 0);
     num_rows += length;
     num_defaults += length;
+    if (was_empty)
+        exact_num_defaults = true;
 }
 
 SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, const Settings & settings_)
@@ -105,7 +137,7 @@ SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, cons
 
 void SerializationInfo::add(const IColumn & column)
 {
-    data.add(column);
+    data.add(column, settings.compute_exact_num_defaults);
     if (settings.choose_kind)
         kind_stack = chooseKindStack(data, settings);
 }
@@ -287,6 +319,15 @@ void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name) 
 
     writeChar(',', out);
     writeJSONKeyValue(KEY_NUM_ROWS, data.num_rows, out);
+
+    /// Only emit the key when true. A missing key reads back as false, so writing
+    /// `"exact_num_defaults": false` would just add noise to `serialization.json`
+    /// for parts that don't carry exact counts.
+    if (data.exact_num_defaults)
+    {
+        writeChar(',', out);
+        writeJSONKeyValue(KEY_EXACT_NUM_DEFAULTS, true, out);
+    }
 }
 
 void SerializationInfo::writeJSON(WriteBuffer & out, const String * name) const
@@ -301,6 +342,11 @@ void SerializationInfo::toJSON(Poco::JSON::Object & object) const
     object.set(KEY_KIND, ISerialization::kindStackToString(kind_stack));
     object.set(KEY_NUM_DEFAULTS, data.num_defaults);
     object.set(KEY_NUM_ROWS, data.num_rows);
+    /// Only emit the key when true. A missing key reads back as false, so writing
+    /// `"exact_num_defaults": false` would just add noise to `serialization.json`
+    /// for parts that don't carry exact counts.
+    if (data.exact_num_defaults)
+        object.set(KEY_EXACT_NUM_DEFAULTS, true);
 }
 
 void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
@@ -312,6 +358,7 @@ void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
 
     data.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
     data.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
+    data.exact_num_defaults = object.has(KEY_EXACT_NUM_DEFAULTS) && object.getValue<bool>(KEY_EXACT_NUM_DEFAULTS);
     kind_stack = ISerialization::stringToKindStack(object.getValue<String>(KEY_KIND));
 }
 
@@ -419,7 +466,36 @@ MergeTreeSerializationInfoVersion SerializationInfoByName::getVersion() const
 
 bool SerializationInfoByName::needsPersistence() const
 {
-    return !empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
+    return !empty() || !missing_columns.empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
+}
+
+bool SerializationInfoByName::isMissingColumn(const String & name) const
+{
+    return getMissingColumnInfo(name) != nullptr;
+}
+
+void SerializationInfoByName::setMissingColumns(MissingColumns columns)
+{
+    chassert(columns.empty() || settings.version >= MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
+    std::sort(columns.begin(), columns.end());
+    auto duplicate = std::adjacent_find(columns.begin(), columns.end(), [](const auto & lhs, const auto & rhs)
+    {
+        return lhs.name == rhs.name;
+    });
+    if (duplicate != columns.end())
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Duplicate missing column '{}' in serialization infos", duplicate->name);
+    missing_columns = std::move(columns);
+}
+
+const SerializationInfoByName::MissingColumnInfo * SerializationInfoByName::getMissingColumnInfo(const String & name) const
+{
+    /// missing_columns is sorted by name, use binary search
+    auto it = std::lower_bound(
+        missing_columns.begin(), missing_columns.end(), name,
+        [](const MissingColumnInfo & info, const String & n) { return info.name < n; });
+    if (it != missing_columns.end() && it->name == name)
+        return &(*it);
+    return nullptr;
 }
 
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
@@ -472,6 +548,29 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
         writeChar('}', out);
     }
 
+    if (version >= MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS && !missing_columns.empty())
+    {
+        writeChar(',', out);
+        writeJSONKey(KEY_MISSING_COLUMNS, out);
+        writeChar('[', out);
+
+        /// missing_columns is kept sorted by name for deterministic checksums.
+        bool first_missing = true;
+        for (const auto & mc : missing_columns)
+        {
+            if (!first_missing)
+                writeChar(',', out);
+            first_missing = false;
+
+            writeChar('{', out);
+            writeJSONKeyValue(KEY_MISSING_COL_NAME, mc.name, out);
+            writeChar(',', out);
+            writeJSONKeyValue(KEY_MISSING_COL_TYPE, mc.type_name, out);
+            writeChar('}', out);
+        }
+        writeChar(']', out);
+    }
+
     writeChar(',', out);
     writeJSONKeyValue(KEY_VERSION, static_cast<size_t>(version), out);
     writeChar('}', out);
@@ -482,6 +581,7 @@ SerializationInfoByName SerializationInfoByName::clone() const
     SerializationInfoByName res(settings);
     for (const auto & [name, info] : *this)
         res.emplace(name, info->clone());
+    res.missing_columns = missing_columns;
     return res;
 }
 
@@ -504,6 +604,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
     Poco::JSON::Array::Ptr columns_array;
     Poco::JSON::Object::Ptr type_versions_obj;
+    Poco::JSON::Array::Ptr missing_columns_array;
     bool propagate_types_serialization_versions_to_nested_types = false;
     for (const auto & [key, value] : *object)
     {
@@ -522,6 +623,10 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         else if (key == KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES)
         {
             propagate_types_serialization_versions_to_nested_types = value.extract<bool>();
+        }
+        else if (version >= MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS && key == KEY_MISSING_COLUMNS)
+        {
+            missing_columns_array = value.extract<Poco::JSON::Array::Ptr>();
         }
         else
         {
@@ -576,6 +681,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     SerializationInfoSettings settings(
         1.0 /* Doesn't matter when constructing from JSON */,
         false /* Cannot choose kind when constructing from JSON */,
+        false /* compute_exact_num_defaults: irrelevant when reading existing JSON */,
         version,
         string_serialization_version,
         nullable_serialization_version,
@@ -608,6 +714,29 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
             info->fromJSON(*elem_object);
             infos.emplace(name, std::move(info));
         }
+    }
+
+    if (missing_columns_array)
+    {
+        MissingColumns missing_columns;
+        missing_columns.reserve(missing_columns_array->size());
+        const auto physical_column_names = columns.getNameSet();
+        for (const auto & elem : *missing_columns_array)
+        {
+            const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
+            for (const auto & [key, _] : *elem_object)
+                if (key != KEY_MISSING_COL_NAME && key != KEY_MISSING_COL_TYPE)
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected field '{}' in missing_columns entry", key);
+
+            MissingColumnInfo mc;
+            mc.name = elem_object->getValue<String>(KEY_MISSING_COL_NAME);
+            mc.type_name = elem_object->getValue<String>(KEY_MISSING_COL_TYPE);
+            if (physical_column_names.contains(mc.name))
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Column '{}' is both physical and missing in serialization infos", mc.name);
+            DataTypeFactory::instance().get(mc.type_name);
+            missing_columns.push_back(std::move(mc));
+        }
+        infos.setMissingColumns(std::move(missing_columns));
     }
 
     return infos;

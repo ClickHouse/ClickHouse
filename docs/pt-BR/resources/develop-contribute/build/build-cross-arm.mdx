@@ -1,0 +1,11 @@
+---
+description: 'Guia para compilar o ClickHouse a partir do código-fonte para a arquitetura AARCH64'
+sidebarTitle: 'Compilar no Linux para AARCH64'
+slug: /development/build-cross-arm
+title: 'Como compilar o ClickHouse no Linux para AARCH64'
+doc_type: 'guide'
+---
+
+Nenhuma etapa especial é necessária para compilar o ClickHouse para AArch64 em uma máquina com AArch64.
+
+Para fazer a compilação cruzada do ClickHouse para AArch64 em uma máquina Linux x86, passe a seguinte flag para o `cmake`: `-DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-aarch64.cmake`

@@ -145,7 +145,7 @@ private:
         };
         ReadBufferFromString buf(value);
 
-        // tryReadFloatText does seem to not raise any error when there is leading whitespace so we check it explicitly
+        // The float parser does not raise an error on leading whitespace, so we check it explicitly
         skipWhitespaceIfAny(buf);
         if (buf.getPosition() > 0)
         {
@@ -158,7 +158,7 @@ private:
         }
 
         Float64 base = 0;
-        if (!tryReadFloatTextPrecise(base, buf))    // If we use the default (fast) tryReadFloatText this returns True on garbage input so we use the Precise version
+        if (!tryReadFloatTextPrecise(base, buf))    // Precise rejects garbage input; the fast parser would accept it
         {
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_NUMBER,

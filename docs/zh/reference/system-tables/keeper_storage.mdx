@@ -1,0 +1,60 @@
+---
+description: '本地进程内 ClickHouse Keeper 节点中存储的数据树的每个节点对应一行。'
+keywords: ['系统表', 'keeper_storage']
+sidebarTitle: 'keeper_storage'
+slug: /operations/system-tables/keeper_storage
+title: 'system.keeper_storage'
+doc_type: '参考'
+---
+
+import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
+
+<SystemTableCloud />
+
+<div id="description">
+  ## 描述
+</div>
+
+该表仅存在于使用 `clickhouse server` (而非 `clickhouse keeper`) 进程的 ClickHouse Keeper 部署中。该表包含本地 Keeper 节点上存储的数据树中每个节点对应的一行，包括 `/keeper` 系统节点。
+
+与 `system.zookeeper` 不同，该表不会向 Keeper 集群发送请求。它直接通过一致的无锁视图读取本地 Keeper 的已提交状态，不会影响请求处理。读取该表无需路径条件，且会返回整棵树，因此适用于扫描所有节点的查询，例如查找子节点最多或数据量最大的节点。
+
+<div id="columns">
+  ## 列
+</div>
+
+* `path` ([String](/zh/reference/data-types/string)) — 节点的绝对路径。
+* `data` ([String](/zh/reference/data-types/string)) — 节点中存储的数据。
+* `czxid` ([Int64](/zh/reference/data-types/int-uint)) — 创建该节点的事务 ID。
+* `mzxid` ([Int64](/zh/reference/data-types/int-uint)) — 最后修改该节点的事务 ID。
+* `ctime` ([DateTime64(3)](/zh/reference/data-types/datetime64)) — 节点的创建时间。
+* `mtime` ([DateTime64(3)](/zh/reference/data-types/datetime64)) — 节点的最后修改时间。
+* `version` ([Int32](/zh/reference/data-types/int-uint)) — 节点数据的修改次数。
+* `cversion` ([Int32](/zh/reference/data-types/int-uint)) — 节点子节点的修改次数。
+* `aversion` ([Int32](/zh/reference/data-types/int-uint)) — 节点 ACL 的修改次数。
+* `ephemeral_owner` ([Int64](/zh/reference/data-types/int-uint)) — 若节点为临时节点，则为拥有该节点的会话 ID；否则为 `0`。
+* `data_length` ([UInt32](/zh/reference/data-types/int-uint)) — 节点数据的大小 (以字节为单位) 。
+* `num_children` ([Int32](/zh/reference/data-types/int-uint)) — 节点的子节点数量。
+* `pzxid` ([Int64](/zh/reference/data-types/int-uint)) — 最后添加或删除该节点子节点的事务 ID。
+* `seq_num` ([Int64](/zh/reference/data-types/int-uint)) — 用于生成节点顺序子节点名称的计数器。
+* `ttl` ([Int64](/zh/reference/data-types/int-uint)) — 若节点为 TTL 节点，则为节点的生存时间 (TTL) (以毫秒为单位) ；否则为 `0`。
+* `acl_id` ([UInt32](/zh/reference/data-types/int-uint)) — 节点 ACL 的内部 ID；若节点没有 ACL，则为 `0`。
+
+<div id="example">
+  ## 示例
+</div>
+
+```sql
+SELECT path, num_children, data_length
+FROM system.keeper_storage
+ORDER BY num_children DESC
+LIMIT 3;
+```
+
+```text
+┌─path──────────────┬─num_children─┬─data_length─┐
+│ /                 │            3 │           0 │
+│ /clickhouse/tasks │            2 │           0 │
+│ /keeper           │            1 │           0 │
+└───────────────────┴──────────────┴─────────────┘
+```

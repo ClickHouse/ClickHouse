@@ -285,7 +285,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-# This function mirrors the PR description checks in ClickhousePullRequestTrigger.
+# This function mirrors the PR description checks in ClickHousePullRequestTrigger.
 # Returns None if the PR should not be mentioned in changelog.
 def generate_description(item: PullRequest, repo: Repository) -> Optional[Description]:
     backport_number = item.number
@@ -311,6 +311,17 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
         return None
 
     description = item.body
+    # Strip the auto-maintained version-info block (added by pr_version_info.py)
+    # so it can never leak into the changelog entry: when the entry is empty it
+    # is the first content after the header and would otherwise be parsed as the
+    # entry. The markers are HTML comments, invisible in the rendered body.
+    if description:
+        description = re.sub(
+            r"<!-- ch-version-info:start -->.*?<!-- ch-version-info:end -->",
+            "",
+            description,
+            flags=re.DOTALL,
+        )
     # Don't skip empty lines because they delimit parts of description
     lines = [x.strip() for x in (description.split("\n") if description else [])]
     lines = [re.sub(r"\s+", " ", ln) for ln in lines]
@@ -381,9 +392,10 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     if re.match(r"^[\-\*] ", entry):
         entry = entry[2:]
 
-    # Better style.
+    # Better style. Uppercase only the first letter (str.capitalize lowercases
+    # the rest of the string, mangling URLs and identifiers).
     if re.match(r"^[a-z]", entry):
-        entry = entry.capitalize()
+        entry = entry[0].upper() + entry[1:]
 
     if not category:
         # Shouldn't happen, because description check in CI should catch such PRs.

@@ -3,10 +3,12 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/SingleValueData.h>
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -101,8 +103,8 @@ private:
     using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMax<Data, isMin>>;
 
 public:
-    explicit AggregateFunctionArgMinMax(const DataTypes & argument_types_, bool return_both_)
-        : Base(argument_types_, {}, createResultType(argument_types_, return_both_))
+    explicit AggregateFunctionArgMinMax(const DataTypes & argument_types_, const Array & parameters_, bool return_both_)
+        : Base(argument_types_, parameters_, createResultType(argument_types_, return_both_))
         , type_val(this->argument_types[1])
         , data_type_res(this->argument_types[0])
         , serialization_res(this->argument_types[0]->getDefaultSerialization())
@@ -124,9 +126,10 @@ public:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
-                    "different data types. Consider using typed subcolumns or cast column to a specific data type",
+                    "different data types. Consider using typed subcolumns or cast column to a specific data type{}",
                     this->type_val->getName(),
-                    getName());
+                    getName(),
+                    getNumericVariantSupertypeHint(type.getPtr()));
         };
         check_not_dynamic_or_variant(*this->type_val);
         this->type_val->forEachChild(check_not_dynamic_or_variant);
@@ -140,6 +143,17 @@ public:
             return std::make_shared<DataTypeTuple>(std::move(types));
         }
         return argument_types_[0];
+    }
+
+    /// Parameters are non-semantic here and never reach the serialized state, so parameterized and
+    /// parameterless states share one representation and stay Merge-/CAST-compatible.
+    DataTypePtr getNormalizedStateType() const override
+    {
+        DataTypes normalized_argument_types;
+        normalized_argument_types.reserve(this->argument_types.size());
+        for (const auto & arg : this->argument_types)
+            normalized_argument_types.emplace_back(arg->getNormalizedType());
+        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
     }
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
@@ -243,7 +257,7 @@ public:
             add(place, columns, *idx, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if constexpr (isMin)
         {
@@ -299,7 +313,7 @@ public:
 
 
 template <bool isMin, typename ResultType>
-IAggregateFunction * createWithTwoTypesSecond(const DataTypes & argument_types, const bool return_both) //NOLINT(misc-unused-parameters)
+IAggregateFunction * createWithTwoTypesSecond(const DataTypes & argument_types, const Array & parameters, const bool return_both) //NOLINT(misc-unused-parameters)
 {
     const DataTypePtr & value_type = argument_types[1];
     WhichDataType which_value(value_type);
@@ -307,93 +321,93 @@ IAggregateFunction * createWithTwoTypesSecond(const DataTypes & argument_types, 
     if (which_value.idx == TypeIndex::UInt8)
     {
         using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<UInt8>>;
-        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, return_both);
+        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, parameters, return_both);
     }
     if (which_value.idx == TypeIndex::UInt16)
     {
         using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<UInt16>>;
-        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, return_both);
+        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, parameters, return_both);
     }
     if (which_value.idx == TypeIndex::UInt32)
     {
         using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<UInt32>>;
-        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, return_both);
+        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, parameters, return_both);
     }
     if (which_value.idx == TypeIndex::UInt64)
     {
        using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<UInt64>>;
-       return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, return_both);
+       return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, parameters, return_both);
     }
     if (which_value.idx == TypeIndex::Int8)
     {
         using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<Int8>>;
-        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, return_both);
+        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, parameters, return_both);
     }
     if (which_value.idx == TypeIndex::Int16)
     {
         using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<Int16>>;
-        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, return_both);
+        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, parameters, return_both);
     }
     if (which_value.idx == TypeIndex::Int32)
     {
         using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<Int32>>;
-        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, return_both);
+        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, parameters, return_both);
     }
     if (which_value.idx == TypeIndex::Int64)
     {
         using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<Int64>>;
-        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, return_both);
+        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, parameters, return_both);
     }
     if (which_value.idx == TypeIndex::Float32)
     {
         using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<Float32>>;
-        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, return_both);
+        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, parameters, return_both);
     }
     if (which_value.idx == TypeIndex::Float64)
     {
         using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<Float64>>;
-        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, return_both);
+        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, parameters, return_both);
     }
     if (which_value.idx == TypeIndex::Date)
     {
         using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<UInt16>>;
-        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, return_both);
+        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, parameters, return_both);
     }
     if (which_value.idx == TypeIndex::DateTime)
     {
         using Data = AggregateFunctionArgMinMaxData<SingleValueDataFixed<ResultType>, SingleValueDataFixed<UInt32>>;
-        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, return_both);
+        return new AggregateFunctionArgMinMax<Data, isMin>(argument_types, parameters, return_both);
     }
 
     return nullptr;
 }
 
 template <bool isMin>
-IAggregateFunction * createWithTwoTypes(const DataTypes & argument_types, const bool return_both)
+IAggregateFunction * createWithTwoTypes(const DataTypes & argument_types, const Array & parameters, const bool return_both)
 {
     const DataTypePtr & result_type = argument_types[0];
     WhichDataType which_result(result_type);
 
     if (which_result.idx == TypeIndex::UInt8)
-        return createWithTwoTypesSecond<isMin, UInt8>(argument_types, return_both);
+        return createWithTwoTypesSecond<isMin, UInt8>(argument_types, parameters, return_both);
     if (which_result.idx == TypeIndex::UInt16)
-        return createWithTwoTypesSecond<isMin, UInt16>(argument_types, return_both);
+        return createWithTwoTypesSecond<isMin, UInt16>(argument_types, parameters, return_both);
     if (which_result.idx == TypeIndex::UInt32)
-        return createWithTwoTypesSecond<isMin, UInt32>(argument_types, return_both);
+        return createWithTwoTypesSecond<isMin, UInt32>(argument_types, parameters, return_both);
     if (which_result.idx == TypeIndex::UInt64)
-        return createWithTwoTypesSecond<isMin, UInt64>(argument_types, return_both);
+        return createWithTwoTypesSecond<isMin, UInt64>(argument_types, parameters, return_both);
     if (which_result.idx == TypeIndex::Int8)
-        return createWithTwoTypesSecond<isMin, Int8>(argument_types, return_both);
+        return createWithTwoTypesSecond<isMin, Int8>(argument_types, parameters, return_both);
     if (which_result.idx == TypeIndex::Int16)
-        return createWithTwoTypesSecond<isMin, Int16>(argument_types, return_both);
+        return createWithTwoTypesSecond<isMin, Int16>(argument_types, parameters, return_both);
     if (which_result.idx == TypeIndex::Int32)
-        return createWithTwoTypesSecond<isMin, Int32>(argument_types, return_both);
+        return createWithTwoTypesSecond<isMin, Int32>(argument_types, parameters, return_both);
     if (which_result.idx == TypeIndex::Int64)
-        return createWithTwoTypesSecond<isMin, Int64>(argument_types, return_both);
+        return createWithTwoTypesSecond<isMin, Int64>(argument_types, parameters, return_both);
     if (which_result.idx == TypeIndex::Float32)
-        return createWithTwoTypesSecond<isMin, Float32>(argument_types, return_both);
+        return createWithTwoTypesSecond<isMin, Float32>(argument_types, parameters, return_both);
     if (which_result.idx == TypeIndex::Float64)
-        return createWithTwoTypesSecond<isMin, Float64>(argument_types, return_both);
+        return createWithTwoTypesSecond<isMin, Float64>(argument_types, parameters, return_both);
 
     return nullptr;
 }
@@ -401,11 +415,11 @@ IAggregateFunction * createWithTwoTypes(const DataTypes & argument_types, const 
 
 template <bool isMin>
 AggregateFunctionPtr createAggregateFunctionArgMinMax(
-    const std::string & name, const DataTypes & argument_types, const Array &, const Settings *, const bool return_both)
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *, const bool return_both)
 {
     assertBinary(name, argument_types);
 
-    AggregateFunctionPtr result = AggregateFunctionPtr(createWithTwoTypes<isMin>(argument_types, return_both));
+    AggregateFunctionPtr result = AggregateFunctionPtr(createWithTwoTypes<isMin>(argument_types, parameters, return_both));
 
     if (!result)
     {
@@ -413,29 +427,29 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(
         WhichDataType which(value_type);
 #define DISPATCH(TYPE) \
         if (which.idx == TypeIndex::TYPE) \
-            return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataFixed<TYPE>>, isMin>(argument_types, return_both)); /// NOLINT
+            return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataFixed<TYPE>>, isMin>(argument_types, parameters, return_both)); /// NOLINT
         FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 
         if (which.idx == TypeIndex::Date)
             return AggregateFunctionPtr(
                 new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataFixed<DataTypeDate::FieldType>>, isMin>(
-                    argument_types, return_both));
+                    argument_types, parameters, return_both));
         if (which.idx == TypeIndex::DateTime)
             return AggregateFunctionPtr(new AggregateFunctionArgMinMax<
                                         AggregateFunctionArgMinMaxDataGeneric<SingleValueDataFixed<DataTypeDateTime::FieldType>>,
-                                        isMin>(argument_types, return_both));
+                                        isMin>(argument_types, parameters, return_both));
         if (which.idx == TypeIndex::String)
             return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataString>, isMin>(
-                argument_types, return_both));
+                argument_types, parameters, return_both));
 
         if (canUseFieldForValueData(value_type))
             return AggregateFunctionPtr(
                 new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataGeneric>, isMin>(
-                    argument_types, return_both));
+                    argument_types, parameters, return_both));
         return AggregateFunctionPtr(
             new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataGenericWithColumn>, isMin>(
-                argument_types, return_both));
+                argument_types, parameters, return_both));
     }
     return result;
 }
@@ -449,11 +463,11 @@ void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory)
 
     FunctionDocumentation::Description description_argMin = R"(
 Calculates the `arg` value for a minimum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.
-Both parts the `arg` and the `min` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `min` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **See also**
 
-- [Tuple](/sql-reference/data-types/tuple.md)
+- [Tuple](/reference/data-types/tuple)
     )";
     FunctionDocumentation::Syntax syntax_argMin = R"(
 argMin(arg, val)
@@ -468,6 +482,15 @@ argMin(arg, val)
     {
         "Basic usage",
         R"(
+CREATE TABLE salary
+(
+    user String,
+    salary UInt32
+)
+ENGINE = Memory AS
+SELECT *
+FROM VALUES(('worker', 1000), ('manager', 3000), ('director', 5000));
+
 SELECT argMin(user, salary) FROM salary;
         )",
         R"(
@@ -502,9 +525,9 @@ SELECT argMin(a, b), min(b) FROM test;
 SELECT argMin(a, (b, a)), min(tuple(b, a)) FROM test;
         )",
         R"(
-┌─argMin(a, tuple(b, a))─┬─min(tuple(b, a))─┐
-│ d                      │ (NULL,NULL)      │
-└────────────────────────┴──────────────────┘
+┌─argMin(a, (b, a))─┬─min((b, a))─┐
+│ a                 │ (0,NULL)    │
+└───────────────────┴─────────────┘
         )"
     }
     };
@@ -520,11 +543,11 @@ SELECT argMin(a, (b, a)), min(tuple(b, a)) FROM test;
 
     FunctionDocumentation::Description description_argMax = R"(
 Calculates the `arg` value for a maximum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.
-Both parts the `arg` and the `max` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `max` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **See also**
 
-- [Tuple](/sql-reference/data-types/tuple.md)
+- [Tuple](/reference/data-types/tuple)
     )";
     FunctionDocumentation::Syntax syntax_argMax = R"(
 argMax(arg, val)
@@ -539,6 +562,15 @@ argMax(arg, val)
     {
         "Basic usage",
         R"(
+CREATE TABLE salary
+(
+    user String,
+    salary UInt32
+)
+ENGINE = Memory AS
+SELECT *
+FROM VALUES(('worker', 1000), ('manager', 3000), ('director', 5000));
+
 SELECT argMax(user, salary) FROM salary;
         )",
         R"(
@@ -573,9 +605,9 @@ SELECT argMax(a, b), max(b) FROM test;
 SELECT argMax(a, (b,a)) FROM test;
         )",
         R"(
-┌─argMax(a, tuple(b, a))─┐
-│ c                      │
-└────────────────────────┘
+┌─argMax(a, (b, a))─┐
+│ c                 │
+└───────────────────┘
         )"
     }
     };
@@ -595,7 +627,7 @@ SELECT argMax(a, (b,a)) FROM test;
     FunctionDocumentation::Description description_argAndMin = R"(
 Calculates the `arg` and `val` value for a minimum `val` value.
 If there are multiple rows with equal `val` being the minimum, which of the associated `arg` and `val` is returned is not deterministic.
-Both parts the `arg` and the `min` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `min` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 :::note
 The only difference with `argMin` is that `argAndMin` returns both argument and value.
@@ -603,8 +635,8 @@ The only difference with `argMin` is that `argAndMin` returns both argument and 
 
 **See also**
 
-- [argMin](/sql-reference/aggregate-functions/reference/argMin.md)
-- [Tuple](/sql-reference/data-types/tuple.md)
+- [argMin](/reference/functions/aggregate-functions/argMin)
+- [Tuple](/reference/data-types/tuple)
     )";
     FunctionDocumentation::Syntax syntax_argAndMin = R"(
 argAndMin(arg, val)
@@ -619,6 +651,15 @@ argAndMin(arg, val)
     {
         "Basic usage",
         R"(
+CREATE TABLE salary
+(
+    user String,
+    salary UInt32
+)
+ENGINE = Memory AS
+SELECT *
+FROM VALUES(('worker', 1000), ('manager', 3000), ('director', 5000));
+
 SELECT argAndMin(user, salary) FROM salary;
         )",
         R"(
@@ -672,7 +713,7 @@ SELECT argAndMin(a, (b, a)), min(tuple(b, a)) FROM test;
     FunctionDocumentation::Description description_argAndMax = R"(
 Calculates the `arg` and `val` value for a maximum `val` value.
 If there are multiple rows with equal `val` being the maximum, which of the associated `arg` and `val` is returned is not deterministic.
-Both parts the `arg` and the `max` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `max` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 :::note
 The only difference with `argMax` is that `argAndMax` returns both argument and value.
@@ -680,8 +721,8 @@ The only difference with `argMax` is that `argAndMax` returns both argument and 
 
 **See also**
 
-- [argMax](/sql-reference/aggregate-functions/reference/argMax.md)
-- [Tuple](/sql-reference/data-types/tuple.md)
+- [argMax](/reference/functions/aggregate-functions/argMax)
+- [Tuple](/reference/data-types/tuple)
     )";
     FunctionDocumentation::Syntax syntax_argAndMax = R"(
 argAndMax(arg, val)
@@ -696,6 +737,15 @@ argAndMax(arg, val)
     {
         "Basic usage",
         R"(
+CREATE TABLE salary
+(
+    user String,
+    salary UInt32
+)
+ENGINE = Memory AS
+SELECT *
+FROM VALUES(('worker', 1000), ('manager', 3000), ('director', 5000));
+
 SELECT argAndMax(user, salary) FROM salary;
         )",
         R"(

@@ -1,0 +1,70 @@
+<test>
+    <settings>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!--
+        Benchmarks the consecutive-keys optimization in `Set::executeImplCase` (the same
+        `ColumnsHashing` machinery aggregation uses): for runs of equal consecutive rows the
+        previous row's result is reused without probing the hash table, and for `SetMethodHashed`
+        even without calculating the SipHash128 of the key (the raw key bytes are compared with
+        the last processed row instead, see `FixedSizeKeySlices`).
+
+        `t_in_clustered` stores 2000 distinct `(k, u)` pairs in runs of 20000 equal consecutive
+        rows (the table is sorted by `(k, u)`, and `u` is a function of `k`), so almost every row
+        reuses the previous row's result.
+
+        `t_in_unclustered` is the regression control: same columns, engine and value distribution,
+        but `ORDER BY tuple()` keeps the insertion order in which `k = number % 2000` cycles, so
+        consecutive rows always differ and every row pays the comparison *and* the hash+probe.
+    -->
+    <create_query>
+        CREATE TABLE t_in_clustered (k UInt64, u UUID, v UInt64) ENGINE = MergeTree ORDER BY (k, u)
+    </create_query>
+    <create_query>
+        CREATE TABLE t_in_unclustered (k UInt64, u UUID, v UInt64) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <!-- 40M rows, 2000 distinct (k, u) pairs in runs of 20000. -->
+    <fill_query>
+        INSERT INTO t_in_clustered
+        SELECT
+            intDiv(number, 20000) AS k,
+            reinterpretAsUUID(sipHash128(k)) AS u,
+            number AS v
+        FROM numbers_mt(40000000)
+    </fill_query>
+
+    <!-- Same 40M rows and 2000 distinct (k, u) pairs, but interleaved: consecutive rows always differ. -->
+    <fill_query>
+        INSERT INTO t_in_unclustered
+        SELECT
+            number % 2000 AS k,
+            reinterpretAsUUID(sipHash128(k)) AS u,
+            number AS v
+        FROM numbers_mt(40000000)
+    </fill_query>
+
+    <!--
+        All queries return 40000000: the set contains all pairs, so the per-row `IN` filter passes
+        every row.
+
+        The subquery returning a single `Tuple(UInt64, UUID)` column keeps the left-hand tuple as
+        one `ColumnTuple` key (`in` decomposes it only when the set has multiple key types), so
+        `SetVariants::chooseMethod` picks `SetMethodHashed`, which skips the SipHash128 via the
+        raw-key-bytes comparison with the last processed row.
+    -->
+    <query>SELECT count() FROM t_in_clustered WHERE (k, u) IN (SELECT (k, u) FROM t_in_clustered)</query>
+    <query>SELECT count() FROM t_in_unclustered WHERE (k, u) IN (SELECT (k, u) FROM t_in_unclustered)</query>
+
+    <!--
+        The two-column subquery decomposes the left-hand tuple into two fixed-width key columns,
+        so `chooseMethod` picks `keys256` (`SetMethodKeysFixed`), which already had the
+        consecutive-keys cache: these queries must stay neutral.
+    -->
+    <query>SELECT count() FROM t_in_clustered WHERE (k, u) IN (SELECT DISTINCT k, u FROM t_in_clustered)</query>
+    <query>SELECT count() FROM t_in_unclustered WHERE (k, u) IN (SELECT DISTINCT k, u FROM t_in_unclustered)</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_in_clustered</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_in_unclustered</drop_query>
+</test>

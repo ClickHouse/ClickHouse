@@ -1,0 +1,180 @@
+---
+title: 'chDB로 Apache Arrow를 쿼리하는 방법'
+sidebarTitle: 'Apache Arrow 쿼리하기'
+slug: /chdb/guides/apache-arrow
+description: '이 가이드에서는 chDB로 Apache Arrow 테이블을 쿼리하는 방법을 알아봅니다'
+keywords: ['chdb', 'Apache Arrow']
+doc_type: 'guide'
+---
+
+[Apache Arrow](https://arrow.apache.org/)는 데이터 커뮤니티에서 널리 사용되는 표준화된 컬럼 지향 메모리 포맷입니다.
+이 가이드에서는 `Python` 테이블 함수를 사용해 Apache Arrow를 쿼리하는 방법을 알아봅니다.
+
+<div id="setup">
+  ## 설정
+</div>
+
+먼저 가상 환경을 만듭니다:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+이제 chDB를 설치하겠습니다.
+버전 2.0.2 이상이 설치되어 있는지 확인하세요:
+
+```bash
+pip install "chdb>=2.0.2"
+```
+
+이제 PyArrow, pandas, ipython을 설치하겠습니다:
+
+```bash
+pip install pyarrow pandas ipython
+```
+
+이 가이드의 나머지 부분에서는 명령 실행에 `ipython`을 사용하며, 다음을 실행해 시작할 수 있습니다:
+
+```bash
+ipython
+```
+
+Python 스크립트나 자주 사용하는 노트북에서 이 코드를 사용할 수도 있습니다.
+
+<div id="creating-an-apache-arrow-table-from-a-file">
+  ## 파일에서 Apache Arrow 테이블 생성하기
+</div>
+
+먼저 [AWS CLI 도구](https://aws.amazon.com/cli/)를 사용해 [Ookla 데이터셋](https://github.com/teamookla/ookla-open-data)의 Parquet 파일 중 하나를 다운로드합니다:
+
+```bash
+aws s3 cp \
+  --no-sign \
+  s3://ookla-open-data/parquet/performance/type=mobile/year=2023/quarter=2/2023-04-01_performance_mobile_tiles.parquet .
+```
+
+<Note>
+  더 많은 파일을 다운로드하려면 `aws s3 ls`를 사용해 모든 파일 목록을 확인한 다음 위 명령을 수정하십시오.
+</Note>
+
+다음으로, `pyarrow` 패키지에서 Parquet 모듈을 가져오겠습니다:
+
+```python
+import pyarrow.parquet as pq
+```
+
+그런 다음 Parquet 파일을 Apache Arrow 테이블로 읽을 수 있습니다:
+
+```python
+arrow_table = pq.read_table("./2023-04-01_performance_mobile_tiles.parquet")
+```
+
+스키마는 아래와 같습니다:
+
+```python
+arrow_table.schema
+```
+
+```text
+quadkey: string
+tile: string
+tile_x: double
+tile_y: double
+avg_d_kbps: int64
+avg_u_kbps: int64
+avg_lat_ms: int64
+avg_lat_down_ms: int32
+avg_lat_up_ms: int32
+tests: int64
+devices: int64
+```
+
+그리고 `shape` 속성을 사용해 행 수와 컬럼 수를 확인할 수 있습니다:
+
+```python
+arrow_table.shape
+```
+
+```text
+(3864546, 11)
+```
+
+<div id="querying-apache-arrow">
+  ## Apache Arrow 쿼리하기
+</div>
+
+이제 chDB에서 Arrow 테이블에 쿼리를 실행해 보겠습니다.
+먼저 chDB를 불러오겠습니다:
+
+```python
+import chdb
+```
+
+그런 다음 테이블을 설명할 수 있습니다:
+
+```python
+chdb.query("""
+DESCRIBE Python(arrow_table)
+SETTINGS describe_compact_output=1
+""", "DataFrame")
+```
+
+```text
+               이름     유형
+0           quadkey   String
+1              tile   String
+2            tile_x  Float64
+3            tile_y  Float64
+4        avg_d_kbps    Int64
+5        avg_u_kbps    Int64
+6        avg_lat_ms    Int64
+7   avg_lat_down_ms    Int32
+8     avg_lat_up_ms    Int32
+9             tests    Int64
+10          devices    Int64
+```
+
+행 개수를 셀 수도 있습니다:
+
+```python
+chdb.query("SELECT count() FROM Python(arrow_table)", "DataFrame")
+```
+
+```text
+   count()
+0  3864546
+```
+
+이제 조금 더 흥미로운 작업을 해보겠습니다.
+다음 쿼리는 `quadkey` 및 `tile.*` 컬럼을 제외한 다음, 남아 있는 모든 컬럼의 평균값과 최댓값을 계산합니다:
+
+```python
+chdb.query("""
+WITH numericColumns AS (
+  SELECT * EXCEPT ('tile.*') EXCEPT(quadkey)
+  FROM Python(arrow_table)
+)
+SELECT * APPLY(max), * APPLY(avg) APPLY(x -> round(x, 2))
+FROM numericColumns
+""", "Vertical")
+```
+
+```text
+Row 1:
+──────
+max(avg_d_kbps):                4155282
+max(avg_u_kbps):                1036628
+max(avg_lat_ms):                2911
+max(avg_lat_down_ms):           2146959360
+max(avg_lat_up_ms):             2146959360
+max(tests):                     111266
+max(devices):                   1226
+round(avg(avg_d_kbps), 2):      84393.52
+round(avg(avg_u_kbps), 2):      15540.4
+round(avg(avg_lat_ms), 2):      41.25
+round(avg(avg_lat_down_ms), 2): 554355225.76
+round(avg(avg_lat_up_ms), 2):   552843178.3
+round(avg(tests), 2):           6.31
+round(avg(devices), 2):         2.88
+```

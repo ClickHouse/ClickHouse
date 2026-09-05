@@ -29,6 +29,8 @@ ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS index_granularity = 1;
 
+SET explain_query_plan_default = 'legacy';
+
 -- 16 rows, one distinct value per granule (GRANULARITY 1, index_granularity 1),
 -- so a predicate matching a single value must leave exactly one granule.
 INSERT INTO t_set_lc SELECT 'svc' || leftPad(toString(number), 4, '0') FROM numbers(16);

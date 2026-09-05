@@ -1,6 +1,7 @@
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <IO/UncompressedCache.h>
 #include <Interpreters/Context.h>
 #include <base/cgroupsv2.h>
@@ -8,6 +9,7 @@
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/ErrnoException.h>
 #include <Common/MemoryWorker.h>
 #include <Common/formatReadable.h>
@@ -17,6 +19,8 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
+#include <Common/SilkFiberScheduler.h>
+#include <Common/UntrackedMemoryRegistry.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Daemon/BaseDaemon.h>
@@ -415,6 +419,134 @@ AsynchronousMetricValues AsynchronousMetrics::getValues() const
 namespace
 {
 
+/// The two parts of the pre-26.8 name of a key-value metric family, surrounding the key.
+struct LegacyMetricName
+{
+    String prefix;
+    String suffix;
+};
+
+/// The metric families that were turned into key-value metrics in version 26.8, and how their keys used to be
+/// mangled into the metric name before that. The table is historical and does not grow: a key-value metric
+/// family introduced later never had a legacy name.
+const std::unordered_map<std::string_view, LegacyMetricName> & getLegacyMetricNames()
+{
+    static const std::unordered_map<std::string_view, LegacyMetricName> result = []
+    {
+        std::unordered_map<std::string_view, LegacyMetricName> res;
+
+        /// The CPU core number was appended to the metric name: `OSUserTimeCPU3`.
+        constexpr std::string_view key_appended_metrics[]
+            = {"OSUserTimeCPU", "OSNiceTimeCPU", "OSSystemTimeCPU", "OSIdleTimeCPU", "OSIOWaitTimeCPU",
+               "OSIrqTimeCPU", "OSSoftIrqTimeCPU", "OSStealTimeCPU", "OSGuestTimeCPU", "OSGuestNiceTimeCPU"};
+
+        for (std::string_view metric : key_appended_metrics)
+            res.emplace(metric, LegacyMetricName{String(metric), ""});
+
+        /// The key was appended to the metric name after an underscore: `BlockReadBytes_sda`.
+        constexpr std::string_view underscore_and_key_appended_metrics[]
+            = {"CPUFrequencyMHz",
+               "BlockReadOps", "BlockWriteOps", "BlockDiscardOps",
+               "BlockReadMerges", "BlockWriteMerges", "BlockDiscardMerges",
+               "BlockReadBytes", "BlockWriteBytes", "BlockDiscardBytes",
+               "BlockReadTime", "BlockWriteTime", "BlockDiscardTime",
+               "BlockInFlightOps", "BlockActiveTime", "BlockQueueTime",
+               "BlockActiveTimePerOp", "BlockQueueTimePerOp",
+               "NetworkReceiveBytes", "NetworkReceivePackets", "NetworkReceiveErrors", "NetworkReceiveDrop",
+               "NetworkSendBytes", "NetworkSendPackets", "NetworkSendErrors", "NetworkSendDrop",
+               "DiskTotal", "DiskUsed", "DiskAvailable", "DiskUnreserved",
+               "DiskPutObjectThrottlerRPS", "DiskPutObjectThrottlerAvailable",
+               "DiskGetObjectThrottlerRPS", "DiskGetObjectThrottlerAvailable"};
+
+        for (std::string_view metric : underscore_and_key_appended_metrics)
+            res.emplace(metric, LegacyMetricName{String(metric) + "_", ""});
+
+        /// The memory controller number was in the middle of the name: `EDAC0_Correctable`.
+        res.emplace("EDACCorrectable", LegacyMetricName{"EDAC", "_Correctable"});
+        res.emplace("EDACUncorrectable", LegacyMetricName{"EDAC", "_Uncorrectable"});
+
+        /// The logging channel name was in the middle of the name: `AsyncLoggingTextLogQueueSize`.
+        res.emplace("AsyncLoggingQueueSize", LegacyMetricName{"AsyncLogging", "QueueSize"});
+
+        /// The disk name was a prefix of the name: `s3_diskDeadBlobsQueueEstimate`.
+        res.emplace("DeadBlobsQueueEstimate", LegacyMetricName{"", "DeadBlobsQueueEstimate"});
+        res.emplace("MissingBlobsQueueEstimate", LegacyMetricName{"", "MissingBlobsQueueEstimate"});
+
+        return res;
+    }();
+
+    return result;
+}
+
+}
+
+String getLegacyAsynchronousMetricName(const String & metric, const String & key)
+{
+    /// `Temperature` merged two families named differently: the thermal zones (`/sys/class/thermal`), whose
+    /// numeric keys were appended right after the name (`Temperature3`), and the hardware monitors
+    /// (`/sys/class/hwmon`), whose names were appended after an underscore (`Temperature_coretemp_Core_0`).
+    if (metric == "Temperature")
+    {
+        if (!key.empty() && std::all_of(key.begin(), key.end(), isNumericASCII))
+            return "Temperature" + key;
+        return "Temperature_" + key;
+    }
+
+    const auto & legacy_names = getLegacyMetricNames();
+    auto it = legacy_names.find(std::string_view{metric});
+    if (it == legacy_names.end())
+        return {};
+
+    return it->second.prefix + key + it->second.suffix;
+}
+
+void applyAsynchronousMetricsKeyValuesMode(AsynchronousMetricValues & values, AsynchronousMetricsKeyValuesMode mode)
+{
+    if (mode == AsynchronousMetricsKeyValuesMode::KeyValues)
+        return;
+
+    AsynchronousMetricValues legacy_values;
+    std::vector<String> metrics_to_remove;
+
+    for (const auto & [name, value] : values)
+    {
+        if (!value.isMap())
+            continue;
+
+        bool has_legacy_name = false;
+
+        for (const auto & [key, key_value] : value.key_values)
+        {
+            String legacy_name = getLegacyAsynchronousMetricName(name, key);
+            if (legacy_name.empty())
+                continue;
+
+            has_legacy_name = true;
+
+            AsynchronousMetricValue legacy_value;
+            legacy_value.value = key_value;
+            legacy_value.documentation = value.documentation;
+            legacy_value.source = value.source;
+            legacy_values[std::move(legacy_name)] = legacy_value;
+        }
+
+        /// A family that has no legacy name (it appeared after the change) is published as it is,
+        /// because there is nothing else it could be published as.
+        if (has_legacy_name && mode == AsynchronousMetricsKeyValuesMode::LegacyNames)
+            metrics_to_remove.push_back(name);
+    }
+
+    for (const auto & name : metrics_to_remove)
+        values.erase(name);
+
+    /// A legacy name is the name that the very same measurement had before the change, so it never collides
+    /// with the name of another metric.
+    values.merge(legacy_values);
+}
+
+namespace
+{
+
 auto get_next_update_time(std::chrono::seconds update_period)
 {
     using namespace std::chrono;
@@ -684,9 +816,9 @@ void AsynchronousMetrics::applyCgroupCPUMetricsUpdate(
 }
 
 void AsynchronousMetrics::applyCPUMetricsUpdate(
-    AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier)
+    AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier)
 {
-    new_values["OSUserTime" + cpu_suffix]
+    new_values["OSUserTime"]
         = {static_cast<double>(delta_values.user) * multiplier,
            "The ratio of time the CPU core was running userspace code. This is a system-wide metric, it includes all the processes on the "
            "host machine, not just clickhouse-server."
@@ -694,19 +826,19 @@ void AsynchronousMetrics::applyCPUMetricsUpdate(
            "stalls, branch mispredictions, running another SMT core)."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSNiceTime" + cpu_suffix]
+    new_values["OSNiceTime"]
         = {static_cast<double>(delta_values.nice) * multiplier,
            "The ratio of time the CPU core was running userspace code with higher priority. This is a system-wide metric, it includes all "
            "the processes on the host machine, not just clickhouse-server."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSSystemTime" + cpu_suffix]
+    new_values["OSSystemTime"]
         = {static_cast<double>(delta_values.system) * multiplier,
            "The ratio of time the CPU core was running OS kernel (system) code. This is a system-wide metric, it includes all the "
            "processes on the host machine, not just clickhouse-server."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSIdleTime" + cpu_suffix]
+    new_values["OSIdleTime"]
         = {static_cast<double>(delta_values.idle) * multiplier,
            "The ratio of time the CPU core was idle (not even ready to run a process waiting for IO) from the OS kernel standpoint. This "
            "is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
@@ -714,42 +846,42 @@ void AsynchronousMetrics::applyCPUMetricsUpdate(
            "stalls, branch mispredictions, running another SMT core)."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSIOWaitTime" + cpu_suffix]
+    new_values["OSIOWaitTime"]
         = {static_cast<double>(delta_values.iowait) * multiplier,
            "The ratio of time the CPU core was not running the code but when the OS kernel did not run any other process on this CPU as "
            "the processes were waiting for IO. This is a system-wide metric, it includes all the processes on the host machine, not just "
            "clickhouse-server."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSIrqTime" + cpu_suffix]
+    new_values["OSIrqTime"]
         = {static_cast<double>(delta_values.irq) * multiplier,
            "The ratio of time spent for running hardware interrupt requests on the CPU. This is a system-wide metric, it includes all the "
            "processes on the host machine, not just clickhouse-server."
            " A high number of this metric may indicate hardware misconfiguration or a very high network load."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSSoftIrqTime" + cpu_suffix]
+    new_values["OSSoftIrqTime"]
         = {static_cast<double>(delta_values.softirq) * multiplier,
            "The ratio of time spent for running software interrupt requests on the CPU. This is a system-wide metric, it includes all the "
            "processes on the host machine, not just clickhouse-server."
            " A high number of this metric may indicate inefficient software running on the system."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSStealTime" + cpu_suffix]
+    new_values["OSStealTime"]
         = {static_cast<double>(delta_values.steal) * multiplier,
            "The ratio of time spent in other operating systems by the CPU when running in a virtualized environment. This is a system-wide "
            "metric, it includes all the processes on the host machine, not just clickhouse-server."
            " Not every virtualized environments present this metric, and most of them don't."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSGuestTime" + cpu_suffix]
+    new_values["OSGuestTime"]
         = {static_cast<double>(delta_values.guest) * multiplier,
            "The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel (See `man "
            "procfs`). This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
            " This metric is irrelevant for ClickHouse, but still exists for completeness."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
-    new_values["OSGuestNiceTime" + cpu_suffix]
+    new_values["OSGuestNiceTime"]
         = {static_cast<double>(delta_values.guest_nice) * multiplier,
            "The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel, when a guest "
            "was set to a higher priority (See `man procfs`). This is a system-wide metric, it includes all the processes on the host "
@@ -757,6 +889,59 @@ void AsynchronousMetrics::applyCPUMetricsUpdate(
            " This metric is irrelevant for ClickHouse, but still exists for completeness."
            " The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across "
            "them [0..num cores]."};
+}
+
+void AsynchronousMetrics::applyPerCPUMetricsUpdate(AsynchronousMetricValues & new_values, ProcStatPerCPUMaps && per_cpu_maps)
+{
+    if (per_cpu_maps.user.empty())
+        return;
+
+#define PER_CPU_EXPLANATION \
+    " The keys are the CPU core numbers, and the value for every core is in the interval [0..1]." \
+    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+
+    new_values["OSUserTimeCPU"]
+        = {"cpu", std::move(per_cpu_maps.user),
+           "The ratio of time every CPU core was running userspace code, same as `OSUserTime` but not summed across the cores."
+           PER_CPU_EXPLANATION};
+    new_values["OSNiceTimeCPU"]
+        = {"cpu", std::move(per_cpu_maps.nice),
+           "The ratio of time every CPU core was running userspace code with higher priority, same as `OSNiceTime` but not summed across the cores."
+           PER_CPU_EXPLANATION};
+    new_values["OSSystemTimeCPU"]
+        = {"cpu", std::move(per_cpu_maps.system),
+           "The ratio of time every CPU core was running OS kernel (system) code, same as `OSSystemTime` but not summed across the cores."
+           PER_CPU_EXPLANATION};
+    new_values["OSIdleTimeCPU"]
+        = {"cpu", std::move(per_cpu_maps.idle),
+           "The ratio of time every CPU core was idle, same as `OSIdleTime` but not summed across the cores."
+           PER_CPU_EXPLANATION};
+    new_values["OSIOWaitTimeCPU"]
+        = {"cpu", std::move(per_cpu_maps.iowait),
+           "The ratio of time every CPU core was waiting for IO, same as `OSIOWaitTime` but not summed across the cores."
+           PER_CPU_EXPLANATION};
+    new_values["OSIrqTimeCPU"]
+        = {"cpu", std::move(per_cpu_maps.irq),
+           "The ratio of time spent for running hardware interrupt requests on every CPU core, same as `OSIrqTime` but not summed across the cores."
+           PER_CPU_EXPLANATION};
+    new_values["OSSoftIrqTimeCPU"]
+        = {"cpu", std::move(per_cpu_maps.softirq),
+           "The ratio of time spent for running software interrupt requests on every CPU core, same as `OSSoftIrqTime` but not summed across the cores."
+           PER_CPU_EXPLANATION};
+    new_values["OSStealTimeCPU"]
+        = {"cpu", std::move(per_cpu_maps.steal),
+           "The ratio of time every CPU core spent in other operating systems when running in a virtualized environment, same as `OSStealTime` but not summed across the cores."
+           PER_CPU_EXPLANATION};
+    new_values["OSGuestTimeCPU"]
+        = {"cpu", std::move(per_cpu_maps.guest),
+           "The ratio of time every CPU core spent running a virtual CPU for guest operating systems, same as `OSGuestTime` but not summed across the cores."
+           PER_CPU_EXPLANATION};
+    new_values["OSGuestNiceTimeCPU"]
+        = {"cpu", std::move(per_cpu_maps.guest_nice),
+           "The ratio of time every CPU core spent running a virtual CPU for guest operating systems with higher priority, same as `OSGuestNiceTime` but not summed across the cores."
+           PER_CPU_EXPLANATION};
+
+#undef PER_CPU_EXPLANATION
 }
 
 void AsynchronousMetrics::applyCgroupNormalizedCPUMetricsUpdate(
@@ -1057,11 +1242,12 @@ void AsynchronousMetrics::processWarningForMemoryOverload(const AsynchronousMetr
 void AsynchronousMetrics::processWarningForCPUOverload(const AsynchronousMetricValues & new_values) const
 {
     const auto * idle_ptr = getAsynchronousMetricValue(new_values, "OSIdleTimeNormalized");
-    if (!idle_ptr)
+    const auto * io_wait_ptr = getAsynchronousMetricValue(new_values, "OSIOWaitTimeNormalized");
+    if (!idle_ptr || !io_wait_ptr)
         return;
 
     /// ensure that the value is always in [0.0, 1.0]
-    const double busy_time = std::clamp(1.0 - idle_ptr->value, 0.0, 1.0);
+    const double busy_time = std::clamp(1.0 - idle_ptr->value - io_wait_ptr->value, 0.0, 1.0);
 
     const auto & cfg = context->getConfigRef();
     const double cpu_warn_ratio = cfg.getDouble("resource_overload_warnings.cpu_overload_warn_ratio", 0.9);
@@ -1232,36 +1418,62 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     ///     `loadChecksums` and from `MergeTreeDataPartBuilder::build`),
     ///   - per-table metadata (allocations from `MergeTreeData::setProperties`,
     ///     `resetSerializationHints`, `updateSerializationHints`).
+    new_values["jemalloc.mergetree_arena.count"] = { JemallocMergeTreeArena::getArenaIndices().size(),
+        "Number of dedicated jemalloc arenas for long-lived MergeTree metadata, controlled by the "
+        "`jemalloc_merge_tree_arenas` server setting. 0 means the dedicated arena pool is disabled and "
+        "metadata is allocated in the default per-CPU arenas; 1 is a single shared arena; N > 1 is a "
+        "pool sharded by CPU. See `jemalloc.mergetree_arena.active_bytes`." };
+
     if (JemallocMergeTreeArena::isEnabled())
     {
-        unsigned mergetree_arena = JemallocMergeTreeArena::getArenaIndex();
-        auto mt_pactive = saveJemallocMetricImpl<size_t>(new_values,
-            fmt::format("stats.arenas.{}.pactive", mergetree_arena),
-            "jemalloc.mergetree_arena.pactive");
-        auto mt_pdirty = saveJemallocMetricImpl<size_t>(new_values,
-            fmt::format("stats.arenas.{}.pdirty", mergetree_arena),
-            "jemalloc.mergetree_arena.pdirty");
-
-        if (mt_pactive && mt_pdirty)
+        /// Sum across every arena in the pool.
+        size_t mt_pactive = 0;
+        size_t mt_pdirty = 0;
+        bool read_ok = true;
+        for (unsigned arena : JemallocMergeTreeArena::getArenaIndices())
         {
+            size_t pactive = 0;
+            size_t pdirty = 0;
+            if (!Jemalloc::tryGetValue(fmt::format("stats.arenas.{}.pactive", arena).c_str(), pactive)
+                || !Jemalloc::tryGetValue(fmt::format("stats.arenas.{}.pdirty", arena).c_str(), pdirty))
+            {
+                read_ok = false;
+                break;
+            }
+            mt_pactive += pactive;
+            mt_pdirty += pdirty;
+        }
+
+        /// Publish only complete sums: a partial prefix would look like a plausible pool total.
+        if (read_ok)
+        {
+            new_values["jemalloc.mergetree_arena.pactive"] = { mt_pactive,
+                "Active pages summed across the dedicated jemalloc MergeTree arena pool." };
+            new_values["jemalloc.mergetree_arena.pdirty"] = { mt_pdirty,
+                "Dirty pages summed across the dedicated jemalloc MergeTree arena pool." };
+
             const size_t page_size = jemalloc_page_size_mib.getValue();
-            new_values["jemalloc.mergetree_arena.active_bytes"] = { *mt_pactive * page_size,
-                "Active bytes in the dedicated jemalloc MergeTree arena. Holds long-lived MergeTree heap "
-                "state: per-part metadata (`NamesAndTypesList`, `SerializationInfoByName`, the "
-                "`serializations` map, `column_name_to_position`, `MergeTreeDataPartChecksums` tree, the "
+            new_values["jemalloc.mergetree_arena.active_bytes"] = { mt_pactive * page_size,
+                "Active bytes summed across the dedicated jemalloc MergeTree arena pool "
+                "(`jemalloc.mergetree_arena.count` arenas). Holds long-lived MergeTree heap "
+                "state: per-part metadata (`SerializationInfoByName`, `MergeTreeDataPartChecksums` tree, the "
                 "`Poco::LRUCache<String, ColumnSize>` delegates inside each `IMergeTreeDataPart`, the "
                 "per-part `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`, and the "
-                "`MergeTreeDataPart{Compact,Wide}` object itself) plus per-table metadata "
+                "`MergeTreeDataPart{Compact,Wide}` object itself), metadata shared across parts of a table "
+                "(`NamesAndTypesList`, `column_name_to_position`, the `serializations` map and "
+                "`ColumnsSubstreams`, see `SharedPartColumns.h`) plus per-table metadata "
                 "(`StorageInMemoryMetadata` / `ColumnsDescription` / `VirtualColumnsDescription` clones "
                 "set up by `setProperties`, the `serialization_hints` aggregation, and the "
-                "`columns_descriptions_cache`). Active parts and outdated parts pending cleanup both "
+                "`shared_part_columns_cache`). Active parts and outdated parts pending cleanup both "
                 "contribute. Disjoint from the cache arena and JIT arena. The per-part columns "
                 "`system.parts.primary_key_bytes_in_memory[_allocated]` and "
                 "`system.parts.index_granularity_bytes_in_memory[_allocated]` are subsets of this metric "
-                "(when their values are non-zero — they can also live in `PrimaryIndexCacheBytes` instead, "
-                "which is in the cache arena and not counted here)."};
-            new_values["jemalloc.mergetree_arena.dirty_bytes"] = { *mt_pdirty * page_size,
-                "Dirty bytes in the MergeTree arena that are eligible for purging back to the OS."};
+                "(when their values are non-zero). The primary index is allocated here even when it is "
+                "owned by `PrimaryIndexCache` (deliberate: re-homing it at the cache boundary could fail "
+                "after a part is already committed), so `PrimaryIndexCacheBytes` overlaps with this metric."};
+            new_values["jemalloc.mergetree_arena.dirty_bytes"] = { mt_pdirty * page_size,
+                "Dirty bytes summed across the dedicated jemalloc MergeTree arena pool that are eligible "
+                "for purging back to the OS."};
         }
     }
 #endif
@@ -1344,6 +1556,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     new_values["TrackedMemory"] = { total_memory_tracker.get(), "Memory tracked by ClickHouse (should be equal to MemoryTracking metric), in bytes." };
+    new_values["UntrackedMemory"] = { DB::UntrackedMemoryRegistry::instance().sum(), "Sum of per-thread buffers of recent allocations and deallocations that have not yet been propagated to TrackedMemory."};
 
 #if defined(OS_LINUX)
     if (loadavg)
@@ -1552,6 +1765,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
             ProcStatValuesOther current_other_values{};
             ProcStatValuesCPU delta_values_all_cpus{};
+            ProcStatPerCPUMaps per_cpu_maps;
 
             while (!proc_stat->eof())
             {
@@ -1583,16 +1797,25 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     {
                         ProcStatValuesCPU delta_values = current_values - prev_values;
 
-                        String cpu_suffix;
                         if (!cpu_num_str.empty())
                         {
-                            cpu_suffix = "CPU" + cpu_num_str;
                             ++num_cpus;
+                            per_cpu_maps.user[cpu_num_str] = static_cast<double>(delta_values.user) * multiplier;
+                            per_cpu_maps.nice[cpu_num_str] = static_cast<double>(delta_values.nice) * multiplier;
+                            per_cpu_maps.system[cpu_num_str] = static_cast<double>(delta_values.system) * multiplier;
+                            per_cpu_maps.idle[cpu_num_str] = static_cast<double>(delta_values.idle) * multiplier;
+                            per_cpu_maps.iowait[cpu_num_str] = static_cast<double>(delta_values.iowait) * multiplier;
+                            per_cpu_maps.irq[cpu_num_str] = static_cast<double>(delta_values.irq) * multiplier;
+                            per_cpu_maps.softirq[cpu_num_str] = static_cast<double>(delta_values.softirq) * multiplier;
+                            per_cpu_maps.steal[cpu_num_str] = static_cast<double>(delta_values.steal) * multiplier;
+                            per_cpu_maps.guest[cpu_num_str] = static_cast<double>(delta_values.guest) * multiplier;
+                            per_cpu_maps.guest_nice[cpu_num_str] = static_cast<double>(delta_values.guest_nice) * multiplier;
                         }
                         else
+                        {
                             delta_values_all_cpus = delta_values;
-
-                        applyCPUMetricsUpdate(new_values, cpu_suffix, delta_values, multiplier);
+                            applyCPUMetricsUpdate(new_values, delta_values, multiplier);
+                        }
                     }
 
                     prev_values = current_values;
@@ -1636,6 +1859,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
             if (!first_run)
             {
+                applyPerCPUMetricsUpdate(new_values, std::move(per_cpu_maps));
+
                 ProcStatValuesOther delta_values = current_other_values - proc_stat_values_other;
 
                 new_values["OSInterrupts"] = { delta_values.interrupts, "The number of interrupts on the host machine. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
@@ -1800,6 +2025,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             // They contain tabs and are interspersed with other info.
 
             int core_id = 0;
+            AsynchronousMetricKeyValues cpu_frequencies;
             while (!cpuinfo->eof())
             {
                 std::string s;
@@ -1826,10 +2052,14 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                     if (auto colon = s.find_first_of(':'))
                     {
                         auto mhz = std::stod(s.substr(colon + 2));
-                        new_values[fmt::format("CPUFrequencyMHz_{}", core_id)] = { mhz, "The current frequency of the CPU, in MHz. Most of the modern CPUs adjust the frequency dynamically for power saving and Turbo Boosting." };
+                        cpu_frequencies[toString(core_id)] = mhz;
                     }
                 }
             }
+
+            if (!cpu_frequencies.empty())
+                new_values["CPUFrequencyMHz"] = { "cpu", std::move(cpu_frequencies),
+                    "The current frequency of every CPU core, in MHz, keyed by the CPU core number. Most of the modern CPUs adjust the frequency dynamically for power saving and Turbo Boosting." };
         }
         catch (...)
         {
@@ -1903,6 +2133,24 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     try
     {
+        AsynchronousMetricKeyValues block_read_ops;
+        AsynchronousMetricKeyValues block_write_ops;
+        AsynchronousMetricKeyValues block_discard_ops;
+        AsynchronousMetricKeyValues block_read_merges;
+        AsynchronousMetricKeyValues block_write_merges;
+        AsynchronousMetricKeyValues block_discard_merges;
+        AsynchronousMetricKeyValues block_read_bytes;
+        AsynchronousMetricKeyValues block_write_bytes;
+        AsynchronousMetricKeyValues block_discard_bytes;
+        AsynchronousMetricKeyValues block_read_time;
+        AsynchronousMetricKeyValues block_write_time;
+        AsynchronousMetricKeyValues block_discard_time;
+        AsynchronousMetricKeyValues block_in_flight_ops;
+        AsynchronousMetricKeyValues block_active_time;
+        AsynchronousMetricKeyValues block_queue_time;
+        AsynchronousMetricKeyValues block_active_time_per_op;
+        AsynchronousMetricKeyValues block_queue_time_per_op;
+
         for (auto & [name, device] : block_devs)
         {
             device->rewind();
@@ -1933,81 +2181,113 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             /// Always in milliseconds according to the docs.
             static constexpr double time_multiplier = 1e-3;
 
-#define BLOCK_DEVICE_EXPLANATION \
-    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." \
-    " Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt"
+            block_read_ops[name] = static_cast<double>(delta_values.read_ios);
+            block_write_ops[name] = static_cast<double>(delta_values.write_ios);
+            block_discard_ops[name] = static_cast<double>(delta_values.discard_ops);
 
-            new_values["BlockReadOps_" + name] = { delta_values.read_ios,
-                "Number of read operations requested from the block device."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockWriteOps_" + name] = { delta_values.write_ios,
-                "Number of write operations requested from the block device."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockDiscardOps_" + name] = { delta_values.discard_ops,
-                "Number of discard operations requested from the block device. These operations are relevant for SSD."
-                " Discard operations are not used by ClickHouse, but can be used by other processes on the system."
-                BLOCK_DEVICE_EXPLANATION };
+            block_read_merges[name] = static_cast<double>(delta_values.read_merges);
+            block_write_merges[name] = static_cast<double>(delta_values.write_merges);
+            block_discard_merges[name] = static_cast<double>(delta_values.discard_merges);
 
-            new_values["BlockReadMerges_" + name] = { delta_values.read_merges,
-                "Number of read operations requested from the block device and merged together by the OS IO scheduler."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockWriteMerges_" + name] = { delta_values.write_merges,
-                "Number of write operations requested from the block device and merged together by the OS IO scheduler."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockDiscardMerges_" + name] = { delta_values.discard_merges,
-                "Number of discard operations requested from the block device and merged together by the OS IO scheduler."
-                " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
-                BLOCK_DEVICE_EXPLANATION };
+            block_read_bytes[name] = static_cast<double>(delta_values.read_sectors * sector_size);
+            block_write_bytes[name] = static_cast<double>(delta_values.write_sectors * sector_size);
+            block_discard_bytes[name] = static_cast<double>(delta_values.discard_sectors * sector_size);
 
-            new_values["BlockReadBytes_" + name] = { delta_values.read_sectors * sector_size,
-                "Number of bytes read from the block device."
-                " It can be lower than the number of bytes read from the filesystem due to the usage of the OS page cache, that saves IO."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockWriteBytes_" + name] = { delta_values.write_sectors * sector_size,
-                "Number of bytes written to the block device."
-                " It can be lower than the number of bytes written to the filesystem due to the usage of the OS page cache, that saves IO."
-                " A write to the block device may happen later than the corresponding write to the filesystem due to write-through caching."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockDiscardBytes_" + name] = { delta_values.discard_sectors * sector_size,
-                "Number of discarded bytes on the block device."
-                " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
-                BLOCK_DEVICE_EXPLANATION };
+            block_read_time[name] = static_cast<double>(delta_values.read_ticks) * time_multiplier;
+            block_write_time[name] = static_cast<double>(delta_values.write_ticks) * time_multiplier;
+            block_discard_time[name] = static_cast<double>(delta_values.discard_ticks) * time_multiplier;
 
-            new_values["BlockReadTime_" + name] = { static_cast<double>(delta_values.read_ticks) * time_multiplier,
-                "Time in seconds spend in read operations requested from the block device, summed across all the operations."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockWriteTime_" + name] = { static_cast<double>(delta_values.write_ticks) * time_multiplier,
-                "Time in seconds spend in write operations requested from the block device, summed across all the operations."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockDiscardTime_" + name] = { static_cast<double>(delta_values.discard_ticks) * time_multiplier,
-                "Time in seconds spend in discard operations requested from the block device, summed across all the operations."
-                " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
-                BLOCK_DEVICE_EXPLANATION };
-
-            new_values["BlockInFlightOps_" + name] = { delta_values.in_flight_ios,
-                "This value counts the number of I/O requests that have been issued to"
-                " the device driver but have not yet completed. It does not include IO"
-                " requests that are in the queue but not yet issued to the device driver."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockActiveTime_" + name] = { static_cast<double>(delta_values.io_ticks) * time_multiplier,
-                "Time in seconds the block device had the IO requests queued."
-                BLOCK_DEVICE_EXPLANATION };
-            new_values["BlockQueueTime_" + name] = { static_cast<double>(delta_values.time_in_queue) * time_multiplier,
-                "This value counts the number of milliseconds that IO requests have waited"
-                " on this block device. If there are multiple IO requests waiting, this"
-                " value will increase as the product of the number of milliseconds times the"
-                " number of requests waiting."
-                BLOCK_DEVICE_EXPLANATION };
+            block_in_flight_ops[name] = static_cast<double>(delta_values.in_flight_ios);
+            block_active_time[name] = static_cast<double>(delta_values.io_ticks) * time_multiplier;
+            block_queue_time[name] = static_cast<double>(delta_values.time_in_queue) * time_multiplier;
 
             if (delta_values.in_flight_ios)
             {
                 /// TODO Check if these values are meaningful.
 
-                new_values["BlockActiveTimePerOp_" + name] = { static_cast<double>(delta_values.io_ticks) * time_multiplier / static_cast<double>(delta_values.in_flight_ios),
-                    "Similar to the `BlockActiveTime` metrics, but the value is divided to the number of IO operations to count the per-operation time." };
-                new_values["BlockQueueTimePerOp_" + name] = { static_cast<double>(delta_values.time_in_queue) * time_multiplier / static_cast<double>(delta_values.in_flight_ios),
-                    "Similar to the `BlockQueueTime` metrics, but the value is divided to the number of IO operations to count the per-operation time." };
+                block_active_time_per_op[name] = static_cast<double>(delta_values.io_ticks) * time_multiplier / static_cast<double>(delta_values.in_flight_ios);
+                block_queue_time_per_op[name] = static_cast<double>(delta_values.time_in_queue) * time_multiplier / static_cast<double>(delta_values.in_flight_ios);
             }
+        }
+
+#define BLOCK_DEVICE_EXPLANATION \
+    " The keys are the names of the block devices." \
+    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." \
+    " Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt"
+
+        if (!block_read_ops.empty())
+        {
+            new_values["BlockReadOps"] = { "device", std::move(block_read_ops),
+                "Number of read operations requested from every block device."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockWriteOps"] = { "device", std::move(block_write_ops),
+                "Number of write operations requested from every block device."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockDiscardOps"] = { "device", std::move(block_discard_ops),
+                "Number of discard operations requested from every block device. These operations are relevant for SSD."
+                " Discard operations are not used by ClickHouse, but can be used by other processes on the system."
+                BLOCK_DEVICE_EXPLANATION };
+
+            new_values["BlockReadMerges"] = { "device", std::move(block_read_merges),
+                "Number of read operations requested from every block device and merged together by the OS IO scheduler."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockWriteMerges"] = { "device", std::move(block_write_merges),
+                "Number of write operations requested from every block device and merged together by the OS IO scheduler."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockDiscardMerges"] = { "device", std::move(block_discard_merges),
+                "Number of discard operations requested from every block device and merged together by the OS IO scheduler."
+                " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
+                BLOCK_DEVICE_EXPLANATION };
+
+            new_values["BlockReadBytes"] = { "device", std::move(block_read_bytes),
+                "Number of bytes read from every block device."
+                " It can be lower than the number of bytes read from the filesystem due to the usage of the OS page cache, that saves IO."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockWriteBytes"] = { "device", std::move(block_write_bytes),
+                "Number of bytes written to every block device."
+                " It can be lower than the number of bytes written to the filesystem due to the usage of the OS page cache, that saves IO."
+                " A write to the block device may happen later than the corresponding write to the filesystem due to write-through caching."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockDiscardBytes"] = { "device", std::move(block_discard_bytes),
+                "Number of discarded bytes on every block device."
+                " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
+                BLOCK_DEVICE_EXPLANATION };
+
+            new_values["BlockReadTime"] = { "device", std::move(block_read_time),
+                "Time in seconds spend in read operations requested from every block device, summed across all the operations."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockWriteTime"] = { "device", std::move(block_write_time),
+                "Time in seconds spend in write operations requested from every block device, summed across all the operations."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockDiscardTime"] = { "device", std::move(block_discard_time),
+                "Time in seconds spend in discard operations requested from every block device, summed across all the operations."
+                " These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system."
+                BLOCK_DEVICE_EXPLANATION };
+
+            new_values["BlockInFlightOps"] = { "device", std::move(block_in_flight_ops),
+                "This value counts the number of I/O requests that have been issued to"
+                " the device driver but have not yet completed, for every block device. It does not include IO"
+                " requests that are in the queue but not yet issued to the device driver."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockActiveTime"] = { "device", std::move(block_active_time),
+                "Time in seconds every block device had the IO requests queued."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockQueueTime"] = { "device", std::move(block_queue_time),
+                "This value counts the number of milliseconds that IO requests have waited"
+                " on every block device. If there are multiple IO requests waiting, this"
+                " value will increase as the product of the number of milliseconds times the"
+                " number of requests waiting."
+                BLOCK_DEVICE_EXPLANATION };
+        }
+
+        if (!block_active_time_per_op.empty())
+        {
+            new_values["BlockActiveTimePerOp"] = { "device", std::move(block_active_time_per_op),
+                "Similar to the `BlockActiveTime` metric, but the value is divided to the number of IO operations to count the per-operation time."
+                BLOCK_DEVICE_EXPLANATION };
+            new_values["BlockQueueTimePerOp"] = { "device", std::move(block_queue_time_per_op),
+                "Similar to the `BlockQueueTime` metric, but the value is divided to the number of IO operations to count the per-operation time."
+                BLOCK_DEVICE_EXPLANATION };
         }
     }
     catch (...)
@@ -2038,6 +2318,15 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
             skipToNextLineOrEOF(*net_dev);
             skipToNextLineOrEOF(*net_dev);
+
+            AsynchronousMetricKeyValues network_receive_bytes;
+            AsynchronousMetricKeyValues network_receive_packets;
+            AsynchronousMetricKeyValues network_receive_errors;
+            AsynchronousMetricKeyValues network_receive_drop;
+            AsynchronousMetricKeyValues network_send_bytes;
+            AsynchronousMetricKeyValues network_send_packets;
+            AsynchronousMetricKeyValues network_send_errors;
+            AsynchronousMetricKeyValues network_send_drop;
 
             while (!net_dev->eof())
             {
@@ -2094,32 +2383,49 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
                 if (!first_run)
                 {
-                    new_values["NetworkReceiveBytes_" + interface_name] = { delta_values.recv_bytes,
-                        " Number of bytes received via the network interface."
-                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
-                    new_values["NetworkReceivePackets_" + interface_name] = { delta_values.recv_packets,
-                        " Number of network packets received via the network interface."
-                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
-                    new_values["NetworkReceiveErrors_" + interface_name] = { delta_values.recv_errors,
-                        " Number of times error happened receiving via the network interface."
-                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
-                    new_values["NetworkReceiveDrop_" + interface_name] = { delta_values.recv_drop,
-                        " Number of bytes a packet was dropped while received via the network interface."
-                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                    network_receive_bytes[interface_name] = static_cast<double>(delta_values.recv_bytes);
+                    network_receive_packets[interface_name] = static_cast<double>(delta_values.recv_packets);
+                    network_receive_errors[interface_name] = static_cast<double>(delta_values.recv_errors);
+                    network_receive_drop[interface_name] = static_cast<double>(delta_values.recv_drop);
 
-                    new_values["NetworkSendBytes_" + interface_name] = { delta_values.send_bytes,
-                        " Number of bytes sent via the network interface."
-                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
-                    new_values["NetworkSendPackets_" + interface_name] = { delta_values.send_packets,
-                        " Number of network packets sent via the network interface."
-                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
-                    new_values["NetworkSendErrors_" + interface_name] = { delta_values.send_errors,
-                        " Number of times error (e.g. TCP retransmit) happened while sending via the network interface."
-                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
-                    new_values["NetworkSendDrop_" + interface_name] = { delta_values.send_drop,
-                        " Number of times a packed was dropped while sending via the network interface."
-                        " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+                    network_send_bytes[interface_name] = static_cast<double>(delta_values.send_bytes);
+                    network_send_packets[interface_name] = static_cast<double>(delta_values.send_packets);
+                    network_send_errors[interface_name] = static_cast<double>(delta_values.send_errors);
+                    network_send_drop[interface_name] = static_cast<double>(delta_values.send_drop);
                 }
+            }
+
+#define NETWORK_INTERFACE_EXPLANATION \
+    " The keys are the names of the network interfaces." \
+    " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server."
+
+            if (!network_receive_bytes.empty())
+            {
+                new_values["NetworkReceiveBytes"] = { "interface", std::move(network_receive_bytes),
+                    "Number of bytes received via every network interface."
+                    NETWORK_INTERFACE_EXPLANATION };
+                new_values["NetworkReceivePackets"] = { "interface", std::move(network_receive_packets),
+                    "Number of network packets received via every network interface."
+                    NETWORK_INTERFACE_EXPLANATION };
+                new_values["NetworkReceiveErrors"] = { "interface", std::move(network_receive_errors),
+                    "Number of times error happened receiving via every network interface."
+                    NETWORK_INTERFACE_EXPLANATION };
+                new_values["NetworkReceiveDrop"] = { "interface", std::move(network_receive_drop),
+                    "Number of bytes a packet was dropped while received via every network interface."
+                    NETWORK_INTERFACE_EXPLANATION };
+
+                new_values["NetworkSendBytes"] = { "interface", std::move(network_send_bytes),
+                    "Number of bytes sent via every network interface."
+                    NETWORK_INTERFACE_EXPLANATION };
+                new_values["NetworkSendPackets"] = { "interface", std::move(network_send_packets),
+                    "Number of network packets sent via every network interface."
+                    NETWORK_INTERFACE_EXPLANATION };
+                new_values["NetworkSendErrors"] = { "interface", std::move(network_send_errors),
+                    "Number of times error (e.g. TCP retransmit) happened while sending via every network interface."
+                    NETWORK_INTERFACE_EXPLANATION };
+                new_values["NetworkSendDrop"] = { "interface", std::move(network_send_drop),
+                    "Number of times a packed was dropped while sending via every network interface."
+                    NETWORK_INTERFACE_EXPLANATION };
             }
         }
         catch (...)
@@ -2358,6 +2664,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
+    AsynchronousMetricKeyValues temperatures;
+
     try
     {
         for (size_t i = 0, size = thermal.size(); i < size; ++i)
@@ -2367,8 +2675,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             in.rewind();
             Int64 temperature = 0;
             readText(temperature, in);
-            new_values[fmt::format("Temperature{}", i)] = { static_cast<double>(temperature) * 0.001,
-                "The temperature of the corresponding device in ℃. A sensor can return an unrealistic value. Source: `/sys/class/thermal`" };
+            temperatures[toString(i)] = static_cast<double>(temperature) * 0.001;
         }
     }
     catch (...)
@@ -2407,11 +2714,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 }
 
                 if (sensor_name.empty())
-                    new_values[fmt::format("Temperature_{}", hwmon_name)] = { static_cast<double>(temperature) * 0.001,
-                        "The temperature reported by the corresponding hardware monitor in ℃. A sensor can return an unrealistic value. Source: `/sys/class/hwmon`" };
+                    temperatures[hwmon_name] = static_cast<double>(temperature) * 0.001;
                 else
-                    new_values[fmt::format("Temperature_{}_{}", hwmon_name, sensor_name)] = { static_cast<double>(temperature) * 0.001,
-                        "The temperature reported by the corresponding hardware monitor and the corresponding sensor in ℃. A sensor can return an unrealistic value. Source: `/sys/class/hwmon`" };
+                    temperatures[fmt::format("{}_{}", hwmon_name, sensor_name)] = static_cast<double>(temperature) * 0.001;
             }
         }
     }
@@ -2434,8 +2739,17 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
+    if (!temperatures.empty())
+        new_values["Temperature"] = { "sensor", std::move(temperatures),
+            "The temperature reported by every sensor, in ℃. A sensor can return an unrealistic value."
+            " The keys are the thermal zone numbers (source: `/sys/class/thermal`)"
+            " or the names of the hardware monitors and their sensors (source: `/sys/class/hwmon`)." };
+
     try
     {
+        AsynchronousMetricKeyValues edac_correctable_errors;
+        AsynchronousMetricKeyValues edac_uncorrectable_errors;
+
         for (size_t i = 0, size = edac.size(); i < size; ++i)
         {
             /// NOTE maybe we need to take difference with previous values.
@@ -2447,11 +2761,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 in.rewind();
                 uint64_t errors = 0;
                 readText(errors, in);
-                new_values[fmt::format("EDAC{}_Correctable", i)] = { errors,
-                    "The number of correctable ECC memory errors."
-                    " A high number of this value indicates bad RAM which has to be immediately replaced,"
-                    " because in presence of a high number of corrected errors, a number of silent errors may happen as well, leading to data corruption."
-                    " Source: `/sys/devices/system/edac/mc/`" };
+                edac_correctable_errors[toString(i)] = static_cast<double>(errors);
             }
 
             if (edac[i].second)
@@ -2460,13 +2770,23 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 in.rewind();
                 uint64_t errors = 0;
                 readText(errors, in);
-                new_values[fmt::format("EDAC{}_Uncorrectable", i)] = { errors,
-                    "The number of uncorrectable ECC memory errors."
-                    " A non-zero number of this value indicates bad RAM which has to be immediately replaced,"
-                    " because it indicates potential data corruption."
-                    " Source: `/sys/devices/system/edac/mc/`" };
+                edac_uncorrectable_errors[toString(i)] = static_cast<double>(errors);
             }
         }
+
+        if (!edac_correctable_errors.empty())
+            new_values["EDACCorrectable"] = { "mc", std::move(edac_correctable_errors),
+                "The number of correctable ECC memory errors, keyed by the memory controller number."
+                " A high number of this value indicates bad RAM which has to be immediately replaced,"
+                " because in presence of a high number of corrected errors, a number of silent errors may happen as well, leading to data corruption."
+                " Source: `/sys/devices/system/edac/mc/`" };
+
+        if (!edac_uncorrectable_errors.empty())
+            new_values["EDACUncorrectable"] = { "mc", std::move(edac_uncorrectable_errors),
+                "The number of uncorrectable ECC memory errors, keyed by the memory controller number."
+                " A non-zero number of this value indicates bad RAM which has to be immediately replaced,"
+                " because it indicates potential data corruption."
+                " Source: `/sys/devices/system/edac/mc/`" };
     }
     catch (...)
     {
@@ -2544,17 +2864,34 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     new_values["OSCPUOverload"] = { ProfileEvents::global_counters.getCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold], /*reset*/ true), "Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics." };
 
-    for (const auto & metric : BaseDaemon::instance().getAsynchronousMetricsFromAsyncLogs())
     {
-        new_values[fmt::format("AsyncLogging{}QueueSize", metric.first)]
-            = {static_cast<double>(metric.second), "Number of async messages queued pending for logging in this channel"};
+        AsynchronousMetricKeyValues async_logging_queue_sizes;
+        for (const auto & metric : BaseDaemon::instance().getAsynchronousMetricsFromAsyncLogs())
+            async_logging_queue_sizes[metric.first] = static_cast<double>(metric.second);
+
+        if (!async_logging_queue_sizes.empty())
+            new_values["AsyncLoggingQueueSize"]
+                = {"channel", std::move(async_logging_queue_sizes),
+                   "Number of async messages queued pending for logging, keyed by the logging channel name."};
     }
+
+#if USE_SILK
+    for (const auto & [counter_name, counter_value] : Silk::getRuntimeCounters())
+        new_values[fmt::format("Silk{}", counter_name)] = { counter_value,
+            "Value of the eponymous low-level counter of the silk fiber runtime, accumulated since the fiber scheduler initialization. "
+            "Counters with Time in the name are in nanoseconds." };
+#endif
 
     /// Add more metrics as you wish.
 
     updateImpl(update_time, current_time, force_update, first_run, new_values);
 
     new_values["AsynchronousMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous metrics (this is the overhead of asynchronous metrics)." };
+
+    /// Publish the key-value metrics in the form the consumers are configured to expect. This is done once,
+    /// here, so that every consumer of the values (`system.asynchronous_metric_log` below,
+    /// `system.asynchronous_metrics`, the Prometheus endpoint and Graphite) sees a consistent picture.
+    applyAsynchronousMetricsKeyValuesMode(new_values, getAsynchronousMetricsKeyValuesMode(context->getConfigRef()));
 
     logImpl(new_values);
 
@@ -2565,12 +2902,16 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         std::lock_guard values_lock(values_mutex);
         values.swap(new_values);
 
-        // These methods look at Asynchronous metrics and add,update or remove warnings
-        // which later get inserted into the system.warnings table:
-        processWarningForMutationStats(new_values);
+        // These methods look at Asynchronous metrics and add, update or remove warnings
+        // which later get inserted into the system.warnings table.
+        // Note: after the swap above, `values` holds the freshly computed metrics and
+        // `new_values` holds the previous cycle's data, so we must read from `values` here.
+        // Passing `new_values` would feed the warning logic the stale snapshot, lagging
+        // system.warnings by one async-metrics cycle (and emitting nothing on the first cycle).
+        processWarningForMutationStats(values);
         // server resource overload warnings
-        processWarningForMemoryOverload(new_values);
-        processWarningForCPUOverload(new_values);
+        processWarningForMemoryOverload(values);
+        processWarningForCPUOverload(values);
     }
 }
 

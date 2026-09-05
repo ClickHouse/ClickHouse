@@ -1,4 +1,4 @@
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
 #include <Server/DistributedQuery/StreamingExchangeSink.h>

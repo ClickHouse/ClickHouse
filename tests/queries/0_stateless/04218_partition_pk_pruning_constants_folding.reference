@@ -1,0 +1,29 @@
+== result ==
+1	1
+1	2
+1	3
+== explain ==
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.partition_pk_folding)
+    Indexes:
+      Min-Max
+        Keys:
+          a
+        Condition: or((a in [3, 3]), or((a in [2, 2]), (a in [1, 1])))
+        Parts: 3/3
+        Granules: 9/9
+      Partition
+        Keys:
+          a
+        Condition: or((a in [3, 3]), or((a in [2, 2]), (a in [1, 1])))
+        Parts: 3/3
+        Granules: 9/9
+      PrimaryKey
+        Keys:
+          b
+        Condition: or((b in [11, +Inf)), or((b in [11, +Inf)), (b in [1, +Inf))))
+        Parts: 1/3
+        Granules: 3/9
+        Search Algorithm: generic exclusion search
+      Ranges: 1

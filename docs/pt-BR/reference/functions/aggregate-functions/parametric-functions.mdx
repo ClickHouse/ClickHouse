@@ -1,0 +1,960 @@
+---
+description: 'Documentação para funções de agregação paramétricas'
+sidebarTitle: 'Paramétricas'
+slug: /sql-reference/aggregate-functions/parametric-functions
+title: 'Funções de agregação paramétricas'
+doc_type: 'reference'
+---
+
+Algumas funções de agregação podem aceitar não apenas colunas de argumentos (usadas para compressão), mas também um conjunto de parâmetros — constantes para inicialização. A sintaxe usa dois pares de parênteses em vez de um. O primeiro é para os parâmetros, e o segundo, para os argumentos.
+
+<div id="histogram">
+  ## histogram
+</div>
+
+Calcula um histograma adaptativo. Os resultados podem não ser precisos.
+
+```sql
+histogram(number_of_bins)(values)
+```
+
+A função usa [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). Os limites dos bins do histograma são ajustados à medida que novos dados são inseridos na função. Em geral, as larguras dos bins não são iguais.
+
+**Argumentos**
+
+`values` — [Expressão](/pt-BR/reference/syntax#expressions) que resulta nos valores de entrada.
+
+**Parâmetros**
+
+`number_of_bins` — Limite superior para o número de bins no histograma. A função calcula automaticamente o número de bins. Ela tenta atingir o número especificado de bins, mas, se não conseguir, usa menos bins.
+
+**Valores retornados**
+
+* [Array](/pt-BR/reference/data-types/array) de [Tuplas](/pt-BR/reference/data-types/tuple) no seguinte formato:
+
+  ```
+  [(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
+  ```
+
+  * `lower` — Limite inferior do bin.
+  * `upper` — Limite superior do bin.
+  * `height` — Altura calculada do bin.
+
+**Exemplo**
+
+```sql
+SELECT histogram(5)(number + 1)
+FROM (
+    SELECT *
+    FROM system.numbers
+    LIMIT 20
+)
+```
+
+```text
+┌─histogram(5)(plus(number, 1))───────────────────────────────────────────┐
+│ [(1,4.5,4),(4.5,8.5,4),(8.5,12.75,4.125),(12.75,17,4.625),(17,20,3.25)] │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+Você pode visualizar um histograma com a função [bar](/pt-BR/reference/functions/regular-functions/other-functions#bar), por exemplo:
+
+```sql
+WITH histogram(5)(rand() % 100) AS hist
+SELECT
+    arrayJoin(hist).3 AS height,
+    bar(height, 0, 6, 5) AS bar
+FROM
+(
+    SELECT *
+    FROM system.numbers
+    LIMIT 20
+)
+```
+
+```text
+┌─height─┬─bar───┐
+│  2.125 │ █▋    │
+│   3.25 │ ██▌   │
+│  5.625 │ ████▏ │
+│  5.625 │ ████▏ │
+│  3.375 │ ██▌   │
+└────────┴───────┘
+```
+
+Nesse caso, lembre-se de que você não conhece os limites das classes do histograma.
+
+<div id="sequencematch">
+  ## sequenceMatch
+</div>
+
+Verifica se a sequência contém uma cadeia de eventos que corresponde ao padrão.
+
+**Sintaxe**
+
+```sql
+sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
+```
+
+<Note>
+  Eventos que ocorrem no mesmo segundo podem aparecer na sequência em uma ordem indefinida, afetando o resultado.
+</Note>
+
+**Argumentos**
+
+* `timestamp` — Coluna que contém dados temporais. Os tipos de dados típicos são `Date` e `DateTime`. Você também pode usar qualquer um dos tipos de dados [UInt](/pt-BR/reference/data-types/int-uint) suportados.
+
+* `cond1`, `cond2` — Condições que descrevem a sequência de eventos. Tipo de dado: `UInt8`. Você pode passar até 32 argumentos de condição. A função considera apenas os eventos descritos nessas condições. Se a sequência contiver dados não descritos por nenhuma condição, a função os ignora.
+
+**Parâmetros**
+
+* `pattern` — string de padrão. Consulte [Sintaxe do padrão](#pattern-syntax).
+
+**Valores retornados**
+
+* 1, se houver correspondência com o padrão.
+* 0, se não houver correspondência com o padrão.
+
+Tipo: `UInt8`.
+
+<div id="pattern-syntax">
+  #### Sintaxe do padrão
+</div>
+
+* `(?N)` — Corresponde ao argumento de condição na posição `N`. As condições são numeradas no intervalo `[1, 32]`. Por exemplo, `(?1)` corresponde ao argumento passado para o parâmetro `cond1`.
+
+* `.*` — Corresponde a qualquer número de eventos. Você não precisa de argumentos condicionais para corresponder a esse elemento do padrão.
+
+* `(?t operator value)` — Define o tempo, em segundos, que deve separar dois eventos. Por exemplo, o padrão `(?1)(?t>1800)(?2)` corresponde a eventos que ocorrem com mais de 1800 segundos de diferença entre si. Pode haver qualquer número de eventos entre esses eventos. Você pode usar os operadores `>=`, `>`, `<`, `<=`, `==`.
+
+**Exemplos**
+
+Considere os dados na tabela `t`:
+
+```text
+┌─time─┬─number─┐
+│    1 │      1 │
+│    2 │      3 │
+│    3 │      2 │
+└──────┴────────┘
+```
+
+Execute a consulta:
+
+```sql
+SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2) FROM t
+```
+
+```text
+┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2))─┐
+│                                                                     1 │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+A função encontrou a cadeia de eventos em que o número 2 vem depois do número 1. Ela ignorou o número 3 entre eles, porque esse número não é descrito como um evento. Se quisermos levar esse número em consideração ao procurar a cadeia de eventos apresentada no exemplo, devemos criar uma condição para ele.
+
+```sql
+SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 3) FROM t
+```
+
+```text
+┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2), equals(number, 3))─┐
+│                                                                                        0 │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Nesse caso, a função não conseguiu encontrar a sequência de eventos que correspondesse ao padrão, porque o evento de número 3 ocorreu entre 1 e 2. Se, nesse mesmo caso, verificássemos a condição para o número 4, a sequência corresponderia ao padrão.
+
+```sql
+SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM t
+```
+
+```text
+┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2), equals(number, 4))─┐
+│                                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Veja também**
+
+* [sequenceCount](#sequencecount)
+
+<div id="sequencecount">
+  ## sequenceCount
+</div>
+
+Conta o número de cadeias de eventos que corresponderam ao padrão. A função procura cadeias de eventos que não se sobrepõem. Ela começa a procurar a próxima cadeia depois que a cadeia atual é encontrada.
+
+<Note>
+  Eventos que ocorrem no mesmo segundo podem ficar na sequência em uma ordem indefinida, afetando o resultado.
+</Note>
+
+**Sintaxe**
+
+```sql
+sequenceCount(pattern)(timestamp, cond1, cond2, ...)
+```
+
+**Argumentos**
+
+* `timestamp` — Coluna considerada como contendo dados de tempo. Os tipos de dados mais comuns são `Date` e `DateTime`. Você também pode usar qualquer um dos tipos de dados [UInt](/pt-BR/reference/data-types/int-uint) compatíveis.
+
+* `cond1`, `cond2` — Condições que descrevem a cadeia de eventos. Tipo de dado: `UInt8`. Você pode passar até 32 argumentos de condição. A função considera apenas os eventos descritos nessas condições. Se a sequência contiver dados que não estejam descritos em uma condição, a função os ignora.
+
+**Parâmetros**
+
+* `pattern` — String de padrão. Consulte [Sintaxe do padrão](#pattern-syntax).
+
+**Valores retornados**
+
+* Número de cadeias de eventos não sobrepostas correspondentes.
+
+Tipo: `UInt64`.
+
+**Exemplo**
+
+Considere os dados na tabela `t`:
+
+```text
+┌─time─┬─number─┐
+│    1 │      1 │
+│    2 │      3 │
+│    3 │      2 │
+│    4 │      1 │
+│    5 │      3 │
+│    6 │      2 │
+└──────┴────────┘
+```
+
+Conte quantas vezes o número 2 aparece após o número 1, com qualquer quantidade de outros números entre eles:
+
+```sql
+SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
+```
+
+```text
+┌─sequenceCount('(?1).*(?2)')(time, equals(number, 1), equals(number, 2))─┐
+│                                                                       2 │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="sequencematchevents">
+  ## sequenceMatchEvents
+</div>
+
+Retorna os timestamps dos eventos das cadeias de eventos mais longas que corresponderam ao padrão.
+
+<Note>
+  Eventos que ocorrem no mesmo segundo podem ficar na sequência em uma ordem indefinida, o que afeta o resultado.
+</Note>
+
+**Sintaxe**
+
+```sql
+sequenceMatchEvents(pattern)(timestamp, cond1, cond2, ...)
+```
+
+**Argumentos**
+
+* `timestamp` — Coluna considerada como contendo dados de tempo. Os tipos de dados mais comuns são `Date` e `DateTime`. Você também pode usar qualquer um dos tipos de dados [UInt](/pt-BR/reference/data-types/int-uint) compatíveis.
+
+* `cond1`, `cond2` — Condições que descrevem a cadeia de eventos. Tipo de dado: `UInt8`. Você pode passar até 32 argumentos de condição. A função considera apenas os eventos descritos nessas condições. Se a sequência contiver dados que não estejam descritos em uma condição, a função os ignora.
+
+**Parâmetros**
+
+* `pattern` — String de padrão. Veja [Sintaxe do padrão](#pattern-syntax).
+
+**Valores retornados**
+
+* Array de timestamps para os argumentos de condição correspondentes (?N) da cadeia de eventos. A posição no array corresponde à posição do argumento de condição no padrão
+
+Tipo: Array.
+
+**Exemplo**
+
+Considere os dados na tabela `t`:
+
+```text
+┌─time─┬─number─┐
+│    1 │      1 │
+│    2 │      3 │
+│    3 │      2 │
+│    4 │      1 │
+│    5 │      3 │
+│    6 │      2 │
+└──────┴────────┘
+```
+
+Retorna os timestamps dos eventos da cadeia mais longa
+
+```sql
+SELECT sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, number = 1, number = 2, number = 4) FROM t
+```
+
+```text
+┌─sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, equals(number, 1), equals(number, 2), equals(number, 4))─┐
+│ [1,3,4]                                                                                                    │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Veja também**
+
+* [sequenceMatch](#sequencematch)
+
+<div id="windowfunnel">
+  ## windowFunnel
+</div>
+
+Procura cadeias de eventos em uma janela de tempo deslizante e calcula o número máximo de eventos ocorridos na cadeia.
+
+A função funciona de acordo com o algoritmo a seguir:
+
+* A função procura dados que disparam a primeira condição da cadeia e define o contador de eventos como 1. Esse é o momento em que a janela deslizante começa.
+
+* Se os eventos da cadeia ocorrerem sequencialmente dentro da janela, o contador será incrementado. Se a sequência de eventos for interrompida, o contador não será incrementado.
+
+* Se os dados tiverem várias cadeias de eventos em diferentes estágios de conclusão, a função retornará apenas o tamanho da cadeia mais longa.
+
+**Sintaxe**
+
+```sql
+windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
+```
+
+**Argumentos**
+
+* `timestamp` — Nome da coluna que contém o timestamp. Tipos de dados compatíveis: [Date](/pt-BR/reference/data-types/date), [DateTime](/pt-BR/reference/data-types/datetime) e outros tipos inteiros sem sinal (observe que, embora o timestamp seja compatível com o tipo `UInt64`, seu valor não pode exceder o valor máximo de Int64, que é 2^63 - 1).
+* `cond` — Condições ou dados que descrevem a cadeia de eventos. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Parâmetros**
+
+* `window` — Duração da janela deslizante; é o intervalo de tempo entre a primeira e a última condição. A unidade de `window` depende do próprio `timestamp` e varia. Ela é determinada usando a expressão `timestamp de cond1 <= timestamp de cond2 <= ... <= timestamp de condN <= timestamp de cond1 + window`.
+* `mode` — É um argumento opcional. Um ou mais modos podem ser definidos.
+  * `'strict_deduplication'` — Se a mesma condição for válida para a sequência de eventos, esse evento repetido interrompe o processamento subsequente. Observação: pode funcionar de forma inesperada se várias condições forem válidas para o mesmo evento.
+  * `'strict_order'` — Não permite a interferência de outros eventos. Por exemplo, no caso de `A->B->D->C`, ele para de encontrar `A->B->C` em `D`, e o nível máximo de evento é 2.
+  * `'strict_increase'` — Aplica condições apenas a eventos com timestamps estritamente crescentes.
+  * `'strict_once'` — Conta cada evento apenas uma vez na cadeia, mesmo que ele atenda à condição várias vezes.
+  * `'allow_reentry'` — Ignora eventos que violam a ordem estrita. Por exemplo, no caso de A-&gt;A-&gt;B-&gt;C, ele encontra A-&gt;B-&gt;C ignorando o A redundante, e o nível máximo de evento é 3.
+
+**Valor retornado**
+
+O número máximo de condições acionadas consecutivamente na cadeia dentro da janela de tempo deslizante.
+Todas as cadeias na seleção são analisadas.
+
+Tipo: `Integer`.
+
+**Exemplo**
+
+Determine se um determinado período é suficiente para o usuário selecionar um celular e comprá-lo duas vezes na loja online.
+
+Defina a seguinte cadeia de eventos:
+
+1. O usuário fez login na conta da loja (`eventID = 1003`).
+2. O usuário procura um celular (`eventID = 1007, product = 'phone'`).
+3. O usuário fez um pedido (`eventID = 1009`).
+4. O usuário fez o pedido novamente (`eventID = 1010`).
+
+Tabela de entrada:
+
+```text
+┌─event_date─┬─user_id─┬───────────timestamp─┬─eventID─┬─product─┐
+│ 2019-01-28 │       1 │ 2019-01-29 10:00:00 │    1003 │ phone   │
+└────────────┴─────────┴─────────────────────┴─────────┴─────────┘
+┌─event_date─┬─user_id─┬───────────timestamp─┬─eventID─┬─product─┐
+│ 2019-01-31 │       1 │ 2019-01-31 09:00:00 │    1007 │ phone   │
+└────────────┴─────────┴─────────────────────┴─────────┴─────────┘
+┌─event_date─┬─user_id─┬───────────timestamp─┬─eventID─┬─product─┐
+│ 2019-01-30 │       1 │ 2019-01-30 08:00:00 │    1009 │ phone   │
+└────────────┴─────────┴─────────────────────┴─────────┴─────────┘
+┌─event_date─┬─user_id─┬───────────timestamp─┬─eventID─┬─product─┐
+│ 2019-02-01 │       1 │ 2019-02-01 08:00:00 │    1010 │ phone   │
+└────────────┴─────────┴─────────────────────┴─────────┴─────────┘
+```
+
+Descubra até onde o usuário `user_id` conseguiu avançar na sequência em um período entre janeiro e fevereiro de 2019.
+
+```sql title="Query"
+SELECT
+    level,
+    count() AS c
+FROM
+(
+    SELECT
+        user_id,
+        windowFunnel(6048000000000000)(timestamp, eventID = 1003, eventID = 1009, eventID = 1007, eventID = 1010) AS level
+    FROM trend
+    WHERE (event_date >= '2019-01-01') AND (event_date <= '2019-02-02')
+    GROUP BY user_id
+)
+GROUP BY level
+ORDER BY level ASC;
+```
+
+```text title="Response"
+┌─level─┬─c─┐
+│     4 │ 1 │
+└───────┴───┘
+```
+
+**Exemplo com o modo allow&#95;reentry**
+
+Este exemplo demonstra como o modo `allow_reentry` funciona com padrões de reentrada do usuário:
+
+```sql
+-- Dados de exemplo: usuário visita checkout -> detalhe do produto -> checkout novamente -> pagamento
+-- Sem allow_reentry: para no nível 2 (página de detalhe do produto)
+-- Com allow_reentry: alcança o nível 4 (conclusão do pagamento)
+
+SELECT
+    level,
+    count() AS users
+FROM
+(
+    SELECT
+        user_id,
+        windowFunnel(3600, 'strict_order', 'allow_reentry')(
+            timestamp,
+            action = 'begin_checkout',      -- Passo 1: Iniciar checkout
+            action = 'view_product_detail', -- Passo 2: Visualizar detalhe do produto  
+            action = 'begin_checkout',      -- Passo 3: Iniciar checkout novamente (reentrada)
+            action = 'complete_payment'     -- Passo 4: Concluir pagamento
+        ) AS level
+    FROM user_events
+    WHERE event_date = today()
+    GROUP BY user_id
+)
+GROUP BY level
+ORDER BY level ASC;
+```
+
+<div id="retention">
+  ## retention
+</div>
+
+A função recebe de 1 a 32 argumentos do tipo `UInt8`, que representam um conjunto de condições e indicam se determinada condição foi atendida para o evento.
+Qualquer condição pode ser especificada como argumento (como em [WHERE](/pt-BR/reference/statements/select/where)).
+
+As condições, exceto a primeira, são aplicadas em pares: o resultado da segunda será verdadeiro se a primeira e a segunda forem verdadeiras; o da terceira, se a primeira e a terceira forem verdadeiras; e assim por diante.
+
+**Sintaxe**
+
+```sql
+retention(cond1, cond2, ..., cond32);
+```
+
+**Argumentos**
+
+* `cond` — Uma expressão que retorna um resultado `UInt8` (1 ou 0).
+
+**Valor retornado**
+
+O array de 1 ou 0.
+
+* 1 — A condição foi atendida para o evento.
+* 0 — A condição não foi atendida para o evento.
+
+Tipo: `UInt8`.
+
+**Exemplo**
+
+Vamos considerar um exemplo de cálculo da função `retention` para determinar o tráfego do site.
+
+**1.** Crie uma tabela para ilustrar o exemplo.
+
+```sql title="Query"
+CREATE TABLE retention_test(date Date, uid Int32) ENGINE = Memory;
+
+INSERT INTO retention_test SELECT '2020-01-01', number FROM numbers(5);
+INSERT INTO retention_test SELECT '2020-01-02', number FROM numbers(10);
+INSERT INTO retention_test SELECT '2020-01-03', number FROM numbers(15);
+```
+
+Tabela de entrada:
+
+```sql title="Query"
+SELECT * FROM retention_test
+```
+
+```text title="Response"
+┌───────date─┬─uid─┐
+│ 2020-01-01 │   0 │
+│ 2020-01-01 │   1 │
+│ 2020-01-01 │   2 │
+│ 2020-01-01 │   3 │
+│ 2020-01-01 │   4 │
+└────────────┴─────┘
+┌───────date─┬─uid─┐
+│ 2020-01-02 │   0 │
+│ 2020-01-02 │   1 │
+│ 2020-01-02 │   2 │
+│ 2020-01-02 │   3 │
+│ 2020-01-02 │   4 │
+│ 2020-01-02 │   5 │
+│ 2020-01-02 │   6 │
+│ 2020-01-02 │   7 │
+│ 2020-01-02 │   8 │
+│ 2020-01-02 │   9 │
+└────────────┴─────┘
+┌───────date─┬─uid─┐
+│ 2020-01-03 │   0 │
+│ 2020-01-03 │   1 │
+│ 2020-01-03 │   2 │
+│ 2020-01-03 │   3 │
+│ 2020-01-03 │   4 │
+│ 2020-01-03 │   5 │
+│ 2020-01-03 │   6 │
+│ 2020-01-03 │   7 │
+│ 2020-01-03 │   8 │
+│ 2020-01-03 │   9 │
+│ 2020-01-03 │  10 │
+│ 2020-01-03 │  11 │
+│ 2020-01-03 │  12 │
+│ 2020-01-03 │  13 │
+│ 2020-01-03 │  14 │
+└────────────┴─────┘
+```
+
+**2.** Agrupe os usuários pelo ID único `uid` usando a função `retention`.
+
+```sql title="Query"
+SELECT
+    uid,
+    retention(date = '2020-01-01', date = '2020-01-02', date = '2020-01-03') AS r
+FROM retention_test
+WHERE date IN ('2020-01-01', '2020-01-02', '2020-01-03')
+GROUP BY uid
+ORDER BY uid ASC
+```
+
+```text title="Response"
+┌─uid─┬─r───────┐
+│   0 │ [1,1,1] │
+│   1 │ [1,1,1] │
+│   2 │ [1,1,1] │
+│   3 │ [1,1,1] │
+│   4 │ [1,1,1] │
+│   5 │ [0,0,0] │
+│   6 │ [0,0,0] │
+│   7 │ [0,0,0] │
+│   8 │ [0,0,0] │
+│   9 │ [0,0,0] │
+│  10 │ [0,0,0] │
+│  11 │ [0,0,0] │
+│  12 │ [0,0,0] │
+│  13 │ [0,0,0] │
+│  14 │ [0,0,0] │
+└─────┴─────────┘
+```
+
+**3.** Calcule o número total de visitas ao site por dia.
+
+```sql title="Query"
+SELECT
+    sum(r[1]) AS r1,
+    sum(r[2]) AS r2,
+    sum(r[3]) AS r3
+FROM
+(
+    SELECT
+        uid,
+        retention(date = '2020-01-01', date = '2020-01-02', date = '2020-01-03') AS r
+    FROM retention_test
+    WHERE date IN ('2020-01-01', '2020-01-02', '2020-01-03')
+    GROUP BY uid
+)
+```
+
+```text title="Response"
+┌─r1─┬─r2─┬─r3─┐
+│  5 │  5 │  5 │
+└────┴────┴────┘
+```
+
+Onde:
+
+* `r1`- o número de visitantes únicos que visitaram o site em 2020-01-01 (a condição `cond1`).
+* `r2`- o número de visitantes únicos que visitaram o site durante um período específico entre 2020-01-01 e 2020-01-02 (as condições `cond1` e `cond2`).
+* `r3`- o número de visitantes únicos que visitaram o site durante um período específico em 2020-01-01 e 2020-01-03 (as condições `cond1` e `cond3`).
+
+<div id="uniquptonx">
+  ## uniqUpTo(N)(x)
+</div>
+
+Calcula o número de valores distintos do argumento até um limite especificado, `N`. Se o número de valores distintos do argumento for maior que `N`, esta função retorna `N` + 1; caso contrário, calcula o valor exato.
+
+Recomendado para uso com `N` pequenos, até 10. O valor máximo de `N` é 100.
+
+Para o estado de uma função de agregação, esta função usa uma quantidade de memória igual a 1 + `N` * o tamanho, em bytes, de um valor.
+Ao lidar com strings, esta função armazena um hash não criptográfico de 8 bytes; o cálculo é aproximado para strings.
+
+Por exemplo, se você tivesse uma tabela que registra cada consulta de pesquisa feita pelos usuários no seu site. Cada linha na tabela representa uma única consulta de pesquisa, com colunas para o ID do usuário, a consulta de pesquisa e o timestamp da consulta. Você pode usar `uniqUpTo` para gerar um relatório que mostre apenas as palavras-chave que produziram pelo menos 5 usuários únicos.
+
+```sql
+SELECT SearchPhrase
+FROM SearchLog
+GROUP BY SearchPhrase
+HAVING uniqUpTo(4)(UserID) >= 5
+```
+
+`uniqUpTo(4)(UserID)` calcula o número de valores únicos de `UserID` para cada `SearchPhrase`, mas conta apenas até 4 valores únicos. Se houver mais de 4 valores únicos de `UserID` para uma `SearchPhrase`, a função retornará 5 (4 + 1). A cláusula `HAVING` então filtra os valores de `SearchPhrase` para os quais o número de valores únicos de `UserID` é menor que 5. Isso fornecerá uma lista de palavras-chave de pesquisa que foram usadas por pelo menos 5 usuários únicos.
+
+<div id="summapfiltered">
+  ## sumMapFiltered
+</div>
+
+Esta função se comporta da mesma forma que [sumMap](/pt-BR/reference/functions/aggregate-functions/sumMap), exceto que também aceita, como parâmetro, um array de chaves para filtrar. Isso pode ser especialmente útil ao trabalhar com alta cardinalidade de chaves.
+
+**Sintaxe**
+
+`sumMapFiltered(keys_to_keep)(keys, values)`
+
+**Parâmetros**
+
+* `keys_to_keep`: [Array](/pt-BR/reference/data-types/array) de chaves para filtrar.
+* `keys`: [Array](/pt-BR/reference/data-types/array) de chaves.
+* `values`: [Array](/pt-BR/reference/data-types/array) de valores.
+
+**Valor retornado**
+
+* Retorna uma tupla de dois arrays: chaves em ordem classificada e valores somados para as chaves correspondentes.
+
+**Exemplo**
+
+```sql title="Query"
+CREATE TABLE sum_map
+(
+    `date` Date,
+    `timeslot` DateTime,
+    `statusMap` Nested(status UInt16, requests UInt64)
+)
+ENGINE = Log
+
+INSERT INTO sum_map VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
+```
+
+```sql title="Query"
+SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) FROM sum_map;
+```
+
+```response title="Response"
+   ┌─sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests)─┐
+1. │ ([1,4,8],[10,20,10])                                            │
+   └─────────────────────────────────────────────────────────────────┘
+```
+
+<div id="summapfilteredwithoverflow">
+  ## sumMapFilteredWithOverflow
+</div>
+
+Esta função se comporta da mesma forma que [sumMap](/pt-BR/reference/functions/aggregate-functions/sumMap), exceto que também aceita, como parâmetro, um array de chaves para filtrar. Isso pode ser especialmente útil ao trabalhar com alta cardinalidade de chaves. Ela difere da função [sumMapFiltered](#summapfiltered) porque realiza a soma com overflow — ou seja, retorna para a soma o mesmo tipo de dado do tipo de dado do argumento.
+
+**Sintaxe**
+
+`sumMapFilteredWithOverflow(keys_to_keep)(keys, values)`
+
+**Parâmetros**
+
+* `keys_to_keep`: [Array](/pt-BR/reference/data-types/array) de chaves para filtrar.
+* `keys`: [Array](/pt-BR/reference/data-types/array) de chaves.
+* `values`: [Array](/pt-BR/reference/data-types/array) de valores.
+
+**Valor retornado**
+
+* Retorna uma tupla de dois arrays: chaves ordenadas e valores somados para as chaves correspondentes.
+
+**Exemplo**
+
+Neste exemplo, criamos uma tabela `sum_map`, inserimos alguns dados nela e, em seguida, usamos `sumMapFilteredWithOverflow`, `sumMapFiltered` e a função `toTypeName` para comparar o resultado. Como `requests` era do tipo `UInt8` na tabela criada, `sumMapFiltered` promoveu o tipo dos valores somados para `UInt64` para evitar overflow, enquanto `sumMapFilteredWithOverflow` manteve o tipo como `UInt8`, que não é grande o suficiente para armazenar o resultado — ou seja, ocorreu overflow.
+
+```sql title="Query"
+CREATE TABLE sum_map
+(
+    `date` Date,
+    `timeslot` DateTime,
+    `statusMap` Nested(status UInt8, requests UInt8)
+)
+ENGINE = Log
+
+INSERT INTO sum_map VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
+```
+
+```sql title="Query"
+SELECT sumMapFilteredWithOverflow([1, 4, 8])(statusMap.status, statusMap.requests) as summap_overflow, toTypeName(summap_overflow) FROM sum_map;
+```
+
+```sql title="Query"
+SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) as summap, toTypeName(summap) FROM sum_map;
+```
+
+```response title="Response"
+   ┌─sum──────────────────┬─toTypeName(sum)───────────────────┐
+1. │ ([1,4,8],[10,20,10]) │ Tuple(Array(UInt8), Array(UInt8)) │
+   └──────────────────────┴───────────────────────────────────┘
+```
+
+```response title="Response"
+   ┌─summap───────────────┬─toTypeName(summap)─────────────────┐
+1. │ ([1,4,8],[10,20,10]) │ Tuple(Array(UInt8), Array(UInt64)) │
+   └──────────────────────┴────────────────────────────────────┘
+```
+
+<div id="sequencenextnode">
+  ## sequenceNextNode
+</div>
+
+Retorna o valor do próximo evento que correspondeu a uma cadeia de eventos.
+
+*Função experimental, `SET allow_experimental_funnel_functions = 1` para habilitá-la.*
+
+**Sintaxe**
+
+```sql
+sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event1, event2, event3, ...)
+```
+
+**Parâmetros**
+
+* `direction` — Usado para especificar a direção.
+  * forward — Avança.
+  * backward — Retrocede.
+
+* `base` — Usado para definir o ponto base.
+  * head — Define o ponto base como o primeiro evento.
+  * tail — Define o ponto base como o último evento.
+  * first&#95;match — Define o ponto base como o primeiro `event1` correspondente.
+  * last&#95;match — Define o ponto base como o último `event1` correspondente.
+
+**Argumentos**
+
+* `timestamp` — Nome da coluna que contém o timestamp. Tipos de dados compatíveis: [Date](/pt-BR/reference/data-types/date), [DateTime](/pt-BR/reference/data-types/datetime) e outros tipos inteiros sem sinal.
+* `event_column` — Nome da coluna que contém o valor do próximo evento a ser retornado. Tipos de dados compatíveis: [String](/pt-BR/reference/data-types/string) e [Nullable(String)](/pt-BR/reference/data-types/nullable).
+* `base_condition` — Condição que o ponto base deve atender.
+* `event1`, `event2`, ... — Condições que descrevem a cadeia de eventos. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Valores retornados**
+
+* `event_column[next_index]` — Se houver correspondência com o padrão e o próximo valor existir.
+* `NULL` - Se não houver correspondência com o padrão ou o próximo valor não existir.
+
+Tipo: [Nullable(String)](/pt-BR/reference/data-types/nullable).
+
+**Exemplo**
+
+Pode ser usado quando os eventos são A-&gt;B-&gt;C-&gt;D-&gt;E e você quer saber qual evento vem após B-&gt;C, que é D.
+
+A instrução de consulta que busca o evento após A-&gt;B:
+
+```sql title="Query"
+CREATE TABLE test_flow (
+    dt DateTime,
+    id int,
+    page String)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMMDD(dt)
+ORDER BY id;
+
+INSERT INTO test_flow VALUES (1, 1, 'A') (2, 1, 'B') (3, 1, 'C') (4, 1, 'D') (5, 1, 'E');
+
+SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'A', page = 'A', page = 'B') as next_flow FROM test_flow GROUP BY id;
+```
+
+```text title="Response"
+┌─id─┬─next_flow─┐
+│  1 │ C         │
+└────┴───────────┘
+```
+
+**Comportamento de `forward` e `head`**
+
+```sql
+ALTER TABLE test_flow DELETE WHERE 1 = 1 settings mutations_sync = 1;
+
+INSERT INTO test_flow VALUES (1, 1, 'Home') (2, 1, 'Gift') (3, 1, 'Exit');
+INSERT INTO test_flow VALUES (1, 2, 'Home') (2, 2, 'Home') (3, 2, 'Gift') (4, 2, 'Basket');
+INSERT INTO test_flow VALUES (1, 3, 'Gift') (2, 3, 'Home') (3, 3, 'Gift') (4, 3, 'Basket');
+```
+
+```sql
+SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'Home', page = 'Home', page = 'Gift') FROM test_flow GROUP BY id;
+
+                  dt   id   page
+ 1970-01-01 09:00:01    1   Home // Ponto base, Correspondeu com Home
+ 1970-01-01 09:00:02    1   Gift // Correspondeu com Gift
+ 1970-01-01 09:00:03    1   Exit // O resultado
+
+ 1970-01-01 09:00:01    2   Home // Ponto base, Correspondeu com Home
+ 1970-01-01 09:00:02    2   Home // Não correspondeu com Gift
+ 1970-01-01 09:00:03    2   Gift
+ 1970-01-01 09:00:04    2   Basket
+
+ 1970-01-01 09:00:01    3   Gift // Ponto base, Não correspondeu com Home
+ 1970-01-01 09:00:02    3   Home
+ 1970-01-01 09:00:03    3   Gift
+ 1970-01-01 09:00:04    3   Basket
+```
+
+**Comportamento de `backward` e `tail`**
+
+```sql
+SELECT id, sequenceNextNode('backward', 'tail')(dt, page, page = 'Basket', page = 'Basket', page = 'Gift') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home
+1970-01-01 09:00:02    1   Gift
+1970-01-01 09:00:03    1   Exit // Ponto base, não corresponde a Basket
+
+1970-01-01 09:00:01    2   Home
+1970-01-01 09:00:02    2   Home // O resultado
+1970-01-01 09:00:03    2   Gift // Corresponde a Gift
+1970-01-01 09:00:04    2   Basket // Ponto base, corresponde a Basket
+
+1970-01-01 09:00:01    3   Gift
+1970-01-01 09:00:02    3   Home // O resultado
+1970-01-01 09:00:03    3   Gift // Ponto base, Matched with Gift
+1970-01-01 09:00:04    3   Basket // Ponto base, corresponde a Basket
+```
+
+**Comportamento de `forward` e `first_match`**
+
+```sql
+SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', page = 'Gift') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home
+1970-01-01 09:00:02    1   Gift // Ponto base
+1970-01-01 09:00:03    1   Exit // O resultado
+
+1970-01-01 09:00:01    2   Home
+1970-01-01 09:00:02    2   Home
+1970-01-01 09:00:03    2   Gift // Ponto base
+1970-01-01 09:00:04    2   Basket  The result
+
+1970-01-01 09:00:01    3   Gift // Ponto base
+1970-01-01 09:00:02    3   Home // O resultado
+1970-01-01 09:00:03    3   Gift
+1970-01-01 09:00:04    3   Basket
+```
+
+```sql
+SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home
+1970-01-01 09:00:02    1   Gift // Ponto base
+1970-01-01 09:00:03    1   Exit // Sem correspondência com Home
+
+1970-01-01 09:00:01    2   Home
+1970-01-01 09:00:02    2   Home
+1970-01-01 09:00:03    2   Gift // Ponto base
+1970-01-01 09:00:04    2   Basket // Sem correspondência com Home
+
+1970-01-01 09:00:01    3   Gift // Ponto base
+1970-01-01 09:00:02    3   Home // Correspondência com Home
+1970-01-01 09:00:03    3   Gift // O resultado
+1970-01-01 09:00:04    3   Basket
+```
+
+**Comportamento de `backward` e `last_match`**
+
+```sql
+SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', page = 'Gift') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home // O resultado
+1970-01-01 09:00:02    1   Gift // Ponto base
+1970-01-01 09:00:03    1   Exit
+
+1970-01-01 09:00:01    2   Home
+1970-01-01 09:00:02    2   Home // O resultado
+1970-01-01 09:00:03    2   Gift // Ponto base
+1970-01-01 09:00:04    2   Basket
+
+1970-01-01 09:00:01    3   Gift
+1970-01-01 09:00:02    3   Home // O resultado
+1970-01-01 09:00:03    3   Gift // Ponto base
+1970-01-01 09:00:04    3   Basket
+```
+
+```sql
+SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home // Correspondeu com Home, o resultado é null
+1970-01-01 09:00:02    1   Gift // Ponto base
+1970-01-01 09:00:03    1   Exit
+
+1970-01-01 09:00:01    2   Home // O resultado
+1970-01-01 09:00:02    2   Home // Correspondeu com Home
+1970-01-01 09:00:03    2   Gift // Ponto base
+1970-01-01 09:00:04    2   Basket
+
+1970-01-01 09:00:01    3   Gift // O resultado
+1970-01-01 09:00:02    3   Home // Correspondeu com Home
+1970-01-01 09:00:03    3   Gift // Ponto base
+1970-01-01 09:00:04    3   Basket
+```
+
+**Comportamento de `base_condition`**
+
+```sql
+CREATE TABLE test_flow_basecond
+(
+    `dt` DateTime,
+    `id` int,
+    `page` String,
+    `ref` String
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMMDD(dt)
+ORDER BY id;
+
+INSERT INTO test_flow_basecond VALUES (1, 1, 'A', 'ref4') (2, 1, 'A', 'ref3') (3, 1, 'B', 'ref2') (4, 1, 'B', 'ref1');
+```
+
+```sql
+SELECT id, sequenceNextNode('forward', 'head')(dt, page, ref = 'ref1', page = 'A') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref
+ 1970-01-01 09:00:01    1   A      ref4 // O head não pode ser o ponto base porque a coluna ref do head não corresponde a 'ref1'.
+ 1970-01-01 09:00:02    1   A      ref3
+ 1970-01-01 09:00:03    1   B      ref2
+ 1970-01-01 09:00:04    1   B      ref1
+```
+
+```sql
+SELECT id, sequenceNextNode('backward', 'tail')(dt, page, ref = 'ref4', page = 'B') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref
+ 1970-01-01 09:00:01    1   A      ref4
+ 1970-01-01 09:00:02    1   A      ref3
+ 1970-01-01 09:00:03    1   B      ref2
+ 1970-01-01 09:00:04    1   B      ref1 // O tail não pode ser o ponto base porque a coluna ref do tail não corresponde a 'ref4'.
+```
+
+```sql
+SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, ref = 'ref3', page = 'A') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref
+ 1970-01-01 09:00:01    1   A      ref4 // Esta linha não pode ser ponto base porque a coluna ref não corresponde a 'ref3'.
+ 1970-01-01 09:00:02    1   A      ref3 // Ponto base
+ 1970-01-01 09:00:03    1   B      ref2 // O resultado
+ 1970-01-01 09:00:04    1   B      ref1
+```
+
+```sql
+SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, ref = 'ref2', page = 'B') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref
+ 1970-01-01 09:00:01    1   A      ref4
+ 1970-01-01 09:00:02    1   A      ref3 // O resultado
+ 1970-01-01 09:00:03    1   B      ref2 // Ponto base
+ 1970-01-01 09:00:04    1   B      ref1 // Esta linha não pode ser ponto base porque a coluna ref não corresponde a 'ref2'.
+```

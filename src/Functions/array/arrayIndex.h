@@ -6,6 +6,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/LowCardinalityExecutionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -27,9 +28,16 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypeObject.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool type_json_skip_null_typed_paths;
+}
 
 namespace ErrorCodes
 {
@@ -509,7 +517,14 @@ class FunctionArrayIndex final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayIndex>(); }
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionArrayIndex>(context->getSettingsRef()[Setting::type_json_skip_null_typed_paths]);
+    }
+
+    /// The default is for Map adapters that hold this function as a member; JSON is not reachable from them.
+    explicit FunctionArrayIndex(bool skip_null_typed_paths_ = false) : skip_null_typed_paths(skip_null_typed_paths_) {}
 
     /// Get function name.
     String getName() const override { return name; }
@@ -836,6 +851,13 @@ private:
      */
     static ColumnPtr executeArrayLowCardinality(const ColumnsWithTypeAndName & arguments)
     {
+        /// The LowCardinality optimization compares dictionary indices instead of actual values.
+        /// This is correct for linear scan (indexOf, has, countEqual) where only equality is checked,
+        /// but incorrect for binary search (indexOfAssumeSorted) where ordering matters --
+        /// dictionary indices are assigned in insertion order, not in sorted order of values.
+        if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
+            return nullptr;
+
         const auto * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         const auto * col_array_const = checkAndGetColumnConstData<ColumnArray>(arguments[0].column.get());
 
@@ -855,36 +877,28 @@ private:
 
         const auto & array_type  = assert_cast<const DataTypeArray &>(*arguments[0].type);
         const auto target_type = recursiveRemoveLowCardinality(array_type.getNestedType());
-        auto right = recursiveRemoveLowCardinality(right_const->getDataColumnPtr());
+
+        /// A float zero equals two byte-distinct dictionary entries, -0.0 and 0.0, and a single index
+        /// cannot denote both, so leave a zero needle to the path that compares values. The needle
+        /// type is narrowed only so that reading it as a float is total.
+        const auto needle_type = removeNullable(recursiveRemoveLowCardinality(arguments[1].type));
+        if (isFloat(removeNullable(target_type)) && (isNumber(needle_type) || isEnum(needle_type))
+            && !right_const->isNullAt(0) && right_const->getDataColumnPtr()->getFloat64(0) == 0.0)
+            return nullptr;
 
         UInt64 index = 0;
         UInt64 left_size = arguments[0].column->size();
         ResultColumnPtr col_result = ResultColumnType::create();
 
-        if (!right->isNullAt(0))
+        if (!LowCardinalityExecutionHelpers::dictionaryIndexForConstant(
+                *left_lc, right_const->getDataColumnPtr(), arguments[1].type, target_type, index))
         {
-            auto right_type = recursiveRemoveLowCardinality(arguments[1].type);
-            right = castColumn({right, right_type, ""}, target_type);
+            col_result->getData().resize_fill(col_array->size());
 
-            if (right->isNullable())
-                right = checkAndGetColumn<ColumnNullable>(*right).getNestedColumnPtr();
+            if (col_array_const)
+                return ColumnConst::create(std::move(col_result), left_size);
 
-            std::string_view elem = right->getDataAt(0);
-            const auto & left_dict = left_lc->getDictionary();
-
-            if (std::optional<UInt64> maybe_index = left_dict.getOrFindValueIndex(elem); maybe_index)
-            {
-                index = *maybe_index;
-            }
-            else
-            {
-                col_result->getData().resize_fill(col_array->size());
-
-                if (col_array_const)
-                    return ColumnConst::create(std::move(col_result), left_size);
-
-                return col_result;
-            }
+            return col_result;
         }
 
         Impl::Main<ConcreteAction, true>::vector(
@@ -973,23 +987,24 @@ private:
      * Check if a path exists in JSON object for a specific row.
      * Returns true if the path (or any path with this prefix) exists.
      */
-    static bool hasPathInObjectRow(
+    bool hasPathInObjectRow(
         const ColumnObject & object_column,
         size_t row,
         const String & path,
         const String & prefix,
         const ColumnString * shared_paths,
-        const ColumnVector<UInt64>::Container & shared_offsets)
+        const ColumnVector<UInt64>::Container & shared_offsets) const
     {
         /// First, check for the requested path in typed paths.
-        /// Typed paths are always considered to be present in each row (even if null).
+        /// Typed paths are always considered to be present in each row (even if null),
+        /// unless skip_null_typed_paths is enabled.
         const auto & typed_paths = object_column.getTypedPaths();
-        if (typed_paths.contains(path))
+        if (auto it = typed_paths.find(path); it != typed_paths.end() && (!skip_null_typed_paths || !it->second->isNullAt(row)))
             return true;
 
         for (const auto & [key, col] : typed_paths)
         {
-            if (key.starts_with(prefix))
+            if (key.starts_with(prefix) && (!skip_null_typed_paths || !col->isNullAt(row)))
                 return true;
         }
 
@@ -1014,13 +1029,14 @@ private:
      * Checks if a path exists in the JSON object.
      *
      * The function checks three storage tiers in order:
-     * 1. Typed paths - explicitly declared paths that are always present (even if null)
+     * 1. Typed paths - explicitly declared paths that are always present (even if null,
+     *    unless skip_null_typed_paths is enabled)
      * 2. Dynamic paths - paths inferred at runtime, null means absence
      * 3. Shared data - overflow storage for rare paths, uses binary search
      *
      * Optimizations:
      * - For constant path: if found in typed paths, returns 1 for all rows immediately
-     * - For constant path: pre-collects relevant dynamic columns to avoid repeated lookups
+     * - For constant path: pre-collects relevant columns to avoid repeated lookups
      * - For non-constant path: uses hasPathInObjectRow() helper with early returns
      *
      * @param arguments - [0] JSON column (or const JSON), [1] path column
@@ -1054,49 +1070,52 @@ private:
             const String path(path_column.getDataAt(0));
             const String prefix = path + ".";
 
-            /// Optimization: if path or its prefix exists in typed paths,
-            /// we can return 1 for all rows since typed paths are always present.
+            /// Collect columns that match exact path or prefix.
+            /// These columns need to be checked for non-null values per row.
+            VectorWithMemoryTracking<const IColumn *> relevant_columns;
+
             const auto & typed_paths = object_column.getTypedPaths();
-            bool found_in_typed = typed_paths.contains(path);
-            if (!found_in_typed)
+            bool found_in_typed = false;
+
+            if (auto it = typed_paths.find(path); it != typed_paths.end())
             {
-                for (const auto & [key, col] : typed_paths)
+                found_in_typed = true;
+                relevant_columns.push_back(it->second.get());
+            }
+
+            for (const auto & [key, col] : typed_paths)
+            {
+                if (key.starts_with(prefix))
                 {
-                    if (key.starts_with(prefix))
-                    {
-                        found_in_typed = true;
-                        break;
-                    }
+                    found_in_typed = true;
+                    relevant_columns.push_back(col.get());
                 }
             }
 
-            if (found_in_typed)
+            /// Optimization: typed paths are always present, so a match means 1 for all rows.
+            /// With skip_null_typed_paths the typed columns are checked per row instead.
+            if (found_in_typed && !skip_null_typed_paths)
             {
-                /// Path exists in typed paths - return 1 for all rows
                 std::fill(res_data.begin(), res_data.end(), 1);
                 return res_col;
             }
 
-            /// Collect columns from dynamic paths that match exact path or prefix.
-            /// These columns need to be checked for non-null values per row.
-            VectorWithMemoryTracking<const IColumn *> relevant_dynamic_columns;
             const auto & dynamic_paths = object_column.getDynamicPathsPtrs();
 
             if (auto it = dynamic_paths.find(path); it != dynamic_paths.end())
-                relevant_dynamic_columns.push_back(it->second);
+                relevant_columns.push_back(it->second);
 
             for (const auto & [key, col] : dynamic_paths)
             {
                 if (key.starts_with(prefix))
-                    relevant_dynamic_columns.push_back(col);
+                    relevant_columns.push_back(col);
             }
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 bool found = false;
 
-                /// Check dynamic paths - need to verify non-null for each row
-                for (const auto * col : relevant_dynamic_columns)
+                for (const auto * col : relevant_columns)
                 {
                     if (!col->isNullAt(i))
                     {
@@ -1105,7 +1124,7 @@ private:
                     }
                 }
 
-                /// Check shared data if not found in dynamic paths
+                /// Check shared data if not found in typed or dynamic paths
                 if (!found)
                 {
                     found = hasPathInSharedData(path, prefix, shared_paths, shared_offsets, i);
@@ -1323,5 +1342,7 @@ private:
 
         return col_res;
     }
+
+    bool skip_null_typed_paths;
 };
 }

@@ -10,7 +10,10 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-    "node", with_zookeeper=True, main_configs=["configs/remote_servers.xml"]
+    "node",
+    with_zookeeper=True,
+    main_configs=["configs/remote_servers.xml"],
+    user_configs=["configs/users.xml"],
 )
 
 

@@ -1,0 +1,6 @@
+bloom filter off: row group 0 (PLAIN) cannot be ruled out, both row groups are read (20000)
+{"result":[{"count()":10000}],"rows_read":20000}
+bloom filter on: the small equality still prunes the PLAIN+bloom row group 0, even though an over-cap IN on the same column is used only by the dictionary filter (10000)
+{"result":[{"count()":10000}],"rows_read":10000}
+the result is identical regardless of the bloom filter
+OK

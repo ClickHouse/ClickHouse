@@ -125,6 +125,44 @@
         SETTINGS enable_join_runtime_filters=1
     </query>
 
+    <!-- Mixed equi + non-equi ON predicate: before this fix no runtime filter was built at all.
+         o_totalprice > c_nationkey * 100 spans both sides so it cannot be pushed to PREWHERE
+         and stays as a post-join filter, while the runtime filter is built on c_custkey only. -->
+
+    <!-- 1 element in filter (ETHIOPIA): equality key filters ~99.999% of probe rows -->
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'ETHIOPIA') AS cn
+        ON c_custkey = o_custkey AND o_totalprice > c_nationkey * 100
+        SETTINGS enable_join_runtime_filters=0
+    </query>
+
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'ETHIOPIA') AS cn
+        ON c_custkey = o_custkey AND o_totalprice > c_nationkey * 100
+        SETTINGS enable_join_runtime_filters=1
+    </query>
+
+    <!-- 10000 elements in filter (GERMANY): equality key filters ~90% of probe rows -->
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'GERMANY') AS cn
+        ON c_custkey = o_custkey AND o_totalprice > c_nationkey * 100
+        SETTINGS enable_join_runtime_filters=0
+    </query>
+
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'GERMANY') AS cn
+        ON c_custkey = o_custkey AND o_totalprice > c_nationkey * 100
+        SETTINGS enable_join_runtime_filters=1
+    </query>
+
     <drop_query>DROP TABLE orders</drop_query>
     <drop_query>DROP TABLE customer</drop_query>
     <drop_query>DROP TABLE nation</drop_query>

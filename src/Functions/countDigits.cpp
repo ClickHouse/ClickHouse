@@ -7,7 +7,7 @@
 #include <Core/callOnTypeIndex.h>
 #include <base/extended_types.h>
 #include <base/itoa.h>
-
+#include <Common/digits10.h>
 
 namespace DB
 {
@@ -20,39 +20,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-template <typename T>
-int digits10(T x)
-{
-    if (x < 10ULL)
-        return 1;
-    if (x < 100ULL)
-        return 2;
-    if (x < 1000ULL)
-        return 3;
-
-    if (x < 1000000000000ULL)
-    {
-        if (x < 100000000ULL)
-        {
-            if (x < 1000000ULL)
-            {
-                if (x < 10000ULL)
-                    return 4;
-                return 5 + (x >= 100000ULL);
-            }
-
-            return 7 + (x >= 10000000ULL);
-        }
-
-        if (x < 10000000000ULL)
-            return 9 + (x >= 1000000000ULL);
-
-        return 11 + (x >= 100000000000ULL);
-    }
-
-    return 12 + digits10(x / 1000000000000ULL);
-}
 
 /// Returns number of decimal digits you need to represent the value.
 /// For Decimal values takes in account their scales: calculates result over underlying int type which is (value * scale).
@@ -140,18 +107,18 @@ private:
                     /// well-defined modular arithmetic and preserves the correct magnitude.
                     /// The outer cast back to `NativeT` is needed because integer promotion
                     /// widens narrower unsigned types to `int` before applying unary minus.
-                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(static_cast<NativeT>(-static_cast<NativeT>(value))));
+                    dst_data[i] = static_cast<UInt8>(common::digits10<NativeT>(static_cast<NativeT>(-static_cast<NativeT>(value))));
                 else
-                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(value));
+                    dst_data[i] = static_cast<UInt8>(common::digits10<NativeT>(value));
             }
             else
             {
                 auto value = src_data[i];
                 if (value < 0) [[unlikely]]
                     /// See note above.
-                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(static_cast<NativeT>(-static_cast<NativeT>(value))));
+                    dst_data[i] = static_cast<UInt8>(common::digits10<NativeT>(static_cast<NativeT>(-static_cast<NativeT>(value))));
                 else
-                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(value));
+                    dst_data[i] = static_cast<UInt8>(common::digits10<NativeT>(value));
             }
         }
     }

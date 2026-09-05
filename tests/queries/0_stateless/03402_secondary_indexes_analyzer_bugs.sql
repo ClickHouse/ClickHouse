@@ -1,6 +1,7 @@
 -- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel-replicas
-
 --- #65607
+SET explain_query_plan_default = 'legacy';
+
 select 'index is applied while using column alias';
 
 drop table if exists t;
@@ -19,7 +20,6 @@ SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 INSERT INTO t SELECT toString(number), number, toString(number) from numbers(65536);
 
-explain indexes=1 select tenant,recordTimestamp from t where colAlias like '%abcd%' settings enable_analyzer=0;
 explain indexes=1 select tenant,recordTimestamp from t where colAlias like '%abcd%' settings enable_analyzer=1;
 
 
@@ -41,10 +41,6 @@ AS SELECT * FROM tab_v1;
 
 INSERT INTO tab_v1 (content) VALUES ('aaa bbb'), ('ccc ddd');
 
-SELECT count()
-FROM tab_v3
-WHERE content = 'iii'
-SETTINGS force_data_skipping_indices='idx_content_bloom', enable_analyzer=0;
 
 SELECT count()
 FROM tab_v3

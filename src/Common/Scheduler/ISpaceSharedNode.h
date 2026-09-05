@@ -19,11 +19,7 @@ namespace DB
 class ISpaceSharedNode : public ISchedulerNode
 {
 public:
-    explicit ISpaceSharedNode(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : ISchedulerNode(event_queue_, config, config_prefix)
-    {}
-
-    ISpaceSharedNode(EventQueue & event_queue_, const SchedulerNodeInfo & info_)
+    explicit ISpaceSharedNode(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {})
         : ISchedulerNode(event_queue_, info_)
     {}
 

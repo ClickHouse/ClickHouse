@@ -1,0 +1,192 @@
+---
+title: 'إعداد الشبكات الخاصة لـ BYOC على AWS'
+slug: /cloud/reference/byoc/onboarding/network-aws
+sidebarTitle: 'إعداد الشبكات الخاصة على AWS'
+keywords: ['BYOC', 'سحابة', 'Bring Your Own Cloud', 'ربط VPC النظيري', 'aws', 'PrivateLink']
+description: 'إعداد ربط VPC النظيري أو PrivateLink لـ BYOC على AWS'
+doc_type: 'مرجع'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يدعم ClickHouse BYOC على AWS خيارين للاتصال الخاص، هما ربط VPC النظيري وAWS PrivateLink.
+
+<div id="common-prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+الخطوات المشتركة اللازمة لكلٍّ من ربط VPC النظيري وPrivateLink.
+
+<div id="step-enable-private-load-balancer-for-clickhouse-byoc">
+  ### فعِّل موازن التحميل الخاص لـ ClickHouse BYOC
+</div>
+
+في ClickHouse Cloud console، فعِّل **موازن التحميل الخاص** للبنية التحتية لـ BYOC.
+
+<Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC تفعيل موازن التحميل الخاص" border />
+
+<div id="aws-vpc-peering">
+  ## إعداد ربط VPC النظيري
+</div>
+
+لإنشاء ربط VPC النظيري أو حذفه لـ ClickHouse BYOC، اتبع الخطوات التالية:
+
+<Steps>
+  <Step title="إنشاء اتصال peering" id="step-1-create-a-peering-connection">
+    1. انتقل إلى VPC Dashboard في حساب ClickHouse BYOC.
+    2. اختر Peering Connections.
+    3. انقر على Create Peering Connection
+    4. اضبط VPC Requester على ClickHouse VPC ID.
+    5. اضبط VPC Accepter على معرّف VPC المستهدف. (اختر حسابًا آخر إذا كان ذلك ينطبق)
+    6. انقر على Create Peering Connection.
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-1.webp" size="lg" alt="BYOC إنشاء peering connection" border />
+  </Step>
+
+  <Step title="قبول طلب اتصال peering" id="step-2-accept-the-peering-connection-request">
+    انتقل إلى حساب الربط النظيري، ومن الصفحة (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) يمكن للعميل الموافقة على طلب ربط VPC النظيري هذا.
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-2.webp" size="lg" alt="BYOC قبول peering connection" border />
+  </Step>
+
+  <Step title="إضافة الوجهة إلى جداول التوجيه في ClickHouse VPC" id="step-3-add-destination-to-clickhouse-vpc-route-tables">
+    في حساب ClickHouse BYOC،
+
+    1. اختر Route Tables في VPC Dashboard.
+    2. ابحث عن ClickHouse VPC ID. ثم حرّر كل جدول توجيه مرتبط بالشبكات الفرعية الخاصة.
+    3. انقر على الزر Edit ضمن علامة التبويب Routes.
+    4. انقر على Add another route.
+    5. أدخل نطاق CIDR الخاص بـ VPC المستهدف في خانة Destination.
+    6. اختر “Peering Connection” ومعرّف اتصال peering في خانة Target.
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-3.webp" size="lg" alt="BYOC إضافة جدول توجيه" border />
+  </Step>
+
+  <Step title="إضافة الوجهة إلى جداول توجيه VPC المستهدف" id="step-4-add-destination-to-the-target-vpc-route-tables">
+    في حساب AWS الخاص بالربط النظيري،
+
+    1. اختر Route Tables في VPC Dashboard.
+    2. ابحث عن معرّف VPC المستهدف.
+    3. انقر على الزر Edit ضمن علامة التبويب Routes.
+    4. انقر على Add another route.
+    5. أدخل نطاق CIDR الخاص بـ ClickHouse VPC في خانة Destination.
+    6. اختر “Peering Connection” ومعرّف اتصال peering في خانة Target.
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-4.webp" size="lg" alt="BYOC إضافة جدول توجيه" border />
+  </Step>
+
+  <Step title="تعديل مجموعة الأمان للسماح بالوصول من VPC المرتبط نظيريًا" id="step-5-edit-security-group-to-allow-peered-vpc-access">
+    في حساب ClickHouse BYOC، تحتاج إلى تحديث إعدادات مجموعة الأمان للسماح بحركة المرور القادمة من VPC المرتبط نظيريًا لديك. يُرجى التواصل مع ClickHouse Support لطلب إضافة قواعد واردة تتضمن نطاقات CIDR الخاصة بـ VPC المرتبط نظيريًا لديك.
+
+    ***
+
+    يُفترض الآن أن تصبح خدمة ClickHouse قابلة للوصول من VPC المرتبط نظيريًا.
+  </Step>
+</Steps>
+
+للوصول إلى ClickHouse بشكل خاص، يتم توفير موازن تحميل خاص ونقطة نهاية لاتصال آمن من VPC المرتبط نظيريًا الخاص بالمستخدم. وتتبع نقطة النهاية الخاصة تنسيق نقطة النهاية العامة مع اللاحقة `-private`. على سبيل المثال:
+
+* **نقطة النهاية العامة**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+* **نقطة النهاية الخاصة**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+
+اختياريًا، بعد التحقق من أن ربط VPC النظيري يعمل، يمكنك طلب إزالة موازن التحميل العام لـ ClickHouse BYOC.
+
+<div id="setup-privatelink">
+  ## إعداد PrivateLink
+</div>
+
+يوفّر AWS PrivateLink اتصالًا آمنًا وخاصًا بخدمات ClickHouse BYOC دون الحاجة إلى ربط VPC النظيري أو بوابات الإنترنت. تمرّ كل حركة البيانات داخل شبكة AWS، مما يضمن عدم عبورها الإنترنت العام مطلقًا.
+
+<Note>
+  **الاتصالات عبر المناطق.** يوفّر مفتاح التبديل **Enable private link** في ClickHouse console خدمة نقطة النهاية ولا يغطي سوى المستهلكين **ضمن المنطقة نفسها**. يعطّل AWS الوصول عبر المناطق لخدمات نقطة النهاية افتراضيًا، ولا تديره ClickHouse console — إذا كان عملاؤك موجودين في منطقة مختلفة، فعليك تمكينه بنفسك: إذ تقع خدمة نقطة النهاية في حساب BYOC الخاص بك، أضف مناطق المستهلكين إلى قائمة **Supported regions** الخاصة بها في AWS console لديك (انظر الخطوة 3 أدناه). لن يغيّر ClickHouse هذه القيم أو يعيد تعيينها. تُطبَّق أسعار AWS لنقل البيانات عبر المناطق.
+</Note>
+
+<Steps>
+  <Step title="فعّل Private Link في وحدة تحكم ClickHouse" id="step-1-enable-private-link">
+    <Note>
+      تأكد من تمكين **موازن التحميل الخاص** كشرط مسبق.
+    </Note>
+
+    <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="تمكين BYOC PrivateLink" border />
+  </Step>
+
+  <Step title={<>احصل على <code>اسم الخدمة</code> لنقطة النهاية</>} id="step-2-obtain-endpoint-service-name">
+    1. في وحدة تحكم ClickHouse Cloud، انتقل إلى صفحة Settings للخدمة التي تريد الاتصال بها عبر PrivateLink.
+    2. انقر على &quot;Set up private endpoint&quot;.
+    3. في اللوحة المنبثقة، انسخ قيمة `Service name` — ستستخدمها في الخطوة التالية. (قد يستغرق إنشاء القيمة بعض الوقت بعد تفعيل PrivateLink.)
+       <Image img="/images/cloud/security/aws-privatelink-pe-create.webp" size="md" alt="نقاط النهاية الخاصة" border />
+  </Step>
+
+  <Step title="أنشئ endpoint في شبكتك" id="step-3-create-endpoint">
+    1. افتح **وحدة تحكم AWS الخاصة بك** (أي حساب AWS الذي يوجد فيه تطبيق العميل) ← VPC ← Endpoints ← Create endpoints.
+
+    2. اختر &quot;Endpoint services that use NLBs and GWLBs&quot; واستخدم `Service name` الذي حصلت عليه في الخطوة السابقة.
+
+    3. انقر على &quot;Verify service&quot;.
+       <Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="إعدادات نقطة نهاية AWS PrivateLink" border />
+
+    4. (اختياري) إذا أردت إنشاء اتصال عابر للمناطق عبر PrivateLink، فعّل مربع الاختيار &quot;Cross region endpoint&quot; وحدد منطقة الخدمة. منطقة الخدمة هي المنطقة التي أُنشئت فيها البنية التحتية لـ BYOC. في الوقت نفسه،
+       1. افتح **وحدة تحكم AWS لـ BYOC** (أي حساب AWS الذي أُنشئت فيه البنية التحتية لـ BYOC) ← VPC ← Endpoint services ← `clickhouse-cloud-infra-xxx` ← Supported regions.
+       2. أضف المنطقة التي يعمل فيها تطبيق العميل إلى قائمة المناطق المدعومة. افتراضيًا، لا تكون مدعومة إلا منطقة البنية التحتية لـ BYOC هذه. يمكنك إضافة مناطق متعددة إذا أردت الاتصال من مناطق مختلفة، ولن يغيّر ClickHouse هذه القيم أو يعيد تعيينها.
+          <Image img="/images/cloud/reference/byoc-privatelink-aws-cross-region.webp" size="md" alt="إعدادات نقطة نهاية AWS PrivateLink العابرة للمناطق" border />
+
+    5. اختر VPC والشبكات الفرعية (يوصى بشبكة فرعية واحدة لكل منطقة توافر).
+       <Image img="/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp" size="md" alt="اختيار VPC والشبكات الفرعية" border />
+
+    6. **مهم**: فعّل &quot;Private DNS names&quot; لنقطة النهاية، إذ يلزم ذلك لكي تعمل ميزة DNS الخاص بصورة صحيحة.
+       يستخدم DNS الخاص لنقاط نهاية BYOC (بتنسيق `*.vpce.{subdomain}`) ميزة &quot;Private DNS names&quot; المضمنة في AWS PrivateLink. لا تحتاج إلى سجلات Route53، إذ يتم حل أسماء DNS تلقائيًا عندما:
+       * تكون &quot;Private DNS names&quot; مفعّلة، و
+       * تكون &quot;DNS Hostnames&quot; مفعّلة
+
+         من خلال VPC Settings ← DNS resolution وDNS hostnames.
+
+         يضمن ذلك توجيه الاتصالات التي تستخدم النطاق الفرعي `vpce` تلقائيًا عبر نقطة نهاية PrivateLink، دون إعدادات DNS إضافية.
+
+    7. (اختياري) عيّن مجموعات الأمان/العلامات.
+       <Note>
+         تأكد من السماح بالمنافذ `443` و`8443` و`9440` في مجموعة الأمان.
+       </Note>
+
+    8. انقر على &quot;Create endpoint&quot; وانتظر لحظة ريثما يتم إنشاء نقطة النهاية.
+
+    9. بعد إنشاء نقطة النهاية، انسخ قيمة `Endpoint ID`، إذ ستستخدمها في الخطوة التالية.
+       <Image img="/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp" size="md" alt="معرّف نقطة نهاية VPC" border />
+  </Step>
+
+  <Step title="الموافقة على اتصال نقطة النهاية" id="step-4-approve-endpoint-connection">
+    1. افتح **وحدة تحكم VPC الخاص بـ BYOC** مرة أخرى ← خدمات نقاط النهاية ← `clickhouse-cloud-infra-xxx` ← اتصالات نقاط النهاية.
+    2. ابحث عن طلب الاتصال المُنشأ من VPC الخاص بك، ثم انقر على &quot;قبول طلب اتصال نقطة النهاية&quot; للموافقة عليه.
+       <Image img="/images/cloud/reference/byoc-privatelink-2.webp" size="md" alt="الموافقة على BYOC PrivateLink" border />
+  </Step>
+
+  <Step title={<>أضف <code>Endpoint ID</code> إلى قائمة السماح الخاصة بخدمة ClickHouse</>} id="step-5-add-endpoint-id-to-services-allow-list">
+    1. في ClickHouse Cloud console، انتقل إلى صفحة Settings للخدمة التي تريد الاتصال بها عبر PrivateLink.
+    2. انقر على &quot;Set up private endpoint&quot;.
+    3. في اللوحة المنبثقة، أدخل `Endpoint ID` الذي حصلت عليه في الخطوة السابقة، وأضف وصفًا اختياريًا.
+    4. انقر على &quot;Create endpoint&quot;.
+
+    <Note>
+      للسماح بالوصول من اتصال PrivateLink قائم، استخدم القائمة المنسدلة لنقطة النهاية القائمة.
+      تعرض القائمة المنسدلة اتصالات PrivateLink القائمة بالخدمات ضمن البنية التحتية نفسها.
+    </Note>
+
+    <Image img="/images/cloud/security/aws-privatelink-pe-filters.webp" size="md" alt="عامل تصفية لنقاط النهاية الخاصة" border />
+  </Step>
+
+  <Step title="الوصول إلى مثيل باستخدام PrivateLink" id="step-6-connect-via-privatelink">
+    1. في وحدة تحكم ClickHouse Cloud، انتقل إلى صفحة Settings الخاصة بالخدمة.
+    2. انقر على &quot;إعداد نقطة نهاية خاصة&quot;.
+    3. في اللوحة المنبثقة التي تفتح، انسخ `DNS name`.
+
+       <Image img="/images/cloud/security/aws-privatelink-pe-dns-name.webp" size="md" alt="اسم DNS لنقطة النهاية الخاصة" border />
+
+       يُتحكَّم في الوصول إلى خدمات ClickHouse عبر PrivateLink على مستويين:
+
+       1. **سياسة تفويض Istio**: سياسات تفويض على مستوى الخدمة تديرها ClickHouse ضمن البنية التحتية لـ BYOC الخاصة بك
+       2. **Security Group لنقطة نهاية VPC**: تتحكم Security Group المرفقة بنقطة نهاية VPC في الموارد ضمن VPC لديك التي يمكنها استخدام نقطة النهاية
+
+       <Note>
+         ميزة &quot;فرض قواعد Inbound على حركة مرور PrivateLink&quot; في private load balancer معطّلة، لذا لا يُتحكَّم في الوصول إلا من خلال سياسات تفويض Istio وSecurity Group لنقطة نهاية VPC.
+       </Note>
+  </Step>
+</Steps>

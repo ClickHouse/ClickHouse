@@ -221,7 +221,7 @@ Common adaptation patterns:
 - Changed header paths
 - Missing or mismatched feature guards in copied public headers
 
-Build the project to find compilation errors. Redirect `ninja` output to a log file in the build directory and use a subagent to analyze the results. If a build directory does not exist yet, configure one first (see `docs/en/development/build.md` — typically `cmake -S . -B build`, or use an existing `build_*` directory):
+Build the project to find compilation errors. Redirect `ninja` output to a log file in the build directory and use a subagent to analyze the results. If a build directory does not exist yet, configure one first (see `docs/resources/develop-contribute/build/build.mdx` — typically `cmake -S . -B build`, or use an existing `build_*` directory):
 
 ```bash
 ninja -C build > build/build_bump_${LIB}.log 2>&1
@@ -306,7 +306,6 @@ Use the PR template at `.github/PULL_REQUEST_TEMPLATE.md` — do not inline a cu
 - a short description of what was updated and why
 - the Changelog category (pick one from the template); typical choices for contrib bumps are `Not for changelog`, `Bug Fix` (for CVE fixes), `Build/Testing/Packaging Improvement`, or `Improvement`
 - the Changelog entry
-- the Documentation checkbox
 
 Create the PR with:
 

@@ -1,0 +1,342 @@
+---
+position: 6
+slug: /clickhouse-operator/guides/tls
+title: تأمين عنقود باستخدام TLS
+keywords: ['kubernetes', 'tls', 'ssl', 'cert-manager', 'الأمان', 'الشهادات']
+description: 'كيفية تأمين عنقود ClickHouse باستخدام TLS عبر cert-manager، بما في ذلك اتصالات العميل وتشفير Keeper.'
+doc_type: 'guide'
+---
+
+يشرح هذا الدليل كيفية تشفير عنقود ClickHouse بالكامل: إصدار
+شهادة باستخدام [cert-manager](https://cert-manager.io/)، وتمكين TLS على
+العنقود، وتوصيل عميل عبر المنافذ الآمنة، وتوسيع نطاق التشفير ليشمل
+حركة تنسيق Keeper.
+
+وهو دليل عملي موجّه للمهام. للاطلاع على مرجع تفصيلي لكل حقل في `spec.settings.tls`، راجع
+[Configuration → TLS/SSL configuration](/ar/products/kubernetes-operator/guides/configuration#tls-ssl-configuration)
+و[مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference#clustertlsspec).
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* عنقود ClickHouse قيد التشغيل ويديره المشغِّل (راجع [المقدمة](/ar/products/kubernetes-operator/guides/introduction)).
+* تثبيت [cert-manager](https://cert-manager.io/docs/installation/) في العنقود.
+* امتلاك صلاحية وصول `kubectl` إلى حيّز اسم العنقود.
+
+لا يُنشئ المشغِّل الشهادات بنفسه، بل يستخدم مورد Kubernetes من نوع
+`Secret` توفّره أنت. ويُعد cert-manager الطريقة الموصى بها لإنشاء هذا
+الـ `Secret` وتدويره، لكن أي أداة تكتب `Secret` بالتنسيق المتوقع ستفي بالغرض.
+
+<div id="secret-format">
+  ## كيف يتوقع المُشغِّل الشهادات
+</div>
+
+يُفعَّل TLS من خلال توجيه `spec.settings.tls.serverCertSecret` إلى Secret يحتوي على
+زوج مفاتيح الخادم:
+
+| مفتاح الـ Secret | المحتويات                        | مطلوب |
+| ---------------- | -------------------------------- | ----- |
+| `tls.crt`        | شهادة الخادم المرمّزة بتنسيق PEM | نعم   |
+| `tls.key`        | المفتاح الخاص المرمّز بتنسيق PEM | نعم   |
+
+وهذا هو نفس التنسيق الذي يكتبه cert-manager تمامًا لمورد `Certificate`، لذلك لا
+تحتاج إلى أي تحويل. ويقوم المُشغِّل بربط زوج المفاتيح داخل كل كبسولة عند
+`/etc/clickhouse-server/tls/` وتهيئته ضمن إعداد `openSSL` في ClickHouse.
+
+<Note>
+  يُعد `serverCertSecret` **إلزاميًا** عندما تكون `tls.enabled: true`. إذ يرفض
+  webhook الخاص بالتحقق أي عنقود يفعّل TLS من دونه، كما يرفض `required: true`
+  ما لم تكن `enabled: true`.
+</Note>
+
+<div id="step-1-ca">
+  ## الخطوة 1 — التهيئة الأولية لـ CA باستخدام cert-manager
+</div>
+
+أكثر إعدادات التهيئة قابليةً للتكرار هو استخدام CA موقَّعة ذاتيًا لتوقيع شهادة
+الخادم لاحقًا. يوفّر لك ذلك ملف `ca.crt` مستقرًا يمكن للعملاء الوثوق به.
+
+```yaml
+# A self-signed issuer used only to mint the CA certificate
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-bootstrap
+  namespace: <namespace>
+spec:
+  selfSigned: {}
+---
+# The CA certificate itself
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: clickhouse-ca
+  namespace: <namespace>
+spec:
+  isCA: true
+  commonName: clickhouse-ca
+  secretName: clickhouse-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-bootstrap
+    kind: Issuer
+---
+# A CA issuer that signs leaf certificates from the CA above
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: clickhouse-ca-issuer
+  namespace: <namespace>
+spec:
+  ca:
+    secretName: clickhouse-ca
+```
+
+في بيئة الإنتاج، استبدل Bootstrap الموقَّع ذاتيًا بجهة الإصدار الفعلية لديك (مثل
+CA مؤسسية، أو Vault، أو ACME، وما إلى ذلك). لا تتغير سوى الخطوة 2 — أما ربط
+العنقود فمتطابق.
+
+<div id="step-2-cert">
+  ## الخطوة 2 — إصدار شهادة الخادم
+</div>
+
+اطلب شهادة طرفية من الجهة المُصدِرة لـ CA. يجب أن تغطي `dnsNames` عناوين
+الوصول التي يستخدمها العملاء للكبسولات. ينشئ المشغّل خدمة **headless** واحدة باسم
+`<cluster-name>-clickhouse-headless`، ويمكن الوصول إلى كل كبسولة نسخة متماثلة عبر
+`<cluster-name>-clickhouse-<shard>-<index>-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local`.
+ويغطي استخدام wildcard على نطاق خدمة headless جميع النسخ المتماثلة:
+
+```yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: clickhouse-server
+  namespace: <namespace>
+spec:
+  secretName: clickhouse-cert        # <-- the Secret the operator will read
+  duration: 8760h                    # 1 year
+  renewBefore: 720h                  # rotate 30 days early
+  issuerRef:
+    name: clickhouse-ca-issuer
+    kind: Issuer
+  dnsNames:
+    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc"
+    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local"
+    - "localhost"
+```
+
+<Note>
+  لا ينشئ المشغّل خدمة على مستوى العنقود بأكمله (مع موازنة حمل). إذا كنت
+  تريد نقطة نهاية واحدة مستقرة للاتصال بها، فأنشئ خدمة `ClusterIP` خاصة بك
+  تحدد كبسولات العنقود وأضف اسم DNS الخاص بها إلى `dnsNames` أعلاه.
+</Note>
+
+ينشئ cert-manager مورد `Secret` باسم `clickhouse-cert` ويضم `tls.crt` و`tls.key` و
+`ca.crt`، ويحدّثه قبل انتهاء صلاحيته. تحقّق من وجوده:
+
+```bash
+kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'keys'
+# ["ca.crt","tls.crt","tls.key"]
+```
+
+<div id="step-3-enable">
+  ## الخطوة 3 — تمكين TLS على العنقود
+</div>
+
+وجّه العنقود إلى كائن Secret:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: <cluster-name>
+  namespace: <namespace>
+spec:
+  settings:
+    tls:
+      enabled: true
+      required: true            # disable the insecure ports entirely
+      serverCertSecret:
+        name: clickhouse-cert
+```
+
+<div id="what-the-operator-does">
+  ### ما الذي يفعله المشغّل
+</div>
+
+عندما تكون `tls.enabled: true`، فإن المشغّل:
+
+* **يفتح المنافذ الآمنة** على كل كبسولة وعلى خدمة headless: `9440`
+  ‏(TLS أصلي) و`8443` ‏(HTTPS). وتُضاف هذه المنافذ إلى جانب المنافذ الحالية.
+* **يربط كائن Secret** عند `/etc/clickhouse-server/tls/` ويُنشئ
+  مقطع `openSSL` في ClickHouse مع `verificationMode: relaxed`،
+  و`disableProtocols: sslv2,sslv3`، و`preferServerCiphers: true`. وهذه
+  هي القيم الافتراضية — راجع [تخصيص إعدادات TLS](#custom-tls-settings) لتجاوزها.
+
+وعندما تضبط أيضًا `required: true`، فإن المشغّل يقوم بالإضافة إلى ذلك بما يلي:
+
+* **يزيل المنافذ غير الآمنة** `9000` ‏(native) و`8123` ‏(HTTP) — ولا تبقى إلا
+  النسخ العاملة عبر TLS، لذا لن يعود بإمكان العملاء غير المشفّرين الاتصال.
+* **يحوّل مسبار الحيوية للكبسولة** إلى المنفذ الآمن `9440` الخاص بـ native، بحيث يستمر
+  فحص الحالة في العمل من دون مستمع غير مشفّر.
+
+<Note>
+  المنافذ `8443` و`9440` الخاصة بـ TLS محجوزة بواسطة webhook **بشكل غير مشروط**،
+  حتى عندما يكون TLS معطّلًا، لذلك فإن تبديل `tls.enabled` لاحقًا لا يتعارض أبدًا مع
+  مدخل `spec.additionalPorts`. راجع
+  [Configuration → `additionalPorts`](/ar/products/kubernetes-operator/guides/configuration#additional-ports).
+</Note>
+
+<div id="step-4-connect">
+  ## الخطوة 4 — الاتصال عبر TLS
+</div>
+
+مع `required: true`، يجب على برامج العميل استخدام المنافذ الآمنة والوثوق بـ CA. وجّه
+الاتصال إلى كبسولة نسخة متماثلة محددة عبر خدمة `headless` (أو خدمة `ClusterIP`
+الخاصة بك إذا كنت قد أنشأت واحدة).
+
+**البروتوكول الأصلي** (`clickhouse-client`, المنفذ `9440`):
+
+```bash
+clickhouse-client --secure \
+  --host <cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local \
+  --port 9440 \
+  --ca-certificate /path/to/ca.crt \
+  --query "SELECT 1"
+```
+
+**HTTPS** (المنفذ `8443`):
+
+```bash
+curl --cacert /path/to/ca.crt \
+  "https://<cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local:8443/?query=SELECT%201"
+```
+
+استخرج `ca.crt` مباشرةً من الـ Secret للاختبار المحلي:
+
+```bash
+kubectl -n <namespace> get secret clickhouse-cert \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+```
+
+<div id="keeper-tls">
+  ## تشفير حركة المرور إلى Keeper
+</div>
+
+إن تفعيل TLS على عنقود ClickHouse **لا** يشفّر الاتصال بـ Keeper.
+فعِّل ذلك على `KeeperCluster` بشكل مستقل — أصدر شهادة لخدمة Keeper
+(الخطوتان 1–2 مع `dnsNames` الخاصة بخدمة Keeper) وأشِر إليها:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: <keeper-name>
+  namespace: <namespace>
+spec:
+  settings:
+    tls:
+      enabled: true
+      required: true
+      serverCertSecret:
+        name: keeper-cert
+```
+
+يكشف Keeper عن منفذ العميل الآمن على `2281`. وبمجرد تفعيل TLS في Keeper، **يتصل
+عنقود ClickHouse به عبر TLS تلقائيًا** — من دون أي إعداد إضافي على جانب
+ClickHouseCluster. ويتحقق ClickHouse من شهادة Keeper بالاستناد إلى
+مخزن الثقة الخاص بالنظام، بالإضافة إلى أي [`caBundle`](#custom-ca) تقوم بتهيئته.
+
+<div id="custom-ca">
+  ## حزمة CA مخصصة
+</div>
+
+يتحقق ClickHouse افتراضيًا من الجهات النظيرة التي يتصل بها (النسخ المتماثلة الأخرى، وKeeper، ومصادر القواميس عبر HTTPS،
+وS3، …) بالرجوع إلى **مخزن الثقة في النظام**. ولإضافة الثقة **أيضًا** إلى
+CA خاصة — سواء كانت موقَّعة ذاتيًا أو داخلية ولا تكون شهادتها الجذرية موجودة في مخزن النظام —
+وفّر `caBundle`:
+
+```yaml
+spec:
+  settings:
+    tls:
+      enabled: true
+      serverCertSecret:
+        name: clickhouse-cert
+      caBundle:
+        name: <ca-secret-name>
+        key: ca.crt
+```
+
+يقوم المشغِّل بربط هذه الحزمة وإضافتها إلى مخزن الثقة الخاص بعميل `openSSL`
+(`caConfig`). يظل مخزن الثقة الخاص بالنظام ساريًا — وتصبح CA الخاصة بك موثوقًا بها **بالإضافة
+إلى** الجذور العامة، لذلك تظل الاتصالات بنقاط النهاية العامة تعمل. وفي
+إعداد موقَّع ذاتيًا، وجّه `caBundle` إلى المفتاح `ca.crt` في كائن Secret نفسه الذي أنشأه cert-manager
+(كما في المثال `cluster_with_ssl`).
+
+<div id="custom-tls-settings">
+  ## تخصيص إعدادات TLS
+</div>
+
+إن مقطع `openSSL` الذي يُنشئه المشغّل هو إعداد افتراضي، وليس حدًا أقصى. ويُكتب
+في تهيئة الخادم الرئيسية؛ وأي شيء ضمن `spec.settings.extraConfig` يُضاف إلى
+`config.d/99-extra-config.yaml`، ثم يدمجه ClickHouse **أخيرًا** — لذلك يتجاوز
+القيم المُولَّدة.
+
+لتشديد الإعدادات الافتراضية — على سبيل المثال، فرض تحقّق صارم من النظير ورفع
+الحد الأدنى للبروتوكول إلى TLS 1.2 — عيّن مفاتيح `openSSL.server` التي تريد تغييرها:
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      openSSL:
+        server:
+          verificationMode: strict
+          disableProtocols: "sslv2,sslv3,tlsv1,tlsv1_1"
+```
+
+يتم الدمج على مستوى كل مفتاح: لا تُستبدل إلا القيم التي تضبطها، بينما تُحفَظ المفاتيح المُنشأة التي
+لا تذكرها (مسارات الشهادات، إعدادات CA). راجع
+[إعدادات خادم `openSSL`](/ar/reference/settings/server-settings/settings#openssl)
+للاطلاع على الخيارات المتاحة، و
+[التهيئة → التهيئة الإضافية المضمّنة](/ar/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
+لمعرفة كيفية دمج `extraConfig`.
+
+<div id="troubleshoot">
+  ## التحقق واستكشاف الأخطاء وإصلاحها
+</div>
+
+**تأكد من أن المنافذ الآمنة مفعّلة على خدمة headless:**
+
+```bash
+kubectl -n <namespace> get svc <cluster-name>-clickhouse-headless \
+  -o jsonpath='{.spec.ports[*].name}'
+# expect: ... tcp-secure http-secure   (and NO tcp/http when required: true)
+```
+
+**تأكد من أن الشهادة مربوطة داخل الكبسولة:**
+
+```bash
+kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
+# clickhouse-server.crt  clickhouse-server.key   (plus custom-ca.crt when caBundle is set)
+```
+
+| العَرَض                                                             | السبب المُرجَّح                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| تفشل الكبسولات في التشغيل / خطأ في ربط وحدة التخزين بعد تمكين TLS | مورد Secret المشار إليه مفقود أو يفتقر إلى `tls.crt`/`tls.key` (أو، عند ضبط `caBundle`، إلى الـ Secret/المفتاح الذي يشير إليه). لا يتحقق المشغّل من محتويات الـ Secret — وتظهر المفاتيح المفقودة على شكل فشل في ربط وحدة تخزين الكبسولة، وليس كحالة `status` مخصّصة. افحص الكبسولة باستخدام `kubectl describe pod`. |
+| يرفض الـ webhook العنقود                                            | تم تعيين `required: true` بدون `enabled: true`، أو `enabled: true` بدون `serverCertSecret`.                                                                                                                                                                                                                   |
+| `certificate verify failed` لدى العميل                              | العميل لا يثق في CA. مرّر `ca.crt` من الـ Secret، أو تحقّق من أن `dnsNames` في الشهادة تغطي المضيف الذي تتصل به.                                                                                                                                                                                              |
+| يتعذّر فجأة على عميل plaintext الاتصال                              | أدّت `required: true` إلى إزالة المنفذين `9000`/`8123`. بدّل العميل إلى `9440`/`8443`، أو عيّن `required: false` للإبقاء على المنافذ غير الآمنة مفتوحة أثناء الترحيل.                                                                                                                                         |
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [التهيئة → تهيئة TLS/SSL](/ar/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — مرجع الحقول
+* [التهيئة → `additionalPorts`](/ar/products/kubernetes-operator/guides/configuration#additional-ports) — المنافذ المحجوزة
+* [مرجع واجهة برمجة التطبيقات → ClusterTLSSpec](/ar/products/kubernetes-operator/reference/api-reference#clustertlsspec)
+* [إعدادات الخادم `openSSL`](/ar/reference/settings/server-settings/settings#openssl) — خيارات TLS التي يمكنك تجاوزها عبر `extraConfig`

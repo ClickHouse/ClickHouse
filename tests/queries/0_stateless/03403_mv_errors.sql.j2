@@ -64,7 +64,7 @@ set min_insert_block_size_rows=10;
 -- { echoOn }
 
 {% for parallel_view_processing in [0, 1] %}
-{% for max_insert_threads in [0, 5] %}
+{% for max_insert_threads in [1, 5] %}
 {% for materialized_views_ignore_errors in [0, 1] %}
 
 {% if materialized_views_ignore_errors == 0 %}

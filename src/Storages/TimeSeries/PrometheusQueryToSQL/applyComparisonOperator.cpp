@@ -22,7 +22,7 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     void checkArgumentTypes(
-        const PQT::BinaryOperator * operator_node,
+        const PrometheusQueryTree::BinaryOperator * operator_node,
         const SQLQueryPiece & left_argument,
         const SQLQueryPiece & right_argument,
         const ConverterContext & context)
@@ -95,7 +95,7 @@ bool isComparisonOperator(std::string_view operator_name)
 
 
 SQLQueryPiece applyComparisonOperator(
-    const PQT::BinaryOperator * operator_node,
+    const PrometheusQueryTree::BinaryOperator * operator_node,
     SQLQueryPiece && left_argument,
     SQLQueryPiece && right_argument,
     ConverterContext & context)

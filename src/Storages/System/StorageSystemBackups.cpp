@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
+#include <Core/Field.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProfileEventsExt.h>
@@ -40,6 +41,8 @@ ColumnsDescription StorageSystemBackups::getColumnsDescription()
         {"files_read", std::make_shared<DataTypeUInt64>(), "Returns the number of files read during RESTORE from this backup."},
         {"bytes_read", std::make_shared<DataTypeUInt64>(), "Returns the total size of files read during RESTORE from this backup."},
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
+        {"settings", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeString>()), "Backup/restore-specific settings effectively used for this operation (from the `SETTINGS` clause, including defaults). Sensitive settings are not exposed."},
+        {"engine_settings", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeString>()), "Settings effectively used by the backup engine's reader/writer (e.g. S3 `allow_native_copy`). Empty when the operation involves more than one engine that a flat map cannot represent: incremental backups and restores, lightweight snapshot restores, and non-internal `ON CLUSTER` operations."},
     };
 }
 
@@ -63,6 +66,17 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
     auto & column_num_read_files = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_num_read_bytes = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_profile_events = assert_cast<ColumnMap &>(*res_columns[column_index++]);
+    auto & column_settings = assert_cast<ColumnMap &>(*res_columns[column_index++]);
+    auto & column_engine_settings = assert_cast<ColumnMap &>(*res_columns[column_index++]);
+
+    auto add_string_map = [](ColumnMap & column_map, const std::map<String, String> & map)
+    {
+        Map map_field;
+        map_field.reserve(map.size());
+        for (const auto & [key, value] : map)
+            map_field.push_back(Tuple{key, value});
+        column_map.insert(map_field);
+    };
 
     auto add_row = [&](const BackupOperationInfo & info)
     {
@@ -85,6 +99,8 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
             ProfileEvents::dumpToMapColumn(*info.profile_counters, &column_profile_events, true);
         else
             column_profile_events.insertDefault();
+        add_string_map(column_settings, info.settings);
+        add_string_map(column_engine_settings, info.engine_settings);
     };
 
     for (const auto & entry : context->getBackupsWorker().getAllInfos())

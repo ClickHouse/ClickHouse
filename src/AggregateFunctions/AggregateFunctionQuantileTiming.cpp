@@ -59,7 +59,7 @@ The result is deterministic (it does not depend on the query processing order).
 The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
-In this case, use the [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles#quantiles) function.
+In this case, use the [`quantiles`](/reference/functions/aggregate-functions/quantiles#quantiles) function.
 
 **Accuracy**
 
@@ -71,18 +71,18 @@ The calculation is accurate if:
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
 :::note
-For calculating page loading time quantiles, this function is more effective and accurate than [`quantile`](/sql-reference/aggregate-functions/reference/quantile).
+For calculating page loading time quantiles, this function is more effective and accurate than [`quantile`](/reference/functions/aggregate-functions/quantile).
 :::
 
 :::note
-If no values are passed to the function (when using `quantileTimingIf`), [NaN](/sql-reference/data-types/float#nan-and-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](/sql-reference/statements/select/order-by) for notes on sorting `NaN` values.
+If no values are passed to the function (when using `quantileTimingIf`), [NaN](/reference/data-types/float#nan-and-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](/reference/statements/select/order-by) for notes on sorting `NaN` values.
 :::
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileTiming(level)(expr)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Expression over a column values returning a Float*-type number. If negative values are passed to the function, the behavior is undefined. If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.", {"Float*"}}
+        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`. If negative values are passed to the function, the behavior is undefined. If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.", {"(U)Int*", "Float*", "Date", "DateTime"}}
     };
     FunctionDocumentation::Parameters parameters = {
         {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float*"}}
@@ -113,7 +113,7 @@ SELECT quantileTiming(response_time) FROM t;
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously with determined precision.
 
-This function is equivalent to [`quantileTiming`](/sql-reference/aggregate-functions/reference/quantiletiming) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileTiming`](/reference/functions/aggregate-functions/quantileTiming) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
 
 The result is deterministic (it does not depend on the query processing order). The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
 
@@ -127,14 +127,14 @@ The calculation is accurate if:
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
 :::note
-For calculating page loading time quantiles, this function is more effective and accurate than [`quantiles`](/sql-reference/aggregate-functions/reference/quantiles).
+For calculating page loading time quantiles, this function is more effective and accurate than [`quantiles`](/reference/functions/aggregate-functions/quantiles).
 :::
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
 quantilesTiming(level1, level2, ...)(expr)
     )";
     FunctionDocumentation::Arguments arguments_quantiles = {
-        {"expr", "Expression over a column values returning a Float*-type number. If negative values are passed to the function, the behavior is undefined. If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.", {"Float*"}}
+        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`. If negative values are passed to the function, the behavior is undefined. If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.", {"(U)Int*", "Float*", "Date", "DateTime"}}
     };
     FunctionDocumentation::Parameters parameters_quantiles = {
         {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`.", {"Float*"}}
@@ -144,6 +144,9 @@ quantilesTiming(level1, level2, ...)(expr)
     {
         "Computing multiple timing quantiles",
         R"(
+CREATE TABLE t (response_time UInt32) ENGINE = Memory;
+INSERT INTO t VALUES (72), (112), (126), (145), (104), (242), (313), (168), (108);
+
 SELECT quantilesTiming(0.25, 0.5, 0.75)(response_time) FROM t;
         )",
         R"(

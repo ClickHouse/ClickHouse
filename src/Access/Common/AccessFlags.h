@@ -24,6 +24,11 @@ public:
     /// Constructs from a string like "SELECT".
     AccessFlags(std::string_view keyword); /// NOLINT
 
+    /// The same, but for callers that are only asking whether the keyword names an access type -
+    /// the parser checking which alternative it is looking at, for instance. Returns false rather
+    /// than throwing when it does not.
+    static bool tryFromKeyword(std::string_view keyword, AccessFlags & result);
+
     /// Constructs from a list of strings like "SELECT, UPDATE, INSERT".
     AccessFlags(const std::vector<std::string_view> & keywords); /// NOLINT
     AccessFlags(const Strings & keywords); /// NOLINT

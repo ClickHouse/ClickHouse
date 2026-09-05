@@ -76,9 +76,10 @@ void KeyDescription::recalculateWithNewAST(
     const ASTPtr & new_ast,
     const ColumnsDescription & columns,
     const VirtualColumnsDescription & virtuals,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const std::optional<Names> & hint_columns)
 {
-    *this = getKeyFromAST(new_ast, columns, virtuals, context, additional_columns);
+    *this = getKeyFromAST(new_ast, columns, virtuals, context, additional_columns, hint_columns);
 }
 
 void KeyDescription::recalculateWithNewColumns(
@@ -157,7 +158,8 @@ KeyDescription KeyDescription::getKeyFromAST(
     const ColumnsDescription & columns,
     const VirtualColumnsDescription & virtuals,
     const ContextPtr & context,
-    const NamesAndTypesList & additional_columns)
+    const NamesAndTypesList & additional_columns,
+    const std::optional<Names> & hint_columns)
 {
     KeyDescription result;
     result.definition_ast = definition_ast;
@@ -175,7 +177,13 @@ KeyDescription KeyDescription::getKeyFromAST(
     {
         auto expr = result.expression_list_ast->clone();
         auto all_columns = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals);
-        auto syntax_result = TreeRewriter(context).analyze(expr, all_columns);
+        /// Subcolumns and virtual columns are legal in a key wherever the caller has put them into `columns`
+        /// and `virtuals`, so by default a typo may be resolved to any of them; a caller that accepts less
+        /// narrows the suggestions down.
+        TreeRewriter tree_rewriter(context);
+        if (hint_columns)
+            tree_rewriter.setHintColumns(*hint_columns);
+        auto syntax_result = tree_rewriter.analyze(expr, all_columns);
         /// In expression we also need to store source columns
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
         /// In sample block we use just key columns
@@ -222,6 +230,25 @@ ASTPtr KeyDescription::getOriginalExpressionList() const
     }
 
     return expr_list;
+}
+
+KeyDescription KeyDescription::getPrimaryKeyFromAST(
+    const ASTPtr & definition_ast,
+    const KeyDescription & sorting_key,
+    const ColumnsDescription & columns,
+    const VirtualColumnsDescription & virtuals,
+    const ContextPtr & context)
+{
+    KeyDescription result = getKeyFromAST(definition_ast, columns, virtuals, context);
+
+    /// The primary key is a prefix of the sorting key (validated in MergeTreeData::checkProperties),
+    /// so its per-column directions are the corresponding prefix of the sorting key's.
+    if (!sorting_key.reverse_flags.empty())
+        result.reverse_flags.assign(
+            sorting_key.reverse_flags.begin(),
+            sorting_key.reverse_flags.begin() + std::min(result.column_names.size(), sorting_key.reverse_flags.size()));
+
+    return result;
 }
 
 KeyDescription KeyDescription::buildEmptyKey()

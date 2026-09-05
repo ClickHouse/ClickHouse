@@ -1,0 +1,111 @@
+---
+position: 5
+slug: /clickhouse-operator/guides/scaling
+title: 集群扩缩容
+keywords: ['kubernetes', '扩缩容', '副本', '分片', 'Keeper', 'quorum']
+description: '介绍如何扩缩容 ClickHouse 的副本和分片以及 Keeper 的 quorum 成员，以及 operator 会自动执行哪些操作。'
+doc_type: 'guide'
+---
+
+你可以通过修改自定义资源中的副本数和分片数来扩缩容集群。operator 会将正在运行的集群逐步调整到新的拓扑：创建或删除按副本划分的 StatefulSets，保持 schema 同步，并通过状态条件反映进度。
+
+本指南介绍如何扩缩容 `ClickHouseCluster` 的副本和分片，如何安全地扩缩容 `KeeperCluster` 的 quorum，以及在扩缩容操作进行过程中应关注哪些状态条件。
+
+<Note>
+  `ClickHouseCluster` 始终需要一个 Keeper，并通过必填的 `spec.keeperClusterRef` 字段引用它——无论集群规模如何，operator 都会通过它来协调集群。若要让每个分片运行多个副本，数据还必须存储在 `ReplicatedMergeTree` 表中，因为只有复制机制才能让第二个副本提供相同的行。
+</Note>
+
+<div id="scaling-replicas">
+  ## 副本扩缩容
+</div>
+
+`spec.replicas` 用于设置每个分片中的副本数量。每个副本都在各自的 StatefulSet 中运行，其名称为 `<cluster>-clickhouse-<shard>-<replica>`，因此一个配置为 `shards: 2` 和 `replicas: 3` 的集群会运行六个 StatefulSet。
+
+直接就地增减副本数：
+
+```yaml
+spec:
+  replicas: 3   # was 1
+  keeperClusterRef:
+    name: my-keeper
+```
+
+扩容时，operator 会为每个新增副本创建对应的 StatefulSets，等待每个 pod (容器组) 就绪，然后将 schema 同步到这些新副本 (参见 [自动 schema 同步](#automatic-schema-sync)) 。缩容时，它会移除多余的 StatefulSets，并清理已删除副本遗留的过期 replicated-database 副本注册信息。
+
+<div id="scaling-shards">
+  ## 分片扩缩容
+</div>
+
+`spec.shards` 用于设置分片数量。每新增一个分片，都会增加一整套按副本划分的 StatefulSets；此外，operator 还会[为每个分片创建一个 PodDisruptionBudget](/zh/products/kubernetes-operator/guides/configuration#pod-disruption-budgets)，以确保某个分片发生中断时，不会影响其他分片的计算。
+
+```yaml
+spec:
+  shards: 3   # was 1
+  replicas: 2
+```
+
+每个分片都保存着一部分互不重叠的数据，Operator 不会在分片之间复制或移动行。`Distributed` 表或显式路由方案决定一行数据会落到哪个分片上，因此新增一个分片时，新写入的数据就有了新的落点，而无需改动现有分片中已存储的行。
+
+<div id="automatic-schema-sync">
+  ## 自动 schema 同步
+</div>
+
+当 `spec.settings.enableDatabaseSync` 为 `true` (默认值) 时，operator 会在拓扑变化时保持 schema 同步：
+
+* **扩容时** — 一旦至少有两个副本就绪，operator 就会将 database 定义复制到新创建的副本，使新副本加入后与集群中其余副本拥有相同的 `Replicated` 和集成 database。
+* **缩容时** — 在某个副本消失之前，operator 会使用 `SYSTEM DROP DATABASE REPLICA` 从每个 `Replicated` database 中删除该副本的注册信息，这样缩容后的集群就不会再等待一个已不存在的 `Replicated` database 副本。
+
+这涵盖 `Replicated` databases 和集成 database 引擎。它不会迁移表数据——行数据保存在 `ReplicatedMergeTree` 表中，并通过 Keeper 独立于此 schema 同步机制进行复制。当只有一个就绪副本时，没有可复制的目标，因此 operator 会跳过此步骤，并记录没有可用目标。
+
+将 `enableDatabaseSync: false` 设为关闭此行为，例如当 schema 传播由外部工具负责时。此后，operator 会在 `SchemaInSync` 状态条件上报告 `SchemaSyncDisabled` 原因。
+
+<div id="scaling-conditions">
+  ## 需关注的状态条件
+</div>
+
+在执行扩缩容操作期间，查看自定义资源的进度情况：
+
+```bash
+kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
+```
+
+| Condition            | Reason                 | Meaning                        |
+| -------------------- | ---------------------- | ------------------------------ |
+| `ClusterSizeAligned` | `UpToDate`             | 正在运行的副本数量与请求的拓扑一致              |
+| `ClusterSizeAligned` | `ScalingUp`            | Operator 正在添加副本                |
+| `ClusterSizeAligned` | `ScalingDown`          | Operator 正在移除副本                |
+| `SchemaInSync`       | `ReplicasInSync`       | 所有副本上都已存在数据库，且过期元数据已清理         |
+| `SchemaInSync`       | `DatabasesNotCreated`  | Operator 尚未在新副本上完成数据库创建        |
+| `SchemaInSync`       | `ReplicasNotCleanedUp` | 缩容后遗留的过期副本元数据尚未移除              |
+| `SchemaInSync`       | `SchemaSyncDisabled`   | `enableDatabaseSync` 为 `false` |
+| `Ready`              | `AllShardsReady`       | 每个分片都有一个就绪的副本                  |
+| `Ready`              | `SomeShardsNotReady`   | 至少有一个分片没有就绪的副本                 |
+
+当 `ClusterSizeAligned` 报告 `UpToDate`、`SchemaInSync` 报告 `ReplicasInSync`，且 `Ready` 报告 `AllShardsReady` 时，一次扩缩容操作即完成。
+
+<div id="scaling-keeper">
+  ## Keeper 的扩缩容
+</div>
+
+`KeeperCluster` 运行的是 RAFT quorum，因此 operator 只有在集群处于稳定状态时，才会**一次只变更一个副本**的成员资格。
+
+这样可以保护 quorum：`2F+1` 的集群可容忍 `F` 个成员宕机，因此 3 节点集群即使缺少 1 个成员仍可继续运行，5 节点集群即使缺少 2 个成员也是如此。
+
+```yaml
+spec:
+  replicas: 5   # was 3
+```
+
+扩容时，Operator 会将当前可用的最小副本 ID 加入 quorum；缩容时，则会移除最大的 ID。每一步都会等待 quorum 稳定后，下一步才会开始。[Keeper PodDisruptionBudget](/zh/products/kubernetes-operator/guides/configuration#pod-disruption-budgets) 默认设置为 `maxUnavailable: replicas/2`，以在自愿性中断期间维持 quorum。
+
+`ScaleAllowed` 状态条件会报告当前 quorum 是否可以变更成员：
+
+| Reason                     | Meaning                     |
+| -------------------------- | --------------------------- |
+| `ReadyToScale`             | quorum 已稳定，Operator 可以添加或移除成员 |
+| `ReplicaHasPendingChanges` | 某个副本仍有待处理的配置变更              |
+| `ReplicaNotReady`          | 某个副本尚未就绪，因此成员变更会等待          |
+| `NoQuorum`                 | 集群当前没有 quorum，因此无法安全地变更成员     |
+| `WaitingFollowers`         | Operator 正在等待跟随者追上进度        |
+
+请按单步方式对 Keeper 进行扩缩容，并在每次变更之间等待 `ScaleAllowed` 恢复为 `ReadyToScale`。一次性跳过多个成员并不会绕过逐个执行 reconcile 的机制——Operator 仍会按每步一个成员的方式逐步调整 quorum。

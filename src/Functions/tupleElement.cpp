@@ -28,34 +28,10 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
-
-ColumnPtr mergeNullMaps(const ColumnPtr & left, const ColumnPtr & right)
-{
-    if (!left)
-        return right;
-
-    if (!right)
-        return left;
-
-    const auto & left_data = assert_cast<const ColumnUInt8 &>(*left).getData();
-    const auto & right_data = assert_cast<const ColumnUInt8 &>(*right).getData();
-
-    if (left_data.size() != right_data.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Null maps have different sizes");
-
-    auto merged_column = ColumnUInt8::create(left_data.size());
-    auto & merged_data = merged_column->getData();
-
-    for (size_t i = 0; i < merged_data.size(); ++i)
-        merged_data[i] = left_data[i] || right_data[i];
-
-    return merged_column;
-}
 
 /** Extract element of tuple by constant index or name. The operation is essentially free.
   * Also the function looks through Arrays: you can get Array of tuple elements from Array of Tuples.
@@ -73,6 +49,11 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// Keep nested LowCardinality element types intact: the default implementation would strip them via
+    /// `recursiveRemoveLowCardinality` before extraction, making `tupleElement(t, 'a')` disagree with the
+    /// subcolumn path `t.a` (which preserves `LowCardinality(...)`). tupleElement only extracts a column, so
+    /// it is naturally correct for any element type without the framework's LowCardinality unwrapping.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool useDefaultImplementationForDynamic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -108,8 +89,11 @@ public:
             {
                 DataTypePtr element_type = tuple->getElements()[index.value()];
 
-                if (is_input_type_nullable && canExtractedSubcolumnsBeInsideNullable(element_type))
-                    element_type = std::make_shared<DataTypeNullable>(element_type);
+                /// For a Nullable(Tuple(...)) input, promote the element so it can represent the outer NULLs,
+                /// using the same rule as the subcolumn path (`t.a`): `Nullable(T)` for wrappable types and
+                /// `LowCardinality(Nullable(T))` for a non-nullable `LowCardinality(T)` element.
+                if (is_input_type_nullable)
+                    element_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(element_type);
 
                 return wrapInArrays(std::move(element_type), count_arrays);
             }
@@ -134,15 +118,6 @@ public:
         }
         else if (const DataTypeObject * object = checkAndGetDataType<DataTypeObject>(input_type))
         {
-            if (is_input_type_nullable)
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} cannot be Nullable(JSON). Actual {}",
-                    getName(),
-                    arguments[0].type->getName());
-            }
-
             if (number_of_arguments != 2)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} with {} first argument doesn't match: passed {}, should be 2",
@@ -153,14 +128,20 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of {} with {} first argument must be a constant String", getName(), input_type->getName());
 
             auto subcolumn_name = subcolumn_name_col->getValue<String>();
-            /// Use combined `@` subcolumn that merges literal value and sub-object.
-            auto combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + subcolumn_name + "`";
-            return wrapInArrays(object->getSubcolumnType(combined_name), count_arrays);
+            auto element_type = getObjectElementType(*object, subcolumn_name);
+
+            /// Same promotion as the Nullable(Tuple(...)) case above, so the extracted path can carry the
+            /// outer NULLs. A `Dynamic` path stays `Dynamic` and represents them itself. A typed path that
+            /// can do neither (e.g. `Array`, `Map`) keeps its type and is default-filled in `executeImpl`.
+            if (is_input_type_nullable)
+                element_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(element_type);
+
+            return wrapInArrays(std::move(element_type), count_arrays);
         }
 
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument for function {} must be Tuple, Nullable(Tuple), QBit, JSON or array of these. Actual {}",
+            "First argument for function {} must be Tuple, Nullable(Tuple), QBit, JSON, Nullable(JSON) or array of these. Actual {}",
             getName(),
             arguments[0].type->getName());
     }
@@ -213,38 +194,7 @@ public:
             res = input_col_as_tuple.getColumnPtr(index.value());
 
             if (null_map_column)
-            {
-                DataTypePtr element_type = input_type_as_tuple->getElements()[index.value()];
-
-                if (const auto * res_nullable = typeid_cast<const ColumnNullable *>(res.get()))
-                {
-                    ColumnPtr merged_null_map = mergeNullMaps(null_map_column, res_nullable->getNullMapColumnPtr());
-                    res = ColumnNullable::create(res_nullable->getNestedColumnPtr(), merged_null_map);
-                }
-                else if (canExtractedSubcolumnsBeInsideNullable(element_type))
-                {
-                    res = ColumnNullable::create(res, null_map_column);
-                }
-                else
-                {
-                    const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
-
-                    auto result_column = element_type->createColumn();
-                    result_column->reserve(res->size());
-
-                    Field default_field = element_type->getDefault();
-
-                    for (size_t i = 0; i < res->size(); ++i)
-                    {
-                        if (null_map[i])
-                            result_column->insert(default_field);
-                        else
-                            result_column->insertFrom(*res, i);
-                    }
-
-                    res = std::move(result_column);
-                }
-            }
+                res = applyOuterNullMap(res, input_type_as_tuple->getElements()[index.value()], null_map_column);
         }
         else if (const DataTypeQBit * input_type_as_qbit = checkAndGetDataType<DataTypeQBit>(input_type))
         {
@@ -267,15 +217,6 @@ public:
         }
         else if (const DataTypeObject * input_type_as_object = checkAndGetDataType<DataTypeObject>(input_type))
         {
-            if (null_map_column)
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} cannot be Nullable(JSON). Actual {}",
-                    getName(),
-                    input_arg.type->getName());
-            }
-
             const auto * subcolumn_name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
             if (!subcolumn_name_col)
                 throw Exception(
@@ -286,12 +227,16 @@ public:
 
             auto subcolumn_name = subcolumn_name_col->getValue<String>();
             res = getObjectElement(*input_type_as_object, input_col->getPtr(), subcolumn_name);
+
+            /// Fold the outer `Nullable(JSON)` null map into the extracted path, matching `getReturnTypeImpl`.
+            if (null_map_column)
+                res = applyOuterNullMap(res, getObjectElementType(*input_type_as_object, subcolumn_name), null_map_column);
         }
         else
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be Tuple, Nullable(Tuple), QBit, JSON or array of these. Actual {}",
+                "First argument for function {} must be Tuple, Nullable(Tuple), QBit, JSON, Nullable(JSON) or array of these. Actual {}",
                 getName(),
                 input_arg.type->getName());
         }
@@ -361,7 +306,9 @@ private:
         {
             const size_t index = index_column->getUInt(0);
 
-            if (index > 0 && index <= qbit.getElementSize())
+            /// The tuple holds element_size bit planes per stride group, grouped as [group][bit]. Index N (1-based) addresses
+            /// bit plane (N-1) % element_size of stride group (N-1) / element_size.
+            if (index > 0 && index <= qbit.getElementSize() * qbit.getNumStrides())
                 return {index - 1};
 
             if (argument_size == 2)
@@ -380,13 +327,57 @@ private:
         return nested_type;
     }
 
+    /// Use combined `@` subcolumn that merges literal value and sub-object.
+    /// For rows with a literal at requested path we return the literal, for rows with a nested object
+    /// we return the nested object as JSON column, so nested `tupleElement` calls can be applied to it.
+    static String getObjectCombinedSubcolumnName(const String & element_name)
+    {
+        return String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + element_name + "`";
+    }
+
     ColumnPtr getObjectElement(const DataTypeObject & object_type, const ColumnPtr & object_column, const String & element_name) const
     {
-        /// Use combined `@` subcolumn that merges literal value and sub-object.
-        /// For rows with a literal at requested path we return the literal, for rows with a nested object
-        /// we return the nested object as JSON column, so nested `tupleElement` calls can be applied to it.
-        auto combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + element_name + "`";
-        return object_type.getSubcolumn(combined_name, object_column);
+        return object_type.getSubcolumn(getObjectCombinedSubcolumnName(element_name), object_column);
+    }
+
+    DataTypePtr getObjectElementType(const DataTypeObject & object_type, const String & element_name) const
+    {
+        return object_type.getSubcolumnType(getObjectCombinedSubcolumnName(element_name));
+    }
+
+    /// Fold the null map of a `Nullable(Tuple(...))` / `Nullable(JSON)` first argument into the element
+    /// extracted from its nested column, so that outer NULLs are visible in the result.
+    ColumnPtr applyOuterNullMap(const ColumnPtr & element_column, const DataTypePtr & element_type, const ColumnPtr & null_map_column) const
+    {
+        if (canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(element_type) || canContainNull(*element_type))
+        {
+            /// The element can represent NULL: fold the outer null map in with the exact same logic as the
+            /// subcolumn path (`t.a`) -- wrap wrappable elements in `ColumnNullable`, OR the mask into an
+            /// element that already carries NULLs (Nullable / LowCardinality(Nullable) / Dynamic / Variant),
+            /// and promote a non-nullable `LowCardinality(T)` element to `LowCardinality(Nullable(T))` first.
+            /// Keeps the (type, column) pair consistent with `getReturnTypeImpl` and the subcolumn reader.
+            return NullableSubcolumnCreator(null_map_column).create(element_column);
+        }
+
+        /// The element (e.g. Map, Array) can neither be wrapped in `Nullable` nor carry NULL itself, so it
+        /// has no NULL representation. Write the element's default for outer-NULL rows -- matching
+        /// `NestedUtils::unwrapNullableTuple` and the stored subcolumn -- instead of leaking whatever payload
+        /// sits under the null map in the hidden nested column.
+        const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
+
+        auto result_column = element_type->createColumn();
+        result_column->reserve(element_column->size());
+
+        Field default_field = element_type->getDefault();
+        for (size_t i = 0; i < element_column->size(); ++i)
+        {
+            if (null_map[i])
+                result_column->insert(default_field);
+            else
+                result_column->insertFrom(*element_column, i);
+        }
+
+        return std::move(result_column);
     }
 };
 

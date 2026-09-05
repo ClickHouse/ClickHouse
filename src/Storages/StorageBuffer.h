@@ -88,6 +88,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
     bool isRemote() const override;
+    bool readsFromOtherTables() const override { return static_cast<bool>(destination_id); }
 
     bool supportsParallelInsert() const override { return true; }
 
@@ -121,6 +122,17 @@ public:
         return true;
     }
     bool supportsPrewhere() const override;
+    /// read() hands the built PREWHERE to the destination (converting declared-type differences
+    /// with a prefix), so a column must exist there and be allowed by the destination's own
+    /// contract. Fails closed like supportsPrewhere(): no destination means nothing is supported.
+    std::optional<NameSet> supportedPrewhereColumns() const override;
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override;
+    bool canMoveConditionsToPrewhere() const override;
+    /// read() forwards the already-analyzed query straight to the destination table, so the
+    /// initiator must not rewrite functions to subcolumns when the destination opts out (e.g.
+    /// Distributed). Fails closed like supportsPrewhere(): no destination means no rewrite.
+    bool supportsOptimizationToSubcolumns() const override;
+    bool supportsOptimizationToTupleElementSubcolumns() const override;
     bool supportsFinal() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
@@ -198,7 +210,7 @@ private:
 
     StoragePtr getDestinationTable() const;
 
-    BackgroundSchedulePool & bg_pool;
+    BackgroundSchedulePoolPtr bg_pool;
     BackgroundSchedulePoolTaskHolder flush_handle;
 
     static constexpr size_t BACKGROUND_RESCHEDULE_MIN_DELAY = 1;

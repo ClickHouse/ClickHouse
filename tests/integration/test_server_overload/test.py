@@ -41,9 +41,12 @@ def test_overload(started_cluster):
 
     for i in range(60):
         try:
-            node1.query("select 1 settings min_os_cpu_wait_time_ratio_to_throw=1, max_os_cpu_wait_time_ratio_to_throw=6")
+            # Max ratio is below the wait/busy ratio the load above produces, so the
+            # probability ramp saturates at 1 and an overloaded server always throws.
+            node1.query("select 1 settings min_os_cpu_wait_time_ratio_to_throw=1, max_os_cpu_wait_time_ratio_to_throw=1.5")
         except QueryRuntimeException as ex:
             assert "(SERVER_OVERLOADED)" in str(ex), "Only server overloaded error is expected"
+            assert "probability used to decide whether to discard the query 1." in str(ex), "Expected the throw probability to be saturated at 1, not a lucky Bernoulli draw"
             wait_for_queries() # Needed for flaky check to make sure CPU is not loaded with queries from previous runs
             return
         time.sleep(0.3)
@@ -68,6 +71,7 @@ def test_drop_connections(started_cluster):
             assert "Connection reset by peer" in str(ex), "Only connection drop is expected"
             assert node2.contains_in_log("CPU is overloaded, CPU is waiting for execution way more than executing"), "Expected server overloaded error in the log"
             assert node2.contains_in_log("probability used to decide whether to drop the connection"), "Expected message that the connection was dropped due to server overload in the log"
+            assert node2.contains_in_log("probability used to decide whether to drop the connection 1."), "Expected the drop probability to be saturated at 1, not a lucky Bernoulli draw"
             wait_for_queries() # Needed for flaky check to make sure CPU is not loaded with queries from previous runs
             return
         time.sleep(0.3)

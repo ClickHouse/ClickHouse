@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <string_view>
 #include <base/types.h>
 
@@ -100,11 +101,13 @@ namespace Protocol
 
         };
 
+        /// Returns the packet name, or the numeric value itself when it is out of range
+        /// (a desynced or fuzzed wire byte), so error messages stay debuggeable.
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
         /// would always be true because of compiler optimization. That would lead to out-of-bounds error
         /// if the packet is invalid.
         /// See https://www.securecoding.cert.org/confluence/display/cplusplus/INT36-CPP.+Do+not+use+out-of-range+enumeration+values
-        std::string_view toString(UInt64 packet);
+        std::string toString(UInt64 packet);
     }
 
     /// Packet types that client transmits.
@@ -131,10 +134,15 @@ namespace Protocol
 
             QueryPlan = 13,                 /// Query plan
 
-            MAX = QueryPlan,
+            MergeTreeAllRangesAnnouncementResponse = 14,
+                                            /// Initiator's reply to a follower's announcement,
+                                            /// carrying the authoritative parts list for the stream.
+
+            MAX = MergeTreeAllRangesAnnouncementResponse,
         };
 
-        std::string_view toString(UInt64 packet);
+        /// See the note on Server::toString: returns the numeric value for out-of-range packets.
+        std::string toString(UInt64 packet);
     }
 
     /// Whether the compression must be used.

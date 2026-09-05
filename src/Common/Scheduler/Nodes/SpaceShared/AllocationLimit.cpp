@@ -141,19 +141,22 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
         allocation_to_kill = nullptr;
         reapply_constraint = true;
     }
-    if (update.increase || reapply_constraint)
-    {
-        if (setIncrease(update.increase ? *update.increase : increase, reapply_constraint))
-            update.setIncrease(increase);
-        else
-            update.resetIncrease();
-    }
+    // Publish the decrease BEFORE evaluating the increase: the eviction decision in `setIncrease` skips
+    // victim selection while a release is in flight below, so when a single update carries both a decrease
+    // and an increase, the decrease must be visible first.
     if (update.decrease)
     {
         if (setDecrease(*update.decrease))
             update.setDecrease(decrease);
         else
             update.resetDecrease();
+    }
+    if (update.increase || reapply_constraint)
+    {
+        if (setIncrease(update.increase ? *update.increase : increase, reapply_constraint))
+            update.setIncrease(increase);
+        else
+            update.resetIncrease();
     }
     if (parent && update)
         propagate(std::move(update));
@@ -184,8 +187,12 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
     {
         if (allocated + new_increase->size > max_allocated)
         {
-            // Limit would be violated, so we have to reclaim resource
-            if (!allocation_to_kill)
+            // Limit would be violated, so we have to reclaim resource.
+            // Do not select a victim while a decrease is pending below: `allocated` still contains
+            // memory that is about to be released, so the eviction may be unnecessary. The increase
+            // stays blocked, and every decrease approval re-runs this via `reapply_constraint`; once
+            // the releases prove insufficient and no decrease is pending, the eviction fires.
+            if (!allocation_to_kill && decrease == nullptr)
             {
                 String details;
                 allocation_to_kill = selectAllocationToKill(*new_increase, max_allocated, details);

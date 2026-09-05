@@ -1,0 +1,7 @@
+-- the join under test runs on MergeJoin and has a totals input
+PartialMergeJoin
+1
+-- starved totals port
+8	0
+0
+ok

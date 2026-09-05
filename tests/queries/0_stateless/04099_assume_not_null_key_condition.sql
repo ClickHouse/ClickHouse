@@ -1,0 +1,125 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- EXPLAIN output may differ
+SET explain_query_plan_default = 'legacy';
+
+-- { echo }
+
+SET parallel_replicas_local_plan= 1;
+SET session_timezone = 'UTC';
+
+-- Mixed non-NULL and NULL values in a single primary-key granule.
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (d Nullable(Date))
+ENGINE = MergeTree ORDER BY assumeNotNull(d) SETTINGS index_granularity = 8192;
+
+INSERT INTO test VALUES (NULL), ('2014-12-31'), ('2015-01-01'), ('2015-01-02'), ('2035-01-01');
+OPTIMIZE TABLE test FINAL;
+
+SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d < '2015-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d < '2015-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d <= '2015-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d <= '2015-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '2015-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '2015-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d >= '2015-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d >= '2015-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d > '2015-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d > '2015-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+DROP TABLE test;
+
+-- `NULL` rows can keep a granule selected as a false positive.
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (d Nullable(Date))
+ENGINE = MergeTree ORDER BY assumeNotNull(d) SETTINGS index_granularity = 8192;
+
+INSERT INTO test VALUES (NULL), ('2016-01-01'), ('2035-01-01');
+OPTIMIZE TABLE test FINAL;
+
+SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d < '2015-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d < '2015-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+DROP TABLE test;
+
+-- `NULL` and the default value share the same key.
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (d Nullable(Date))
+ENGINE = MergeTree ORDER BY assumeNotNull(d) SETTINGS index_granularity = 8192;
+
+INSERT INTO test VALUES (NULL), ('1970-01-01'), ('2024-06-15');
+OPTIMIZE TABLE test FINAL;
+
+SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d > '1970-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d > '1970-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+DROP TABLE test;
+
+-- All rows are `NULL`.
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (d Nullable(Date))
+ENGINE = MergeTree ORDER BY assumeNotNull(d) SETTINGS index_granularity = 8192;
+
+INSERT INTO test VALUES (NULL), (NULL), (NULL);
+OPTIMIZE TABLE test FINAL;
+
+SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d >= '2024-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d >= '2024-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+DROP TABLE test;
+
+-- Partition pruning with `NULL` present.
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (d Nullable(Date))
+ENGINE = MergeTree PARTITION BY toRelativeDayNum(assumeNotNull(d)) ORDER BY tuple();
+
+INSERT INTO test VALUES (NULL), ('1970-01-01'), ('2014-12-31'), ('2016-01-01'), ('2035-01-01');
+
+SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d < '2015-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d < '2015-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+DROP TABLE test;
+
+-- Non-date type.
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (x Nullable(Int32))
+ENGINE = MergeTree ORDER BY assumeNotNull(x) SETTINGS index_granularity = 8192;
+
+INSERT INTO test VALUES (-10), (0), (NULL), (42), (100);
+OPTIMIZE TABLE test FINAL;
+
+SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM test WHERE x > 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM test WHERE x > 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM test WHERE x = 42;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM test WHERE x = 42) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+DROP TABLE test;
+
+-- Composite primary key.
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (a Nullable(Int32), b Int32)
+ENGINE = MergeTree ORDER BY (assumeNotNull(a), b) SETTINGS index_granularity = 8192;
+
+INSERT INTO test VALUES (1, 10), (1, 20), (2, 10), (2, 20), (NULL, 5);
+OPTIMIZE TABLE test FINAL;
+
+SELECT arraySort(groupArray(concat(if(isNull(a), 'NULL', toString(a)), ':', toString(b)))) FROM test WHERE a = 1;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(concat(if(isNull(a), 'NULL', toString(a)), ':', toString(b)))) FROM test WHERE a = 1) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+SELECT arraySort(groupArray(concat(if(isNull(a), 'NULL', toString(a)), ':', toString(b)))) FROM test WHERE a >= 2;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(concat(if(isNull(a), 'NULL', toString(a)), ':', toString(b)))) FROM test WHERE a >= 2) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+
+DROP TABLE test;

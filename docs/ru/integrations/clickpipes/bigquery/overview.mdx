@@ -1,0 +1,110 @@
+---
+sidebarTitle: 'Обзор'
+description: 'Как экспортировать данные из BigQuery в ClickHouse Cloud с помощью ClickPipes.'
+slug: /integrations/clickpipes/bigquery/overview
+title: 'Интеграция BigQuery с ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import IntroClickPipe from '/snippets/ru/_intro.mdx';
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<IntroClickPipe />
+
+<div id="features">
+  ## Возможности
+</div>
+
+<div id="initial-load">
+  ### Начальная загрузка
+</div>
+
+ClickPipe для BigQuery загрузит выбранные таблицы из [набора данных](https://docs.cloud.google.com/bigquery/docs/datasets-intro) BigQuery в целевые таблицы ClickHouse одной батч-операцией. После завершения задачи по ингестии ClickPipe автоматически останавливается. Для процесса ингестии при начальной загрузке требуется предоставленный пользователем GCS-бакет в качестве промежуточного хранилища. В будущем этот промежуточный бакет будет предоставляться и управляться ClickPipes.
+
+<Note>
+  ClickPipes использует батч-задания выгрузки для переноса данных из BigQuery в промежуточный GCS-бакет. Эта операция **не приводит к расходам на обработку** в BigQuery.
+</Note>
+
+<div id="cdc">
+  ### CDC (фиксация изменений данных)
+</div>
+
+CDC **не поддерживается** в закрытой предварительной версии, но будет поддерживаться в будущем. Пока мы рекомендуем использовать [ClickPipe для Google Cloud Storage](/ru/integrations/clickpipes/object-storage/google-cloud-storage/overview), чтобы после завершения начальной загрузки непрерывно синхронизировать экспортированные из BigQuery данные с ClickHouse Cloud.
+
+<div id="data-type-mapping">
+  ## Сопоставление типов данных
+</div>
+
+[Типы данных BigQuery](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
+
+| Тип данных BigQuery | Тип данных ClickHouse | Подробности                                                    |
+| ------------------- | --------------------- | -------------------------------------------------------------- |
+| `BOOL`              | `Bool`                |                                                                |
+| `INT64`             | `Int64`               |                                                                |
+| `FLOAT64`           | `Float64`             |                                                                |
+| `NUMERIC`           | `Decimal(P, S)`       | Точность до 38, масштаб до 9. Точность и масштаб сохраняются.  |
+| `BIGNUMERIC`        | `Decimal(P, S)`       | Точность до 76, масштаб до 38. Точность и масштаб сохраняются. |
+| `STRING`            | `String`              |                                                                |
+| `BYTES`             | `String`              |                                                                |
+| `JSON`              | `String` (JSON)       |                                                                |
+| `DATE`              | `Date`                |                                                                |
+| `TIME`              | `String`              | Точность до микросекунд.                                       |
+| `DATETIME`          | `DateTime`            | Точность до микросекунд.                                       |
+| `TIMESTAMP`         | `DateTime64(6)`       | Точность до микросекунд.                                       |
+| `GEOGRAPHY`         | `String`              |                                                                |
+| `GEOMETRY`          | `String`              |                                                                |
+| `UUID`              | `String`              |                                                                |
+| `ARRAY<T>`          | `Array(T)`            |                                                                |
+| `ARRAY<DATE>`       | `Array(Date)`         |                                                                |
+| `STRUCT` (RECORD)   | `String`              |                                                                |
+
+<div id="access-control">
+  ## Управление доступом
+</div>
+
+<div id="authentication">
+  ### Аутентификация
+</div>
+
+<div id="service-account-credentials">
+  #### Учетные данные сервисного аккаунта
+</div>
+
+ClickPipes аутентифицируется в вашем проекте Google Cloud с помощью [ключа сервисного аккаунта](https://docs.cloud.google.com/iam/docs/keys-create-delete). Мы рекомендуем создать отдельный сервисный аккаунт с минимально необходимым набором [разрешений](#permissions), чтобы ClickPipes мог экспортировать данные из BigQuery, загружать их в промежуточный GCS-бакет и считывать в ClickHouse.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="Создание ключа сервисного аккаунта с разрешениями для BigQuery и Cloud Storage" size="lg" border />
+
+<div id="permissions">
+  ### Разрешения
+</div>
+
+<div id="bigquery">
+  #### BigQuery
+</div>
+
+У сервисного аккаунта должны быть следующие роли BigQuery:
+
+* [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
+* [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
+
+Чтобы дополнительно сузить область доступа, рекомендуем использовать [условия IAM](https://docs.cloud.google.com/bigquery/docs/conditions), чтобы ограничить ресурсы, к которым у роли есть доступ. Например, роль `dataViewer` можно ограничить конкретным набором данных, содержащим таблицы, которые вы хотите синхронизировать:
+
+```bash
+resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
+```
+
+<div id="cloud-storage">
+  #### Cloud Storage
+</div>
+
+Сервисный аккаунт должен иметь следующие роли Cloud Storage:
+
+* [`roles/storage.objectAdmin`](https://docs.cloud.google.com/storage/docs/access-control/iam-roles#storage.objectAdmin)
+* [`roles/storage.bucketViewer`](https://docs.cloud.google.com/storage/docs/access-control/iam-roles#storage.bucketViewer)
+
+Чтобы дополнительно сузить область доступа, мы рекомендуем использовать [условия IAM](https://docs.cloud.google.com/bigquery/docs/conditions), чтобы ограничить ресурсы, к которым у роли есть доступ. Например, можно ограничить роли `objectAdmin` и `bucketViewer`, предоставив им доступ только к выделенному бакету, созданному для синхронизации ClickPipes.
+
+```bash
+resource.name.startsWith("projects/_/buckets/<BUCKET_NAME>")
+```

@@ -1,0 +1,145 @@
+---
+title: 'BYOC GCP 프라이빗 네트워킹 설정'
+slug: /cloud/reference/byoc/onboarding/network-gcp
+sidebarTitle: 'GCP 프라이빗 네트워킹 설정'
+keywords: ['BYOC', '클라우드', 'bring your own cloud', 'VPC peering', 'gcp', 'private service connect']
+description: 'GCP에서 BYOC를 위한 VPC Peering 또는 Private Service Connect를 설정합니다'
+doc_type: '참고'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+GCP의 ClickHouse BYOC는 VPC Peering과 PSC(Private Service Connect)의 두 가지 프라이빗 연결 옵션을 지원합니다.
+
+<div id="common-prerequisites">
+  ## 사전 요구 사항
+</div>
+
+VPC peering 및 PSC에 공통으로 필요한 단계입니다.
+
+<div id="step-enable-private-load-balancer-for-clickhouse-byoc">
+  ### BYOC용 ClickHouse에 프라이빗 로드 밸런서 활성화
+</div>
+
+ClickHouse Cloud 콘솔에서 BYOC 인프라의 **프라이빗 로드 밸런서**를 활성화하십시오.
+
+<Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC 프라이빗 로드 밸런서 활성화" border />
+
+<div id="gcp-vpc-peering">
+  ## VPC peering 설정
+</div>
+
+[GCP VPC peering 기능](https://docs.cloud.google.com/vpc/docs/vpc-peering)을 미리 숙지하고, VPC peering의 제한 사항(예: 피어링된 VPC 네트워크 간에 서브넷 IP 범위가 겹치면 안 됨)도 확인하십시오. ClickHouse BYOC는 피어링을 통해 ClickHouse 서비스에 네트워크로 연결할 수 있도록 프라이빗 로드 밸런서를 사용합니다.
+
+ClickHouse BYOC의 VPC peering을 생성하거나 삭제하려면 다음 단계를 따르십시오.
+
+<Note>
+  The example steps are for a simple scenario, for advanced scenarios such as peering with on-premises connectivity, some adjustments may be required.
+</Note>
+
+<Steps>
+  <Step title="Create a peering connection" id="step-1-create-a-peering-connection">
+    이 예시에서는 BYOC VPC 네트워크와 기존의 다른 VPC 네트워크 간에 피어링을 설정합니다.
+
+    1. ClickHouse BYOC Google Cloud Project에서 &quot;VPC Network&quot;로 이동합니다.
+    2. &quot;VPC network peering&quot;을 선택합니다.
+    3. &quot;Create connection&quot;을 클릭합니다.
+    4. 요구 사항에 맞게 필요한 필드를 입력합니다. 아래는 동일한 GCP 프로젝트 내에서 피어링을 생성하는 화면입니다.
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-gcp-1.webp" size="md" alt="BYOC 피어링 연결 생성" border />
+
+    GCP VPC peering이 작동하려면 2개의 네트워크 사이에 2개의 연결이 필요합니다(즉, BYOC 네트워크에서 기존 VPC 네트워크로의 연결 1개와 기존 VPC 네트워크에서 BYOC 네트워크로의 연결 1개). 따라서 반대 방향으로도 동일하게 연결을 하나 더 생성해야 합니다. 아래는 두 번째 피어링 연결을 생성하는 화면입니다.
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-gcp-2.webp" size="md" alt="BYOC 피어링 연결 수락" border />
+
+    두 연결이 모두 생성되면 Google Cloud Console 웹페이지를 새로고침한 후 두 연결의 status가 &quot;Active&quot;로 표시되어야 합니다.
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-gcp-3.webp" size="lg" alt="BYOC 피어링 연결 수락" border />
+
+    이제 피어링된 VPC에서 ClickHouse 서비스에 접근할 수 있습니다.
+  </Step>
+
+  <Step title="Access ClickHouse service via peering connection" id="step-2-access-ch-service-via-peering">
+    ClickHouse에 비공개로 접근할 수 있도록, 사용자의 피어링된 VPC에서 안전하게 연결할 수 있는 프라이빗 로드 밸런서와 endpoint가 프로비저닝됩니다. Private endpoint는 public endpoint 형식을 따르며 `-private` 접미사가 추가됩니다. 예시는 다음과 같습니다.
+
+    * **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-east1.gcp.clickhouse-byoc.com`
+    * **Private endpoint**: `h5ju65kv87-private.mhp0y4dmph.us-east1.gcp.clickhouse-byoc.com`
+  </Step>
+</Steps>
+
+<div id="setup-psc">
+  ## PSC(Private Service Connect) 설정
+</div>
+
+GCP PSC(Private Service Connect)는 VPC peering이나 인터넷 gateway 없이 ClickHouse BYOC 서비스에 안전한 프라이빗 연결을 제공합니다. 모든 트래픽은 GCP 네트워크 내에서만 흐르므로 공용 인터넷을 거치지 않습니다.
+
+<Steps>
+  <Step title="ClickHouse 콘솔에서 Private Link 활성화" id="step-1-enable-private-link">
+    <Note>
+      사전 요구 사항으로 **프라이빗 로드 밸런서**가 활성화되어 있는지 확인하십시오.
+    </Note>
+
+    <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="BYOC PrivateLink 활성화" />
+  </Step>
+
+  <Step title={<>엔드포인트 <code>Service name</code> 가져오기</>} id="step-2-obtain-endpoint-service-name">
+    1. ClickHouse Cloud 콘솔에서 PSC를 통해 연결하려는 서비스의 설정 페이지로 이동합니다.
+    2. &quot;Set up private endpoint&quot;를 클릭합니다.
+    3. 열린 플라이아웃에서 `Service name`과 `DNS name` 값을 복사합니다. 다음 단계에서 사용합니다. (Private Link를 활성화한 후 값이 생성되기까지 다소 시간이 걸릴 수 있습니다.)
+       <Image img="/images/cloud/security/gcp-privatelink-pe-create.webp" size="md" alt="Private Endpoints" border />
+  </Step>
+
+  <Step title="네트워크에서 엔드포인트 생성" id="step-3-create-endpoint">
+    1. **자체 GCP 콘솔**(즉, 클라이언트 애플리케이션이 있는 GCP 계정)을 열고 Network Services → Private Service Connect → Connected Endpoints로 이동합니다.
+
+    2. &quot;Connect Endpoint&quot; 버튼을 클릭하여 Private Service Connect 생성 대화상자를 엽니다.
+       <Image img="/images/cloud/security/gcp-psc-open.webp" size="md" alt="Google Cloud 콘솔에서 Private Service Connect 열기" border />
+
+    3. 다음 필드를 입력합니다.
+       * **Target**: `Published service`를 선택합니다.
+       * **Target service**: 이전 단계에서 가져온 `Service name`을 사용합니다.
+       * **Endpoint name**: 유효한 엔드포인트 이름을 입력합니다.
+       * **Network/Subnetwork**: 연결에 사용할 네트워크를 선택합니다. 클라이언트 애플리케이션이 연결하는 네트워크입니다.
+       * **IP address**: 엔드포인트에 사용할 새 IP 주소를 선택하거나 생성합니다. 이 IP 주소는 [엔드포인트의 Private DNS 이름 설정](#step-5-set-private-dns-name-for-endpoint) 단계에서 사용합니다.
+       * (선택 사항) **Enable global access**: 모든 Region에서 엔드포인트를 사용할 수 있도록 하려면 활성화합니다.
+         <Image img="/images/cloud/security/gcp-psc-enable-global-access.webp" size="md" alt="Private Service Connect의 Global Access 활성화" border />
+       * &quot;ADD ENDPOINT&quot; 버튼을 클릭하여 엔드포인트를 생성합니다.
+
+    4. 연결이 승인되면 Status 컬럼이 Pending에서 Accepted로 변경됩니다.
+
+    5. 엔드포인트를 생성한 후 `PSC Connection ID` 값을 복사합니다. 다음 단계에서 사용합니다.
+       <Image img="/images/cloud/security/gcp-psc-copy-connection-id.webp" size="md" alt="PSC Connection ID 복사" border />
+  </Step>
+
+  <Step title={<>ClickHouse 서비스 허용 목록에 <code>Endpoint ID</code> 추가</>} id="step-4-add-endpoint-id-to-services-allow-list">
+    1. ClickHouse Cloud 콘솔에서 PSC를 통해 연결하려는 서비스의 설정 페이지로 이동합니다.
+    2. &quot;Set up private endpoint&quot;를 클릭합니다.
+    3. 열린 플라이아웃에서 이전 단계에서 가져온 `PSC Connection ID`를 선택 사항인 설명과 함께 `Endpoint ID` 필드에 입력합니다.
+    4. &quot;Create endpoint&quot;를 클릭합니다.
+
+    <Note>
+      기존 PSC 연결의 액세스를 허용하려면 기존 엔드포인트 드롭다운 메뉴를 사용합니다.
+      드롭다운에는 동일한 인프라 내 서비스에 연결된 기존 PSC 연결이 표시됩니다.
+    </Note>
+
+    <Image img="/images/cloud/security/gcp-privatelink-pe-filters.webp" size="md" alt="Private Endpoints 필터" border />
+  </Step>
+
+  <Step title="엔드포인트의 Private DNS 이름 설정" id="step-5-set-private-dns-name-for-endpoint">
+    <Note>
+      DNS를 구성하는 방법은 다양합니다. 사용 사례에 맞게 DNS를 설정하십시오.
+    </Note>
+
+    &quot;DNS name&quot;의 모든 하위 도메인(와일드카드)이 GCP PSC 엔드포인트 IP 주소를 가리키도록 구성해야 합니다. 이렇게 하면 VPC/Network 내의 서비스와 구성 요소가 해당 이름을 올바르게 확인할 수 있습니다.
+  </Step>
+
+  <Step title="PSC를 사용하여 인스턴스에 액세스" id="step-6-connect-via-psc">
+    1. ClickHouse Cloud 콘솔에서 서비스의 설정 페이지로 이동합니다.
+    2. &quot;Set up private endpoint&quot;를 클릭합니다.
+    3. 열린 플라이아웃에서 `DNS name`을 복사합니다.
+       <Image img="/images/cloud/security/gcp-privatelink-pe-dns.webp" size="md" alt="Private Endpoint DNS 이름" border />
+       <Note>
+         PSC를 통한 ClickHouse 서비스 액세스는 BYOC 인프라 내에서 ClickHouse가 관리하는 서비스 수준의 **Istio Authorization Policy**로 제어됩니다.
+       </Note>
+  </Step>
+</Steps>

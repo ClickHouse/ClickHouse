@@ -1,0 +1,21 @@
+External communication to the network interface is enabled by activating the listen
+host setting. This ensures that the ClickHouse server host is reachable by other
+hosts:
+
+```xml
+<listen_host>0.0.0.0</listen_host>
+```
+
+The port for the HTTP API is set to `8123`:
+
+```xml
+<http_port>8123</http_port>
+```
+
+The TCP port for interaction by ClickHouse's native protocol between clickhouse-client
+and other native ClickHouse tools, and clickhouse-server and other clickhouse-servers
+is set to `9000`:
+
+```xml
+<tcp_port>9000</tcp_port>
+```

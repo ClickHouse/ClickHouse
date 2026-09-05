@@ -1,0 +1,18 @@
+---
+slug: /guides/sre/scaling-clusters
+sidebarTitle: 'Rebalanceamento de shards'
+description: 'O ClickHouse não oferece suporte ao rebalanceamento automático de shards, por isso fornecemos algumas práticas recomendadas para rebalanceá-los.'
+title: 'Rebalanceamento de dados'
+doc_type: 'guide'
+keywords: ['escalabilidade', 'clusters', 'escalabilidade horizontal', 'planejamento de capacidade', 'desempenho']
+---
+
+O ClickHouse não oferece suporte ao rebalanceamento automático de shards. No entanto, há algumas maneiras de rebalancear shards, em ordem de preferência:
+
+1. Ajuste o shard da [tabela distribuída](/pt-BR/reference/engines/table-engines/special/distributed), permitindo que as gravações sejam direcionadas preferencialmente ao novo shard. Isso pode causar desequilíbrios de carga e pontos de sobrecarga no cluster, mas pode ser viável na maioria dos cenários em que a taxa de gravação não é extremamente alta. Isso não exige que o usuário altere o destino das gravações, ou seja, ele pode continuar sendo a tabela distribuída. Isso não ajuda a rebalancear os dados existentes.
+
+2. Como alternativa a (1), modifique o cluster existente e grave exclusivamente no novo shard até que o cluster fique balanceado, ponderando manualmente as gravações. Isso tem as mesmas limitações de (1).
+
+3. Se você precisar rebalancear dados existentes e tiver particionado os dados, considere desanexar as partições e realocá-las manualmente para outro nó antes de reanexá-las ao novo shard. Essa abordagem é mais manual do que as técnicas a seguir, mas pode ser mais rápida e consumir menos recursos. Como se trata de uma operação manual, é preciso considerar cuidadosamente o rebalanceamento dos dados.
+
+4. Exporte os dados do cluster de origem para o novo cluster por meio de um [INSERT FROM SELECT](/pt-BR/reference/statements/insert-into#inserting-the-results-of-select). Isso não terá bom desempenho em conjuntos de dados muito grandes e poderá gerar IO significativo no cluster de origem, além de consumir recursos consideráveis de rede. Isso deve ser considerado como último recurso.

@@ -30,7 +30,7 @@ node2 = cluster.add_instance(
 )
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
         cluster.start()
@@ -426,9 +426,9 @@ def test_long_query_cancel(fn_setup_tables):
 
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        refresh_interval="EVERY 3 SECONDS",
+        refresh_interval="EVERY 2 SECONDS",
         to_clause="tgt1",
-        select_query="SELECT now() a, sleep(1) b from numbers(5) settings max_block_size=1",
+        select_query="SELECT now() a, sleep(1) b from numbers(3) settings max_block_size=1",
         with_append=False,
         empty=True,
         settings={"refresh_retries": "0"},
@@ -451,7 +451,7 @@ def test_long_query_cancel(fn_setup_tables):
         node, "test_rmv", delay=0.1, max_attempts=1000, wait_status="Scheduled"
     )
 
-    assert node.query("SELECT count() FROM tgt1") == "5\n"
+    assert node.query("SELECT count() FROM tgt1") == "3\n"
 
 
 @pytest.fixture(scope="function")

@@ -1,119 +1,92 @@
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <Parsers/CommonParsers.h>
 #include <base/find_symbols.h>
-#include <Common/ErrorCodes.h>
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace
 {
-using Strings = std::vector<String>;
 
-class KeyWordToStringConverter
+/// These invariants used to be checked while the keyword table was built at program startup.
+/// They are compile-time now, so they cost nothing and cannot be violated by a build that skips them.
+
+constexpr bool containsUnderscore(std::string_view value)
 {
-public:
-    static const KeyWordToStringConverter & instance()
+    for (char c : value)
+        if (c == '_')
+            return true;
+    return false;
+}
+
+constexpr char toLowerASCII(char c)
+{
+    return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+}
+
+/// A keyword identifier must spell out its value, with underscores standing for spaces.
+constexpr bool identifierMatchesValue(std::string_view identifier, std::string_view value)
+{
+    if (value == "TRUE" || value == "FALSE" || value == "NULL")
+        return true;
+
+    if (identifier.size() != value.size())
+        return false;
+
+    for (size_t i = 0; i < identifier.size(); ++i)
     {
-        static const KeyWordToStringConverter res;
-        return res;
+        if (identifier[i] == '_' && value[i] == ' ')
+            continue;
+        if (toLowerASCII(identifier[i]) != toLowerASCII(value[i]))
+            return false;
     }
 
-    std::string_view convert(Keyword type) const
-    {
-        return mapping[static_cast<size_t>(type)];
-    }
+    return true;
+}
 
-    const std::vector<String> & getMapping() const
-    {
-        return mapping;
-    }
+#define CHECK_KEYWORD_HAS_NO_UNDERSCORE(identifier, value) \
+    static_assert(!containsUnderscore(value), \
+        "The keyword " value " has an underscore. If this is intentional, declare it in APPLY_FOR_PARSER_KEYWORDS_WITH_UNDERSCORES.");
+APPLY_FOR_PARSER_KEYWORDS(CHECK_KEYWORD_HAS_NO_UNDERSCORE)
+#undef CHECK_KEYWORD_HAS_NO_UNDERSCORE
 
-    const std::unordered_set<std::string> & getSet() const { return set; }
+#define CHECK_KEYWORD_MATCHES_IDENTIFIER(identifier, value) \
+    static_assert(identifierMatchesValue(#identifier, value), \
+        "The keyword identifier " #identifier " differs from its value " value ".");
+APPLY_FOR_PARSER_KEYWORDS(CHECK_KEYWORD_MATCHES_IDENTIFIER)
+APPLY_FOR_PARSER_KEYWORDS_WITH_UNDERSCORES(CHECK_KEYWORD_MATCHES_IDENTIFIER)
+#undef CHECK_KEYWORD_MATCHES_IDENTIFIER
 
-private:
-    KeyWordToStringConverter()
-    {
-#define KEYWORD_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING(identifier, value) \
-        checkUnderscore(value); \
-        addToMapping(Keyword::identifier, value);
-        APPLY_FOR_PARSER_KEYWORDS(KEYWORD_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING)
-#undef KEYWORD_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING
-
-#define KEYWORD_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING(identifier, value) \
-        addToMapping(Keyword::identifier, value);
-        APPLY_FOR_PARSER_KEYWORDS_WITH_UNDERSCORES(KEYWORD_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING)
-#undef KEYWORD_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING
-
-#ifndef NDEBUG
-#define KEYWORD_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING(identifier, value) \
-        check(#identifier, value);
-        APPLY_FOR_PARSER_KEYWORDS(KEYWORD_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING)
-        APPLY_FOR_PARSER_KEYWORDS_WITH_UNDERSCORES(KEYWORD_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING)
-#undef KEYWORD_TYPE_TO_STRING_CONVERTER_ADD_TO_MAPPING
-#endif
-    }
-
-    void addToMapping(Keyword identifier, std::string_view value)
-    {
-        size_t index = static_cast<size_t>(identifier);
-        mapping.resize(std::max(index + 1, mapping.size()));
-        mapping[index] = value;
-        set.emplace(value);
-    }
-
-    void checkUnderscore(std::string_view value)
-    {
-        if (value.contains('_'))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "The keyword {} has underscore. If this is intentional, please declare it in another list.", value);
-    }
-
-    [[ maybe_unused ]] void check(std::string_view identifier, std::string_view value)
-    {
-        if (value == "TRUE" || value == "FALSE" || value == "NULL")
-            return;
-
-        if (identifier.size() != value.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The length of the keyword identifier and the length of its value are different.");
-
-        for (size_t i = 0; i < identifier.size(); ++i)
-        {
-            if (std::tolower(identifier[i]) == '_' && std::tolower(value[i]) == ' ')
-                continue;
-            if (std::tolower(identifier[i]) == std::tolower(value[i]))
-                continue;
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Keyword identifier {} differs from its value {} in {} position: {} and {}",
-                identifier, value, i, identifier[i], value[i]);
-        }
-
-    }
-
-    Strings mapping;
-    std::unordered_set<std::string> set;
+/// Indexed by `Keyword`: the enumerators are declared from the same two lists, in the same order.
+#define KEYWORD_TO_STRING_VIEW(identifier, value) std::string_view{value},
+constexpr std::array keyword_strings
+{
+    APPLY_FOR_PARSER_KEYWORDS(KEYWORD_TO_STRING_VIEW)
+    APPLY_FOR_PARSER_KEYWORDS_WITH_UNDERSCORES(KEYWORD_TO_STRING_VIEW)
 };
+#undef KEYWORD_TO_STRING_VIEW
+
 }
 
 
 std::string_view toStringView(Keyword type)
 {
-    return KeyWordToStringConverter::instance().convert(type);
+    return keyword_strings[static_cast<size_t>(type)];
 }
 
+/// Only used to populate system tables and to obfuscate queries, so it is built on demand
+/// rather than at startup.
 const std::vector<String> & getAllKeyWords()
 {
-    return KeyWordToStringConverter::instance().getMapping();
+    static const std::vector<String> res(keyword_strings.begin(), keyword_strings.end());
+    return res;
 }
 
 const std::unordered_set<std::string> & getKeyWordSet()
 {
-    return KeyWordToStringConverter::instance().getSet();
+    static const std::unordered_set<std::string> res(keyword_strings.begin(), keyword_strings.end());
+    return res;
 }
 
 ParserKeyword::ParserKeyword(Keyword keyword)

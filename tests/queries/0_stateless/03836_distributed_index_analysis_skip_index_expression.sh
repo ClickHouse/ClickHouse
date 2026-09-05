@@ -9,6 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 # Test that distributed index analysis works correctly when skip index contains
 # expressions over columns (e.g. toStartOfMinute(timestamp)), not just plain
 # column references.
@@ -42,10 +43,16 @@ $CLICKHOUSE_CLIENT -nm -q "
       index_granularity=8192,
       index_granularity_bytes=10e6,
       distributed_index_analysis_min_parts_to_activate=0,
-      distributed_index_analysis_min_indexes_bytes_to_activate=0;
+      distributed_index_analysis_min_indexes_bytes_to_activate=0,
+      -- auto_statistics_types='': otherwise the auto column statistics (materialized on INSERT by default) add a statistics.packed file that inflates part sizes and perturbs the distributed index analysis counters.
+      auto_statistics_types='';
   system stop merges test_skip_with_expr;
-  insert into test_skip_with_expr select toDateTime64('2024-01-01 00:00:00', 9) + number, number from numbers(1e6)
-    settings max_block_size=10000, min_insert_block_size_rows=10000, max_insert_threads=1;
+  -- 50 parts of 1000 rows; the step of 10 seconds keeps each part spanning multiple hours,
+  -- so the probe hour below still selects exactly one part (as with 10000 rows of step 1).
+  -- The part count is what has to fit the flaky-check time limit under sanitizers: with metadata
+  -- in Keeper, every part commit is a round trip, and the insert dominates the test wall time.
+  insert into test_skip_with_expr select toDateTime64('2024-01-01 00:00:00', 9) + (number * 10), number from numbers(5e4)
+    settings max_block_size=1000, min_insert_block_size_rows=1000, max_insert_threads=1;
   select count() from system.parts where database = currentDatabase() and table = 'test_skip_with_expr' and active;
 "
 

@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <atomic>
 #include <memory>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3Settings.h>
@@ -29,8 +30,6 @@ public:
     using S3CredentialsRefreshCallback = ReadBufferFromS3::S3CredentialsRefreshCallback;
 
 private:
-    friend class S3PlainObjectStorage;
-
     S3ObjectStorage(
         const char * logger_name,
         std::unique_ptr<S3::Client> && client_,
@@ -40,10 +39,12 @@ private:
         ObjectStorageKeyGeneratorPtr key_generator_,
         const String & disk_name_,
         bool for_disk_s3_ = true,
-        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; })
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; },
+        bool client_restricts_server_credentials_ = true)
         : uri(uri_)
         , disk_name(disk_name_)
         , client(std::move(client_))
+        , client_restricts_server_credentials(client_restricts_server_credentials_)
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
         , key_generator(std::move(key_generator_))
@@ -160,11 +161,21 @@ private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
+    std::pair<std::string, std::string> splitBucketAndKey(const std::string & remote_path) const;
+    std::map<std::string, StoredObjects> groupByBucket(const StoredObjects & objects) const;
+
     const S3::URI uri;
 
     std::string disk_name;
 
     mutable MultiVersion<S3::Client> client;
+    /// The user-query credential restriction mode the current `client` was built under (initialized by the
+    /// caller from the policy used to build the initial client -- e.g. a table created with the opt-in starts
+    /// `false`). `applyNewSettings` rebuilds the client when a session with a different restriction mode accesses
+    /// the storage, so a restricted session never reuses a credentialed client built for an opt-in session (and
+    /// vice versa). Defaults to restricted (the server default) for callers that do not pass an explicit value.
+    /// Atomic: `applyNewSettings` can run concurrently on a shared storage.
+    mutable std::atomic<bool> client_restricts_server_credentials = true;
     MultiVersion<S3Settings> s3_settings;
     S3Capabilities s3_capabilities;
 

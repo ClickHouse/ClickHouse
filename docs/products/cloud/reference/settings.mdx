@@ -1,0 +1,18 @@
+---
+sidebarTitle: 'Configuring settings'
+slug: /manage/settings
+title: 'Configuring settings'
+description: 'How to configure settings for your ClickHouse Cloud service for a specific user or role'
+keywords: ['ClickHouse Cloud', 'settings configuration', 'cloud settings', 'user settings', 'role settings']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+To specify settings for your ClickHouse Cloud service for a specific [user](/concepts/features/security/access-rights#user-account-management) or [role](/concepts/features/security/access-rights#role-management), you must use [SQL-driven Settings Profiles](/concepts/features/security/access-rights#settings-profiles-management). Applying Settings Profiles ensures that the settings you configure persist, even when your services stop, idle, and upgrade. To learn more about Settings Profiles, please see [this page](/concepts/features/configuration/settings/settings-profiles).
+
+Please note that XML-based Settings Profiles and [configuration files](/concepts/features/configuration/server-config/configuration-files) are currently not supported for ClickHouse Cloud.
+
+To learn more about the settings you can specify for your ClickHouse Cloud service, please see all possible settings by category in [our docs](/reference/settings/index).
+
+<Image img="/images/cloud/manage/cloud-settings-sidebar.webp" size="sm" alt="Cloud settings sidebar" border/>

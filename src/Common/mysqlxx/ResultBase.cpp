@@ -22,6 +22,14 @@ ResultBase::~ResultBase()
     mysql_free_result(res);
 }
 
+MYSQL_FIELD & ResultBase::getField(size_t n) const
+{
+    if (num_fields <= n)
+        throw Exception(std::string("Unknown column position ") + std::to_string(n));
+
+    return fields[n];
+}
+
 std::string ResultBase::getFieldName(size_t n) const
 {
     if (num_fields <= n)
