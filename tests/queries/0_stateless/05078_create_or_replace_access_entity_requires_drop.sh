@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -eu
 
-suffix="05060_${CLICKHOUSE_DATABASE}"
+suffix="05078_${CLICKHOUSE_DATABASE}"
 actor="actor_${suffix}"
 victim_user="victim_user_${suffix}"
 victim_role="victim_role_${suffix}"
@@ -55,7 +55,7 @@ check()
 $CLICKHOUSE_CLIENT --query "
     CREATE TABLE ${CLICKHOUSE_DATABASE}.target (id UInt64) ENGINE = MergeTree ORDER BY id;
     CREATE USER ${actor};
-    CREATE USER ${victim_user} IDENTIFIED WITH sha256_password BY 'victim_password';
+    CREATE USER ${victim_user} IDENTIFIED WITH plaintext_password BY 'victim_password';
     CREATE ROLE ${victim_role};
     CREATE QUOTA ${victim_quota};
     CREATE SETTINGS PROFILE ${victim_profile};
@@ -65,7 +65,7 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 echo "-- only CREATE granted"
-check "DROP USER" "CREATE USER OR REPLACE ${victim_user} IDENTIFIED WITH sha256_password BY 'hijacked'"
+check "DROP USER" "CREATE USER OR REPLACE ${victim_user} IDENTIFIED WITH plaintext_password BY 'hijacked'"
 check "DROP ROLE" "CREATE ROLE OR REPLACE ${victim_role}"
 check "DROP QUOTA" "CREATE QUOTA OR REPLACE ${victim_quota}"
 check "DROP SETTINGS PROFILE" "CREATE SETTINGS PROFILE OR REPLACE ${victim_profile}"
@@ -88,7 +88,7 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 echo "-- DROP granted as well"
-check "DROP USER" "CREATE USER OR REPLACE ${victim_user} IDENTIFIED WITH sha256_password BY 'replaced'"
+check "DROP USER" "CREATE USER OR REPLACE ${victim_user} IDENTIFIED WITH plaintext_password BY 'replaced'"
 check "DROP ROLE" "CREATE ROLE OR REPLACE ${victim_role}"
 check "DROP QUOTA" "CREATE QUOTA OR REPLACE ${victim_quota}"
 check "DROP SETTINGS PROFILE" "CREATE SETTINGS PROFILE OR REPLACE ${victim_profile}"
