@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -776,7 +777,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_as(Keyword::AS);
     ParserKeyword s_not(Keyword::NOT);
     ParserKeyword s_replicated(Keyword::REPLICATED);
-    ParserToken s_dot(TokenType::Dot);
     ParserToken s_comma(TokenType::Comma);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
@@ -1020,16 +1020,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
                 /// ENGINE can not be specified for table functions.
                 if (storage || !table_function_p.parse(pos, as_table_function, expected))
                 {
-                    /// AS [db.]table
-                    if (!name_p.parse(pos, as_table, expected))
+                    /// AS [db.]table, possibly a hierarchical name `a.b.c`
+                    if (!parseDatabaseAndTableAsAST(pos, expected, as_database, as_table))
                         return false;
-
-                    if (s_dot.ignore(pos, expected))
-                    {
-                        as_database = as_table;
-                        if (!name_p.parse(pos, as_table, expected))
-                            return false;
-                    }
 
                     /// Optional - ENGINE can be specified.
                     if (!storage)
@@ -1314,7 +1307,8 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword s_on(Keyword::ON);
     ParserKeyword s_uuid(Keyword::UUID);
     ParserStorage storage_p{ParserStorage::DATABASE_ENGINE};
-    ParserIdentifier name_p(true);
+    /// `CREATE DATABASE a.b` creates the database named `a.b` (a hierarchical name, the same as `USE a.b`).
+    ParserCompoundIdentifier name_p(/*table_name_with_optional_uuid*/ false, /*allow_query_parameter*/ true);
     ParserTableOverridesDeclarationList table_overrides_p;
 
     ASTPtr database;

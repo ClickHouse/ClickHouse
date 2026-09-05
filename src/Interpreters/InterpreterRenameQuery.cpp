@@ -59,10 +59,27 @@ BlockIO InterpreterRenameQuery::execute()
     /// Don't allow to drop tables (that we are renaming); don't allow to create tables in places where tables will be renamed.
     TableGuards table_guards;
 
+    auto & database_catalog = DatabaseCatalog::instance();
+
     for (const auto & elem : rename.getElements())
     {
         descriptions.emplace_back(elem, current_database);
-        const auto & description = descriptions.back();
+        auto & description = descriptions.back();
+
+        /// Hierarchical names (`a.b.c`, or `c` inside `USE a.b`): the source is the existing table the name refers to,
+        /// the destination is placed the same way as a created table; see `DatabaseCatalog`.
+        if (!rename.database)
+        {
+            StorageID from = database_catalog.resolveHierarchicalName(
+                StorageID(elem.from.database ? elem.from.getDatabase() : "", elem.from.getTable()), getContext());
+            description.from_database_name = from.database_name;
+            description.from_table_name = from.table_name;
+
+            StorageID to = database_catalog.resolveHierarchicalNameForCreation(
+                StorageID(elem.to.database ? elem.to.getDatabase() : "", elem.to.getTable()), getContext());
+            description.to_database_name = to.database_name;
+            description.to_table_name = to.table_name;
+        }
 
         UniqueTableName from(description.from_database_name, description.from_table_name);
         UniqueTableName to(description.to_database_name, description.to_table_name);
@@ -70,8 +87,6 @@ BlockIO InterpreterRenameQuery::execute()
         table_guards[from];
         table_guards[to];
     }
-
-    auto & database_catalog = DatabaseCatalog::instance();
 
     /// Must do it in consistent order.
     for (auto & table_guard : table_guards)

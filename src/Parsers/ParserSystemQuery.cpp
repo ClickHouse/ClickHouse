@@ -931,32 +931,21 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     return false;
             }
 
-            ParserToken s_dot(TokenType::Dot);
-            ParserIdentifier table_parser(true);
-
             do
             {
-                ASTPtr table_first;
-                if (!table_parser.parse(pos, table_first, expected))
+                /// [db.]table, possibly a hierarchical name `a.b.c`
+                ASTPtr database;
+                ASTPtr table;
+                if (!parseDatabaseAndTableAsAST(pos, expected, database, table))
                 {
                     if (res->tables.empty())
                         break;
                     return false;
                 }
 
-                if (!s_dot.ignore(pos))
-                {
-                    res->tables.emplace_back(String{}, table_first->as<ASTIdentifier &>().full_name);
-                }
-                else
-                {
-                    ASTPtr table_second;
-                    if (!table_parser.parse(pos, table_second, expected))
-                        return false;
-                    res->tables.emplace_back(table_first->as<ASTIdentifier &>().full_name, table_second->as<ASTIdentifier &>().full_name);
-                }
-
-
+                String database_name;
+                tryGetIdentifierNameInto(database, database_name);
+                res->tables.emplace_back(database_name, getIdentifierName(table));
             } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
 
             break;

@@ -15,6 +15,9 @@
 #include <Common/Macros.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
+#include <base/find_symbols.h>
+
+#include <fmt/ranges.h>
 
 
 namespace DB
@@ -30,6 +33,52 @@ InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_
     : WithMutableContext(context_)
     , query_ptr(query_ptr_)
 {
+}
+
+/// The sources of the tables listed for a hierarchical database name (see `DatabaseCatalog`), as conditions on
+/// `system.tables` and expressions of the listed name. Empty for an ordinary database name, which is only itself.
+std::vector<InterpreterShowTablesQuery::HierarchicalDatabaseSource> InterpreterShowTablesQuery::getHierarchicalDatabaseSources(const String & database)
+{
+    const auto & catalog = DatabaseCatalog::instance();
+
+    std::vector<String> parts;
+    splitInto<'.'>(parts, database);
+
+    /// The databases `a.b.*`, when there are such.
+    bool has_nested_databases = false;
+    String nested_database_prefix = database + '.';
+    auto databases = catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true});
+    if (auto it = databases.lower_bound(nested_database_prefix); it != databases.end() && it->first.starts_with(nested_database_prefix))
+        has_nested_databases = true;
+
+    if (parts.size() < 2 && !has_nested_databases)
+        return {};
+
+    std::vector<HierarchicalDatabaseSource> sources;
+    auto quoted = [](const String & value) { WriteBufferFromOwnString buf; buf << DB::quote << value; return buf.str(); };
+
+    /// The database itself.
+    sources.push_back({.condition = "database = " + quoted(database), .name_expression = "name"});
+
+    if (has_nested_databases)
+        sources.push_back({
+            .condition = "startsWith(database, " + quoted(nested_database_prefix) + ")",
+            .name_expression = fmt::format("concat(substring(database, {}), '.', name)", nested_database_prefix.size() + 1)});
+
+    /// The tables `b.*` of the database `a`, for every prefix `a` that is a database.
+    for (size_t database_parts = parts.size() - 1; database_parts >= 1; --database_parts)
+    {
+        String database_name = fmt::format("{}", fmt::join(parts.begin(), parts.begin() + database_parts, "."));
+        if (!catalog.isDatabaseExist(database_name))
+            continue;
+
+        String table_prefix = fmt::format("{}.", fmt::join(parts.begin() + database_parts, parts.end(), "."));
+        sources.push_back({
+            .condition = "(database = " + quoted(database_name) + " AND startsWith(name, " + quoted(table_prefix) + "))",
+            .name_expression = fmt::format("substring(name, {})", table_prefix.size() + 1)});
+    }
+
+    return sources;
 }
 
 String InterpreterShowTablesQuery::getRewrittenQuery()
@@ -167,30 +216,37 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
     WriteBufferFromOwnString rewritten_query;
 
-    if (query.full)
-    {
-        rewritten_query << "SELECT name, engine FROM system.";
-    }
-    else
-    {
-        rewritten_query << "SELECT name FROM system.";
-    }
-
-    if (query.dictionaries)
-        rewritten_query << "dictionaries ";
-    else
-        rewritten_query << "tables ";
-
-    rewritten_query << "WHERE ";
+    String system_table = query.dictionaries ? "system.dictionaries" : "system.tables";
+    String engine_column = query.full ? ", engine" : "";
 
     if (query.temporary)
     {
         if (query.dictionaries)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary dictionaries are not possible.");
-        rewritten_query << "is_temporary";
+        rewritten_query << "SELECT name" << engine_column << " FROM " << system_table << " WHERE is_temporary";
     }
     else
-        rewritten_query << "database = " << DB::quote << database;
+    {
+        auto sources = getHierarchicalDatabaseSources(database);
+        if (sources.empty())
+        {
+            rewritten_query << "SELECT name" << engine_column << " FROM " << system_table << " WHERE database = " << DB::quote << database;
+        }
+        else
+        {
+            /// A hierarchical database name (see `DatabaseCatalog`): the tables of the database `a.b`, of the databases
+            /// `a.b.*` (listed as `c.table`), and the tables `b.*` of the database `a` (listed as `table`) - the names
+            /// are relative to the name selected by `USE`. The relative name gets its own alias in the subquery,
+            /// because an alias named `name` would shadow the column in the subquery's own `WHERE`.
+            rewritten_query << "SELECT hierarchical_name AS name" << engine_column << " FROM (SELECT * EXCEPT (name), multiIf(";
+            for (const auto & source : sources)
+                rewritten_query << source.condition << ", " << source.name_expression << ", ";
+            rewritten_query << "name) AS hierarchical_name FROM " << system_table << " WHERE ";
+            for (size_t i = 0; i < sources.size(); ++i)
+                rewritten_query << (i ? " OR " : "") << sources[i].condition;
+            rewritten_query << ") WHERE 1";
+        }
+    }
 
     if (!query.like.empty())
         rewritten_query
@@ -235,6 +291,13 @@ BlockIO InterpreterShowTablesQuery::execute()
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
+
+    /// A hierarchical database name (`a.b`) may denote the tables `b.*` of the database `a`: the flags below are
+    /// about that database then.
+    auto resolved_database = DatabaseCatalog::instance().resolveHierarchicalDatabase(database);
+    if (!resolved_database.database_name.empty())
+        database = resolved_database.database_name;
+
     if (DatabaseCatalog::instance().isDatalakeCatalog(database))
     {
         /// Explicit `SHOW TABLES` should include tables from the requested data lake catalog.

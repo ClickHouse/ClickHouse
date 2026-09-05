@@ -552,9 +552,6 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     if (table_name_with_optional_uuid)
     {
-        if (parts.size() > 2)
-            return false;
-
         if (s_uuid.ignore(pos, expected))
         {
             ParserStringLiteral uuid_p;
@@ -565,8 +562,8 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             has_uuid_clause = true;
         }
 
-        if (parts.size() == 1) node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
-        else node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
+        /// Any number of parts: `a.b.c` is a hierarchical name (see `ASTTableIdentifier`).
+        node = make_intrusive<ASTTableIdentifier>(std::move(parts), std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
         node->as<ASTTableIdentifier>()->has_uuid = has_uuid_clause;
     }

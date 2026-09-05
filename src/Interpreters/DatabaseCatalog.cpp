@@ -31,6 +31,7 @@
 #include <Common/levenshteinDistance.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
+#include <base/find_symbols.h>
 #include <base/scope_guard.h>
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -505,6 +506,50 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             database = it->second;
     }
 
+    StoragePtr table;
+    if (database)
+    {
+        if (exception)
+        {
+            try
+            {
+                table = database->getTable(table_id.table_name, context_);
+            }
+            catch (const Exception & e)
+            {
+                exception->emplace(e);
+            }
+        }
+        else
+        {
+            table = database->tryGetTable(table_id.table_name, context_);
+        }
+    }
+
+    if (!table)
+    {
+        /// A hierarchical name: try the other splits of the name (see the header).
+        String current_database = context_->getCurrentDatabase();
+        for (const auto & candidate : getHierarchicalNameCandidates(table_id, current_database))
+        {
+            if (candidate.database_name == table_id.database_name && candidate.table_name == table_id.table_name)
+                continue;
+
+            auto candidate_database = tryGetDatabase(candidate.database_name);
+            if (!candidate_database)
+                continue;
+
+            if (auto candidate_table = candidate_database->tryGetTable(candidate.table_name, context_))
+            {
+                database = std::move(candidate_database);
+                table = std::move(candidate_table);
+                if (exception)
+                    exception->reset();
+                break;
+            }
+        }
+    }
+
     if (!database)
     {
         if (exception)
@@ -521,23 +566,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             }
         }
         return {};
-    }
-
-    StoragePtr table;
-    if (exception)
-    {
-        try
-        {
-            table = database->getTable(table_id.table_name, context_);
-        }
-        catch (const Exception & e)
-        {
-            exception->emplace(e);
-        }
-    }
-    else
-    {
-        table = database->tryGetTable(table_id.table_name, context_);
     }
 
     if (!table && exception && !exception->has_value())
@@ -606,27 +634,246 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
     if (database_name.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
 
-    DatabasePtr db;
+    resolveHierarchicalDatabase(database_name);
+}
+
+namespace
+{
+
+std::vector<String> splitHierarchicalName(std::string_view name)
+{
+    std::vector<String> parts;
+    splitInto<'.'>(parts, name);
+    return parts;
+}
+
+String joinHierarchicalName(const std::vector<String> & parts, size_t begin, size_t end)
+{
+    String res;
+    for (size_t i = begin; i < end; ++i)
     {
-        std::lock_guard lock{databases_mutex};
-        if (auto it = databases.find(database_name); it != databases.end())
-            db = it->second;
+        if (i != begin)
+            res += '.';
+        res += parts[i];
     }
-    if (!db)
+    return res;
+}
+
+/// All the splits of a dotted name into a database and a table, the longest database first.
+void addHierarchicalNameSplits(const std::vector<String> & parts, std::vector<StorageID> & candidates)
+{
+    for (size_t database_parts = parts.size() - 1; database_parts >= 1; --database_parts)
     {
-        DatabaseNameHints hints(*this);
-        auto names = hints.getHints(database_name);
-        if (names.empty())
+        String database_name = joinHierarchicalName(parts, 0, database_parts);
+        String table_name = joinHierarchicalName(parts, database_parts, parts.size());
+        if (database_name.empty() || table_name.empty())
+            continue;
+        StorageID candidate(database_name, table_name);
+        if (std::find(candidates.begin(), candidates.end(), candidate) == candidates.end())
+            candidates.push_back(std::move(candidate));
+    }
+}
+
+}
+
+std::vector<StorageID> DatabaseCatalog::getHierarchicalNameCandidates(const StorageID & table_id, const String & current_database)
+{
+    std::vector<StorageID> candidates;
+
+    std::vector<String> qualified_parts;
+    if (!table_id.database_name.empty())
+    {
+        candidates.emplace_back(table_id.database_name, table_id.table_name);
+        qualified_parts = splitHierarchicalName(table_id.database_name);
+    }
+    for (auto & part : splitHierarchicalName(table_id.table_name))
+        qualified_parts.push_back(std::move(part));
+
+    if (!table_id.database_name.empty())
+        addHierarchicalNameSplits(qualified_parts, candidates);
+
+    if (!current_database.empty())
+    {
+        std::vector<String> relative_parts = splitHierarchicalName(current_database);
+        for (auto & part : qualified_parts)
+            relative_parts.push_back(std::move(part));
+        addHierarchicalNameSplits(relative_parts, candidates);
+    }
+
+    return candidates;
+}
+
+StorageID DatabaseCatalog::getHierarchicalNamePlacement(const StorageID & table_id, ContextPtr context_) const
+{
+    return getHierarchicalNamePlacement(table_id, context_->getCurrentDatabase(), context_);
+}
+
+StorageID DatabaseCatalog::getHierarchicalNamePlacement(const StorageID & table_id, const String & current_database, ContextPtr context_) const
+{
+    size_t table_name_parts = splitHierarchicalName(table_id.table_name).size();
+
+    for (const auto & candidate : getHierarchicalNameCandidates(table_id, current_database))
+    {
+        auto database = tryGetDatabase(candidate.database_name);
+        if (!database)
+            continue;
+
+        /// A name qualified with a database that does not exist (`nodb.t`) is reported as such, rather than as the
+        /// table `nodb.t` of the current database - unless the current database has a namespace `nodb.*` of tables.
+        std::vector<String> candidate_table_parts = splitHierarchicalName(candidate.table_name);
+        if (!table_id.database_name.empty() && candidate_table_parts.size() > table_name_parts
+            && !(table_id.database_name + '.').starts_with(candidate.database_name + '.'))
         {
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
+            String table_prefix = joinHierarchicalName(candidate_table_parts, 0, candidate_table_parts.size() - table_name_parts) + '.';
+            if (!hasTablesWithPrefix(*database, table_prefix, context_))
+                continue;
         }
 
-        throw Exception(
-            ErrorCodes::UNKNOWN_DATABASE,
-            "Database {} does not exist. Maybe you meant {}?",
-            backQuoteIfNeed(database_name),
-            backQuoteIfNeed(names[0]));
+        return candidate;
     }
+
+    if (table_id.database_name.empty())
+        return StorageID(current_database, table_id.table_name);
+    return StorageID(table_id.database_name, table_id.table_name);
+}
+
+StorageID DatabaseCatalog::resolveHierarchicalName(const StorageID & table_id, ContextPtr context_) const
+{
+    return resolveHierarchicalName(table_id, context_->getCurrentDatabase(), context_);
+}
+
+StorageID DatabaseCatalog::resolveHierarchicalName(const StorageID & table_id, const String & current_database, ContextPtr context_) const
+{
+    StorageID as_written(table_id.database_name.empty() ? current_database : table_id.database_name, table_id.table_name);
+
+    /// Fast path: the name as written. A table with a UUID exists for sure. Without a UUID, an extra existence check
+    /// is only needed when the name has other candidates, i.e. contains dots.
+    if (auto database = as_written.database_name.empty() ? nullptr : tryGetDatabase(as_written.database_name))
+    {
+        as_written.uuid = database->tryGetTableUUID(as_written.table_name);
+        if (as_written.hasUUID())
+            return as_written;
+
+        bool has_other_candidates = as_written.database_name.contains('.') || as_written.table_name.contains('.');
+        if (!has_other_candidates || database->isTableExist(as_written.table_name, context_))
+            return as_written;
+    }
+
+    for (auto & candidate : getHierarchicalNameCandidates(table_id, current_database))
+    {
+        if (candidate.database_name == as_written.database_name && candidate.table_name == as_written.table_name)
+            continue;
+
+        auto database = tryGetDatabase(candidate.database_name);
+        if (!database)
+            continue;
+
+        if (database->isTableExist(candidate.table_name, context_))
+        {
+            candidate.uuid = database->tryGetTableUUID(candidate.table_name);
+            return candidate;
+        }
+    }
+
+    return getHierarchicalNamePlacement(table_id, current_database, context_);
+}
+
+bool DatabaseCatalog::hasTablesWithPrefix(const IDatabase & database, const String & prefix, ContextPtr context_)
+{
+    TablesFilter filter{.kind = TablesFilter::Kind::Like, .pattern = prefix + "%"};
+    auto iterator = database.getTablesIteratorWithHint(
+        context_, [&](const String & table_name) { return table_name.starts_with(prefix); }, /*skip_not_loaded*/ false, filter);
+    return iterator->isValid();
+}
+
+StorageID DatabaseCatalog::resolveHierarchicalNameForCreation(const StorageID & table_id, ContextPtr context_) const
+{
+    String current_database = context_->getCurrentDatabase();
+    String database_as_written = table_id.database_name.empty() ? current_database : table_id.database_name;
+    if (database_as_written.empty())
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
+
+    /// Fast path: the database as written exists.
+    if (isDatabaseExist(database_as_written))
+        return StorageID(database_as_written, table_id.table_name);
+
+    size_t table_name_parts = splitHierarchicalName(table_id.table_name).size();
+    std::optional<StorageID> candidate_in_a_new_namespace;
+    for (const auto & candidate : getHierarchicalNameCandidates(table_id, current_database))
+    {
+        auto database = tryGetDatabase(candidate.database_name);
+        if (!database)
+            continue;
+
+        std::vector<String> candidate_table_parts = splitHierarchicalName(candidate.table_name);
+        if (candidate_table_parts.size() > table_name_parts)
+        {
+            /// The unquoted parts of the name became a namespace of the table: it must exist already.
+            String table_prefix = joinHierarchicalName(candidate_table_parts, 0, candidate_table_parts.size() - table_name_parts) + '.';
+            if (!hasTablesWithPrefix(*database, table_prefix, context_))
+            {
+                if (!candidate_in_a_new_namespace)
+                    candidate_in_a_new_namespace = candidate;
+                continue;
+            }
+        }
+
+        return candidate;
+    }
+
+    if (candidate_in_a_new_namespace)
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE,
+            "Database {} does not exist, and the database {} has no tables named {}* yet. "
+            "The unquoted parts of a name do not create a namespace of tables: to create the first table of a namespace, "
+            "quote the table name, like {}",
+            backQuoteIfNeed(database_as_written),
+            backQuoteIfNeed(candidate_in_a_new_namespace->database_name),
+            backQuote(candidate_in_a_new_namespace->table_name.substr(0, candidate_in_a_new_namespace->table_name.size() - table_id.table_name.size())),
+            candidate_in_a_new_namespace->getFullTableName());
+
+    /// Throws UNKNOWN_DATABASE with a hint.
+    getDatabase(database_as_written);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database {} exists, but no placement for the table {} was found", database_as_written, table_id.getNameForLogs());
+}
+
+DatabaseCatalog::HierarchicalDatabase DatabaseCatalog::resolveHierarchicalDatabase(const String & name) const
+{
+    if (isDatabaseExist(name))
+        return {.database_name = name, .table_prefix = ""};
+
+    /// The longest prefix that is a database, with the rest as a namespace of its tables.
+    std::vector<String> parts = splitHierarchicalName(name);
+    for (size_t database_parts = parts.size() - 1; database_parts >= 1; --database_parts)
+    {
+        String database_name = joinHierarchicalName(parts, 0, database_parts);
+        auto database = tryGetDatabase(database_name);
+        if (!database)
+            continue;
+
+        String table_prefix = joinHierarchicalName(parts, database_parts, parts.size()) + '.';
+        if (hasTablesWithPrefix(*database, table_prefix, getContext()))
+            return {.database_name = database_name, .table_prefix = table_prefix};
+    }
+
+    /// A common prefix of database names.
+    String database_prefix = name + '.';
+    {
+        std::lock_guard lock{databases_mutex};
+        auto it = databases.lower_bound(database_prefix);
+        if (it != databases.end() && it->first.starts_with(database_prefix))
+            return {.database_name = "", .table_prefix = ""};
+    }
+
+    DatabaseNameHints hints(*this);
+    auto names = hints.getHints(name);
+    if (names.empty())
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(name));
+
+    throw Exception(
+        ErrorCodes::UNKNOWN_DATABASE,
+        "Database {} does not exist. Maybe you meant {}?",
+        backQuoteIfNeed(name),
+        backQuoteIfNeed(names[0]));
 }
 
 bool DatabaseCatalog::hasDatalakeCatalogs() const

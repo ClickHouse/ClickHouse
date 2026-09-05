@@ -903,9 +903,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (!create.as_table.empty())
     {
-        String as_database_name = getContext()->resolveDatabase(create.as_database);
-        getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, create.as_table);
-        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
+        /// `AS a.b.c` is a hierarchical name: the database and the table are those of the existing table it refers to.
+        StorageID as_table_id = DatabaseCatalog::instance().resolveHierarchicalName({create.as_database, create.as_table}, getContext());
+        String as_database_name = as_table_id.database_name;
+        getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, as_table_id.table_name);
+        StoragePtr as_storage = DatabaseCatalog::instance().getTable(as_table_id, getContext());
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -1531,8 +1533,10 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     {
         /// NOTE Getting the structure from the table specified in the AS is done not atomically with the creation of the table.
 
-        String as_database_name = getContext()->resolveDatabase(create.as_database);
-        String as_table_name = create.as_table;
+        /// `AS a.b.c` is a hierarchical name: the database and the table are those of the existing table it refers to.
+        StorageID as_table_id = DatabaseCatalog::instance().resolveHierarchicalName({create.as_database, create.as_table}, getContext());
+        String as_database_name = as_table_id.database_name;
+        String as_table_name = as_table_id.table_name;
 
         ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, getContext());
 
@@ -1759,6 +1763,20 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             "You should not specify a cluster for a temporary objects.");
 
     String current_database = getContext()->getCurrentDatabase();
+
+    /// A hierarchical name (`CREATE TABLE a.b.c`, or `CREATE TABLE c` inside `USE a.b`) is placed into an existing
+    /// database, the rest of the name becoming the table name (`a`.`b.c`); see `DatabaseCatalog`. `current_database`
+    /// stays as selected by `USE` (possibly `a.b`): the names inside the query (the `SELECT` of a view) are relative to it.
+    if (!create.isTemporary())
+    {
+        StorageID placement = DatabaseCatalog::instance().resolveHierarchicalNameForCreation(
+            StorageID(create.database ? create.getDatabase() : "", create.getTable()), getContext());
+        if (placement.table_name != create.getTable())
+            create.setTable(placement.table_name);
+        if (!create.database || placement.database_name != create.getDatabase())
+            create.setDatabase(placement.database_name);
+    }
+
     auto database_name = create.database ? create.getDatabase() : current_database;
 
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
@@ -1930,7 +1948,25 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.setDatabase(current_database);
 
     if (create.targets)
+    {
+        /// Inside `USE a.b` (a hierarchical name, not a database), a target without a database (`TO t`) is `a`.`b.t`:
+        /// an existing table, or its placement.
+        if (!DatabaseCatalog::instance().isDatabaseExist(current_database))
+        {
+            for (auto kind : {ViewTarget::To, ViewTarget::Inner, ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::Metrics})
+            {
+                if (!create.targets->hasTableID(kind))
+                    continue;
+                auto target_id = create.targets->getTableID(kind);
+                if (target_id.database_name.empty())
+                {
+                    auto resolved = DatabaseCatalog::instance().resolveHierarchicalName(target_id, getContext());
+                    create.targets->setTableID(kind, StorageID(resolved.database_name, resolved.table_name));
+                }
+            }
+        }
         create.targets->setCurrentDatabase(current_database);
+    }
 
     if (create.select && create.isView())
     {
@@ -3091,7 +3127,9 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
     if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view
         && (!create.is_materialized_view || create.is_populate))
     {
-        String as_database_name = getContext()->resolveDatabase(as_database_saved);
+        StorageID as_table_id = DatabaseCatalog::instance().resolveHierarchicalName({as_database_saved, as_table_saved}, getContext());
+        String as_database_name = as_table_id.database_name;
+        String as_table_name = as_table_id.table_name;
 
         auto partition = make_intrusive<ASTPartition>();
         partition->all = true;
@@ -3101,7 +3139,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
         command->type = ASTAlterCommand::REPLACE_PARTITION;
         command->partition = command->children.emplace_back(std::move(partition)).get();
         command->from_database = as_database_name;
-        command->from_table = as_table_saved;
+        command->from_table = as_table_name;
         command->to_database = create.getDatabase();
         command->to_table = create.getTable();
 

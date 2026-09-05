@@ -51,8 +51,10 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         }
         else
         {
-            String database = getContext()->resolveDatabase(exists_query->getDatabase());
-            const auto & table = exists_query->getTable();
+            /// A hierarchical name (`a.b.c`) is checked as the database and the table it resolves to (see `DatabaseCatalog`).
+            StorageID table_id = DatabaseCatalog::instance().resolveHierarchicalName({exists_query->getDatabase(), exists_query->getTable()}, getContext());
+            const String & database = table_id.database_name;
+            const String & table = table_id.table_name;
             /// A dictionary created by a DDL query is also registered among tables, so a plain `EXISTS <name>`
             /// query can refer to a dictionary. For such a dictionary `SHOW DICTIONARIES` is sufficient, which
             /// matches the behaviour of `EXISTS DICTIONARY <name>` and what the documentation promises.
@@ -94,9 +96,9 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         }
         else
         {
-            String database = getContext()->resolveDatabase(exists_query->getDatabase());
-            getContext()->checkAccess(AccessType::SHOW_TABLES, database, exists_query->getTable());
-            auto table = DatabaseCatalog::instance().tryGetTable({database, exists_query->getTable()}, getContext());
+            StorageID table_id = DatabaseCatalog::instance().resolveHierarchicalName({exists_query->getDatabase(), exists_query->getTable()}, getContext());
+            getContext()->checkAccess(AccessType::SHOW_TABLES, table_id.database_name, table_id.table_name);
+            auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
             result = table && table->isView();
         }
     }
@@ -110,9 +112,9 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
     {
         if (exists_query->isTemporary())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary dictionaries are not possible.");
-        String database = getContext()->resolveDatabase(exists_query->getDatabase());
-        getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, database, exists_query->getTable());
-        result = DatabaseCatalog::instance().isDictionaryExist({database, exists_query->getTable()});
+        StorageID table_id = DatabaseCatalog::instance().resolveHierarchicalName({exists_query->getDatabase(), exists_query->getTable()}, getContext());
+        getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, table_id.database_name, table_id.table_name);
+        result = DatabaseCatalog::instance().isDictionaryExist(table_id);
     }
 
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{

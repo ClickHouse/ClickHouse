@@ -14,7 +14,8 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_use(Keyword::USE);
     ParserKeyword s_database(Keyword::DATABASE);
-    ParserIdentifier name_p{/*allow_query_parameter*/ true};
+    /// `USE a.b` selects the database `a.b`, or the tables `b.*` of the database `a` (a hierarchical name).
+    ParserCompoundIdentifier name_p{/*table_name_with_optional_uuid*/ false, /*allow_query_parameter*/ true};
 
     if (!s_use.ignore(pos, expected))
         return false;
@@ -71,6 +72,29 @@ Lets you set the current database for the session.
 The current database is used for searching for tables if the database is not explicitly defined in the query with a dot before the table name.
 
 This query can't be made when using the HTTP protocol, since there is no concept of a session.
+
+## Hierarchical names {#hierarchical-names}
+
+Database and table names can contain dots, and such names can be written without quotes. A qualified name like `a.b.c` has no fixed split into a database and a table: it is resolved against the existing databases and tables, trying the database `a.b` with the table `c`, then the database `a` with the table `b.c`, and then the table `a.b.c` of the current database. Quoting does not matter: `a."b.c"`, `"a.b".c` and `a.b.c` are the same name. This is how the tables of a data lake catalog, named `namespace.table`, are addressed: `SELECT * FROM catalog.namespace.table`.
+
+The current database can be hierarchical as well. `USE a.b` is allowed when the database `a.b` exists, when the database `a` has tables named `b.*` (then `b` is a namespace of tables, and `SELECT * FROM c` reads the table `a`.`b.c`), or when there are databases named `a.b.*` (then `SELECT * FROM c.d` reads the table `d` of the database `a.b.c`). `SHOW TABLES` lists the tables under the selected name, with the names relative to it.
+
+The unquoted parts of a name never create a new namespace: `CREATE TABLE a.b.c` creates the table `a`.`b.c` only if the database `a` already has tables named `b.*`, which protects against typos in database names. The first table of a namespace is created by quoting its name: `CREATE TABLE a."b.c"`.
+
+```sql
+CREATE DATABASE catalog;
+CREATE TABLE catalog."sales.orders" (id UInt64) ENGINE = MergeTree ORDER BY id;
+
+SELECT * FROM catalog.sales.orders;
+
+USE catalog;
+SELECT * FROM sales.orders;
+CREATE TABLE sales.customers (id UInt64) ENGINE = MergeTree ORDER BY id; -- creates the table `sales.customers`
+
+USE catalog.sales;
+SELECT * FROM orders;
+SHOW TABLES; -- customers, orders
+```
 )DOCS_MD",
         .syntax = R"(
 USE [DATABASE] db
