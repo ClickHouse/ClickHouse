@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <array>
 #include <bit>
 
 #include <Columns/ColumnsNumber.h>
@@ -9,6 +10,7 @@
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/DistinctSortedFilter.h>
+#include <Processors/Transforms/DistinctSpillLayout.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Common/assert_cast.h>
 
@@ -177,87 +179,117 @@ TEST(DistinctSortedFilter, FlagSuppressesWholeEqualRange)
     EXPECT_EQ(result.getNumRows(), 0u);
 }
 
-TEST(DistinctSortedFilter, MergeTieBreakKeepsFirstInputFirst)
+TEST(DistinctSortedFilter, MergeSuppressionOrderKeepsFirstOrdinaryPayload)
 {
-    /// The suppression of the already-emitted rows relies on MergingSortedTransform returning the rows
-    /// of input 0 before the equal rows of the other inputs (the sorting queues break ties by the input
-    /// index, see the note on SortCursorHelper in Core/SortCursor.h). This test pins that contract with
-    /// a real merge: input 0 is the flagged "already emitted" run, input 1 shares some of its keys.
+    /// Suppression runs may be registered anywhere. Ordinary runs retain chronological registration
+    /// so equal keys keep the first ordinary payload. A user payload name also exercises flag renaming.
+    const auto input_header = std::make_shared<const Block>(Block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "__distinct_already_emitted")});
+    const DistinctSpillLayout layout(input_header, {0}, /*preserve_input_order=*/ false);
+    const auto & spill_header = layout.getSpillHeader();
 
-    const Block header
-        = {ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
-           ColumnWithTypeAndName(std::make_shared<DataTypeUInt8>(), "flag")};
-    const auto shared_header = std::make_shared<const Block>(header);
-
-    auto make_source = [&](const std::vector<std::vector<UInt64>> & runs, UInt8 flag)
+    auto make_source = [&](const std::vector<std::vector<UInt64>> & runs, bool suppression, UInt64 payload)
     {
         Chunks chunks;
         for (const auto & keys : runs)
-            chunks.push_back(makeChunk(keys, std::vector<UInt8>(keys.size(), flag)));
-        return std::make_shared<SourceFromChunks>(shared_header, std::move(chunks));
+        {
+            auto key_column = ColumnUInt64::create();
+            for (const auto key : keys)
+                key_column->insertValue(key);
+
+            if (suppression)
+            {
+                MutableColumns columns;
+                columns.emplace_back(std::move(key_column));
+                chunks.push_back(layout.prepareSuppressionChunk(std::move(columns)));
+            }
+            else
+            {
+                auto payload_column = ColumnUInt64::create();
+                for (size_t row = 0; row < keys.size(); ++row)
+                    payload_column->insertValue(payload++);
+
+                Columns columns;
+                columns.emplace_back(std::move(key_column));
+                columns.emplace_back(std::move(payload_column));
+                chunks.push_back(layout.prepareInputChunk(Chunk(std::move(columns), keys.size()), 0));
+            }
+        }
+        return std::make_shared<SourceFromChunks>(spill_header, std::move(chunks));
     };
 
-    /// Keys 1..6 were emitted before the spill (input 0); keys 2, 4, 6, 7 arrive from a later run.
-    auto emitted_run = make_source({{1, 2, 3}, {4, 5, 6}}, 1);
-    auto later_run = make_source({{2, 4}, {6, 7}}, 0);
-
-    SortDescription description;
-    description.emplace_back("k", 1, 1);
-
-    auto merge = std::make_shared<MergingSortedTransform>(
-        shared_header,
-        /*num_inputs=*/ 2,
-        description,
-        /*max_block_size_rows=*/ 3,
-        /*max_block_size_bytes=*/ 0,
-        /*max_dynamic_subcolumns=*/ std::nullopt,
-        SortingQueueStrategy::Batch);
-
-    connect(emitted_run->getPort(), merge->getInputs().front());
-    connect(later_run->getPort(), merge->getInputs().back());
-
-    auto * output_port = &merge->getOutputs().front();
-    auto processors = std::make_shared<Processors>();
-    processors->emplace_back(std::move(emitted_run));
-    processors->emplace_back(std::move(later_run));
-    processors->emplace_back(std::move(merge));
-
-    QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
-    PullingPipelineExecutor executor(pipeline);
-
-    auto filter = makeFilter();
-    std::vector<UInt64> distinct_keys;
-    std::optional<UInt64> prev_key;
-    UInt8 prev_flag = 1;
-
-    Block block;
-    while (executor.pull(block))
+    for (const auto & input_order : {
+             std::array<size_t, 4>{0, 1, 2, 3},
+             std::array<size_t, 4>{1, 0, 3, 2},
+             std::array<size_t, 4>{0, 2, 3, 1}})
     {
-        if (block.rows() == 0)
-            continue;
+        SCOPED_TRACE(::testing::PrintToString(input_order));
+        std::array sources{
+            make_source({{2, 4, 7}, {7, 8}}, false, 100),
+            make_source({{1, 2}, {4}}, true, 0),
+            make_source({{2, 4, 7}, {8, 9}}, false, 200),
+            make_source({{3}, {5, 6}}, true, 0)};
 
-        const auto & keys = assert_cast<const ColumnUInt64 &>(*block.getByPosition(0).column).getData();
-        const auto & flags = assert_cast<const ColumnUInt8 &>(*block.getByPosition(1).column).getData();
+        auto merge = std::make_shared<MergingSortedTransform>(
+            spill_header,
+            sources.size(),
+            layout.getRunSortDescription(),
+            /*max_block_size_rows=*/ 2,
+            /*max_block_size_bytes=*/ 0,
+            /*max_dynamic_subcolumns=*/ std::nullopt,
+            SortingQueueStrategy::Batch);
 
-        /// The contract itself: within a group of equal keys, flagged rows come first.
-        for (size_t i = 0; i < keys.size(); ++i)
+        auto processors = std::make_shared<Processors>();
+        auto input = merge->getInputs().begin();
+        for (const auto source_index : input_order)
         {
-            if (prev_key && *prev_key == keys[i])
-                EXPECT_LE(flags[i], prev_flag) << "flagged row after an equal unflagged row, key " << keys[i];
-            prev_key = keys[i];
-            prev_flag = flags[i];
+            auto & source = sources[source_index];
+            connect(source->getPort(), *input++);
+            processors->emplace_back(std::move(source));
         }
+        auto * output_port = &merge->getOutputs().front();
+        processors->emplace_back(std::move(merge));
 
-        /// And its consequence: the filter must emit exactly the keys that were not emitted before.
-        auto filtered = filter.filter(Chunk(block.getColumns(), block.rows()), /*strip_flag=*/ false);
-        if (filtered.hasRows())
+        QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
+        PullingPipelineExecutor executor(pipeline);
+        DistinctSortedFilter filter(
+            layout.getKeyColumnsPositions(), layout.getKeySortDescription(), layout.getFlagColumnPosition());
+        std::vector<std::pair<UInt64, UInt64>> distinct_rows;
+        std::optional<UInt64> prev_key;
+        UInt8 prev_flag = 1;
+        bool crossed_chunk_boundary = false;
+
+        Block block;
+        while (executor.pull(block))
         {
+            if (block.rows() == 0)
+                continue;
+
+            const auto & keys = assert_cast<const ColumnUInt64 &>(*block.getByPosition(0).column).getData();
+            const auto & flags = assert_cast<const ColumnUInt8 &>(
+                *block.getByPosition(layout.getFlagColumnPosition()).column).getData();
+
+            crossed_chunk_boundary |= prev_key && *prev_key == keys.front();
+            /// Suppression priority holds across output chunks as well as within each chunk.
+            for (size_t row = 0; row < keys.size(); ++row)
+            {
+                if (prev_key && *prev_key == keys[row])
+                    EXPECT_LE(flags[row], prev_flag) << "flagged row after an unflagged row, key " << keys[row];
+                prev_key = keys[row];
+                prev_flag = flags[row];
+            }
+
+            auto filtered = filter.filter(Chunk(block.getColumns(), block.rows()), /*strip_flag=*/ true);
             const auto & filtered_keys = assert_cast<const ColumnUInt64 &>(*filtered.getColumns()[0]).getData();
-            distinct_keys.insert(distinct_keys.end(), filtered_keys.begin(), filtered_keys.end());
+            const auto & payloads = assert_cast<const ColumnUInt64 &>(*filtered.getColumns()[1]).getData();
+            for (size_t row = 0; row < filtered_keys.size(); ++row)
+                distinct_rows.emplace_back(filtered_keys[row], payloads[row]);
         }
-    }
 
-    EXPECT_EQ(distinct_keys, (std::vector<UInt64>{7}));
+        EXPECT_TRUE(crossed_chunk_boundary);
+        EXPECT_EQ(distinct_rows, (std::vector<std::pair<UInt64, UInt64>>{{7, 102}, {8, 104}, {9, 204}}));
+    }
 }
 
 TEST(DistinctSortedFilter, SortEqualZerosCollapseThroughMerge)

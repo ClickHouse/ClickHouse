@@ -24,9 +24,9 @@ class MergingSortedTransform;
 /// output waits until all input has been consumed. `DistinctSpillLayout` owns the column conversions.
 ///
 /// `MergingSortedTransform` merges the runs, including any in-memory tail, and `DistinctSortedFilter`
-/// removes duplicate keys and keys emitted before spilling. The suppression run is merge input zero:
-/// the merge's input-index tie-break puts its flagged rows first in every equal-key range. Ordinary
-/// runs follow in arrival order, preserving the first payload among equal keys.
+/// removes duplicate keys and keys emitted before spilling. Runs are ordered by key and then by the
+/// already-emitted flag descending, placing suppression rows first in each equal-key range. Ordinary
+/// runs follow in arrival order, preserving the first payload among equal keys through input-index ties.
 ///
 /// When input order must be preserved, `DistinctSpillLayout` attaches arrival numbers to spilled rows.
 /// After merging and deduplication, `MergeSortingTransform` restores that order and can itself spill.

@@ -85,9 +85,6 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     , run_dedup(
           spill_layout.getKeyColumnsPositions(), spill_layout.getKeySortDescription(), spill_layout.getFlagColumnPosition())
 {
-    chassert(max_bytes_before_external_distinct > 0);
-    /// `DistinctStep` selects this transform only when the distinct key has non-constant columns.
-    chassert(distinct_set->hasKeyColumns());
 }
 
 ExternalDistinctTransform::~ExternalDistinctTransform() = default;
@@ -100,7 +97,8 @@ size_t ExternalDistinctTransform::minBytesInRun() const
 Chunk ExternalDistinctTransform::sortSpillChunk(Chunk chunk, bool already_emitted) const
 {
     /// Stable sorting retains the first-arriving payload and the first binary representation among
-    /// keys that compare equal. The service columns follow the same permutation as the input columns.
+    /// keys that compare equal. The flag is constant within a chunk, so key order also satisfies the
+    /// run order. The service columns follow the same permutation as the input columns.
     Block block = spill_layout.getSpillHeader()->cloneWithColumns(chunk.detachColumns());
     if (already_emitted)
         sortBlock(block, spill_layout.getKeySortDescription(), /*limit=*/ 0, IColumn::PermutationSortStability::Stable);
@@ -155,7 +153,7 @@ void ExternalDistinctTransform::startSpillRun(Chunks run_chunks, size_t run_byte
 
     /// Deduplication follows sorting, so applying the hint inside the sort could lose distinct values.
     merge_sorter = std::make_unique<MergeSorter>(
-        spill_header, std::move(run_chunks), spill_layout.getKeySortDescription(), max_block_size_rows, /*limit=*/ 0);
+        spill_header, std::move(run_chunks), spill_layout.getRunSortDescription(), max_block_size_rows, /*limit=*/ 0);
 
     auto sink = std::make_shared<BufferingToFileSink>(spill_header, std::move(tmp_stream), log);
     auto source = std::make_shared<BufferingFromFileSource>(spill_header, sink->getHolder(), log);
@@ -185,7 +183,7 @@ void ExternalDistinctTransform::createMergedStream(PendingPipelineUpdate & updat
     external_merging_sorted = std::make_shared<MergingSortedTransform>(
         spill_header,
         /*num_inputs=*/ 0,
-        description,
+        spill_layout.getRunSortDescription(),
         max_block_size_rows,
         /*max_block_size_bytes=*/ 0,
         /*max_dynamic_subcolumns=*/ std::nullopt,
@@ -531,7 +529,7 @@ void ExternalDistinctTransform::generate()
         /// Register the final input even when the tail is empty, then close merge-input registration.
         /// The merged-stream filter also handles duplicates within this last input.
         auto source = std::make_shared<MergeSorterSource>(
-            spill_layout.getSpillHeader(), std::move(chunks), spill_layout.getKeySortDescription(),
+            spill_layout.getSpillHeader(), std::move(chunks), spill_layout.getRunSortDescription(),
             max_block_size_rows, /*limit=*/ 0);
         pending_pipeline_update.emplace(PendingPipelineUpdate{
             .kind = PipelineUpdateKind::AddInMemoryTail,

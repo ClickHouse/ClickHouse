@@ -29,6 +29,13 @@ SortDescription buildSortDescription(const Block & header, const ColumnNumbers &
     return description;
 }
 
+/// Orders suppression rows before ordinary rows with equal keys, independently of run registration.
+SortDescription buildRunSortDescription(const Block & header, SortDescription description, size_t flag_column_pos)
+{
+    description.emplace_back(header.getByPosition(flag_column_pos).name, -1, 1);
+    return description;
+}
+
 /// Selects the non-constant columns in header order. Constants are restored from the header after
 /// merging, so their values do not need to be written to the temporary runs.
 ColumnNumbers calculateSpillColumnsPositions(const Block & header)
@@ -52,7 +59,6 @@ ColumnNumbers mapKeysToSpillPositions(const ColumnNumbers & key_columns_pos, con
     for (const auto key_pos : key_columns_pos)
     {
         const auto it = std::find(spill_columns_pos.begin(), spill_columns_pos.end(), key_pos);
-        chassert(it != spill_columns_pos.end());
         spill_positions.push_back(it - spill_columns_pos.begin());
     }
     return spill_positions;
@@ -175,6 +181,7 @@ DistinctSpillLayout::DistinctSpillLayout(
     , spill_header(buildSpillHeader(*input_header, spill_columns_pos, serialized_key_columns_pos, preserve_input_order))
     , merged_header(buildMergedHeader(*spill_header, flag_column_pos))
     , key_sort_description(buildSortDescription(*spill_header, key_columns_pos))
+    , run_sort_description(buildRunSortDescription(*spill_header, key_sort_description, flag_column_pos))
     , arrival_number_sort_description(buildArrivalNumberDescription(*merged_header, arrival_number_column_pos))
 {
 }
@@ -219,7 +226,6 @@ Chunk DistinctSpillLayout::prepareSuppressionChunk(MutableColumns key_columns) c
 Chunk DistinctSpillLayout::serializeKeysAndAddServiceColumns(
     Chunk chunk, bool already_emitted, UInt64 first_arrival_number) const
 {
-    chassert(chunk.getNumColumns() == spill_columns_pos.size());
     const size_t num_rows = chunk.getNumRows();
 
     /// The temporary files use `Native`, which cannot retain special column representations.

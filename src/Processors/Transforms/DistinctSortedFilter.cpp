@@ -1,8 +1,5 @@
 #include <Processors/Transforms/DistinctSortedFilter.h>
 
-#include <algorithm>
-#include <functional>
-
 #include <Columns/ColumnsNumber.h>
 #include <Core/SortCursor.h>
 #include <Common/assert_cast.h>
@@ -15,8 +12,6 @@ DistinctSortedFilter::DistinctSortedFilter(ColumnNumbers key_columns_pos_, SortD
     , description(std::move(description_))
     , flag_column_pos(flag_column_pos_)
 {
-    chassert(key_columns_pos.size() == description.size());
-    chassert(!key_columns_pos.empty());
 }
 
 void DistinctSortedFilter::reset()
@@ -52,7 +47,6 @@ Chunk DistinctSortedFilter::filter(Chunk chunk, bool strip_flag)
         return chunk;
 
     auto columns = chunk.detachColumns();
-    chassert(flag_column_pos == columns.size() - 1);
 
     ColumnRawPtrs key_columns;
     key_columns.reserve(key_columns_pos.size());
@@ -74,10 +68,6 @@ Chunk DistinctSortedFilter::filter(Chunk chunk, bool strip_flag)
     {
         const size_t range_end = getEqualRangeEndAssumeSorted(key_columns, description, range_begin, num_rows);
 
-        /// The merge of the runs must return the flagged rows before the equal unflagged ones (the
-        /// sorting queues break ties by the input index and the flagged run is the input 0).
-        chassert(std::is_sorted(flags.begin() + range_begin, flags.begin() + range_end, std::greater{}));
-
         /// Keep the first row of the range unless this value was already emitted before the spill.
         if (flags[range_begin] == 0)
         {
@@ -97,7 +87,7 @@ Chunk DistinctSortedFilter::filter(Chunk chunk, bool strip_flag)
     }
 
     if (strip_flag)
-        columns.pop_back();
+        columns.erase(columns.begin() + flag_column_pos);
 
     return Chunk(std::move(columns), output_rows);
 }

@@ -11,7 +11,7 @@ namespace DB
 /// the first row of each equal range, including ranges split across chunks. Sort equality collapses
 /// signed zeros and NaNs with different payloads, as it does for the in-order `DISTINCT` algorithm.
 ///
-/// The final column is a `UInt8` already-emitted flag. Flagged rows must precede unflagged rows with
+/// Each row carries a `UInt8` already-emitted flag. Flagged rows must precede unflagged rows with
 /// equal keys. A flagged first row suppresses the entire range because its key was already emitted.
 class DistinctSortedFilter
 {

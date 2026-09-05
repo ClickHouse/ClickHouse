@@ -23,6 +23,7 @@ public:
     const SharedHeader & getMergedHeader() const { return merged_header; }
     const ColumnNumbers & getKeyColumnsPositions() const { return key_columns_pos; }
     const SortDescription & getKeySortDescription() const { return key_sort_description; }
+    const SortDescription & getRunSortDescription() const { return run_sort_description; }
     const SortDescription & getArrivalNumberSortDescription() const { return arrival_number_sort_description; }
     size_t getFlagColumnPosition() const { return flag_column_pos; }
     bool preservesInputOrder() const { return arrival_number_column_pos.has_value(); }
@@ -51,6 +52,8 @@ private:
     const SharedHeader spill_header;
     const SharedHeader merged_header;
     const SortDescription key_sort_description;
+    /// Run ordering gives suppression rows precedence; deduplication compares only the keys.
+    const SortDescription run_sort_description;
     const SortDescription arrival_number_sort_description;
 };
 
