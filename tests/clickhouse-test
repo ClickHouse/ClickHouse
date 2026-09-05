@@ -1909,6 +1909,9 @@ class SettingsRandomizer:
             random_settings["cluster_for_parallel_replicas"] = "parallel_replicas"
             random_settings["parallel_replicas_local_plan"] = 1
             random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
+            random_settings["parallel_replicas_plan_based"] = (
+                1 if random.random() < 0.5 else 0
+            )
 
     @staticmethod
     def get_random_settings(args, tags):
