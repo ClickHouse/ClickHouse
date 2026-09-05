@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <cerrno>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -412,6 +413,39 @@ static uint64_t getInode(const char * self)
 
 #endif
 
+#if defined(OS_DARWIN)
+
+/// The entry and its target differ exactly when the entry is a symlink, and only
+/// the followed pair is comparable with copy_file's equivalence test.
+/// `followed` is filled only when 0 is returned.
+static int reportPathIdentity(std::ostream & out, const char * label, const char * path, struct stat & followed)
+{
+    struct stat entry{};
+    if (0 == lstat(path, &entry))
+    {
+        const char * type = S_ISLNK(entry.st_mode) ? "link" : (S_ISREG(entry.st_mode) ? "reg" : "other");
+        out << ' ' << label << "=lstat(type=" << type
+            << ",dev=" << entry.st_dev << ",ino=" << entry.st_ino
+            << ",mode=0" << std::oct << entry.st_mode << std::dec
+            << ",uid=" << entry.st_uid << ",gid=" << entry.st_gid
+            << ",size=" << entry.st_size << ",mtime=" << entry.st_mtime << ')';
+    }
+    else
+        out << ' ' << label << "=lstat(errno=" << errno << ' ' << strerror(errno) << ')'; // NOLINT(concurrency-mt-unsafe)
+
+    if (0 != stat(path, &followed))
+    {
+        out << ' ' << label << "=stat(errno=" << errno << ' ' << strerror(errno) << ')'; // NOLINT(concurrency-mt-unsafe)
+        return 1;
+    }
+
+    out << ' ' << label << "=stat(dev=" << followed.st_dev << ",ino=" << followed.st_ino
+        << ",mode=0" << std::oct << followed.st_mode << std::dec << ')';
+    return 0;
+}
+
+#endif
+
 int main(int/* argc*/, char* argv[])
 {
     char self[4096] = {0};
@@ -541,7 +575,17 @@ int main(int/* argc*/, char* argv[])
         std::filesystem::copy_file(static_cast<char *>(decompressed_name.data()), static_cast<char *>(self), ec);
         if (ec)
         {
-            std::cerr << ec.message() << std::endl;
+            std::cerr << "copy_file(self): " << ec.message() << " [" << ec.value() << "] dst=" << self
+                      << " src=" << decompressed_name.data();
+            struct stat dst_followed{};
+            struct stat src_followed{};
+            int dst_rc = reportPathIdentity(std::cerr, "dst", self, dst_followed);
+            int src_rc = reportPathIdentity(std::cerr, "src", decompressed_name.data(), src_followed);
+            /// copy_file reports EEXIST when this holds of the followed pair.
+            if (0 == dst_rc && 0 == src_rc)
+                std::cerr << " equivalent=" << (dst_followed.st_dev == src_followed.st_dev
+                                                && dst_followed.st_ino == src_followed.st_ino);
+            std::cerr << " wrapper=(dev=" << input_info.st_dev << ",ino=" << input_info.st_ino << ')' << std::endl;
             return 1;
         }
 #else
