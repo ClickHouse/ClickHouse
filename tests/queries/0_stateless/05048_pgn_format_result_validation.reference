@@ -1,0 +1,6 @@
+Test 1: An invalid 'Result' tag value is an error
+Invalid PGN: tag 'Result' has value 'won', expected '1-0', '0-1', '1/2-1/2' or '*'
+Test 2: A game termination marker that contradicts the 'Result' tag is an error
+Invalid PGN: the game termination marker '0-1' contradicts the game result '1-0'
+Test 3: A game termination marker that agrees with the 'Result' tag is fine
+Test Event	1-0	e4 e5 Nf3 Nc6

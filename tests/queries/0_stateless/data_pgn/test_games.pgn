@@ -1,0 +1,35 @@
+[Event "World Chess Championship"]
+[Site "Moscow, Russia"]
+[Date "2023.11.15"]
+[Round "1"]
+[White "Magnus Carlsen"]
+[Black "Ian Nepomniachtchi"]
+[Result "1-0"]
+[WhiteElo "2859"]
+[BlackElo "2793"]
+
+1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 Nf6 5.Nc3 a6 1-0
+
+[Event "London Chess Classic"]
+[Site "London, England"]
+[Date "2023.11.20"]
+[Round "2"]
+[White "Fabiano Caruana"]
+[Black "Praggnanandhaa R"]
+[Result "0-1"]
+[WhiteElo "2770"]
+[BlackElo "2709"]
+
+1.d4 Nf6 2.c4 e6 3.Nc3 Bb4 4.Qc2 O-O 5.a3 Bxc3+ 6.Qxc3 b6 0-1
+
+[Event "Sinquefield Cup"]
+[Site "Saint Louis, USA"]
+[Date "2023.11.25"]
+[Round "3"]
+[White "Ding Liren"]
+[Black "Alireza Firouzja"]
+[Result "1/2-1/2"]
+[WhiteElo "2787"]
+[BlackElo "2703"]
+
+1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 Nf6 1/2-1/2
