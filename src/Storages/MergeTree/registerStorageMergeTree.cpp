@@ -1040,6 +1040,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 {
                     if (args.mode < LoadingStrictnessLevel::FORCE_ATTACH)
                         throw;
+                    /// Only the analyzed description, which query execution needs, is missing. The declaration itself
+                    /// stays in the metadata, so a later rewrite of the CREATE query still contains it.
+                    metadata.projections.addUnavailable(projection_ast->clone());
                     tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format(
                         "Cannot parse projection {} during server startup, skipping it. "
                         "It may be caused by a dependency on a dropped dictionary or a missing object. "
