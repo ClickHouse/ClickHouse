@@ -16,10 +16,12 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Sinks/NullSink.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NATS/NATSCoreConsumer.h>
 #include <Storages/NATS/NATSCoreProducer.h>
@@ -35,10 +37,12 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -92,6 +96,26 @@ extern const int BAD_ARGUMENTS;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int CANNOT_CONNECT_NATS;
 extern const int QUERY_NOT_ALLOWED;
+}
+
+namespace FailPoints
+{
+extern const char nats_pause_before_building_insert_pipeline[];
+}
+
+namespace
+{
+
+/// The insert pipeline `InterpreterInsertQuery` builds for a streaming table without dependent views
+/// ends in a `NullSinkToStorage`: it discards what is inserted rather than failing, see
+/// `InsertDependenciesBuilder::createChainWithDependencies`.
+bool insertsNowhere(const QueryPipeline & pipeline)
+{
+    return std::ranges::any_of(
+        pipeline.getProcessors(),
+        [](const auto & processor) { return typeid_cast<const NullSinkToStorage *>(processor.get()) != nullptr; });
+}
+
 }
 
 
@@ -867,6 +891,8 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
     /// ensure no stale state is reused.
     new_context->makeQueryContext();
 
+    FailPointInjection::pauseFailPoint(FailPoints::nats_pause_before_building_insert_pipeline);
+
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(
         insert,
@@ -876,6 +902,18 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
         /* no_destination */ true,
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
+
+    /// `threadFunc` streams only while the table has dependent views, but the interpreter looks them
+    /// up again, and a `DROP VIEW` landing in between leaves it with nowhere to insert into: the
+    /// pipeline it builds then discards whatever the sources consume, and the acknowledgement below
+    /// would confirm to the broker messages that were never inserted anywhere. Such a cycle must not
+    /// consume anything. What the consumers hold goes back to the broker when the next cycle finds
+    /// the last view gone and unsubscribes them.
+    if (insertsNowhere(block_io.pipeline))
+    {
+        LOG_DEBUG(log, "The last materialized view was dropped while the streaming cycle was being prepared, nothing to stream to");
+        return true;
+    }
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());

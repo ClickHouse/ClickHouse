@@ -1846,6 +1846,83 @@ def test_nats_jet_stream_returns_buffered_backlog_to_the_broker_when_unsubscribi
             result, total_expected))
 
 
+def test_nats_jet_stream_does_not_acknowledge_messages_discarded_by_a_view_dropped_mid_cycle(nats_cluster):
+    # A streaming cycle checks that views are attached and then has its insert pipeline built, which
+    # looks them up again. A `DROP VIEW` landing between the two leaves the pipeline with nowhere to
+    # insert into: it discards what the sources consume, and the cycle used to acknowledge those
+    # messages all the same, so the broker counted as consumed a block of rows that reached no
+    # table. The gap is a millisecond wide, so a failpoint holds a cycle open exactly there.
+    #
+    # The ACK deadline is far beyond every wait below, so the rows can only reach the view attached
+    # afterwards if the cycle handed them back rather than acknowledging them.
+    total_expected = 10
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
+
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n';
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.consume;
+        """
+    )
+    nats_helpers.wait_for_streaming_started(instance, "test.consume")
+
+    # Streaming is under way, so the next cycle stops right before it builds the insert pipeline,
+    # having already found the view attached.
+    instance.query("SYSTEM ENABLE FAILPOINT nats_pause_before_building_insert_pipeline")
+    instance.query("SYSTEM WAIT FAILPOINT nats_pause_before_building_insert_pipeline PAUSE")
+
+    # Delivered into the consumer's local queue while the cycle is held, so the cycle has something
+    # to consume once it goes on. The broker counts them as delivered and awaiting acknowledgement.
+    messages = [json.dumps({"key": key, "value": key}) for key in range(total_expected)]
+    asyncio.run(publish_messages(cluster, "test_stream", "test_subject", messages))
+    _wait_for_ack_pending(total_expected)
+
+    anchor = nats_helpers.log_line_count(instance)
+    assert anchor > 0, "log offset anchor is not a line number: {}".format(anchor)
+
+    instance.query("DROP VIEW test.consumer")
+    instance.query("SYSTEM DISABLE FAILPOINT nats_pause_before_building_insert_pipeline")
+
+    # The released cycle finds no view to stream to, and the task unsubscribes its consumers once it
+    # notices the last view is gone, handing back whatever they hold. Waiting for that makes the
+    # count below a statement about what the released cycle did with the messages, not about a
+    # view recreated before it ran.
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        if nats_helpers.count_in_log_after(instance, UNSUBSCRIBED_LOG_LINE, anchor) > 0:
+            break
+        time.sleep(0.2)
+    else:
+        raise AssertionError("the consumer stayed subscribed after the last view was dropped")
+
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.consume;
+        """
+    )
+
+    result = instance.query_with_retry(
+        "SELECT count(DISTINCT key) FROM test.view",
+        retry_count = 60,
+        sleep_time = 1,
+        check_callback = lambda num_rows: int(num_rows) == total_expected)
+    assert int(result) == total_expected, (
+        "the cycle that had no view to stream to acknowledged the messages it discarded, "
+        "view holds {} of {} keys".format(result, total_expected))
+
+
 def test_nats_jet_stream_hands_back_the_backlog_of_a_consumer_a_direct_select_left_subscribed(nats_cluster):
     # Once the last materialized view is gone the streaming task unsubscribes the consumers, but it
     # only reaches the ones in the pool at that moment. A direct `SELECT` issued right after the
