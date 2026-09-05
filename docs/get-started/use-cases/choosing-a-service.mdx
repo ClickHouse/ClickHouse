@@ -1,22 +1,22 @@
 ---
 title: 'Choose a service for your workload'
 sidebarTitle: 'Choose a service'
-description: 'Map analytical queries, transactional application state, observability, and local analysis to ClickHouse Cloud, ClickHouse Managed Postgres, ClickStack, or chDB.'
+description: 'Choose ClickHouse or Postgres services within ClickHouse Cloud for analytics or transactions, Managed ClickStack for observability, or chDB for local analysis.'
 keywords: ['database selection', 'analytical database', 'transactional database', 'managed postgres', 'report history']
 doc_type: 'guide'
 ---
 
 Start with the queries and correctness requirements your application needs to support. A large row count alone does not determine the database, and an application that generates reports can contain both analytical and transactional workloads.
 
-ClickHouse Cloud runs the ClickHouse analytical database engine. ClickHouse Managed Postgres runs PostgreSQL. They are separate database services with different SQL behavior; choosing one does not require deploying the other.
+ClickHouse Cloud is the platform for managed services, including ClickHouse for analytics and ClickHouse Managed Postgres for transactional workloads. These services run different database engines — ClickHouse and PostgreSQL — with different SQL behavior. You can use either service independently or combine them within ClickHouse Cloud.
 
 ## Map the workload to a starting point {#workload-map}
 
 | What your application needs | Start by evaluating | What to check before choosing |
 | --- | --- | --- |
-| Aggregations, filtering, and comparisons across large event or result histories | [ClickHouse Cloud](/products/cloud/getting-started/intro) | Representative queries, ingestion batches, data freshness, concurrent queries, and the design of updates or retries |
-| Transactional application state, such as orders, inventory reservations, or jobs whose state transitions require transactions and constraints | [ClickHouse Managed Postgres](/products/managed-postgres/overview) | Transaction boundaries, constraints, indexes, connection management, and the service's supported features and availability |
-| Transactional application state plus analytical queries that need an independent serving system | [Managed Postgres with ClickHouse integration](/products/managed-postgres/clickhouse-integration) | Which tables need replication, acceptable replication lag, schema changes, and the cost and operation of two services |
+| Aggregations, filtering, and comparisons across large event or result histories | [ClickHouse service in ClickHouse Cloud](/products/cloud/getting-started/intro) | Representative queries, ingestion batches, data freshness, concurrent queries, and the design of updates or retries |
+| Transactional application state, such as orders, inventory reservations, or jobs whose state transitions require transactions and constraints | [ClickHouse Managed Postgres in ClickHouse Cloud](/products/managed-postgres/overview) | Transaction boundaries, constraints, indexes, connection management, and the service's supported features and availability |
+| Transactional application state plus analytical queries that need an independent serving system | [Postgres and ClickHouse services in ClickHouse Cloud](/products/managed-postgres/clickhouse-integration) | Which tables need replication, acceptable replication lag, schema changes, and the cost and operation of two services |
 | A managed experience for searching and investigating application logs, metrics, and traces | [Managed ClickStack](/clickstack/getting-started/managed) | Instrumentation, telemetry ingestion, retention, and the observability workflows your team needs |
 | Analysis of files or in-memory data inside a local application or notebook | [chDB](/chdb/index) | Local resources and whether you need a separately hosted, shared database service |
 
@@ -35,7 +35,7 @@ Suppose an application processes uploaded files, produces reports, and needs to 
 
 ### Completed runs and analytical results {#completed-runs}
 
-ClickHouse Cloud is a candidate when the dominant workload is analysis across result rows and run records can be appended on completion. A small metadata table does not by itself require a second database.
+A ClickHouse service in ClickHouse Cloud is a candidate when the dominant workload is analysis across result rows and run records can be appended on completion. A small metadata table does not by itself require a second database.
 
 Design and test how readers distinguish a complete run from a partially ingested one. Define stable run identifiers, retry behavior, and how duplicate result rows are handled. Separate inserts into a results table and a run-history table must not be treated as a single cross-table transaction.
 
@@ -64,4 +64,4 @@ For a managed deployment, also check:
 - Whether an intermittent analytical workload can tolerate the connection delay associated with [automatic idling](/products/cloud/features/autoscaling/idling).
 - The team's responsibility for schema design, application retries, query tuning, and cost controls, even when the service manages the infrastructure.
 
-Once you have selected ClickHouse Cloud, use the [ClickHouse CLI](/products/cloud/features/cli) to create and manage resources from a terminal. For the other starting points, follow the product guides linked in the workload map.
+For ClickHouse or Postgres services in ClickHouse Cloud, use the [ClickHouse CLI](/products/cloud/features/cli) to create and manage resources from a terminal. For Managed ClickStack and chDB, follow the product guides linked in the workload map.
