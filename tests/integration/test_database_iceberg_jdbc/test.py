@@ -33,20 +33,18 @@ def started_cluster():
         cluster.shutdown()
 
 
-def database_sql(name, database, endpoint, host="postgres1", port=5432):
+def database_sql(name, database, endpoint, host="postgres1", port=5432, password=READER_PASSWORD):
     return f"""
         CREATE DATABASE {name} ENGINE = DataLakeCatalog
         SETTINGS catalog_type='jdbc', warehouse='jdbc_test',
             jdbc_host='{host}', jdbc_port={port}, jdbc_database='{database}',
-            jdbc_user='jdbc_reader', jdbc_password='{READER_PASSWORD}',
+            jdbc_user='jdbc_reader', jdbc_password='{password}',
             vended_credentials=0, storage_endpoint='{endpoint}',
             aws_access_key_id='{minio_access_key}', aws_secret_access_key='{minio_secret_key}'
     """
 
 
-@pytest.mark.parametrize("version", [0, 1])
-@pytest.mark.parametrize("endpoint_has_bucket", [False, True])
-def test_catalog_reads_and_refresh(started_cluster, version, endpoint_has_bucket):
+def create_catalog_fixture(version, endpoint_has_bucket):
     name = "jdbc_" + uuid.uuid4().hex
     admin = get_postgres_conn(cluster.postgres_ip, cluster.postgres_port)
     with admin.cursor() as cursor:
@@ -85,8 +83,40 @@ def test_catalog_reads_and_refresh(started_cluster, version, endpoint_has_bucket
         )
         cursor.execute("GRANT USAGE ON SCHEMA public TO jdbc_reader")
         cursor.execute("GRANT SELECT ON iceberg_tables, iceberg_namespace_properties TO jdbc_reader")
-
     endpoint = "http://minio1:9001" + (f"/{BUCKET}" if endpoint_has_bucket else "")
+    return {"name": name, "admin": admin, "conn": conn, "catalog": catalog, "table": table, "endpoint": endpoint}
+
+
+def drop_catalog_fixture(fixture):
+    node.query(f"DROP DATABASE IF EXISTS {fixture['name']}")
+    fixture["catalog"].engine.dispose()
+    fixture["conn"].close()
+    with fixture["admin"].cursor() as cursor:
+        cursor.execute(f"DROP DATABASE {fixture['name']}")
+    fixture["admin"].close()
+
+
+def storage_objects(prefix):
+    return sorted(
+        obj.object_name
+        for obj in cluster.minio_client.list_objects(BUCKET, prefix, recursive=True)
+    )
+
+
+def catalog_metadata_location(conn):
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT metadata_location FROM iceberg_tables "
+            "WHERE catalog_name = 'jdbc_test' AND table_namespace = 'a.b' AND table_name = 't'"
+        )
+        return cursor.fetchone()[0]
+
+
+@pytest.mark.parametrize("version", [0, 1])
+@pytest.mark.parametrize("endpoint_has_bucket", [False, True])
+def test_catalog_reads_and_refresh(started_cluster, version, endpoint_has_bucket):
+    fixture = create_catalog_fixture(version, endpoint_has_bucket)
+    name, table, endpoint = fixture["name"], fixture["table"], fixture["endpoint"]
     try:
         node.query(database_sql(name, name, endpoint), settings={"allow_database_iceberg": 1})
         assert node.query(f"SHOW TABLES FROM {name}") == "a.b.t\n"
@@ -104,12 +134,86 @@ def test_catalog_reads_and_refresh(started_cluster, version, endpoint_has_bucket
         assert READER_PASSWORD not in definition
         assert "jdbc_password = '[HIDDEN]'" in definition
     finally:
+        drop_catalog_fixture(fixture)
+
+
+def test_jdbc_catalog_rejects_mutations_before_storage_writes(started_cluster):
+    fixture = create_catalog_fixture(version=1, endpoint_has_bucket=False)
+    name, conn = fixture["name"], fixture["conn"]
+    table_ref = f"{name}.`a.b.t`"
+    try:
+        node.query(
+            database_sql(name, name, fixture["endpoint"]),
+            settings={"allow_database_iceberg": 1},
+        )
+        assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "1\n2\n"
+        before_objects = storage_objects(f"{name}/")
+        before_location = catalog_metadata_location(conn)
+        assert before_objects and before_location.startswith("s3://")
+
+        error = node.query_and_get_error(
+            f"INSERT INTO {table_ref} VALUES (99)",
+            settings={"allow_database_iceberg": 1, "allow_insert_into_iceberg": 1},
+        )
+        assert "INSERT is not supported by this catalog" in error
+
+        error = node.query_and_get_error(f"ALTER TABLE {table_ref} ADD COLUMN extra String")
+        assert "ALTER is not supported by this catalog" in error
+
+        error = node.query_and_get_error(f"DELETE FROM {table_ref} WHERE id = 1")
+        assert "Mutation is not supported by this catalog" in error
+
+        error = node.query_and_get_error(f"OPTIMIZE TABLE {table_ref}")
+        assert "OPTIMIZE is not supported by this catalog" in error
+
+        error = node.query_and_get_error(f"DROP TABLE {table_ref}")
+        assert "DROP TABLE is not supported" in error
+
+        assert storage_objects(f"{name}/") == before_objects
+        assert catalog_metadata_location(conn) == before_location
+        assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "1\n2\n"
+    finally:
+        drop_catalog_fixture(fixture)
+
+
+def test_missing_catalog_tables(started_cluster):
+    name = "jdbc_" + uuid.uuid4().hex
+    admin = get_postgres_conn(cluster.postgres_ip, cluster.postgres_port)
+    with admin.cursor() as cursor:
+        cursor.execute(f"CREATE DATABASE {name}")
+    try:
+        error = node.query_and_get_error(
+            database_sql(name, name, "http://minio1:9001"),
+            settings={"allow_database_iceberg": 1},
+        )
+        assert "iceberg_tables" in error and "jdbc_schema" in error
+    finally:
         node.query(f"DROP DATABASE IF EXISTS {name}")
-        catalog.engine.dispose()
-        conn.close()
         with admin.cursor() as cursor:
             cursor.execute(f"DROP DATABASE {name}")
         admin.close()
+
+
+def test_missing_namespace_properties_table(started_cluster):
+    fixture = create_catalog_fixture(version=1, endpoint_has_bucket=False)
+    try:
+        with fixture["conn"].cursor() as cursor:
+            cursor.execute("DROP TABLE iceberg_namespace_properties")
+        error = node.query_and_get_error(
+            database_sql(fixture["name"], fixture["name"], fixture["endpoint"]),
+            settings={"allow_database_iceberg": 1},
+        )
+        assert "iceberg_namespace_properties" in error and "jdbc_schema" in error
+    finally:
+        drop_catalog_fixture(fixture)
+
+
+def test_invalid_credentials(started_cluster):
+    error = node.query_and_get_error(
+        database_sql("jdbc_bad_credentials", "postgres", "http://minio1:9001", password="wrong-password"),
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "password authentication failed" in error
 
 
 def test_outbound_host_policy(started_cluster):

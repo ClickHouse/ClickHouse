@@ -29,6 +29,7 @@
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace DB::Setting
@@ -105,16 +106,21 @@ IcebergJdbcCatalog::IcebergJdbcCatalog(
     /// returning empty listings and confusing "table does not exist" errors.
     auto holder = pool->get();
     pqxx::nontransaction txn(holder->get());
-    pqxx::result tables = txn.exec_params(
-        "SELECT 1 FROM information_schema.tables WHERE table_schema = $1 AND table_name = 'iceberg_tables'",
-        params.schema);
-    if (tables.empty())
+    for (const char * table : {"iceberg_tables", "iceberg_namespace_properties"})
     {
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "JDBC catalog: table 'iceberg_tables' not found in Postgres schema '{}'. "
-            "Point 'jdbc_schema' at the schema holding the standard Iceberg JdbcCatalog tables",
-            params.schema);
+        pqxx::result tables = txn.exec_params(
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2",
+            params.schema,
+            table);
+        if (tables.empty())
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "JDBC catalog: table '{}' not found in Postgres schema '{}'. "
+                "Point 'jdbc_schema' at the schema holding the standard Iceberg JdbcCatalog tables",
+                table,
+                params.schema);
+        }
     }
 
     /// V1 adds the `iceberg_type` column distinguishing TABLE from VIEW rows;
@@ -296,6 +302,36 @@ void IcebergJdbcCatalog::getTableMetadata(
             namespace_name,
             table_name);
     }
+}
+
+void IcebergJdbcCatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED, "JDBC catalog is read-only: CREATE TABLE is not supported");
+}
+
+void IcebergJdbcCatalog::createNamespaceIfNotExists(const String & /*namespace_name*/, const String & /*location*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED, "JDBC catalog is read-only: CREATE NAMESPACE is not supported");
+}
+
+bool IcebergJdbcCatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED, "JDBC catalog is read-only: table updates are not supported");
+}
+
+bool IcebergJdbcCatalog::updateSchema(
+    const String & /*namespace_name*/,
+    const String & /*table_name*/,
+    const String & /*new_metadata_path*/,
+    Poco::JSON::Object::Ptr /*new_schema*/,
+    Int32 /*previous_schema_id*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED, "JDBC catalog is read-only: schema changes are not supported");
+}
+
+void IcebergJdbcCatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/, bool /*delete_data*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED, "JDBC catalog is read-only: DROP TABLE is not supported");
 }
 
 Poco::JSON::Object::Ptr IcebergJdbcCatalog::getMetadataJSON(const String & metadata_location, TableMetadata & result) const

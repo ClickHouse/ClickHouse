@@ -847,6 +847,7 @@ bool StorageObjectStorage::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
+    DataLake::throwIfTableWritesUnsupported(catalog, "OPTIMIZE");
     return configuration->optimize(object_storage, metadata_snapshot, context, format_settings);
 }
 
@@ -1066,6 +1067,7 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
+    DataLake::throwIfTableWritesUnsupported(catalog, "Mutation");
     /// For datalake tables (e.g. Iceberg), refresh external metadata so that the
     /// storage snapshot contains the `datalake_table_state`. Without this the mutation
     /// pipeline will hit a `LOGICAL_ERROR` exception in `iterate` when building the read side.
@@ -1080,6 +1082,7 @@ void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & comm
 
 void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
 {
+    DataLake::throwIfTableWritesUnsupported(catalog, "Mutation");
     configuration->checkMutationIsPossible(object_storage, CurrentThread::tryGetQueryContext(), commands);
 }
 
@@ -1093,6 +1096,7 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
 {
+    DataLake::throwIfTableWritesUnsupported(catalog, "ALTER");
     /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
     std::lock_guard lock(hive_partitioning_resolution_mutex);
 
@@ -1116,6 +1120,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
 
 void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
+    DataLake::throwIfTableWritesUnsupported(catalog, "ALTER");
     configuration->checkAlterIsPossible(object_storage, context, commands);
 }
 

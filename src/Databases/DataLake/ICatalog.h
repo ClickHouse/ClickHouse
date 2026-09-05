@@ -11,6 +11,8 @@
 #include <Poco/JSON/Object.h>
 
 #include <functional>
+#include <memory>
+#include <string_view>
 #include <unordered_map>
 
 namespace DB
@@ -281,6 +283,10 @@ public:
     /// The Glue catalog does not support such operation.
     virtual bool isTransactional() const { return false; }
 
+    /// Whether catalog-backed table mutations (`INSERT`, `ALTER`, `DELETE`, `OPTIMIZE`, `DROP TABLE`, ... ) are supported.
+    /// Read-only catalogs return false; storage checks this before any object-storage mutation.
+    virtual bool supportsTableWrites() const { return true; }
+
     virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & /*storage_id*/)
     {
         return std::nullopt;
@@ -317,6 +323,10 @@ protected:
     /// which is sometimes also called "catalog name".
     const std::string warehouse;
 };
+
+/// Throw before any object-storage mutation when the table's catalog is read-only.
+/// A null catalog means no catalog integration and is unaffected.
+void throwIfTableWritesUnsupported(const std::shared_ptr<ICatalog> & catalog, std::string_view operation);
 
 
 }

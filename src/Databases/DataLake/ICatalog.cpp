@@ -19,6 +19,7 @@ namespace DB::ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace DB::DatabaseDataLakeSetting
@@ -423,6 +424,12 @@ bool ICatalog::updateSchema(
 void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/, bool /*delete_data*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");
+}
+
+void throwIfTableWritesUnsupported(const std::shared_ptr<ICatalog> & catalog, std::string_view operation)
+{
+    if (catalog && !catalog->supportsTableWrites())
+        throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED, "{} is not supported by this catalog", operation);
 }
 
 ICatalog::PreparedSettingsChangesPtr ICatalog::prepareSettingsChanges(const DB::SettingsChanges & /*changes*/)

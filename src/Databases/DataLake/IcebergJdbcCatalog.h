@@ -37,7 +37,8 @@ namespace DataLake
 /// PostgreSQL backends and S3 metadata locations are supported. V1 adds the
 /// `iceberg_type` column; future schema changes require compatibility testing.
 /// Writes, views and credential vending are not supported. Use read-only
-/// PostgreSQL and object-storage credentials.
+/// PostgreSQL and object-storage credentials. Mutations are rejected before
+/// object-storage writes; cached metadata JSON is keyed by immutable location.
 class IcebergJdbcCatalog final : public ICatalog, private DB::WithContext
 {
 public:
@@ -83,6 +84,23 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_JDBC;
     }
 
+    bool supportsTableWrites() const override { return false; }
+
+    void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
+
+    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+
+    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
+
+    bool updateSchema(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr new_schema,
+        Int32 previous_schema_id) const override;
+
+    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
+
 protected:
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
 
@@ -113,7 +131,7 @@ private:
     const LoggerPtr log;
 
     postgres::PoolWithFailoverPtr pool;
-    /// Whether `iceberg_tables` has the V1 `iceberg_type` column.
+    /// Whether `iceberg_tables` has the V1 `iceberg_type` column, captured when the catalog object is constructed.
     bool has_iceberg_type = false;
 
     mutable DB::CacheBase<String, Poco::JSON::Object::Ptr> metadata_objects;
