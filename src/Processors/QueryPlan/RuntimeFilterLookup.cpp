@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
-#include <cmath>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -32,7 +31,6 @@ namespace ProfileEvents
     extern const Event RuntimeFilterRowsChecked;
     extern const Event RuntimeFilterRowsPassed;
     extern const Event RuntimeFilterRowsSkipped;
-    extern const Event RuntimeFilterBloomFilterBuildsSkipped;
 }
 
 namespace DB
@@ -361,13 +359,6 @@ void ApproximateRuntimeFilter::insert(ColumnPtr values)
     if (inserts_are_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after it was marked as finished");
 
-    if (is_fully_disabled)
-    {
-        /// The values are not needed, but the envelope still serves the index analysis.
-        updateRange(*values);
-        return;
-    }
-
     if (bloom_filter)
     {
         /// Bloom mode dropped the values; track the envelope here.
@@ -388,9 +379,6 @@ void ApproximateRuntimeFilter::insert(ColumnPtr values)
 
 void ApproximateRuntimeFilter::finishInsertImpl()
 {
-    if (is_fully_disabled)
-        return;
-
     if (bloom_filter)
     {
         checkBloomFilterWorthiness();
@@ -410,22 +398,14 @@ void ApproximateRuntimeFilter::merge(const IRuntimeFilter * source)
     if (!source_typed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
 
-    /// A disabled side makes the union unknown; only the envelopes are merged then.
-    if (source_typed->is_fully_disabled)
-        disable();
-
-    if (!is_fully_disabled)
+    if (source_typed->bloom_filter)
     {
-        if (source_typed->bloom_filter)
-        {
-            switchToBloomFilter();
-            if (!is_fully_disabled)
-                mergeBloomFilters(*bloom_filter, *source_typed->bloom_filter);
-        }
-        else
-        {
-            insert(source_typed->getValuesColumn());
-        }
+        switchToBloomFilter();
+        mergeBloomFilters(*bloom_filter, *source_typed->bloom_filter);
+    }
+    else
+    {
+        insert(source_typed->getValuesColumn());
     }
     /// Also merge the source's envelope (bloom mode loses source values).
     mergeRange(*source);
@@ -525,33 +505,11 @@ void ApproximateRuntimeFilter::switchToBloomFilter()
 
     UInt64 bloom_filter_bytes = getBytesLimit();
     if (distinct_keys_hint)
-    {
         bloom_filter_bytes = growBloomFilterBytes(*distinct_keys_hint, bloom_filter_hash_functions, getBytesLimit(), max_ratio_of_set_bits_in_bloom_filter);
-
-        /// The filter size is capped (`MAX_STATS_SIZED_BLOOM_FILTER_BYTES`), so a build side with more distinct keys
-        /// than fit at the maximal density is discarded by `checkBloomFilterWorthiness` after every build thread
-        /// has filled and merged its copy. The hint tells that in advance: the expected fill rate of a filter of
-        /// `bits` bits after `keys * hashes` bit inserts is `1 - exp(-keys * hashes / bits)`.
-        const double predicted_fill_rate = -std::expm1(
-            -static_cast<double>(bloom_filter_hash_functions) * static_cast<double>(*distinct_keys_hint) / (static_cast<double>(bloom_filter_bytes) * 8.0));
-        if (predicted_fill_rate > max_ratio_of_set_bits_in_bloom_filter)
-        {
-            ProfileEvents::increment(ProfileEvents::RuntimeFilterBloomFilterBuildsSkipped);
-            disable();
-            return;
-        }
-    }
 
     bloom_filter = std::make_unique<BloomFilter>(bloom_filter_bytes, bloom_filter_hash_functions, BLOOM_FILTER_SEED);
     insertIntoBloomFilter(getValuesColumn());
 
-    releaseExactValues();
-}
-
-void ApproximateRuntimeFilter::disable()
-{
-    setFullyDisabled();
-    bloom_filter.reset();
     releaseExactValues();
 }
 
