@@ -248,13 +248,18 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
     /// files cache, and time-travel queries get their own entry instead of
     /// poisoning the ordinary one.
     const auto & query_settings = context->getSettingsRef();
+    if (query_settings[Setting::iceberg_snapshot_id].changed && query_settings[Setting::iceberg_timestamp_ms].changed)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Time travel with timestamp and snapshot id for iceberg table by path {} cannot be changed simultaneously",
+            persistent_components.table_path);
     String snapshot_selector = "latest";
     if (query_settings[Setting::iceberg_snapshot_id].changed)
         snapshot_selector = "sid:" + toString(query_settings[Setting::iceberg_snapshot_id].value);
     else if (query_settings[Setting::iceberg_timestamp_ms].changed)
         snapshot_selector = "ts:" + toString(query_settings[Setting::iceberg_timestamp_ms].value);
 
-    if (!force_fetch_latest_metadata)
+    if (!force_fetch_latest_metadata && persistent_components.metadata_cache)
     {
         const String parsed_key = metadata_file_path + "#v" + toString(metadata_version) + "#" + snapshot_selector;
         auto parsed = persistent_components.metadata_cache->getOrSetParsedTableMetadata(
@@ -267,6 +272,10 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
                 entry->table_state = result.second;
                 return entry;
             });
+        /// The cached state is shared between storages; schema registration is not.
+        /// A new storage must initialize its own schema processor before using it.
+        if (!persistent_components.schema_processor->hasClickHouseTableSchemaById(parsed->table_state.schema_id))
+            return getState(context, metadata_file_path, metadata_version);
         return {parsed->data_snapshot, parsed->table_state};
     }
 
