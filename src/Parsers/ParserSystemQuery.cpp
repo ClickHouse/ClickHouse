@@ -54,9 +54,18 @@ namespace ErrorCodes
         if (ParserStringLiteral{}.parse(pos, ast, expected))
         {
             String name = ast->as<ASTLiteral &>().value.safeGet<String>();
-            /// A string literal carries a dictionary name verbatim. In particular,
-            /// a dot may be part of the dictionary name rather than a database separator.
-            res->setTable(name);
+            /// A single dot preserves the established string-literal form for a
+            /// qualified dictionary name. Multiple dots are part of a bare dictionary name.
+            auto dot_pos = name.find('.');
+            if (dot_pos != String::npos && name.find('.', dot_pos + 1) == String::npos)
+            {
+                res->setDatabase(name.substr(0, dot_pos));
+                res->setTable(name.substr(dot_pos + 1));
+            }
+            else
+            {
+                res->setTable(name);
+            }
             parsed_table = true;
             children_already_added = true; /// setDatabase/setTable already push to children
         }

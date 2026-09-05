@@ -314,6 +314,31 @@ def test_qualified_dictionary_on_cluster_keeps_explicit_database(
         drop_issue_114322_dictionaries()
 
 
+@pytest.mark.parametrize("command", ["RELOAD", "UNLOAD"])
+def test_qualified_dictionary_string_literal_on_cluster_keeps_explicit_database(
+    started_cluster, command
+):
+    try:
+        prepare_issue_114322_dictionaries()
+        if command == "RELOAD":
+            unload_issue_114322_dictionaries(ch1)
+            expected = "default\tLOADED\n{}\tNOT_LOADED\n".format(DICTIONARY_DB)
+        else:
+            reload_issue_114322_dictionaries(ch1)
+            expected = "default\tNOT_LOADED\n{}\tLOADED\n".format(DICTIONARY_DB)
+
+        coordinator.query(
+            "SYSTEM {} DICTIONARY 'default.{}' ON CLUSTER 'workers_only'".format(
+                command, DICTIONARY_NAME
+            ),
+            database=DICTIONARY_DB,
+        )
+
+        assert_issue_114322_dictionary_statuses(expected)
+    finally:
+        drop_issue_114322_dictionaries()
+
+
 def test_reload_xml_only_dictionary_on_cluster_uses_qualified_database_name(
     started_cluster,
 ):
