@@ -4,6 +4,7 @@ import json
 import os
 import platform
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -95,7 +96,7 @@ def _is_praktika_job(job_name):
 
 def _build_dockers(workflow, job_name):
     print(f"Start [{job_name}], workflow [{workflow.name}]")
-    sw = Utils.Stopwatch()
+    started = time.monotonic()
     dockers = workflow.dockers
     ready = []
     results = []
@@ -180,7 +181,7 @@ def _build_dockers(workflow, job_name):
                     job_timeout=DOCKER_BUILD_JOB_TIMEOUT_S,
                     # Read per image, not once: what is left of the budget is what the
                     # images already built have not used.
-                    elapsed=sw.duration,
+                    elapsed=time.monotonic() - started,
                 )
             )
             if results[-1].is_ok():
@@ -208,13 +209,13 @@ def _build_dockers(workflow, job_name):
 
 
 def _clean_buildx_volumes():
-    sw = Utils.Stopwatch()
+    started = time.monotonic()
     for command in (
         "docker buildx rm --all-inactive --force",
         "docker ps -a --filter name=buildx_buildkit -q | xargs -r docker rm -f",
         "docker volume ls -q | grep buildx_buildkit | xargs -r docker volume rm",
     ):
-        left = int(DOCKER_CLEANUP_BUDGET_S - sw.duration)
+        left = int(DOCKER_CLEANUP_BUDGET_S - (time.monotonic() - started))
         if left < 1:
             print(f"Out of cleanup budget, skipping: [{command}]")
             continue
