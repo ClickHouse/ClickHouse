@@ -8,8 +8,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_INDEX;
 }
 
-MergeTreeIndexLegacyHypothesis::MergeTreeIndexLegacyHypothesis(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_)
-    : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
+MergeTreeIndexLegacyHypothesis::MergeTreeIndexLegacyHypothesis(const IndexDescription & index_)
+    : IMergeTreeIndex(index_)
 {
 }
 
@@ -28,12 +28,12 @@ MergeTreeIndexConditionPtr MergeTreeIndexLegacyHypothesis::createIndexCondition(
     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Index of type 'hypothesis' is no longer supported. Please drop the index");
 }
 
-MergeTreeIndexPtr legacyHypothesisIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
+MergeTreeIndexPtr legacyHypothesisIndexCreator(const IndexDescription & index)
 {
-    return std::make_shared<MergeTreeIndexLegacyHypothesis>(std::move(metadata_snapshot), index);
+    return std::make_shared<MergeTreeIndexLegacyHypothesis>(index);
 }
 
-void legacyHypothesisIndexValidator(const IndexDescription &, bool attach, const MergeTreeSettings & /*settings*/)
+void legacyHypothesisIndexValidator(const IndexDescription &, bool attach)
 {
     if (!attach)
         throw Exception(ErrorCodes::ILLEGAL_INDEX, "Index of type 'hypothesis' is no longer supported. Please drop the index");

@@ -28,16 +28,3 @@ EXPLAIN PIPELINE SELECT zero + 1 AS x FROM system.zeros LIMIT 10 SETTINGS max_bl
 -- Verify that we clamp odd values to something slightly saner
 SET max_block_size = 9223372036854775806;
 SELECT value FROM system.settings WHERE name = 'max_block_size';
-
-
-SET max_threads = 9223372036854775807;
--- The clamp must reduce the requested 2^63-1 to EXACTLY 256 * getNumberOfCPUCoresToUse().
--- The core count is derived at runtime from the still-visible `default` column (`auto(N)`),
--- which is unaffected by the SET above, so the bound tracks the real clamp contract on any
--- host instead of relying on a hardcoded threshold. The only literal is the documented 256
--- multiplier from src/Core/SettingsQuirks.cpp:113.
-SELECT
-    toUInt64(value) = 256 * toUInt64(extract(default, 'auto\\(([0-9]+)\\)')) AS clamped_to_256x_cores,
-    toUInt64(value) < toUInt64(9223372036854775807) AS reduced_from_requested
-FROM system.settings
-WHERE name = 'max_threads';

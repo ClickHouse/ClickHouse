@@ -2,9 +2,9 @@
 
 #include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/WriteSettings.h>
-#include <Interpreters/FileCache/FileCache_fwd.h>
-#include <Interpreters/FileCache/FileCacheKey.h>
-#include <Interpreters/FileCache/FileSegment.h>
+#include <Interpreters/Cache/FileCache_fwd.h>
+#include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/FilesystemCacheLog.h>
 
 namespace Poco
@@ -39,12 +39,8 @@ public:
     /**
     * Write a range of file segments. Allocate file segment of `max_file_segment_size` and write to
     * it until it is full and then allocate next file segment.
-    * On a `false` return, `failure_reason` is set to a human-readable reason why write-through
-    * caching was stopped (e.g. cache capacity reached, or covering segment being evicted).
-    * `bytes_written_to_cache` is set to the number of bytes actually written to file segments, which
-    * can be less than `size` when some bytes are skipped because they are already present in cache.
     */
-    bool write(char * data, size_t size, size_t offset, FileSegmentKind segment_kind, std::string & failure_reason, size_t & bytes_written_to_cache);
+    bool write(char * data, size_t size, size_t offset, FileSegmentKind segment_kind);
 
     void finalize();
 
@@ -54,12 +50,8 @@ public:
 
     void jumpToPosition(size_t position);
 
-    void setFileFinishedForDistributedCache();
-
 private:
-    /// Returns nullptr if write-through caching should be skipped for this write,
-    /// setting `failure_reason` to the reason why.
-    FileSegment * allocateFileSegment(size_t offset, FileSegmentKind segment_kind, std::string & failure_reason);
+    FileSegment & allocateFileSegment(size_t offset, FileSegmentKind segment_kind);
 
     void appendFilesystemCacheLog(const FileSegment & file_segment);
 
@@ -75,7 +67,6 @@ private:
     const String query_id;
     const String source_path;
     const bool is_distributed_cache;
-    bool is_file_finished_for_distributed_cache = false;
 
     FileSegmentsHolderPtr file_segments;
     size_t ignore_bytes = 0;
@@ -91,7 +82,6 @@ public:
     virtual bool cachingStopped() const = 0;
     virtual const FileSegmentsHolder * getFileSegments() const  = 0;
     virtual void jumpToPosition(size_t position) = 0;
-    virtual void setFileFinishedForDistributedCache() = 0;
 
     virtual WriteBuffer & getImpl() = 0;
 
@@ -125,8 +115,6 @@ public:
     const FileSegmentsHolder * getFileSegments() const override { return cache_writer ? cache_writer->getFileSegments() : nullptr; }
 
     void jumpToPosition(size_t position) override;
-
-    void setFileFinishedForDistributedCache() override { if (cache_writer) cache_writer->setFileFinishedForDistributedCache(); }
 
     WriteBuffer & getImpl() override { return *this; }
 

@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemSettingsProfileElements.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -21,7 +20,7 @@
 namespace DB
 {
 
-static const std::vector<std::pair<String, Int8>> & getSettingConstraintWritabilityEnumValues()
+const std::vector<std::pair<String, Int8>> & getSettingConstraintWritabilityEnumValues()
 {
     static const std::vector<std::pair<String, Int8>> values = []
     {
@@ -172,7 +171,7 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
                     break;
                 }
                 default:
-                    chassert(false);
+                    assert(false);
             }
 
             column_index.push_back(current_index);
@@ -210,6 +209,3 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSettingsProfileElements) }

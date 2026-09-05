@@ -222,13 +222,13 @@ void JWTProvider::openURLInBrowser(const std::string & url)
     if (command.empty())
         return;
 
-    pid_t pid = 0;
+    pid_t pid;
     const char * argv[] = {command.c_str(), url.c_str(), nullptr};
     int status = posix_spawnp(&pid, command.c_str(), nullptr, nullptr, const_cast<char * const *>(argv), nullptr);
 
     if (status == 0)
     {
-        int wait_status = 0;
+        int wait_status;
         waitpid(pid, &wait_status, 0);
     }
 #elif defined(OS_WINDOWS)

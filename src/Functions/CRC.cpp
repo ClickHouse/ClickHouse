@@ -78,8 +78,7 @@ namespace
 template <class Impl>
 struct CRCFunctionWrapper
 {
-    /// If the function will return constant value for FixedString data type.
-    static constexpr auto is_fixed_to_constant = false;
+    static constexpr auto is_fixed_to_constant = true;
     using ReturnType = typename Impl::ReturnType;
 
     static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<ReturnType> & res, size_t input_rows_count)

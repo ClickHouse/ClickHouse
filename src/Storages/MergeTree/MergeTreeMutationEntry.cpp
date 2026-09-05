@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 String MergeTreeMutationEntry::versionToFileName(UInt64 block_number_)
 {
-    chassert(block_number_);
+    assert(block_number_);
     return fmt::format("mutation_{}.txt", block_number_);
 }
 
@@ -35,7 +35,7 @@ UInt64 MergeTreeMutationEntry::tryParseFileName(const String & file_name_)
         return 0;
     if (!checkString(".txt", file_name_buf))
         return 0;
-    chassert(maybe_block_number);
+    assert(maybe_block_number);
     return maybe_block_number;
 }
 
@@ -66,9 +66,9 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
         *out << "commands: ";
         commands->writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";
-        if (tid.isNonTransactional())
+        if (tid.isPrehistoric())
         {
-            csn = Tx::NonTransactionalCSN;
+            csn = Tx::PrehistoricCSN;
         }
         else
         {
@@ -88,7 +88,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
 
 void MergeTreeMutationEntry::commit(UInt64 block_number_)
 {
-    chassert(block_number_);
+    assert(block_number_);
     block_number = block_number_;
     String new_file_name = versionToFileName(block_number);
     disk->moveFile(path_prefix + file_name, path_prefix + new_file_name);
@@ -141,8 +141,8 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
 
     if (buf->eof())
     {
-        tid = Tx::NonTransactionalTID;
-        csn = Tx::NonTransactionalCSN;
+        tid = Tx::PrehistoricTID;
+        csn = Tx::PrehistoricCSN;
     }
     else
     {

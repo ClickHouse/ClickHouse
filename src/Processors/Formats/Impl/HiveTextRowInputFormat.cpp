@@ -21,9 +21,6 @@ static FormatSettings updateFormatSettings(const FormatSettings & settings, cons
     updated.defaults_for_omitted_fields = true;
     updated.csv.delimiter = updated.hive_text.fields_delimiter;
     updated.csv.allow_variable_number_of_columns = settings.hive_text.allow_variable_number_of_columns;
-    /// Hive's `LazySimpleSerDe` always writes `NULL` as `\N` (and the `HiveText` output format
-    /// always emits `\N`), so accept it independent of `format_csv_null_representation`.
-    updated.csv.null_representation = "\\N";
     if (settings.hive_text.input_field_names.empty())
         updated.hive_text.input_field_names = header.getNames();
     return updated;
@@ -57,7 +54,6 @@ std::vector<String> HiveTextFormatReader::readTypes()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HiveTextRowInputFormat::readTypes is not implemented");
 }
 
-void registerInputFormatHiveText(FormatFactory & factory);
 void registerInputFormatHiveText(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -65,14 +61,8 @@ void registerInputFormatHiveText(FormatFactory & factory)
         {
             return std::make_shared<HiveTextRowInputFormat>(std::make_unique<const Block>(sample), buf, params, settings);
         });
-
-    /// The structured documentation for `HiveText` is registered unconditionally alongside the
-    /// output format (see `registerOutputFormatHiveText`), because the output format is compiled
-    /// even in builds without `USE_HIVE`. Keeping the documentation there ensures every registered
-    /// format carries a non-empty description regardless of the `USE_HIVE` build option.
 }
 
-void registerFileSegmentationEngineHiveText(FormatFactory & factory);
 void registerFileSegmentationEngineHiveText(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngineCreator(
