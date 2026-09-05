@@ -62,6 +62,44 @@ private:
         return backslash_count % 2 == 0;
     }
 
+    /// Whether a `\Q` quoted section reaches the end of the pattern. re2 treats everything after
+    /// `\Q` as literal text, up to a closing `\E` or the end of the pattern, so trailing `.*$` or
+    /// `$` bytes inside such a section are ordinary characters and not regexp syntax: they neither
+    /// anchor the match nor can be removed. Both rewrites below decide from raw bytes whether the
+    /// pattern ends with syntax, so both have to decline for such a pattern.
+    static bool endsInsideQuotedLiteral(const std::string & regexp)
+    {
+        size_t i = 0;
+        while (i + 1 < regexp.size())
+        {
+            if (regexp[i] != '\\')
+            {
+                ++i;
+                continue;
+            }
+
+            if (regexp[i + 1] != 'Q')
+            {
+                /// An ordinary escape sequence - both of its bytes are consumed, so that the
+                /// second backslash of `\\Q` does not open a quoted section.
+                i += 2;
+                continue;
+            }
+
+            /// Inside a quoted section a backslash is a literal byte of its own, and only the
+            /// exact two-byte sequence `\E` closes the section.
+            i += 2;
+            while (i + 1 < regexp.size() && !(regexp[i] == '\\' && regexp[i + 1] == 'E'))
+                ++i;
+
+            if (i + 1 >= regexp.size())
+                return true;
+
+            i += 2;
+        }
+        return false;
+    }
+
     /// Whether the pattern turns the `s` (dot matches a newline) flag off with an inline group,
     /// `(?-s)` or `(?i-s:...)`. ClickHouse compiles regexp functions with `dot_nl` on, so `.`
     /// normally matches a newline and a trailing `.*$` never constrains the match; with the flag
@@ -106,11 +144,11 @@ private:
         if (regexp.empty())
             return false;
 
+        /// A `^` at the very start cannot be quoted - a `\Q` would have to precede it - so it is
+        /// always an anchor, while a trailing `$` is one only outside a quoted section.
         bool starts_with_caret = regexp.front() == '^';
-        bool ends_with_unescaped_dollar = false;
-
-        if (!regexp.empty() && regexp.back() == '$')
-            ends_with_unescaped_dollar = isUnescaped(regexp, regexp.size() - 1);
+        bool ends_with_unescaped_dollar = regexp.back() == '$' && isUnescaped(regexp, regexp.size() - 1)
+            && !endsInsideQuotedLiteral(regexp);
 
         if (!starts_with_caret && !ends_with_unescaped_dollar)
             return false;
@@ -165,8 +203,12 @@ private:
         /// `.*$` cannot cross a newline: it pins the match to the last line, and dropping it moves
         /// the capture to an earlier one.
         ///
+        /// The tail also has to be regexp syntax rather than literal text: an unterminated `\Q`
+        /// quotes it, and then `.*$` are three ordinary characters to match.
+        ///
         /// For simplicity, this optimization ignores alternations.
-        if (regexp.size() >= 3 && regexp.ends_with(".*$") && isUnescaped(regexp, regexp.size() - 3) && !disablesDotAll(regexp))
+        if (regexp.size() >= 3 && regexp.ends_with(".*$") && isUnescaped(regexp, regexp.size() - 3) && !disablesDotAll(regexp)
+            && !endsInsideQuotedLiteral(regexp))
         {
             regexp = regexp.substr(0, regexp.size() - 3);
             function_node_arguments_nodes[1] = std::make_shared<ConstantNode>(std::move(regexp));
