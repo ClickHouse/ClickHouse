@@ -115,8 +115,8 @@ def test_remote_write_rejects_a_mismatching_time_series_type():
 
 
 def test_remote_write_over_distributed():
-    assert write("/dist/write", "dist_metric", HOSTS).status_code == 204
-
+    response = write("/dist/write", "dist_metric", HOSTS)
+    assert response.status_code == 204, response.text
     # Every sample lands exactly once across the shards, and the fixed hash split fills both.
     assert_eq_with_retry(
         node,
@@ -147,10 +147,8 @@ def test_remote_write_over_distributed_ignores_async_insert():
             "SELECT sum(value) FROM system.events WHERE event = 'AsyncInsertQuery'"
         )
     )
-    assert (
-        write("/dist/write?async_insert=1", "async_dist_metric", HOSTS).status_code
-        == 204
-    )
+    response = write("/dist/write?async_insert=1", "async_dist_metric", HOSTS)
+    assert response.status_code == 204, response.text
 
     # The samples are on the shards, and no asynchronous insert ran: the batch never waited in
     # the queue for a busy timeout before reaching them.
