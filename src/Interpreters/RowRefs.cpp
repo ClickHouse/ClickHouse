@@ -299,9 +299,15 @@ UInt32 StoredColumnsIndex::add(const StoredBlock * block)
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while registering a stored block");
     });
     /// `blocks` and `row_stores` are indexed by the same block number, so grow both before either is
-    /// appended to: the appends are then non-allocating and cannot leave the two different lengths.
-    blocks.reserve(blocks.size() + 1);
-    row_stores.reserve(row_stores.size() + 1);
+    /// appended to: both appends are then non-allocating and cannot leave the two different lengths.
+    /// The capacity doubles, so growing costs amortised constant time per stored block.
+    chassert(blocks.size() == row_stores.size());
+    if (blocks.size() == blocks.capacity() || row_stores.size() == row_stores.capacity())
+    {
+        const size_t new_capacity = 2 * blocks.capacity() + 1;
+        blocks.reserve(new_capacity);
+        row_stores.reserve(new_capacity);
+    }
     blocks.push_back(block);
     row_stores.push_back(block->row_store.get());
     ++blocks_generation; /// Invalidate any previously built emit table (StorageJoin can insert between joins).
