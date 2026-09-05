@@ -916,6 +916,7 @@ def main():
         is_db_replicated=is_database_replicated,
         is_shared_catalog=is_shared_catalog,
         is_per_test_coverage=is_per_test_coverage,
+        is_llvm_coverage=is_llvm_coverage,
     )
     # `run_tests` runs `clickhouse-test` without changing directory, so clients
     # it spawns inherit the repository root and dump their cores there.
