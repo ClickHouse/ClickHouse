@@ -23,6 +23,11 @@ workflow = Workflow.Config(
         # after the PR's last CI run (e.g. a new randomized setting in
         # `tests/clickhouse-test`). Self-skips when the PR changes no tests.
         *JobConfigs.stateless_tests_flaky_mq_jobs,
+        # Reruns the documentation examples against the merge group state, so a
+        # pull request and a `master` commit that are each green on their own
+        # cannot break them together. Cheap enough to run unconditionally - see
+        # `JobConfigs.docs_examples_mq_job`.
+        JobConfigs.docs_examples_mq_job,
     ],
     artifacts=[
         *[
