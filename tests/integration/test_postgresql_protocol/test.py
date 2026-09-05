@@ -2230,3 +2230,298 @@ def test_restricted_user_catalog_visibility(started_cluster):
     cur.execute("DROP DATABASE IF EXISTS pg_visible_db")
     cur.execute("DROP DATABASE IF EXISTS pg_hidden_db")
     ch.close()
+
+
+def test_catalog_qualifier_is_case_insensitive(started_cluster):
+    """PostgreSQL folds unquoted identifiers to lower case, so a bare `PG_CATALOG`
+    qualifier names the same schema as `pg_catalog` and must be stripped as well.
+    A quoted identifier keeps its case in PostgreSQL, so `"PG_CATALOG"` is a
+    different (and non-existent) schema and must not be rewritten."""
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+
+    for qualifier in ["pg_catalog", "PG_CATALOG", "Pg_Catalog", '"pg_catalog"']:
+        cur.execute(f"SELECT count() FROM {qualifier}.pg_namespace")
+        assert int(cur.fetchall()[0][0]) > 0, qualifier
+
+        cur.execute(f"SELECT {qualifier}.pg_table_is_visible(1)")
+        assert str(cur.fetchall()[0][0]) in ("1", "True"), qualifier
+
+    # A quoted qualifier in a different case is a different schema in PostgreSQL,
+    # and there is no such database here.
+    with pytest.raises(psycopg.errors.Error):
+        cur.execute('SELECT count() FROM "PG_CATALOG".pg_namespace')
+
+    ch.close()
+
+
+def test_catalog_oids_are_unique(started_cluster):
+    """The synthesized oids of the emulated catalog are used as join keys by
+    PostgreSQL clients, so they have to be unique: `pg_class.relnamespace` must
+    resolve to exactly one `pg_namespace` row, and no two relations may share
+    an oid."""
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("CREATE DATABASE IF NOT EXISTS pg_oids_db")
+    for i in range(16):
+        cur.execute(f"CREATE DATABASE IF NOT EXISTS pg_oids_extra_{i}")
+        cur.execute(
+            f"CREATE TABLE IF NOT EXISTS pg_oids_db.t_{i} (id Int32) ENGINE = Memory"
+        )
+    ch.close()
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        dbname="pg_oids_db",
+    )
+    cur = ch.cursor()
+
+    cur.execute("SELECT oid, nspname FROM pg_namespace")
+    namespaces = cur.fetchall()
+    oids = [int(row[0]) for row in namespaces]
+    assert len(oids) == len(set(oids))
+
+    cur.execute("SELECT oid, relname FROM pg_class WHERE relname != ''")
+    relations = cur.fetchall()
+    relation_oids = [int(row[0]) for row in relations]
+    assert len(relation_oids) == len(set(relation_oids))
+    assert len(relations) == 16
+    # The oid spaces of namespaces and relations must not overlap either.
+    assert not (set(oids) & set(relation_oids))
+
+    # The join psql performs behind `\d` must match exactly one namespace per relation.
+    cur.execute(
+        "SELECT c.relname, n.nspname FROM pg_class AS c "
+        "JOIN pg_namespace AS n ON n.oid = c.relnamespace WHERE c.relname != ''"
+    )
+    joined = cur.fetchall()
+    assert len(joined) == 16
+    assert {row[1] for row in joined} == {"pg_oids_db"}
+
+    ch.close()
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("DROP DATABASE IF EXISTS pg_oids_db")
+    for i in range(16):
+        cur.execute(f"DROP DATABASE IF EXISTS pg_oids_extra_{i}")
+    ch.close()
+
+
+def test_catalog_table_oids_differ_across_databases(started_cluster):
+    """A session can switch the current database with `USE`, and `pg_class` then lists
+    the tables of the new one. Two same-named tables in two databases are different
+    objects, so their oids must differ - otherwise an oid a client remembered in the
+    first database silently resolves to the other table after the switch."""
+    node = started_cluster.instances["node"]
+
+    databases = ["pg_oids_qualified_a", "pg_oids_qualified_b"]
+
+    def connect(dbname=None):
+        return psycopg.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            **({"dbname": dbname} if dbname else {}),
+        )
+
+    ch = connect()
+    cur = ch.cursor()
+    for database in databases:
+        cur.execute(f"DROP DATABASE IF EXISTS {database}")
+        cur.execute(f"CREATE DATABASE {database}")
+        cur.execute(f"CREATE TABLE {database}.events (id Int32) ENGINE = Memory")
+    ch.close()
+
+    oids = []
+    for database in databases:
+        ch = connect(database)
+        cur = ch.cursor()
+        cur.execute("SELECT oid FROM pg_class WHERE relname = 'events'")
+        oids.append(int(cur.fetchall()[0][0]))
+        ch.close()
+
+    assert oids[0] != oids[1]
+
+    # The same, inside a single session that switches the database with `USE`:
+    # the oid remembered before the switch must not name the other table after it.
+    ch = connect(databases[0])
+    cur = ch.cursor()
+    cur.execute("SELECT oid FROM pg_class WHERE relname = 'events'")
+    remembered = int(cur.fetchall()[0][0])
+    cur.execute(f"USE {databases[1]}")
+    cur.execute("SELECT oid FROM pg_class WHERE relname = 'events'")
+    after_switch = int(cur.fetchall()[0][0])
+    ch.close()
+
+    assert remembered != after_switch
+    assert {remembered, after_switch} == set(oids)
+
+    ch = connect()
+    cur = ch.cursor()
+    for database in databases:
+        cur.execute(f"DROP DATABASE IF EXISTS {database}")
+    ch.close()
+
+
+def test_catalog_oids_are_stable(started_cluster):
+    """An oid identifies an object, and PostgreSQL clients are allowed to remember
+    one and use it in a later query, so the oid of a database or a table must not
+    change when unrelated objects appear."""
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_db")
+    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_aaa")
+    cur.execute("CREATE DATABASE pg_stable_oids_db")
+    cur.execute("CREATE TABLE pg_stable_oids_db.zzz (id Int32) ENGINE = Memory")
+    ch.close()
+
+    def read_oids():
+        ch = psycopg.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            dbname="pg_stable_oids_db",
+        )
+        cur = ch.cursor()
+        cur.execute("SELECT oid FROM pg_namespace WHERE nspname = 'pg_stable_oids_db'")
+        namespace_oid = int(cur.fetchall()[0][0])
+        cur.execute("SELECT oid, relnamespace FROM pg_class WHERE relname = 'zzz'")
+        row = cur.fetchall()[0]
+        ch.close()
+        return namespace_oid, int(row[0]), int(row[1])
+
+    before = read_oids()
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    # Both names sort before the existing ones, which is what a scheme numbering
+    # the objects by their position in the sorted list of names would shift.
+    cur.execute("CREATE DATABASE pg_stable_oids_aaa")
+    cur.execute("CREATE TABLE pg_stable_oids_db.aaa (id Int32) ENGINE = Memory")
+    ch.close()
+
+    assert read_oids() == before
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_db")
+    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_aaa")
+    ch.close()
+
+
+def test_catalog_oids_do_not_depend_on_a_colliding_peer(started_cluster):
+    """The oid of an object is a pure function of its name, so it must not change even
+    when another name whose hash lands in the same slot appears or disappears. These two
+    names are a real collision of the namespace oids: `sipHash64(name) % 2000000000`
+    is 7242078 for both."""
+    node = started_cluster.instances["node"]
+    colliding = ["collision_probe_121841", "collision_probe_264544"]
+
+    def sql(query, dbname=None):
+        ch = psycopg.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            **({"dbname": dbname} if dbname else {}),
+        )
+        cur = ch.cursor()
+        for statement in query:
+            cur.execute(statement)
+        rows = cur.fetchall() if cur.description else None
+        ch.close()
+        return rows
+
+    sql([f"DROP DATABASE IF EXISTS {name}" for name in colliding])
+    sql(
+        [
+            f"CREATE DATABASE {colliding[0]}",
+            f"CREATE TABLE {colliding[0]}.{colliding[0]} (id Int32) ENGINE = Memory",
+            f"CREATE TABLE {colliding[0]}.{colliding[1]} (id Int32) ENGINE = Memory",
+        ]
+    )
+
+    def read_oids():
+        namespace = sql(
+            [f"SELECT oid FROM pg_namespace WHERE nspname = '{colliding[0]}'"],
+            dbname=colliding[0],
+        )
+        relation = sql(
+            [
+                f"SELECT oid, relnamespace FROM pg_class WHERE relname = '{colliding[0]}'"
+            ],
+            dbname=colliding[0],
+        )
+        return int(namespace[0][0]), int(relation[0][0]), int(relation[0][1])
+
+    # The first name is alone in its slot here - only its colliding peer as a table exists.
+    before = read_oids()
+
+    # Creating the colliding database must not renumber the object that is already there.
+    sql([f"CREATE DATABASE {colliding[1]}"])
+    assert read_oids() == before
+
+    # Neither must dropping it again.
+    sql([f"DROP DATABASE {colliding[1]}"])
+    assert read_oids() == before
+
+    # The accepted cost of that stability: while both colliding databases exist,
+    # `pg_namespace` emits the same oid for both of them, so the join behind `\d`
+    # cannot tell them apart. Uniqueness and stability are not both achievable in a
+    # bounded oid space without a persistent oid counter, and stability wins - see the
+    # comment above the view. This asserts the trade-off rather than a correct join.
+    sql([f"CREATE DATABASE {colliding[1]}"])
+    joined = sql(
+        [
+            "SELECT c.relname, n.nspname FROM pg_class AS c "
+            "JOIN pg_namespace AS n ON n.oid = c.relnamespace "
+            "WHERE c.relname != '' ORDER BY c.relname, n.nspname"
+        ],
+        dbname=colliding[0],
+    )
+    assert {row[0] for row in joined} == set(colliding)
+    assert {row[1] for row in joined} == set(colliding)
+
+    sql([f"DROP DATABASE IF EXISTS {name}" for name in colliding])

@@ -1164,7 +1164,10 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         ("password", po::value<std::string>(), "password")
         ("ask-password", "ask-password")
-        ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")
+        ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key to authenticate with the server. "
+            "If the file name is omitted, the key is looked up using SSH configuration: "
+            "the identity files configured for this host in `~/.ssh/config`, the default identity files, such as `~/.ssh/id_ed25519`, "
+            "and the keys held by the ssh-agent.")
         ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
         ("jwt", po::value<std::string>(), "Use JWT for authentication")
@@ -1743,6 +1746,12 @@ void Client::readArguments(
                 /// if the value of --password is omitted, the password will be asked before
                 /// connection start
                 common_arguments.emplace_back(ConnectionParameters::ASK_PASSWORD);
+            }
+            else if (arg == "--ssh-key-file" && ((arg_num + 1) >= argc || std::string_view(argv[arg_num + 1]).starts_with('-')))
+            {
+                common_arguments.emplace_back(arg);
+                /// If the file name is omitted, the key is looked up in `~/.ssh` and in the ssh-agent.
+                common_arguments.emplace_back();
             }
             else
                 common_arguments.emplace_back(arg); /// anything else, eg --hilite

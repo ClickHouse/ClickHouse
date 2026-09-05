@@ -1,6 +1,7 @@
 #include <Storages/System/StorageSystemHypotheticalIndexes.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <Access/ContextAccess.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
@@ -33,6 +34,9 @@ void StorageSystemHypotheticalIndexes::fillData(
     const auto & store = context->getHypotheticalObjectStore();
     auto entries = store.getAll();
 
+    const auto access = context->getAccess();
+    const bool check_access = !access->isGranted(AccessType::SHOW_TABLES);
+
     for (const auto & entry : entries)
     {
         /// Hide entries whose table no longer exists (DROP TABLE).
@@ -46,6 +50,11 @@ void StorageSystemHypotheticalIndexes::fillData(
             database_name = db->getDatabaseName();
             table_name = storage->getStorageID().getTableName();
         }
+
+        /// a session entry outlives the grants it was made under, so hide it once the table it
+        /// points at is no longer visible, including after the table is renamed
+        if (check_access && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+            continue;
 
         size_t col = 0;
         res_columns[col++]->insert(database_name);
