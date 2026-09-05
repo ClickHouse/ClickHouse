@@ -30,9 +30,14 @@
 (def held-packages
   "E: Unable to correct problems, you have held broken packages.\n")
 
-(def lists-lock-held
-  (str "E: Could not get lock /var/lib/apt/lists/lock. It is held by process 1234 (apt-get)\n"
-       "E: Unable to lock directory /var/lib/apt/lists/\n"))
+(defn lists-lock-held
+  "What apt printed on the node the nightly run lost, where the `apt-get update`
+  of the node's own boot held the lists lock for the whole job."
+  ([] (lists-lock-held 1758 "apt-get"))
+  ([pid holder]
+   (str "E: Could not get lock /var/lib/apt/lists/lock. It is held by process "
+        pid " (" holder ")\n"
+        "E: Unable to lock directory /var/lib/apt/lists/\n")))
 
 (def apt-config-defaults
   "The lines apt reports for its own compiled-in defaults for the options the
@@ -88,6 +93,11 @@
     (ok (str/join "\n" (repeat (:indexes @node) "Created-By: Packages")))
 
     (str/includes? cmd "systemctl stop")
+    (ok)
+
+    ;; A signal reaches whatever the scripted update said held the lock: the
+    ;; node has no processes, so what a kill does is only to be recorded.
+    (str/includes? cmd "kill -")
     (ok)
 
     (str/includes? cmd "apt-get --allow-releaseinfo-change update")
@@ -292,18 +302,80 @@
     ;; still be spending it.
     (is (some? @chos/archive-retry-deadline))))
 
-(deftest the-lists-lock-is-waited-for
+(deftest the-boot-jobs-of-apt-are-stopped
+  ;; The service as well as the timers: it is the one already running when a
+  ;; node that booted seconds ago is set up.
+  (let [node (setup! (fake-node {}))
+        stops (cmds-matching node "systemctl stop")]
+    (is (= 1 (count stops)))
+    (is (every? #(str/includes? (first stops) %)
+                ["apt-daily.timer" "apt-daily-upgrade.timer" "apt-daily.service"]))
+    ;; The ones that run dpkg are waited for, not stopped.
+    (is (not (str/includes? (first stops) "unattended-upgrades")))
+    (is (not (str/includes? (first stops) "apt-daily-upgrade.service")))))
+
+(deftest a-lists-lock-released-inside-the-grace-is-waited-for
+  ;; What a healthy node does: the update of its own boot holds the lock for
+  ;; seconds, so it is left to finish.
   (with-redefs [chos/apt-lock-retry-interval-ms 10]
-    (let [node (setup! (fake-node {:updates [{:exit 100 :out "" :err lists-lock-held}
-                                             {:exit 100 :out "" :err lists-lock-held}
+    (let [node (setup! (fake-node {:updates [{:exit 100 :out "" :err (lists-lock-held)}
+                                             {:exit 100 :out "" :err (lists-lock-held)}
                                              (ok)]}))]
-      (is (= 3 (count (cmds-matching node "apt-get --allow-releaseinfo-change update")))))))
+      (is (= 3 (count (cmds-matching node "apt-get --allow-releaseinfo-change update"))))
+      (is (empty? (cmds-matching node "kill -"))))))
+
+(deftest a-lists-lock-holder-that-outlasts-its-grace-is-stopped
+  ;; The node the nightly run lost: TERM once the grace is spent, KILL when the
+  ;; next attempt finds the same process still there, and the update then runs.
+  (with-redefs [chos/apt-lock-retry-interval-ms 10
+                chos/apt-lists-lock-grace-seconds 0]
+    (let [node (setup! (fake-node {:updates [{:exit 100 :out "" :err (lists-lock-held)}
+                                             {:exit 100 :out "" :err (lists-lock-held)}
+                                             (ok)]}))]
+      (is (= ["kill -TERM 1758" "kill -KILL 1758"]
+             (map #(str/replace % #".*(kill -\S+ \d+).*" "$1")
+                  (cmds-matching node "kill -"))))
+      (is (= 3 (count (cmds-matching node "apt-get --allow-releaseinfo-change update"))))
+      (is (= #{"n1"} @chos/apt-updated-hosts)))))
+
+(deftest a-lists-lock-holder-is-signalled-once-each-way
+  ;; A holder that answers neither signal is waited for like any other, and
+  ;; reported at the deadline rather than signalled again and again.
+  (with-redefs [chos/apt-lock-retry-interval-ms 10
+                chos/apt-lists-lock-grace-seconds 0
+                chos/apt-lock-timeout-seconds 1]
+    (let [node (fake-node {:updates [{:exit 100 :out "" :err (lists-lock-held)}]})
+          e (setup-error node)]
+      (is (= :jepsen.clickhouse.os/apt-lists-lock-unavailable (:type e)))
+      (is (< 2 (count (cmds-matching node "apt-get --allow-releaseinfo-change update"))))
+      (is (= 2 (count (cmds-matching node "kill -")))))))
+
+(deftest a-new-lists-lock-holder-gets-its-own-signals
+  (with-redefs [chos/apt-lock-retry-interval-ms 10
+                chos/apt-lists-lock-grace-seconds 0]
+    (let [node (setup! (fake-node {:updates [{:exit 100 :out "" :err (lists-lock-held 1758 "apt-get")}
+                                             {:exit 100 :out "" :err (lists-lock-held 2001 "apt-get")}
+                                             (ok)]}))]
+      (is (= ["kill -TERM 1758" "kill -TERM 2001"]
+             (map #(str/replace % #".*(kill -\S+ \d+).*" "$1")
+                  (cmds-matching node "kill -")))))))
+
+(deftest a-lists-lock-holder-that-is-not-an-apt-is-left-alone
+  (with-redefs [chos/apt-lock-retry-interval-ms 10
+                chos/apt-lists-lock-grace-seconds 0
+                chos/apt-lock-timeout-seconds 1]
+    (let [node (fake-node {:updates [{:exit 100 :out ""
+                                      :err (lists-lock-held 1758 "packagekitd")}]})
+          e (setup-error node)]
+      (is (= :jepsen.clickhouse.os/apt-lists-lock-unavailable (:type e)))
+      (is (empty? (cmds-matching node "kill -"))))))
 
 (deftest a-lists-lock-that-is-never-released-is-reported
   (with-redefs [chos/apt-lock-retry-interval-ms 10
                 chos/apt-lock-timeout-seconds 1]
-    (let [e (setup-error (fake-node {:updates [{:exit 100 :out "" :err lists-lock-held}]}))]
+    (let [e (setup-error (fake-node {:updates [{:exit 100 :out "" :err (lists-lock-held)}]}))]
       (is (= :jepsen.clickhouse.os/apt-lists-lock-unavailable (:type e)))
+      (is (= "n1" (:node e)))
       (is (str/includes? (:err e) "Could not get lock")))))
 
 (deftest a-host-with-a-completed-setup-is-not-updated-again

@@ -21,7 +21,12 @@
   an update of 22 indexes against such a mirror takes hours to report anything
   at all - longer than the job is allowed to run. The timeouts apt is
   configured with here, and the deadline the update is run under, are what turn
-  that into a failure this can retry."
+  that into a failure this can retry.
+
+  An apt the node started for itself against such a mirror is bounded the only
+  way it can be: it holds the lists lock, none of the configuration above
+  reached it, and it is stopped. Waiting for it costs the whole job rather than
+  one test, because every test in the run waits for the same lock again."
   (:require [clojure.string :as str]
             [clojure.tools.logging :refer [info warn]]
             [jepsen.os :as os]
@@ -92,14 +97,54 @@
   The same budget apt is given for the locks it waits for."
   apt-lock-timeout-seconds)
 
+(def apt-lists-lock-grace-seconds
+  "How long the process found holding the lists lock is left to finish before it
+  is stopped. A node boots seconds before a test runs it, so the `apt-get
+  update` of its own boot is often the incumbent, and against an archive that
+  answers it finishes in seconds - the CI logs of a healthy node show four of
+  them. One still holding the lock after this long is downloading from an
+  archive that has stopped answering, and none of the options above reached it:
+  it was started before the drop-in was written, with apt's own 120 s per target
+  and apt's own retries on top, so it holds the lock for hours. Waiting for it
+  is not one test's cost but the whole run's, because every test sets its nodes
+  up again and waits for the same lock."
+  60)
+
 (def apt-lock-retry-interval-ms 5000)
 
 (def apt-archive-retry-interval-ms 15000)
 
+(def apt-lists-lock-path
+  "The lock apt takes while it fetches the package lists."
+  "/var/lib/apt/lists/lock")
+
 (def lists-lock-error
   "What apt prints when /var/lib/apt/lists/lock is held. DPkg::Lock::Timeout
   does not cover this lock, so it needs its own retry."
-  "Could not get lock /var/lib/apt/lists/lock")
+  (str "Could not get lock " apt-lists-lock-path))
+
+(def lists-lock-holder-pattern
+  "How apt names what holds the lists lock. apt reads the holder's id out of the
+  lock and its name out of `/proc`, so both are there to be read back, and a
+  holder that is not an apt fetching package lists can be told apart."
+  (re-pattern (str (java.util.regex.Pattern/quote lists-lock-error)
+                   "\\. It is held by process (\\d+) \\(([^)]*)\\)")))
+
+(def lists-lock-holders-to-stop
+  "The names apt reports for a holder of the lists lock that this may stop. Only
+  apt's own front-ends: the lists lock is taken to fetch package lists and for
+  nothing else, and no dpkg runs while it is held, so a holder of it that is
+  stopped leaves nothing half-done - only downloads to make again, which is what
+  the update waiting for it is about to do anyway. A holder of any other name is
+  left alone and waited for, as before."
+  #{"apt-get" "apt" "aptitude"})
+
+(def lists-lock-holder-signals
+  "The signals sent, in this order, to a holder of the lists lock whose grace has
+  run out. TERM first, so apt exits by its own hand and takes its partial
+  downloads with it; KILL if the next attempt finds it still there, which gives
+  TERM the interval between two attempts to be answered."
+  [:TERM :KILL])
 
 (def archive-fetch-errors
   "What apt prints when it could not download a file the package lists name.
@@ -126,15 +171,28 @@
    #"Hash Sum mismatch"
    #"File has unexpected size"])
 
-(defn stop-apt-timers!
-  "Stops the timers that start automatic apt runs. Best effort: a node without
-  systemd, or with these units absent, is fine. Stops the timers and never the
-  services, so a package operation already in flight is left to finish."
+(def apt-boot-units
+  "The units that run apt on a node of their own accord: the timers that would
+  start one, and the service one of them has often already started, a node
+  being booted seconds before a test runs it.
+
+  `apt-daily.service` only downloads - the package lists, an unattended upgrade
+  it asks for with `--download-only`, and an autoclean - so stopping it cannot
+  interrupt a dpkg. `apt-daily-upgrade.service` and `unattended-upgrades.service`
+  install, so they are left running and waited for instead: a dpkg stopped
+  halfway leaves the node refusing every package operation until someone runs
+  `dpkg --configure -a`, and DPkg::Lock::Timeout already waits for the lock they
+  hold."
+  [:apt-daily.timer :apt-daily-upgrade.timer :apt-daily.service])
+
+(defn stop-apt-boot-jobs!
+  "Stops the apt runs a boot starts. Best effort: a node without systemd, or
+  with these units absent, is fine."
   []
   (try+
-   (c/su (c/exec :systemctl :stop :apt-daily.timer :apt-daily-upgrade.timer))
+   (c/su (apply c/exec :systemctl :stop apt-boot-units))
    (catch Object _
-     (warn "Could not stop the apt-daily timers; continuing"))))
+     (warn "Could not stop the apt jobs of the boot; continuing"))))
 
 (defn assert-apt-options!
   "Asserts apt parses the drop-in and resolves every option to the value
@@ -247,6 +305,42 @@
   (boolean (when-let [err (apt-error failure)]
              (str/includes? err lists-lock-error))))
 
+(defn lists-lock-holder
+  "What apt named as holding the lists lock, as {:pid :name}, or nil when the
+  message named none. apt truncates the name to what `/proc` holds, so it is
+  compared and reported and never used to find the process again: the id apt
+  read out of the lock is what identifies it."
+  [failure]
+  (when-let [err (apt-error failure)]
+    (when-let [[_ pid name] (re-find lists-lock-holder-pattern err)]
+      {:pid (parse-long pid) :name name})))
+
+(defn lists-lock-holder-signal
+  "The next signal to send to a holder that has already been sent this many, or
+  nil once the list is spent - a process that answers neither TERM nor KILL is
+  waited for like any other holder, and reported at the deadline."
+  [signals-sent]
+  (get lists-lock-holder-signals signals-sent))
+
+(defn describe-lists-lock-holder
+  "How a holder is named in the log, or how one apt did not name is."
+  [{:keys [pid], holder-name :name}]
+  (if pid
+    (str "process " pid " (" holder-name ")")
+    "a process apt did not name"))
+
+(defn stop-lists-lock-holder!
+  "Sends a signal to the process apt named as holding the lists lock. `kill`
+  exits non-zero for a process that has since gone, which is the outcome wanted
+  rather than a failure, so nothing is thrown for it."
+  [signal {:keys [pid] :as holder}]
+  (info "sending" (name signal) "to" (describe-lists-lock-holder holder)
+        "holding" apt-lists-lock-path "on" c/*host*)
+  (try+
+   (c/su (c/exec :kill (str "-" (name signal)) (str pid)))
+   (catch [:type :jepsen.control/nonzero-exit] _
+     (info "process" pid "was already gone"))))
+
 (defn archive-unavailable?
   "Is this failed apt-get a failure to download from the archive, rather than a
   rejection of what was asked for? Matched on the message, because apt reports
@@ -289,12 +383,18 @@
   unreachable, and exits non-zero having fetched every index that matters when
   one configured source is broken. The readable package indexes it leaves
   behind are what decides, so a failure the retrying gives up on is judged by
-  that count rather than being fatal on its own."
+  that count rather than being fatal on its own.
+
+  A holder of the lists lock that outlasts its grace is stopped rather than
+  waited for, so that the archive it is stuck on costs this run one grace and
+  not one lock timeout per test."
   []
   (let [start (System/currentTimeMillis)
         lock-deadline (+ start (* 1000 apt-lock-timeout-seconds))
+        grace-deadline (+ start (* 1000 apt-lists-lock-grace-seconds))
         swallowed-err
-        (loop [attempt 1]
+        (loop [attempt 1
+               signals-sent {}]
           (let [failure
                 (try+
                  ;; debian/update! hardcodes its argv, so its lock is taken here.
@@ -313,15 +413,32 @@
 
               (lists-lock-held? failure)
               (if (< (System/currentTimeMillis) lock-deadline)
-                (do (Thread/sleep (long apt-lock-retry-interval-ms))
-                    (recur (inc attempt)))
+                (let [holder (lists-lock-holder failure)
+                      signal (when (and holder
+                                        (contains? lists-lock-holders-to-stop
+                                                   (:name holder))
+                                        (<= grace-deadline (System/currentTimeMillis)))
+                               (lists-lock-holder-signal
+                                (get signals-sent (:pid holder) 0)))]
+                  (when (= 1 attempt)
+                    (info "waiting for" apt-lists-lock-path "on" c/*host*
+                          "held by" (describe-lists-lock-holder holder)))
+                  (when signal
+                    (stop-lists-lock-holder! signal holder))
+                  (Thread/sleep (long apt-lock-retry-interval-ms))
+                  (recur (inc attempt)
+                         (if signal
+                           (update signals-sent (:pid holder) (fnil inc 0))
+                           signals-sent)))
                 (let [waited (- (System/currentTimeMillis) start)]
                   (throw+ {:type ::apt-lists-lock-unavailable
+                           :node c/*host*
                            :waited-ms waited
                            :err (apt-error failure)}
                           nil
-                          "apt could not take /var/lib/apt/lists/lock after %d ms:\n%s"
-                          waited (update-failure-message failure))))
+                          "apt could not take %s on %s after %d ms:\n%s"
+                          apt-lists-lock-path c/*host* waited
+                          (update-failure-message failure))))
 
               ;; An archive that could not be downloaded from, with nothing on
               ;; the node to install from either: worth another attempt while
@@ -334,7 +451,7 @@
                         (str "(attempt " attempt "), retrying:\n")
                         (update-failure-message failure))
                   (Thread/sleep (long apt-archive-retry-interval-ms))
-                  (recur (inc attempt)))
+                  (recur (inc attempt) signals-sent))
 
               :else
               (update-failure-message failure))))]
@@ -424,7 +541,7 @@
   (reify os/OS
     (setup! [_ test node]
       (info node "configuring apt to wait for its locks and to time out on the archive")
-      (stop-apt-timers!)
+      (stop-apt-boot-jobs!)
       (c/su (cu/write-file! apt-conf-content apt-conf-path))
       (assert-apt-options!)
       (ensure-package-lists!)
