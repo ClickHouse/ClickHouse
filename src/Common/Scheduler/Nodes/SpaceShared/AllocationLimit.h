@@ -43,6 +43,7 @@ private:
     void processSuction();
     void clearMemoryGrowthSuspension();
     void clearSuction();
+    void retrySuctionWaiters();
 
     ResourceCost max_allocated = default_max_allocated;
 

@@ -217,7 +217,8 @@ bool AllocationQueue::canEnterSuction(const ResourceAllocation & allocation) con
     for (ISchedulerNode * node = parent; node; node = node->parent)
     {
         const auto * space_node = static_cast<const ISpaceSharedNode *>(node);
-        if (ResourceAllocation * suction = space_node->getLocalSuctionAllocation(); suction && suction != &allocation)
+        /// Policy and workload ancestors share the descendant's slot even without a local limit.
+        if (ResourceAllocation * suction = space_node->getSuctionAllocation(); suction && suction != &allocation)
             return false;
         /// The queue policy may replace this queue's provisional spiller before suction starts.
         /// A spiller from another queue still owns this ancestor scope and blocks promotion.
@@ -616,7 +617,7 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
         ResourceAllocation & candidate = *it;
         if (candidate.kill_requested)
             continue;
-        if (&candidate == &killer.allocation)
+        if (&candidate == &killer.allocation && killer.allocation.isSuctioned())
         {
             if (candidate.isProtectedFromEviction())
                 protected_self_fallback = &candidate;

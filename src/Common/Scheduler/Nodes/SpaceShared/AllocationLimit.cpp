@@ -99,7 +99,7 @@ void AllocationLimit::approveIncrease()
     child->approveIncrease();
     setIncrease(child->increase, false);
     if (completes_suction)
-        child->retrySuspendedIncreases();
+        retrySuctionWaiters();
 }
 
 void AllocationLimit::approveDecrease()
@@ -203,7 +203,10 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
             }
         }
         else if (suction_growth && !child->getSuctionAllocation())
+        {
             suction_growth = nullptr;
+            retrySuctionWaiters();
+        }
         update.setSuction(getSuctionAllocation());
     }
     bool reapply_constraint = false;
@@ -331,6 +334,16 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
 
     if (!promoted_to_suction && !new_increase && suction_growth && decrease == nullptr && !allocation_to_kill)
         processSuction();
+
+    /// A suction cap applies even when reserved capacity makes the workload fit check succeed.
+    if (new_increase && new_increase->allocation.isSuctioned()
+        && !new_increase->allocation.canAllocateInSuction(new_increase->size))
+    {
+        processSuction();
+        const bool changed = increase != nullptr;
+        increase = nullptr;
+        return changed;
+    }
 
     if (!reapply_constraint && increase == new_increase)
         return false;
@@ -478,8 +491,17 @@ void AllocationLimit::clearSuction()
         suction_growth->allocation.onGrowthPressureResolved();
     }
     suction_growth = nullptr;
-    if (child)
-        child->retrySuspendedIncreases();
+    retrySuctionWaiters();
+}
+
+void AllocationLimit::retrySuctionWaiters()
+{
+    /// A sibling limit may be waiting for the slot at a shared policy ancestor. Retry from the
+    /// resource root after releasing ownership so that sibling receives the completion event too.
+    ISpaceSharedNode * root = this;
+    while (root->parent)
+        root = static_cast<ISpaceSharedNode *>(root->parent);
+    root->retrySuspendedIncreases();
 }
 
 void AllocationLimit::processSuction()
@@ -487,6 +509,13 @@ void AllocationLimit::processSuction()
     if (!suction_growth || decrease != nullptr || allocation_to_kill
         || !suction_growth->allocation.memory_growth_suction_priority)
         return;
+
+    /// Ownership follows a child upward, but eviction still requires pressure at this limit.
+    /// A hidden child request may already be waiting for a victim's release farther down.
+    if (suction_growth->allocation.canAllocateInSuction(suction_growth->size)
+        && allocated + suction_growth->size <= getEffectiveLimit(*suction_growth))
+        return;
+
     selectAndKill(*suction_growth);
 }
 
