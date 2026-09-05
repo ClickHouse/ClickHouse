@@ -80,11 +80,13 @@ RUN fetch() { \
 # image needs it, and it is installed on `amd64` only: an `x86_64` PE needs an `x86_64` host, and
 # the ARM build of Wine ships no `x86` emulator, so there it would be dead weight.
 #
-# `wine64` rather than the `wine` metapackage, and without recommends: the metapackage pulls in
-# the whole i386 multiarch half, and a 64-bit PE does not need it.
+# `wine` rather than `wine64` alone, and without recommends. `wine64` is only the loader and the
+# DLLs - it installs nothing into `PATH` - so the launcher has to come from `wine`, whose
+# dependency is satisfied by `wine64` on `amd64`; without recommends apt does not additionally
+# pull the i386 multiarch half, which a 64-bit PE does not need.
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
         apt-get update \
-        && apt-get install --yes --no-install-recommends --verbose-versions wine64 \
+        && apt-get install --yes --no-install-recommends --verbose-versions wine \
         && apt-get clean \
         && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*; \
     fi

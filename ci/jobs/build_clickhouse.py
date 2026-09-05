@@ -533,15 +533,18 @@ def main():
             # and `wineboot --init` creates it up front so the query does not race the
             # first-run bootstrap. `WINEDEBUG=-all` silences Wine's own diagnostics; a real
             # failure still comes out of ClickHouse on stderr.
+            # `wine`, not `wine64`: the `wine64` package is only the loader and the DLLs and
+            # installs nothing into `PATH`; `wine` is the launcher, and it selects the 64-bit
+            # loader when it is installed.
             wine_prefix = f"{Utils.cwd()}/ci/tmp/wineprefix"
             wine_env = "WINEDEBUG=-all WINEPREFIX=" + wine_prefix
             results.append(
                 Result.from_commands_run(
                     name="Run clickhouse.exe under Wine",
                     command=[
-                        f"{wine_env} wine64 wineboot --init",
-                        f"{wine_env} wine64 {build_dir}/programs/clickhouse.exe --version",
-                        f'{wine_env} wine64 {build_dir}/programs/clickhouse.exe local --query "SELECT 1"',
+                        f"{wine_env} wine wineboot --init",
+                        f"{wine_env} wine {build_dir}/programs/clickhouse.exe --version",
+                        f'{wine_env} wine {build_dir}/programs/clickhouse.exe local --query "SELECT 1"',
                     ],
                     with_info=True,
                 )
