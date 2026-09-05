@@ -69,6 +69,7 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Planner/TableExpressionData.h>
 #include <Storages/StorageDummy.h>
@@ -6170,11 +6171,330 @@ static bool hasTextIndexMaterialization(const MutationCommands & commands, Stora
     return false;
 }
 
+void MergeTreeData::checkLossyRecompressionIsPossible(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
+{
+    const auto & columns = metadata_snapshot->getColumns();
+
+    /// The column may have been dropped or turned into an ALIAS since the mutation was created;
+    /// the rewrite then follows the current metadata and there is no stored stream to guard.
+    const auto * column_desc = columns.tryGet(column_name);
+    if (!column_desc || !column_desc->codec || !codecResolvesToLossyCompression(column_desc->codec, column_desc->type))
+        return;
+
+    /// A dependency list may name a subcolumn (`val.x` of a `Tuple`, `arr.size0`, ...) instead of
+    /// the stored column that holds it, and reading a subcolumn reads the very stream that the
+    /// recompression rewrites. Map every required column back to its owning stored column before
+    /// comparing - the same normalization `MutateTask` applies to these lists.
+    ///
+    /// Structural subcolumns (`arr.size0`, `x.null`, ...) are the exception: a specialized codec
+    /// is only ever applied to the substreams where `ISerialization::isSpecialCompressionAllowed`
+    /// holds - for array sizes, null maps and the other structural substreams the part writers and
+    /// the raw-block recompression fall back to the generic codecs of the chain, so a lossy
+    /// recompression cannot change their values (`codecResolvesToLossyCompression` skips them for
+    /// the same reason). A dependent that reads the recompressed column only through such
+    /// subcolumns stays valid and must not block the recompression.
+    auto is_structural_subcolumn = [&](std::string_view subcolumn_name)
+    {
+        bool found = false;
+        bool structural = true;
+        auto substream_data = ISerialization::SubstreamData(column_desc->type->getDefaultSerialization()).withType(column_desc->type);
+        IDataType::forEachSubcolumn([&](const auto & substream_path, const auto & name, const auto &)
+        {
+            if (name != subcolumn_name)
+                return;
+            found = true;
+            /// Every substream of a subcolumn anchored under a structural path element contains
+            /// that element in its own path, so none of its streams can take the specialized codec.
+            structural = structural && !ISerialization::isSpecialCompressionAllowed(substream_path);
+        }, substream_data);
+        return found && structural;
+    };
+
+    const auto storage_columns = columns.getAllPhysical().getNameSet();
+    auto depends_on_recompressed_column = [&](const Names & required_columns)
+    {
+        return std::ranges::any_of(required_columns, [&](const String & required_column)
+        {
+            auto column_in_storage = Nested::tryGetColumnNameInStorage(required_column, storage_columns);
+            if (!column_in_storage || *column_in_storage != column_name)
+                return false;
+            if (required_column.size() > column_name.size()
+                && is_structural_subcolumn(std::string_view(required_column).substr(column_name.size() + 1)))
+                return false;
+            return true;
+        });
+    };
+
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        if (depends_on_recompressed_column(projection.getRequiredColumns()))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: projection `{}` reads this column, "
+                "and it is not rebuilt by the recompression, so it would keep describing the values as they "
+                "were before the recompression. Drop the projection first (a DROP PROJECTION "
+                "written before the RECOMPRESS COLUMN in the same ALTER works), or rebuild it "
+                "with ALTER TABLE ... MATERIALIZE PROJECTION after the recompression.",
+                column_name, column_desc->codec->formatForErrorMessage(), projection.name);
+    }
+
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    {
+        if (depends_on_recompressed_column(index.expression->getRequiredColumns()))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: index `{}` depends on this column, "
+                "and it is not rebuilt by the recompression, so it would keep describing the values as they "
+                "were before the recompression and could skip granules that do match. Drop the index "
+                "first (a DROP INDEX written before the RECOMPRESS COLUMN in the same ALTER works), "
+                "or rebuild it with ALTER TABLE ... MATERIALIZE INDEX after the recompression.",
+                column_name, column_desc->codec->formatForErrorMessage(), index.name);
+    }
+
+    /// The partition value and the part minmax index are computed from the column values and
+    /// are used by `MergeTreeDataSelectExecutor::selectPartsToRead` to prune whole parts before
+    /// any rows are read. The mutation carries the partition value over from the source part and
+    /// rebuilds the part minmax index from the pre-recompression values, so after a lossy
+    /// recompression a part could return rows outside its stored bounds, and parts whose
+    /// post-recompression rows do match a query could be pruned. The partition key cannot be
+    /// dropped, so only a lossless codec can recompress such a column.
+    if (depends_on_recompressed_column(metadata_snapshot->getColumnsRequiredForPartitionKey()))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: the partition key uses this column, "
+            "and the partition value and the part minmax index are not recalculated by the recompression, "
+            "so they would keep describing the values as they were before the recompression and parts "
+            "could be pruned incorrectly. Only a lossless codec can recompress a partition key column.",
+            column_name, column_desc->codec->formatForErrorMessage());
+
+    /// Same for the sorting key: the primary index (`primary.idx`) describes the
+    /// pre-recompression values, and the physical order of the rows itself may no longer match
+    /// the post-recompression values, so index analysis could skip granules that do match.
+    /// The sorting key cannot be dropped either.
+    if (depends_on_recompressed_column(metadata_snapshot->getColumnsRequiredForSortingKey()))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: the sorting key uses this column, "
+            "and the primary index and the physical order of the rows are not recalculated by the "
+            "recompression, so they would keep describing the values as they were before the "
+            "recompression and granules could be skipped incorrectly. Only a lossless codec can "
+            "recompress a sorting key column.",
+            column_name, column_desc->codec->formatForErrorMessage());
+
+    /// A stored `MATERIALIZED` column is kept in sync with its expression by mutations (an
+    /// `UPDATE` of a source column recalculates the dependent `MATERIALIZED` columns), but the
+    /// recompression copies the dependents from the source part unchanged, so `m MATERIALIZED
+    /// f(x)` would keep the values computed from `x` as it was before the recompression.
+    /// Resolve the expressions the same way `MutationsInterpreter` does when it collects the
+    /// affected `MATERIALIZED` columns: over the physical columns plus the `EPHEMERAL` and
+    /// `ALIAS` ones (a `MATERIALIZED` expression may reference an `EPHEMERAL` or an `ALIAS`
+    /// column, and the analysis must still resolve it).
+    NamesAndTypesList all_columns_with_helpers = columns.getAllPhysical();
+    for (const auto & ephemeral_column : columns.getEphemeral())
+        all_columns_with_helpers.push_back(ephemeral_column);
+    for (const auto & alias_column : columns.getAliases())
+        all_columns_with_helpers.push_back(alias_column);
+
+    /// Resolve enumerable subcolumns (`arr.size0`, `val.x`, ...) as first-class columns, so the
+    /// required-columns list keeps the subcolumn names and the structural-subcolumn exception
+    /// above can apply to them. Dynamic subcolumns (`JSON` paths) cannot be enumerated, so
+    /// `replaceSubcolumnsToGetSubcolumnFunctionInQuery` below still collapses them to the owning
+    /// column, which conservatively counts as reading its values.
+    NamesAndTypesList analysis_columns = all_columns_with_helpers;
+    NameSet resolvable_column_names;
+    for (const auto & column : all_columns_with_helpers)
+    {
+        resolvable_column_names.insert(column.name);
+        for (const auto & subcolumn_name : column.type->getSubcolumnNames())
+            analysis_columns.emplace_back(column.name, subcolumn_name, column.type, column.type->getSubcolumnType(subcolumn_name));
+    }
+
+    /// `requiredSourceColumns` of an expression may name an `EPHEMERAL` or an `ALIAS` column
+    /// rather than the stored columns its default expression reads (`m MATERIALIZED e + 1` with
+    /// `e EPHEMERAL x * 2` requires `e`, not `x`, and the same with `e ALIAS x * 2`), so expand
+    /// every `EPHEMERAL` and `ALIAS` dependency through its default expression until only stored
+    /// columns remain.
+    auto required_source_columns_expanded = [&](const ASTPtr & expression)
+    {
+        Names required_columns;
+        NameSet visited_columns;
+        std::vector<ASTPtr> expressions_to_analyze{expression};
+        while (!expressions_to_analyze.empty())
+        {
+            auto expression_query = expressions_to_analyze.back()->clone();
+            expressions_to_analyze.pop_back();
+
+            /// Keep explicitly requested enumerable subcolumns as identifiers. `TreeRewriter`
+            /// otherwise sees `getSubcolumn(arr, 'size0')` as a dependency on the full `arr`
+            /// column, losing the fact that only a structural stream is read. The generic
+            /// replacement below remains necessary for dynamic subcolumns, which cannot be
+            /// represented in `analysis_columns`.
+            auto replace_get_subcolumn_with_identifier = [&](ASTPtr & ast, const auto & self) -> void
+            {
+                if (const auto * function = ast->as<ASTFunction>(); function && function->name == "getSubcolumn" && function->arguments
+                    && function->arguments->children.size() == 2)
+                {
+                    const auto * identifier = function->arguments->children[0]->as<ASTIdentifier>();
+                    const auto * literal = function->arguments->children[1]->as<ASTLiteral>();
+                    if (identifier && literal && literal->value.getType() == Field::Types::String)
+                    {
+                        const auto & subcolumn_name = literal->value.safeGet<String>();
+                        if (const auto source_column = all_columns_with_helpers.tryGetByName(identifier->getColumnName());
+                            source_column && source_column->type->hasSubcolumn(subcolumn_name))
+                        {
+                            ast = make_intrusive<ASTIdentifier>(identifier->getColumnName() + "." + subcolumn_name);
+                            return;
+                        }
+                    }
+                }
+
+                for (auto & child : ast->children)
+                    self(child, self);
+            };
+            replace_get_subcolumn_with_identifier(expression_query, replace_get_subcolumn_with_identifier);
+            replaceSubcolumnsToGetSubcolumnFunctionInQuery(expression_query, analysis_columns);
+            auto syntax_result = TreeRewriter(getContext()).analyze(expression_query, analysis_columns);
+            for (const auto & required_column : syntax_result->requiredSourceColumns())
+            {
+                if (!visited_columns.emplace(required_column).second)
+                    continue;
+                /// The required name may be an `EPHEMERAL` or an `ALIAS` column or one of their subcolumns.
+                auto owning_column = Nested::tryGetColumnNameInStorage(required_column, resolvable_column_names);
+                const auto * required_column_desc = owning_column ? columns.tryGet(*owning_column) : nullptr;
+                if (required_column_desc
+                    && (required_column_desc->default_desc.kind == ColumnDefaultKind::Ephemeral
+                        || required_column_desc->default_desc.kind == ColumnDefaultKind::Alias)
+                    && required_column_desc->default_desc.expression)
+                {
+                    auto helper_expression = required_column_desc->default_desc.expression->clone();
+                    if (required_column.size() > owning_column->size())
+                        helper_expression = makeASTFunction(
+                            "getSubcolumn",
+                            std::move(helper_expression),
+                            make_intrusive<ASTLiteral>(required_column.substr(owning_column->size() + 1)));
+                    expressions_to_analyze.push_back(std::move(helper_expression));
+                }
+                else
+                    required_columns.push_back(required_column);
+            }
+        }
+        return required_columns;
+    };
+
+    for (const auto & dependent_column : columns)
+    {
+        if (dependent_column.default_desc.kind != ColumnDefaultKind::Materialized
+            || !dependent_column.default_desc.expression
+            || dependent_column.name == column_name)
+            continue;
+
+        if (depends_on_recompressed_column(required_source_columns_expanded(dependent_column.default_desc.expression)))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: the stored MATERIALIZED column "
+                "`{}` is computed from this column, and it is not recalculated by the recompression, so "
+                "it would keep the values computed before the recompression. Remove the MATERIALIZED "
+                "property first (a MODIFY COLUMN ... REMOVE MATERIALIZED written before the RECOMPRESS "
+                "COLUMN in the same ALTER works); it can be re-added afterwards and the column rebuilt "
+                "with ALTER TABLE ... MATERIALIZE COLUMN.",
+                column_name, column_desc->codec->formatForErrorMessage(), dependent_column.name);
+    }
+
+    /// The part stores the min/max of every TTL expression (`ttl.txt`), and the background
+    /// processing uses them to decide when rows or the whole part are expired, when the part has
+    /// to move to another disk or volume, and when a recompression TTL has to rewrite it. The
+    /// mutation copies `ttl_infos` from the source part unchanged (`RECOMPRESS COLUMN` only reads
+    /// the column, so `MutationsInterpreter` schedules no TTL recalculation), so after a lossy
+    /// recompression data would keep being expired, kept, moved, or recompressed according to the
+    /// values as they were before the recompression.
+    auto check_ttl_dependency = [&](const TTLDescription & ttl_description, const String & ttl_kind, const String & removal_hint)
+    {
+        auto ttl_dependency_columns = ttl_description.expression_columns.getNames();
+        const auto & where_dependency_columns = ttl_description.where_expression_columns.getNames();
+        ttl_dependency_columns.insert(ttl_dependency_columns.end(), where_dependency_columns.begin(), where_dependency_columns.end());
+
+        if (depends_on_recompressed_column(ttl_dependency_columns))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: the {} `{}` reads this column, "
+                "and the TTL bounds stored in the parts are not recalculated by the recompression, so "
+                "they would keep describing the values as they were before the recompression and data "
+                "could be expired, kept, moved, or recompressed incorrectly. Remove the TTL first ({}); "
+                "it can be re-added afterwards and the parts rebuilt with ALTER TABLE ... MATERIALIZE TTL.",
+                column_name, column_desc->codec->formatForErrorMessage(), ttl_kind,
+                ttl_description.expression_ast->formatForErrorMessage(), removal_hint);
+    };
+
+    static constexpr auto table_ttl_removal_hint = "ALTER TABLE ... REMOVE TTL, or ALTER TABLE ... MODIFY TTL without it";
+    if (metadata_snapshot->hasRowsTTL())
+        check_ttl_dependency(metadata_snapshot->getRowsTTL(), "table (DELETE) TTL expression", table_ttl_removal_hint);
+    for (const auto & ttl_description : metadata_snapshot->getRowsWhereTTLs())
+        check_ttl_dependency(ttl_description, "table (DELETE WHERE) TTL expression", table_ttl_removal_hint);
+    for (const auto & ttl_description : metadata_snapshot->getGroupByTTLs())
+        check_ttl_dependency(ttl_description, "table (GROUP BY) TTL expression", table_ttl_removal_hint);
+    for (const auto & ttl_description : metadata_snapshot->getMoveTTLs())
+        check_ttl_dependency(ttl_description, "table (move) TTL expression", table_ttl_removal_hint);
+    for (const auto & ttl_description : metadata_snapshot->getRecompressionTTLs())
+        check_ttl_dependency(ttl_description, "table (RECOMPRESS) TTL expression", table_ttl_removal_hint);
+    for (const auto & [ttl_column_name, ttl_description] : metadata_snapshot->getColumnTTLs())
+        check_ttl_dependency(ttl_description, fmt::format("TTL expression of column `{}`", ttl_column_name),
+            "ALTER TABLE ... MODIFY COLUMN ... REMOVE TTL");
+}
+
 void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
 {
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
+
+    /// `RECOMPRESS COLUMN` is parsed straight into a `MutationCommand` and never goes through the
+    /// `AlterCommands` validation, so validate the target here. It must be a physical (stored)
+    /// column: an unknown name has no data at all, and an `ALIAS` / `EPHEMERAL` column has no
+    /// on-disk stream to recompress. Without this check the mutation would silently do nothing on
+    /// wide/full parts (the column is simply absent) or rewrite every physical column of a
+    /// compact/non-full part.
+    {
+        auto columns_metadata = getInMemoryMetadataPtr(getContext(), false);
+        const auto & columns = columns_metadata->getColumns();
+        for (const auto & command : commands)
+        {
+            if (command.type != MutationCommand::RECOMPRESS_COLUMN)
+                continue;
+
+            if (!columns.has(command.column_name))
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                    "Cannot RECOMPRESS COLUMN `{}`: there is no such column in table {}.",
+                    command.column_name, getStorageID().getNameForLogs());
+
+            if (!columns.hasPhysical(command.column_name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot RECOMPRESS COLUMN `{}`: it is an ALIAS or EPHEMERAL column and has no stored data to recompress.",
+                    command.column_name);
+
+            /// A lossy codec (e.g. `SZ3`) does not reproduce the original values, so recompressing with
+            /// it changes what the part returns. The mutation rewrites the column, but hardlinks the
+            /// part's projections and skip indices unchanged (a `READ_COLUMN` schedules dependents for a
+            /// rebuild only when the column type changes). A projection would keep describing the
+            /// pre-recompression values, so a query could get different results depending on whether it
+            /// reads the base part or the projection, and a stale skip index could prune granules that do
+            /// match. Reject that combination; recompressing a column no projection or skip index depends
+            /// on is fine, and so is a lossless codec. Column statistics are only used for cardinality
+            /// estimation, never for filtering, so they are deliberately not covered here.
+            ///
+            /// A column that has no explicit codec inherits the table's default codec, which can never be
+            /// lossy (`CompressionCodecFactory::get` rejects a lossy codec when the column type is unknown),
+            /// so only the explicit codec has to be examined.
+            ///
+            /// Dropping the dependent in the same `ALTER` needs no special handling here: `DROP PROJECTION`
+            /// and `DROP INDEX` are parsed as `AlterCommand`s, so they form their own command segment that
+            /// `InterpreterAlterQuery` executes in the order the commands were written. `ALTER TABLE t
+            /// DROP PROJECTION p, RECOMPRESS COLUMN c` therefore applies the metadata drop before this check
+            /// runs, and the dependent is already gone from the metadata read below. The opposite order
+            /// (`RECOMPRESS COLUMN c, DROP PROJECTION p`) really does recompress while the dependent is still
+            /// live — the two segments become two mutations, and a query in between would see the stale
+            /// projection — so it is rejected, and the message points at writing the drop first.
+            ///
+            /// This check runs against the metadata as it is when the `ALTER` is accepted, but the
+            /// recompression reads the codec from the table metadata again when the mutation executes, and
+            /// a `MODIFY COLUMN ... CODEC(...)` / `ADD INDEX` / `ADD PROJECTION` in between can invalidate
+            /// the conclusion, so `MutateTask` re-runs the same check at execution time.
+            checkLossyRecompressionIsPossible(command.column_name, columns_metadata);
+        }
+    }
 
     /// Reject mutations that bypass UK dedup: DELETE/UPDATE rewrite rows;
     /// MATERIALIZE COLUMN / CLEAR COLUMN (the latter serialized as
@@ -6217,6 +6537,14 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                     "the whole part is rewritten regardless of which column is targeted, so the "
                     "per-part UNIQUE KEY dense index would be lost. UNIQUE KEY columns: ({}).",
                     command.column_name, fmt::join(uk_column_names, ", "));
+
+            if (command.type == MutationCommand::RECOMPRESS_COLUMN)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... RECOMPRESS COLUMN `{}` is not supported on tables with UNIQUE KEY. "
+                    "Recompressing a Compact part (or a column that inherits the table's default codec) goes "
+                    "through a whole-part rewrite that does not preserve the `delete_bitmap_*.rbm` sidecars, "
+                    "which would resurrect deleted rows.",
+                    command.column_name);
 
             /// These commands rebuild whole parts (the full read+rewrite mutation path) and
             /// drop the delete_bitmap_*.rbm sidecars, silently resurrecting deleted rows once
@@ -12643,6 +12971,17 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
             else if (command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN)
             {
                 const std::string action = (command.type == AlterCommand::DROP_COLUMN) ? "drop" : "rename";
+
+                /// A pending `RECOMPRESS COLUMN` only re-serializes the data streams of its own target
+                /// with the codec the column currently has, and it is skipped for every part once that
+                /// column is no longer stored, or while the drop is still a pending alter conversion
+                /// for the part - including after a same-name re-add, so the pre-drop bytes are never
+                /// carried over into the new column (`canSkipMutationCommandForPart`). So it does not
+                /// stand in the way of dropping the column. `RENAME COLUMN` is deliberately not
+                /// exempt: the recompression is carried over to the new name and is executed there.
+                if (mutation_command.type == MutationCommand::Type::RECOMPRESS_COLUMN
+                    && command.type == AlterCommand::DROP_COLUMN)
+                    continue;
 
                 if (mutation_command.column_name == command.column_name)
                     throw_exception(mutation_name, action, "column", command.column_name);

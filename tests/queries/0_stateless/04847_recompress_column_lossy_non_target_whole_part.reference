@@ -1,0 +1,7 @@
+Compact
+Cannot RECOMPRESS COLUMN `y` with the lossy codec
+index `idx` depends on this column
+re-serializes every stored column, including `y`
+1000
+0
+1000

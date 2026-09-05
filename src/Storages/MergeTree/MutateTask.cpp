@@ -2,6 +2,9 @@
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MutateTask.h>
@@ -34,6 +37,7 @@
 #include <Processors/Transforms/TTLTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
+#include <Storages/MergeTree/MergeTreeColumnRecompression.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
@@ -162,6 +166,37 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
     return false;
 }
 
+/// Whether a column's explicit codec descriptor resolves the table's default codec, i.e. references
+/// `Default` -- either directly (`CODEC(Default)`) or inside a pipeline (`CODEC(Delta, Default)`).
+/// `CompressionCodecFactory::get` substitutes `Default` with the codec passed as `current_default`,
+/// so such a codec's effective compression changes with the table's `default_compression_codec`
+/// setting. The wide-part fast path resolves it against the part's *stored* default codec, so it
+/// cannot honor a change of that setting -- those columns must go through the whole-part rewrite.
+static bool codecDependsOnDefault(const ASTPtr & codec_ast)
+{
+    const auto * func = codec_ast->as<ASTFunction>();
+    if (!func || !func->arguments)
+        return false;
+
+    for (const auto & child : func->arguments->children)
+    {
+        /// `Default` is parsed as a bare identifier (it takes no arguments), but accept the function
+        /// form defensively as well.
+        if (const auto * identifier = child->as<ASTIdentifier>())
+        {
+            if (identifier->name() == DEFAULT_CODEC_NAME)
+                return true;
+        }
+        else if (const auto * child_func = child->as<ASTFunction>())
+        {
+            if (child_func->name == DEFAULT_CODEC_NAME)
+                return true;
+        }
+    }
+
+    return false;
+}
+
 /// Wide parts written before `columns_substreams.txt` was introduced (in 25.8) can contain a column
 /// with a dynamic structure (`Dynamic`, `JSON`, ...) whose data-dependent substreams (`variant_discr`,
 /// the variant element streams, ...) are not recorded anywhere we can enumerate without a
@@ -202,7 +237,8 @@ static bool rewritesAllPartColumns(
     const MergeTreeData::DataPartPtr & source_part,
     const MutationCommands & commands_for_part,
     const MutationsInterpreter * interpreter,
-    MergeTreeDataPartStorageType future_storage_type)
+    MergeTreeDataPartStorageType future_storage_type,
+    bool recompress_rewrites_whole_part)
 {
     return haveMutationsOfDynamicColumns(source_part, commands_for_part)
         || hasDynamicColumnsWithoutRecordedSubstreams(source_part)
@@ -211,6 +247,13 @@ static bool rewritesAllPartColumns(
         /// Per-file hardlink reuse needs source and result to share the storage format; a differing
         /// format (e.g. the packing threshold changed) needs a full rewrite.
         || source_part->getDataPartStorage().getType() != future_storage_type
+        /// `splitAndModifyMutationCommands` decided that a `RECOMPRESS COLUMN` of this part cannot use
+        /// the in-place path and has to go through the regular writer. That decision must not be
+        /// re-derived from `isAffectingAllColumns` here: the interpreter reads the columns the *part*
+        /// stores, so a part that predates an unrelated `ADD COLUMN` produces a header that is a strict
+        /// subset of the table's physical columns and would be routed to `MutateSomePartColumnsTask`,
+        /// which keeps `source_part->default_codec` and silently recompresses with the old codec.
+        || recompress_rewrites_whole_part
         || (interpreter && interpreter->isAffectingAllColumns());
 }
 
@@ -266,6 +309,8 @@ static void splitAndModifyMutationCommands(
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
+    NameSet & for_recompression,
+    bool & recompress_rewrites_whole_part,
     bool suitable_for_ttl_optimization,
     LoggerPtr log)
 {
@@ -278,13 +323,86 @@ static void splitAndModifyMutationCommands(
         return name;
     };
 
+    /// The wide-part fast path resolves a column's codec against the part's stored default codec
+    /// (`source_part->default_codec`), which is not updated when the table's `default_compression_codec`
+    /// setting changes -- so it cannot honor such a change and would silently do nothing. This affects
+    /// a column that inherits the table default (no explicit `CODEC`) as well as one whose explicit
+    /// codec references `Default` (`CODEC(Default)`, `CODEC(Delta, Default)`), because `Default`
+    /// resolves through the same stored part default. Route those columns through the whole-part
+    /// rewrite, which re-serializes every column with the *current* effective codec
+    /// (`getCompressionCodecForPart`) and rewrites `default_compression_codec.txt`.
+    recompress_rewrites_whole_part = false;
+
+    /// Names (both old and new) of the columns that reach this part through a rename: a pending
+    /// metadata-only RENAME COLUMN that this part has not materialized yet (it still stores the
+    /// streams under the old name), or a RENAME COLUMN in this very mutation. The in-place fast
+    /// path cannot recompress such a column -- it resolves the streams against the source part,
+    /// where they exist only under the old name, so it would either fail or silently skip the
+    /// column -- so those columns are routed to the whole-part rewrite below, which re-serializes
+    /// every column with its current codec and materializes the rename through the interpreter.
+    NameSet renamed_column_names;
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::Type::RENAME_COLUMN && part_columns.has(command.column_name))
+        {
+            renamed_column_names.insert(command.column_name);
+            renamed_column_names.insert(command.rename_to);
+        }
+    }
+    for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
+    {
+        if (part_columns.has(rename_from))
+        {
+            renamed_column_names.insert(rename_from);
+            renamed_column_names.insert(rename_to);
+        }
+    }
+
+    for (const auto & command : commands)
+    {
+        if (command.type != MutationCommand::Type::RECOMPRESS_COLUMN)
+            continue;
+
+        if (renamed_column_names.contains(command.column_name))
+        {
+            recompress_rewrites_whole_part = true;
+            break;
+        }
+
+        if (part_columns.has(command.column_name))
+        {
+            const auto * column_desc = table_columns.tryGet(command.column_name);
+            if (!column_desc || !column_desc->codec || codecDependsOnDefault(column_desc->codec))
+            {
+                recompress_rewrites_whole_part = true;
+                break;
+            }
+
+            /// A lossy codec (e.g. `SZ3`) does not decompress to the original bytes, which violates
+            /// the fast path's premise that recompression keeps the decompressed content byte-identical
+            /// (carried-over uncompressed checksums and marks), and the raw-block path cannot perform
+            /// the writer-side vector-dimension setup such codecs need. Re-serialize through the
+            /// regular writer instead. Such a column cannot have dependent projections or skip indices
+            /// (`MergeTreeData::checkLossyRecompressionIsPossible` rejects that combination, both when
+            /// the `ALTER` is accepted and again in `MutateTask::prepare` right before this runs), so
+            /// the whole-part rewrite hardlinking them unchanged is safe here.
+            if (codecResolvesToLossyCompression(column_desc->codec, column_desc->type))
+            {
+                recompress_rewrites_whole_part = true;
+                break;
+            }
+        }
+    }
+
     if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
-        || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
+        || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage())
+        || recompress_rewrites_whole_part)
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
         NameSet ignored_columns;
         NameSet extra_columns_for_indices_and_projections;
+        bool recompress_via_whole_part_rewrite = false;
         auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
 
         for (const auto & command : commands)
@@ -405,6 +523,14 @@ static void splitAndModifyMutationCommands(
             {
                 for_file_renames.push_back(command);
             }
+            else if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN)
+            {
+                /// Compact (and packed / dynamic) parts store all columns together, so a single
+                /// column cannot be recompressed without deserializing. The column is left out of
+                /// `mutated_columns`, so it is picked up by the READ_COLUMN back-fill below and
+                /// re-serialized (with its current codec) as part of the whole-part rewrite.
+                recompress_via_whole_part_rewrite = true;
+            }
             else if (bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets],
                           has_column = part_columns.has(command.column_name),
                           has_nested_column = share_nested && part_columns.hasNested(command.column_name);
@@ -486,6 +612,34 @@ static void splitAndModifyMutationCommands(
                      .column_name = rename_from,
                      .rename_to = rename_to
                 });
+            }
+        }
+
+        /// The whole-part rewrite re-serializes every stored column with its current codec from the
+        /// table metadata, not only the recompression target, so a metadata-only `MODIFY COLUMN ...
+        /// CODEC(...)` of another column piggybacks on the rewrite. The lossy-codec dependency guard
+        /// ran only for the target column when the `ALTER` was accepted (and again in
+        /// `MutateTask::prepare` right before this runs); run it here for every column this rewrite
+        /// re-serializes, or a lossy codec queued on a non-target column would rewrite that column
+        /// while its dependents (or the partition / sorting key) keep describing the pre-rewrite
+        /// values. Runs after the pending renames were applied to `part_columns`, so a renamed
+        /// column is validated under the name it is written with. A failure leaves the mutation
+        /// failed and retried, the same as the re-validation of the target in `prepare`.
+        if (recompress_via_whole_part_rewrite)
+        {
+            for (const auto & column : part_columns)
+            {
+                try
+                {
+                    part->storage.checkLossyRecompressionIsPossible(column.name, metadata_snapshot);
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage("Part {} does not support in-place recompression, so RECOMPRESS COLUMN "
+                        "rewrites it as a whole and re-serializes every stored column, including `{}`, "
+                        "with its current codec", part->name, column.name);
+                    throw;
+                }
             }
         }
 
@@ -671,6 +825,17 @@ static void splitAndModifyMutationCommands(
                     for_interpreter.push_back(command);
                     for_file_renames.push_back(command);
                 }
+            }
+            else if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN)
+            {
+                /// Recompress the column's data streams in place (no deserialization). Only columns
+                /// physically present in this part are recompressed. Dynamic-subcolumn types, columns
+                /// that inherit the table default codec, and columns whose codec references `Default`
+                /// are already routed to the whole-part rewrite branch above (haveMutationsOfDynamicColumns
+                /// / recompress_rewrites_whole_part), so here the column's codec never depends on the
+                /// source part's stored default codec.
+                if (part_columns.has(command.column_name))
+                    for_recompression.insert(command.column_name);
             }
             /// If we don't have this column in source part, we don't need to materialize it.
             else if (part_columns.has(command.column_name))
@@ -1888,6 +2053,16 @@ struct MutationContext
     MutationCommands for_interpreter;
     MutationCommands for_file_renames;
 
+    /// Columns whose data streams must be re-compressed in place (RECOMPRESS COLUMN) without
+    /// deserializing the values. Populated only for wide, full-storage parts; other cases fall
+    /// back to a normal re-serializing rewrite.
+    NamesAndTypesList columns_to_recompress;
+
+    /// Set by `splitAndModifyMutationCommands` when a `RECOMPRESS COLUMN` of this part cannot use the
+    /// in-place path and must be re-serialized through the regular writer, which rewrites the part as
+    /// a whole. Reused by the task selection so that both agree.
+    bool recompress_rewrites_whole_part = false;
+
     NamesAndTypesList storage_columns;
     NameSet materialized_indices;
     NameSet materialized_projections;
@@ -3075,6 +3250,53 @@ private:
         ctx->new_data_part->checksums = ctx->source_part->checksums;
         ctx->new_data_part->invalidated_system_columns = ctx->source_part->invalidated_system_columns;
 
+        /// Re-compress the data streams of RECOMPRESS COLUMN columns with their current codec,
+        /// without deserializing the values. This must happen after the source checksums are copied
+        /// above (so the recompressed files' checksums replace the stale ones) and after the
+        /// hardlink loop (their files were excluded via files_to_skip and are written fresh here).
+        /// `recompressed_streams` is shared across the columns so that a stream shared by several of
+        /// them (the offsets stream of `Nested` siblings under `share_nested_offsets`) is rewritten
+        /// exactly once, by the first column that reaches it.
+        NameSet recompressed_streams;
+
+        /// Pre-seed the shared-stream set with the on-disk streams that this mutation's own column
+        /// output stream will write for the updated columns. A stream shared between a recompressed
+        /// column and an updated sibling -- the offsets stream of `Nested` siblings under
+        /// `share_nested_offsets`, where `n.a`/`n.b` share `n.size0` -- must be written only by that
+        /// output stream. Otherwise `recompressColumnStreams` would rewrite it here and the later
+        /// output stream would overwrite the same file, so the shared stream would end up under the
+        /// updated sibling's codec and RECOMPRESS COLUMN of the other sibling would not actually
+        /// recompress all of its stored streams. Seeding makes recompression skip such streams and
+        /// leave them to the output stream, matching a fresh write of the part (which also writes a
+        /// shared offsets stream exactly once).
+        ///
+        /// Resolve the streams via `getStreamCounts` -- the same computation `collectFilesToSkip` uses
+        /// to decide which files the output stream produces -- over the columns the interpreter writes,
+        /// resolved against the source part's checksums. This also covers an updated column that is not
+        /// present in the source part yet, e.g. a `Nested` sibling `n.c` being materialized in the same
+        /// mutation as a RECOMPRESS COLUMN of another sibling (created by `ADD COLUMN n.c ...` so old
+        /// parts still lack it): the new sibling's own data streams do not resolve against the source
+        /// part and are skipped, while its shared offsets stream does resolve (it was created by the
+        /// existing siblings) and gets seeded, so recompression leaves it to the single output-stream
+        /// writer. Iterating only `source_part->getColumns()` here would miss that shared stream.
+        for (const auto & [stream_name, _] : MutationHelpers::getStreamCounts(ctx->new_data_part, ctx->source_part->checksums, ctx->updated_header.getNames()))
+            recompressed_streams.insert(stream_name);
+
+        for (const auto & column : ctx->columns_to_recompress)
+        {
+            recompressColumnStreams(
+                *ctx->source_part,
+                *ctx->new_data_part,
+                column,
+                ctx->metadata_snapshot,
+                ctx->source_part->default_codec,
+                *ctx->data->getSettings(),
+                ctx->context->getReadSettings(),
+                ctx->context->getWriteSettings(),
+                recompressed_streams,
+                ctx->new_data_part->checksums);
+        }
+
         /// When the archive will not be hardlinked from source (packed_skip_index_archive_dirty),
         /// the inherited skp_idx.packed entry must not survive untouched into the new part's
         /// checksums: it points at a file that may not exist in the new part. Drop it up front;
@@ -3581,7 +3803,12 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
     return isVariantExtension(part_column->type, command.data_type);
 }
 
-static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
+static bool canSkipMutationCommandForPart(
+    const MergeTreeDataPartPtr & part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const AlterConversionsPtr & alter_conversions,
+    const MutationCommand & command,
+    const ContextPtr & context)
 {
     if (auto alter = command.ast(); alter && alter->partition)
     {
@@ -3611,6 +3838,28 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
 
     if (command.type == MutationCommand::APPLY_DELETED_MASK && !part->hasLightweightDelete())
         return true;
+
+    /// A part created before an ADD COLUMN has no stream to recompress. Similarly, a queued
+    /// recompression can outlive its physical target after a later DROP COLUMN or conversion to
+    /// ALIAS / EPHEMERAL. In both cases, skip it rather than sending a compact part through the
+    /// whole-part rewrite, which would unnecessarily re-serialize every other stored column with
+    /// its current codec.
+    ///
+    /// The stream this part still stores is also stale when the column was dropped and then
+    /// re-added under the same name: the drop is a not-yet-applied alter conversion for this part,
+    /// so the read path already substitutes the default value for it
+    /// (`injectRequiredColumnsRecursively`). Recompressing that stream would keep the pre-drop
+    /// bytes alive under the new column definition, so skip the recompression there as well - the
+    /// pending drop removes the stream anyway.
+    if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN)
+    {
+        const bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
+
+        if (!part->getColumnsDescription().has(command.column_name)
+            || !metadata_snapshot->getColumns().hasPhysical(command.column_name)
+            || (alter_conversions && alter_conversions->isColumnDropped(command.column_name, share_nested)))
+            return true;
+    }
 
     if (canSkipConversionToNullable(part, metadata_snapshot, command))
         return true;
@@ -3931,7 +4180,7 @@ bool MutateTask::prepare()
 
     for (const auto & command : *ctx->commands)
     {
-        if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, command, context_for_reading))
+        if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, alter_conversions, command, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
     }
 
@@ -4052,7 +4301,20 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", 1);
     context_for_reading->setSetting("read_from_distributed_cache_if_exists_otherwise_bypass_cache", 1);
 
+    /// The lossy-codec dependency guard ran in `MergeTreeData::checkMutationIsPossible` when the
+    /// `ALTER` was accepted, but the recompression resolves the codec from the table metadata again
+    /// here, at execution time, and a `MODIFY COLUMN ... CODEC(...)` / `ADD INDEX` / `ADD PROJECTION`
+    /// executed in between can have invalidated that validation (e.g. a queued `RECOMPRESS COLUMN x`
+    /// followed by `MODIFY COLUMN x CODEC(SZ3(...))` would otherwise rewrite `x` lossily while its
+    /// dependents keep describing the old values). Re-run the guard against the same metadata
+    /// snapshot the recompression uses. A failure leaves the mutation failed and retried (visible in
+    /// `system.mutations`); it proceeds once the metadata is fixed, or can be killed.
+    for (const auto & command : ctx->commands_for_part)
+        if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN)
+            ctx->data->checkLossyRecompressionIsPossible(command.column_name, ctx->metadata_snapshot);
+
     bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && (*ctx->data->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
+    NameSet columns_to_recompress;
     MutationHelpers::splitAndModifyMutationCommands(
         ctx->source_part,
         ctx->metadata_snapshot,
@@ -4060,6 +4322,8 @@ bool MutateTask::prepare()
         ctx->commands_for_part,
         ctx->for_interpreter,
         ctx->for_file_renames,
+        columns_to_recompress,
+        ctx->recompress_rewrites_whole_part,
         suitable_for_ttl_optimization,
         ctx->log);
 
@@ -4140,7 +4404,8 @@ bool MutateTask::prepare()
     /// Decided once here and reused for the task selection below, so that the column list of the new
     /// part cannot disagree with the task that fills it.
     const bool rewrites_all_columns = MutationHelpers::rewritesAllPartColumns(
-        ctx->source_part, ctx->commands_for_part, ctx->interpreter.get(), ctx->future_part->part_format.storage_type);
+        ctx->source_part, ctx->commands_for_part, ctx->interpreter.get(), ctx->future_part->part_format.storage_type,
+        ctx->recompress_rewrites_whole_part);
 
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
@@ -4246,6 +4511,32 @@ bool MutateTask::prepare()
         /// Skip the corrupted-part orphan files (see `MutationContext::orphan_skip_index_files`);
         /// `collectFilesToSkip` cannot reach them since they are absent from `checksums.txt`.
         ctx->files_to_skip.insert(ctx->orphan_skip_index_files.begin(), ctx->orphan_skip_index_files.end());
+
+        /// Columns that are only recompressed (RECOMPRESS COLUMN) must not be hardlinked from the
+        /// source part, otherwise `recompressColumnStreams` would overwrite the shared inode. Add
+        /// their data streams to `files_to_skip` and record the columns for the task to recompress.
+        /// Columns that are also rewritten by the interpreter are excluded (the rewrite already
+        /// applies the current codec).
+        ///
+        /// Iterate in the part's stored-column order rather than over `columns_to_recompress`, whose
+        /// iteration order (it is a `NameSet`) is unspecified. This makes the arbitration of a stream
+        /// shared by several of the recompressed columns deterministic: with `share_nested_offsets`
+        /// the `Nested` siblings `n.a`/`n.b` share one `n.size0` offsets stream, and it is rewritten
+        /// exactly once by the first column that reaches it (see `recompressed_streams`). Processing
+        /// the columns in stored order makes the first sibling in that order own the shared stream,
+        /// matching how a fresh write of the part assigns it, instead of an arbitrary hash-set order.
+        for (const auto & column : ctx->new_data_part->getColumns())
+        {
+            if (!columns_to_recompress.contains(column.name))
+                continue;
+
+            if (ctx->updated_header.has(column.name))
+                continue;
+
+            ctx->columns_to_recompress.push_back(column);
+            for (const auto & file : getColumnDataStreamFileNames(*ctx->source_part, column))
+                ctx->files_to_skip.insert(file);
+        }
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->metadata_snapshot,

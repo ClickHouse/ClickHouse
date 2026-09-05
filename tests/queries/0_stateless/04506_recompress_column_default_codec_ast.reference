@@ -1,0 +1,10 @@
+default part	Wide
+default none is large	1
+default after	100000	100000	100000
+default zstd is small	1
+1
+delta part	Wide
+delta none is large	1
+delta after	100000	100000	4999950000
+delta zstd is small	1
+1

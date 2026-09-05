@@ -1089,6 +1089,15 @@ public:
     /// (currently no additional checks: always ok)
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
+    /// Rejects `RECOMPRESS COLUMN` of a column whose codec resolves to lossy compression when a
+    /// projection, a skip index, the partition key, the sorting key, or a stored `MATERIALIZED`
+    /// column depends on it: the recompression rewrites the column's values but not the dependents,
+    /// which would keep describing the pre-recompression values. A no-op for a lossless codec or a
+    /// column absent from the given metadata. Called from `checkMutationIsPossible` when the `ALTER`
+    /// is accepted and again by `MutateTask` when the mutation executes, because the codec and the
+    /// dependents can change in between.
+    void checkLossyRecompressionIsPossible(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
+
     /// Checks that partition name in all commands is valid
     void checkAlterPartitionIsPossible(
         const PartitionCommands & commands,

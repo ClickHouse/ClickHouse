@@ -49,6 +49,7 @@ struct MutationCommand
         REWRITE_PARTS,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
+        RECOMPRESS_COLUMN, /// Re-compress a column with its current codec without deserializing values.
         APPLY_DELETED_MASK,
         APPLY_PATCHES,
         ALTER_WITHOUT_MUTATION, /// pure metadata command

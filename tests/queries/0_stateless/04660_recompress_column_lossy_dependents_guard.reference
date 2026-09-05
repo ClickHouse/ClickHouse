@@ -1,0 +1,4 @@
+projection table, non-dependent column recompressed	1000
+lossless dependents recompressed	1000	0
+lossless dependents projection agrees	999
+1

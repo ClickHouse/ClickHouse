@@ -1,0 +1,16 @@
+-- local KILL MUTATION
+queued	1
+without ALTER RECOMPRESS COLUMN on the table:
+ACCESS_DENIED
+pending	1
+with ALTER RECOMPRESS COLUMN(s) on the table:
+waiting	(RECOMPRESS COLUMN s)
+pending	0
+-- KILL MUTATION ON CLUSTER
+queued	1
+with every other mutation privilege, but not ALTER RECOMPRESS COLUMN:
+ACCESS_DENIED
+ALTER RECOMPRESS COLUMN
+pending	1
+with ALTER RECOMPRESS COLUMN as well:
+pending	0

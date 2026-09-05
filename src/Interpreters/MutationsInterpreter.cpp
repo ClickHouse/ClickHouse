@@ -1224,6 +1224,15 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
         }
+        else if (command.type == MutationCommand::RECOMPRESS_COLUMN)
+        {
+            /// Re-serialize the column's stored values unchanged, so they are written with the
+            /// column's current codec. On wide parts `MutateTask` recompresses the data streams
+            /// without deserializing; this identity read is the fallback used for compact parts and
+            /// for mutation validation.
+            mutation_kind.set(MutationKind::MUTATE_OTHER);
+            read_columns.emplace_back(command.column_name);
+        }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);

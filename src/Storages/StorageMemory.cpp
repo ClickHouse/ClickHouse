@@ -265,9 +265,18 @@ static inline void updateBlockData(Block & old_block, const Block & new_block)
     }
 }
 
-void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
+void StorageMemory::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
 {
-    /// Some validation will be added
+    /// `RECOMPRESS COLUMN` re-compresses a column's on-disk data streams. A `Memory` table keeps raw
+    /// column blocks in RAM and has no per-column on-disk files to recompress, so the statement is
+    /// meaningless here. Reject it explicitly instead of letting `mutate` drop it silently, which would
+    /// make `ALTER TABLE ... RECOMPRESS COLUMN` succeed as a no-op and break the feature's contract
+    /// (this also covers `MaterializedView` targets that forward mutations to a `Memory` table).
+    for (const auto & command : commands)
+        if (command.type == MutationCommand::RECOMPRESS_COLUMN)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "ALTER TABLE ... RECOMPRESS COLUMN is not supported for the Memory table engine: "
+                "it keeps column data in memory and has no on-disk column streams to recompress.");
 }
 
 void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context)
@@ -301,6 +310,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
             case MutationCommand::MATERIALIZE_PROJECTION:
             case MutationCommand::MATERIALIZE_STATISTICS:
             case MutationCommand::REWRITE_PARTS:
+            case MutationCommand::RECOMPRESS_COLUMN:
                 continue;
             default:
                 commands_to_run.push_back(command);
