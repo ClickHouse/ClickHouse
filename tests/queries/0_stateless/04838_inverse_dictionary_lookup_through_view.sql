@@ -15,6 +15,7 @@ DROP VIEW IF EXISTS view_lookup_grouped_v;
 DROP VIEW IF EXISTS view_lookup_no_key_v;
 DROP VIEW IF EXISTS view_lookup_cast_v;
 DROP VIEW IF EXISTS view_lookup_cast_key_v;
+DROP VIEW IF EXISTS view_lookup_narrow_key_v;
 DROP TABLE IF EXISTS view_lookup_ref;
 DROP TABLE IF EXISTS view_lookup_data;
 DROP DICTIONARY IF EXISTS view_lookup_dict;
@@ -87,8 +88,10 @@ SELECT count() FROM view_lookup_cast_v WHERE name = 'match';
 SET optimize_inverse_dictionary_lookup = 0;
 SELECT count() FROM view_lookup_cast_v WHERE name = 'match';
 
--- A view whose declared KEY column type differs from the inner table's type still rewrites safely:
--- the mismatch surfaces as an explicit CAST in the resulting condition, and results still match.
+-- A view whose declared KEY column type differs from the inner table's type must not be rewritten,
+-- even for a widening/nullable-only difference: reading the key through the view enforces the
+-- declared type, and a rewrite that ignores this can silently change the comparison domain for a
+-- narrowing case, so the pass requires an exact type match and conservatively skips here too.
 CREATE VIEW view_lookup_cast_key_v (id Nullable(UInt64), name String) AS
 SELECT id, dictGetString('view_lookup_dict', 'name', id) AS name FROM view_lookup_data;
 
@@ -101,6 +104,22 @@ SELECT count() FROM view_lookup_cast_key_v WHERE name = 'match';
 
 SET optimize_inverse_dictionary_lookup = 0;
 SELECT count() FROM view_lookup_cast_key_v WHERE name = 'match';
+
+-- A view whose declared KEY column type NARROWS the inner table's type must not be rewritten: the
+-- view enforces a truncating cast when reading, so rewriting the predicate through it would compare
+-- the narrowed value against the original (wide) constant and silently drop matching rows.
+CREATE VIEW view_lookup_narrow_key_v (id UInt8, name String) AS
+SELECT id, dictGetString('view_lookup_dict', 'name', id) AS name FROM view_lookup_data;
+
+SET optimize_inverse_dictionary_lookup = 1;
+EXPLAIN indexes = 1
+SELECT count() FROM view_lookup_narrow_key_v WHERE name = 'match';
+
+SET optimize_inverse_dictionary_lookup = 1;
+SELECT count() FROM view_lookup_narrow_key_v WHERE name = 'match';
+
+SET optimize_inverse_dictionary_lookup = 0;
+SELECT count() FROM view_lookup_narrow_key_v WHERE name = 'match';
 
 -- A view over another view (recursion through the TableNode/view path twice) still rewrites.
 CREATE VIEW view_lookup_nested_v AS SELECT * FROM view_lookup_v;
@@ -149,6 +168,7 @@ DROP VIEW view_lookup_grouped_v;
 DROP VIEW view_lookup_no_key_v;
 DROP VIEW view_lookup_cast_v;
 DROP VIEW view_lookup_cast_key_v;
+DROP VIEW view_lookup_narrow_key_v;
 DROP VIEW view_lookup_nested_v;
 DROP DICTIONARY view_lookup_dict;
 DROP TABLE view_lookup_data;

@@ -240,6 +240,24 @@ tryParseDictFunctionCall(const QueryTreeNodePtr & node, const ContextPtr & conte
 
             if (const auto * outer_table_node = outer_source->as<TableNode>())
             {
+                /// The view may declare its own type for the key column position (independent of
+                /// the defining column's own cast, already checked in tryResolveColumnDefinition).
+                /// Reading through a mismatched declared type silently changes the comparison domain
+                /// (e.g. a UInt64 key narrowed to UInt8), so bail unless the view's exposed key type
+                /// exactly matches the inner key's natural type.
+                const auto & declared_columns = outer_table_node->getStorageSnapshot()->metadata->getColumns().getOrdinary();
+                const NameAndTypePair * declared_key_column = nullptr;
+                for (const auto & declared_column : declared_columns)
+                {
+                    if (declared_column.name == outer_key_column.name)
+                    {
+                        declared_key_column = &declared_column;
+                        break;
+                    }
+                }
+                if (!declared_key_column || !declared_key_column->type->equals(*outer_key_column.type))
+                    return std::nullopt;
+
                 /// Crossed a view boundary: check access on the view's own exposed column, not on
                 /// whatever table its private inner resolution happens to use (which can run under
                 /// the view definer's rights, not the invoker's).
