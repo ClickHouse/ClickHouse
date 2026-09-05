@@ -5,6 +5,7 @@
 
 #include <base/scope_guard.h>
 #include <base/sleep.h>
+#include <Columns/ColumnConst.h>
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/SystemLogBase.h>
@@ -12,8 +13,11 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils.h>
+#include <Common/config_version.h>
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/BackupLog.h>
@@ -775,6 +779,11 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
             elem.appendToBlock(columns);
 
         block.setColumns(std::move(columns));
+
+        auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+        block.insert({low_cardinality_string->createColumnConst(block.rows(), Field(VERSION_STRING))->convertToFullColumnIfConst(), low_cardinality_string, "clickhouse_version"});
+        block.insert({low_cardinality_string->createColumnConst(block.rows(), Field(SYSTEM_PROCESSOR))->convertToFullColumnIfConst(), low_cardinality_string, "system_processor"});
+
         prepare_insert_data_to_block = stopwatch.elapsedMilliseconds();
         stopwatch.restart();
 
@@ -1126,6 +1135,16 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
 }
 
 template <typename LogElement>
+ColumnsDescription SystemLog<LogElement>::getColumnsDescription()
+{
+    auto columns = LogElement::getColumnsDescription();
+    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    columns.add({"clickhouse_version", low_cardinality_string, "Version of the ClickHouse server that produced the row."});
+    columns.add({"system_processor", low_cardinality_string, "CPU architecture of the ClickHouse server that produced the row."});
+    return columns;
+}
+
+template <typename LogElement>
 ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 {
     auto create = make_intrusive<ASTCreateQuery>();
@@ -1134,7 +1153,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     create->setTable(table_id.table_name);
 
     auto new_columns_list = make_intrusive<ASTColumns>();
-    auto ordinary_columns = LogElement::getColumnsDescription();
+    auto ordinary_columns = getColumnsDescription();
     auto alias_columns = LogElement::getNamesAndAliases();
     /// S3-backed engines do not support alias columns; `shouldSkipAliasColumns` returns
     /// `true` for `SharedSystemLogFlushPolicy` and for `DefaultSystemLogFlushPolicy` when
@@ -1243,7 +1262,7 @@ ASTPtr SystemLog<LogElement>::getCreateUnionTableQuery()
     /// Note: unlike the log table itself, no skipping indices - they are not supported for
     /// tables created over a table function.
     auto new_columns_list = make_intrusive<ASTColumns>();
-    auto ordinary_columns = LogElement::getColumnsDescription();
+    auto ordinary_columns = getColumnsDescription();
     auto alias_columns = LogElement::getNamesAndAliases();
     if (!flush_policy->shouldSkipAliasColumns())
         ordinary_columns.setAliases(alias_columns);
