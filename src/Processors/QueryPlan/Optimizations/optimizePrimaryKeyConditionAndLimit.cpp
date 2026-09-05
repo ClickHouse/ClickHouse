@@ -51,7 +51,8 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
         }
         else if (auto * limit_step = typeid_cast<LimitStep *>(iter->node->step.get()))
         {
-            source_step_with_filter->setLimit(limit_step->getLimitForSorting());
+            if (auto rows_to_read = limit_step->getLimitWithOffset())
+                source_step_with_filter->setLimit(*rows_to_read);
             break;
         }
         else if (auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
