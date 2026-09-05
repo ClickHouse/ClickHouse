@@ -644,10 +644,13 @@ check_if_detached "SET create_index_ignore_unique = 1; CREATE UNIQUE INDEX idx_u
 check_if_detached "CREATE INDEX idx_t ON t_reattach_index (b) TYPE minmax GRANULARITY 1" "t_reattach_index"
 check_if_detached "DROP INDEX idx_t ON t_reattach_index" "t_reattach_index"
 
-# `CREATE`/`DROP HYPOTHETICAL INDEX` never mutates the table: the interpreter only reads its metadata and
-# updates the session-local hypothetical-index store, so the hook must not detach the table for them.
+# `CREATE`/`DROP HYPOTHETICAL INDEX` and `CREATE`/`DROP HYPOTHETICAL PROJECTION` never mutate the table:
+# the interpreter only reads its metadata and updates the session-local hypothetical-object store, so the
+# hook must not detach the table for them.
 check_if_not_detached "CREATE HYPOTHETICAL INDEX idx_h ON t_reattach_index (b) TYPE minmax GRANULARITY 1" "t_reattach_index"
 check_if_not_detached "DROP HYPOTHETICAL INDEX IF EXISTS idx_h ON t_reattach_index" "t_reattach_index"
+check_if_not_detached "CREATE HYPOTHETICAL PROJECTION proj_h ON t_reattach_index (SELECT a, b ORDER BY b)" "t_reattach_index"
+check_if_not_detached "DROP HYPOTHETICAL PROJECTION IF EXISTS proj_h ON t_reattach_index" "t_reattach_index"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_index"
 
