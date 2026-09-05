@@ -1,9 +1,12 @@
 #pragma once
+#include <Core/Defines.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
+
+struct Settings;
 
 /// Whether adding a hashing preliminary DISTINCT can pay off, given the effective number of threads the
 /// caller has already resolved. Such a step deduplicates each stream on its own so that the final,
@@ -15,9 +18,39 @@ bool preliminaryDistinctIsUseful(size_t max_threads);
 class DistinctStep : public ITransformingStep
 {
 public:
+    struct Settings
+    {
+        /// Restrictions on the maximum size of the DISTINCT set.
+        SizeLimits set_size_limits;
+
+        UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
+
+        /// The external DISTINCT thresholds. The effective limit is their min-combination, computed when
+        /// the pipeline is built (both zero - external DISTINCT is disabled).
+        UInt64 max_bytes_before_external_distinct = 0;
+        double max_bytes_ratio_before_external_distinct = 0.;
+
+        /// The spill-related members are consumed only when external DISTINCT is enabled, but they
+        /// must hold valid values even in the default-constructed struct: internal DISTINCT steps
+        /// built with it (e.g. the set transfer of a distributed plan) are serialized through
+        /// updatePlanSettings, and e.g. the buffer size is a non-zero plan setting. The defaults
+        /// mirror the defaults of the corresponding query settings.
+        size_t min_free_disk_space = 0;
+        String temporary_files_codec = "LZ4";
+        UInt64 temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+
+        /// External DISTINCT disabled (e.g. deduplication during merges, which must not depend on
+        /// query-level settings or query memory tracking).
+        Settings() = default;
+        explicit Settings(const DB::Settings & settings_);
+        explicit Settings(const QueryPlanSerializationSettings & settings_);
+
+        void updatePlanSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const;
+    };
+
     DistinctStep(
         const SharedHeader & input_header_,
-        const SizeLimits & set_size_limits_,
+        Settings settings_,
         UInt64 limit_hint_,
         const Names & columns_,
         /// If enabled, execute the `DISTINCT` for separate streams, otherwise for merged streams. The
@@ -34,14 +67,14 @@ public:
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
-    void describeActions(FormatSettings & settings) const override;
+    void describeActions(FormatSettings & format_settings) const override;
 
     bool isPreliminary() const { return pre_distinct; }
 
     UInt64 getLimitHint() const { return limit_hint; }
     void updateLimitHint(UInt64 hint);
 
-    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
+    void serializeSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -51,7 +84,7 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
-    const SizeLimits & getSetSizeLimits() const { return set_size_limits; }
+    const Settings & getSettings() const { return settings; }
 
     void applyOrder(SortDescription sort_desc) { distinct_sort_desc = std::move(sort_desc); }
     const SortDescription & getSortDescription() const override { return distinct_sort_desc; }
@@ -62,15 +95,24 @@ public:
     /// into a single stream.
     void skipStreamMerging() { skip_stream_merging = true; }
 
+    /// The step must return the rows in their input order: it runs above the ORDER BY sorting of its
+    /// query (set by the planners), or the optimizer propagates a global order through it, which the
+    /// steps above may rely on (set by the applyOrder optimization). The in-memory DISTINCT keeps the
+    /// order by construction; a spilling one restores it after merging its runs (see
+    /// ExternalDistinctTransform).
+    void preserveInputOrder() { preserve_input_order = true; }
+    bool preservesInputOrder() const { return preserve_input_order; }
+
 private:
     void updateOutputHeader() override;
 
-    SizeLimits set_size_limits;
+    Settings settings;
     UInt64 limit_hint;
     const Names columns;
     bool pre_distinct;
     SortDescription distinct_sort_desc;
     bool skip_stream_merging = false;
+    bool preserve_input_order = false;
 };
 
 }

@@ -3400,6 +3400,44 @@ In case of ORDER BY with LIMIT, when memory usage is higher than specified thres
 If memory usage after remerge does not reduced by this ratio, remerge will be disabled.
 )", 0) \
     \
+    DECLARE(UInt64, max_bytes_before_external_distinct, 0, R"(
+Enables or disables execution of `DISTINCT` clauses in external memory
+(see [DISTINCT in external memory](/sql-reference/statements/select/distinct#distinct-in-external-memory)).
+If memory usage during a `DISTINCT` operation exceeds this threshold in bytes, the 'external distinct' mode (spill data to disk) is activated.
+
+Possible values:
+
+- Maximum volume of RAM (in bytes) that can be used by the single [DISTINCT](/sql-reference/statements/select/distinct) operation.
+  The recommended value is half of available system memory.
+- `0` — `DISTINCT` in external memory disabled.
+
+If both `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` are set, the smaller resulting threshold is used.
+
+:::note
+For `DISTINCT` over several key columns with variable-width types (e.g. multiple `String` columns),
+memory usage can be up to twice the size of the distinct data until the first spill.
+:::
+)", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_distinct, 0.5, R"(
+The ratio of available memory that is allowed for `DISTINCT`. Once reached, external memory is used.
+
+For example, if set to `0.6`, `DISTINCT` will allow using 60% of the available memory
+(to server/user/merges) at the beginning of the execution, after that, it will
+start spilling to disk.
+
+The available memory is what remains, when the query starts, under the strictest memory limit that
+applies to the query (the server or the user memory limit). When no memory limit is configured at all,
+this setting has no effect and only `max_bytes_before_external_distinct` applies.
+
+If both `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
+
+:::note
+The ratio is computed against the server and user level memory limits; [max_memory_usage](#max_memory_usage)
+does not affect it. To bound the memory of a specific query with spilling, set the absolute
+`max_bytes_before_external_distinct` in addition to `max_memory_usage`.
+:::
+)", 0) \
+    \
     DECLARE(UInt64, max_result_rows, 0, R"(
 Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
 No limit is applied when the value is `0`.

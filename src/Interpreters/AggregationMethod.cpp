@@ -1,4 +1,5 @@
 #include <Interpreters/AggregatedData.h>
+#include <Interpreters/AggregationCommon.h>
 #include <Interpreters/AggregationMethod.h>
 #include <IO/ReadBufferFromString.h>
 
@@ -137,55 +138,9 @@ template <typename TData, bool has_nullable_keys, bool has_low_cardinality, bool
 void AggregationMethodKeysFixed<TData, has_nullable_keys, has_low_cardinality, consecutive_keys_optimization>::insertKeyIntoColumns(
     const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes, const IColumn::SerializationSettings *)
 {
-    size_t keys_size = key_columns.size();
-
-    static constexpr auto bitmap_size = has_nullable_keys ? std::tuple_size_v<KeysNullMap<Key>> : 0;
-    /// In any hash key value, column values to be read start just after the bitmap, if it exists.
-    size_t pos = bitmap_size;
-
-    for (size_t i = 0; i < keys_size; ++i)
-    {
-        IColumn * observed_column = nullptr;
-        ColumnUInt8 * null_map = nullptr;
-
-        bool column_nullable = false;
-        if constexpr (has_nullable_keys)
-            column_nullable = isColumnNullable(*key_columns[i]);
-
-        /// If we have a nullable column, get its nested column and its null map.
-        if (column_nullable)
-        {
-            ColumnNullable & nullable_col = assert_cast<ColumnNullable &>(*key_columns[i]);
-            observed_column = &nullable_col.getNestedColumn();
-            null_map = assert_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
-        }
-        else
-        {
-            observed_column = key_columns[i];
-            null_map = nullptr;
-        }
-
-        bool is_null = false;
-        if (column_nullable)
-        {
-            /// The current column is nullable. Check if the value of the
-            /// corresponding key is nullable. Update the null map accordingly.
-            size_t bucket = i / 8;
-            size_t offset = i % 8;
-            UInt8 val = (reinterpret_cast<const UInt8 *>(&key)[bucket] >> offset) & 1;
-            null_map->insertValue(val);
-            is_null = val == 1;
-        }
-
-        if (has_nullable_keys && is_null)
-            observed_column->insertDefault();
-        else
-        {
-            size_t size = key_sizes[i];
-            observed_column->insertData(reinterpret_cast<const char *>(&key) + pos, size);
-            pos += size;
-        }
-    }
+    /// The caller has already shuffled the columns into the packing order (see shuffleKeyColumns), so
+    /// the key bytes map onto the columns sequentially and no unpack order is needed.
+    unpackFixedKeyIntoColumns<has_nullable_keys>(key, /*unpack_order=*/ nullptr, key_columns, key_sizes);
 }
 
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt16Key, false, false, false>;

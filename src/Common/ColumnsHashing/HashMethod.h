@@ -589,32 +589,41 @@ struct HashMethodKeysFixed
         }
     }
 
-    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    /// The order in which the prepared-keys packing lays the columns out in the packed key: grouped by
+    /// the value size, in the descending order. Returns std::nullopt when the prepared keys are not
+    /// used (then the columns are packed in their original order). This is the single source of the
+    /// rule; the consumers that read the keys back must unpack in the same order (see
+    /// unpackFixedKeyIntoColumns).
+    static std::optional<std::vector<size_t>> packedKeysOrder(const Sizes & key_sizes)
     {
         if (!usePreparedKeys(key_sizes))
             return {};
 
+        std::vector<size_t> order;
+        order.reserve(key_sizes.size());
+        for (const size_t size : {16, 8, 4, 2, 1})
+            for (size_t i = 0; i < key_sizes.size(); ++i)
+                if (key_sizes[i] == size)
+                    order.push_back(i);
+        return order;
+    }
+
+    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    {
+        const auto order = packedKeysOrder(key_sizes);
+        if (!order)
+            return {};
+
         std::vector<IColumn *> new_columns;
         new_columns.reserve(key_columns.size());
-
         Sizes new_sizes;
-        auto fill_size = [&](size_t size)
-        {
-            for (size_t i = 0; i < key_sizes.size(); ++i)
-            {
-                if (key_sizes[i] == size)
-                {
-                    new_columns.push_back(key_columns[i]);
-                    new_sizes.push_back(size);
-                }
-            }
-        };
+        new_sizes.reserve(key_sizes.size());
 
-        fill_size(16);
-        fill_size(8);
-        fill_size(4);
-        fill_size(2);
-        fill_size(1);
+        for (const size_t i : *order)
+        {
+            new_columns.push_back(key_columns[i]);
+            new_sizes.push_back(key_sizes[i]);
+        }
 
         key_columns.swap(new_columns);
         return new_sizes;

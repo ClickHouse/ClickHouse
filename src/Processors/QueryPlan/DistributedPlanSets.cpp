@@ -127,11 +127,14 @@ void convertSetSourceForDistributedPlan(QueryPlan & source_plan, const ContextPt
     /// values, so task serialization checks it against the actual columns. A truncated set
     /// would change results, so the mode is throw.
     const auto & settings = context->getSettingsRef();
-    SizeLimits transfer_limits(settings[Setting::max_rows_to_transfer], 0, OverflowMode::THROW);
+    /// Default-constructed step settings: this internal DISTINCT must not depend on the user's DISTINCT
+    /// limits or spill to disk; only the transfer limit applies.
+    DistinctStep::Settings distinct_settings;
+    distinct_settings.set_size_limits = SizeLimits(settings[Setting::max_rows_to_transfer], 0, OverflowMode::THROW);
 
     auto header = source_plan.getCurrentHeader();
     source_plan.addStep(
-        std::make_unique<DistinctStep>(header, transfer_limits, 0, header->getNames(), /*pre_distinct_=*/false));
+        std::make_unique<DistinctStep>(header, std::move(distinct_settings), 0, header->getNames(), /*pre_distinct_=*/false));
 
     QueryPlanOptimizationSettings optimization_settings(context);
     source_plan.optimize(optimization_settings);

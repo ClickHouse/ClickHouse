@@ -1,0 +1,19 @@
+<test>
+    <!-- Key shapes that the DISTINCT hash set cannot store as plain fixed or string keys (several
+         variable-width columns, `LowCardinality`): with the spilling armed (the default), the spilling
+         transform keeps them as serialized keys so that it can rebuild the first spilled run from the
+         set; with the spilling disabled, the in-memory transform keeps only a hash per key. Nothing
+         spills here, so the two variants measure the cost of having the spilling armed. -->
+    <substitutions>
+        <substitution>
+            <name>external</name>
+            <values>
+                <value>max_bytes_ratio_before_external_distinct = 0.5</value>
+                <value>max_bytes_ratio_before_external_distinct = 0, max_bytes_before_external_distinct = 0</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM (SELECT DISTINCT toString(number % 1000000) AS a, toString(number % 1000) AS b FROM numbers_mt(10000000)) SETTINGS {external}</query>
+    <query>SELECT count() FROM (SELECT DISTINCT toLowCardinality(toString(number % 100000)) AS a FROM numbers_mt(30000000)) SETTINGS {external}</query>
+</test>

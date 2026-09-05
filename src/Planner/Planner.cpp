@@ -116,7 +116,6 @@ namespace Setting
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
-    extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
@@ -132,11 +131,9 @@ namespace Setting
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
-    extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const SettingsUInt64 max_subquery_depth;
-    extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
@@ -1241,11 +1238,9 @@ void addDistinctStep(QueryPlan & query_plan,
             limit_hint_for_distinct = limit_length + limit_offset;
     }
 
-    SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
-
     auto distinct_step = std::make_unique<DistinctStep>(
         query_plan.getCurrentHeader(),
-        limits,
+        DistinctStep::Settings(settings),
         limit_hint_for_distinct,
         column_names,
         pre_distinct);
@@ -1254,6 +1249,12 @@ void addDistinctStep(QueryPlan & query_plan,
         distinct_step->setStepDescription("Preliminary DISTINCT");
     else
         distinct_step->setStepDescription("DISTINCT");
+
+    /// The DISTINCT that runs after the ORDER BY sits above the sort in the plan: the sorted order has to
+    /// survive it up to the result.
+    if (!before_order && query_node.hasOrderBy())
+        distinct_step->preserveInputOrder();
+
     query_plan.addStep(std::move(distinct_step));
 }
 
@@ -2405,7 +2406,7 @@ void Planner::buildPlanForUnionNode()
     if (is_distinct)
     {
         /// Add distinct transform
-        SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
+        DistinctStep::Settings distinct_settings(settings);
 
         /// UNION concatenates its branches' streams instead of merging them, so a preliminary DISTINCT
         /// runs in parallel and shrinks what the final single-stream DISTINCT must merge. INTERSECT/EXCEPT
@@ -2416,7 +2417,7 @@ void Planner::buildPlanForUnionNode()
         {
             auto pre_distinct_step = std::make_unique<DistinctStep>(
                 query_plan.getCurrentHeader(),
-                limits,
+                distinct_settings,
                 0 /*limit hint*/,
                 query_plan.getCurrentHeader()->getNames(),
                 true /*pre distinct*/);
@@ -2426,7 +2427,7 @@ void Planner::buildPlanForUnionNode()
 
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentHeader(),
-            limits,
+            std::move(distinct_settings),
             0 /*limit hint*/,
             query_plan.getCurrentHeader()->getNames(),
             false /*pre distinct*/);

@@ -3502,7 +3502,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
         auto deduplication_step = std::make_unique<DistinctStep>(
             merge_parts_query_plan.getCurrentHeader(),
-            SizeLimits(), 0 /*limit_hint*/,
+            DistinctStep::Settings{}, 0 /*limit_hint*/,
             global_ctx->deduplicate_by_columns,
             false /*pre_distinct*/);
 

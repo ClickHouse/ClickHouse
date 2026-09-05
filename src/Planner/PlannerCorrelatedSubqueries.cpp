@@ -618,17 +618,15 @@ QueryPlan decorrelateQueryPlan(
             context.correlated_subquery.correlated_column_identifiers));
         rhs_plan.getRootNode()->step->setStepDescription("Input for " + context.correlated_subquery.action_node_name, 100);
 
-        /// Needed to simulate the Duplicate Eliminating Join. Runs with internal unbounded limits so
-        /// that a user's max_rows_in_distinct / distinct_overflow_mode can never truncate the domain.
-        {
-            SizeLimits distinct_limits(/*max_rows_=*/0, /*max_bytes_=*/0, OverflowMode::THROW);
-            rhs_plan.addStep(std::make_unique<DistinctStep>(
-                rhs_plan.getCurrentHeader(),
-                distinct_limits,
-                /*limit_hint_=*/0,
-                context.correlated_subquery.correlated_column_identifiers,
-                /*pre_distinct_=*/false));
-        }
+        /// Needed to simulate the Duplicate Eliminating Join. Runs with the default-constructed step
+        /// settings: internal unbounded limits, so that a user's max_rows_in_distinct /
+        /// distinct_overflow_mode can never truncate the domain, and no external DISTINCT.
+        rhs_plan.addStep(std::make_unique<DistinctStep>(
+            rhs_plan.getCurrentHeader(),
+            DistinctStep::Settings{},
+            /*limit_hint_=*/0,
+            context.correlated_subquery.correlated_column_identifiers,
+            /*pre_distinct_=*/false));
 
         if (default_join_kind == DecorrelationJoinKind::LEFT)
             std::swap(lhs_plan, rhs_plan);

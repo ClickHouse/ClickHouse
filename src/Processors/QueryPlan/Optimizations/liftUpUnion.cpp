@@ -96,7 +96,7 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
 
             distinct_node.step = std::make_unique<DistinctStep>(
                 distinct_node.children.front()->step->getOutputHeader(),
-                distinct->getSetSizeLimits(),
+                distinct->getSettings(),
                 distinct->getLimitHint(),
                 distinct->getColumnNames(),
                 distinct->isPreliminary());
