@@ -7927,10 +7927,16 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
         bool pulled_to_queue = false;
         do
         {
-            String log_pointer = getZooKeeper()->getWatch(
-                fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer",
-                nullptr,
-                Coordination::WatchCallbackPtrOrEventPtr{watch_event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync});
+            String log_pointer;
+            /// The replica can be removed while we are waiting for it, and then it never processes
+            /// the entry. Report it as unfinished instead of failing with a Keeper error.
+            if (!getZooKeeper()->tryGetWatch(
+                    fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer",
+                    log_pointer,
+                    nullptr,
+                    Coordination::WatchCallbackPtrOrEventPtr{watch_event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync}))
+                break;
+
             if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
             {
                 pulled_to_queue = true;
@@ -7961,7 +7967,9 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
         /// If not found in the log, it is already in the queue.
         LOG_DEBUG(log, "Looking for log entry with id `{}` in the log", entry.log_entry_id);
 
-        String log_pointer = getZooKeeper()->get(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer");
+        String log_pointer;
+        if (!getZooKeeper()->tryGet(fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer", log_pointer))
+            return false;
 
         Strings log_entries = getZooKeeper()->getChildren(fs::path(table_zookeeper_path) / "log");
         UInt64 log_index = 0;
@@ -7998,10 +8006,13 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
             {
                 Coordination::EventPtr event = std::make_shared<Poco::Event>();
 
-                log_pointer = getZooKeeper()->getWatch(
-                    fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer",
-                    nullptr,
-                    Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync});
+                if (!getZooKeeper()->tryGetWatch(
+                        fs::path(table_zookeeper_path) / "replicas" / replica / "log_pointer",
+                        log_pointer,
+                        nullptr,
+                        Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync}))
+                    break;
+
                 if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
                 {
                     pulled_to_queue = true;
@@ -8029,7 +8040,11 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
       * Its number may not match the `log` node. Therefore, we search by comparing the content.
       */
 
-    Strings queue_entries = getZooKeeper()->getChildren(fs::path(table_zookeeper_path) / "replicas" / replica / "queue");
+    Strings queue_entries;
+    if (getZooKeeper()->tryGetChildren(fs::path(table_zookeeper_path) / "replicas" / replica / "queue", queue_entries)
+        != Coordination::Error::ZOK)
+        return false;
+
     String queue_entry_to_wait_for;
 
     for (const String & entry_name : queue_entries)
