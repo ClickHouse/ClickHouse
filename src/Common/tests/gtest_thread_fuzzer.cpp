@@ -37,6 +37,7 @@ TEST(ThreadFuzzer, mutex)
 
 #if defined(OS_LINUX)
 
+#include <csignal>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -45,6 +46,7 @@ TEST(ThreadFuzzer, mutex)
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <base/errnoToString.h>
 #include <Common/Exception.h>
 
 extern char ** environ;
@@ -64,20 +66,42 @@ const char * const child_marker_env = "CH_THREAD_FUZZER_TIMER_TEST_CHILD";
 /// Printed only after the assertions have run, so a skip cannot be mistaken for a pass.
 const char * const child_sentinel = "THREAD_FUZZER_TIMER_ASSERTIONS_RAN";
 
+/// The period is also the initial `it_value`, which counts down remaining process CPU time: a
+/// period of a few microseconds could be read as 0 while the timer is still armed.
 const char * const child_env[] = {
-    "THREAD_FUZZER_CPU_TIME_PERIOD_US=1000",
+    "THREAD_FUZZER_CPU_TIME_PERIOD_US=100000",
     "THREAD_FUZZER_SLEEP_PROBABILITY=0.01",
     "THREAD_FUZZER_SLEEP_TIME_US_MAX=100000",
     "THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY=1",
     "CH_THREAD_FUZZER_TIMER_TEST_CHILD=1",
 };
 
-UInt64 profTimerIntervalUs()
+struct ProfTimer
+{
+    /// Armed-ness lives here: `setitimer` disarms whenever `it_value` is 0, whatever `it_interval`
+    /// holds, and `getitimer` reports a 0 `it_value` for an inactive timer.
+    UInt64 value_us = 0;
+    /// The reload amount, which decides only whether an armed timer fires more than once.
+    UInt64 interval_us = 0;
+};
+
+UInt64 toMicroseconds(const struct timeval & tv)
+{
+    return static_cast<UInt64>(tv.tv_sec) * 1000000 + static_cast<UInt64>(tv.tv_usec);
+}
+
+/// A `getitimer` error fails the test here, because a zeroed result would reach the caller as a
+/// disarmed timer.
+ProfTimer profTimer()
 {
     struct itimerval current{};
     if (0 != getitimer(ITIMER_PROF, &current))
-        return 0;
-    return static_cast<UInt64>(current.it_interval.tv_sec) * 1000000 + current.it_interval.tv_usec;
+        ADD_FAILURE() << "getitimer(ITIMER_PROF) failed: " << errnoToString();
+
+    ProfTimer result;
+    result.value_us = toMicroseconds(current.it_value);
+    result.interval_us = toMicroseconds(current.it_interval);
+    return result;
 }
 
 bool injectsMemoryLimitException()
@@ -103,17 +127,27 @@ TEST(ThreadFuzzerTimer, StopStartTogglePerturbationChild)
     ASSERT_TRUE(DB::ThreadFuzzer::instance().isEffective());
 
     DB::ThreadFuzzer::instance().setup();
-    EXPECT_NE(0UL, profTimerIntervalUs()) << "setup() did not arm ITIMER_PROF";
+    ProfTimer timer = profTimer();
+    EXPECT_NE(0UL, timer.value_us) << "setup() did not arm ITIMER_PROF";
+    EXPECT_NE(0UL, timer.interval_us) << "setup() armed ITIMER_PROF to fire only once";
     EXPECT_TRUE(DB::ThreadFuzzer::isStarted());
     EXPECT_TRUE(injectsMemoryLimitException()) << "no fault injected while started";
 
     DB::ThreadFuzzer::stop();
-    EXPECT_EQ(0UL, profTimerIntervalUs()) << "stop() left ITIMER_PROF armed";
+    timer = profTimer();
+    EXPECT_EQ(0UL, timer.value_us) << "stop() left ITIMER_PROF armed";
+    EXPECT_EQ(0UL, timer.interval_us) << "stop() left a reload period on ITIMER_PROF";
     EXPECT_FALSE(injectsMemoryLimitException()) << "stop() did not stop fault injection";
 
     DB::ThreadFuzzer::start();
-    EXPECT_NE(0UL, profTimerIntervalUs()) << "start() did not re-arm ITIMER_PROF";
+    timer = profTimer();
+    EXPECT_NE(0UL, timer.value_us) << "start() did not re-arm ITIMER_PROF";
+    EXPECT_NE(0UL, timer.interval_us) << "start() armed ITIMER_PROF to fire only once";
     EXPECT_TRUE(injectsMemoryLimitException()) << "start() did not resume fault injection";
+
+    /// gtest teardown, the global Context destructor and the thread pool shutdowns that follow run
+    /// with no perturbation armed. The parent asserts the exit code of that path.
+    DB::ThreadFuzzer::stop();
 
     std::cout << child_sentinel << std::endl;
 }
@@ -173,6 +207,49 @@ TEST(ThreadFuzzerTimer, StopStartTogglePerturbation)
     EXPECT_TRUE(WIFEXITED(status) && 0 == WEXITSTATUS(status)) << "child failed, output:\n" << output;
     EXPECT_NE(std::string::npos, output.find(child_sentinel))
         << "child did not run its assertions, output:\n" << output;
+}
+
+/// `ITIMER_PROF` is process-wide and out of tree a CPU profiler owns it, so a process the fuzzer
+/// configured no timer for must come out of `stop()` with its own timer intact.
+TEST(ThreadFuzzerTimer, StopLeavesAForeignProfTimerAlone)
+{
+    /// The state under test is "the fuzzer configured no timer here". That predicate is private, but
+    /// a configured timer makes the fuzzer effective, so a false `isEffective` establishes it.
+    /// Asserted first: a future test exporting `THREAD_FUZZER_*` into this process would move this
+    /// case onto the configured branch, where it would measure nothing.
+    ASSERT_FALSE(DB::ThreadFuzzer::instance().isEffective())
+        << "the fuzzer is configured in this process, so the unconfigured branch is not under test";
+    ASSERT_EQ(0UL, profTimer().value_us) << "ITIMER_PROF was already armed on entry";
+
+    /// Longer than this test can consume in process CPU time, so the timer cannot expire mid-test.
+    static constexpr UInt64 foreign_interval_us = 7000000;
+
+    const auto saved_disposition = std::signal(SIGPROF, SIG_IGN);
+    ASSERT_NE(SIG_ERR, saved_disposition) << errnoToString();
+
+    struct itimerval foreign{};
+    foreign.it_interval.tv_sec = static_cast<time_t>(foreign_interval_us / 1000000);
+    foreign.it_value.tv_sec = static_cast<time_t>(foreign_interval_us / 1000000);
+    const int arm_rc = setitimer(ITIMER_PROF, &foreign, nullptr);
+    ASSERT_EQ(0, arm_rc) << errnoToString();
+
+    DB::ThreadFuzzer::stop();
+    const ProfTimer after_stop = profTimer();
+
+    /// Restored before the assertions, so a failure cannot leak the timer into later tests.
+    struct itimerval disarm{};
+    const int disarm_rc = setitimer(ITIMER_PROF, &disarm, nullptr);
+    EXPECT_EQ(0, disarm_rc) << errnoToString();
+    EXPECT_NE(SIG_ERR, std::signal(SIGPROF, saved_disposition)) << errnoToString();
+
+    EXPECT_EQ(foreign_interval_us, after_stop.interval_us) << "stop() disarmed a timer it does not own";
+
+    /// `it_value` counts down process CPU time, and the kernel reports the remainder rounded up to a
+    /// whole timer tick, so it lands slightly above the period rather than exactly on it. A tick is
+    /// at most 10 ms, so two of them bound the rounding on any supported HZ.
+    static constexpr UInt64 tick_rounding_slack_us = 20000;
+    EXPECT_GT(after_stop.value_us, foreign_interval_us / 2) << "stop() re-armed ITIMER_PROF";
+    EXPECT_LE(after_stop.value_us, foreign_interval_us + tick_rounding_slack_us) << "stop() re-armed ITIMER_PROF";
 }
 
 #endif
