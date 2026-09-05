@@ -424,6 +424,28 @@ def md_code(name: str) -> str:
     return f"`{name}`"
 
 
+# Keeps both ends: an exit code or an HTTP status usually sits at the end of a
+# message, and the widest one here (a cluster query error carrying its whole
+# inlined SQL, ~55 KB) has to fit GitHub's 65536-char comment body.
+MSG_HEAD_LEN = 600
+MSG_TAIL_LEN = 400
+
+
+def md_message(text: str) -> str:
+    """Free-form message as an inline code span, bounded head+tail."""
+    if len(text) > MSG_HEAD_LEN + MSG_TAIL_LEN:
+        elided = len(text) - MSG_HEAD_LEN - MSG_TAIL_LEN
+        text = f"{text[:MSG_HEAD_LEN]}...(+{elided} chars elided)...{text[-MSG_TAIL_LEN:]}"
+    # A span closes on the first backtick run as long as its opener, and a
+    # backslash does not escape inside one, so the fence has to be longer than
+    # every run here; a run at either end needs the space the renderer strips.
+    fence = "`"
+    while fence in text:
+        fence += "`"
+    pad = " " if text.startswith("`") or text.endswith("`") else ""
+    return f"{fence}{pad}{text}{pad}{fence}"
+
+
 def strip_build_dir(path: str) -> str:
     return path.removeprefix(f"{BUILD_DIR}/")
 
@@ -533,6 +555,18 @@ def get_master_shas(info) -> List[str]:
 # day, so 60 fetches cover the walk's TU_BASE_DAYS + UPLOAD_DELAY_DAYS horizon
 # with margin (measured: 21 fetches for 19 days over 1247 first-parent commits).
 EXTEND_MAX_PAGES = 60
+# `gh` self-bounds connect and TLS handshake but not a stalled response body,
+# so every call carries its own deadline.
+GH_TIMEOUT_SECONDS = 120
+GH_STREAM_LEN = 300
+
+
+def _elide_stream(text: str) -> str:
+    """A captured stream capped, with a marker so a reader can tell it was cut."""
+    text = text.strip()
+    if len(text) <= GH_STREAM_LEN:
+        return text
+    return f"{text[:GH_STREAM_LEN]}...(+{len(text) - GH_STREAM_LEN} chars elided)"
 
 
 def _list_commits_page(anchor_sha: str, page: int) -> List[dict]:
@@ -542,22 +576,30 @@ def _list_commits_page(anchor_sha: str, page: int) -> List[dict]:
     second-parent commits. Each entry carries its parent shas so that
     `_walk_first_parent` can reconstruct the chain client-side.
     """
-    out = subprocess.run(
-        [
-            "gh",
-            "api",
-            # Hardcoded upstream namespace, like the store_data hook: the
-            # profile rows in the CI logs cluster carry public-repo shas.
-            f"repos/ClickHouse/ClickHouse/commits?sha={anchor_sha}&per_page=100&page={page}",
-            "--jq",
-            "[.[] | {sha: .sha, date: .commit.committer.date, parents: [.parents[].sha]}]",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=True,
-    ).stdout
-    return json.loads(out)
+    # Hardcoded upstream namespace, like the store_data hook: the profile rows
+    # in the CI logs cluster carry public-repo shas.
+    endpoint = f"repos/ClickHouse/ClickHouse/commits?sha={anchor_sha}&per_page=100&page={page}"
+    argv = [
+        "gh",
+        "api",
+        endpoint,
+        "--jq",
+        "[.[] | {sha: .sha, date: .commit.committer.date, parents: [.parents[].sha]}]",
+    ]
+    try:
+        res = subprocess.run(argv, capture_output=True, text=True, timeout=GH_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"gh api timed out after {GH_TIMEOUT_SECONDS} s: {endpoint}") from e
+    if res.returncode != 0:
+        # Field order matters: an outer caller bounds this message before it
+        # reaches a public comment, so the exit code and the endpoint - one of
+        # up to EXTEND_MAX_PAGES - precede the capped API-controlled streams,
+        # which are what name the HTTP status.
+        raise RuntimeError(
+            f"gh api exited {res.returncode} for {endpoint}: "
+            f"err[{_elide_stream(res.stderr)}] out[{_elide_stream(res.stdout)}]"
+        )
+    return json.loads(res.stdout)
 
 
 def _walk_first_parent(anchor_sha: str, cutoff: str, max_pages: int, list_page, max_commits: int = 0):
@@ -1599,7 +1641,7 @@ def main():
             update_comment(
                 f"### Build profile diff ({CHECK_NAME})\n\n"
                 f"Comparing commit `{pr_sha}` with master failed: "
-                f"{md_code(f'{type(e).__name__}: {e}'.replace(chr(10), ' '))}.\n\n"
+                f"{md_message(f'{type(e).__name__}: {e}'.replace(chr(10), ' '))}.\n\n"
                 "See the job log for details.",
                 only_update=True,
             )
