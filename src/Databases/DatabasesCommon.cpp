@@ -21,6 +21,7 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/TTLDescription.h>
 #include <Storages/Utils.h>
+#include <IO/ReadSettings.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
@@ -371,7 +372,14 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
 
 String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path)
 {
-    auto read_buf = disk->readFile(file_path, getReadSettingsForMetadata());
+    /// `.sql` metadata is rewritten in place by concurrent ALTER/RENAME, so a buffer that snapshots
+    /// the file size at construction can read past it and trip
+    /// `file_offset_of_buffer_end <= getFileSize()`. Every stage disabled below snapshots that size.
+    auto read_settings = getReadSettingsForMetadata();
+    read_settings.remote_fs_settings.method = RemoteFSReadMethod::read;
+    read_settings.reader_executor.enabled = false;
+    read_settings.disableCaches();
+    auto read_buf = disk->readFile(file_path, read_settings);
     String content;
     readStringUntilEOF(content, *read_buf);
 
