@@ -1484,49 +1484,10 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
         descr.fill_step = order_by_elem.direction;
 
     if (order_by_elem.getFillStaleness())
-    {
         std::tie(descr.fill_staleness, descr.staleness_kind) = getWithFillValueWithIntervalKind(order_by_elem.getFillStaleness(), context);
 
-        if (order_by_elem.getFillFrom())
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STALENESS cannot be used together with WITH FILL FROM");
-    }
-
-    if (accurateEquals(descr.fill_step, Field{0}))
-        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be zero");
-
-    if (order_by_elem.direction == 1)
-    {
-        if (accurateLess(descr.fill_step, Field{0}))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be negative for sorting in ascending direction");
-
-        if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
-            accurateLess(descr.fill_to, descr.fill_from))
-        {
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                            "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction");
-        }
-
-        if (accurateLess(descr.fill_staleness, Field{0}))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STALENESS value cannot be negative for sorting in ascending direction");
-    }
-    else
-    {
-        if (accurateLess(Field{0}, descr.fill_step))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be positive for sorting in descending direction");
-
-        if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
-            accurateLess(descr.fill_from, descr.fill_to))
-        {
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                            "WITH FILL FROM value cannot be less than TO value for sorting in descending direction");
-        }
-
-        if (accurateLess(Field{0}, descr.fill_staleness))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STALENESS value cannot be positive for sorting in descending direction");
-    }
+    if (const auto reason = checkFillDescription(descr, order_by_elem.direction); !reason.empty())
+        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "{}", reason);
 
     return descr;
 }

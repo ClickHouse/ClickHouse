@@ -192,6 +192,11 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
     SortDescription sort_description;
     deserializeSortDescription(sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
 
+    /// The planners add this step only when there is something to fill, and `FillingTransform` reads the
+    /// first fill column unconditionally, so a description without one would take it out of range.
+    if (std::none_of(sort_description.begin(), sort_description.end(), [](const auto & desc) { return desc.with_fill; }))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "FillingStep: no WITH FILL column in the sort description");
+
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
     /// Fail closed on a flag bit this version does not know, rather than desynchronizing the stream.

@@ -9,6 +9,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/IntervalKind.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
@@ -293,6 +294,79 @@ JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description)
 namespace
 {
 
+/// A step or staleness bound has to be a number the fill arithmetic can advance by; `getStepFunction`
+/// otherwise reaches `Field::safeGet` with the wrong type.
+bool isFillArithmeticValue(const Field & value)
+{
+    switch (value.getType())
+    {
+        case Field::Types::UInt64:
+        case Field::Types::Int64:
+        case Field::Types::Float64:
+        case Field::Types::UInt128:
+        case Field::Types::Int128:
+        case Field::Types::UInt256:
+        case Field::Types::Int256:
+        case Field::Types::Decimal32:
+        case Field::Types::Decimal64:
+        case Field::Types::Decimal128:
+        case Field::Types::Decimal256:
+            return true;
+        default:
+            return false;
+    }
+}
+
+}
+
+String checkFillDescription(const FillColumnDescription & fill, int direction)
+{
+    /// The planners always set a step (`+1`/`-1` when the query gives none), so this only rejects a
+    /// forged description. A `Null` step passes every comparison below, hence the explicit check.
+    if (!isFillArithmeticValue(fill.fill_step))
+        return "WITH FILL STEP value must be a number";
+
+    if (accurateEquals(fill.fill_step, Field{0}))
+        return "WITH FILL STEP value cannot be zero";
+
+    if (!fill.fill_staleness.isNull() && !isFillArithmeticValue(fill.fill_staleness))
+        return "WITH FILL STALENESS value must be a number";
+
+    if (fill.staleness_kind && fill.fill_staleness.isNull())
+        return "WITH FILL STALENESS interval requires a value";
+
+    if (!fill.fill_staleness.isNull() && !fill.fill_from.isNull())
+        return "WITH FILL STALENESS cannot be used together with WITH FILL FROM";
+
+    if (direction > 0)
+    {
+        if (accurateLess(fill.fill_step, Field{0}))
+            return "WITH FILL STEP value cannot be negative for sorting in ascending direction";
+
+        if (accurateLess(fill.fill_staleness, Field{0}))
+            return "WITH FILL STALENESS value cannot be negative for sorting in ascending direction";
+
+        if (!fill.fill_from.isNull() && !fill.fill_to.isNull() && accurateLess(fill.fill_to, fill.fill_from))
+            return "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction";
+    }
+    else
+    {
+        if (accurateLess(Field{0}, fill.fill_step))
+            return "WITH FILL STEP value cannot be positive for sorting in descending direction";
+
+        if (accurateLess(Field{0}, fill.fill_staleness))
+            return "WITH FILL STALENESS value cannot be positive for sorting in descending direction";
+
+        if (!fill.fill_from.isNull() && !fill.fill_to.isNull() && accurateLess(fill.fill_from, fill.fill_to))
+            return "WITH FILL FROM value cannot be less than TO value for sorting in descending direction";
+    }
+
+    return {};
+}
+
+namespace
+{
+
 /// The plan may be client-supplied (`TCPHandler::receiveQueryPlan`), so an out-of-range enum value has
 /// to be rejected instead of cast into the enum: `FillingTransform::getStepFunction` switches on it
 /// without a default case. Same check as `decodeDataType` does for an `Interval` type.
@@ -441,6 +515,12 @@ void deserializeSortDescription(
 
             readStringBinary(desc.alias, in);
             deserializeFillColumnDescription(desc.fill_description, in, max_type_complexity);
+
+            /// The planners reject these before building a description, so a legitimate plan always
+            /// passes; a forged one would make the filling generate rows without end.
+            if (const auto reason = checkFillDescription(desc.fill_description, desc.direction); !reason.empty())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Invalid WITH FILL description for column '{}': {}", desc.column_name, reason);
         }
     }
 }
