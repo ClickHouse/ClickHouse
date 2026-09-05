@@ -1,0 +1,56 @@
+--- numbers
+ C D F 005
+i8	Int8					
+i16	Int16					
+i32	Int32					
+i64	Int64					
+f32	Float32					
+f64	Float64					
+0	0	0	0	0	0
+1	1	1	1	0.25	0.125
+2	2	2	2	0.5	0.25
+--- unsigned numbers switch the file to CDF-5
+ C D F 005
+u8	UInt8					
+u16	UInt16					
+u32	UInt32					
+u64	UInt64					
+0	0	0	0
+1	1	1	1
+2	2	2	2
+--- strings
+ C D F 002
+s	String					
+fs	String					
+a	xy
+bb	xy
+ccc	xy
+--- NULLs
+ C D F 002
+n	Nullable(Int32)					
+s	String					
+0	0
+\N	1
+2	
+--- dates and times
+ C D F 005
+d	UInt16					
+d32	Int32					
+dt	UInt32					
+dt64	Int64					
+18263	-7304	1577934245	1577934245123
+18264	-7303	1577934246	1577934245123
+--- enums and low cardinality
+ C D F 002
+e	Int8					
+lc	Int32					
+1	0
+2	1
+--- an empty result
+ C D F 002
+x	Int32					
+--- many rows
+100000	4999950000	299995
+--- errors
+1
+1

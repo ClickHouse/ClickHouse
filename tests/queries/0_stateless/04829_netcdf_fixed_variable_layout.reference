@@ -1,0 +1,11 @@
+--- two fixed-size variables whose data begins at the same offset
+1
+--- two fixed-size variables whose data overlaps partially
+1
+--- two fixed-size variables side by side read back correctly
+1	3
+2	4
+--- a fixed-size variable extending into the records of a streaming file
+1
+--- a streaming file whose fixed-size variable ends at the records reads back correctly
+4	6	22

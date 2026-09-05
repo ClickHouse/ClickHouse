@@ -872,6 +872,7 @@
         "reference/formats/MySQLDump",
         "reference/formats/MySQLWire",
         "reference/formats/Native",
+        "reference/formats/NetCDF",
         "reference/formats/Npy",
         "reference/formats/Null",
         "reference/formats/ODBCDriver2",

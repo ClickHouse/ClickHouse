@@ -1,0 +1,23 @@
+--- coordinate
+station	String
+a
+b
+c
+--- shared
+station	UInt64
+nchar	UInt64
+nm	String
+flag	Int32
+0	0	a	1
+0	1	b	2
+0	2	\0	3
+1	0	c	1
+1	1	d	2
+1	2	\0	3
+--- length
+station	UInt64
+nm	String
+0	ab
+1	cd
+--- written
+hello	1

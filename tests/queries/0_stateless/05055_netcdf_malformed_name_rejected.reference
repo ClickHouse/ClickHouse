@@ -1,0 +1,16 @@
+--- a conforming file is read
+0
+1
+2
+--- an empty variable name
+1
+--- a variable name that is not valid UTF-8
+1
+--- a variable name with a control character
+1
+--- a variable name with a trailing space
+1
+--- a dimension name that begins with a dot
+1
+--- a dimension name with a slash
+1
