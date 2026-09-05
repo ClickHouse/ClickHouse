@@ -244,10 +244,10 @@ void expectSizesStreamRejected(const std::vector<UInt64> & sizes_values, size_t 
     settings.getter = makeSizeStreamGetter<ReadBuffer *>(sizes_in, data_in);
     serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
-    auto result = ColumnString::create();
+    ColumnPtr result = ColumnString::create();
     try
     {
-        serialization->deserializeBinaryBulkWithMultipleStreams(*result, rows_offset, limit, settings, state, nullptr);
+        serialization->deserializeBinaryBulkWithMultipleStreams(result, rows_offset, limit, settings, state, nullptr);
         FAIL() << "deserialize accepted a corrupted sizes stream";
     }
     catch (const DB::Exception & e)
