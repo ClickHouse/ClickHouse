@@ -68,6 +68,10 @@
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
+#if USE_RAPIDJSON
+#include <Parsers/Mongo/parseMongoQuery.h>
+#include <Parsers/Mongo/ParserMongoQuery.h>
+#endif
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <IO/Ask.h>
@@ -663,6 +667,12 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     {
         if (dialect == Dialect::prql)
             parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        else if (dialect == Dialect::mongo)
+#if USE_RAPIDJSON
+            parser = std::make_unique<Mongo::ParserMongoQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the MongoDB dialect is disabled: ClickHouse is built without rapidjson");
+#endif
         else if (dialect == Dialect::promql)
             parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
         else if (dialect == Dialect::polyglot)
@@ -675,7 +685,12 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             String message;
             try
             {
-                res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+#if USE_RAPIDJSON
+                if (dialect == Dialect::mongo)
+                    res = Mongo::tryParseMongoQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+                else
+#endif
+                    res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
             }
             catch (const Exception & e)
             {
@@ -692,7 +707,12 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         }
         else
         {
-            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+#if USE_RAPIDJSON
+            if (dialect == Dialect::mongo)
+                res = Mongo::parseMongoQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            else
+#endif
+                res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
     }
 

@@ -1,0 +1,3 @@
+ <clickhouse>
+     <mongo_port>27017</mongo_port>
+ </clickhouse>

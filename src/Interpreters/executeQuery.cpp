@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -102,6 +104,10 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
+#if USE_RAPIDJSON
+#include <Parsers/Mongo/ParserMongoQuery.h>
+#include <Parsers/Mongo/parseMongoQuery.h>
+#endif
 
 #include <IO/CompressionMethod.h>
 
@@ -167,6 +173,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
+    extern const SettingsBool allow_experimental_mongo_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
@@ -2333,6 +2340,31 @@ static BlockIO executeQueryImpl(
                 settings[Setting::allow_experimental_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
+        else if (settings[Setting::dialect] == Dialect::mongo && !internal)
+        {
+            /// A leading `SET` must bypass the experimental gate: it is how a session that
+            /// turned `allow_experimental_mongo_dialect` back off runs `SET dialect = 'clickhouse'`
+            /// to leave the dialect, the same way the `clickhouse_json` dialect escapes below.
+            /// The Mongo parser itself parses a `SET` with the ClickHouse parser, so only the
+            /// gate needs the exception. A Mongo statement always starts with the collection
+            /// path (`db.<collection>.<command>`), never with a bare `SET` word.
+            const bool is_set_escape = isClickHouseJSONSetEscape(begin, end, settings[Setting::max_query_size]);
+#if USE_RAPIDJSON
+            if (!settings[Setting::allow_experimental_mongo_dialect] && !is_set_escape)
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Support for the MongoDB dialect is disabled (turn on setting 'allow_experimental_mongo_dialect')");
+            Mongo::ParserMongoQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            out_ast = parseMongoQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+#else
+            /// A build without rapidjson must not strand a session whose dialect was set to
+            /// `mongo` either: a `SET` is plain SQL and needs nothing of the Mongo parser.
+            if (!is_set_escape)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the MongoDB dialect is disabled: ClickHouse is built without rapidjson");
+            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+#endif
+        }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
         {
             /// Allow `SET` queries in plain SQL so users can switch back to another dialect
@@ -2540,7 +2572,7 @@ static BlockIO executeQueryImpl(
         /// DDL parts (database, table, columns, storage, targets) while preserving placeholders
         /// in the SELECT body, which form the view's parameterizable interface.
         bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
-        if (out_ast && probably_has_params)
+        if (out_ast && probably_has_params && settings[Setting::dialect] != Dialect::mongo)
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(out_ast);
