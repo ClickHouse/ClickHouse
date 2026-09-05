@@ -12,18 +12,18 @@ INSERT INTO t05066 SELECT number FROM numbers(5);
 CREATE VIEW v05066_invoker SQL SECURITY INVOKER AS SELECT k FROM t05066;
 CREATE VIEW v05066_definer DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT k FROM t05066;
 
-SELECT 'invoker, no inlining:', groupArray(k) FROM (SELECT k FROM v05066_invoker ORDER BY k)
+SELECT 'invoker, no inlining:', arraySort(groupArray(k)) FROM v05066_invoker
 SETTINGS analyzer_inline_views = 0, additional_table_filters = {'v05066_invoker': 'k != 2'};
 
-SELECT 'invoker, inlining:', groupArray(k) FROM (SELECT k FROM v05066_invoker ORDER BY k)
+SELECT 'invoker, inlining:', arraySort(groupArray(k)) FROM v05066_invoker
 SETTINGS analyzer_inline_views = 1, additional_table_filters = {'v05066_invoker': 'k != 2'};
 
-SELECT 'definer, inlining:', groupArray(k) FROM (SELECT k FROM v05066_definer ORDER BY k)
+SELECT 'definer, inlining:', arraySort(groupArray(k)) FROM v05066_definer
 SETTINGS analyzer_inline_views = 1, additional_table_filters = {'v05066_definer': 'k != 2'};
 
 -- A view that is not named by the setting keeps being inlined, and the filter of another table
 -- applies where it is supposed to.
-SELECT 'unrelated key, inlining:', groupArray(k) FROM (SELECT k FROM v05066_invoker ORDER BY k)
+SELECT 'unrelated key, inlining:', arraySort(groupArray(k)) FROM v05066_invoker
 SETTINGS analyzer_inline_views = 1, additional_table_filters = {'t05066': 'k != 3'};
 
 DROP VIEW v05066_invoker;
