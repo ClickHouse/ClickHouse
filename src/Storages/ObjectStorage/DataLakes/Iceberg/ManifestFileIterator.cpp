@@ -150,7 +150,8 @@ namespace
 
 namespace
 {
-    std::optional<DB::Range> getMaterializedRowLineageRange(const ParsedManifestFileEntry & parsed_entry, Int32 field_id)
+    std::optional<DB::Range> getMaterializedRowLineageRange(
+        const ParsedManifestFileEntry & parsed_entry, Int32 field_id, const IcebergPathFromMetadata & path_to_manifest_file)
     {
         auto bounds = parsed_entry.value_bounds.find(field_id);
         if (bounds == parsed_entry.value_bounds.end())
@@ -172,6 +173,21 @@ namespace
         if (!left || !right)
             return std::nullopt;
 
+        /// A pair inverted as declared means the manifest's statistics are untrustworthy, so no range
+        /// derived from them is safe to prune on. Dropping them is therefore right where swapping or
+        /// clamping would prune on a range the manifest never asserted.
+        if (accurateLess(*right, *left))
+        {
+            LOG_WARNING(
+                getLogger("ManifestFileIterator"),
+                "Manifest file '{}' declares a lower bound above the upper bound for row lineage column id "
+                "{} of data file '{}'; ignoring the declared bounds for this column",
+                path_to_manifest_file,
+                field_id,
+                parsed_entry.file_path_key.serialize());
+            return std::nullopt;
+        }
+
         return DB::Range(*left, true, *right, true);
     }
 
@@ -183,14 +199,22 @@ namespace
         return false;
     }
 
-    void addRowLineageHyperrectangles(std::unordered_map<Int32, DB::Range> & hyperrectangles, const ProcessedManifestFileEntry & entry)
+    void addRowLineageHyperrectangles(
+        std::unordered_map<Int32, DB::Range> & hyperrectangles,
+        const ProcessedManifestFileEntry & entry,
+        const IcebergPathFromMetadata & path_to_manifest_file)
     {
         const auto & parsed_entry = *entry.parsed_entry;
         if (!entry.first_row_id.has_value() || parsed_entry.record_count <= 0 || entry.sequence_number < 0)
             return;
 
         const UInt64 inherited_sequence_number = static_cast<UInt64>(entry.sequence_number);
-        const UInt64 last_inherited_row_id = *entry.first_row_id + static_cast<UInt64>(parsed_entry.record_count) - 1;
+        /// `first_row_id` and `record_count` are both writer-declared, so the block of row ids they span
+        /// need not be representable, and a wrapped last row id would sit below the block's own first one.
+        UInt64 last_inherited_row_id = 0;
+        if (common::addOverflow<UInt64>(
+                *entry.first_row_id, static_cast<UInt64>(parsed_entry.record_count) - 1, last_inherited_row_id))
+            return;
         const bool column_presence_is_known = isColumnPresenceKnown(parsed_entry);
         const bool row_ids_are_readable = Poco::toUpper(parsed_entry.file_format) != "ORC";
 
@@ -210,7 +234,7 @@ namespace
                     continue;
                 }
             }
-            else if (auto range = getMaterializedRowLineageRange(parsed_entry, field_id))
+            else if (auto range = getMaterializedRowLineageRange(parsed_entry, field_id, path_to_manifest_file))
             {
                 hyperrectangles.emplace(field_id, *range);
                 continue;
@@ -685,7 +709,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 hyperrectangles.emplace(column_id, DB::Range(*left, true, *right, true));
             }
 
-            addRowLineageHyperrectangles(hyperrectangles, *entry);
+            addRowLineageHyperrectangles(hyperrectangles, *entry, path_to_manifest_file);
         }
 
         const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);

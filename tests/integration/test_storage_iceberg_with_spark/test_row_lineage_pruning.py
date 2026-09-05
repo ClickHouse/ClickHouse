@@ -14,8 +14,12 @@ NOTE: row lineage is written only by `iceberg-spark-runtime` 1.10.0 and later, s
 pinned in `ci/docker/integration/runner/Dockerfile`.
 """
 
+import json
+import os
 import uuid
 
+import avro.datafile
+import avro.io
 import pytest
 
 from helpers.iceberg_utils import (
@@ -24,6 +28,9 @@ from helpers.iceberg_utils import (
     get_creation_expression,
     get_uuid_str,
 )
+
+# The reserved field id of `_row_id`, which a manifest uses to key statistics about it.
+ROW_ID_FIELD_ID = 2147483540
 
 # Both runs must read the same data, so only the metadata-level skip differs between them.
 PRUNING_DISABLED = {
@@ -349,4 +356,177 @@ def test_materialized_row_ids_are_not_pruned_away(
             settings=PRUNING_ENABLED,
         ).strip()
         == "0\n2\n3"
+    )
+
+
+def _current_manifest_list(table_name):
+    """Path of the current snapshot's manifest list, on the filesystem Spark just wrote it to."""
+    metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
+    with open(os.path.join(metadata_dir, "version-hint.text")) as f:
+        version = f.read().strip()
+    with open(os.path.join(metadata_dir, f"v{version}.metadata.json")) as f:
+        metadata = json.load(f)
+    snapshot = next(
+        entry
+        for entry in metadata["snapshots"]
+        if entry["snapshot-id"] == metadata["current-snapshot-id"]
+    )
+    return snapshot["manifest-list"]
+
+
+def _rewrite_avro(path, patch_record):
+    """Rewrite an avro file in place with `patch_record` applied to each record, preserving the
+    writer schema, the codec and the Iceberg file metadata. Returns how many records it changed, so
+    that a field the writer did not produce fails the test instead of silently patching nothing."""
+    with open(path, "rb") as f:
+        reader = avro.datafile.DataFileReader(f, avro.io.DatumReader())
+        schema = reader.datum_reader.writers_schema
+        file_meta = dict(reader.meta)
+        codec = reader.codec
+        records = list(reader)
+        reader.close()
+
+    patched = sum(1 for record in records if patch_record(record))
+    if patched:
+        with open(path, "wb") as f:
+            writer = avro.datafile.DataFileWriter(
+                f, avro.io.DatumWriter(), schema, codec=codec
+            )
+            for key, value in file_meta.items():
+                if not key.startswith("avro."):
+                    writer.set_meta(key, value)
+            for record in records:
+                writer.append(record)
+            writer.close()
+    return patched
+
+
+def _manifest_holding_row_id(table_name, row_key):
+    """Path of the manifest describing the data file whose row id block contains `row_key`. The
+    block a writer reserved for a file is `[first_row_id, first_row_id + added_rows_count)`."""
+    with open(_current_manifest_list(table_name), "rb") as f:
+        reader = avro.datafile.DataFileReader(f, avro.io.DatumReader())
+        entries = list(reader)
+        reader.close()
+    for entry in entries:
+        first_row_id = entry["first_row_id"]
+        if first_row_id <= row_key < first_row_id + entry["added_rows_count"]:
+            return entry["manifest_path"]
+    raise AssertionError(f"No manifest holds row id {row_key} in {table_name}")
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_inverted_declared_row_id_bounds_do_not_prune(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_row_lineage_inverted_bounds_" + storage_type + "_" + get_uuid_str()
+
+    _create_table_with_five_appends(spark, TABLE_NAME)
+
+    def declare_inverted_row_id_bounds(record):
+        data_file = record["data_file"]
+        # Statistics that place the lower bound above the upper bound describe no value at all, so
+        # nothing may be pruned on them: a writer that emits them is not to be trusted about this
+        # column, and both swapping and clamping the pair invent a range it never declared.
+        data_file["lower_bounds"].append(
+            {"key": ROW_ID_FIELD_ID, "value": (100).to_bytes(8, "little")}
+        )
+        data_file["upper_bounds"].append(
+            {"key": ROW_ID_FIELD_ID, "value": (50).to_bytes(8, "little")}
+        )
+        # A declared bound is only read for a column the manifest says holds no nulls.
+        data_file["null_value_counts"].append({"key": ROW_ID_FIELD_ID, "value": 0})
+        return True
+
+    assert (
+        _rewrite_avro(
+            _manifest_holding_row_id(TABLE_NAME, 25), declare_inverted_row_id_bounds
+        )
+        == 1
+    )
+
+    _publish(started_cluster_iceberg_with_spark, storage_type, TABLE_NAME)
+    table_expression = _table_function(
+        started_cluster_iceberg_with_spark, storage_type, TABLE_NAME
+    )
+
+    # The file is read, so the four whose blocks cannot hold row id 25 are the only ones skipped.
+    # Swapping the pair instead would exclude 25 and skip the file holding it, and pruning on the
+    # pair as declared would skip it too, both losing the row the filter asks for.
+    assert (
+        _pruned_files(
+            instance,
+            TABLE_NAME,
+            f"SELECT id FROM {table_expression} WHERE _row_id = 25 ORDER BY ALL",
+        )
+        == 4
+    )
+
+    assert (
+        instance.query(
+            f"SELECT id FROM {table_expression} WHERE _row_id = 25",
+            settings=PRUNING_ENABLED,
+        ).strip()
+        == "25"
+    )
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_unrepresentable_row_id_block_does_not_prune(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_row_lineage_wrapped_block_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg "
+        f"TBLPROPERTIES ('format-version' = '3', 'write.format.default' = 'parquet')"
+    )
+    for lo in range(0, 20, 10):
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} select id, 'a' from range({lo}, {lo + 10})"
+        )
+
+    def declare_negative_first_row_id(record):
+        # `first_row_id` is a signed long on the wire but a row id is unsigned, so a negative value
+        # names a block starting just below the top of the range whose end no longer fits in it.
+        # The rows the file really holds are then outside the block, and pruning by it drops them.
+        if record["first_row_id"] != 0:
+            return False
+        record["first_row_id"] = -1
+        return True
+
+    assert (
+        _rewrite_avro(_current_manifest_list(TABLE_NAME), declare_negative_first_row_id)
+        == 1
+    )
+
+    _publish(started_cluster_iceberg_with_spark, storage_type, TABLE_NAME)
+    table_expression = _table_function(
+        started_cluster_iceberg_with_spark, storage_type, TABLE_NAME
+    )
+
+    # The file whose block does not fit is read whatever the filter says, while the second file,
+    # whose block is well formed, still prunes.
+    assert (
+        _pruned_files(
+            instance,
+            TABLE_NAME,
+            f"SELECT id FROM {table_expression} WHERE _row_id = 5 ORDER BY ALL",
+        )
+        == 1
+    )
+
+    # A row id is assigned as `first_row_id` plus the row's position, so the block starting one
+    # below zero shifts every id in the file down by one: row id 5 is the seventh row, `id` 6.
+    # Pruning that file on its block would drop this row from a filter that matches it.
+    assert (
+        instance.query(
+            f"SELECT id FROM {table_expression} WHERE _row_id = 5",
+            settings=PRUNING_ENABLED,
+        ).strip()
+        == "6"
     )
