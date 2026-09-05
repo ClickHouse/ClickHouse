@@ -35,14 +35,14 @@ class KeeperClientBase
 public:
     explicit KeeperClientBase(std::ostream & cout_, std::ostream & cerr_);
 
-    fs::path getAbsolutePath(const String & relative) const;
+    String getAbsolutePath(const String & relative) const;
 
     void askConfirmation(const String & prompt, std::function<void()> && callback);
 
     virtual String executeFourLetterCommand(const String & command);
 
     zkutil::ZooKeeperPtr zookeeper;
-    std::filesystem::path cwd = "/";
+    String cwd = "/";
     std::function<void()> confirmation_callback;
     bool ask_confirmation = true;
 

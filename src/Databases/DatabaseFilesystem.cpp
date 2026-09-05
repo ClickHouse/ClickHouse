@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseFilesystem.h>
 
@@ -42,29 +43,32 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
     : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(getLogger("DatabaseFileSystem(" + name_ + ")"))
 {
     bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
-    fs::path user_files_path = is_local ? "" : fs::canonical(getContext()->getUserFilesPath());
+    fs::path user_files_path = is_local ? fs::path{} : fs::canonical(pathFromString(getContext()->getUserFilesPath()));
+    auto path_as_fs = pathFromString(path_);
 
-    if (fs::path(path).is_relative())
+    if (path_as_fs.is_relative())
     {
-        path = user_files_path / path;
+        path_as_fs = user_files_path / path_as_fs;
     }
 
-    path = fs::absolute(path).lexically_normal();
+    path_as_fs = fs::absolute(path_as_fs).lexically_normal();
 
-    if (!is_local && !pathStartsWith(fs::path(path), user_files_path))
+    if (!is_local && !pathStartsWith(path_as_fs, user_files_path))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Path must be inside user-files path: {}", user_files_path.string());
+                        "Path must be inside user-files path: {}", pathToGenericString(user_files_path));
     }
 
-    if (!fs::exists(path))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
+    if (!fs::exists(path_as_fs))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", pathToGenericString(path_as_fs));
+
+    path = pathToGenericString(path_as_fs);
 }
 
 std::string DatabaseFilesystem::getTablePath(const std::string & table_name) const
 {
-    fs::path table_path = fs::path(path) / table_name;
-    return table_path.lexically_normal().string();
+    fs::path table_path = pathFromString(path) / pathFromString(table_name);
+    return pathToGenericString(table_path.lexically_normal());
 }
 
 StoragePtr DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr table_storage) const
@@ -92,14 +96,15 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     if (!containsGlobs(table_path))
     {
         /// Check if the corresponding file exists.
-        if (!fs::exists(table_path))
+        const auto table_path_as_fs = pathFromString(table_path);
+        if (!fs::exists(table_path_as_fs))
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", table_path);
             return false;
         }
 
-        if (!fs::is_regular_file(table_path))
+        if (!fs::is_regular_file(table_path_as_fs))
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", table_path);
@@ -121,7 +126,7 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) co
     }
 
     /// Invalidate cache if file no longer exists.
-    if (table && !fs::exists(getTablePath(name)))
+    if (table && !fs::exists(pathFromString(getTablePath(name))))
     {
         std::lock_guard lock(mutex);
         loaded_tables.erase(name);

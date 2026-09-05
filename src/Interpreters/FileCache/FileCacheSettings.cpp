@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 
 #include <Core/BaseSettings.h>
@@ -186,13 +187,13 @@ void FileCacheSettings::loadFromConfig(
 
     if ((*this)[FileCacheSetting::path].changed)
     {
-        if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
+        if (pathFromString((*this)[FileCacheSetting::path].value).is_relative())
         {
             if (cache_path_prefix_if_relative.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache path prefix for relative paths was not provided");
 
             is_path_relative_in_config = true;
-            (*this)[FileCacheSetting::path] = fs::path(cache_path_prefix_if_relative) / (*this)[FileCacheSetting::path].value;
+            (*this)[FileCacheSetting::path] = pathToGenericString(pathFromString(cache_path_prefix_if_relative) / pathFromString((*this)[FileCacheSetting::path].value));
         }
     }
     else
@@ -214,13 +215,13 @@ void FileCacheSettings::loadFromCollection(
         impl->set(key, collection.get<String>(key));
     }
 
-    if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
+    if (pathFromString((*this)[FileCacheSetting::path].value).is_relative())
     {
         if (cache_path_prefix_if_relative.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache path prefix for relative paths was not provided");
 
         is_path_relative_in_config = true;
-        (*this)[FileCacheSetting::path] = fs::path(cache_path_prefix_if_relative) / (*this)[FileCacheSetting::path].value;
+        (*this)[FileCacheSetting::path] = pathToGenericString(pathFromString(cache_path_prefix_if_relative) / pathFromString((*this)[FileCacheSetting::path].value));
     }
 
     validate();
@@ -233,7 +234,7 @@ void FileCacheSettings::validate()
     if (!settings[FileCacheSetting::path].changed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`path` is required parameter of cache configuration");
 
-    if (fs::path((*this)[FileCacheSetting::path].value).is_relative())
+    if (pathFromString((*this)[FileCacheSetting::path].value).is_relative())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`path` was not normalized to absolute: {}", (*this)[FileCacheSetting::path].value);
 
     if (!settings[FileCacheSetting::max_size].changed && !settings[FileCacheSetting::max_size_ratio_to_total_space].changed)
@@ -270,7 +271,7 @@ void FileCacheSettings::validate()
         if (settings[FileCacheSetting::max_size_ratio_to_total_space] <= 0 || settings[FileCacheSetting::max_size_ratio_to_total_space] > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "`max_size_ratio_to_total_space` must be in range (0, 1]");
 
-        fs::create_directories(settings[FileCacheSetting::path].value);
+        fs::create_directories(pathFromString(settings[FileCacheSetting::path].value));
         struct statvfs stat = getStatVFS(settings[FileCacheSetting::path]);
         const auto total_space = stat.f_blocks * stat.f_frsize;
         settings[FileCacheSetting::max_size] =

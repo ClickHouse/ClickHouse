@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
@@ -247,7 +248,7 @@ void DiskObjectStorageTransaction::removeSharedFiles(const RemoveBatchRequest & 
 {
     for (const auto & [path, if_exists] : files)
     {
-        const bool should_remove_objects = !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename());
+        const bool should_remove_objects = !keep_all_batch_data && !file_names_remove_metadata_only.contains(pathToGenericString(fs::path(path).filename()));
         addOperation([path, if_exists, should_remove_objects](MetadataTransactionPtr tx)
         {
             tx->unlinkFile(path, if_exists, should_remove_objects);

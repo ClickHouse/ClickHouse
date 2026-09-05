@@ -5,6 +5,7 @@
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <filesystem>
 
 namespace Poco
@@ -140,10 +141,10 @@ struct DDLTaskBase
 
     virtual void createSyncedNodeIfNeed(const ZooKeeperPtr & /*zookeeper*/) {}
 
-    String getActiveNodePath() const { return fs::path(entry_path) / "active" / host_id_str; }
-    String getFinishedNodePath() const { return fs::path(entry_path) / "finished" / host_id_str; }
-    String getShardNodePath() const { return fs::path(entry_path) / "shards" / getShardID(); }
-    String getSyncedNodePath() const { return fs::path(entry_path) / "synced" / host_id_str; }
+    String getActiveNodePath() const { return zkutil::joinZooKeeperPath(entry_path, "active", host_id_str); }
+    String getFinishedNodePath() const { return zkutil::joinZooKeeperPath(entry_path, "finished", host_id_str); }
+    String getShardNodePath() const { return zkutil::joinZooKeeperPath(entry_path, "shards", getShardID()); }
+    String getSyncedNodePath() const { return zkutil::joinZooKeeperPath(entry_path, "synced", host_id_str); }
 
     static String getLogEntryName(UInt32 log_entry_number);
     static UInt32 getLogEntryNumber(const String & log_entry_name);

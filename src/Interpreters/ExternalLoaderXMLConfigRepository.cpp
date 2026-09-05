@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 
 #include <filesystem>
@@ -38,7 +39,7 @@ std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefiniti
         patterns_copy = patterns;
     }
 
-    const String config_dir = fs::path(main_config_path).parent_path();
+    const String config_dir = pathToGenericString(fs::path(main_config_path).parent_path());
     std::set<std::string> files;
 
     for (const auto & pattern : patterns_copy)
@@ -48,7 +49,7 @@ std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefiniti
 
         if (pattern[0] != '/')
         {
-            const String absolute_path = fs::path(config_dir) / pattern;
+            const String absolute_path = pathToGenericString(fs::path(config_dir) / pattern);
 
             Poco::Glob::glob(absolute_path, files, 0);
             if (!files.empty())

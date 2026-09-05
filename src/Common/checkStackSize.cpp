@@ -1,13 +1,9 @@
-#include <base/getThreadId.h>
+#include <Common/checkStackSize.h>
+
 #include <base/defines.h> /// THREAD_SANITIZER
 #include <base/scope_guard.h>
-#include <Common/checkStackSize.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/StackfulCoroutine.h>
-#include <sys/resource.h>
-#include <pthread.h>
-#include <unistd.h>
 #include <cstdint>
 
 #include "config.h"
@@ -16,8 +12,22 @@
 #include <silk/fibers/fiber.h>
 #endif
 
+#if defined(OS_WINDOWS)
+
+#include <Poco/UnWindows.h>
+
+#else
+
+#include <base/getThreadId.h>
+#include <Common/ErrnoException.h>
+#include <sys/resource.h>
+#include <pthread.h>
+#include <unistd.h>
+
 #if defined(OS_FREEBSD)
 #   include <pthread_np.h>
+#endif
+
 #endif
 
 
@@ -58,7 +68,18 @@ static NO_INLINE size_t getStackSize(void ** out_address)
     size_t size = 0;
     void * address = nullptr;
 
-#if defined(OS_DARWIN)
+#if defined(OS_WINDOWS)
+    /// Reports the full stack reservation of the current thread (the reserve size from the PE
+    /// header for the main thread - see cmake/windows/default_libs.cmake - or the size passed to
+    /// `CreateThread`), not just the currently committed part, so it is the same "maximum stack"
+    /// the POSIX branches below compute. Guard pages live inside the reservation; the free-ratio
+    /// margin in `checkStackSize` keeps the check far away from them.
+    ULONG_PTR low_limit = 0;
+    ULONG_PTR high_limit = 0;
+    GetCurrentThreadStackLimits(&low_limit, &high_limit);
+    address = reinterpret_cast<void *>(low_limit);
+    size = high_limit - low_limit;
+#elif defined(OS_DARWIN)
     // pthread_get_stacksize_np() returns a value too low for the main thread on
     // OSX 10.9, http://mail.openjdk.java.net/pipermail/hotspot-dev/2013-October/011369.html
     //

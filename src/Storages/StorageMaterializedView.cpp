@@ -931,7 +931,7 @@ void StorageMaterializedView::startup()
     if (const auto configured_delay_ms = getContext()->getServerSettings()[ServerSetting::startup_mv_delay_ms]; configured_delay_ms)
     {
         pcg64_fast gen{randomSeed()};
-        const auto delay_ms = std::uniform_int_distribution<>(0, 1)(gen) ? configured_delay_ms : 0UL;
+        const auto delay_ms = std::uniform_int_distribution<>(0, 1)(gen) ? configured_delay_ms : 0ULL;
         if (delay_ms)
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
     }

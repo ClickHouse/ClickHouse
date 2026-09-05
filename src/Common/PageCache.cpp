@@ -1,6 +1,8 @@
 #include <Common/PageCache.h>
 
+#if !defined(OS_WINDOWS)
 #include <sys/mman.h>
+#endif
 #include <Common/Allocator.h>
 #include <Common/JemallocCacheAllocator.h>
 #include <Common/MemoryTracker.h>
@@ -63,7 +65,7 @@ PageCache::PageCache(
     , free_memory_ratio(free_memory_ratio_)
     , history_window(history_window_)
 {
-    num_shards = std::max(num_shards, 1ul);
+    num_shards = std::max(num_shards, 1uz);
     size_t bytes_per_shard = (min_size_in_bytes + num_shards - 1) / num_shards;
     for (size_t i = 0; i < num_shards; ++i)
     {

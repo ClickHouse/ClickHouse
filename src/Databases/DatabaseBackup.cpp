@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Databases/DatabaseBackup.h>
 
 #include <filesystem>
@@ -176,7 +177,7 @@ DatabaseBackup::DatabaseBackup(const String & name_, const String & metadata_pat
     : DatabaseOrdinary(
         name_,
         metadata_path_,
-        DatabaseCatalog::getDataDirPath(name_) / "",
+        pathToGenericString(DatabaseCatalog::getDataDirPath(name_) / ""),
         "DatabaseBackup(" + name_ + ")",
         context_)
     , config(config_)
@@ -261,7 +262,7 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     {
         DiskBackup::PathPrefixReplacement path_prefix_replacement;
         path_prefix_replacement.from = data_path;
-        path_prefix_replacement.to = DatabaseCatalog::getDataDirPath(config.database_name) / "";
+        path_prefix_replacement.to = pathToGenericString(DatabaseCatalog::getDataDirPath(config.database_name) / "");
 
         DiskBackupConfiguration disk_backup_config;
 

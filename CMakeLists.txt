@@ -246,6 +246,12 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
+# The option works by putting `-g1` on those modules, which is a *reduction* only when the build
+# has fuller debug info to begin with. Where there is none it is an increase, so it is off there.
+if (DISABLE_ALL_DEBUG_SYMBOLS OR OS_WINDOWS)
+    set (OMIT_HEAVY_DEBUG_SYMBOLS OFF)
+endif ()
+
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
 
 # Create BuildID when using lld. For other linkers it is created by default.
@@ -329,7 +335,9 @@ option (ENABLE_BUILD_PROFILING "Enable profiling of build time" OFF)
 if (ENABLE_BUILD_PROFILING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftime-trace")
 
-    if (LINKER_NAME MATCHES "lld")
+    # lld's MinGW driver does not implement `--time-trace` (only the ELF driver does),
+    # so the Windows link would fail with "unknown argument".
+    if (LINKER_NAME MATCHES "lld" AND NOT OS_WINDOWS)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--time-trace")
         set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--time-trace")
     endif ()
@@ -402,6 +410,12 @@ endif ()
 set (DEBUG_INFO_FLAGS "-g")
 if (DISABLE_ALL_DEBUG_SYMBOLS)
     set (DEBUG_INFO_FLAGS "-g0")
+elseif (OS_WINDOWS)
+    # No debug info in the PE image. A PE image cannot exceed 4 GiB - the field that holds its size
+    # is 32 bits - and DWARF for a binary this large runs to several times that on its own; PE also
+    # has no equivalent of the `.gnu_debuglink` arrangement the Linux packages use to carry it in a
+    # separate file. A crash therefore symbolizes to module and offset rather than to file and line.
+    set (DEBUG_INFO_FLAGS "-g0")
 endif()
 
 if (OS_DARWIN)
@@ -410,7 +424,9 @@ if (OS_DARWIN)
 endif()
 
 # generate ranges for fast "addr2line" search
-if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
+# Not when there is no debug info to index: `-gdwarf-aranges` is in the `-g` family and puts the
+# debug level back to its default, undoing an earlier `-g0`.
+if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" AND NOT DEBUG_INFO_FLAGS STREQUAL "-g0")
     # NOTE: that clang has a bug because of it does not emit .debug_aranges
     # with ThinLTO, so custom ld.lld wrapper is shipped in docker images.
     set(DEBUG_INFO_FLAGS "${DEBUG_INFO_FLAGS} -gdwarf-aranges")
@@ -579,6 +595,8 @@ elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
 elseif (OS_SUNOS)
     include(cmake/sunos/default_libs.cmake)
+elseif (OS_WINDOWS)
+    include(cmake/windows/default_libs.cmake)
 elseif (OS_WASM)
     include(cmake/wasm/default_libs.cmake)
 endif ()
@@ -857,4 +875,11 @@ if (NATIVE_BUILD_TARGETS
         COMMAND_ECHO STDOUT
         COMMAND_ERROR_IS_FATAL ANY
     )
+endif ()
+
+if (OS_WINDOWS)
+    # Defines the `clickhouse-windows-ported` aggregate target that CI builds while the
+    # Windows port is in progress. Must come after every `add_subdirectory` so that it can
+    # see the targets.
+    include (cmake/windows/ported_targets.cmake)
 endif ()

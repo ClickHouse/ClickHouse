@@ -230,7 +230,7 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
 
     /// Read the last 64 KiB in hopes that FileMetaData is smaller than that.
     /// This is usually enough for files smaller than a few hundred MB.
-    size_t initial_read_size = std::min(file_size, 64ul << 10);
+    size_t initial_read_size = std::min(file_size, 64uz << 10);
     PODArray<char> buf(initial_read_size);
     prefetcher.readSync(buf.data(), initial_read_size, file_size - initial_read_size);
 
@@ -1109,7 +1109,7 @@ void Reader::initializePrefetches()
             /// more pages to read, and we don't want to start reading a page inside these 100 bytes.
             size_t data_pages_extra_bytes = 0;
             if (file_metadata.created_by == "parquet-mr" && !column.meta->meta_data.__isset.dictionary_page_offset && !column.meta->__isset.offset_index_offset)
-                data_pages_extra_bytes = std::min(100ul, prefetcher.getFileSize() - size_t(column.meta->meta_data.data_page_offset) - column.data_pages_bytes);
+                data_pages_extra_bytes = std::min(100uz, prefetcher.getFileSize() - size_t(column.meta->meta_data.data_page_offset) - column.data_pages_bytes);
 
             column.data_pages_prefetch = prefetcher.registerRange(
                 size_t(column.meta->meta_data.data_page_offset),

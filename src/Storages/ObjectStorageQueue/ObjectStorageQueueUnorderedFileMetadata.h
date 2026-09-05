@@ -12,7 +12,7 @@ public:
     using Bucket = size_t;
 
     explicit ObjectStorageQueueUnorderedFileMetadata(
-        const std::filesystem::path & zk_path,
+        const std::string & zk_path,
         const std::string & path_,
         FileStatusPtr file_status_,
         size_t max_loading_retries_,
@@ -26,7 +26,7 @@ public:
     /// Return vector of indexes of filtered paths.
     static void filterOutProcessedAndFailed(
         std::vector<std::string> & paths,
-        const std::filesystem::path & zk_path_,
+        const std::string & zk_path_,
         const std::string & zookeeper_name_,
         LoggerPtr log_);
 

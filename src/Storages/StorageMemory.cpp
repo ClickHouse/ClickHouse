@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
@@ -32,6 +33,7 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 
+#include <Backups/BackupPathUtils.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
 #include <Backups/BackupEntryFromMemory.h>
@@ -504,17 +506,16 @@ namespace
             , tmp_data(tmp_data_)
             , read_settings(read_settings_)
         {
-            fs::path data_path_in_backup_fs = data_path_in_backup;
             data_bin_pos = file_paths.size();
-            file_paths.emplace_back(data_path_in_backup_fs / "data.bin");
+            file_paths.emplace_back(joinBackupPath(data_path_in_backup, "data.bin"));
             index_mrk_pos= file_paths.size();
-            file_paths.emplace_back(data_path_in_backup_fs / "index.mrk");
+            file_paths.emplace_back(joinBackupPath(data_path_in_backup, "index.mrk"));
             columns_txt_pos = file_paths.size();
-            file_paths.emplace_back(data_path_in_backup_fs / "columns.txt");
+            file_paths.emplace_back(joinBackupPath(data_path_in_backup, "columns.txt"));
             count_txt_pos = file_paths.size();
-            file_paths.emplace_back(data_path_in_backup_fs / "count.txt");
+            file_paths.emplace_back(joinBackupPath(data_path_in_backup, "count.txt"));
             sizes_json_pos = file_paths.size();
-            file_paths.emplace_back(data_path_in_backup_fs / "sizes.json");
+            file_paths.emplace_back(joinBackupPath(data_path_in_backup, "sizes.json"));
         }
 
     private:
@@ -575,7 +576,7 @@ namespace
                 {
                     if (i == sizes_json_pos)
                         continue;
-                    file_checker.update(std::filesystem::path{file_paths[i]}.filename(), backup_entries[i].second->getSize());
+                    file_checker.update(backupPathBaseName(file_paths[i]), backup_entries[i].second->getSize());
                 }
 
                 WriteBufferFromOwnString write_buffer;
@@ -643,12 +644,11 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
 {
     /// Our data are in the StripeLog format.
 
-    fs::path data_path_in_backup_fs = data_path_in_backup;
 
     /// Reading index.mrk
     IndexForNativeFormat index;
     {
-        String index_file_path = data_path_in_backup_fs / "index.mrk";
+        String index_file_path = joinBackupPath(data_path_in_backup, "index.mrk");
         if (!backup->fileExists(index_file_path))
             throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_file_path);
 
@@ -680,7 +680,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
     size_t new_bytes = 0;
     size_t new_rows = 0;
     {
-        String data_file_path = data_path_in_backup_fs / "data.bin";
+        String data_file_path = joinBackupPath(data_path_in_backup, "data.bin");
         if (!backup->fileExists(data_file_path))
             throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file_path);
 

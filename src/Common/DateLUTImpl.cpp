@@ -564,3 +564,13 @@ namespace cctz_extension
 
     ZoneInfoSourceFactory zone_info_source_factory = custom_factory;
 }
+
+#if defined(OS_WINDOWS)
+namespace cctz
+{
+    /// `zone_info_source.cc` is not built on Windows - see `contrib/cctz-cmake/CMakeLists.txt` -
+    /// so these two, which have nothing to do with the factory above, come from here instead.
+    ZoneInfoSource::~ZoneInfoSource() = default;
+    std::string ZoneInfoSource::Version() const { return std::string(); }
+}
+#endif

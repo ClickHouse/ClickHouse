@@ -253,8 +253,13 @@ protected:
     TimePoint thread_attach_time{};
 
     // CPU and Real time query profilers
+#if !defined(OS_WINDOWS)
+    /// The sampling profilers are POSIX-timer and signal based; see Common/QueryProfiler.h,
+    /// which is not built on Windows. A `unique_ptr` to an incomplete type cannot be destroyed,
+    /// so the members go with it rather than lingering as unusable nulls.
     std::unique_ptr<QueryProfilerReal> query_profiler_real;
     std::unique_ptr<QueryProfilerCPU> query_profiler_cpu;
+#endif
 
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
@@ -368,9 +373,11 @@ private:
 
     void initPerformanceCounters();
 
+#if !defined(OS_WINDOWS)
     void initQueryProfiler();
 
     void finalizeQueryProfiler();
+#endif
 
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database);
 

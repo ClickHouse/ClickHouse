@@ -1,6 +1,7 @@
 #include <Common/Crypto/X509Certificate.h>
 
 #include <base/scope_guard.h>
+#include <base/time.h> /// `timegm` on Windows
 
 #include <ctime>
 
@@ -173,7 +174,7 @@ std::string X509Certificate::subjectName() const
     return buffer;
 }
 
-std::string X509Certificate::issuerName(uint nid) const
+std::string X509Certificate::issuerName(unsigned nid) const
 {
     if (X509_NAME * issuer = X509_get_issuer_name(certificate))
     {
@@ -184,7 +185,7 @@ std::string X509Certificate::issuerName(uint nid) const
     return {};
 }
 
-std::string X509Certificate::subjectName(uint nid) const
+std::string X509Certificate::subjectName(unsigned nid) const
 {
     if (X509_NAME * subj = X509_get_subject_name(certificate))
     {

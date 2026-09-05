@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Common/StringUtils.h>
 #include <Access/DiskAccessStorage.h>
 #include <Access/AccessEntityIO.h>
@@ -90,7 +91,7 @@ namespace
         auto canonical_directory_path = std::filesystem::weakly_canonical(directory_path);
         if (canonical_directory_path.has_filename())
             canonical_directory_path += std::filesystem::path::preferred_separator;
-        return canonical_directory_path;
+        return pathToGenericString(canonical_directory_path);
     }
 
 
@@ -391,7 +392,7 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
 
         const auto & path = directory_entry.path();
         UUID id;
-        if (!tryParseUUID(path.stem(), id))
+        if (!tryParseUUID(pathToGenericString(path.stem()), id))
             continue; /// Not an access-entity file (e.g. `users.list`, `need_rebuild_lists.mark`).
 
         if (path.extension() == ".tmp")

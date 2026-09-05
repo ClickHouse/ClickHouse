@@ -1,4 +1,9 @@
 #include <Common/filesystemHelpers.h>
+#include <base/pathToString.h>
+#include <limits>
+#if defined(OS_WINDOWS)
+#include <Poco/UnWindows.h>
+#endif
 
 #if defined(OS_LINUX)
 #    include <mntent.h>
@@ -11,7 +16,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <utime.h>
+#include <IO/PlatformFileIO.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -46,6 +51,42 @@ namespace ErrorCodes
 struct statvfs getStatVFS(String path)
 {
     struct statvfs fs{};
+#if defined(OS_WINDOWS)
+    while (true)
+    {
+        ULARGE_INTEGER available_to_caller{};
+        ULARGE_INTEGER total{};
+        ULARGE_INTEGER free_total{};
+        if (GetDiskFreeSpaceExW(pathFromString(path).c_str(), &available_to_caller, &total, &free_total))
+        {
+            /// Report in bytes: `GetDiskFreeSpaceEx` gives byte counts, so a fragment is one byte
+            /// and the free-space arithmetic elsewhere (`f_bavail * f_frsize`) comes out right.
+            fs.f_frsize = 1;
+            fs.f_blocks = total.QuadPart;
+            fs.f_bavail = available_to_caller.QuadPart;
+            /// NTFS has no fixed inode table, so there is no limit to report and no way to run
+            /// out. `max` is the truthful answer here, where 0 would read as "no inodes left".
+            fs.f_files = std::numeric_limits<unsigned long long>::max();
+            fs.f_favail = std::numeric_limits<unsigned long long>::max();
+            return fs;
+        }
+
+        /// Same as below: we sometimes ask about a directory that is yet to be created.
+        auto fs_path = pathFromString(path);
+        const auto error = GetLastError();
+        if ((error == ERROR_PATH_NOT_FOUND || error == ERROR_FILE_NOT_FOUND) && fs_path.has_parent_path())
+        {
+            path = pathToString(fs_path.parent_path());
+            continue;
+        }
+
+        throw Exception(
+            ErrorCodes::CANNOT_STATVFS,
+            "Could not calculate available disk space for {} (GetDiskFreeSpaceEx), error code: {}",
+            path,
+            error);
+    }
+#else
     while (statvfs(path.c_str(), &fs) != 0)
     {
         if (errno == EINTR)
@@ -62,6 +103,7 @@ struct statvfs getStatVFS(String path)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not calculate available disk space (statvfs)");
     }
     return fs;
+#endif
 }
 
 bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
@@ -172,10 +214,19 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
 
     const auto get_device_id = [](const std::filesystem::path & p)
     {
+#if defined(OS_WINDOWS)
+        /// `path::c_str()` is a `const wchar_t *` here, so the wide variant is the matching one -
+        /// and the only one that can name a path outside the active code page.
+        struct _stat64 st{};
+        if (_wstat64(p.c_str(), &st))
+            DB::ErrnoException::throwFromPath(DB::ErrorCodes::SYSTEM_ERROR, pathToString(p), "Cannot stat {}", pathToString(p));
+        return st.st_dev;
+#else
         struct stat st{};
         if (stat(p.c_str(), &st))   /// NOTE: man stat does not list EINTR as possible error
             DB::ErrnoException::throwFromPath(DB::ErrorCodes::SYSTEM_ERROR, p.string(), "Cannot stat {}", p.string());
         return st.st_dev;
+#endif
     };
 
     /// If /some/path/to/dir/ and /some/path/to/ have different device id,
@@ -318,7 +369,7 @@ namespace FS
 
 bool createFile(const std::string & path)
 {
-    int n = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+    int n = DB::platformOpenFile(path, O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
     if (n != -1)
     {
         close(n);
@@ -327,14 +378,47 @@ bool createFile(const std::string & path)
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_CREATE_FILE, path, "Cannot create file: {}", path);
 }
 
+#if defined(OS_WINDOWS)
+/// mingw-w64 does not define the `access` mode bits; the CRT's own spellings are these values.
+#ifndef F_OK
+#define F_OK 0
+#endif
+#ifndef W_OK
+#define W_OK 2
+#endif
+#ifndef R_OK
+#define R_OK 4
+#endif
+#ifndef X_OK
+#define X_OK 1
+#endif
+#endif
+
+/// `access(2)` against the current directory, which is what the `AT_FDCWD` below asks for.
+///
+/// Windows has no `faccessat`, and `_waccess` differs in two ways worth knowing. Its mode bits
+/// happen to match F_OK/W_OK/R_OK above but it has no execute bit at all - Windows decides
+/// whether a file can be executed from its contents, not from a permission - so an `X_OK` query
+/// degrades to asking whether the file exists. And it reports only the read-only attribute and
+/// ACL-based denial, not the calling user's effective permissions the way `AT_EACCESS` does.
+static int checkAccess(const std::string & path, int mode)
+{
+#if defined(OS_WINDOWS)
+    const int windows_mode = (mode == X_OK) ? F_OK : mode;
+    return ::_waccess(pathFromString(path).c_str(), windows_mode);
+#else
+    return faccessat(AT_FDCWD, path.c_str(), mode, AT_EACCESS);
+#endif
+}
+
 bool exists(const std::string & path)
 {
-    return faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS) == 0;
+    return checkAccess(path, F_OK) == 0;
 }
 
 bool canRead(const std::string & path, bool allow_throw)
 {
-    int err = faccessat(AT_FDCWD, path.c_str(), R_OK, AT_EACCESS);
+    int err = checkAccess(path, R_OK);
     if (err == 0)
         return true;
 
@@ -349,7 +433,7 @@ bool canRead(const std::string & path, bool allow_throw)
 
 bool canWrite(const std::string & path, bool allow_throw)
 {
-    int err = faccessat(AT_FDCWD, path.c_str(), W_OK, AT_EACCESS);
+    int err = checkAccess(path, W_OK);
     if (err == 0)
         return true;
 
@@ -364,7 +448,7 @@ bool canWrite(const std::string & path, bool allow_throw)
 
 bool canExecute(const std::string & path, bool allow_throw)
 {
-    int err = faccessat(AT_FDCWD, path.c_str(), X_OK, AT_EACCESS);
+    int err = checkAccess(path, X_OK);
     if (err == 0)
         return true;
 
@@ -380,7 +464,7 @@ bool canExecute(const std::string & path, bool allow_throw)
 time_t getModificationTime(const std::string & path)
 {
     struct stat st{};
-    if (stat(path.c_str(), &st) == 0)
+    if (DB::platformStat(path, st) == 0)
         return st.st_mtime;
     std::error_code m_ec(errno, std::generic_category());
     throw fs::filesystem_error("Cannot check modification time for file", path, m_ec);
@@ -389,7 +473,7 @@ time_t getModificationTime(const std::string & path)
 time_t getChangeTime(const std::string & path)
 {
     struct stat st{};
-    if (stat(path.c_str(), &st) == 0)
+    if (DB::platformStat(path, st) == 0)
         return st.st_ctime;
     std::error_code m_ec(errno, std::generic_category());
     throw fs::filesystem_error("Cannot check change time for file", path, m_ec);
@@ -402,10 +486,7 @@ Poco::Timestamp getModificationTimestamp(const std::string & path)
 
 void setModificationTime(const std::string & path, time_t time)
 {
-    struct utimbuf tb{};
-    tb.actime  = time;
-    tb.modtime = time;
-    if (utime(path.c_str(), &tb) != 0)
+    if (DB::platformSetFileTimes(path, time, time) != 0)
         DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot set modification time to file: {}", path);
 }
 

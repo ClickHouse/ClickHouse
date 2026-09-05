@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -38,7 +39,7 @@ std::vector<String> listFiles(
 {
     auto key = std::filesystem::path(path) / prefix;
     RelativePathsWithMetadata files_with_metadata;
-    object_storage.listObjects(key, files_with_metadata, 0);
+    object_storage.listObjects(pathToGenericString(key), files_with_metadata, 0);
     Strings res;
     for (const auto & file_with_metadata : files_with_metadata)
     {

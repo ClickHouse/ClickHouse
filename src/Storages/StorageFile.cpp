@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
@@ -25,6 +26,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/MMapReadBufferFromFile.h>
 #include <IO/MMapReadBufferFromFileDescriptor.h>
+#include <IO/PlatformFileIO.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/EmptyReadBuffer.h>
@@ -209,7 +211,7 @@ void listFilesWithRegexpMatchingImpl(
     /// `fs::directory_iterator` preserves the spelling it is handed.
     auto add_matched_path = [&](const std::string & path, size_t bytes)
     {
-        if (matched_paths.emplace(fs::path(path).lexically_normal().string()).second)
+        if (matched_paths.emplace(pathToGenericString(pathFromString(path).lexically_normal())).second)
         {
             total_bytes_to_read += bytes;
             result.push_back(collapseRedundantSeparators(path));
@@ -225,10 +227,10 @@ void listFilesWithRegexpMatchingImpl(
             /// We use fs::canonical to resolve the canonical path and check if the file does exists
             /// but the result path will be fs::absolute.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-            (void)fs::canonical(path_for_ls + for_match);
+            (void)fs::canonical(pathFromString(path_for_ls + for_match));
             /// `checkCreationIsAllowed` normalizes its own copy of this path, so a `..` must not
             /// survive here: the check and the reader would name different files.
-            const fs::path absolute_path = fs::absolute(path_for_ls + for_match).lexically_normal();
+            const fs::path absolute_path = fs::absolute(pathFromString(path_for_ls + for_match)).lexically_normal();
             /// This exact-match branch is reached for suffixes without globs, including the
             /// zero-level `**/` case (e.g. `data/**/file.txt` matching `data/file.txt`). The file
             /// is returned and read, so its bytes must be counted towards `total_bytes_to_read`
@@ -236,7 +238,7 @@ void listFilesWithRegexpMatchingImpl(
             /// directory); in that case keep the byte count at zero but still return the path.
             std::error_code size_ec;
             const size_t file_size = fs::file_size(absolute_path, size_ec);
-            add_matched_path(absolute_path.string(), size_ec ? 0 : file_size);
+            add_matched_path(pathToGenericString(absolute_path), size_ec ? 0 : file_size);
         }
         catch (const std::exception &) // NOLINT
         {
@@ -266,7 +268,7 @@ void listFilesWithRegexpMatchingImpl(
 
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
 
-    if (!fs::exists(prefix_without_globs))
+    if (!fs::exists(pathFromString(prefix_without_globs)))
         return;
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
@@ -282,14 +284,14 @@ void listFilesWithRegexpMatchingImpl(
 
     const fs::directory_iterator end;
     std::error_code ec;
-    for (fs::directory_iterator it(prefix_without_globs, ec); it != end; it.increment(ec))
+    for (fs::directory_iterator it(pathFromString(prefix_without_globs), ec); it != end; it.increment(ec))
     {
         if (ec)
         {
             return;
         }
 
-        const std::string full_path = it->path().string();
+        const std::string full_path = pathToGenericString(it->path());
         const size_t last_slash = full_path.rfind('/');
         const String file_name = full_path.substr(last_slash);
 
@@ -305,7 +307,7 @@ void listFilesWithRegexpMatchingImpl(
                     continue;
                 }
 
-                add_matched_path(it->path().string(), file_size);
+                add_matched_path(pathToGenericString(it->path()), file_size);
             }
         }
         else if (it->is_directory())
@@ -325,12 +327,12 @@ void listFilesWithRegexpMatchingImpl(
                 const std::string descent_pattern = (current_glob == "/**" && looking_for_directory)
                     ? suffix_with_globs
                     : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
-                listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
+                listFilesWithRegexpMatchingImpl(pathToGenericString(it->path() / ""),
                                                 descent_pattern,
                                                 total_bytes_to_read, result, matched_paths, recursive, depth + 1);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
-                listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
+                listFilesWithRegexpMatchingImpl(pathToGenericString(it->path() / ""), suffix_with_globs.substr(next_slash_after_glob_pos),
                                                 total_bytes_to_read, result, matched_paths, false, depth + 1);
         }
     }
@@ -405,7 +407,7 @@ void checkCreationIsAllowed(
 
     if (can_be_directory)
     {
-        auto table_path_stat = fs::status(table_path);
+        auto table_path_stat = fs::status(pathFromString(table_path));
         if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File {} must not be a directory", table_path);
     }
@@ -419,12 +421,12 @@ void checkCreationIsAllowedResolvingDotDot(
     bool can_be_directory)
 {
     std::error_code ec;
-    const fs::path checked_path = resolveDotDotForContainmentCheck(path, ec);
+    const fs::path checked_path = resolveDotDotForContainmentCheck(pathFromString(path), ec);
     if (ec)
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot check whether file `{}` is inside `{}`: {}",
             path, db_dir_path, ec.message());
 
-    checkCreationIsAllowed(context_global, db_dir_path, checked_path, can_be_directory);
+    checkCreationIsAllowed(context_global, db_dir_path, pathToGenericString(checked_path), can_be_directory);
 }
 
 /// Splits the archive syntax (e.g. "archive.zip::file*.parquet") into
@@ -459,8 +461,8 @@ std::pair<String, String> splitToArchivePathAndPathInArchive(const String & sour
 /// Finds files matching a specified pattern with globs.
 Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
 {
-    fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
-    fs::path fs_pattern(path_with_globs);
+    fs::path user_files_absolute_path = fs::weakly_canonical(pathFromString(user_files_path));
+    fs::path fs_pattern = pathFromString(path_with_globs);
     if (fs_pattern.is_relative())
         fs_pattern = user_files_absolute_path / fs_pattern;
 
@@ -468,7 +470,8 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
 
     /// Do not use fs::canonical or fs::weakly_canonical.
     /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-    String pattern = fs::absolute(fs_pattern).lexically_normal(); /// Normalize path.
+    fs::path pattern_path = fs::absolute(fs_pattern).lexically_normal(); /// Normalize path.
+    String pattern = pathToGenericString(pattern_path);
     bool can_be_directory = true;
 
     if (pattern.contains(PartitionedSink::PARTITION_ID_WILDCARD))
@@ -479,10 +482,10 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     }
     else if (pattern.find_first_of("*?{") == std::string::npos)
     {
-        if (!fs::is_directory(pattern))
+        if (!fs::is_directory(pattern_path))
         {
             std::error_code error;
-            size_t size = fs::file_size(pattern, error);
+            size_t size = fs::file_size(pattern_path, error);
             if (!error)
                 total_bytes_to_read += size;
 
@@ -491,7 +494,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         else
         {
             /// We list non-directory files under that directory.
-            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read);
+            paths = listFilesWithRegexpMatching(pathToGenericString(pattern_path / "*"), total_bytes_to_read);
             can_be_directory = false;
         }
     }
@@ -505,7 +508,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     for (const auto & path : paths)
     {
         /// Brace expansion runs after the normalization above, so a matched path can still carry a `..`.
-        checkCreationIsAllowedResolvingDotDot(context, user_files_absolute_path, path, can_be_directory);
+        checkCreationIsAllowedResolvingDotDot(context, pathToGenericString(user_files_absolute_path), path, can_be_directory);
     }
 
     return paths;
@@ -637,41 +640,39 @@ struct stat getFileStat(const String & current_path, bool use_table_fd, int tabl
     else
     {
         /// Check if file descriptor allows random reads (and reading it twice).
-        if (0 != stat(current_path.c_str(), &file_stat))
+        if (0 != platformStat(current_path, file_stat))
             throw ErrnoException(ErrorCodes::CANNOT_STAT, "Cannot stat file {}", current_path);
     }
 
     return file_stat;
 }
 
-/// Sub-second-precision version token for a file, folding in the inode and size so that an
-/// in-place rewrite which lands in the same timestamp tick as the previous write (see the
+/// Sub-second-precision version token for a file, folding in the file identity and size so that
+/// an in-place rewrite which lands in the same timestamp tick as the previous write (see the
 /// settle-window comment at its call site) is still distinguishable from a rewrite that isn't.
-String computeFileCacheVersionToken(const struct stat & file_stat)
+/// Built from `platformFileVersion` rather than `stat`, because on Windows the CRT's `stat`
+/// carries whole seconds and reports `st_ino` as zero - which would collapse the token for
+/// exactly the same-size in-place rewrite it exists to distinguish.
+String computeFileCacheVersionToken(const PlatformFileVersion & version)
 {
-#if defined(OS_DARWIN)
-    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
-#else
-    const auto mtim_sec = file_stat.st_mtim.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
-#endif
     return fmt::format(
-        "{}.{:09}_{}_{}",
-        static_cast<Int64>(mtim_sec),
-        static_cast<Int64>(mtim_nsec),
-        static_cast<Int64>(file_stat.st_ino),
-        file_stat.st_size);
+        "{}.{:09}_{}_{}_{}",
+        version.mtime_sec,
+        version.mtime_nsec,
+        version.device_id,
+        version.file_id,
+        version.size);
 }
 
-/// Re-stats `path` and reports whether it still produces `expected_token`. Used to bracket a
-/// local-file read (once right after opening, once right before trusting the read for the Query
-/// Condition Cache) so a rewrite by another writer that lands strictly between the initial `stat`
-/// and either checkpoint is caught instead of silently pinning a mismatched generation.
+/// Re-reads the version of `path` and reports whether it still produces `expected_token`. Used to
+/// bracket a local-file read (once right after opening, once right before trusting the read for
+/// the Query Condition Cache) so a rewrite by another writer that lands strictly between the
+/// initial version snapshot and either checkpoint is caught instead of silently pinning a
+/// mismatched generation.
 bool fileCacheVersionTokenStillHolds(const String & path, const String & expected_token)
 {
-    struct stat current_stat{};
-    return 0 == stat(path.c_str(), &current_stat) && computeFileCacheVersionToken(current_stat) == expected_token;
+    PlatformFileVersion version;
+    return 0 == platformFileVersion(path, version) && computeFileCacheVersionToken(version) == expected_token;
 }
 
 std::unique_ptr<ReadBuffer> createReadBuffer(
@@ -838,7 +839,7 @@ namespace
             {
                 auto get_last_mod_time = [&]() -> std::optional<time_t>
                 {
-                    if (0 != stat(path.c_str(), &file_stat))
+                    if (0 != platformStat(path, file_stat))
                         return std::nullopt;
 
                     return file_stat.st_mtime;
@@ -1098,7 +1099,7 @@ namespace
             auto & schema_cache = StorageFile::getSchemaCache(context);
             auto get_last_mod_time = [&]() -> std::optional<time_t>
             {
-                if (0 != stat(archive_path.c_str(), &file_stat))
+                if (0 != platformStat(archive_path, file_stat))
                     return std::nullopt;
 
                 return file_stat.st_mtime;
@@ -1396,12 +1397,12 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     if (args.format_name == "Distributed")
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Distributed format is allowed only with explicit file path");
 
-    String table_dir_path = fs::path(base_path) / relative_table_dir_path / "";
-    fs::create_directories(table_dir_path);
+    String table_dir_path = pathToGenericString(pathFromString(base_path) / relative_table_dir_path / "");
+    fs::create_directories(pathFromString(table_dir_path));
     paths = {getTablePath(table_dir_path, format_name)};
 
     std::error_code error;
-    size_t size = fs::file_size(paths[0], error);
+    size_t size = fs::file_size(pathFromString(paths[0]), error);
     if (!error)
         total_bytes_to_read = size;
 
@@ -1648,20 +1649,20 @@ void StorageFileSource::beforeDestroy()
         {
             try
             {
-                auto file_path = fs::path(file_path_ref);
-                String new_filename = storage->file_renamer.generateNewFilename(file_path.filename().string());
+                auto file_path = pathFromString(file_path_ref);
+                String new_filename = storage->file_renamer.generateNewFilename(pathToGenericString(file_path.filename()));
                 file_path.replace_filename(new_filename);
 
                 // Checking access rights. The path is the one the rename will operate on, so a `..` in
                 // it must be resolved and not folded lexically.
-                checkCreationIsAllowedResolvingDotDot(getContext(), getContext()->getUserFilesPath(), file_path.string(), true);
+                checkCreationIsAllowedResolvingDotDot(getContext(), getContext()->getUserFilesPath(), pathToGenericString(file_path), true);
 
                 // Checking an existing of new file
                 if (fs::exists(file_path))
-                    throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", file_path.string());
+                    throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", pathToGenericString(file_path));
 
-                fs::rename(fs::path(file_path_ref), file_path);
-                file_path_ref = file_path.string();
+                fs::rename(pathFromString(file_path_ref), file_path);
+                file_path_ref = pathToGenericString(file_path);
                 storage->was_renamed = true;
             }
             catch (const std::exception & e)
@@ -1864,27 +1865,29 @@ Chunk StorageFileSource::generate()
                 /// Build a sub-second-precision version token for the format metadata cache key.
                 /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same
                 /// second that keeps the file size unchanged would otherwise reuse a stale entry.
-                current_file_cache_version = computeFileCacheVersionToken(file_stat);
+                PlatformFileVersion file_version;
+                const bool file_version_known = 0
+                    == (storage->use_table_fd ? platformFileVersionOfDescriptor(storage->table_fd, file_version)
+                                              : platformFileVersion(current_path, file_version));
+                if (file_version_known)
+                    current_file_cache_version = computeFileCacheVersionToken(file_version);
+                else
+                    current_file_cache_version.reset();
 
                 /// The version token above proves a rewrite only after the file has settled.
                 /// Filesystem timestamps are coarser than the wall clock (one clock tick of
                 /// ~1-10 ms on most Linux filesystems, a full second on ext3, two seconds on
-                /// FAT), so a rewrite that keeps the inode and the byte size and lands in the
-                /// same timestamp tick as the previous write produces an identical token. Once
-                /// the last modification is comfortably in the past, its tick is over and any
-                /// further write is guaranteed to change the token. The query condition cache
-                /// skips whole row groups based on this token, so for files modified more
+                /// FAT), so a rewrite that keeps the file identity and the byte size and lands
+                /// in the same timestamp tick as the previous write produces an identical token.
+                /// Once the last modification is comfortably in the past, its tick is over and
+                /// any further write is guaranteed to change the token. The query condition
+                /// cache skips whole row groups based on this token, so for files modified more
                 /// recently - or with an mtime in the future, e.g. due to clock skew on a
                 /// network mount - it fails close and stays bypassed (see the gates below)
                 /// rather than risking stale results.
-#if defined(OS_DARWIN)
-                const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-#else
-                const auto mtim_sec = file_stat.st_mtim.tv_sec;
-#endif
                 static constexpr Int64 file_version_settle_seconds = 3;
-                current_file_version_settled
-                    = static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
+                current_file_version_settled = file_version_known
+                    && file_version.mtime_sec + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
 
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     continue;
@@ -2574,7 +2577,10 @@ public:
                 /// and keeps the byte size - the same residual window every single-pass read of a
                 /// concurrently rewritten local file has. (getFileStat throws if the file is gone.)
                 auto file_stat = getFileStat(path, /*use_table_fd=*/ false, -1, storage->getName());
-                if (computeFileCacheVersionToken(file_stat) != file.file.version_token)
+                /// The token is built from `platformFileVersion`, not from this `stat`: the CRT's
+                /// `stat` has whole-second precision and no inode on Windows, which would collapse
+                /// exactly the same-size in-place rewrite the token exists to distinguish.
+                if (!fileCacheVersionTokenStillHolds(path, file.file.version_token))
                     throwFileChanged(path);
 
                 read_buf = createReadBuffer(path, file_stat, /*use_table_fd=*/ false, -1, storage->compression_method, getContext());
@@ -2933,7 +2939,7 @@ public:
         validatePartitionKey(filepath, true);
         checkCreationIsAllowedResolvingDotDot(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
 
-        fs::create_directories(fs::path(filepath).parent_path());
+        fs::create_directories(pathFromString(filepath).parent_path());
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,
@@ -3023,12 +3029,12 @@ SinkToStoragePtr StorageFile::write(
                             getStorageID().getNameForLogs());
 
         path = paths.front();
-        fs::create_directories(fs::path(path).parent_path());
+        fs::create_directories(pathFromString(path).parent_path());
 
         std::error_code error_code;
         if (!context->getSettingsRef()[Setting::engine_file_truncate_on_insert] && !is_path_with_globs
             && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings)
-            && fs::file_size(path, error_code) != 0 && !error_code)
+            && fs::file_size(pathFromString(path), error_code) != 0 && !error_code)
         {
             if (context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files])
             {
@@ -3040,7 +3046,7 @@ SinkToStoragePtr StorageFile::write(
                     new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
                     ++index;
                 }
-                while (fs::exists(new_path));
+                while (fs::exists(pathFromString(new_path)));
                 paths.push_back(new_path);
                 path = new_path;
             }
@@ -3095,8 +3101,8 @@ void StorageFile::rename(const String & new_path_to_table_data, const StorageID 
     if (path_new == paths[0])
         return;
 
-    fs::create_directories(fs::path(path_new).parent_path());
-    fs::rename(paths[0], path_new);
+    fs::create_directories(pathFromString(path_new).parent_path());
+    fs::rename(pathFromString(paths[0]), pathFromString(path_new));
 
     paths[0] = std::move(path_new);
     renameInMemory(new_table_id);
@@ -3120,10 +3126,10 @@ void StorageFile::truncate(
     {
         for (const auto & path : paths)
         {
-            if (!fs::exists(path))
+            if (!fs::exists(pathFromString(path)))
                 continue;
 
-            if (0 != ::truncate(path.c_str(), 0))
+            if (0 != platformTruncate(path, 0))
                 ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate file at {}", path);
         }
     }

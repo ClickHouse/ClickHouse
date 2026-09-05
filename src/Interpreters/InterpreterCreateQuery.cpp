@@ -1,4 +1,5 @@
 #include <array>
+#include <base/pathToString.h>
 #include <memory>
 
 #include <filesystem>
@@ -323,17 +324,17 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto default_db_disk = getContext()->getDatabaseDisk();
 
     /// Will write file with database metadata, if needed.
-    default_db_disk->createDirectories(DatabaseCatalog::getMetadataDirPath());
+    default_db_disk->createDirectories(pathToGenericString(DatabaseCatalog::getMetadataDirPath()));
     auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
     auto metadata_tmp_file_path = DatabaseCatalog::getMetadataTmpFilePath(database_name);
 
     fs::path metadata_path;
     if (!create.storage && create.attach)
     {
-        if (!default_db_disk->existsFile(metadata_file_path))
+        if (!default_db_disk->existsFile(pathToGenericString(metadata_file_path)))
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Database engine must be specified for ATTACH DATABASE query");
         /// Short syntax: try read database definition from file
-        auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), default_db_disk, metadata_file_path);
+        auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), default_db_disk, pathToGenericString(metadata_file_path));
         create = ast->as<ASTCreateQuery &>();
         if (create.table || !create.storage)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Metadata file {} contains incorrect CREATE DATABASE query", metadata_file_path.string());
@@ -380,7 +381,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         metadata_path = DatabaseCatalog::getStoreDirPath(create.uuid);
 
-        if (!create.attach && default_db_disk->existsDirectory(metadata_path) && !default_db_disk->isDirectoryEmpty(metadata_path))
+        if (!create.attach && default_db_disk->existsDirectory(pathToGenericString(metadata_path)) && !default_db_disk->isDirectoryEmpty(pathToGenericString(metadata_path)))
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists and is not empty", metadata_path.string());
     }
     else
@@ -404,7 +405,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                         "Enable allow_experimental_database_materialized_postgresql to use it");
     }
 
-    bool need_write_metadata = !create.attach || !default_db_disk->existsFile(metadata_file_path);
+    bool need_write_metadata = !create.attach || !default_db_disk->existsFile(pathToGenericString(metadata_file_path));
     bool need_lock_uuid = internal || need_write_metadata;
     auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false);
 
@@ -416,7 +417,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext(), mode, internal);
+    DatabasePtr database = DatabaseFactory::instance().get(create, pathToGenericString(metadata_path / ""), getContext(), mode, internal);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -433,12 +434,12 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         String statement = statement_buf.str();
 
         /// Needed to make database creation retriable if it fails after the file is created
-        default_db_disk->removeFileIfExists(metadata_tmp_file_path);
+        default_db_disk->removeFileIfExists(pathToGenericString(metadata_tmp_file_path));
 
         /// Exclusive flag guarantees, that database is not created right now in another thread.
         writeMetadataFile(
             default_db_disk,
-            /*file_path=*/metadata_tmp_file_path,
+            /*file_path=*/pathToGenericString(metadata_tmp_file_path),
             /*content=*/statement,
             /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
     }
@@ -457,7 +458,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (need_write_metadata)
         {
             /// Prevents from overwriting metadata of detached database
-            default_db_disk->moveFile(metadata_tmp_file_path, metadata_file_path);
+            default_db_disk->moveFile(pathToGenericString(metadata_tmp_file_path), pathToGenericString(metadata_file_path));
             renamed = true;
         }
 
@@ -477,8 +478,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         if (renamed)
         {
-            chassert(default_db_disk->existsFile(metadata_file_path));
-            default_db_disk->removeFileIfExists(metadata_file_path);
+            chassert(default_db_disk->existsFile(pathToGenericString(metadata_file_path)));
+            default_db_disk->removeFileIfExists(pathToGenericString(metadata_file_path));
         }
         if (added)
             DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
@@ -1893,27 +1894,28 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         chassert(!ddl_guard);
 
-        fs::path user_files = fs::path(getContext()->getUserFilesPath()).lexically_normal();
-        fs::path root_path = fs::path(getContext()->getPath()).lexically_normal();
+        fs::path user_files = pathFromString(getContext()->getUserFilesPath()).lexically_normal();
+        fs::path root_path = pathFromString(getContext()->getPath()).lexically_normal();
+        fs::path attach_from_path = pathFromString(create.attach_from_path);
 
         if (!getContext()->isDDLOrOnClusterInternal())
         {
-            fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
+            fs::path data_path = attach_from_path.lexically_normal();
             if (data_path.is_relative())
                 data_path = (user_files / data_path).lexically_normal();
-            if (!fileOrSymlinkPathStartsWith(data_path.string(), user_files.string()))
+            if (!fileOrSymlinkPathStartsWith(pathToGenericString(data_path), pathToGenericString(user_files)))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                                "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
+                                "Data directory {} must be inside {} to attach it", pathToGenericString(data_path), pathToGenericString(user_files));
 
             /// Data path must be relative to root_path
-            create.attach_from_path = fs::relative(data_path, root_path) / "";
+            create.attach_from_path = pathToGenericString(fs::relative(data_path, root_path) / "");
         }
         else
         {
-            fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
-            if (!fileOrSymlinkPathStartsWith(data_path.string(), user_files.string()))
+            fs::path data_path = (root_path / attach_from_path).lexically_normal();
+            if (!fileOrSymlinkPathStartsWith(pathToGenericString(data_path), pathToGenericString(user_files)))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                                "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
+                                "Data directory {} must be inside {} to attach it", pathToGenericString(data_path), pathToGenericString(user_files));
         }
     }
     else if (create.attach && !create.attach_short_syntax && !getContext()->isDDLOrOnClusterInternal())
@@ -2416,7 +2418,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     data_path = database->getTableDataPath(create);
     // When creating a table, when checking if the data path exists, it should use the local disk to check, not the database disk. Because the database disk stores metadata files only.
-    auto full_data_path = fs::path{getContext()->getPath()} / data_path;
+    auto full_data_path = pathFromString(getContext()->getPath()) / pathFromString(data_path);
 
     if (!create.attach && !data_path.empty() && fs::exists(full_data_path))
     {
@@ -2430,11 +2432,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             /// We don't have a table with this UUID (and all metadata is loaded),
             /// so the existing directory probably contains some leftovers from previous unsuccessful attempts to create the table
 
-            fs::path trash_path = fs::path{getContext()->getPath()} / "trash" / data_path / getHexUIntLowercase(thread_local_rng());
+            fs::path trash_path = pathFromString(getContext()->getPath()) / "trash" / pathFromString(data_path) / getHexUIntLowercase(thread_local_rng());
             LOG_WARNING(getLogger("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
                         Poco::toLower(storage_name), String(data_path), trash_path);
             fs::create_directories(trash_path.parent_path());
-            renameNoReplace(full_data_path, trash_path);
+            renameNoReplace(pathToGenericString(full_data_path), pathToGenericString(trash_path));
         }
         else
         {
@@ -3845,7 +3847,7 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
             for (auto it = disk->iterateDirectory(table_data_path); it->isValid(); it->next())
             {
                 String part_name = it->name();
-                String part_path = fs::path(table_data_path) / part_name;
+                String part_path = pathToGenericString(fs::path(table_data_path) / part_name);
 
                 /// Check if it's a directory (part directory)
                 if (!disk->existsDirectory(part_path))
@@ -3864,7 +3866,7 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
                 for (const auto * file_name : {VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME,
                                                VersionMetadata::TXN_VERSION_METADATA_FILE_NAME})
                 {
-                    String txn_file = fs::path(part_path) / file_name;
+                    String txn_file = pathToGenericString(fs::path(part_path) / file_name);
                     if (disk->existsFile(txn_file))
                     {
                         disk->removeFile(txn_file);

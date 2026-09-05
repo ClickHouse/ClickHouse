@@ -1,6 +1,4 @@
 #include <Common/StatusFile.h>
-
-#include <sys/file.h>
 #include <fcntl.h>
 #include <cerrno>
 
@@ -10,7 +8,9 @@
 #include <Common/ErrnoException.h>
 #include <base/errnoToString.h>
 #include <base/defines.h>
+#include <base/pathToString.h>
 
+#include <IO/PlatformFileIO.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -47,7 +47,10 @@ StatusFile::StatusFile(std::string path_, FillFunction fill)
     : path(std::move(path_))
 {
     /// If file already exists. NOTE Minor race condition.
-    if (fs::exists(path))
+    /// `path` is UTF-8, so every filesystem operation on it here has to go through either
+    /// `pathFromString` or one of the `platform*` wrappers - the narrow `std::filesystem` and CRT
+    /// entrypoints convert through the Windows active code page and lose non-ASCII path components.
+    if (fs::exists(pathFromString(path)))
     {
         std::string contents;
         {
@@ -62,15 +65,14 @@ StatusFile::StatusFile(std::string path_, FillFunction fill)
             LOG_INFO(getLogger("StatusFile"), "Status file {} already exists and is empty - probably unclean hardware restart.", path);
     }
 
-    fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
+    fd = platformOpenFile(path, O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
 
     if (-1 == fd)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {}", path);
 
     try
     {
-        int flock_ret = flock(fd, LOCK_EX | LOCK_NB);
-        if (-1 == flock_ret)
+        if (-1 == platformLockFileExclusive(fd, /*blocking*/ false))
         {
             if (errno == EWOULDBLOCK)
                 throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot lock file {}. Another server instance in same directory is already running.", path);
@@ -111,7 +113,7 @@ StatusFile::~StatusFile()
     if (0 != close(fd))
         LOG_ERROR(getLogger("StatusFile"), "Cannot close file {}, {}", path, errnoToString());
 
-    if (0 != unlink(path.c_str()))
+    if (0 != platformUnlink(path))
         LOG_ERROR(getLogger("StatusFile"), "Cannot unlink file {}, {}", path, errnoToString());
 }
 

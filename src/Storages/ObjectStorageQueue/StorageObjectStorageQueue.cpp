@@ -44,18 +44,16 @@
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/randomSeed.h>
 
-#include <filesystem>
 #include <Poco/Event.h>
 
 #include <fmt/ranges.h>
-
-namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
@@ -425,7 +423,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         *queue_settings_,
         UUIDHelpers::Nil,
         &zookeeper_name);
-    LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
+    LOG_INFO(log, "Using zookeeper path: {}", zk_path);
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
         zookeeper_name,
@@ -1852,9 +1850,9 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
     if (zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME)
-        settings[ObjectStorageQueueSetting::keeper_path] = zk_path.string();
+        settings[ObjectStorageQueueSetting::keeper_path] = zk_path;
     else
-        settings[ObjectStorageQueueSetting::keeper_path] = fmt::format("{}:{}", zookeeper_name, zk_path.string());
+        settings[ObjectStorageQueueSetting::keeper_path] = fmt::format("{}:{}", zookeeper_name, zk_path);
     settings[ObjectStorageQueueSetting::loading_retries] = table_metadata.loading_retries;
     settings[ObjectStorageQueueSetting::processing_threads_num] = table_metadata.processing_threads_num;
     settings[ObjectStorageQueueSetting::parallel_inserts] = table_metadata.parallel_inserts;
@@ -1959,7 +1957,7 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
             result_zk_path = configured_path;
         else
         {
-            const auto prefixed_path = (fs::path(zk_path_prefix) / keeper_path).string();
+            const auto prefixed_path = zkutil::joinZooKeeperPath(zk_path_prefix, keeper_path);
             if (has_keeper_prefix)
                 result_zk_path = keeper_name + ":" + prefixed_path;
             else
@@ -1971,7 +1969,7 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         if (database_uuid == UUIDHelpers::Nil)
             database_uuid = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getUUID();
 
-        result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
+        result_zk_path = zkutil::joinZooKeeperPath(zk_path_prefix, toString(database_uuid), toString(table_id.uuid));
     }
 
     if (context_ && result_zk_path.contains('{'))

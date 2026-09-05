@@ -13,6 +13,22 @@ set (SRCS
     "${LIBRARY_DIR}/src/zone_info_source.cc"
 )
 
+if (OS_WINDOWS)
+    # `zone_info_source.cc` holds cctz's default `zone_info_source_factory`, which the embedder is
+    # meant to override - and `DateLUTImpl.cpp` does, to read the time zones compiled into the
+    # binary. cctz makes that definition weak so the override wins, except on mingw, where it
+    # deliberately falls back to a strong one because "the Windows linker cannot handle" weak
+    # symbols. GNU ld cannot; lld can, but cctz has no way to know which is in use, so it takes the
+    # safe branch and the two strong definitions collide. Since the override is unconditional here,
+    # drop the default rather than the override; `DateLUTImpl.cpp` supplies the two other things
+    # this file defines.
+    list (REMOVE_ITEM SRCS "${LIBRARY_DIR}/src/zone_info_source.cc")
+
+    # `time_zone_lookup.cc` calls `GetWindowsLocalTimeZone` when `_WIN32` is defined. The file
+    # defining it is Windows-only and self-contained (it loads `icu.dll` dynamically).
+    list (APPEND SRCS "${LIBRARY_DIR}/src/time_zone_name_win.cc")
+endif ()
+
 add_library (_cctz ${SRCS})
 target_include_directories (_cctz PUBLIC "${LIBRARY_DIR}/include")
 

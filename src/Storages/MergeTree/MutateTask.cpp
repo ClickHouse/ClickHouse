@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/TreeRewriter.h>
 
 #include <Parsers/ASTAlterQuery.h>
@@ -2732,7 +2733,7 @@ private:
                         *projection_data_part_storage_src, p_it->name(), p_it->name());
 
                     auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
-                    hardlinked_files.insert(file_name_with_projection_prefix);
+                    hardlinked_files.insert(pathToGenericString(file_name_with_projection_prefix));
                 }
 
                 ctx->new_data_part->getDataPartStorage().checkpointTransaction();
@@ -3056,7 +3057,7 @@ private:
                         projection_data_part_storage_dst->createHardLinkFrom(
                             *projection_data_part_storage_src, p_it->name(), p_it->name());
 
-                        hardlinked_files.insert(file_name_with_projection_prefix);
+                        hardlinked_files.insert(pathToGenericString(file_name_with_projection_prefix));
                     }
                 }
 

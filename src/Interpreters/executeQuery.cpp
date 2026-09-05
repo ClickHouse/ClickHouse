@@ -297,7 +297,7 @@ namespace FailPoints
     extern const char trigger_sanitizer_error[];
 }
 
-static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
+[[maybe_unused]] static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
 {
 #if defined(ADDRESS_SANITIZER)
     const auto data = std::make_unique_for_overwrite<char[]>(16);

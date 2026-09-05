@@ -43,11 +43,11 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"Instrumentation", static_cast<UInt8>(TraceType::Instrumentation)},
 };
 
-static_assert(TraceSender::MEMORY_CONTEXT_UNKNOWN == -1);
+static_assert(TRACE_MEMORY_CONTEXT_UNKNOWN == -1);
 using ContextDataType = TraceLogElement::ContextDataType;
 const ContextDataType::Values TraceLogElement::context_values =
 {
-    {"Unknown", static_cast<Int8>(TraceSender::MEMORY_CONTEXT_UNKNOWN)},
+    {"Unknown", TRACE_MEMORY_CONTEXT_UNKNOWN},
     {"Global", static_cast<Int8>(VariableContext::Global)},
     {"User", static_cast<Int8>(VariableContext::User)},
     {"Process", static_cast<Int8>(VariableContext::Process)},
@@ -241,11 +241,11 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
     if (memory_context.has_value())
         typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(memory_context.value()));
     else
-        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(TraceSender::MEMORY_CONTEXT_UNKNOWN));
+        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(TRACE_MEMORY_CONTEXT_UNKNOWN);
     if (memory_blocked_context.has_value())
         typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(memory_blocked_context.value()));
     else
-        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(TraceSender::MEMORY_CONTEXT_UNKNOWN));
+        typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(TRACE_MEMORY_CONTEXT_UNKNOWN);
 
     if (event != ProfileEvents::end())
     {

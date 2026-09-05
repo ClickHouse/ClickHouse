@@ -591,6 +591,18 @@ class JobConfigs:
             provides=[],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
+        Job.ParamSet(
+            # No artifact: `clickhouse.exe` is not something to hand to anyone yet. See
+            # docs/resources/develop-contribute/build/build-cross-windows.mdx.
+            #
+            # An `amd64` runner, unlike every other cross-build here, because this job also runs
+            # the binary it produced (see `build_clickhouse.py`): an `x86_64` PE needs an
+            # `x86_64` host, and Wine on ARM ships no `x86` emulator. Cross-compiling is
+            # arch-independent, so nothing else about the job changes.
+            parameter=BuildTypes.AMD_WINDOWS,
+            provides=[],
+            runs_on=RunnerLabels.AMD_LARGE,
+        ),
     )
     # The standalone WebAssembly build of the SQL parser (utils/wasm-parser). It cross-compiles to
     # `wasm32-wasip1` with a wasi-sdk toolchain, which cannot be mixed into a tree configured for

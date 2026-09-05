@@ -1,7 +1,12 @@
 #include <cstdlib>
 #include <string_view>
-#include <unistd.h>
-#include <sys/ioctl.h>
+#if defined(OS_WINDOWS)
+#  include <io.h>
+#  include <Poco/UnWindows.h>
+#else
+#  include <unistd.h>
+#  include <sys/ioctl.h>
+#endif
 #if defined(OS_SUNOS)
 #  include <sys/termios.h>
 #endif
@@ -18,6 +23,33 @@ namespace DB::ErrorCodes
 
 std::pair<uint16_t, uint16_t> getTerminalSize(int in_fd, int err_fd)
 {
+#if defined(OS_WINDOWS)
+    /// Windows has no `TIOCGWINSZ`; the size is in the console's screen-buffer info. Take it
+    /// from `srWindow`, the visible window, and not from `dwSize`, the screen buffer - the
+    /// latter includes the scrollback and is typically far taller than the terminal.
+    for (int fd : {in_fd, err_fd})
+    {
+        if (!_isatty(fd))
+            continue;
+
+        auto * handle = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+        if (handle == INVALID_HANDLE_VALUE)
+            continue;
+
+        CONSOLE_SCREEN_BUFFER_INFO info{};
+        if (!GetConsoleScreenBufferInfo(handle, &info))
+            throw DB::Exception(
+                DB::ErrorCodes::SYSTEM_ERROR,
+                "Cannot obtain terminal window size (GetConsoleScreenBufferInfo), error code: {}",
+                GetLastError());
+
+        return {static_cast<uint16_t>(info.srWindow.Right - info.srWindow.Left + 1),
+                static_cast<uint16_t>(info.srWindow.Bottom - info.srWindow.Top + 1)};
+    }
+
+    /// Default - 0, as below.
+    return {0, 0};
+#else
     struct winsize terminal_size {};
     if (isatty(in_fd))
     {
@@ -31,6 +63,7 @@ std::pair<uint16_t, uint16_t> getTerminalSize(int in_fd, int err_fd)
     }
     /// Default - 0.
     return {terminal_size.ws_col, terminal_size.ws_row};
+#endif
 }
 
 uint16_t getTerminalWidth(int in_fd, int err_fd)
@@ -40,6 +73,12 @@ uint16_t getTerminalWidth(int in_fd, int err_fd)
 
 bool terminalSupportsUTF8()
 {
+#if defined(OS_WINDOWS)
+    /// Windows does not take the console encoding from the locale environment variables - they
+    /// are normally not set at all there - but from the console's output code page, which is
+    /// what actually governs how the bytes we write are interpreted.
+    return GetConsoleOutputCP() == CP_UTF8;
+#else
     /// The character encoding is determined by the locale environment variables,
     /// in order of precedence: LC_ALL, LC_CTYPE, LANG.
     const char * locale = nullptr;
@@ -69,6 +108,7 @@ bool terminalSupportsUTF8()
     }
 
     return false;
+#endif
 }
 
 po::options_description createOptionsDescription(const std::string & caption, uint16_t terminal_width)

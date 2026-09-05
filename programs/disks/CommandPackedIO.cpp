@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Common/TerminalSize.h>
 #include <ICommand.h>
+#include <base/pathToString.h>
 #include <base/types.h>
 #include <Common/logger_useful.h>
 
@@ -76,7 +77,7 @@ public:
                 LOG_INFO(log, "Listing packed files recursively on disk {}, path {}", disk_from.getDisk()->getName(), path_from);
                 auto listings = listPackedRecursive(disk_from.getDisk(), path_from);
                 for (const auto & [path, listing] : listings)
-                    printListing(path.string(), listing, std::cout);
+                    printListing(pathToGenericString(path), listing, std::cout);
             }
             else
             {

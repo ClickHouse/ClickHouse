@@ -1,3 +1,78 @@
+/// `ShellCommand` runs a child process and talks to it over pipes. Every part of that is a
+/// distinct POSIX call here - `vfork`, `execvp`, `pipe` per stream, `wait4` for the exit status
+/// and the child's resource usage, a signal to terminate - and Windows has no counterpart to any
+/// of them individually: it has `CreateProcess`, which subsumes the lot and takes a command line
+/// rather than an `argv`, plus anonymous pipe handles that are inherited rather than `dup2`-ed.
+/// So this is a rewrite rather than a port, and nothing `clickhouse-client` or `clickhouse-local`
+/// needs on Windows yet depends on it - the executable table function, executable dictionaries
+/// and UDFs are server-side, and the client's pager is a Unix convention. Until it is written,
+/// the entry points say so rather than silently doing nothing.
+#if defined(OS_WINDOWS)
+
+#include <Common/Exception.h>
+#include <Common/ShellCommand.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+ShellCommand::~ShellCommand() = default;
+
+std::unique_ptr<ShellCommand> ShellCommand::execute(const ShellCommand::Config & config)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Running external commands is not implemented on Windows (command: {})", config.command);
+}
+
+std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const ShellCommand::Config & config)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Running external commands is not implemented on Windows (command: {})", config.command);
+}
+
+/// Unreachable: no `ShellCommand` can be constructed on Windows. Defined because the class is
+/// used across translation units and every non-inline member has to resolve at link time.
+void ShellCommand::wait()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Running external commands is not implemented on Windows");
+}
+
+int ShellCommand::tryWait()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Running external commands is not implemented on Windows");
+}
+
+bool ShellCommand::waitIfProccesTerminated()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Running external commands is not implemented on Windows");
+}
+
+bool ShellCommand::tryWaitWithoutStatusCheck()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Running external commands is not implemented on Windows");
+}
+
+bool ShellCommand::wasChildResourceUsageCaptured() const noexcept
+{
+    return false;
+}
+
+UInt64 ShellCommand::getChildUserTimeMicroseconds() const noexcept
+{
+    return 0;
+}
+
+UInt64 ShellCommand::getChildSystemTimeMicroseconds() const noexcept
+{
+    return 0;
+}
+
+}
+
+#else
+
 /// `wait4` is declared under `_DEFAULT_SOURCE` on Linux glibc, which the
 /// `-std=c++23` strict mode otherwise hides. Define it before the first system
 /// header that guards it. It is a libc feature-test macro, hence the reserved
@@ -10,7 +85,9 @@
 #   pragma clang diagnostic pop
 #endif
 
+#if !defined(OS_WINDOWS)
 #include <sys/resource.h>
+#endif
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <dlfcn.h>
@@ -556,3 +633,5 @@ UInt64 ShellCommand::getChildSystemTimeMicroseconds() const noexcept
 
 }
 
+
+#endif

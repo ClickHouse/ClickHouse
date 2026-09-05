@@ -492,7 +492,7 @@ int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
     {
         events_count = epoll.getManyReady(1, &event, blocking ? -1 : 0);
         if (!events_count && async_callback)
-            async_callback(epoll.getFileDescriptor(), 0, AsyncEventTimeoutType::NONE, epoll.getDescription(), AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
+            async_callback(epoll.getFileDescriptor(), 0, AsyncEventTimeoutType::NONE, epoll.getDescription(), AsyncEvent::READ | AsyncEvent::ERROR);
     }
     return event.data.fd;
 }

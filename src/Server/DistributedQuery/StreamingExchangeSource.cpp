@@ -1,3 +1,4 @@
+#include <Common/Socket.h>
 #include <memory>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
@@ -177,9 +178,10 @@ IProcessor::Status StreamingExchangeSource::prepare()
 
 int StreamingExchangeSource::schedule()
 {
-    LOG_TEST(log, "Schedule exchange stream {}, fd: {}", stream_name, socket->sockfd());
+    const int fd = Socket(socket->sockfd()).toDescriptor();
+    LOG_TEST(log, "Schedule exchange stream {}, fd: {}", stream_name, fd);
 
-    return socket->sockfd();
+    return fd;
 }
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)

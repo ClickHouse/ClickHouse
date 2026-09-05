@@ -104,8 +104,14 @@ SET(ASM_OPTIONS "-x assembler-with-cpp")
 set (SRCS_CONTEXT
     "${LIBRARY_DIR}/libs/context/src/dummy.cpp"
     "${LIBRARY_DIR}/libs/context/src/fcontext.cpp"
-    "${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp"
 )
+
+if (OS_WINDOWS)
+    # Reads the stack size limit from the thread's TIB instead of `getrlimit`.
+    list (APPEND SRCS_CONTEXT "${LIBRARY_DIR}/libs/context/src/windows/stack_traits.cpp")
+else ()
+    list (APPEND SRCS_CONTEXT "${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp")
+endif ()
 
 if (ARCH_AARCH64)
     if (OS_DARWIN)
@@ -157,6 +163,16 @@ elseif(OS_DARWIN)
         "${LIBRARY_DIR}/libs/context/src/asm/make_x86_64_sysv_macho_gas.S"
         "${LIBRARY_DIR}/libs/context/src/asm/ontop_x86_64_sysv_macho_gas.S"
     )
+elseif(OS_WINDOWS)
+    # The Win64 calling convention differs from SysV (different callee-saved set, and the
+    # fiber has to carry its own TIB stack bounds), so Boost ships separate sources for it.
+    # Of the three PE variants we want the `clang_gas` one: the `masm`/`gas` `.asm` files are
+    # for MASM and for GNU as, whereas this one is written for clang's integrated assembler.
+    set (SRCS_CONTEXT ${SRCS_CONTEXT}
+        "${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_ms_pe_clang_gas.S"
+        "${LIBRARY_DIR}/libs/context/src/asm/make_x86_64_ms_pe_clang_gas.S"
+        "${LIBRARY_DIR}/libs/context/src/asm/ontop_x86_64_ms_pe_clang_gas.S"
+    )
 else()
     set (SRCS_CONTEXT ${SRCS_CONTEXT}
         "${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_sysv_elf_gas.S"
@@ -197,8 +213,13 @@ endif()
 set (SRCS_COROUTINE
   "${LIBRARY_DIR}/libs/coroutine/src/detail/coroutine_context.cpp"
   "${LIBRARY_DIR}/libs/coroutine/src/exceptions.cpp"
-  "${LIBRARY_DIR}/libs/coroutine/src/posix/stack_traits.cpp"
 )
+
+if (OS_WINDOWS)
+    list (APPEND SRCS_COROUTINE "${LIBRARY_DIR}/libs/coroutine/src/windows/stack_traits.cpp")
+else ()
+    list (APPEND SRCS_COROUTINE "${LIBRARY_DIR}/libs/coroutine/src/posix/stack_traits.cpp")
+endif ()
 add_library (_boost_coroutine ${SRCS_COROUTINE})
 add_library (boost::coroutine ALIAS _boost_coroutine)
 target_include_directories (_boost_coroutine PRIVATE ${LIBRARY_DIR})

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
@@ -182,7 +183,7 @@ MergeTreeDataPartBuilder::getPartStorageAndMarkType(
     auto disk = volume_->getDisk();
     auto part_relative_path = fs::path(root_path_) / part_dir_;
 
-    for (auto it = disk->iterateDirectory(part_relative_path); it->isValid(); it->next())
+    for (auto it = disk->iterateDirectory(pathToGenericString(part_relative_path)); it->isValid(); it->next())
     {
         auto it_path = fs::path(it->name());
         auto ext = it_path.extension().string();

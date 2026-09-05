@@ -22,9 +22,9 @@ struct LazyObjectStorageFileRegistry
     /// The global row index of a row is (file_index << ROW_INDEX_BITS) | row_index_in_file.
     /// 2^40 rows per file and 2^24 files per query are both far beyond practical limits.
     static constexpr size_t ROW_INDEX_BITS = 40;
-    static constexpr UInt64 MAX_ROWS_PER_FILE = 1ul << ROW_INDEX_BITS;
+    static constexpr UInt64 MAX_ROWS_PER_FILE = 1ull << ROW_INDEX_BITS;
     static constexpr UInt64 ROW_INDEX_MASK = MAX_ROWS_PER_FILE - 1;
-    static constexpr UInt64 MAX_FILES = 1ul << (64 - ROW_INDEX_BITS);
+    static constexpr UInt64 MAX_FILES = 1ull << (64 - ROW_INDEX_BITS);
 
     std::mutex mutex;
     std::vector<ObjectInfoPtr> files;

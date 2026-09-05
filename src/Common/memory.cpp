@@ -1,4 +1,8 @@
+#if defined(OS_WINDOWS)
+#include <Poco/UnWindows.h>
+#else
 #include <sys/mman.h>
+#endif
 #include <Poco/Environment.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
@@ -40,8 +44,15 @@ void memoryGuardInstall(void *addr, size_t len)
     else
 #endif
     {
+#if defined(OS_WINDOWS)
+        DWORD previous = 0;
+        if (!VirtualProtect(addr, len, PAGE_NOACCESS, &previous))
+            throw DB::Exception(
+                DB::ErrorCodes::SYSTEM_ERROR, "Cannot VirtualProtect(PAGE_NOACCESS), error code: {}", GetLastError());
+#else
         if (mprotect(addr, len, PROT_NONE))
             throw DB::ErrnoException(DB::ErrorCodes::SYSTEM_ERROR, "Cannot mprotect(PROT_NONE)");
+#endif
     }
 }
 
@@ -57,7 +68,14 @@ void memoryGuardRemove(void *addr, size_t len)
     else
 #endif
     {
+#if defined(OS_WINDOWS)
+        DWORD previous = 0;
+        if (!VirtualProtect(addr, len, PAGE_READWRITE, &previous))
+            throw DB::Exception(
+                DB::ErrorCodes::SYSTEM_ERROR, "Cannot VirtualProtect(PAGE_READWRITE), error code: {}", GetLastError());
+#else
         if (mprotect(addr, len, PROT_READ|PROT_WRITE))
             throw DB::ErrnoException(DB::ErrorCodes::SYSTEM_ERROR, "Cannot mprotect(PROT_NONE)");
+#endif
     }
 }

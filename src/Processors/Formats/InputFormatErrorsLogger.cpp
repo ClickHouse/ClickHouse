@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Port.h>
@@ -46,7 +47,7 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : m
     if (context->getApplicationType() == Context::ApplicationType::SERVER)
     {
         auto user_files_path = context->getUserFilesPath();
-        errors_file_path = fs::path(user_files_path) / path_in_setting;
+        errors_file_path = pathToGenericString(fs::path(user_files_path) / path_in_setting);
         if (!fileOrSymlinkPathStartsWith(errors_file_path, user_files_path))
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                             "Cannot log errors in path `{}`, because it is not inside `{}`",

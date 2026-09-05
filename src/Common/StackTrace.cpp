@@ -77,6 +77,11 @@ void StackTrace::setShowAddresses(bool show)
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
+#if !defined(OS_WINDOWS)
+/// Everything from here to the matching #endif interprets a POSIX signal context.
+/// Windows reports faults through Structured Exception Handling and has neither
+/// `siginfo_t` nor `ucontext_t`; see the note in StackTrace.h. Capturing the current
+/// stack, below, stays available.
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::string message = getSignalCodeDescription(sig, info.si_code);
@@ -324,6 +329,7 @@ static void * getCallerAddress([[maybe_unused]] const ucontext_t & context)
     return nullptr;
 #endif
 }
+#endif
 
 void StackTrace::forEachFrame(
     const FramePointers & frame_pointers,
@@ -478,6 +484,11 @@ void StackTrace::forEachFrame(
 #endif
 }
 
+#if !defined(OS_WINDOWS)
+/// Everything from here to the matching #endif interprets a POSIX signal context.
+/// Windows reports faults through Structured Exception Handling and has neither
+/// `siginfo_t` nor `ucontext_t`; see the note in StackTrace.h. Capturing the current
+/// stack, below, stays available.
 StackTrace::StackTrace(const ucontext_t & signal_context)
 {
     /// This variable from signal handler is not instrumented by Memory Sanitizer.
@@ -580,6 +591,7 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
     }
     asynchronous_stack_unwinding = false;
 }
+#endif
 
 StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offset_)
     : size(size_)
@@ -910,7 +922,9 @@ void StackTrace::dropCache()
 }
 
 
+#if !defined(OS_WINDOWS)
 thread_local bool asynchronous_stack_unwinding = false;
 thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;
+#endif
 
 #pragma clang diagnostic pop

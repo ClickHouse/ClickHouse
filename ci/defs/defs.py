@@ -365,6 +365,10 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_TIDY = "arm_tidy"
     AMD_DARWIN = "amd_darwin"
     ARM_DARWIN = "arm_darwin"
+    # Cross-build for Windows (mingw-w64). It links a native PE `clickhouse.exe`, which has
+    # not been run yet, so the job builds the binary but publishes no artifact. See
+    # docs/en/development/build-cross-windows.md.
+    AMD_WINDOWS = "amd_windows"
     ARM_V80COMPAT = "arm_v80compat"
     AMD_FREEBSD = "amd_freebsd"
     PPC64LE = "ppc64le"

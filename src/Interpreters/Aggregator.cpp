@@ -128,7 +128,7 @@ void initDataVariantsWithSizeHint(
     }
 
     const auto & stats_collecting_params = params.stats_collecting_params;
-    const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
+    const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1uz) : 1;
     if (auto hint = getSizeHint(stats_collecting_params, /*tables_cnt=*/max_threads))
     {
         /// An engaged run starts single-level at the default size, ignoring the hint. Two-level

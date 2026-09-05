@@ -10,7 +10,11 @@ from ci.defs.defs import (
 )
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
-from ci.workflows.pull_request import REGULAR_BUILD_NAMES
+from ci.workflows.pull_request import (
+    REGULAR_BUILD_NAMES,
+    SPECIAL_BUILD_JOBS_EXCEPT_WINDOWS,
+    WINDOWS_BUILD_JOB,
+)
 
 # On master the plain (non-sanitizer) stateless suite runs against the optimized
 # release binary instead of the plain `binary` build that PRs use. Drop the
@@ -43,9 +47,12 @@ workflow = Workflow.Config(
             job.set_run_after(
                 REGULAR_BUILD_NAMES + [JobConfigs.tidy_build_arm_jobs[0].name]
             )
-            for job in JobConfigs.special_build_jobs
+            for job in SPECIAL_BUILD_JOBS_EXCEPT_WINDOWS
         ],
         *JobConfigs.wasm_parser_build_jobs,
+        # Nothing consumes the Windows cross-build and nothing gates on it, so it starts
+        # right away instead of waiting for every regular build and the tidy build.
+        WINDOWS_BUILD_JOB,
         *JobConfigs.unittest_jobs,
         *JobConfigs.unittest_llvm_coverage_job,
         JobConfigs.docker_server,

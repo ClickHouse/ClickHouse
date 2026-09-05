@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <atomic>
 #include <map>
 #include <set>
@@ -4292,7 +4293,7 @@ void Context::loadUserDefinedExecutableFunctionDrivers(const Poco::Util::Abstrac
         std::set<std::string> files;
         if (pattern[0] != '/')
         {
-            const String absolute_path = config_dir / pattern;
+            const String absolute_path = pathToGenericString(config_dir / pattern);
             Poco::Glob::glob(absolute_path, files, 0);
             if (files.empty())
                 Poco::Glob::glob(pattern, files, 0);
@@ -8526,10 +8527,10 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     /// Only apply this cap when the user hasn't explicitly configured `background_pool_size`.
     bool background_pool_auto_lowered = false;
     size_t available_memory = getMemoryAmount();
-    if (available_memory > 0 && available_memory < (4ul << 30)
+    if (available_memory > 0 && available_memory < (4uz << 30)
         && !server_settings[ServerSetting::background_pool_size].changed)
     {
-        size_t max_pool = std::max<size_t>(1, available_memory / (1ul << 30)); /// 1 per GiB
+        size_t max_pool = std::max<size_t>(1, available_memory / (1uz << 30)); /// 1 per GiB
         if (background_pool_size > max_pool)
         {
             LOG_INFO(getLogger("Context"),

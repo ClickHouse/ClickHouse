@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <filesystem>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
@@ -125,7 +126,7 @@ String IcebergPathResolver::resolve(const IcebergPathFromMetadata & metadata_pat
         && (raw_path.size() == table_location.size() || raw_path[table_location.size()] == '/'))
     {
         auto result = std::filesystem::path{table_root} / trim_forward_slash(raw_path.substr(table_location.size()));
-        return result;
+        return pathToGenericString(result);
     }
 
     if (isInForeignNamespace(raw_path))

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 
 
@@ -119,7 +120,7 @@ void FutureMergedMutatedPart::updateName()
 
 void FutureMergedMutatedPart::updatePath(const MergeTreeData & storage, const IReservation * reservation)
 {
-    path = fs::path(storage.getFullPathOnDisk(reservation->getDisk())) / name;
+    path = pathToGenericString(fs::path(storage.getFullPathOnDisk(reservation->getDisk())) / name);
     path += "/";
 }
 

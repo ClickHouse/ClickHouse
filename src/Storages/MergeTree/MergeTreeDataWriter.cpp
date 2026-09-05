@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <memory>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>

@@ -64,7 +64,7 @@ public:
 
     const auto & getFormatName() const { return configuration->format; }
 
-    const fs::path & getZooKeeperPath() const { return zk_path; }
+    const String & getZooKeeperPath() const { return zk_path; }
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
@@ -137,7 +137,9 @@ private:
     ObjectStorageType type;
     const std::string engine_name;
     std::string zookeeper_name;
-    fs::path zk_path;
+    /// A Keeper path, not a filesystem path: kept as a UTF-8 `String` end to end, so that no
+    /// `std::filesystem::path` round-trip can re-encode it or swap its separators.
+    String zk_path;
     const bool enable_logging_to_queue_log;
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);

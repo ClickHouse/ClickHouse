@@ -3,6 +3,13 @@
 #include <atomic>
 #include <mutex>
 #include <base/types.h>
+#include <Common/AsyncCallback.h>
+
+/// The executor is fiber-based, and fibers are not built on Windows - `FiberStack` rests on
+/// `getrlimit` and mmap guard pages, and the async event loop that drives all of this is left out
+/// there as well (see docs/en/development/build-cross-windows.md). The callback vocabulary above
+/// stays available to everyone.
+#if !defined(OS_WINDOWS)
 #include <Common/Epoll.h>
 #include <Common/StackfulCoroutine.h>
 #include <Common/CoroutineStack.h>
@@ -17,15 +24,6 @@
 namespace DB
 {
 
-enum class AsyncEventTimeoutType : uint8_t
-{
-    CONNECT,
-    RECEIVE,
-    SEND,
-    NONE,
-};
-
-using AsyncCallback = std::function<void(int, Poco::Timespan, AsyncEventTimeoutType, const std::string &, uint32_t)>;
 using SuspendCallback = std::function<void()>;
 
 struct CoroutineInfo
@@ -69,24 +67,9 @@ public:
     virtual ~AsyncTaskExecutor() = default;
 
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-    /// EPOLLIN/EPOLLOUT/EPOLLERR come from <sys/epoll.h> on Linux and from the kqueue
-    /// compatibility shim in <Common/Epoll.h> on macOS, so the values match the `Epoll` flags
-    /// on both platforms.
-    enum Event
-    {
-        READ = EPOLLIN,
-        WRITE = EPOLLOUT,
-        ERROR = EPOLLERR,
-    };
-#else
-    enum Event
-    {
-        READ = 1,
-        WRITE = 2,
-        ERROR = 4,
-    };
-#endif
+    /// Kept as a member alias so that `AsyncEvent::READ` keeps resolving; the
+    /// values live in <Common/AsyncCallback.h>, which does not depend on fibers.
+    using Event = AsyncEvent;
 
 protected:
     /// Method that is called in resume() before actual coroutine resuming.
@@ -139,3 +122,5 @@ private:
 String getSocketTimeoutExceededMessageByTimeoutType(AsyncEventTimeoutType type, Poco::Timespan timeout, const String & socket_description);
 
 }
+
+#endif

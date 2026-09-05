@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -177,7 +178,7 @@ std::string TableMetadata::getLocation() const
     if (path.empty())
         return location_without_path;
 
-    return (std::filesystem::path(location_without_path) / path).string();
+    return pathToGenericString(std::filesystem::path(location_without_path) / path);
 }
 
 std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style) const
@@ -203,8 +204,8 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::
     if (!azure_account_with_suffix.empty())
     {
         if (!force_add_bucket && location.contains("/" + bucket))
-            return std::filesystem::path(location) / path / "";
-        return std::filesystem::path(location) / bucket / path / "";
+            return pathToGenericString(std::filesystem::path(location) / path / "");
+        return pathToGenericString(std::filesystem::path(location) / bucket / path / "");
     }
 
     if (uri_style == DB::S3UriStyle::VIRTUAL_HOSTED)
@@ -219,7 +220,7 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::
         std::string vhosted_base = endpoint_uri.toString();
         if (vhosted_base.ends_with('/'))
             vhosted_base.pop_back();
-        return std::filesystem::path(vhosted_base) / path / "";
+        return pathToGenericString(std::filesystem::path(vhosted_base) / path / "");
     }
 
     if (uri_style == DB::S3UriStyle::PATH)
@@ -234,8 +235,8 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::
     }
 
     if (!force_add_bucket && location.ends_with(bucket))
-        return std::filesystem::path(location) / path / "";
-    return std::filesystem::path(location) / bucket / path / "";
+        return pathToGenericString(std::filesystem::path(location) / path / "");
+    return pathToGenericString(std::filesystem::path(location) / bucket / path / "");
 }
 
 void TableMetadata::setEndpoint(const std::string & endpoint_)

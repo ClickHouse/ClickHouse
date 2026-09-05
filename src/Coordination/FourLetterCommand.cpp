@@ -1,3 +1,4 @@
+#include <base/getOSUserName.h>
 #include <Coordination/FourLetterCommand.h>
 
 #include <Coordination/CoordinationSettings.h>
@@ -549,12 +550,7 @@ String EnviCommand::run()
     buf << "os.version=" << Environment::osVersion() << '\n';
     buf << "cpu.count=" << Environment::processorCount() << '\n';
 
-    String os_user;
-    os_user.resize(256, '\0');
-    if (0 == getlogin_r(os_user.data(), static_cast<int>(os_user.size() - 1)))
-        os_user.resize(strlen(os_user.c_str()));
-    else
-        os_user.clear();    /// Don't mind if we cannot determine user login.
+    String os_user = getOSUserName();
 
     buf << "user.name=" << os_user << '\n';
 

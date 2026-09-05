@@ -2132,7 +2132,7 @@ size_t StorageDistributed::getRandomShardIndex(const Cluster::ShardsInfo & shard
         res = std::uniform_int_distribution<size_t>(0, total_weight - 1)(rng);
     }
 
-    for (auto i = 0ul, s = shards.size(); i < s; ++i)
+    for (size_t i = 0, s = shards.size(); i < s; ++i)
     {
         if (shards[i].weight > res)
             return i;

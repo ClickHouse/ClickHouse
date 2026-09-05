@@ -15,6 +15,12 @@
 
 #include <unistd.h>
 
+#if defined(OS_WINDOWS)
+#include <Poco/Net/Net.h>
+#endif
+
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <iostream>
 #include <new>
@@ -33,14 +39,35 @@ int mainEntryClickHouseDisks(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 int mainEntryClickHouseFormat(int argc, char ** argv);
 int mainEntryClickHouseFstDumpTree(int argc, char ** argv);
+#if !defined(OS_WINDOWS)
 int mainEntryClickHouseGitImport(int argc, char ** argv);
+#endif
 int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 int mainEntryClickHouseOomCanary(int argc, char ** argv);
+#if ENABLE_CLICKHOUSE_SU
 int mainEntryClickHouseSU(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_DOCKER_INIT
 int mainEntryClickHouseDockerInit(int argc, char ** argv);
+#endif
 int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
+
+#if defined(OS_WINDOWS)
+/// The server cannot run on Windows: its startup goes through BaseDaemon, which needs POSIX
+/// signals, fork and friends. Without this stub the mode would be dispatched anyway and fail
+/// deep inside daemon startup with NOT_IMPLEMENTED from an internal primitive
+/// (BaseDaemon::closeFDs). Reject it up front with a clear message instead.
+int mainEntryClickHouseServerUnsupportedOnWindows(int argc, char ** argv);
+int mainEntryClickHouseServerUnsupportedOnWindows(int, char **)
+{
+    std::cerr << "ClickHouse server is not supported on Windows.\n"
+                 "Use 'clickhouse local' to query data without a server,\n"
+                 "or 'clickhouse client' to connect to a server running on another machine." << std::endl;
+    return -1;
+}
+#endif
 int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperRemoveByList(int argc, char ** argv);
 
@@ -87,11 +114,13 @@ int mainEntryClickHouseChdig(int argc, char ** argv)
 #endif
 
 // install
+#if ENABLE_CLICKHOUSE_INSTALL
 int mainEntryClickHouseInstall(int argc, char ** argv);
 int mainEntryClickHouseStart(int argc, char ** argv);
 int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
+#endif
 
 // packed-io: list/extract/create ClickHouse packed-format archives
 int mainEntryClickHousePackedIO(int argc, char ** argv);
@@ -140,16 +169,28 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"dig", mainEntryClickHouseChdig},
 #endif
     {"benchmark", mainEntryClickHouseBenchmark},
+#if defined(OS_WINDOWS)
+    /// Registered so that `clickhouse server` and the `clickhouse-server` alias reject the mode
+    /// with a clear message instead of failing inside daemon startup; hidden from the help.
+    {"server", mainEntryClickHouseServerUnsupportedOnWindows},
+#else
     {"server", mainEntryClickHouseServer},
+#endif
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
     {"compressor", mainEntryClickHouseCompressor},
     {"format", mainEntryClickHouseFormat},
     {"obfuscator", mainEntryClickHouseObfuscator},
     {"oom-canary", mainEntryClickHouseOomCanary},
+#if !defined(OS_WINDOWS)
     {"git-import", mainEntryClickHouseGitImport},
+#endif
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
+#if ENABLE_CLICKHOUSE_SU
     {"su", mainEntryClickHouseSU},
+#endif
+#if ENABLE_CLICKHOUSE_DOCKER_INIT
     {"docker-init", mainEntryClickHouseDockerInit},
+#endif
     {"hash-binary", mainEntryClickHouseHashBinary},
     {"disks", mainEntryClickHouseDisks},
     {"check-marks", mainEntryClickHouseCheckMarks},
@@ -158,7 +199,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"zookeeper-remove-by-list", mainEntryClickHouseZooKeeperRemoveByList},
 
     // keeper
-#if ENABLE_CLICKHOUSE_KEEPER
+#if ENABLE_CLICKHOUSE_KEEPER && !defined(OS_WINDOWS)
     {"keeper", mainEntryClickHouseKeeper},
 #endif
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
@@ -175,11 +216,13 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"keeper-utils", mainEntryClickHouseKeeperUtils},
 #endif
     // install
+#if ENABLE_CLICKHOUSE_INSTALL
     {"install", mainEntryClickHouseInstall},
     {"start", mainEntryClickHouseStart},
     {"stop", mainEntryClickHouseStop},
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
+#endif
     // help
     {"help", mainEntryHelp},
     {"packed-io", mainEntryClickHousePackedIO},
@@ -200,7 +243,14 @@ void printHelp(std::ostream & out)
 {
     out << "Use one of the following commands:" << std::endl;
     for (const auto & application : clickhouse_applications)
+    {
+#if defined(OS_WINDOWS)
+        /// The entry only exists to print that the mode is unsupported - do not advertise it.
+        if (application.second == mainEntryClickHouseServerUnsupportedOnWindows)
+            continue;
+#endif
         out << "clickhouse " << application.first << " [args] " << std::endl;
+    }
 }
 
 /// Add an item here to register a new short name
@@ -215,11 +265,40 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 
 }
 
+/// `argv[0]` reduced to a program name: the basename, with the Windows executable suffix
+/// stripped, so that "/usr/bin/clickhouse-local", "clickhouse-local.exe" and
+/// "C:\Programs\clickhouse-local.exe" all compare equal to "clickhouse-local".
+static std::string_view programNameFromArgv0(std::string_view argv0)
+{
+#if defined(OS_WINDOWS)
+    /// Windows path components are separated by either slash; a backslash is a legal (if
+    /// unusual) file-name character on POSIX, so it is a separator only here.
+    static constexpr std::string_view separators = "/\\";
+#else
+    static constexpr std::string_view separators = "/";
+#endif
+    if (const auto pos = argv0.find_last_of(separators); pos != std::string_view::npos)
+        argv0.remove_prefix(pos + 1);
+
+#if defined(OS_WINDOWS)
+    /// Windows file names are case-insensitive, so ".EXE" spells the same suffix.
+    static constexpr std::string_view suffix = ".exe";
+    if (argv0.size() > suffix.size())
+    {
+        const auto tail = argv0.substr(argv0.size() - suffix.size());
+        if (std::equal(tail.begin(), tail.end(), suffix.begin(), [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == b; }))
+            argv0.remove_suffix(suffix.size());
+    }
+#endif
+
+    return argv0;
+}
+
 static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
     for (const auto & [alias, name] : clickhouse_short_names)
         if (app_suffix == name
-            && !argv.empty() && (alias == argv[0] || endsWith(argv[0], "/" + std::string(alias))))
+            && !argv.empty() && programNameFromArgv0(argv[0]) == alias)
             return true;
 
     /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
@@ -238,7 +317,7 @@ static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & a
 
     /// Use app if clickhouse binary is run through symbolic link with name clickhouse-app
     std::string app_name = "clickhouse-" + std::string(app_suffix);
-    return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
+    return !argv.empty() && programNameFromArgv0(argv[0]) == app_name;
 }
 
 /// Don't allow dlopen in the main ClickHouse binary, because it is harmful and insecure.
@@ -327,6 +406,17 @@ int main(int argc_, char ** argv_)
 {
     inside_main = true;
     SCOPE_EXIT({ inside_main = false; });
+
+#if defined(OS_WINDOWS)
+    /// Winsock must be started before the first socket call. Poco does that from a static
+    /// initializer in `Net.cpp`, but `_poco_net` is a static library and nothing references that
+    /// translation unit, so the linker is free to drop it - and then the first socket call fails
+    /// with `WSANOTINITIALISED`. Calling `initializeNetwork` here forces `Net.cpp` into the link
+    /// (so its initializer runs before `main` even starts) and starts Winsock even if the
+    /// initializer were compiled out. `WSAStartup` is reference-counted, so the double start is
+    /// harmless; the extra reference also keeps Winsock alive through static destruction.
+    Poco::Net::initializeNetwork();
+#endif
 
     /// PHDR cache is required for query profiler to work reliably
     /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -28,14 +29,14 @@ namespace ErrorCodes
 
 namespace
 {
-    std::string getProcessedPathWithBucket(const std::filesystem::path & zk_path, size_t bucket)
+    std::string getProcessedPathWithBucket(const std::string & zk_path, size_t bucket)
     {
-        return zk_path / "buckets" / toString(bucket) / "processed";
+        return zkutil::joinZooKeeperPath(zk_path, "buckets", toString(bucket), "processed");
     }
 
-    std::string getProcessedPathWithoutBucket(const std::filesystem::path & zk_path)
+    std::string getProcessedPathWithoutBucket(const std::string & zk_path)
     {
-        return zk_path / "processed";
+        return zkutil::joinZooKeeperPath(zk_path, "processed");
     }
 
     bool useBucketsForProcessing(size_t buckets_num)
@@ -114,7 +115,7 @@ namespace
     /// Requires `partitioning_mode` and `parser` because when `bucketing_mode == PARTITION`
     /// the bucket index is derived from the partition key rather than the full file path.
     std::string getProcessedBucketPath(
-        const std::filesystem::path & zk_path,
+        const std::string & zk_path,
         const std::string & path,
         size_t buckets_num,
         ObjectStorageQueueBucketingMode bucketing_mode,
@@ -130,7 +131,7 @@ namespace
     /// `getProcessedBucketPath(...)` in non-partitioned mode, or
     /// `getProcessedBucketPath(...) / <partition_key>` in HIVE/REGEX mode.
     std::string getProcessedPath(
-        const std::filesystem::path & zk_path,
+        const std::string & zk_path,
         const std::string & path,
         size_t buckets_num,
         ObjectStorageQueueBucketingMode bucketing_mode,
@@ -139,7 +140,7 @@ namespace
     {
         auto bucket_path = getProcessedBucketPath(zk_path, path, buckets_num, bucketing_mode, partitioning_mode, parser);
         if (hasPartitioningMode(partitioning_mode))
-            return std::filesystem::path(std::move(bucket_path)) / getPartitionKey(path, partitioning_mode, parser);
+            return zkutil::joinZooKeeperPath(bucket_path, getPartitionKey(path, partitioning_mode, parser));
         return bucket_path;
     }
 
@@ -154,7 +155,7 @@ std::string ObjectStorageQueueOrderedFileMetadata::BucketInfo::toString() const
 }
 
 std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getLastProcessedPaths(
-    const std::filesystem::path & zk_path_,
+    const std::string & zk_path_,
     size_t buckets_num_,
     ObjectStorageQueuePartitioningMode partitioning_mode_,
     const std::string & zookeeper_name_,
@@ -405,7 +406,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::~BucketHolder()
 }
 
 ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
-    const std::filesystem::path & zk_path_,
+    const std::string & zk_path_,
     const std::string & path_,
     FileStatusPtr file_status_,
     BucketInfoPtr bucket_info_,
@@ -421,9 +422,9 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     : ObjectStorageQueueIFileMetadata(
         path_,
         zookeeper_name_,
-        /* processing_node_path */zk_path_ / "processing" / getNodeName(path_),
+        /* processing_node_path */zkutil::joinZooKeeperPath(zk_path_, "processing", getNodeName(path_)),
         /* processed_node_path */getProcessedPath(zk_path_, path_, buckets_num_, bucketing_mode_, partitioning_mode_, parser_),
-        /* failed_node_path */zk_path_ / "failed" / getNodeName(path_),
+        /* failed_node_path */zkutil::joinZooKeeperPath(zk_path_, "failed", getNodeName(path_)),
         file_status_,
         max_loading_retries_,
         metadata_ref_count_,
@@ -618,7 +619,7 @@ bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFilesByPartition(
 
     Strings partition_processed_paths;
     for (const auto & partition : partitions)
-        partition_processed_paths.push_back(std::filesystem::path(processed_node_path_) / partition);
+        partition_processed_paths.push_back(zkutil::joinZooKeeperPath(processed_node_path_, partition));
 
     zkutil::ZooKeeper::MultiTryGetResponse responses;
 
@@ -660,7 +661,7 @@ ObjectStorageQueueOrderedFileMetadata::getBucketForPath(
 }
 
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
-    const std::filesystem::path & zk_path,
+    const std::string & zk_path,
     const Bucket & bucket,
     bool /*use_persistent_processing_nodes_*/,
     const std::atomic<size_t> & persistent_processing_node_ttl_seconds_,
@@ -668,7 +669,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     LoggerPtr log_)
 {
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log_);
-    const auto bucket_path = zk_path / "buckets" / toString(bucket);
+    const auto bucket_path = zkutil::joinZooKeeperPath(zk_path, "buckets", toString(bucket));
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     bool bucket_exists = false;
@@ -679,7 +680,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     chassert(bucket_exists);
 #endif
 
-    const auto bucket_lock_path = bucket_path / "lock";
+    const auto bucket_lock_path = zkutil::joinZooKeeperPath(bucket_path, "lock");
     const auto processor_info = getProcessorInfo(generateProcessingID());
 
     Coordination::Error code = {};
@@ -1087,7 +1088,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(
 
 void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     std::vector<std::string> & paths,
-    const std::filesystem::path & zk_path_,
+    const std::string & zk_path_,
     size_t buckets_num,
     const std::string & zookeeper_name_,
     ObjectStorageQueueBucketingMode bucketing_mode,
@@ -1158,7 +1159,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
                 }
             }
         }
-        failed_paths.push_back(zk_path_ / "failed" / getNodeName(path));
+        failed_paths.push_back(zkutil::joinZooKeeperPath(zk_path_, "failed", getNodeName(path)));
         check_paths_indexes.push_back(i);
     }
 

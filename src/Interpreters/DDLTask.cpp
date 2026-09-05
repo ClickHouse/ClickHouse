@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Access/User.h>
@@ -426,7 +427,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
             {
                 String current_host_id_str = host.toString();
                 String active_id = toString(ServerUUID::get());
-                String active_path = fs::path(global_context->getDDLWorker().getReplicasDir()) / current_host_id_str / "active";
+                String active_path = zkutil::joinZooKeeperPath(global_context->getDDLWorker().getReplicasDir(), current_host_id_str, "active");
                 String content;
                 Coordination::Stat stat;
                 if (!zookeeper->tryGet(active_path, content, &stat))
@@ -478,7 +479,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
             return false;
         }
 
-        size_t finished_nodes_count = zookeeper->getChildren(fs::path(entry_path) / "finished").size();
+        size_t finished_nodes_count = zookeeper->getChildren(zkutil::joinZooKeeperPath(entry_path, "finished")).size();
         if (entry.hosts.size() == finished_nodes_count)
         {
             LOG_WARNING(log, "Failed to find current host ID, but assuming that {} is finished because the number of finished nodes ({}) "

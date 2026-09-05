@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Server/StaticRequestHandler.h>
 #include <Server/IServer.h>
 
@@ -85,7 +86,7 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
             file_name = file_name.substr(1);
 
         fs::path user_files_absolute_path = fs::canonical(fs::path(server.context()->getUserFilesPath()));
-        String file_path = fs::weakly_canonical(user_files_absolute_path / file_name);
+        String file_path = pathToGenericString(fs::weakly_canonical(user_files_absolute_path / file_name));
 
         if (!fs::exists(file_path))
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Invalid file name {} for static HTTPHandler. ", file_path);

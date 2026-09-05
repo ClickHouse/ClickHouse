@@ -199,15 +199,29 @@ void ObjectStorageQueuePostProcessor::doWithRetries(std::function<void()> action
     }
 }
 
+/// The base name of an object-storage key. Not `fileName()`: an object key is not a filesystem path,
+/// so `/` is its only separator and a backslash is an ordinary character of the key.
+static String objectKeyBaseName(const String & remote_path)
+{
+    const auto separator_pos = remote_path.rfind('/');
+    return separator_pos == String::npos ? remote_path : remote_path.substr(separator_pos + 1);
+}
+
 static StoredObject applyMovePrefixIfPresent(const StoredObject & src, const String & move_prefix, bool preserve_path)
 {
     if (move_prefix.empty())
     {
         return src;
     }
-    const String suffix = preserve_path ? src.remote_path : fileName(src.remote_path);
+    const String suffix = preserve_path ? src.remote_path : objectKeyBaseName(src.remote_path);
     chassert(!suffix.starts_with('/'));
-    const String remote_path = fs::path(move_prefix) / suffix;
+    /// Joined by hand rather than through `std::filesystem::path`, which would append the host's
+    /// preferred separator (a backslash on Windows) and re-encode a non-ASCII key through the
+    /// active code page.
+    String remote_path = move_prefix;
+    if (!remote_path.ends_with('/'))
+        remote_path += '/';
+    remote_path += suffix;
     return StoredObject(remote_path);
 }
 

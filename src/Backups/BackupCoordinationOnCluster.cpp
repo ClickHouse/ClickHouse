@@ -187,7 +187,7 @@ BackupCoordinationOnCluster::BackupCoordinationOnCluster(
     , log(getLogger("BackupCoordinationOnCluster"))
     , with_retries(log, get_zookeeper_, keeper_settings, process_list_element_, [root_zookeeper_path_](Coordination::ZooKeeperWithFaultInjection::Ptr zk) { zk->sync(root_zookeeper_path_); })
     , cleaner(/* is_restore = */ false, zookeeper_path, with_retries, log)
-    , stage_sync(/* is_restore = */ false, fs::path{zookeeper_path} / "stage", current_host, all_hosts, allow_concurrent_backup_, concurrency_counters_, with_retries, schedule_, process_list_element_, log)
+    , stage_sync(/* is_restore = */ false, zkutil::joinZooKeeperPath(zookeeper_path, "stage"), current_host, all_hosts, allow_concurrent_backup_, concurrency_counters_, with_retries, schedule_, process_list_element_, log)
 {
     /// If the current host isn't the initiator then there are other hosts working on this backup (at least the initiator itself).
     if (current_host != kInitiator)
@@ -715,13 +715,13 @@ void BackupCoordinationOnCluster::prepareKeeperMapTables() const
 
         with_retries.renewZooKeeper(zk);
 
-        fs::path tables_path = fs::path(zookeeper_path) / "keeper_map_tables";
+        const String tables_path = zkutil::joinZooKeeperPath(zookeeper_path, "keeper_map_tables");
 
         auto tables = zk->getChildren(tables_path);
         keeper_map_table_infos.reserve(tables.size());
 
         for (auto & table : tables)
-            table = tables_path / table;
+            table = zkutil::joinZooKeeperPath(tables_path, table);
 
         auto tables_info = zk->get(tables);
         for (size_t i = 0; i < tables_info.size(); ++i)
@@ -736,7 +736,7 @@ void BackupCoordinationOnCluster::prepareKeeperMapTables() const
             keeper_map_table_infos.emplace_back(
                 std::move(data[0]),
                 BackupCoordinationKeeperMapTables::KeeperMapTableInfo{
-                    .table_id = fs::path(tables[i]).filename(), .data_path_in_backup = std::move(data[1])});
+                    .table_id = zkutil::zooKeeperNodeName(tables[i]), .data_path_in_backup = std::move(data[1])});
         }
     });
 

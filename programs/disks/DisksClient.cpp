@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <DisksClient.h>
 #include <optional>
 #include <Client/ClientBase.h>
@@ -27,7 +28,7 @@ DiskWithPath::DiskWithPath(DiskPtr disk_, std::optional<String> path_) : disk(di
 {
     if (path_.has_value())
     {
-        if (!fs::path{path_.value()}.is_absolute())
+        if (!pathFromString(path_.value()).is_absolute())
         {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initializing path {} is not absolute", path_.value());
         }
@@ -86,8 +87,8 @@ std::vector<String> DiskWithPath::getAllFilesByPrefix(const String & prefix, boo
             if (slash_pos == String::npos)
                 return {"", prefix};
 
-            std::filesystem::path pattern_path{prefix};
-            return {pattern_path.parent_path(), pattern_path.filename()};
+            std::filesystem::path pattern_path = pathFromString(prefix);
+            return {pathToGenericString(pattern_path.parent_path()), pathToGenericString(pattern_path.filename())};
         }();
 
         if (!isDirectory(path_before))
@@ -132,13 +133,13 @@ void DiskWithPath::setPath(const String & any_path)
 
 String DiskWithPath::validatePathAndGetAsRelative(const String & path)
 {
-    String lexically_normal_path = fs::path(path).lexically_normal();
+    String lexically_normal_path = pathToGenericString(pathFromString(path).lexically_normal());
     if (lexically_normal_path.contains(".."))
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Path {} is not normalized", path);
 
     /// If path is absolute we should keep it as relative inside disk, so disk will look like
     /// an ordinary filesystem with root.
-    if (fs::path(lexically_normal_path).is_absolute())
+    if (pathFromString(lexically_normal_path).is_absolute())
         return lexically_normal_path.substr(1);
 
     return lexically_normal_path;
@@ -146,16 +147,16 @@ String DiskWithPath::validatePathAndGetAsRelative(const String & path)
 
 String DiskWithPath::normalizePathAndGetAsRelative(const String & messyPath)
 {
-    std::filesystem::path path(messyPath);
-    std::filesystem::path canonical_path = std::filesystem::weakly_canonical(path);
-    String npath = canonical_path.make_preferred().string();
-    return validatePathAndGetAsRelative(npath);
+    std::filesystem::path canonical_path = std::filesystem::weakly_canonical(pathFromString(messyPath));
+    return validatePathAndGetAsRelative(pathToGenericString(canonical_path));
 }
 
 String DiskWithPath::normalizePath(const String & path)
 {
-    std::filesystem::path canonical_path = std::filesystem::weakly_canonical(path);
-    return canonical_path.make_preferred().string();
+    std::filesystem::path canonical_path = std::filesystem::weakly_canonical(pathFromString(path));
+    /// The paths of `DiskWithPath` are `IDisk` virtual paths: `/`-separated by definition, so they
+    /// are read back generically rather than with the host's preferred separator.
+    return pathToGenericString(canonical_path);
 }
 
 DisksClient::DisksClient(const Poco::Util::AbstractConfiguration & config_, ContextPtr context_)
@@ -222,7 +223,7 @@ DisksClient::DisksClient(const Poco::Util::AbstractConfiguration & config_, Cont
             std::pair{
                 [this, config_prefix]()
                 { return std::make_shared<DiskLocal>(LOCAL_DISK_NAME, "/", 0, this->context, this->config, config_prefix); },
-                fs::current_path().string()});
+                pathToGenericString(fs::current_path())});
     }
 
     addDisk(begin_disk, std::nullopt);

@@ -36,7 +36,7 @@ RestoreCoordinationOnCluster::RestoreCoordinationOnCluster(
     , log(getLogger("RestoreCoordinationOnCluster"))
     , with_retries(log, get_zookeeper_, keeper_settings, process_list_element_, [root_zookeeper_path_](Coordination::ZooKeeperWithFaultInjection::Ptr zk) { zk->sync(root_zookeeper_path_); })
     , cleaner(/* is_restore = */ true, zookeeper_path, with_retries, log)
-    , stage_sync(/* is_restore = */ true, fs::path{zookeeper_path} / "stage", current_host, all_hosts, allow_concurrent_restore_, concurrency_counters_, with_retries, schedule_, process_list_element_, log)
+    , stage_sync(/* is_restore = */ true, zkutil::joinZooKeeperPath(zookeeper_path, "stage"), current_host, all_hosts, allow_concurrent_restore_, concurrency_counters_, with_retries, schedule_, process_list_element_, log)
 {
     /// If the current host isn't the initiator then there are other hosts working on this backup (at least the initiator itself).
     if (current_host != kInitiator)
@@ -145,7 +145,7 @@ bool RestoreCoordinationOnCluster::acquireCreatingSharedDatabase(const String & 
         {
             with_retries.renewZooKeeper(zk);
 
-            String path = fs::path(zookeeper_path) / "shared_databases_acquired" / escapeForFileName(database_name);
+            String path = zkutil::joinZooKeeperPath(zookeeper_path, "shared_databases_acquired", escapeForFileName(database_name));
             auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
                 throw zkutil::KeeperException::fromPath(code, path);
@@ -292,7 +292,7 @@ bool RestoreCoordinationOnCluster::acquireInsertingDataForKeeperMap(const String
 
             /// we need to remove leading '/' from root_zk_path
             auto normalized_root_zk_path = root_zk_path.substr(1);
-            std::string restore_lock_path = fs::path(zookeeper_path) / "keeper_map_tables" / escapeForFileName(normalized_root_zk_path);
+            std::string restore_lock_path = zkutil::joinZooKeeperPath(zookeeper_path, "keeper_map_tables", escapeForFileName(normalized_root_zk_path));
             zk->createAncestors(restore_lock_path);
             auto code = zk->tryCreate(restore_lock_path, table_unique_id, zkutil::CreateMode::Persistent);
 

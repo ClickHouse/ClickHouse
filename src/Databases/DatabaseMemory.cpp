@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseFactory.h>
@@ -24,7 +25,7 @@ namespace ErrorCodes
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
-    , data_path(DatabaseCatalog::getDataDirPath(name_) / "")
+    , data_path(pathToGenericString(DatabaseCatalog::getDataDirPath(name_) / ""))
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseMemory::DatabaseMemory");
     /// Temporary database should not have any data at the moment of its creation.

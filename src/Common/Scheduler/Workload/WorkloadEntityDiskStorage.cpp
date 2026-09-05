@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Common/Scheduler/Workload/WorkloadEntityDiskStorage.h>
 
 #include <Common/StringUtils.h>
@@ -51,13 +52,10 @@ namespace
     constexpr std::string_view resource_prefix = "resource_";
     constexpr std::string_view sql_suffix = ".sql";
 
-    /// Converts a path to an absolute path and append it with a separator.
-    String makeDirectoryPathCanonical(const String & directory_path)
+    /// Converts a path to an absolute path.
+    fs::path makeDirectoryPathCanonical(const String & directory_path)
     {
-        auto canonical_directory_path = std::filesystem::weakly_canonical(directory_path);
-        if (canonical_directory_path.has_filename())
-            canonical_directory_path += std::filesystem::path::preferred_separator;
-        return canonical_directory_path;
+        return std::filesystem::weakly_canonical(pathFromString(directory_path));
     }
 }
 
@@ -75,9 +73,9 @@ ASTPtr WorkloadEntityDiskStorage::tryLoadEntity(WorkloadEntityType entity_type, 
 }
 
 
-ASTPtr WorkloadEntityDiskStorage::tryLoadEntity(WorkloadEntityType entity_type, const String & entity_name, const String & path, bool check_file_exists)
+ASTPtr WorkloadEntityDiskStorage::tryLoadEntity(WorkloadEntityType entity_type, const String & entity_name, const fs::path & path, bool check_file_exists)
 {
-    LOG_DEBUG(log, "Loading workload entity {} from file {}", backQuote(entity_name), path);
+    LOG_DEBUG(log, "Loading workload entity {} from file {}", backQuote(entity_name), pathToString(path));
 
     try
     {
@@ -85,7 +83,7 @@ ASTPtr WorkloadEntityDiskStorage::tryLoadEntity(WorkloadEntityType entity_type, 
             return nullptr;
 
         /// There is .sql file with workload entity creation statement.
-        ReadBufferFromFile in(path);
+        ReadBufferFromFile in(pathToString(path));
 
         String entity_create_query;
         readStringUntilEOF(entity_create_query, in);
@@ -111,7 +109,7 @@ ASTPtr WorkloadEntityDiskStorage::tryLoadEntity(WorkloadEntityType entity_type, 
     }
     catch (...)
     {
-        tryLogCurrentException(log, fmt::format("while loading workload entity {} from path {}", backQuote(entity_name), path));
+        tryLogCurrentException(log, fmt::format("while loading workload entity {} from path {}", backQuote(entity_name), pathToString(path)));
         return nullptr; /// Failed to load this entity, will ignore it
     }
 }
@@ -131,18 +129,18 @@ void WorkloadEntityDiskStorage::loadEntities(const Poco::Util::AbstractConfigura
 
 void WorkloadEntityDiskStorage::loadEntitiesImpl()
 {
-    LOG_INFO(log, "Loading workload entities from {}", dir_path);
+    LOG_INFO(log, "Loading workload entities from {}", pathToString(dir_path));
 
     std::vector<std::pair<String, ASTPtr>> entities_name_and_queries;
 
     if (!std::filesystem::exists(dir_path))
     {
-        LOG_DEBUG(log, "The directory for workload entities ({}) does not exist: nothing to load", dir_path);
+        LOG_DEBUG(log, "The directory for workload entities ({}) does not exist: nothing to load", pathToString(dir_path));
     }
     else
     {
         Poco::DirectoryIterator dir_end;
-        for (Poco::DirectoryIterator it(dir_path); it != dir_end; ++it)
+        for (Poco::DirectoryIterator it(pathToString(dir_path)); it != dir_end; ++it)
         {
             if (it->isDirectory())
                 continue;
@@ -158,7 +156,7 @@ void WorkloadEntityDiskStorage::loadEntitiesImpl()
                 if (name.empty())
                     continue;
 
-                ASTPtr ast = tryLoadEntity(WorkloadEntityType::Workload, name, dir_path + it.name(), /* check_file_exists= */ false);
+                ASTPtr ast = tryLoadEntity(WorkloadEntityType::Workload, name, dir_path / pathFromString(it.name()), /* check_file_exists= */ false);
                 if (ast)
                     entities_name_and_queries.emplace_back(name, ast);
             }
@@ -172,7 +170,7 @@ void WorkloadEntityDiskStorage::loadEntitiesImpl()
                 if (name.empty())
                     continue;
 
-                ASTPtr ast = tryLoadEntity(WorkloadEntityType::Resource, name, dir_path + it.name(), /* check_file_exists= */ false);
+                ASTPtr ast = tryLoadEntity(WorkloadEntityType::Resource, name, dir_path / pathFromString(it.name()), /* check_file_exists= */ false);
                 if (ast)
                     entities_name_and_queries.emplace_back(name, ast);
             }
@@ -191,7 +189,7 @@ void WorkloadEntityDiskStorage::createDirectory()
     fs::create_directories(dir_path, create_dir_error_code);
     if (!fs::exists(dir_path) || !fs::is_directory(dir_path) || create_dir_error_code)
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Couldn't create directory {} reason: '{}'",
-                        dir_path, create_dir_error_code.message());
+                        pathToString(dir_path), create_dir_error_code.message());
 }
 
 
@@ -205,8 +203,8 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::storeEntit
     const Settings & settings)
 {
     createDirectory();
-    String file_path = getFilePath(entity_type, entity_name);
-    LOG_DEBUG(log, "Storing workload entity {} to file {}", backQuote(entity_name), file_path);
+    const fs::path file_path = getFilePath(entity_type, entity_name);
+    LOG_DEBUG(log, "Storing workload entity {} to file {}", backQuote(entity_name), pathToString(file_path));
 
     if (fs::exists(file_path))
     {
@@ -217,11 +215,12 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::storeEntit
     }
 
 
-    String temp_file_path = file_path + ".tmp";
+    fs::path temp_file_path = file_path;
+    temp_file_path += ".tmp";
 
     try
     {
-        WriteBufferFromFile out(temp_file_path);
+        WriteBufferFromFile out(pathToString(temp_file_path));
         writeString(create_entity_query->formatWithSecretsOneLine(), out);
         writeChar('\n', out);
         out.next();
@@ -232,7 +231,7 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::storeEntit
         if (replace_if_exists)
             fs::rename(temp_file_path, file_path);
         else
-            renameNoReplace(temp_file_path, file_path);
+            renameNoReplace(pathToString(temp_file_path), pathToString(file_path));
     }
     catch (...)
     {
@@ -251,8 +250,8 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::removeEnti
     const String & entity_name,
     bool throw_if_not_exists)
 {
-    String file_path = getFilePath(entity_type, entity_name);
-    LOG_DEBUG(log, "Removing workload entity {} stored in file {}", backQuote(entity_name), file_path);
+    const fs::path file_path = getFilePath(entity_type, entity_name);
+    LOG_DEBUG(log, "Removing workload entity {} stored in file {}", backQuote(entity_name), pathToString(file_path));
 
     bool existed = fs::remove(file_path);
 
@@ -269,19 +268,19 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::removeEnti
 }
 
 
-String WorkloadEntityDiskStorage::getFilePath(WorkloadEntityType entity_type, const String & entity_name) const
+fs::path WorkloadEntityDiskStorage::getFilePath(WorkloadEntityType entity_type, const String & entity_name) const
 {
-    String file_path;
+    fs::path file_path;
     switch (entity_type)
     {
         case WorkloadEntityType::Workload:
         {
-            file_path = dir_path + "workload_" + escapeForFileName(entity_name) + ".sql";
+            file_path = dir_path / pathFromString("workload_" + escapeForFileName(entity_name) + ".sql");
             break;
         }
         case WorkloadEntityType::Resource:
         {
-            file_path = dir_path + "resource_" + escapeForFileName(entity_name) + ".sql";
+            file_path = dir_path / pathFromString("resource_" + escapeForFileName(entity_name) + ".sql");
             break;
         }
         case WorkloadEntityType::MAX: break;

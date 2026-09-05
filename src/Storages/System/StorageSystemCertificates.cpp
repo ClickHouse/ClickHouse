@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
@@ -90,8 +91,8 @@ static void enumCertificates(const std::string & dir, bool def, MutableColumns &
         if (!dir_entry.is_regular_file() || !RE2::FullMatch(dir_entry.path().filename().string(), cert_name))
             continue;
 
-        X509Certificate cert(dir_entry.path());
-        populateTable(cert, res_columns, dir_entry.path(), def, protocol);
+        X509Certificate cert(pathToGenericString(dir_entry.path()));
+        populateTable(cert, res_columns, pathToGenericString(dir_entry.path()), def, protocol);
     }
 }
 

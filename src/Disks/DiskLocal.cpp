@@ -1,3 +1,5 @@
+#include <IO/PlatformFileIO.h>
+#include <base/pathToString.h>
 #include <Disks/DiskLocal.h>
 #include <Common/IThrottler.h>
 #include <Core/Defines.h>
@@ -64,14 +66,21 @@ namespace
 
 bool errnoIndicatesReadOnlyDisk(int err)
 {
-    return err == EROFS || err == EACCES || err == EPERM || err == ENOSPC || err == EDQUOT;
+    if (err == EROFS || err == EACCES || err == EPERM || err == ENOSPC)
+        return true;
+#if defined(EDQUOT)
+    /// A disk quota. Not in the Windows CRT's `<errno.h>`, which has no notion of one.
+    if (err == EDQUOT)
+        return true;
+#endif
+    return false;
 }
 
 UInt64 getTotalSpaceByName(const String & name, const String & disk_path, UInt64 keep_free_space_bytes)
 {
     struct statvfs fs{};
     if (name == "default") /// for default disk we get space from path/data/
-        fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
+        fs = getStatVFS(pathToString(pathFromString(disk_path) / "data" / ""));
     else
         fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_blocks * fs.f_frsize;
@@ -156,7 +165,7 @@ class DiskLocalDirectoryIterator final : public IDirectoryIterator
 public:
     DiskLocalDirectoryIterator() = default;
     DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_)
-        : dir_path(dir_path_), entry(fs::path(disk_path_) / dir_path_)
+        : dir_path(pathFromString(dir_path_)), entry(pathFromString(disk_path_) / dir_path)
     {
     }
 
@@ -167,17 +176,22 @@ public:
     String path() const override
     {
         if (entry->is_directory())
-            return dir_path / entry->path().filename() / "";
-        return dir_path / entry->path().filename();
+            return pathToGenericString(dir_path / entry->path().filename() / "");
+        return pathToGenericString(dir_path / entry->path().filename());
     }
 
-    String name() const override { return entry->path().filename(); }
+    String name() const override { return pathToGenericString(entry->path().filename()); }
 
 private:
     fs::path dir_path;
     fs::directory_iterator entry;
 };
 
+
+fs::path DiskLocal::absolutePath(const String & path) const
+{
+    return pathFromString(disk_path) / pathFromString(path);
+}
 
 ReservationPtr DiskLocal::reserve(UInt64 bytes)
 {
@@ -296,7 +310,7 @@ std::optional<UInt64> DiskLocal::getAvailableSpace() const
     /// available for superuser only and for system purposes
     struct statvfs fs{};
     if (name == "default") /// for default disk we get space from path/data/
-        fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
+        fs = getStatVFS(pathToString(pathFromString(disk_path) / "data" / ""));
     else
         fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_bavail * fs.f_frsize;
@@ -340,42 +354,42 @@ catch (const fs::filesystem_error & e)
 
 bool DiskLocal::existsFileOrDirectory(const String & path) const
 {
-    return existsOrFileNameTooLong([&] { return fs::exists(fs::path(disk_path) / path); });
+    return existsOrFileNameTooLong([&] { return fs::exists(absolutePath(path)); });
 }
 
 bool DiskLocal::existsFile(const String & path) const
 {
-    return existsOrFileNameTooLong([&] { return fs::is_regular_file(fs::path(disk_path) / path); });
+    return existsOrFileNameTooLong([&] { return fs::is_regular_file(absolutePath(path)); });
 }
 
 bool DiskLocal::existsDirectory(const String & path) const
 {
-    return existsOrFileNameTooLong([&] { return fs::is_directory(fs::path(disk_path) / path); });
+    return existsOrFileNameTooLong([&] { return fs::is_directory(absolutePath(path)); });
 }
 
 size_t DiskLocal::getFileSize(const String & path) const
 {
-    return fs::file_size(fs::path(disk_path) / path);
+    return fs::file_size(absolutePath(path));
 }
 
 void DiskLocal::createDirectory(const String & path)
 {
-    fs::create_directory(fs::path(disk_path) / path);
+    fs::create_directory(absolutePath(path));
 }
 
 void DiskLocal::createDirectories(const String & path)
 {
-    fs::create_directories(fs::path(disk_path) / path);
+    fs::create_directories(absolutePath(path));
 }
 
 void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
 {
-    fs::rename(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
+    fs::rename(absolutePath(from_path), absolutePath(to_path));
 }
 
 DirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path) const
 {
-    fs::path meta_path = fs::path(disk_path) / path;
+    fs::path meta_path = absolutePath(path);
     if (!broken && fs::exists(meta_path) && fs::is_directory(meta_path))
         return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
     return std::make_unique<DiskLocalDirectoryIterator>();
@@ -383,25 +397,25 @@ DirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path) const
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
 {
-    renameNoReplace(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
+    renameNoReplace(pathToGenericString(absolutePath(from_path)), pathToGenericString(absolutePath(to_path)));
 }
 
 void DiskLocal::replaceFile(const String & from_path, const String & to_path)
 {
-    fs::path from_file = fs::path(disk_path) / from_path;
-    fs::path to_file = fs::path(disk_path) / to_path;
+    fs::path from_file = absolutePath(from_path);
+    fs::path to_file = absolutePath(to_path);
     fs::create_directories(to_file.parent_path());
     fs::rename(from_file, to_file);
 }
 
 void DiskLocal::renameExchange(const std::string & old_path, const std::string & new_path)
 {
-    DB::renameExchange(fs::path(disk_path) / old_path, fs::path(disk_path) / new_path);
+    DB::renameExchange(pathToGenericString(absolutePath(old_path)), pathToGenericString(absolutePath(new_path)));
 }
 
 bool DiskLocal::renameExchangeIfSupported(const std::string & old_path, const std::string & new_path)
 {
-    return DB::renameExchangeIfSupported(fs::path(disk_path) / old_path, fs::path(disk_path) / new_path);
+    return DB::renameExchangeIfSupported(pathToGenericString(absolutePath(old_path)), pathToGenericString(absolutePath(new_path)));
 }
 
 void DiskLocal::prepareRead(
@@ -410,7 +424,7 @@ void DiskLocal::prepareRead(
     std::optional<size_t> read_hint,
     ReadPipeline & pipeline) const
 {
-    auto full_path = fs::path(disk_path) / path;
+    auto full_path = absolutePath(path);
 
     /// Do not fail eagerly if the file doesn't exist or can't be stat'd.
     /// The error should come at read time with the proper error code
@@ -420,11 +434,12 @@ void DiskLocal::prepareRead(
     std::error_code ec;
     auto file_size = fs::file_size(full_path, ec);
 
-    StoredObject obj(full_path.string(), full_path.string(), ec ? StoredObject::UnknownSize : file_size);
+    auto full_path_string = pathToString(full_path);
+    StoredObject obj(full_path_string, full_path_string, ec ? StoredObject::UnknownSize : file_size);
 
     /// No gather for local disk — the source buffer is returned directly.
     pipeline.setLocalFileSource(
-        full_path.string(),
+        full_path_string,
         StoredObjects{obj},
         settings,
         read_hint);
@@ -465,7 +480,7 @@ DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     return std::make_unique<WriteBufferFromFile>(
-        fs::path(disk_path) / path,
+        pathToGenericString(absolutePath(path)),
         buf_size,
         flags,
         settings.local_throttler,
@@ -478,130 +493,132 @@ DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const
 
 std::vector<String> DiskLocal::getBlobPath(const String & path) const
 {
-    auto fs_path = fs::path(disk_path) / path;
-    return {fs_path};
+    auto fs_path = absolutePath(path);
+    return {pathToGenericString(fs_path)};
 }
 
 void DiskLocal::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
 {
-    auto fs_path = fs::path(disk_path) / path;
-    std::move(write_blob_function)({fs_path}, mode, {});
+    auto fs_path = absolutePath(path);
+    std::move(write_blob_function)({pathToGenericString(fs_path)}, mode, {});
 }
 
 void DiskLocal::removeFile(const String & path)
 {
-    auto fs_path = fs::path(disk_path) / path;
-    if (0 != unlink(fs_path.c_str()))
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
+    auto fs_path = absolutePath(path);
+    if (0 != platformUnlink(pathToString(fs_path)))
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, pathToGenericString(fs_path), "Cannot unlink file {}", fs_path);
 }
 
 void DiskLocal::removeFileIfExists(const String & path)
 {
-    auto fs_path = fs::path(disk_path) / path;
-    if (0 != unlink(fs_path.c_str()))
+    auto fs_path = absolutePath(path);
+    const auto path_string = pathToString(fs_path);
+    if (0 != platformUnlink(path_string))
     {
         if (errno != ENOENT)
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, pathToGenericString(fs_path), "Cannot unlink file {}", fs_path);
     }
 }
 
 void DiskLocal::removeDirectory(const String & path)
 {
-    auto fs_path = fs::path(disk_path) / path;
-    if (0 != rmdir(fs_path.c_str()))
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, fs_path, "Cannot remove directory {}", fs_path);
+    auto fs_path = absolutePath(path);
+    if (0 != platformRmdir(pathToString(fs_path)))
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, pathToGenericString(fs_path), "Cannot remove directory {}", fs_path);
 }
 
 void DiskLocal::removeDirectoryIfExists(const String & path)
 {
-    auto fs_path = fs::path(disk_path) / path;
-    if (!existsDirectory(fs_path))
+    auto fs_path = absolutePath(path);
+    if (!existsDirectory(pathToGenericString(fs_path)))
         return;
-    if (0 != rmdir(fs_path.c_str()))
+    const auto path_string = pathToString(fs_path);
+    if (0 != platformRmdir(path_string))
         if (errno != ENOENT)
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, fs_path, "Cannot remove directory {}", fs_path);
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, pathToGenericString(fs_path), "Cannot remove directory {}", fs_path);
 }
 
 void DiskLocal::removeRecursive(const String & path)
 {
-    (void)fs::remove_all(fs::path(disk_path) / path);
+    (void)fs::remove_all(absolutePath(path));
 }
 
 void DiskLocal::listFiles(const String & path, std::vector<String> & file_names) const
 {
     file_names.clear();
-    for (const auto & entry : fs::directory_iterator(fs::path(disk_path) / path))
-        file_names.emplace_back(entry.path().filename());
+    for (const auto & entry : fs::directory_iterator(absolutePath(path)))
+        file_names.emplace_back(pathToGenericString(entry.path().filename()));
 }
 
 void DiskLocal::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
-    FS::setModificationTime(fs::path(disk_path) / path, timestamp.epochTime());
+    FS::setModificationTime(pathToGenericString(absolutePath(path)), timestamp.epochTime());
 }
 
 Poco::Timestamp DiskLocal::getLastModified(const String & path) const
 {
-    return FS::getModificationTimestamp(fs::path(disk_path) / path);
+    return FS::getModificationTimestamp(pathToGenericString(absolutePath(path)));
 }
 
 time_t DiskLocal::getLastChanged(const String & path) const
 {
-    return FS::getChangeTime(fs::path(disk_path) / path);
+    return FS::getChangeTime(pathToGenericString(absolutePath(path)));
 }
 
 void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
 {
-    DB::createHardLink(fs::path(disk_path) / src_path, fs::path(disk_path) / dst_path);
+    DB::createHardLink(pathToGenericString(absolutePath(src_path)), pathToGenericString(absolutePath(dst_path)));
 }
 
 bool DiskLocal::isSymlink(const String & path) const
 {
-    return FS::isSymlink(fs::path(disk_path) / path);
+    return FS::isSymlink(absolutePath(path));
 }
 
 bool DiskLocal::isSymlinkNoThrow(const String & path) const
 {
-    return FS::isSymlinkNoThrow(fs::path(disk_path) / path);
+    return FS::isSymlinkNoThrow(absolutePath(path));
 }
 
 void DiskLocal::createDirectorySymlink(const String & target, const String & link)
 {
-    auto link_path_inside_disk = fs::path(disk_path) / link;
+    auto link_path_inside_disk = absolutePath(link);
     /// Symlinks will be relative.
-    fs::create_directory_symlink(fs::proximate(fs::path(disk_path) / target, link_path_inside_disk.parent_path()), link_path_inside_disk);
+    fs::create_directory_symlink(fs::proximate(absolutePath(target), link_path_inside_disk.parent_path()), link_path_inside_disk);
 }
 
 String DiskLocal::readSymlink(const fs::path & path) const
 {
-    return FS::readSymlink(fs::path(disk_path) / path);
+    return pathToGenericString(FS::readSymlink(pathFromString(disk_path) / path));
 }
 
 bool DiskLocal::equivalent(const String & p1, const String & p2) const
 {
-    return fs::equivalent(fs::path(disk_path) / p1, fs::path(disk_path) / p2);
+    return fs::equivalent(absolutePath(p1), absolutePath(p2));
 }
 
 bool DiskLocal::equivalentNoThrow(const String & p1, const String & p2) const
 {
     std::error_code ec;
-    return fs::equivalent(fs::path(disk_path) / p1, fs::path(disk_path) / p2, ec);
+    return fs::equivalent(absolutePath(p1), absolutePath(p2), ec);
 }
 
 void DiskLocal::truncateFile(const String & path, size_t size)
 {
-    int res = truncate((fs::path(disk_path) / path).string().data(), size);
+    int res = platformTruncate(pathToGenericString(absolutePath(path)), size);
     if (-1 == res)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate {}", path);
 }
 
 void DiskLocal::createFile(const String & path)
 {
-    FS::createFile(fs::path(disk_path) / path);
+    FS::createFile(pathToGenericString(absolutePath(path)));
 }
 
 void DiskLocal::setReadOnly(const String & path)
 {
-    fs::permissions(fs::path(disk_path) / path,
+    fs::permissions(absolutePath(path),
                     fs::perms::owner_write | fs::perms::group_write | fs::perms::others_write,
                     fs::perm_options::remove);
 }
@@ -621,14 +638,14 @@ void DiskLocal::copyDirectoryContent(
 {
     /// If throttling was configured we cannot use copying directly.
     if (isSameDiskType(*this, *to_disk) && !read_settings.local_throttler && !write_settings.local_throttler)
-        fs::copy(fs::path(disk_path) / from_dir, fs::path(to_disk->getPath()) / to_dir, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
+        fs::copy(absolutePath(from_dir), pathFromString(to_disk->getPath()) / pathFromString(to_dir), fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
     else
         IDisk::copyDirectoryContent(from_dir, to_disk, to_dir, read_settings, write_settings, cancellation_hook);
 }
 
 SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
 {
-    return std::make_unique<LocalDirectorySyncGuard>(fs::path(disk_path) / path);
+    return std::make_unique<LocalDirectorySyncGuard>(pathToGenericString(absolutePath(path)));
 }
 
 
@@ -749,7 +766,7 @@ void DiskLocal::checkAccessImpl(const String & path)
 
 void DiskLocal::setup()
 {
-    fs::create_directories(disk_path);
+    fs::create_directories(pathFromString(disk_path));
 }
 
 void DiskLocal::startupImpl()
@@ -773,16 +790,16 @@ void DiskLocal::startupImpl()
 struct stat DiskLocal::stat(const String & path) const
 {
     struct stat st{};
-    auto full_path = fs::path(disk_path) / path;
-    if (::stat(full_path.string().c_str(), &st) == 0)
+    auto full_path = absolutePath(path);
+    if (platformStat(pathToString(full_path), st) == 0)
         return st;
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot stat file: {}", path);
 }
 
 void DiskLocal::chmod(const String & path, mode_t mode)
 {
-    auto full_path = fs::path(disk_path) / path;
-    if (::chmod(full_path.string().c_str(), mode) == 0)
+    auto full_path = absolutePath(path);
+    if (platformChmod(pathToString(full_path), mode) == 0)
         return;
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot chmod file: {}", path);
 }

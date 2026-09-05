@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/pathToString.h>
 #include <filesystem>
 #include <mutex>
 #include <optional>
@@ -76,7 +77,7 @@ public:
     ObjectStorageQueueMetadata(
         ObjectStorageType storage_type_,
         const std::string & zookeeper_name_,
-        const fs::path & zookeeper_path_,
+        const std::string & zookeeper_path_,
         const ObjectStorageQueueTableMetadata & table_metadata_,
         size_t cleanup_interval_min_ms_,
         size_t cleanup_interval_max_ms_,
@@ -103,7 +104,7 @@ public:
     /// because its default depends on the CPU cores on the server);
     static ObjectStorageQueueTableMetadata syncWithKeeper(
         const String & zookeeper_name,
-        const fs::path & zookeeper_path,
+        const std::string & zookeeper_path,
         const ObjectStorageQueueSettings & settings,
         const ColumnsDescription & columns,
         const std::string & format,
@@ -229,7 +230,9 @@ private:
     const ObjectStorageQueueBucketingMode bucketing_mode;
     const ObjectStorageQueuePartitioningMode partitioning_mode;
     const std::string zookeeper_name;
-    const fs::path zookeeper_path;
+    /// A Keeper path, not a filesystem path: kept as a UTF-8 `String` end to end, so that no
+    /// `std::filesystem::path` round-trip can re-encode it or swap its separators.
+    const std::string zookeeper_path;
     const size_t keeper_multiread_batch_size;
 
     const bool cleanup_processed_files = false;

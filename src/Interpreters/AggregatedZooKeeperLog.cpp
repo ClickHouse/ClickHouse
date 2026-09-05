@@ -14,6 +14,7 @@
 #include <city.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ZooKeeper/SystemTablesDataTypes.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 
 
 namespace DB
@@ -116,7 +117,7 @@ void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
 void AggregatedZooKeeperLog::observe(
     Int64 session_id,
     Int32 operation,
-    const std::filesystem::path & path,
+    std::string_view path,
     UInt64 latency_microseconds,
     Coordination::Error error,
     StaticString component,
@@ -127,7 +128,7 @@ void AggregatedZooKeeperLog::observe(
     EntryKey entry_key{
         .session_id = session_id,
         .operation = operation,
-        .parent_path = path.parent_path(),
+        .parent_path = zkutil::parentZooKeeperPath(path),
         .component = component,
         .is_subrequest = is_subrequest
     };

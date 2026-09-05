@@ -353,8 +353,10 @@ void ThreadStatus::applyQuerySettings()
         query_id = query_context_ptr->getCurrentQueryId();
     }
 
+#if !defined(OS_WINDOWS)
     if (boundToOSThread())
         initQueryProfiler();
+#endif
 
     untracked_memory_limit = settings[Setting::max_untracked_memory];
     if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(untracked_memory_limit))
@@ -432,7 +434,9 @@ void ThreadStatus::detachFromGroup()
 
     if (boundToOSThread())
     {
+#if !defined(OS_WINDOWS)
         finalizeQueryProfiler();
+#endif
         finalizePerformanceCounters();
     }
 
@@ -692,6 +696,8 @@ void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_re
 #endif
 }
 
+#if !defined(OS_WINDOWS)
+
 void ThreadStatus::initQueryProfiler()
 {
 #if defined(QUERY_PROFILER_SUPPORTED)
@@ -739,6 +745,8 @@ void ThreadStatus::finalizeQueryProfiler()
     query_profiler_real.reset();
     query_profiler_cpu.reset();
 }
+
+#endif
 
 void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database)
 {

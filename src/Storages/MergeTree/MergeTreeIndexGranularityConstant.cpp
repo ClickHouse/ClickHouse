@@ -142,7 +142,7 @@ size_t MergeTreeIndexGranularityConstant::countRowsForRows(size_t from_mark, siz
     size_t rows_before_mark = getMarkStartingRow(from_mark);
     size_t last_row_pos = rows_before_mark + offset_in_rows + number_of_rows;
 
-    return getRowsCountInRange(from_mark, std::max(1UL, getMarkUpperBoundForRow(last_row_pos))) - offset_in_rows;
+    return getRowsCountInRange(from_mark, std::max(1uz, getMarkUpperBoundForRow(last_row_pos))) - offset_in_rows;
 }
 
 void MergeTreeIndexGranularityConstant::fixFromRowsCount(size_t rows_count)

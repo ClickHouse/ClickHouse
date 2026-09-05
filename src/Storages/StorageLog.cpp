@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/StorageLog.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLogSettings.h>
@@ -35,6 +36,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Backups/BackupPathUtils.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
 #include <Backups/BackupEntryFromMemory.h>
@@ -1236,10 +1238,9 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     if (!num_data_files || !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path))
         return;
 
-    fs::path data_path_in_backup_fs = data_path_in_backup;
     auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/");
     fs::path temp_dir = temp_dir_owner->getRelativePath();
-    disk->createDirectories(temp_dir);
+    disk->createDirectories(pathToGenericString(temp_dir));
 
     const auto & read_settings = backup_entries_collector.getReadSettings();
     const auto & backup_settings = backup_entries_collector.getBackupSettings();
@@ -1251,12 +1252,12 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String data_file_name = fileName(data_file.path);
-        String hardlink_file_path = temp_dir / data_file_name;
+        String hardlink_file_path = pathToGenericString(temp_dir / data_file_name);
         disk->createHardLink(data_file.path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
             disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file.path), allow_checksums_from_remote_paths);
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
-        backup_entries_collector.addBackupEntry(data_path_in_backup_fs / data_file_name, std::move(backup_entry));
+        backup_entries_collector.addBackupEntry(joinBackupPath(data_path_in_backup, data_file_name), std::move(backup_entry));
     }
 
     /// __marks.mrk
@@ -1264,23 +1265,23 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String marks_file_name = fileName(marks_file_path);
-        String hardlink_file_path = temp_dir / marks_file_name;
+        String hardlink_file_path = pathToGenericString(temp_dir / marks_file_name);
         disk->createHardLink(marks_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
             disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(marks_file_path), allow_checksums_from_remote_paths);
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
-        backup_entries_collector.addBackupEntry(data_path_in_backup_fs / marks_file_name, std::move(backup_entry));
+        backup_entries_collector.addBackupEntry(joinBackupPath(data_path_in_backup, marks_file_name), std::move(backup_entry));
     }
 
     /// sizes.json
     String files_info_path = file_checker.getPath();
     backup_entries_collector.addBackupEntry(
-        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, read_settings, copy_encrypted));
+        joinBackupPath(data_path_in_backup, fileName(files_info_path)), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, read_settings, copy_encrypted));
 
     /// columns.txt
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     backup_entries_collector.addBackupEntry(
-        data_path_in_backup_fs / "columns.txt",
+        joinBackupPath(data_path_in_backup, "columns.txt"),
         std::make_unique<BackupEntryFromMemory>(metadata_snapshot->getColumns().getAllPhysical().toString()));
 
     /// count.txt
@@ -1288,7 +1289,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     {
         size_t num_rows = data_files[INDEX_WITH_REAL_ROW_COUNT].marks.empty() ? 0 : data_files[INDEX_WITH_REAL_ROW_COUNT].marks.back().rows;
         backup_entries_collector.addBackupEntry(
-            data_path_in_backup_fs / "count.txt", std::make_unique<BackupEntryFromMemory>(toString(num_rows)));
+            joinBackupPath(data_path_in_backup, "count.txt"), std::make_unique<BackupEntryFromMemory>(toString(num_rows)));
     }
 }
 
@@ -1324,12 +1325,11 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
 
     try
     {
-        fs::path data_path_in_backup_fs = data_path_in_backup;
 
         /// Append data files.
         for (const auto & data_file : data_files)
         {
-            String file_path_in_backup = data_path_in_backup_fs / fileName(data_file.path);
+            String file_path_in_backup = joinBackupPath(data_path_in_backup, fileName(data_file.path));
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 
@@ -1340,7 +1340,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
         {
             /// Append marks.
             size_t num_extra_marks = 0;
-            String file_path_in_backup = data_path_in_backup_fs / fileName(marks_file_path);
+            String file_path_in_backup = joinBackupPath(data_path_in_backup, fileName(marks_file_path));
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 

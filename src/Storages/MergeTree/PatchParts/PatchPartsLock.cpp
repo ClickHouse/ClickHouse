@@ -1,4 +1,6 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
+#include <Common/timespanFromSeconds.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Analyzer/Utils.h>
@@ -7,7 +9,6 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <filesystem>
 #include <boost/algorithm/string/join.hpp>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -20,8 +21,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/ProcessList.h>
 #include <thread>
-
-namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
@@ -91,7 +90,9 @@ bool waitInterruptibly(const ContextPtr & context, const Stopwatch & watch, Int6
 
 void waitInterruptibly(const ContextPtr & context, Poco::Event & event, const Stopwatch & watch, Int64 timeout_ms)
 {
-    waitInterruptibly(context, watch, timeout_ms, [&](Int64 chunk_ms) { return event.tryWait(chunk_ms); });
+    /// `chunk_ms` is non-negative here: `waitInterruptibly` clamps it to the remaining time, which
+    /// is positive inside the loop.
+    waitInterruptibly(context, watch, timeout_ms, [&](Int64 chunk_ms) { return event.tryWait(toPocoMilliseconds(static_cast<UInt64>(chunk_ms))); });
 }
 
 zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
@@ -101,7 +102,7 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
 
-    auto lock_path = fs::path(zookeeper_path) / "lightweight_updates" / "lock";
+    auto lock_path = zkutil::joinZooKeeperPath(zookeeper_path, "lightweight_updates", "lock");
     auto lock_acquire_timeout = context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds();
     Stopwatch acquire_watch;
 
@@ -109,12 +110,12 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
     for (size_t num_try = 0;; ++num_try)
     {
         ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
-        LOG_TRACE(getLogger("getLockForSyncMode"), "Trying to get lock (try: {}, path: {}) for lightweight update", num_try, lock_path.string());
+        LOG_TRACE(getLogger("getLockForSyncMode"), "Trying to get lock (try: {}, path: {}) for lightweight update", num_try, lock_path);
         auto code = zookeeper->tryCreate(lock_path, "", zkutil::CreateMode::Ephemeral);
 
         if (code == Coordination::Error::ZOK)
         {
-            LOG_TRACE(getLogger("getLockForSyncMode"), "Got lock (try: {}, path: {}) for lightweight update", num_try, lock_path.string());
+            LOG_TRACE(getLogger("getLockForSyncMode"), "Got lock (try: {}, path: {}) for lightweight update", num_try, lock_path);
             return zkutil::EphemeralNodeHolder::existing(lock_path, *zookeeper);
         }
 
@@ -143,7 +144,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
 
     auto affected_columns = getUpdateAffectedColumns(commands, context);
-    auto in_progress_path = fs::path(zookeeper_path) / "lightweight_updates" / "in_progress";
+    auto in_progress_path = zkutil::joinZooKeeperPath(zookeeper_path, "lightweight_updates", "in_progress");
     auto lock_acquire_timeout = context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds();
     auto affected_columns_str = affected_columns.toString();
 
@@ -161,7 +162,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
     for (size_t num_try = 0;; ++num_try)
     {
         ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
-        LOG_TRACE(getLogger("getLockForAutoMode"), "Trying to get lock (try: {}, path: {}) for lightweight update", num_try, in_progress_path.string());
+        LOG_TRACE(getLogger("getLockForAutoMode"), "Trying to get lock (try: {}, path: {}) for lightweight update", num_try, in_progress_path);
 
         auto in_progress_ids = zookeeper->getChildren(in_progress_path, &parent_stat);
 
@@ -169,7 +170,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
         multiget_paths.reserve(in_progress_ids.size());
 
         for (const auto & id : in_progress_ids)
-            multiget_paths.push_back(in_progress_path / id);
+            multiget_paths.push_back(zkutil::joinZooKeeperPath(in_progress_path, id));
 
         auto contents = zookeeper->tryGet(multiget_paths);
         String conflicting_path;
@@ -215,7 +216,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
         }
 
         Coordination::Requests ops;
-        ops.push_back(zkutil::makeCreateRequest(in_progress_path / "update-", affected_columns_str, zkutil::CreateMode::EphemeralSequential));
+        ops.push_back(zkutil::makeCreateRequest(zkutil::joinZooKeeperPath(in_progress_path, "update-"), affected_columns_str, zkutil::CreateMode::EphemeralSequential));
         ops.push_back(zkutil::makeSetRequest(in_progress_path, "", parent_stat.version));
 
         /// `parent_stat.version` was read above, so anything committing here makes the request below

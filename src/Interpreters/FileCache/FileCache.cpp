@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/FileCache/FileCache.h>
 
 #include <IO/Operators.h>
@@ -526,20 +527,21 @@ void FileCache::initialize()
 {
     // Prevent initialize() from running twice. This may be caused by two cache disks being created with the same path (see integration/test_filesystem_cache).
     callOnce(initialize_called, [&] {
-        bool need_to_load_metadata = fs::exists(getBasePath());
+        const fs::path base_path = pathFromString(getBasePath());
+        bool need_to_load_metadata = fs::exists(base_path);
         try
         {
             if (!need_to_load_metadata)
-                fs::create_directories(getBasePath());
+                fs::create_directories(base_path);
 
-            auto fs_info = std::filesystem::space(getBasePath());
+            auto fs_info = std::filesystem::space(base_path);
             const size_t size_limit = main_priority->getSizeLimit(cache_state_guard.lock());
             if (fs_info.capacity < size_limit)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "The total capacity of the disk containing cache path {} is less than the specified max_size {} bytes",
                                 getBasePath(), std::to_string(size_limit));
 
-            status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
+            status_file = make_unique<StatusFile>(pathToGenericString(base_path / "status"), StatusFile::write_full_info);
         }
         catch (const std::filesystem::filesystem_error & e)
         {
@@ -1662,8 +1664,10 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     if (shutdown)
         return;
 
+#if USE_LIBFIU
     while (fiu_fail(FailPoints::file_cache_stall_free_space_ratio_keeping_thread))
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+#endif
 
     Stopwatch watch;
     size_t reschedule_ms = free_space_keeping_reschedule_ms;
@@ -2262,7 +2266,7 @@ void FileCache::loadMetadataImpl()
 
             auto path = key_prefix_it->path();
 
-            const std::string key_prefix_dir_name = path.filename();
+            const std::string key_prefix_dir_name = pathToGenericString(path.filename());
             if (key_prefix_it->is_directory() &&
                 key_prefix_dir_name != getKeyTypePrefix(FileSegmentKeyType::Data) &&
                 key_prefix_dir_name != getKeyTypePrefix(FileSegmentKeyType::System)

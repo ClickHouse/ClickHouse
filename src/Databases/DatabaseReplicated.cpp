@@ -63,6 +63,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/thread_local_rng.h>
 
@@ -214,7 +215,7 @@ DatabaseReplicated::DatabaseReplicated(
     , zookeeper_path(normalizeZooKeeperPath(zookeeper_path_))
     , shard_name(shard_name_)
     , replica_name(replica_name_)
-    , replica_path(fs::path(zookeeper_path) / "replicas" / getFullReplicaName(shard_name, replica_name))
+    , replica_path(zkutil::joinZooKeeperPath(zookeeper_path, "replicas", getFullReplicaName(shard_name, replica_name)))
     , db_settings(std::move(db_settings_))
     , tables_metadata_digest(0)
 {
@@ -271,7 +272,7 @@ void DatabaseReplicated::getStatus(ReplicatedStatus & response, const bool with_
         std::vector<std::string> paths;
 
         paths.push_back(zookeeper_path + "/max_log_ptr");
-        paths.push_back(fs::path(replica_path) / "log_ptr");
+        paths.push_back(zkutil::joinZooKeeperPath(replica_path, "log_ptr"));
 
         auto get_result = zookeeper->tryGet(paths);
         chassert(get_result.size() == paths.size());
@@ -290,7 +291,7 @@ void DatabaseReplicated::getStatus(ReplicatedStatus & response, const bool with_
 
         paths.clear();
 
-        const Strings all_replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
+        const Strings all_replicas = zookeeper->getChildren(zkutil::joinZooKeeperPath(zookeeper_path, "replicas"));
         response.total_replicas = static_cast<UInt32>(all_replicas.size());
     }
     catch (const Coordination::Exception &)
@@ -542,7 +543,7 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::tryGetReplicasInfo");
     Strings paths;
 
-    paths.emplace_back(fs::path(zookeeper_path) / "max_log_ptr");
+    paths.emplace_back(zkutil::joinZooKeeperPath(zookeeper_path, "max_log_ptr"));
 
     const auto & addresses_with_failover = cluster_->getShardsAddresses();
     const auto & shards_info = cluster_->getShardsInfo();
@@ -551,8 +552,8 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
         for (const auto & replica : addresses_with_failover[shard_index])
         {
             String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name);
-            paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "active");
-            paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "log_ptr");
+            paths.emplace_back(zkutil::joinZooKeeperPath(zookeeper_path, "replicas", full_name, "active"));
+            paths.emplace_back(zkutil::joinZooKeeperPath(zookeeper_path, "replicas", full_name, "log_ptr"));
         }
     }
 
@@ -769,7 +770,7 @@ void DatabaseReplicated::initDatabaseReplica(const ZooKeeperPtr & current_zookee
 
     /// If not exist, create a node with the database name for introspection.
     /// Technically, the database may have different names on different replicas, but this is not a usual case and we only save the first one
-    auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
+    const String db_name_path = zkutil::joinZooKeeperPath(zookeeper_path, FIRST_REPLICA_DATABASE_NAME);
     auto error_code = current_zookeeper->trySet(db_name_path, getDatabaseName());
     if (error_code == Coordination::Error::ZNONODE)
         current_zookeeper->tryCreate(db_name_path, getDatabaseName(), zkutil::CreateMode::Persistent);
@@ -879,7 +880,7 @@ bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, Sy
     while (true)
     {
         UInt32 our_log_ptr = ddl_worker->getLogPointer();
-        UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(zookeeper_path) / "max_log_ptr"));
+        UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(zkutil::joinZooKeeperPath(zookeeper_path, "max_log_ptr")));
         bool became_synced = our_log_ptr + db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
         if (became_synced)
             return true;
@@ -1506,7 +1507,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     return getQueryStatus(
         zookeeper_name,
         node_path,
-        fs::path(zookeeper_path) / "replicas",
+        zkutil::joinZooKeeperPath(zookeeper_path, "replicas"),
         query_context,
         hosts_to_wait,
         std::move(database_guard));
@@ -1916,7 +1917,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     if (first_entry_to_mark_finished)
     {
         /// Skip non-existing entries that were removed a long time ago (if the replica was offline for a long time)
-        Strings all_nodes = current_zookeeper->getChildren(fs::path(zookeeper_path) / "log");
+        Strings all_nodes = current_zookeeper->getChildren(zkutil::joinZooKeeperPath(zookeeper_path, "log"));
         std::erase_if(all_nodes, [] (const String & s) { return !startsWith(s, "query-"); });
         auto oldest_node = std::min_element(all_nodes.begin(), all_nodes.end());
         if (oldest_node != all_nodes.end())
@@ -1932,8 +1933,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         {
             auto entry_name = DDLTaskBase::getLogEntryName(ptr);
 
-            auto finished = fs::path(zookeeper_path) / "log" / entry_name / "finished" / getFullReplicaName();
-            auto synced = fs::path(zookeeper_path) / "log" / entry_name / "synced" / getFullReplicaName();
+            const String log_entry_path = zkutil::joinZooKeeperPath(zookeeper_path, "log", entry_name);
+            const String finished = zkutil::joinZooKeeperPath(log_entry_path, "finished", getFullReplicaName());
+            const String synced = zkutil::joinZooKeeperPath(log_entry_path, "synced", getFullReplicaName());
 
             auto status = ExecutionStatus(0).serializeText();
             auto res_finished = current_zookeeper->tryCreate(finished, status, zkutil::CreateMode::Persistent);
@@ -2343,7 +2345,7 @@ void DatabaseReplicated::dropReplica(
     if (database_mark != REPLICATED_DATABASE_MARK)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} does not look like a path of Replicated database", database_zookeeper_path);
 
-    String database_replica_path = fs::path(database_zookeeper_path) / "replicas" / full_replica_name;
+    String database_replica_path = zkutil::joinZooKeeperPath(database_zookeeper_path, "replicas", full_replica_name);
     if (!zookeeper->exists(database_replica_path))
     {
         if (!throw_if_noop)
@@ -2440,8 +2442,7 @@ void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String &
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::renameDatabase");
     DatabaseAtomic::renameDatabase(query_context, new_name);
-    auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
-    getZooKeeper()->set(db_name_path, getDatabaseName());
+    getZooKeeper()->set(zkutil::joinZooKeeperPath(zookeeper_path, FIRST_REPLICA_DATABASE_NAME), getDatabaseName());
 }
 
 void DatabaseReplicated::stopReplication()

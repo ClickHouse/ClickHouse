@@ -2142,8 +2142,12 @@ void Counters::increment(Event event, Count amount)
         current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 
+#if !defined(OS_WINDOWS)
     if (unlikely(send_to_trace_log))
         DB::TraceSender::send(DB::TraceType::ProfileEvent, StackTrace(), {.event = event, .increment = amount});
+#else
+    UNUSED(send_to_trace_log);
+#endif
 }
 
 void Counters::incrementNoTrace(Event event, Count amount)

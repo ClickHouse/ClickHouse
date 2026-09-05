@@ -116,7 +116,13 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand()
 
     ShellCommand::Config command_config(path.string());
     command_config.arguments = cmd_args;
+#if defined(OS_WINDOWS)
+    /// There is no `SIGKILL` on Windows; 9 is the number it has everywhere else. Moot in practice,
+    /// since `ShellCommand` cannot spawn the bridge there at all.
+    command_config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy(true, 9);
+#else
     command_config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy(true, SIGKILL);
+#endif
 
     return ShellCommand::executeDirect(command_config);
 }

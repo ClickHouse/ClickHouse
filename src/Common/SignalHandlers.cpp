@@ -1,4 +1,17 @@
+/// Fault and termination handling built on `sigaction`. Windows reports faults through
+/// Structured Exception Handling instead - `AddVectoredExceptionHandler` and friends - which
+/// is a different mechanism, not a renamed one.
 #include <Common/SignalHandlers.h>
+
+#if defined(OS_WINDOWS)
+
+bool isCrashed()
+{
+    return false;
+}
+
+#else
+
 #include <Common/config_version.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/ShellCommandsHolder.h>
@@ -901,3 +914,5 @@ void HandledSignals::setupCommonTerminateRequestSignalHandlers()
 }
 
 #pragma clang diagnostic pop
+
+#endif
