@@ -51,7 +51,7 @@ La matérialisation paresseuse s’y superpose naturellement, mais contrairement
 
 Prenons l’exemple de la requête suivante, qui recherche les avis Amazon ayant reçu le plus grand nombre de votes utiles, quelle que soit la date, le produit, la note ou le statut de vérification, et renvoie les 3 premiers avec leur titre, leur en-tête et leur texte intégral.
 
-Commençons par exécuter la requête (avec des caches du système de fichiers à froid) avec la matérialisation paresseuse désactivée (à l’aide de [`query_plan_optimize_lazy_materialization`](/fr/reference/settings/session-settings#query_plan_optimize_lazy_materialization)) :
+Commençons par exécuter la requête (avec des caches du système de fichiers à froid) avec la matérialisation paresseuse désactivée (à l’aide de [`query_plan_optimize_lazy_materialization`](/fr/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_materialization)) :
 
 ```sql title="Query"
 SELECT

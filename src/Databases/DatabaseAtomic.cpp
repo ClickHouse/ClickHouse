@@ -168,6 +168,8 @@ void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name,
 
 StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)
 {
+    ensurePopulated();
+
     // it is important to call the destructors of not_in_use without
     // locked mutex to avoid potential deadlock.
     DetachedTables not_in_use;
@@ -269,8 +271,15 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
     bool inside_database = this == &other_db;
 
+    ensurePopulated();
     if (!inside_database)
+        other_db.ensurePopulated();
+
+    if (!inside_database)
+    {
         other_db.createDirectories();
+        other_db.waitDatabaseStarted();
+    }
 
     String old_metadata_path = getObjectMetadataPath(table_name);
     String new_metadata_path = to_database.getObjectMetadataPath(to_table_name);
@@ -359,6 +368,12 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         other_table->checkTableCanBeRenamed(other_table_new_id);
         assert_can_move_mat_view(other_table);
     }
+
+    /// Check the destination `max_tables` quota only after the source table has been resolved
+    /// and validated, so that a full destination does not mask `UNKNOWN_TABLE` and other
+    /// source-side errors. An exchange does not change the number of tables.
+    if (!inside_database && !exchange)
+        other_db.checkTablesLimitUnlocked();
 
     /// Table renaming actually begins here
     auto txn = local_context->getZooKeeperMetadataTransaction();
@@ -732,16 +747,20 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     waitDatabaseStarted();
     std::lock_guard lock(mutex);
 
+    /// A longer database name leaves less room for the table name in the dropped-metadata file
+    /// name metadata_dropped/{db}.{table}.{uuid}.sql, so a rename can leave a table that cannot
+    /// be dropped. Detached tables are checked too, because ATTACH does not re-check the length.
+    for (const auto & table : tables)
+        checkTableNameLengthUnlocked(new_name, table.first, getContext());
+    for (const auto & detached_table : snapshot_detached_tables)
+        checkTableNameLengthUnlocked(new_name, detached_table.first, getContext());
+
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
     if (check_ref_deps || check_loading_deps)
     {
         for (auto & table : tables)
-        {
-            checkTableNameLengthUnlocked(new_name, table.first, getContext());
-
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
-        }
     }
 
 
@@ -906,7 +925,7 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
 The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default in open-source ClickHouse.
 
 :::note
-On ClickHouse Cloud, the [`Shared` database engine](/cloud/reference/shared-catalog#shared-database-engine) is used by default and also supports
+On ClickHouse Cloud, the [`Shared` database engine](/products/cloud/features/infrastructure/shared-catalog#shared-database-engine) is used by default and also supports
 the above mentioned operations.
 :::
 
@@ -964,7 +983,7 @@ EXCHANGE TABLES new_table AND old_table;
 
 ### ReplicatedMergeTree in atomic database {#replicatedmergetree-in-atomic-database}
 
-For [`ReplicatedMergeTree`](/engines/table-engines/mergetree-family/replication) tables, it is recommended not to specify the engine parameters for the path in ZooKeeper and the replica name. In this case, the configuration parameters [`default_replica_path`](/reference/settings/server-settings/settings/default-replica#default_replica_path) and [`default_replica_name`](/reference/settings/server-settings/settings/default-replica#default_replica_name) will be used. If you want to specify engine parameters explicitly, it is recommended to use the `{uuid}` macros. This ensures that unique paths are automatically generated for each table in ZooKeeper.
+For [`ReplicatedMergeTree`](/reference/engines/table-engines/mergetree-family/replication) tables, it is recommended not to specify the engine parameters for the path in ZooKeeper and the replica name. In this case, the configuration parameters [`default_replica_path`](/reference/settings/server-settings/settings/default-replica#default_replica_path) and [`default_replica_name`](/reference/settings/server-settings/settings/default-replica#default_replica_name) will be used. If you want to specify engine parameters explicitly, it is recommended to use the `{uuid}` macros. This ensures that unique paths are automatically generated for each table in ZooKeeper.
 
 ### Metadata disk {#metadata-disk}
 When `disk` is specified in `SETTINGS`, the disk is used to store table metadata files.
@@ -974,6 +993,30 @@ For example:
 CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
 ```
 If unspecified, the disk defined in `database_disk.disk` is used by default.
+
+### Limiting the number of tables {#limiting-the-number-of-tables}
+
+The `max_tables` setting limits how many tables the database may contain. `0` (the default) means unlimited. Every table-like object counts toward the limit: an ordinary table, a view, a materialized view, and a dictionary created with `CREATE DICTIONARY`. When the limit is reached, `CREATE TABLE`, `CREATE DICTIONARY` and `ATTACH TABLE` throw a `TOO_MANY_TABLES` exception.
+
+```sql
+CREATE DATABASE db ENGINE = Atomic SETTINGS max_tables = 100;
+```
+
+The limit can be changed for an existing database with `ALTER DATABASE`:
+
+```sql
+ALTER DATABASE db MODIFY SETTING max_tables = 200;
+```
+
+Lowering the limit below the current number of tables does not drop any tables. It only prevents new ones from being created until the count drops below the limit again.
+
+`CREATE OR REPLACE TABLE` briefly creates the replacement under a temporary name before swapping it in, so replacing a table while the database is exactly at `max_tables` fails with `TOO_MANY_TABLES` even though the final table count would not grow. Moving an object into the database with `RENAME TABLE` or `RENAME DICTIONARY` is also subject to the limit.
+
+A materialized view created without a `TO` clause has a hidden inner table that counts toward the limit as a table of its own.
+
+The limit is checked before an operation starts, so it is best-effort: concurrent queries can push the database slightly over it.
+
+The setting is available for the on-disk database engines that keep their tables in memory and their metadata in local `.sql` files: `Atomic` and `Ordinary`. It is not supported by the `Replicated` engine.
 
 ## See also {#see-also}
 

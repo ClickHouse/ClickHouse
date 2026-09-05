@@ -18,13 +18,13 @@ This guide covers how backups work in ClickHouse Cloud, what options you have to
 
 ## Backup status list {#backup-status-list}
 
-Your service will be backed up based on the set schedule, whether it is the default daily schedule or a [custom schedule](/products/cloud/guides/backups/configurable-backups) picked by you. All available backups can be viewed from the **Backups** tab of the service. From here, you can see the status of the backup, the duration, as well as the size of the backup. You can also restore a specific backup using the **Actions** column.
+Backups run according to the schedule configured for your service, whether that is the default daily schedule or a [custom schedule](/products/cloud/guides/backups/configurable-backups) you have picked. All available backups can be viewed from the **Backups** tab of the service. From here, you can see the status of the backup, the duration, as well as the size of the backup. You can also restore a specific backup using the **Actions** column.
 
 <Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="List of backup statuses in ClickHouse Cloud" border/>
 
 ## Understanding backup cost {#understanding-backup-cost}
 
-Per the default policy, ClickHouse Cloud mandates a backup every day, with a 24 hour retention.  Choosing a schedule that requires retaining more data, or causes more frequent backups can cause additional storage charges for backups.
+Unless configured with a different schedule, services are backed up once every 24 hours, and each backup is retained for 24 hours. The ability to configure backup schedules varies by service and plan. Choosing a schedule that requires retaining more data, or causes more frequent backups can cause additional storage charges for backups.
 
 To understand the backup cost, you can view the backup cost per service from the usage screen (as shown below). Once you have backups running for a few days with a customized schedule, you can get an idea of the cost and extrapolate to get the monthly cost for backups.
 
@@ -153,21 +153,17 @@ Legacy Plans: For customers on legacy plans, default daily backups retained for 
 
 ## Backup durations {#backup-durations}
 
-Backup and restore durations depend on several factors such as the size of the database as well as the schema and the number of tables in the database.
-Incremental backups will usually complete much faster than a full backup as less data is being backed up.
-Restoring from an incremental backup will be slightly slower than restoring from a full backup as all incremental backups and the last full backup in the chain are included in the restore as explained above.
+Backup and restore durations vary significantly with data size, schema complexity, and the number of tables. The figures below are observations from internal testing and are not performance commitments.
 
-In our testing, we have seen that smaller backups of ~1 TB could take around 10-15 minutes or longer to back up.
-Backups less than 20 TB should complete within an hour, and backing up 50 TB of data should take about 2-3 hours.
-Backups get economies of scale at larger sizes, and we have seen backups of up to 1 PB for some internal services complete in about 10 hours.
+In our testing, a backup of roughly 1 TB has taken about 10 to 15 minutes, and 20 TB about an hour. Larger datasets take proportionally longer, and backups of several hundred TB or more can take many hours, although there are economies of scale that help at larger sizes.
+
+Restores are typically slower than the equivalent backup, particularly when the restore includes a long chain of incremental backups, since the full backup and all subsequent incremental backups in the chain must be applied. Restoring a very large service can take longer than a day.
+
+Because durations depend heavily on your data, schema, and backup configuration, we strongly recommend testing a restore against your own data before relying on any target recovery time.
 
 <Note>
 Backups to external buckets may be slower than backups to ClickHouse buckets
 </Note>
-
-Restore durations are about the same as the backup durations.
-
-We recommend testing with your own database or sample data to get better estimates as the actual duration depends on several factors as outlined above.
 
 ## Configurable backups {#configurable-backups}
 

@@ -347,7 +347,7 @@ greatest(x1[, x2, ...])
 
 **Valeur renvoyée**
 
-Renvoie la plus grande valeur parmi les arguments, promue au type compatible le plus large. [`Any`](/fr/reference/data-types/index)
+Renvoie la plus grande valeur parmi les arguments, promue au plus grand type compatible. [`Any`](/fr/reference/data-types/index)
 
 **Exemples**
 
@@ -364,7 +364,7 @@ SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 └────────┴─────────┘
 ```
 
-**tableau**
+**Tableaux**
 
 ```sql title=Query
 SELECT greatest(['hello'], ['there'], ['world']);
@@ -384,9 +384,9 @@ SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12
 ```
 
 ```response title=Response
-┌─greatest(toD⋯0.000', 3))─┐
-│  2025-01-02 12:00:00.000 │
-└──────────────────────────┘
+┌─greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3))─┐
+│                                                                   2025-01-02 12:00:00.000 │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="if">
@@ -400,7 +400,7 @@ Effectue un branchement conditionnel.
 * Si la condition `cond` s&#39;évalue à une valeur non nulle, la fonction renvoie le résultat de l&#39;expression `then`.
 * Si `cond` s&#39;évalue à zéro ou à NULL, le résultat de l&#39;expression `else` est renvoyé.
 
-Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings#short_circuit_function_evaluation) détermine si l&#39;évaluation en court-circuit est utilisée.
+Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) détermine si l&#39;évaluation en court-circuit est utilisée.
 
 S&#39;il est activé, l&#39;expression `then` n&#39;est évaluée que sur les lignes où `cond` est true, et l&#39;expression `else` sur celles où `cond` est false.
 
@@ -472,7 +472,7 @@ least(x1[, x2, ...])
 
 **Valeur renvoyée**
 
-Renvoie la plus petite valeur parmi les arguments, promue au type compatible le plus large. [`Any`](/fr/reference/data-types/index)
+Renvoie la plus petite valeur parmi les arguments, promue au plus grand type compatible. [`Any`](/fr/reference/data-types/index)
 
 **Exemples**
 
@@ -496,9 +496,9 @@ SELECT least(['hello'], ['there'], ['world']);
 ```
 
 ```response title=Response
-┌─least(['hell⋯ ['world'])─┐
-│ ['hello']                │
-└──────────────────────────┘
+┌─least(['hello'], ['there'], ['world'])─┐
+│ ['hello']                              │
+└────────────────────────────────────────┘
 ```
 
 **Types DateTime**
@@ -509,9 +509,9 @@ SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00
 ```
 
 ```response title=Response
-┌─least(toDate⋯0.000', 3))─┐
-│  2025-01-01 12:00:00.000 │
-└──────────────────────────┘
+┌─least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3))─┐
+│                                                                2025-01-01 12:00:00.000 │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="multiIf">
@@ -524,7 +524,7 @@ Permet d&#39;écrire l&#39;opérateur [`CASE`](/fr/reference/operators/index#con
 Évalue chaque condition dans l&#39;ordre. Pour la première condition qui est vraie (non égale à zéro et différente de `NULL`), renvoie la valeur correspondante.
 Si aucune des conditions n&#39;est vraie, renvoie la valeur `else`.
 
-Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings#short_circuit_function_evaluation) contrôle
+Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) contrôle
 si l&#39;évaluation en court-circuit est utilisée. S&#39;il est activé, l&#39;expression `then_i` est évaluée uniquement sur les lignes où
 `((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` est vraie.
 

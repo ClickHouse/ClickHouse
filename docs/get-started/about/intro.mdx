@@ -32,14 +32,14 @@ ClickHouse is a column-oriented database. In such systems, tables are stored as 
 The difference is best explained with an example query running over 100 million rows of [real-world anonymized web analytics data](/get-started/sample-datasets/anon-web-analytics-metrica):
 
 ```sql
-SELECT MobilePhoneModel, COUNT() AS c
+SELECT MobilePhoneModel, count() AS c
 FROM metrica.hits
 WHERE
       RegionID = 229
   AND EventDate >= '2013-07-01'
   AND EventDate <= '2013-07-31'
   AND MobilePhone != 0
-  AND MobilePhoneModel not in ['', 'iPad']
+  AND MobilePhoneModel NOT IN ('', 'iPad')
 GROUP BY MobilePhoneModel
 ORDER BY c DESC
 LIMIT 8;

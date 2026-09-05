@@ -25,7 +25,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 * يمكن نسخ البيانات عبر عدة عقد في cluster لتحقيق التوفّر العالي، وfailover، والترقيات من دون downtime. راجع [نسخ البيانات](/ar/reference/engines/table-engines/mergetree-family/replication).
 
-* تدعم محركات الجداول `MergeTree` أنواعًا مختلفة من الإحصاءات وطرائق أخذ العينات للمساعدة في query optimization.
+* تدعم محركات الجداول `MergeTree` أنواعًا مختلفة من الإحصاءات وطرائق أخذ العينات للمساعدة في تحسين الاستعلامات.
 
 <Note>
   على الرغم من تشابه الاسم، فإن المحرّك [Merge](/ar/reference/engines/table-engines/special/merge) يختلف عن محركات `*MergeTree`.
@@ -70,7 +70,9 @@ ORDER BY expr
 
 `ENGINE` — اسم المحرّك ومعلماته. `ENGINE = MergeTree()`. لا يحتوي محرّك `MergeTree` على أي معلمات.
 
-<div id="order_by">
+<a id="order_by" />
+
+<div id="order-by">
   #### ORDER BY
 </div>
 
@@ -212,7 +214,7 @@ Marks numbers:   0      1      2      3      4      5      6      7      8      
 * `CounterID IN ('a', 'h') AND Date = 3`، يقرأ الخادم البيانات ضمن نطاقات العلامات `[1, 3)` و`[7, 8)`.
 * `Date = 3`، يقرأ الخادم البيانات ضمن نطاق العلامات `[1, 10]`.
 
-تُظهر الأمثلة أعلاه أن استخدام فهرس يكون دائمًا أكثر فعالية من إجراء فحص كامل.
+تُظهر الأمثلة أعلاه أن استخدام فهرس يكون دائمًا أكثر فعالية من مسح كامل.
 
 يسمح الفهرس المتناثر بقراءة بيانات إضافية. عند قراءة نطاق واحد من المفتاح الأساسي، يمكن قراءة ما يصل إلى `index_granularity * 2` من الصفوف الإضافية في كل كتلة بيانات.
 
@@ -220,7 +222,7 @@ Marks numbers:   0      1      2      3      4      5      6      7      8      
 
 لا يتطلب ClickHouse مفتاحًا أساسيًا فريدًا. يمكنك إدراج عدة صفوف بالمفتاح الأساسي نفسه.
 
-يمكنك استخدام تعبيرات من النوع `Nullable` في عبارتي `PRIMARY KEY` و`ORDER BY`، ولكن لا يُنصح بذلك بشدة. للسماح بهذه الميزة، فعِّل الإعداد [allow&#95;nullable&#95;key](/ar/reference/settings/merge-tree-settings#allow_nullable_key). وينطبق مبدأ [NULLS&#95;LAST](/ar/reference/statements/select/order-by#sorting-of-special-values) على قيم `NULL` في عبارة `ORDER BY`.
+يمكنك استخدام تعبيرات من النوع `Nullable` في عبارتي `PRIMARY KEY` و`ORDER BY`، ولكن لا يُنصح بذلك بشدة. للسماح بهذه الميزة، فعِّل الإعداد [allow&#95;nullable&#95;key](/ar/reference/settings/merge-tree-settings/allow#allow_nullable_key). وينطبق مبدأ [NULLS&#95;LAST](/ar/reference/statements/select/order-by#sorting-of-special-values) على قيم `NULL` في عبارة `ORDER BY`.
 
 <div id="selecting-a-primary-key">
   ### اختيار مفتاح أساسي
@@ -245,9 +247,9 @@ Marks numbers:   0      1      2      3      4      5      6      7      8      
 
 يؤثر المفتاح الأساسي الطويل سلبًا في أداء الإدراج واستهلاك الذاكرة، لكن الأعمدة الإضافية في المفتاح الأساسي لا تؤثر في أداء ClickHouse أثناء استعلامات `SELECT`.
 
-يمكنك إنشاء جدول من دون مفتاح أساسي باستخدام الصياغة `ORDER BY tuple()`. في هذه الحالة، يخزّن ClickHouse البيانات بترتيب إدراجها. وإذا كنت تريد الحفاظ على ترتيب البيانات عند إدراجها بواسطة استعلامات `INSERT ... SELECT`، فاضبط [max&#95;insert&#95;threads = 1](/ar/reference/settings/session-settings#max_insert_threads).
+يمكنك إنشاء جدول من دون مفتاح أساسي باستخدام الصياغة `ORDER BY tuple()`. في هذه الحالة، يخزّن ClickHouse البيانات بترتيب إدراجها. وإذا كنت تريد الحفاظ على ترتيب البيانات عند إدراجها بواسطة استعلامات `INSERT ... SELECT`، فاضبط [max&#95;insert&#95;threads = 1](/ar/reference/settings/session-settings/max-insert#max_insert_threads).
 
-لاختيار البيانات بالترتيب الأصلي، استخدم استعلامات `SELECT` [أحادية الخيط](/ar/reference/settings/session-settings#max_threads).
+لاختيار البيانات بالترتيب الأصلي، استخدم استعلامات `SELECT` [أحادية الخيط](/ar/reference/settings/session-settings/max-threads#max_threads).
 
 <div id="choosing-a-primary-key-that-differs-from-the-sorting-key">
   ### اختيار مفتاح أساسي يختلف عن مفتاح الفرز
@@ -260,7 +262,7 @@ Marks numbers:   0      1      2      3      4      5      6      7      8      
 
 في هذه الحالة، من المنطقي الإبقاء على بضعة أعمدة فقط في المفتاح الأساسي لتوفير مسح نطاقات بكفاءة، وإضافة بقية أعمدة الأبعاد إلى مجموعة مفتاح الفرز.
 
-يُعد [ALTER](/ar/reference/statements/alter/index) لمفتاح الفرز عملية خفيفة، لأنه عند إضافة عمود جديد في الوقت نفسه إلى الجدول وإلى مفتاح الفرز، لا تحتاج أجزاء البيانات الحالية إلى أي تغيير. وبما أن مفتاح الفرز القديم هو بادئة لمفتاح الفرز الجديد، ولا توجد بيانات في العمود المُضاف حديثًا، فإن البيانات تكون مرتبةً وفقًا لمفتاحي الفرز القديم والجديد معًا عند تعديل الجدول.
+يُعد [ALTER](/ar/reference/statements/alter/skipping-index) لمفتاح الفرز عملية خفيفة، لأنه عند إضافة عمود جديد في الوقت نفسه إلى الجدول وإلى مفتاح الفرز، لا تحتاج أجزاء البيانات الحالية إلى أي تغيير. وبما أن مفتاح الفرز القديم هو بادئة لمفتاح الفرز الجديد، ولا توجد بيانات في العمود المُضاف حديثًا، فإن البيانات تكون مرتبةً وفقًا لمفتاحي الفرز القديم والجديد معًا عند تعديل الجدول.
 
 <div id="use-of-indexes-and-partitions-in-queries">
   ### استخدام الفهارس والتقسيمات في الاستعلامات
@@ -299,7 +301,7 @@ AND (CounterID = 101500 OR EventDate != toDate('2014-05-01'))
 
 سيستخدم ClickHouse فهرس المفتاح الأساسي لاستبعاد البيانات غير ذات الصلة، ومفتاح التقسيم الشهري لاستبعاد الأقسام الواقعة ضمن نطاقات تاريخ غير ذات صلة.
 
-تُظهر الاستعلامات أعلاه أن الفهرس يُستخدم حتى مع التعبيرات المعقدة. وتُنظَّم القراءة من الجدول بحيث لا يمكن أن يكون استخدام الفهرس أبطأ من إجراء فحص كامل.
+تُظهر الاستعلامات أعلاه أن الفهرس يُستخدم حتى مع التعبيرات المعقدة. وتُنظَّم القراءة من الجدول بحيث لا يمكن أن يكون استخدام الفهرس أبطأ من مسح كامل.
 
 في المثال أدناه، لا يمكن استخدام الفهرس.
 
@@ -307,7 +309,7 @@ AND (CounterID = 101500 OR EventDate != toDate('2014-05-01'))
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-للتحقق مما إذا كان ClickHouse يستطيع استخدام الفهرس عند تنفيذ استعلام، استخدم الإعدادين [force&#95;index&#95;by&#95;date](/ar/reference/settings/session-settings#force_index_by_date) و[force&#95;primary&#95;key](/ar/reference/settings/session-settings#force_primary_key).
+للتحقق مما إذا كان ClickHouse يستطيع استخدام الفهرس عند تنفيذ استعلام، استخدم الإعدادين [force&#95;index&#95;by&#95;date](/ar/reference/settings/session-settings/force#force_index_by_date) و[force&#95;primary&#95;key](/ar/reference/settings/session-settings/force#force_primary_key).
 
 يتيح مفتاح التقسيم بحسب الشهر قراءة كتل البيانات التي تحتوي فقط على تواريخ ضمن النطاق المناسب. في هذه الحالة، قد تحتوي كتلة البيانات على بيانات تخص عدة تواريخ (حتى شهر كامل). وداخل الكتلة، تكون البيانات مرتبة حسب المفتاح الأساسي، الذي قد لا يتضمن التاريخ بوصفه العمود الأول. لذلك، فإن استخدام استعلام يتضمن شرطًا على التاريخ فقط ولا يحدد بادئة المفتاح الأساسي سيؤدي إلى قراءة بيانات أكثر مما يلزم عند الاستعلام عن تاريخ واحد.
 
@@ -693,7 +695,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 تشبه الإسقاطات [العروض المُجسَّدة](/ar/reference/statements/create/view)، لكنها تُعرَّف على مستوى الجزء. وهي توفّر ضمانات للاتساق إلى جانب استخدامها تلقائيًا في الاستعلامات.
 
 <Note>
-  عند تنفيذ الإسقاطات، ينبغي أيضًا مراعاة الإعداد [force&#95;optimize&#95;projection](/ar/reference/settings/session-settings#force_optimize_projection).
+  عند تنفيذ الإسقاطات، ينبغي أيضًا مراعاة الإعداد [force&#95;optimize&#95;projection](/ar/reference/settings/session-settings/force-optimize#force_optimize_projection).
 </Note>
 
 لا تُدعَم الإسقاطات في عبارات `SELECT` التي تستخدم المُعدِّل [FINAL](/ar/reference/statements/select/from#final-modifier).
@@ -975,7 +977,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 
 **انظر أيضًا**
 
-* إعداد [ttl&#95;only&#95;drop&#95;parts](/ar/reference/settings/merge-tree-settings#ttl_only_drop_parts)
+* إعداد [ttl&#95;only&#95;drop&#95;parts](/ar/reference/settings/merge-tree-settings/other#ttl_only_drop_parts)
 
 <div id="disk-types">
   ## أنواع الأقراص
@@ -1011,7 +1013,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 </div>
 
 * القرص — جهاز تخزين كتلي مُركَّب على نظام الملفات.
-* القرص الافتراضي — القرص الذي يخزّن المسار المحدد في إعداد الخادم [path](/ar/reference/settings/server-settings/settings#path).
+* القرص الافتراضي — القرص الذي يخزّن المسار المحدد في إعداد الخادم [path](/ar/reference/settings/server-settings/settings/other#path).
 * وحدة التخزين — مجموعة مرتبة من أقراص متماثلة (مشابهة لـ [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 * سياسة التخزين — مجموعة من وحدات التخزين والقواعد الخاصة بنقل البيانات بينها.
 
@@ -1176,7 +1178,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 تعني سياسة التخزين `default` استخدام وحدة تخزين واحدة فقط، تتكوّن من قرص واحد فقط محدَّد في `<path>`.
 يمكنك تغيير سياسة التخزين بعد إنشاء الجدول باستخدام استعلام [ALTER TABLE ... MODIFY SETTING]، ويجب أن تتضمن السياسة الجديدة جميع الأقراص ووحدات التخزين القديمة نفسها وبالأسماء نفسها.
 
-يمكن تغيير عدد الخيوط التي تنفّذ عمليات نقل أجزاء البيانات في الخلفية عبر الإعداد [background&#95;move&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_move_pool_size).
+يمكن تغيير عدد الخيوط التي تنفّذ عمليات نقل أجزاء البيانات في الخلفية عبر الإعداد [background&#95;move&#95;pool&#95;size](/ar/reference/settings/server-settings/settings/background#background_move_pool_size).
 
 <div id="details">
   ### التفاصيل
@@ -1206,7 +1208,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 بعد اكتمال عمليات الدمج في الخلفية والطفرات، لا تُزال الأجزاء القديمة إلا بعد مرور مدة زمنية معينة (`old_parts_lifetime`).
 وخلال هذه المدة، لا تُنقَل إلى وحدات تخزين أو أقراص أخرى. لذلك، وحتى تُزال الأجزاء نهائيًا، فإنها تظل محسوبة عند تقييم مساحة القرص المشغولة.
 
-يمكن للمستخدم إسناد الأجزاء الكبيرة الجديدة إلى أقراص مختلفة ضمن وحدة تخزين من نوع [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) بطريقة متوازنة باستخدام الإعداد [min&#95;bytes&#95;to&#95;rebalance&#95;partition&#95;over&#95;jbod](/ar/reference/settings/merge-tree-settings#min_bytes_to_rebalance_partition_over_jbod).
+يمكن للمستخدم إسناد الأجزاء الكبيرة الجديدة إلى أقراص مختلفة ضمن وحدة تخزين من نوع [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) بطريقة متوازنة باستخدام الإعداد [min&#95;bytes&#95;to&#95;rebalance&#95;partition&#95;over&#95;jbod](/ar/reference/settings/merge-tree-settings/min-bytes#min_bytes_to_rebalance_partition_over_jbod).
 
 <div id="table_engine-mergetree-s3">
   ## استخدام التخزين الخارجي لتخزين البيانات
@@ -1428,16 +1430,16 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
   حزمة مضغوطة من الملخصات ذات القيمة الواحدة المستمدة من عمود. وبحسب نوع العمود، تُعبَّأ العناصر التالية:
 
-  * لأي عمود تُمثَّل قيمه كأعداد (أعداد صحيحة، أعداد فاصلة عائمة، `Decimal*`، `Date*`، `DateTime*`، `Enum*`، `IPv4`، ...): القيمة الدنيا والقيمة القصوى، مما يتيح تقدير انتقائية مرشحات النطاق وتمكين تقليم الأجزاء؛
-  * لأعمدة `String` و`FixedString`: إجمالي طول القيم غير `NULL` بالبايت (الذي يمكن اشتقاق متوسط طول السلسلة منه)؛
-  * لأعمدة `Nullable` و`LowCardinality(Nullable)`: عدد قيم `NULL`، الذي يستخدمه المُحسِّن لاستبعاد صفوف `NULL` من تقديرات الانتقائية.
+  * لأي عمود: عدد الصفوف التي تساوي القيمة الافتراضية للنوع (`0` للأعداد الصحيحة والأعداد فاصلة عائمة، و`''` لـ `String`، و`[]` لـ `Array`، و`NULL` لـ `Nullable`، إلخ)، مما يتيح للمُحسِّن تقدير مسندات `col = <default>` وعوامل التصفية `IS NULL`؛
+  * لأي عمود تُمثَّل قيمه كأعداد (أعداد صحيحة، أعداد فاصلة عائمة، `Decimal*`، `Date*`، `DateTime*`، `Enum*`، `IPv4`، ...): القيمة الدنيا والقيمة القصوى، مما يتيح تقدير انتقائية عوامل تصفية النطاق وتمكين تقليم الأجزاء؛
+  * لأعمدة `String` و`FixedString`: إجمالي طول القيم غير `NULL` بالبايت (الذي يمكن اشتقاق متوسط طول السلسلة منه).
 
-    يمكن لإحصائية `basic` واحدة أن تعبّئ عدة عناصر من هذه في الوقت نفسه — فعلى سبيل المثال، في عمود `Nullable(UInt32)`، تتتبّع كلاً من الحد الأدنى/الأقصى الرقمي وعدد قيم `NULL`. وبالمقارنة مع `minmax`، تعمل `basic` أيضاً مع أعمدة `String` / `FixedString`، ويمكن تعريفها على أغلفة `Nullable` لأنواع مثل `UUID` أو `IPv6` فقط لتتبّع عدد قيم `NULL`.
+    يمكن لإحصائية `basic` واحدة أن تعبّئ عدة عناصر من هذه في الوقت نفسه — فعلى سبيل المثال، في عمود `Nullable(UInt32)`، تتتبّع كلاً من الحد الأدنى/الأقصى الرقمي وعدد قيم `NULL`. ولأن عدد القيم الافتراضية مُعرَّف لكل نوع من أنواع الأعمدة، يمكن تعريف `basic` على أي عمود، بما في ذلك الأنواع المركبة مثل `Array` و`Tuple` و`Map`.
 
 * `minmax` (مهمل)
 
 <Note>
-  إحصاءات `minmax` مهملة ولم يعد بالإمكان إنشاؤها (`CREATE TABLE ... STATISTICS(minmax)` و`ALTER TABLE ... ADD/MODIFY STATISTICS ... TYPE minmax` تُرجع خطأ). تظل الجداول والأجزاء الحالية التي تحتوي على إحصاءات `minmax` تعمل. استخدم إحصاءات `basic` بدلاً منها.
+  إحصاءات `minmax` مهملة. استخدم إحصاءات `basic` بدلاً منها، فهي مجموعة شاملة لـ `minmax`.
 </Note>
 
 * `tdigest`
@@ -1468,33 +1470,39 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
   ### أنواع البيانات المدعومة
 </div>
 
-|             | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString |
-| ----------- | -------------------------------------------------- | ---- | --------------------- |
-| basic       | ✔                                                  | ✔    | ✔                     |
-| countmin    | ✔                                                  | ✔    | ✔                     |
-| minmax      | ✔                                                  | ✔    | ✗                     |
-| tdigest     | ✔                                                  | ✗    | ✗                     |
-| uniq        | ✔                                                  | ✔    | ✔                     |
-| uniq&#95;v2 | ✔                                                  | ✔    | ✔                     |
+|             | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String أو FixedString | أي نوع آخر                   |
+| ----------- | -------------------------------------------------- | ---- | --------------------- | ---------------------------- |
+| basic       | ✔                                                  | ✔    | ✔                     | ✔ (عدد القيم الافتراضية فقط) |
+| countmin    | ✔                                                  | ✔    | ✔                     | ✗                            |
+| minmax      | ✔                                                  | ✔    | ✗                     | ✗                            |
+| tdigest     | ✔                                                  | ✗    | ✗                     | ✗                            |
+| uniq        | ✔                                                  | ✔    | ✔                     | ✗                            |
+| uniq&#95;v2 | ✔                                                  | ✔    | ✔                     | ✗                            |
 
-كل ما سبق يقبل أيضًا مغلّفات `Nullable` و`LowCardinality(Nullable)` للأنواع المدرجة. ويمكن أيضًا تعريف `Basic` على مغلّفات `Nullable` لأنواع مثل `UUID` أو `IPv6` فقط لتتبّع عدد قيم NULL.
+تقبل جميع ما سبق أيضًا الأغلفة `Nullable` و`LowCardinality(Nullable)` للأنواع المذكورة. ويمكن أيضًا تعريف `basic` لأي نوع آخر (بما في ذلك الأنواع المركبة مثل `Array` و`Tuple` و`Map`)، وفي هذه الحالة لا يسجّل سوى عدد القيم الافتراضية.
 
 <div id="supported-operations">
   ### العمليات المدعومة
 </div>
 
-|             | مرشحات المساواة (==) | مرشحات النطاق (`>, >=, <, <=`) |
-| ----------- | -------------------- | ------------------------------ |
-| basic       | ✗                    | ✔ (للأعمدة الرقمية فقط)        |
-| countmin    | ✔                    | ✗                              |
-| minmax      | ✗                    | ✔ (للأعمدة الرقمية فقط)        |
-| tdigest     | ✗                    | ✔ (للأعمدة الرقمية فقط)        |
-| uniq        | ✔                    | ✗                              |
-| uniq&#95;v2 | ✔                    | ✗                              |
+|             | عوامل تصفية المساواة (==) | عوامل تصفية النطاق (`>, >=, <, <=`) |
+| ----------- | ------------------------- | ----------------------------------- |
+| basic       | ✔ (القيمة الافتراضية فقط) | ✔ (الأعمدة الرقمية فقط)             |
+| countmin    | ✔                         | ✗                                   |
+| minmax      | ✗                         | ✔ (الأعمدة الرقمية فقط)             |
+| tdigest     | ✗                         | ✔ (الأعمدة الرقمية فقط)             |
+| uniq        | ✔                         | ✗                                   |
+| uniq&#95;v2 | ✔                         | ✗                                   |
 
-بالنسبة إلى `basic` على الأعمدة `String` / `FixedString`، لا يسجّل هذا الإحصاء إلا
-إجمالي طول البايتات للقيم غير `NULL` (ويُستخدم لتقدير متوسط طول السلسلة النصية) وعدد قيم `NULL`؛
-ولا يُعتمد عليه في مرشحات النطاق أو تقليم الأجزاء.
+يستجيب `basic` لعامل تصفية المساواة بدقة فقط عندما تطابق القيمة المُقارنة القيمة الافتراضية للتخزين
+الداخلي للعمود (العدد الصحيح الخام `0` للأنواع الرقمية، و`''` / N من البايتات الصفرية لـ `String` /
+`FixedString`، و`NULL` للأعمدة من النوع `Nullable`، إلخ). وبالنسبة إلى أنواع `Enum` على وجه الخصوص، لا يُستخدم المسار السريع
+إلا عندما تُطابق القيمة الحرفية للمُعدِّد العدد الصحيح الخام `0`؛ وإذا لم تكن لأي مُعدِّد قيمة خام قدرها `0`،
+فلن تُسهم الإحصائية في تقدير المساواة. أما بالنسبة إلى القيم الأخرى، فيلجأ المُحسِّن
+إلى إحصاءات أخرى.
+بالنسبة إلى `basic` في أعمدة `String` / `FixedString`، تسجل الإحصائية إجمالي طول البايتات غير `NULL`
+(المستخدم لتقدير متوسط طول السلسلة) بالإضافة إلى عدد القيم الافتراضية/`NULL`؛ ولا تعتمد عليها عوامل تصفية النطاق أو
+تقليم الأجزاء.
 
 <div id="column-level-settings">
   ## إعدادات على مستوى العمود

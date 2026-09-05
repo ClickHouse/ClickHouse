@@ -19,14 +19,14 @@ Contient des informations sur les threads qui exécutent des requêtes, par exem
 
 Pour activer la journalisation :
 
-1. Configurez les paramètres dans la section [query&#95;thread&#95;log](/fr/reference/settings/server-settings/settings#query_thread_log).
-2. Définissez [log&#95;query&#95;threads](/fr/reference/settings/session-settings#log_query_threads) sur 1.
+1. Configurez les paramètres dans la section [query&#95;thread&#95;log](/fr/reference/settings/server-settings/settings/query#query_thread_log).
+2. Définissez [log&#95;query&#95;threads](/fr/reference/settings/session-settings/log-query#log_query_threads) sur 1.
 
-La période de vidage des données est définie par le paramètre `flush_interval_milliseconds` dans la section des paramètres serveur [query&#95;thread&#95;log](/fr/reference/settings/server-settings/settings#query_thread_log). Pour forcer le vidage, utilisez la requête [SYSTEM FLUSH LOGS](/fr/reference/statements/system#flush-logs).
+La période de vidage des données est définie par le paramètre `flush_interval_milliseconds` dans la section des paramètres serveur [query&#95;thread&#95;log](/fr/reference/settings/server-settings/settings/query#query_thread_log). Pour forcer le vidage, utilisez la requête [SYSTEM FLUSH LOGS](/fr/reference/statements/system#flush-logs).
 
 ClickHouse ne supprime pas automatiquement les données de la table. Consultez [Introduction](/fr/reference/system-tables/overview#system-tables-introduction) pour plus de détails.
 
-Vous pouvez utiliser le paramètre [log&#95;queries&#95;probability](/fr/reference/settings/session-settings#log_queries_probability)) pour réduire le nombre de requêtes enregistrées dans la table `query_thread_log`.
+Vous pouvez utiliser le paramètre [log&#95;queries&#95;probability](/fr/reference/settings/session-settings/log-queries#log_queries_probability)) pour réduire le nombre de requêtes enregistrées dans la table `query_thread_log`.
 
 <div id="columns">
   ## Colonnes
@@ -53,33 +53,33 @@ Vous pouvez utiliser le paramètre [log&#95;queries&#95;probability](/fr/referen
 * `current_database` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom de la base de données courante.
 * `query` ([String](/fr/reference/data-types/string)) — Texte de la requête.
 * `normalized_query_hash` ([UInt64](/fr/reference/data-types/int-uint)) — Hachage de la requête normalisée — avec les constantes effacées, etc.
-* `is_initial_query` ([UInt8](/fr/reference/data-types/int-uint)) — Type de requête. Valeurs possibles : 1 — la requête a été initiée par le client, 0 — la requête a été initiée par une autre requête pour l’exécution distribuée des requêtes.
+* `is_initial_query` ([UInt8](/fr/reference/data-types/int-uint)) — Indique si la requête est initiale. Valeurs possibles : 1 — une requête initiale (de niveau supérieur), 0 — une requête enfant initiée par une autre requête, y compris les requêtes pour l’exécution distribuée et les sous-requêtes internes.
 * `connection_address` ([IPv6](/fr/reference/data-types/ipv6)) — Adresse IP du client depuis laquelle la connexion a été établie. En cas de connexion via un proxy, il s’agira de l’adresse du proxy.
 * `connection_port` ([UInt16](/fr/reference/data-types/int-uint)) — Port du client depuis lequel la connexion a été établie. En cas de connexion via un proxy, il s’agira du port du proxy.
 * `user` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom de l’utilisateur qui a initié la requête en cours.
 * `query_id` ([String](/fr/reference/data-types/string)) — ID de la requête.
 * `address` ([IPv6](/fr/reference/data-types/ipv6)) — Adresse IP utilisée pour effectuer la requête. En cas de connexion via un proxy et si `auth_use_forwarded_address` est défini, il s’agira de l’adresse du client au lieu de celle du proxy.
 * `port` ([UInt16](/fr/reference/data-types/int-uint)) — Port client utilisé pour effectuer la requête. En cas de connexion via un proxy, si `auth_use_forwarded_address` est défini, il s’agit du port du client plutôt que de celui du proxy.
-* `initial_user` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom de l’utilisateur qui a exécuté la requête initiale (pour l’exécution distribuée des requêtes).
-* `initial_query_id` ([String](/fr/reference/data-types/string)) — ID de la requête initiale (pour l’exécution distribuée des requêtes).
-* `initial_address` ([IPv6](/fr/reference/data-types/ipv6)) — Adresse IP depuis laquelle la requête parente a été lancée.
-* `initial_port` ([UInt16](/fr/reference/data-types/int-uint)) — Port client utilisé pour effectuer la requête parente.
-* `initial_query_start_time` ([DateTime](/fr/reference/data-types/datetime)) — Heure de début d’exécution de la requête initiale.
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/fr/reference/data-types/datetime64)) — Heure de début d’exécution de la requête initiale
+* `initial_user` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom de l’utilisateur qui a exécuté la requête initiale dans la même chaîne de requêtes.
+* `initial_query_id` ([String](/fr/reference/data-types/string)) — ID de la requête initiale dans la même chaîne de requêtes.
+* `initial_address` ([IPv6](/fr/reference/data-types/ipv6)) — Adresse IP depuis laquelle la requête initiale de la même chaîne de requêtes a été lancée.
+* `initial_port` ([UInt16](/fr/reference/data-types/int-uint)) — Port client depuis lequel la requête initiale de la même chaîne de requêtes a été lancée.
+* `initial_query_start_time` ([DateTime](/fr/reference/data-types/datetime)) — Heure de début de la requête initiale dans la même chaîne de requêtes.
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/fr/reference/data-types/datetime64)) — Heure de début de la requête initiale dans la même chaîne de requêtes, avec une précision à la microseconde.
 * `authenticated_user` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom de l’utilisateur authentifié dans la session.
 * `interface` ([UInt8](/fr/reference/data-types/int-uint)) — Interface depuis laquelle la requête a été lancée. Valeurs possibles : 1 — TCP, 2 — HTTP.
 * `is_secure` ([UInt8](/fr/reference/data-types/int-uint)) — Indicateur précisant si la connexion était sécurisée.
 * `os_user` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom d’utilisateur du système d’exploitation qui exécute clickhouse-client.
 * `client_hostname` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom d’hôte de la machine cliente sur laquelle s’exécute clickhouse-client ou un autre client TCP.
 * `client_name` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom de clickhouse-client ou d’un autre client TCP.
-* `client_agent` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Agent de codage IA ayant invoqué le client (par exemple, `claude-code` ou `cursor`), détecté à partir des variables d’environnement. Vide si aucun agent n’a été détecté.
+* `client_agent` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Agent de codage IA ayant invoqué le client (par exemple, `claude-code`, `cursor`), détecté à partir des variables d’environnement. Vide si aucun agent n’a été détecté.
 * `client_revision` ([UInt32](/fr/reference/data-types/int-uint)) — Révision de clickhouse-client ou d’un autre client TCP.
 * `client_version_major` ([UInt32](/fr/reference/data-types/int-uint)) — Version majeure de clickhouse-client ou d’un autre client TCP.
 * `client_version_minor` ([UInt32](/fr/reference/data-types/int-uint)) — Version mineure de clickhouse-client ou d’un autre client TCP.
 * `client_version_patch` ([UInt32](/fr/reference/data-types/int-uint)) — Composant de correctif de la version de clickhouse-client ou d’un autre client TCP.
 * `script_query_number` ([UInt32](/fr/reference/data-types/int-uint)) — Numéro séquentiel de la requête dans un script multi-requêtes.
 * `script_line_number` ([UInt32](/fr/reference/data-types/int-uint)) — Numéro de ligne, dans un script multi-requêtes, où commence la requête actuelle.
-* `http_method` ([UInt8](/fr/reference/data-types/int-uint)) — Méthode HTTP ayant lancé la requête. Valeurs possibles : 0 — la requête a été lancée depuis l’interface TCP, 1 — la méthode GET a été utilisée, 2 — la méthode POST a été utilisée.
+* `http_method` ([UInt8](/fr/reference/data-types/int-uint)) — Méthode HTTP ayant lancé la requête. Valeurs possibles : 0 - la requête a été lancée depuis l’interface TCP, 1 - la méthode GET a été utilisée, 2 - la méthode POST a été utilisée, 4 - la méthode PUT a été utilisée, 5 - la méthode DELETE a été utilisée, 6 - la méthode HEAD a été utilisée.
 * `http_user_agent` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — En-tête UserAgent transmis dans la requête HTTP.
 * `http_referer` ([String](/fr/reference/data-types/string)) — En-tête HTTP `Referer` transmis dans la requête HTTP (contient une adresse absolue ou partielle de la page qui effectue la requête).
 * `forwarded_for` ([String](/fr/reference/data-types/string)) — En-tête HTTP `X-Forwarded-For` transmis dans la requête HTTP.

@@ -176,8 +176,8 @@ FROM employees;
 
     FunctionDocumentation::Description description_kahan = R"(
 Calculates the sum of the numbers with [Kahan compensated summation algorithm](https://en.wikipedia.org/wiki/Kahan_summation_algorithm).
-Slower than [`sum`](/sql-reference/aggregate-functions/reference/sum) function.
-The compensation works only for [Float](/sql-reference/data-types/float) types.
+Slower than [`sum`](/reference/functions/aggregate-functions/sum) function.
+The compensation works only for [Float](/reference/data-types/float) types.
     )";
     FunctionDocumentation::Syntax syntax_kahan = R"(
 sumKahan(x)

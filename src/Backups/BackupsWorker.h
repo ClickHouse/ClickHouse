@@ -99,11 +99,13 @@ private:
         bool on_cluster,
         const ClusterPtr & cluster);
 
+    enum class ThreadPoolId : uint8_t;
+
     /// Builds file infos for specified backup entries.
-    void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, QueryStatusPtr process_list_element);
+    void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element);
 
     /// Write backup entries to an opened backup.
-    void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const BackupOperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool is_internal_backup, QueryStatusPtr process_list_element);
+    void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const BackupOperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool is_internal_backup, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element);
 
     std::pair<BackupOperationID, BackupStatus> startRestoring(const ASTPtr & query, ContextMutablePtr context);
     struct RestoreStarter;
@@ -144,7 +146,6 @@ private:
     void setNumFilesAndSize(const BackupOperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
                             UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes);
 
-    enum class ThreadPoolId : uint8_t;
     ThreadPool & getThreadPool(ThreadPoolId thread_pool_id);
 
     /// Waits for some time if `test_inject_sleep` is true.

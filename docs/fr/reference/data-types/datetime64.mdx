@@ -46,14 +46,14 @@ ENGINE = MergeTree;
 ```
 
 ```sql
--- Parse DateTime
--- - from an integer interpreted as the number of milliseconds (because of precision 3) since 1970-01-01,
--- - from a decimal interpreted as the number of seconds before the decimal part, and based on the precision after the decimal point,
+-- Parse DateTime64
+-- - from an integer interpreted as the number of seconds since 1970-01-01 (like DateTime),
+-- - from a decimal interpreted as the number of seconds, the fractional part giving sub-second precision,
 -- - from a string.
 
 INSERT INTO dt64
 VALUES
-(1546300800123, 1),
+(1546300800, 1),
 (1546300800.123, 2),
 ('2019-01-01 00:00:00', 3);
 
@@ -62,13 +62,13 @@ SELECT * FROM dt64;
 
 ```text
 ┌───────────────timestamp─┬─event_id─┐
-│ 2019-01-01 03:00:00.123 │        1 │
+│ 2019-01-01 03:00:00.000 │        1 │
 │ 2019-01-01 03:00:00.123 │        2 │
 │ 2019-01-01 00:00:00.000 │        3 │
 └─────────────────────────┴──────────┘
 ```
 
-* Lors de l’insertion d’une valeur datetime sous forme d’entier, elle est traitée comme un timestamp Unix (UTC) correctement mis à l’échelle. `1546300800000` (avec une précision de 3) représente `'2019-01-01 00:00:00'` UTC. Cependant, comme la colonne `timestamp` utilise le fuseau horaire `Asia/Istanbul` (UTC+3), lors de l’affichage sous forme de chaîne, la valeur sera affichée comme `'2019-01-01 03:00:00'`. Lors de l’insertion d’une valeur datetime sous forme décimale, elle est traitée de manière similaire à un entier, à ceci près que la valeur avant le point décimal correspond au timestamp Unix jusqu’aux secondes incluses, et la partie après le point décimal est traitée comme la précision.
+* Lors de l’insertion d’une valeur datetime sous forme de nombre, elle est traitée comme un horodatage Unix (UTC) en secondes, comme `DateTime`. `1546300800` représente `'2019-01-01 00:00:00'` UTC. Cependant, comme la colonne `timestamp` utilise le fuseau horaire `Asia/Istanbul` (UTC+3), la valeur sera affichée sous forme de chaîne comme `'2019-01-01 03:00:00'`. L’insertion d’un nombre avec une partie fractionnaire fonctionne de la même manière : la partie avant le point décimal correspond à l’horodatage Unix en secondes et la partie après fournit une précision inférieure à la seconde selon la précision de la colonne. (Avant la version 26.8, un entier nu non entre guillemets dans les chemins d’entrée `JSON` et `Values`/`Quoted` — ce dernier couvrant tous les formats qui analysent les champs avec la règle d’échappement `Quoted` : `Values`, `MySQLDump` et `Template`/`CustomSeparated`/`Regexp` configurés avec l’échappement de champ `Quoted` — était plutôt interprété comme la valeur brute sous-jacente à la précision de la colonne, de sorte que `1546300800000` avec une précision de 3 signifiait `'2019-01-01 00:00:00'`. Pour restaurer le comportement précédent dans ces chemins, définissez `input_format_read_datetime_number_as_raw_value = 1` (ou `SET compatibility = '26.7'`) ; cela affecte également la fonction `JSONExtract` et le type de données `JSON`. Le paramètre de compatibilité ne régit qu’un entier nu : dans le format `Values`, un nombre fractionnaire, que le legacy streaming parser rejette, revient à l’évaluation d’une expression SQL et est lu en secondes — comme dans les versions antérieures à la 26.8. Dans `JSONExtract` et le type de données `JSON`, une valeur fractionnaire est analysée via `Float64`, de sorte qu’un horodatage dont le nombre de chiffres dépasse ce que `Float64` peut préserver peut être arrondi à la valeur adjacente, contrairement aux formats d’entrée de lignes qui analysent exactement le texte d’origine. Les formats d’entrée de texte séparé par des tabulations, CSV et les autres formats de texte avec échappement ne sont pas régis par ce paramètre et conservent leur interprétation existante d’un nombre non entre guillemets : une valeur élevée est lue comme des ticks.)
 * Lors de l’insertion d’une valeur de chaîne comme datetime, elle est considérée comme étant dans le fuseau horaire de la colonne. `'2019-01-01 00:00:00'` sera considéré comme appartenant au fuseau horaire `Asia/Istanbul` et stocké sous la forme `1546290000000`.
 
 2. Filtrage sur les valeurs `DateTime64`
@@ -96,10 +96,9 @@ SELECT * FROM dt64 WHERE timestamp = toDateTime64(1546300800.123, 3);
 └─────────────────────────┴──────────┘
 ```
 
-Contrairement à l’opération `insert`, la fonction `toDateTime64` traite toutes les valeurs comme des valeurs décimales ; la précision doit donc
-être indiquée après la virgule.
+Comme lors de l’insertion d’un nombre, la fonction `toDateTime64` traite un argument numérique comme un nombre de secondes. La précision inférieure à la seconde doit donc être indiquée après le point décimal.
 
-3. Récupération du fuseau horaire d’une valeur de type `DateTime64` :
+3. Obtenir le fuseau horaire d’une valeur de type `DateTime64` :
 
 ```sql
 SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS x;
@@ -111,7 +110,7 @@ SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS 
 └─────────────────────────┴────────────────────────────────┘
 ```
 
-4. Conversion de fuseaux horaires
+4. Conversion de fuseau horaire
 
 ```sql
 SELECT
@@ -132,10 +131,10 @@ FROM dt64;
 
 * [Fonctions de conversion de type](/fr/reference/functions/regular-functions/type-conversion-functions)
 * [Fonctions de manipulation des dates et heures](/fr/reference/functions/regular-functions/date-time-functions)
-* [Le paramètre `date_time_input_format`](/fr/reference/settings/formats#date_time_input_format)
-* [Le paramètre `date_time_output_format`](/fr/reference/settings/formats#date_time_output_format)
-* [Le paramètre de configuration du serveur `timezone`](/fr/reference/settings/server-settings/settings#timezone)
-* [Le paramètre `session_timezone`](/fr/reference/settings/session-settings#session_timezone)
+* [Le paramètre `date_time_input_format`](/fr/reference/settings/formats/date-time#date_time_input_format)
+* [Le paramètre `date_time_output_format`](/fr/reference/settings/formats/date-time#date_time_output_format)
+* [Le paramètre de configuration du serveur `timezone`](/fr/reference/settings/server-settings/settings/other#timezone)
+* [Le paramètre `session_timezone`](/fr/reference/settings/session-settings/other#session_timezone)
 * [Opérateurs de manipulation des dates et heures](/fr/reference/operators/index#operators-for-working-with-dates-and-times)
 * [Type de données `Date`](/fr/reference/data-types/date)
 * [Type de données `DateTime`](/fr/reference/data-types/datetime)

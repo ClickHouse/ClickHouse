@@ -401,7 +401,8 @@ bool CSVFormatReader::readField(
 
 bool CSVFormatReader::readFieldImpl(ReadBuffer & istr, DB::IColumn & column, const DB::DataTypePtr & type, const DB::SerializationPtr & serialization)
 {
-    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
+    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type)
+        && !isCSVSeparateColumnsTuple(type, format_settings))
     {
         /// If value is null but type is not nullable then use default value instead.
         return SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, istr, format_settings, serialization);
@@ -601,7 +602,7 @@ If input data contains only ENUM ids, it's recommended to enable the setting [in
 
 ## Description {#description}
 
-Also prints the header row with column names, similar to [TabSeparatedWithNames](/interfaces/formats/TabSeparatedWithNames).
+Also prints the header row with column names, similar to [TabSeparatedWithNames](/reference/formats/TabSeparated/TabSeparatedWithNames).
 
 ## Example usage {#example-usage}
 

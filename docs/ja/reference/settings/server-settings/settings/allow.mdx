@@ -20,14 +20,19 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 ユーザーが各機能ティアに関連する設定を変更できるかどうかを制御します。
 
-* `0` - すべての設定の変更が許可されます (実験的、ベータ、本番) 。
-* `1` - ベータおよび本番の機能設定のみ変更できます。実験的な設定への変更は拒否されます。
-* `2` - 本番の設定のみ変更できます。実験的またはベータの設定への変更は拒否されます。
+* `0` - すべての設定の変更が許可されます (実験的、プライベートプレビュー、ベータ、本番) 。
+* `1` - プライベートプレビュー、ベータおよび本番の機能設定のみ変更できます。実験的な設定への変更は拒否されます。
+* `2` - ベータおよび本番の機能設定のみ変更できます。実験的またはプライベートプレビューの設定への変更は拒否されます。
+* `3` - 本番の設定のみ変更できます。実験的、プライベートプレビューまたはベータの設定への変更は拒否されます。
 
-これは、すべての `EXPERIMENTAL` / `BETA` 機能に readonly 制約を設定するのと同等です。
+これは、すべての `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA` 機能に readonly 制約を設定するのと同等です。
 
 <Note>
   値が `0` の場合は、すべての設定を変更できます。
+</Note>
+
+<Note>
+  `2` は以前、「本番設定のみ」を意味していました。現在はベータ設定も許可されるため、本番設定のみを許可するために `2` を固定していた構成では、`3` を使用する必要があります。
 </Note>
 
 <div id="allow_impersonate_user">
@@ -42,6 +47,8 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 &#39;IDENTIFIED WITH no&#95;password&#39; が明示的に指定されている場合を除き、パスワードなしのユーザー作成を禁止します。
 
+* **デフォルト:** `true`
+
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
@@ -52,6 +59,8 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 安全性の低い `no&#95;password` タイプのパスワードを許可するかどうかを設定します。
 
+* **デフォルト:** `true`
+
 ```xml
 <allow_no_password>1</allow_no_password>
 ```
@@ -61,6 +70,8 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 </div>
 
 平文パスワード型 (安全ではない) の使用を許可するかどうかを設定します。
+
+* **デフォルト:** `true`
 
 ```xml
 <allow_plaintext_password>1</allow_plaintext_password>

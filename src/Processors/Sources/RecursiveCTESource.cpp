@@ -182,7 +182,6 @@ private:
         ++recursive_step;
 
         SelectQueryOptions select_query_options;
-        select_query_options.merge_tree_enable_remove_parts_from_snapshot_optimization = false;
 
         const auto & recursive_table_name = recursive_cte_union_node->as<UnionNode &>().getCTEName();
         recursive_query_context->addOrUpdateExternalTable(recursive_table_name, working_temporary_table_holder);
