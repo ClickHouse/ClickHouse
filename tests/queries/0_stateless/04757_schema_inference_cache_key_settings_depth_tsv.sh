@@ -17,19 +17,20 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 T="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 AGE="2000-01-01 00:00:00"
 
-$CLICKHOUSE_LOCAL -q "SELECT [[[[[[toUInt32(1)]]]]]] AS x INTO OUTFILE '${T}_deep_a.parquet' TRUNCATE FORMAT Parquet"
-cp "${T}_deep_a.parquet" "${T}_deep_b.parquet"
+for suffix in a b; do
+    printf '[[[[[[1]]]]]]\n' > "${T}_deep_${suffix}.tsv"
+done
 touch -d "$AGE" "${T}"_*
 
 # --- max_parser_depth --------------------------------------------------------------------
 # A low limit must keep throwing after a high-limit query warmed the cache.
-echo "-- Parquet depth, high limit then low limit must throw"
+echo "-- TSV depth, high limit then low limit must throw"
 $CLICKHOUSE_LOCAL -m -q "
-    DESC file('${T}_deep_a.parquet', 'Parquet') SETTINGS max_parser_depth = 1000 FORMAT Null;
-    DESC file('${T}_deep_a.parquet', 'Parquet') SETTINGS max_parser_depth = 2 FORMAT Null;" \
+    DESC file('${T}_deep_a.tsv', 'TSV') SETTINGS max_parser_depth = 1000 FORMAT Null;
+    DESC file('${T}_deep_a.tsv', 'TSV') SETTINGS max_parser_depth = 3 FORMAT Null;" \
     2>&1 | grep -c TOO_DEEP_RECURSION
-echo "-- Parquet depth, low limit alone throws (control)"
-$CLICKHOUSE_LOCAL -q "DESC file('${T}_deep_b.parquet', 'Parquet') SETTINGS max_parser_depth = 2 FORMAT Null" \
+echo "-- TSV depth, low limit alone throws (control)"
+$CLICKHOUSE_LOCAL -q "DESC file('${T}_deep_b.tsv', 'TSV') SETTINGS max_parser_depth = 3 FORMAT Null" \
     2>&1 | grep -c TOO_DEEP_RECURSION
 
 rm -f "${T}"_*
