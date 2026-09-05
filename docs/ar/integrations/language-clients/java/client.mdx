@@ -55,8 +55,8 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   ## التهيئة
 
-  يتم تهيئة كائن Client عبر `com.clickhouse.client.api.Client.Builder#build()`. يمتلك كل client سياقه الخاص، ولا تُشارَك أي كائنات بين الـ clients.
-  يوفر Builder طرق ضبط تُيسّر عملية الإعداد.
+  يتم تهيئة كائن Client بواسطة `com.clickhouse.client.api.Client.Builder#build()`. يمتلك كل عميل سياقه الخاص ولا تُشارَك أي كائنات بينهما.
+  يوفر الـ Builder طرق تكوين لتسهيل الإعداد.
 
   مثال:
 
@@ -74,7 +74,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   تُهيَّأ المصادقة لكل عميل في مرحلة التهيئة. وتتوفر ثلاث طرق مصادقة مدعومة: بكلمة المرور، أو برمز الوصول، أو بشهادة SSL للعميل.
 
-  تتطلب المصادقة بكلمة مرور تعيين اسم المستخدم وكلمة المرور من خلال استدعاء `setUsername(String)` و`setPassword(String)`:
+  تتطلب المصادقة بكلمة المرور تعيين اسم المستخدم وكلمة المرور عبر استدعاء `setUsername(String)` و`setPassword(String)`:
 
   ```java showLineNumbers
    Client client = new Client.Builder()
@@ -116,8 +116,8 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   ## التهيئة
 
-  يتم تعريف جميع الإعدادات عبر طرق النسخة (المعروفة أيضاً بطرق الإعداد)، مما يجعل نطاق وسياق كل قيمة واضحاً.
-  تُعرَّف معاملات الإعداد الرئيسية ضمن نطاق واحد (العميل أو العملية) ولا تتجاوز بعضها البعض.
+  يتم تعريف جميع الإعدادات بواسطة طرق المثيل (المعروفة أيضاً بطرق التهيئة)، مما يوضح نطاق وسياق كل قيمة.
+  تُعرَّف معاملات التهيئة الرئيسية في نطاق واحد (العميل أو العملية) ولا تتجاوز بعضها البعض.
 
   يتم تحديد الإعداد أثناء إنشاء الـ client. راجع `com.clickhouse.client.api.Client.Builder`.
 
@@ -192,7 +192,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
       | `sslSocketSNI(String sni)`                  | `sni` - سلسلة اسم الخادم            | يضبط اسم الخادم الذي سيُستخدم لـ SNI ‏(Server Name Indication) في اتصال SSL/TLS.    | -         | `ssl_socket_sni`     |
     </Tab>
 
-    <Tab title="الوسيط">
+    <Tab title="بروكسي">
       | الطريقة                                           | الوسيطات                                                                          | الوصف                                            | الافتراضي | المفتاح                                  |
       | ------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------ | --------- | ---------------------------------------- |
       | `addProxy(ProxyType type, String host, int port)` | `type` - نوع الوكيل<br />`host` - اسم مضيف الوكيل أو IP<br />`port` - منفذ الوكيل | يحدد الوكيل المُستخدم للاتصال بالخادم.           | -         | `proxy_type`, `proxy_host`, `proxy_port` |
@@ -268,7 +268,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   يتضمن سجل الاستعلام حقلين إضافيين هما `query_id` و`log_comment`، يمكن استخدامهما لتحديد عملية معينة وإضافة معلومات إضافية إلى سجل الاستعلام.
 
-  `query_id` هو معرّف فريد للعملية. يمكن تعيينه من قِبل التطبيق عن طريق استدعاء الدالة `setQueryId` في الفئة `QuerySettings`.
+  `query_id` هو معرف فريد لعملية. يمكن تعيينه بواسطة التطبيق عن طريق استدعاء الدالة `setQueryId` في فئة `QuerySettings`.
 
   ```java showLineNumbers
   QuerySettings querySettings = new QuerySettings();
@@ -444,7 +444,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **القيمة المُعادة**
 
-  مستقبل من نوع `InsertResponse` - نتيجة العملية ومعلومات إضافية كمقاييس جانب الخادم.
+  مستقبل من نوع `InsertResponse` - نتيجة العملية ومعلومات إضافية مثل مقاييس جانب الخادم.
 
   **أمثلة**
 
@@ -519,7 +519,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   كائن Response يحتوي على نتيجة عملية الإدراج. لا يكون متاحاً إلا إذا تلقّى الـ Client استجابةً من الـ server.
 
   <Note>
-    يجب إغلاق هذا الكائن في أقرب وقت ممكن لتحرير الاتصال، إذ لا يمكن إعادة استخدامه حتى تُقرأ جميع بيانات الاستجابة السابقة بالكامل.
+    يجب إغلاق هذا الكائن في أقرب وقت ممكن لتحرير الاتصال، إذ لا يمكن إعادة استخدام الاتصال حتى تُقرأ جميع بيانات الاستجابة السابقة بالكامل.
   </Note>
 
   | الطريقة                         | الوصف                                                                                          |
@@ -636,7 +636,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   List<GenericRecord> queryAll(String sqlQuery)
   ```
 
-  **المعاملات**
+  **المعلمات**
 
   `sqlQuery` - تعبير SQL للاستعلام عن البيانات من الخادم.
 
@@ -670,18 +670,18 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **طرق الإعداد**
 
-  | الأسلوب                                           | الوصف                                                                                                                               |
-  | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-  | `setQueryId(String queryId)`                      | يعيّن معرّف الاستعلام الذي سيُسنَد إلى العملية.                                                                                     |
-  | `setFormat(ClickHouseFormat format)`              | يضبط تنسيق الاستجابة. راجع `RowBinaryWithNamesAndTypes` للاطلاع على القائمة الكاملة.                                                |
-  | `setMaxExecutionTime(Integer maxExecutionTime)`   | يعيّن وقت تنفيذ العملية على الخادم. لا يؤثر ذلك في مهلة القراءة.                                                                    |
-  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | يطلب من الخادم انتظار اكتمال الاستعلام قبل إرسال الاستجابة.                                                                         |
-  | `setUseServerTimeZone(Boolean useServerTimeZone)` | ستُستخدم المنطقة الزمنية للخادم (راجع إعدادات العميل) لتحليل أنواع التاريخ/الوقت في ناتج العملية. القيمة الافتراضية `false`.        |
-  | `setUseTimeZone(String timeZone)`                 | يطلب من الخادم استخدام `timeZone` لتحويل الوقت. راجع [session&#95;timezone](/ar/reference/settings/session-settings#session_timezone). |
-  | `serverSetting(String name, String value)`        | يعيّن إعداد خادم محددًا للعملية.                                                                                                    |
-  | `serverSetting(String name, Collection values)`   | يُعيّن إعدادات خادم فردية بقيم متعددة لعملية ما. يجب أن تكون عناصر المجموعة من النوع `String`.                                      |
-  | `setDBRoles(Collection dbRoles)`                  | يحدّد أدوار DB المطلوب تعيينها قبل تنفيذ العملية. يجب أن تكون عناصر المجموعة قيماً من نوع `String`.                                 |
-  | `setOption(String option, Object value)`          | يضبط خيار تهيئة بتنسيق خام. هذا ليس إعدادًا على مستوى الخادم.                                                                       |
+  | الأسلوب                                           | الوصف                                                                                                                                     |
+  | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+  | `setQueryId(String queryId)`                      | يعيّن معرّف الاستعلام الذي سيُسنَد إلى العملية.                                                                                           |
+  | `setFormat(ClickHouseFormat format)`              | يضبط تنسيق الاستجابة. راجع `RowBinaryWithNamesAndTypes` للاطلاع على القائمة الكاملة.                                                      |
+  | `setMaxExecutionTime(Integer maxExecutionTime)`   | يعيّن وقت تنفيذ العملية على الخادم. لا يؤثر ذلك في مهلة القراءة.                                                                          |
+  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | يطلب من الخادم انتظار اكتمال الاستعلام قبل إرسال الاستجابة.                                                                               |
+  | `setUseServerTimeZone(Boolean useServerTimeZone)` | ستُستخدم المنطقة الزمنية للخادم (راجع إعدادات العميل) لتحليل أنواع التاريخ/الوقت في ناتج العملية. القيمة الافتراضية `false`.              |
+  | `setUseTimeZone(String timeZone)`                 | يطلب من الخادم استخدام `timeZone` لتحويل الوقت. راجع [session&#95;timezone](/ar/reference/settings/session-settings/other#session_timezone). |
+  | `serverSetting(String name, String value)`        | يعيّن إعداد خادم محددًا للعملية.                                                                                                          |
+  | `serverSetting(String name, Collection values)`   | يُعيّن إعدادات خادم فردية بقيم متعددة لعملية ما. يجب أن تكون عناصر المجموعة من النوع `String`.                                            |
+  | `setDBRoles(Collection dbRoles)`                  | يعيّن أدوار قاعدة البيانات المراد تعيينها قبل تنفيذ العملية. يجب أن تكون عناصر المجموعة قيماً من نوع `String`.                            |
+  | `setOption(String option, Object value)`          | يضبط خيار تهيئة بتنسيق خام. هذا ليس إعدادًا على مستوى الخادم.                                                                             |
 
   ### QueryResponse
 
@@ -694,7 +694,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | الطريقة                         | الوصف                                                                                   |
   | ------------------------------- | --------------------------------------------------------------------------------------- |
   | `ClickHouseFormat getFormat()`  | يعيد التنسيق الذي تُرمَّز به البيانات في الاستجابة.                                     |
-  | `InputStream getInputStream()`  | يعيد تدفق بايتات البيانات غير المضغوطة بالتنسيق المحدد.                                 |
+  | `InputStream getInputStream()`  | يعيد تدفق بايتات البيانات غير المضوطة بالتنسيق المحدد.                                  |
   | `OperationMetrics getMetrics()` | يعيد كائنًا يحتوي على مقاييس العملية.                                                   |
   | `String getQueryId()`           | يعيد معرّف الاستعلام الذي عيّنه التطبيق للعملية (عبر إعدادات العملية أو بواسطة الخادم). |
   | `TimeZone getTimeZone()`        | يعيد المنطقة الزمنية التي يجب استخدامها لمعالجة النوعين Date وDateTime في الاستجابة.    |
@@ -708,7 +708,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   ### getTableSchema(String table)
 
-  يجلب مخطط الجدول الخاص بـ `table`.
+  يجلب مخطط الجدول لـ `table`.
 
   **التوقيعات**
 
@@ -739,7 +739,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **المعاملات**
 
-  `sql` - عبارة SQL من نوع &quot;SELECT&quot; التي سيتم إرجاع مخططها.
+  `sql` - عبارة SQL &quot;SELECT&quot; التي يجب إرجاع مخططها.
 
   **القيمة المُعادة**
 

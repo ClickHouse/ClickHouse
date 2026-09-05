@@ -5,6 +5,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/JSON/Object.h>
@@ -235,6 +236,84 @@ TEST(SerializationInfoByNameJSON, WriteJSONCanBeReadBack)
     EXPECT_TRUE(restored.getSettings().propagate_types_serialization_versions_to_nested_types);
     EXPECT_NE(restored.tryGet("string\"with\\escapes"), nullptr);
     EXPECT_NE(restored.tryGet("tuple"), nullptr);
+}
+
+TEST(SerializationInfoByNameJSON, MissingColumnsDoNotDowngradeConfiguredVersion)
+{
+    SerializationInfoSettings settings;
+    settings.version = MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS;
+
+    SerializationInfoByName infos(settings);
+    infos.setMissingColumns({
+        {.name = "z", .type_name = "String"},
+        {.name = "a", .type_name = "UInt64"},
+    });
+
+    WriteBufferFromOwnString out;
+    infos.writeJSON(out);
+    const auto json = out.str();
+    auto restored = SerializationInfoByName::readJSONFromString({}, json);
+
+    EXPECT_LT(json.find(R"("name":"a")"), json.find(R"("name":"z")"));
+    EXPECT_EQ(infos.getVersion(), settings.version);
+    EXPECT_EQ(restored.getVersion(), settings.version);
+    ASSERT_EQ(restored.getMissingColumns().size(), 2);
+    EXPECT_EQ(restored.getMissingColumns()[0].name, "a");
+    EXPECT_EQ(restored.getMissingColumns()[0].type_name, "UInt64");
+    EXPECT_EQ(restored.getMissingColumns()[1].name, "z");
+    EXPECT_EQ(restored.getMissingColumns()[1].type_name, "String");
+    ASSERT_NE(restored.getMissingColumnInfo("a"), nullptr);
+    EXPECT_EQ(restored.getMissingColumnInfo("a")->type_name, "UInt64");
+}
+
+TEST(SerializationInfoByNameJSON, RejectsMissingColumnsBeforeTheirFormatVersion)
+{
+    constexpr auto * json = R"({"columns":[],"missing_columns":[{"name":"value","type":"UInt64"}],"version":1})";
+    EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
+}
+
+TEST(SerializationInfoByNameJSON, RejectsDuplicateMissingColumns)
+{
+    constexpr auto * json = R"({"columns":[],"types_serialization_versions":{"string":0},"missing_columns":[{"name":"value","type":"UInt64"},{"name":"value","type":"String"}],"version":2})";
+    EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
+}
+
+TEST(SerializationInfoByNameJSON, RejectsUnknownMissingColumnField)
+{
+    constexpr auto * json = R"({"columns":[],"types_serialization_versions":{"string":0},"missing_columns":[{"name":"value","type":"UInt64","expression":"1"}],"version":2})";
+    EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
+}
+
+TEST(SerializationInfoByNameJSON, RejectsPhysicalMissingColumnConflict)
+{
+    constexpr auto * json = R"({"columns":[],"types_serialization_versions":{"string":0},"missing_columns":[{"name":"value","type":"UInt64"}],"version":2})";
+    NamesAndTypesList columns{{"value", std::make_shared<DataTypeUInt64>()}};
+    EXPECT_THROW(SerializationInfoByName::readJSONFromString(columns, json), DB::Exception);
+}
+
+TEST(SerializationInfoByNameJSON, RejectsInvalidMissingColumnType)
+{
+    constexpr auto * json = R"({"columns":[],"types_serialization_versions":{"string":0},"missing_columns":[{"name":"value","type":"NotAType"}],"version":2})";
+    EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
+}
+
+TEST(SerializationInfoSettings, OnlyWithTypesCanDowngradeToBasic)
+{
+    SerializationInfoSettings with_types;
+    with_types.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+    with_types.tryDowngradeToBasic();
+    EXPECT_EQ(with_types.version, MergeTreeSerializationInfoVersion::BASIC);
+
+    SerializationInfoSettings with_nested_propagation;
+    with_nested_propagation.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+    with_nested_propagation.propagate_types_serialization_versions_to_nested_types = true;
+    with_nested_propagation.tryDowngradeToBasic();
+    EXPECT_EQ(with_nested_propagation.version, MergeTreeSerializationInfoVersion::WITH_TYPES);
+
+    SerializationInfoSettings with_missing;
+    with_missing.version = MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS;
+    with_missing.tryDowngradeToBasic();
+    EXPECT_EQ(with_missing.version, MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
 }
 
 /// Malformed kind tests.

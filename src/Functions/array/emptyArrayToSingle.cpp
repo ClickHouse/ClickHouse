@@ -409,7 +409,7 @@ INSERT INTO test VALUES ([], [], []);
 SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM test;
 )", R"(
 ┌─emptyArrayToSingle(a)─┬─emptyArrayToSingle(b)─┬─emptyArrayToSingle(c)───┐
-│ [0]                   │ ['']                  │ ['1970-01-01 01:00:00'] │
+│ [0]                   │ ['']                  │ ['1970-01-01 00:00:00'] │
 └───────────────────────┴───────────────────────┴─────────────────────────┘
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

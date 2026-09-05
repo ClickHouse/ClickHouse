@@ -27,7 +27,7 @@ namespace
 }
 
 ASTPtr transformGroupASTForBinaryOperator(
-    const PQT::BinaryOperator * operator_node,
+    const PrometheusQueryTree::BinaryOperator * operator_node,
     ASTPtr && group,
     bool drop_metric_name,
     bool & metric_name_dropped)

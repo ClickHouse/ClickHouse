@@ -7,13 +7,16 @@ namespace DB::JemallocMergeTreeArena
 {
 
 /// Dedicated jemalloc arena(s) for long-lived MergeTree heap state:
-///   - per-part metadata: `NamesAndTypesList`, `SerializationInfoByName`, the `serializations`
-///     map, `column_name_to_position`, `MergeTreeDataPartChecksums` tree, `ColumnsSubstreams`,
-///     the per-part `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `index_granularity`, and the
-///     primary index arrays.
-///   - per-table metadata: `ColumnsDescription`, `VirtualColumnsDescription`,
-///     `StorageInMemoryMetadata` clones, the `serialization_hints` aggregation, and the
-///     `columns_descriptions_cache`.
+///   - per-part metadata: `SerializationInfoByName`, `MergeTreeDataPartChecksums` tree,
+///     the per-part `Poco::LRUCache<String, ColumnSize>(1024)` and its delegates, the
+///     `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`,
+///     `index_granularity_info`, and the primary index / index-granularity arrays themselves.
+///   - metadata shared across parts of a table (see `SharedPartColumns.h`): `NamesAndTypesList`,
+///     `column_name_to_position`, the `serializations` map and `ColumnsSubstreams`.
+///   - per-table metadata: the `MergeTreeData` object's mutable schema state — `ColumnsDescription`,
+///     `VirtualColumnsDescription`, `StorageInMemoryMetadata` clones, the `serialization_hints`
+///     aggregation across active parts, and the `shared_part_columns_cache` populated from
+///     `setColumns`.
 /// Isolating these off the default arenas reduces fragmentation of query-lifetime allocations.
 ///
 /// Callers route allocations here for a bounded scope via `ScopedJemallocThreadArena` from

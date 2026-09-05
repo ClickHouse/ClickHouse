@@ -5,9 +5,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Tests the native ClickHouse Arrow IPC writer (output_format_arrow_use_native_writer=1) for both the
-# ArrowStream and Arrow (file) formats over a wide type matrix. The data written natively must read
-# back identically to the same data written by the Apache Arrow library writer.
+# Tests the native ClickHouse Arrow IPC writer for both the ArrowStream and Arrow (file) formats over a
+# wide type matrix. The data written natively must read back identically to what was written, and it
+# must also decode identically in `pyarrow`, an independent Arrow implementation, so that a bug shared
+# by the native writer and the native reader cannot hide.
 
 GEN="SELECT
     toInt8(-number) AS i8, toUInt32(number) AS u32, toFloat64(number / 7) AS f64,
@@ -23,22 +24,46 @@ WRITE_SETTINGS="output_format_arrow_string_as_string = 1, output_format_arrow_co
 
 for fmt in ArrowStream Arrow; do
     NATIVE_FILE="${CLICKHOUSE_TMP}/04317_native.${fmt}"
-    LIBRARY_FILE="${CLICKHOUSE_TMP}/04317_library.${fmt}"
 
-    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${NATIVE_FILE}', '${fmt}') ${GEN} SETTINGS ${WRITE_SETTINGS}, output_format_arrow_use_native_writer = 1"
-    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${LIBRARY_FILE}', '${fmt}') ${GEN} SETTINGS ${WRITE_SETTINGS}, output_format_arrow_use_native_writer = 0"
+    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${NATIVE_FILE}', '${fmt}') ${GEN} SETTINGS ${WRITE_SETTINGS}"
 
     echo "--- ${fmt}: native-written, read with native reader ---"
-    ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${NATIVE_FILE}', '${fmt}') ORDER BY u32 SETTINGS input_format_arrow_use_native_reader = 1"
+    ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${NATIVE_FILE}', '${fmt}') ORDER BY u32"
 
-    NATIVE=$(${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${NATIVE_FILE}', '${fmt}') ORDER BY u32 SETTINGS input_format_arrow_use_native_reader = 1")
-    NATIVE_VIA_LIB=$(${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${NATIVE_FILE}', '${fmt}') ORDER BY u32 SETTINGS input_format_arrow_use_native_reader = 0")
-    LIBRARY=$(${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${LIBRARY_FILE}', '${fmt}') ORDER BY u32 SETTINGS input_format_arrow_use_native_reader = 0")
+    echo "--- ${fmt}: native-written, read by pyarrow ---"
+    python3 - "${NATIVE_FILE}" "${fmt}" <<'PY'
+import datetime
+import decimal
+import sys
+import pyarrow as pa
 
-    echo "--- ${fmt}: native reader == library reader (on native file)? ---"
-    [ "$NATIVE" = "$NATIVE_VIA_LIB" ] && echo "OK" || echo "MISMATCH"
-    echo "--- ${fmt}: native-written == library-written? ---"
-    [ "$NATIVE" = "$LIBRARY" ] && echo "OK" || echo "MISMATCH"
+path, fmt = sys.argv[1], sys.argv[2]
+with pa.OSFile(path, "rb") as source:
+    reader = pa.ipc.open_file(source) if fmt == "Arrow" else pa.ipc.open_stream(source)
+    table = reader.read_all()
 
-    rm -f "${NATIVE_FILE}" "${LIBRARY_FILE}"
+# The repr of timezone-aware datetimes depends on which timezone library pyarrow picked up,
+# so normalize values to representations that are stable across environments.
+def norm(v):
+    if isinstance(v, datetime.datetime) or isinstance(v, datetime.date):
+        return v.isoformat()
+    if isinstance(v, decimal.Decimal):
+        return str(v)
+    if isinstance(v, bytes):
+        return v.hex()
+    if isinstance(v, list):
+        return [norm(x) for x in v]
+    if isinstance(v, tuple):
+        return tuple(norm(x) for x in v)
+    if isinstance(v, dict):
+        return {k: norm(x) for k, x in v.items()}
+    return v
+
+for field in table.schema:
+    print(field.name, field.type, sep="\t")
+for row in table.to_pylist():
+    print({k: norm(v) for k, v in row.items()})
+PY
+
+    rm -f "${NATIVE_FILE}"
 done

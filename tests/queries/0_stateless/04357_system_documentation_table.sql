@@ -54,7 +54,9 @@ SELECT description != '' FROM system.documentation WHERE type = 'Setting' AND na
 SELECT count() FROM system.documentation WHERE type = 'Setting' AND description = 'Obsolete setting, does nothing.';
 
 -- Setting aliases are rendered as a reference to the canonical setting, like the other aliased entities.
-SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'enable_analyzer';
+-- Only the first line is checked: the history of the changes of the alias follows it (see
+-- `04651_system_documentation_settings_history`).
+SELECT splitByChar('\n', description)[1] FROM system.documentation WHERE type = 'Setting' AND name = 'enable_analyzer';
 
 -- MergeTree setting aliases are rendered as a reference to the canonical setting as well.
-SELECT description FROM system.documentation WHERE type = 'MergeTree Setting' AND name = 'allow_experimental_block_number_column';
+SELECT splitByChar('\n', description)[1] FROM system.documentation WHERE type = 'MergeTree Setting' AND name = 'allow_experimental_block_number_column';

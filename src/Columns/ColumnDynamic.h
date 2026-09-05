@@ -186,7 +186,6 @@ public:
 
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
     std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
@@ -197,13 +196,21 @@ public:
     /// variant vs the shared variant).
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    /// Weak hash of the raw variant storage. Like `updateHashWithValueRange`, this is NOT guaranteed
-    /// to be equal for logically equal values stored with different variant layouts (typed variant
-    /// vs the shared variant); the in-memory scatter consumers only need fast per-query partitioning.
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
-    {
-        variant_column_ptr->computeHashInto(row_begin, row_end, hash_out, initial);
-    }
+    /// Unlike `updateHashWithValueRange`, this is split-invariant (a value hashes the same in a typed
+    /// or the shared variant), so it is safe to scatter join/aggregation keys by.
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+
+    /// Leaf hashes of `count` values of `values`, a column of values in the Dynamic binary form
+    /// (`[binary encoded type][value]`), written to `hash_out[0 .. count)`. Value `i` of the batch is
+    /// `values[first + i]`, or `values[value_indices[i]]` for the scattered overload. Each hash is the
+    /// one the value would have when stored in a typed variant, which is what makes the shared variant
+    /// invisible to the scatter hash. Reused by `ColumnObject` for `shared_data`.
+    ///
+    /// The batch is grouped by type and deserialized one column per type rather than one per value:
+    /// this runs over whole blocks on the scatter path, so a per-value temporary column would put an
+    /// allocation on every row.
+    static void hashSharedValues(const ColumnString & values, size_t first, size_t count, UInt32 * hash_out);
+    static void hashSharedValues(const ColumnString & values, const UInt64 * value_indices, size_t count, UInt32 * hash_out);
 
     void updateHashFast(SipHash & hash) const override
     {
@@ -257,6 +264,12 @@ public:
 #else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
+
+    /// Compare two shared-variant-serialized Dynamic values ([binary encoded type][value], NULL as
+    /// Nothing) without materializing ColumnDynamic: byte-equality, then NULL/type-name order, then a
+    /// concrete-type column for equal type names. Used by doCompareAt's both-shared branch and by
+    /// ColumnObject's both-shared-data path comparison.
+    static int compareSerializedValues(std::string_view lhs, std::string_view rhs, int nan_direction_hint);
 
     bool hasEqualValues() const override
     {
@@ -362,6 +375,11 @@ public:
     UInt64 getNumberOfDefaultRows() const override
     {
         return variant_column_ptr->getNumberOfDefaultRows();
+    }
+
+    bool hasOnlyTypeDefaults() const override
+    {
+        return variant_column_ptr->hasOnlyTypeDefaults();
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override

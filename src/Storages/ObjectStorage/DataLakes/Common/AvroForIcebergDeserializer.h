@@ -45,6 +45,8 @@ private:
 
     std::map<std::string, std::vector<uint8_t>> metadata;
 
+    size_t bytes_read = 0;
+
     /// Shared mutex to protect mutable cache members for thread safety
     mutable SharedMutex cache_mutex;
 
@@ -70,6 +72,9 @@ public:
         const DB::FormatSettings & format_settings);
 
     size_t rows() const;
+
+    /// The constructor consumes the whole file, so this is its size on storage.
+    size_t bytesRead() const { return bytes_read; }
 
     /// Allow to access avro paths like "a.b.c"
     bool hasPath(const std::string & path) const;

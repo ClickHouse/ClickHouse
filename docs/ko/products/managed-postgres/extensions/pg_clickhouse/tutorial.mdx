@@ -14,6 +14,11 @@ keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhou
 이 튜토리얼은 [ClickHouse 튜토리얼]을 따르되, 모든 쿼리는
 pg&#95;clickhouse를 통해 실행합니다.
 
+`pg_clickhouse`를 구성하는 방법을 선택하십시오.
+
+* ClickHouse Managed Postgres를 사용하는 경우 [Console에서](#from-console)를 선택하십시오.
+* 확장 기능을 직접 설치하고 구성하는 경우 [PSQL에서](#from-psql)를 선택하십시오.
+
 <div id="start-clickhouse">
   ## ClickHouse 시작하기
 </div>
@@ -164,6 +169,43 @@ SELECT count() FROM taxi.trips;
 quit
 ```
 
+<div id="from-console">
+  ## 콘솔에서
+</div>
+
+ClickHouse Managed Postgres를 사용하는 경우 ClickHouse Cloud
+콘솔에서 `pg_clickhouse`를 구성하고 ClickHouse 서비스에 연결할 수
+있습니다. Managed Postgres 서비스를 열고 **설정**을 선택한 다음
+**ClickHouse 통합** 섹션을 찾습니다. **pg&#95;clickhouse 활성화**를 클릭합니다.
+
+설정 양식에서 외부 서버 이름을 입력합니다. 연결에 사용할 ClickHouse
+서비스, 데이터베이스 및 사용자를 선택합니다. ClickHouse
+비밀번호를 입력한 후 ClickHouse 테이블을 가져올 Postgres 데이터베이스와 대상 스키마를
+선택합니다. **연결**을 클릭하여 외부 서버를 생성하고 스키마를 가져옵니다.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="ClickHouse Cloud 콘솔의 taxi 데이터베이스용 pg_clickhouse 설정 양식" size="lg" border />
+
+설정이 완료되면 콘솔에 확인 메시지가 표시되고 서버 목록에 외부
+서버가 나타납니다.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="ClickHouse Cloud 콘솔에서 완료된 taxi 데이터베이스용 pg_clickhouse 설정" size="lg" border />
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="taxi pg_clickhouse 연결을 보여주는 외부 서버 목록" size="lg" border />
+
+이제 Postgres **SQL 콘솔**을 열고 가져온 테이블을 쿼리할 수
+있습니다:
+
+```sql
+SELECT * FROM <schema>.<table>;
+```
+
+이 튜토리얼의 택시 예시를 따라 하려면 `taxi` ClickHouse
+데이터베이스를 선택하고 `taxi` 대상 스키마로 가져오세요.
+
+<div id="from-psql">
+  ## PSQL에서
+</div>
+
 <div id="install-pg_clickhouse">
   ### pg_clickhouse 설치
 </div>
@@ -204,6 +246,14 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
 여기서는 ClickHouse 바이너리
 프로토콜을 사용하는 binary driver를 선택했습니다. HTTP 인터페이스를 사용하는 &quot;http&quot; driver를 사용할 수도 있습니다.
 
+<Note>
+  ClickHouse Cloud 콘솔에서 SQL을 실행하는 경우, 콘솔 관리자 사용자에게 외부 서버에 대한 액세스 권한을 부여하세요:
+
+  ```sql
+  GRANT USAGE ON FOREIGN SERVER taxi_srv TO chpg_console_admin;
+  ```
+</Note>
+
 다음으로 PostgreSQL 사용자를 ClickHouse 사용자에 매핑합니다. 가장 간단한 방법은
 현재 PostgreSQL 사용자를 외부 서버의 원격 사용자에 매핑하는 것입니다:
 
@@ -221,7 +271,7 @@ CREATE SCHEMA taxi;
 IMPORT FOREIGN SCHEMA taxi FROM SERVER taxi_srv INTO taxi;
 ```
 
-이제 테이블이 가져와져 있어야 합니다: [psql]에서 `\det+`를 사용해 확인하십시오:
+이제 테이블을 가져왔을 것입니다. [psql]에서 `\det+`를 사용해 확인하십시오:
 
 ```pgsql
 taxi=# \det+ taxi.*
@@ -501,7 +551,7 @@ CSV 파일을 기반으로 합니다.
    딕셔너리를 채우십시오:
 
    ```sql
-   SELECT clickhouse_raw_query($$
+   CALL clickhouse_perform('taxi_srv', $$
        CREATE DICTIONARY taxi.taxi_zone_dictionary (
            LocationID Int64 DEFAULT 0,
            Borough String,
@@ -512,68 +562,68 @@ CSV 파일을 기반으로 합니다.
        SOURCE(HTTP(URL 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv' FORMAT 'CSVWithNames'))
        LIFETIME(MIN 0 MAX 0)
        LAYOUT(HASHED_ARRAY())
-   $$, 'host=localhost dbname=taxi');
+   $$);
    ```
 
-<Note>
-  `LIFETIME`을 0으로 설정하면 불필요한
-  S3 버킷 트래픽을 방지하기 위해 자동 업데이트가 비활성화됩니다.
-  다른 경우에는 다르게 구성할 수도 있습니다. 자세한 내용은 [LIFETIME을 사용한 딕셔너리 데이터
-  갱신](/ko/reference/statements/create/dictionary/lifetime)을 참조하십시오.
-</Note>
+   <Note>
+     `LIFETIME`을 0으로 설정하면 불필요한
+     S3 버킷 트래픽을 방지하기 위해 자동 업데이트가 비활성화됩니다.
+     다른 경우에는 다르게 구성할 수도 있습니다. 자세한 내용은 [LIFETIME을 사용한 딕셔너리 데이터
+     갱신](/ko/reference/statements/create/dictionary/lifetime)을 참조하십시오.
+   </Note>
 
-2. 이제 이를 가져오십시오:
+   2. 이제 이를 가져오십시오:
 
-```sql
-    IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
-    FROM SERVER taxi_srv INTO taxi;
-```
+   ```sql
+   IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
+   FROM SERVER taxi_srv INTO taxi;
+   ```
 
-3. 쿼리가 가능한지 확인합니다:
+   3. 쿼리가 가능한지 확인합니다:
 
-```pgsql
-    taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
-     LocationID |  Borough  |                     Zone                      | service_zone
-    ------------+-----------+-----------------------------------------------+--------------
-             77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
-            106 | Brooklyn  | Gowanus                                       | Boro Zone
-            103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
-    (3 rows)
-```
+   ```pgsql
+   taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
+    LocationID |  Borough  |                     Zone                      | service_zone
+   ------------+-----------+-----------------------------------------------+--------------
+            77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
+           106 | Brooklyn  | Gowanus                                       | Boro Zone
+           103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
+   (3 rows)
+   ```
 
-4. 좋습니다. 이제 `dictGet` 함수를 사용해
-   쿼리에서 자치구 이름을 가져오십시오. 이 쿼리는
-   LaGuardia 또는 JFK 공항에서 끝나는 자치구별 택시
-   운행 횟수의 합계를 계산합니다:
+   4. 좋습니다. 이제 `dictGet` 함수를 사용해
+      쿼리에서 자치구 이름을 가져오십시오. 이 쿼리는
+      LaGuardia 또는 JFK 공항에서 끝나는 자치구별 택시
+      운행 횟수의 합계를 계산합니다:
 
-```pgsql
-    taxi=# SELECT
-            count(1) AS total,
-            COALESCE(NULLIF(dictGet(
-                'taxi.taxi_zone_dictionary', 'Borough',
-                toUInt64(pickup_nyct2010_gid)
-            ), ''), 'Unknown') AS borough_name
-        FROM taxi.trips
-        WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
-        GROUP BY borough_name
-        ORDER BY total DESC;
-     total | borough_name
-    -------+---------------
-     23683 | Unknown
-      7053 | Manhattan
-      6828 | Brooklyn
-      4458 | Queens
-      2670 | Bronx
-       554 | Staten Island
-        53 | EWR
-    (7 rows)
+   ```pgsql
+   taxi=# SELECT
+           count(1) AS total,
+           COALESCE(NULLIF(dictGet(
+               'taxi.taxi_zone_dictionary', 'Borough',
+               toUInt64(pickup_nyct2010_gid)
+           ), ''), 'Unknown') AS borough_name
+       FROM taxi.trips
+       WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
+       GROUP BY borough_name
+       ORDER BY total DESC;
+    total | borough_name
+   -------+---------------
+    23683 | Unknown
+     7053 | Manhattan
+     6828 | Brooklyn
+     4458 | Queens
+     2670 | Bronx
+      554 | Staten Island
+       53 | EWR
+   (7 rows)
 
-    Time: 66.245 ms
-```
+   Time: 66.245 ms
+   ```
 
-이 쿼리는 LaGuardia 또는 JFK 공항에서 끝나는 택시 운행 건수를
-borough별로 합산합니다. 승차한 지역을 알 수 없는 운행도
-상당히 많다는 점에 유의하십시오.
+   이 쿼리는 LaGuardia 또는 JFK 공항에서 끝나는 택시 운행 건수를
+   borough별로 합산합니다. 승차한 지역을 알 수 없는 운행도
+   상당히 많다는 점에 유의하십시오.
 
 <div id="perform-a-join">
   ## 조인 수행
@@ -607,31 +657,31 @@ borough별로 합산합니다. 승차한 지역을 알 수 없는 운행도
    Time: 48.449 ms
    ```
 
-<Note>
-  위 `JOIN` 쿼리의 출력은 앞서 본 `dictGet`
-  쿼리와 동일합니다(`Unknown` 값이 포함되지 않는다는 점만 제외). 내부적으로는
-  ClickHouse가 실제로 `taxi_zone_dictionary` 딕셔너리에 대해 `dictGet` 함수를 호출하지만,
-  `JOIN` 구문이 SQL 개발자에게는 더 익숙합니다.
-</Note>
+   <Note>
+     위 `JOIN` 쿼리의 출력은 앞서 본 `dictGet`
+     쿼리와 동일합니다(`Unknown` 값이 포함되지 않는다는 점만 제외). 내부적으로는
+     ClickHouse가 실제로 `taxi_zone_dictionary` 딕셔너리에 대해 `dictGet` 함수를 호출하지만,
+     `JOIN` 구문이 SQL 개발자에게는 더 익숙합니다.
+   </Note>
 
-```pgsql
-    taxi=# explain SELECT
-            count(1) AS total,
-            "Borough"
-        FROM taxi.trips
-        JOIN taxi.taxi_zone_dictionary
-          ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
-        WHERE pickup_nyct2010_gid > 0
-          AND dropoff_nyct2010_gid IN (132, 138)
-        GROUP BY "Borough"
-        ORDER BY total DESC;
-                                  QUERY PLAN
-    -----------------------------------------------------------------------
-     Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
-       Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
-    (2 rows)
-    Time: 2.012 ms
-```
+   ```pgsql
+   taxi=# explain SELECT
+           count(1) AS total,
+           "Borough"
+       FROM taxi.trips
+       JOIN taxi.taxi_zone_dictionary
+         ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
+       WHERE pickup_nyct2010_gid > 0
+         AND dropoff_nyct2010_gid IN (132, 138)
+       GROUP BY "Borough"
+       ORDER BY total DESC;
+                                 QUERY PLAN
+   -----------------------------------------------------------------------
+    Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
+      Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
+   (2 rows)
+   Time: 2.012 ms
+   ```
 
 2. 이 쿼리는 팁 금액이 가장 높은 1000건의 운행에 해당하는 행을 반환한 다음,
    각 행을 딕셔너리와 내부 조인합니다:
@@ -657,7 +707,7 @@ borough별로 합산합니다. 승차한 지역을 알 수 없는 운행도
 
 [EXPLAIN]: https://www.postgresql.org/docs/current/sql-explain.html "SQL 문: EXPLAIN"
 
-[dictionary]: /reference/statements/create/dictionary
+[딕셔너리]: /reference/statements/create/dictionary
 
 [PGXN]: https://pgxn.org/dist/pg_clickhouse "PGXN의 pg_clickhouse"
 

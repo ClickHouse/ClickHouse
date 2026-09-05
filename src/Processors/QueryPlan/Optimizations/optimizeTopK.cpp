@@ -1,6 +1,7 @@
 #include <Columns/Collator.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -110,7 +111,14 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     const auto & sort_column = sorting_step->getInputHeaders().front()->getByName(sort_column_name);
 
-    const bool where_clause = filter_step || read_from_mergetree_step->getPrewhereInfo();
+    /// A row-level policy filter restricts the rows inside the reader just like a `WHERE` / `PREWHERE`,
+    /// so it must count as a `where_clause` as well. Otherwise a query filtered only by a row policy leaves
+    /// `where_clause == false`, `MergeTreeDataSelectExecutor` enables `perform_top_k_optimization` and narrows
+    /// the read to the top-K marks before the policy runs: the policy then discards the rows in those marks
+    /// and the query returns fewer rows than the `LIMIT` - or none at all - even though later marks hold rows
+    /// the policy keeps.
+    const bool where_clause
+        = filter_step || read_from_mergetree_step->getPrewhereInfo() || read_from_mergetree_step->getRowLevelFilter();
 
     ///remove alias
     if (sort_column_name.contains('.'))
@@ -164,7 +172,9 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     /// Dynamic and Variant columns cannot be reliably filtered: their lessOrEquals
     /// returns Nullable(UInt8) rather than UInt8, causing an "Unexpected return type"
-    /// logical error when the prewhere filter is executed. Skip the optimization for them.
+    /// logical error when the prewhere filter is executed. Comparison functions also
+    /// reject zero-sized tuples even though ORDER BY supports them. Skip the optimization
+    /// for these types.
     ///
     /// For variable-length types (e.g. String, Array, Map, Tuple containing variable-length
     /// elements), the per-row threshold comparison cost can exceed its savings — most notably
@@ -172,10 +182,12 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     /// path behind an explicit opt-in. Nullable and Tuple of fixed-length types are still
     /// considered fixed-length (haveMaximumSizeOfValue forwards through them).
     const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
+    const auto * sort_column_tuple_type = typeid_cast<const DataTypeTuple *>(sort_column.type.get());
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
         && !read_from_mergetree_step->getPrewhereInfo()
         && !isDynamic(sort_column.type)
         && !isVariant(sort_column.type)
+        && (!sort_column_tuple_type || !sort_column_tuple_type->getElements().empty())
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
 
     /// When read-in-order optimization is enabled and the sort column is a prefix

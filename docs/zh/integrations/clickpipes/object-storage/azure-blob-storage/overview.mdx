@@ -44,7 +44,7 @@ ABS ClickPipe 会以单个批次操作，将指定容器中所有匹配某个模
 
 ABS ClickPipe 假定文件会按词典序添加到容器中，并依赖这种隐含顺序按顺序摄取文件。这意味着任何新文件**都必须**按词典序排在上一个已摄取文件之后。例如，名为 `file1`、`file2` 和 `file3` 的文件会按顺序被摄取；但如果向容器中添加一个新的 `file 0`，它将被**忽略**，因为该文件名按词典序并不大于上一个已摄取的文件。
 
-在此模式下，ABS ClickPipe 会对指定路径中的**所有文件**执行初始加载，然后以可配置的时间间隔轮询新文件 (默认情况下为 30 秒) 。**无法**从某个特定文件或某个时间点开始摄取——ClickPipes 始终会加载指定路径中的所有文件。
+在此模式下，ABS ClickPipe 会对指定路径中的**所有文件**执行初始加载，然后以可配置的时间间隔轮询新文件 (默认情况下为 30 秒) 。若要在某个特定文件之后开始持续摄取，请配置 **Start after**。ClickPipes 将跳过按词典序小于或等于配置值的文件，并从该点继续摄取较新的文件。
 
 <div id="file-pattern-matching">
   ### 文件模式匹配
@@ -152,7 +152,7 @@ ABS ClickPipes 分别通过两条不同的网络路径进行元数据发现和�
   如果你的 Azure Blob 存储容器与 ClickHouse Cloud 服务位于同一 Azure 区域，基于 IP 的访问控制**将不起作用**。当这两个服务位于同一区域时，流量会通过 Azure 的内部网络路由，而不是公共互联网。
 </Warning>
 
-* 对于**基于 IP 的访问控制**，你的 Azure Storage 防火墙中的 [IP 网络规则](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) 必须允许 [此处](/zh/integrations/clickpipes/home#list-of-static-ips) 列出的 ClickPipes 服务所在区域的静态 IP，以及 ClickHouse Cloud 服务的[静态 IP](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)。要获取你的 ClickHouse Cloud 区域的静态 IP，请打开终端并运行：
+* 对于**基于 IP 的访问控制**，你的 Azure Storage 防火墙中的 [IP 网络规则](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) 必须允许 [此处](/zh/integrations/clickpipes/networking/static-ips) 列出的 ClickPipes 服务所在区域的静态 IP，以及 ClickHouse Cloud 服务的[静态 IP](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)。要获取你的 ClickHouse Cloud 区域的静态 IP，请打开终端并运行：
 
   ```bash
   # 将 <your-region> 替换为你的 ClickHouse Cloud 区域
@@ -165,18 +165,19 @@ ABS ClickPipes 分别通过两条不同的网络路径进行元数据发现和�
 
 ClickPipes 提供了开箱即用的默认值，能够满足大多数使用场景的需求。如果您的场景需要进一步细调，可以调整以下设置：
 
-| Setting                              | Default value | Description                                                                                           |
-| ------------------------------------ | ------------- | ----------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB          | 单次插入批次中要处理的字节数。                                                                                       |
-| `Max file count`                     | 100           | 单次插入批次中要处理的最大文件数。                                                                                     |
-| `Max threads`                        | auto(3)       | 文件处理的[最大并发线程数](/zh/reference/settings/session-settings#max_threads)。                                  |
-| `Max insert threads`                 | 1             | 文件处理的[最大并发 insert 线程数](/zh/reference/settings/session-settings#max_insert_threads)。                   |
-| `Min insert block size bytes`        | 1GB           | 可插入表中的[块最小字节大小](/zh/reference/settings/session-settings#min_insert_block_size_bytes)。                 |
-| `Max download threads`               | 4             | [最大并发下载线程数](/zh/reference/settings/session-settings#max_download_threads)。                            |
-| `Object storage polling interval`    | 30s           | 配置将数据插入 ClickHouse 集群前的最长等待时间。                                                                        |
-| `Parallel distributed insert select` | 2             | [并行分布式 insert select 设置](/zh/reference/settings/session-settings#parallel_distributed_insert_select)。 |
-| `Parallel view processing`           | false         | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings#parallel_view_processing)方式推送到已附加的视图。           |
-| `Use cluster function`               | true          | 是否在多个节点之间并行处理文件。                                                                                      |
+| Setting                              | Default value | Description                                                                                                    |
+| ------------------------------------ | ------------- | -------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB          | 单次插入批次中要处理的字节数。                                                                                                |
+| `Max file count`                     | 100           | 单次插入批次中要处理的最大文件数。                                                                                              |
+| `Max threads`                        | auto(3)       | 文件处理的[最大并发线程数](/zh/reference/settings/session-settings/max-threads#max_threads)。                               |
+| `Max insert threads`                 | 1             | 文件处理的[最大并发 insert 线程数](/zh/reference/settings/session-settings/max-insert#max_insert_threads)。                 |
+| `Min insert block size bytes`        | 1GB           | 可插入表中的[块最小字节大小](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)。               |
+| `Max download threads`               | 4             | [最大并发下载线程数](/zh/reference/settings/session-settings/max-download#max_download_threads)。                        |
+| `Object storage polling interval`    | 30s           | 配置将数据插入 ClickHouse 集群前的最长等待时间。                                                                                 |
+| `Start after`                        | None          | 对于 ordered 模式的持续摄取，跳过字典序小于或等于指定文件名或路径的文件。                                                                      |
+| `Parallel distributed insert select` | 2             | [并行分布式 insert select 设置](/zh/reference/settings/session-settings/parallel#parallel_distributed_insert_select)。 |
+| `Parallel view processing`           | false         | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings/parallel#parallel_view_processing)方式推送到已附加的视图。           |
+| `Use cluster function`               | true          | 是否在多个节点之间并行处理文件。                                                                                               |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes 的高级设置" size="lg" border />
 

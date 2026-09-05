@@ -27,6 +27,14 @@ Ignore ON CLUSTER clause for replicated access entities management queries.
 
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 
+## ignore_on_cluster_for_replicated_handler_queries {#ignore_on_cluster_for_replicated_handler_queries}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to ignore the ON CLUSTER clause for handler management queries when handlers are backed by replicated (Keeper) storage."}]}]}/>
+
+Ignore ON CLUSTER clause for replicated handler management queries.
+
 ## ignore_on_cluster_for_replicated_named_collections_queries {#ignore_on_cluster_for_replicated_named_collections_queries}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

@@ -1,0 +1,14 @@
+<clickhouse>
+    <named_collections>
+        <remote_ipv6_collection>
+            <host>2001:db8::1</host>
+            <port>9000</port>
+            <database>default</database>
+        </remote_ipv6_collection>
+        <remote_ipv6_denied_collection>
+            <host>2001:db8::2</host>
+            <port>9000</port>
+            <database>default</database>
+        </remote_ipv6_denied_collection>
+    </named_collections>
+</clickhouse>
