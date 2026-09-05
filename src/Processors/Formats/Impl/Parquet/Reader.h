@@ -504,7 +504,13 @@ struct Reader
     Prefetcher prefetcher;
 
     parq::FileMetaData file_metadata;
+    std::shared_ptr<const parq::FileMetaData> shared_file_metadata;
     std::deque<RowGroup> row_groups;
+
+    const parq::FileMetaData & getFileMetadata() const
+    {
+        return shared_file_metadata ? *shared_file_metadata : file_metadata;
+    }
 
     /// Don't get confused in different column numberings (sorry there are so many):
     ///  * In parquet metadata, columns are listed in array `schema`.

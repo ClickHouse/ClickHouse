@@ -64,11 +64,12 @@ class ParquetMetadataCache : public CacheBase<ParquetMetadataCacheKey, ParquetMe
 {
 public:
     using Base = CacheBase<ParquetMetadataCacheKey, ParquetMetadataCacheCell, ParquetMetadataCacheKeyHash, ParquetMetadataCacheWeightFunction>;
+    using CellPtr = Base::MappedPtr;
     ParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio);
     static ParquetMetadataCacheKey createKey(const String & file_path, const String & file_attr);
     /// Get or load Parquet metadata with caching
     template <typename LoadFunc>
-    parquet::format::FileMetaData getOrSetMetadata(const ParquetMetadataCacheKey & key, LoadFunc && load_fn)
+    CellPtr getOrSetMetadataCell(const ParquetMetadataCacheKey & key, LoadFunc && load_fn)
     {
         auto load_fn_wrapper = [&]()
         {
@@ -87,7 +88,16 @@ public:
             LOG_TRACE(log, "cache hit {} | {}", key.file_path, key.etag);
             ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
         }
-        return result.first->metadata;
+        return result.first;
+    }
+
+    template <typename LoadFunc>
+    std::shared_ptr<const parquet::format::FileMetaData> getOrSetMetadataPtr(
+        const ParquetMetadataCacheKey & key, LoadFunc && load_fn)
+    {
+        auto cell = getOrSetMetadataCell(key, std::forward<LoadFunc>(load_fn));
+        const auto * metadata = &cell->metadata;
+        return std::shared_ptr<const parquet::format::FileMetaData>(std::move(cell), metadata);
     }
 
 private:
