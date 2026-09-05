@@ -547,6 +547,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 ¹ `LIKE` and `match` use direct read as a hint for the listed tokenizers, otherwise they fall back to brute-force scan.
 `LIKE` additionally supports evaluation by a dictionary scan (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor.
 A `%value%` pattern is then a *direct read (without hint)*, while `value%` and `%value` patterns remain a hint, see [LIKE/ILIKE queries](#like-ilike-queries-perf).
+With `array` a token is the whole value, so any pattern qualifies and all of them are a *direct read (without hint)*.
 
 ² `ILIKE` is only supported via evaluation by a dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer).
 There is no fallback to using the index as a hint for patterns the dictionary scan does not support: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
@@ -1411,6 +1412,10 @@ The same dictionary scan serves `startsWith(col, 'value')` and `endsWith(col, 'v
 This is the path most `value%` and `%value` patterns actually take, because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (enabled by default) rewrites `col LIKE 'value%'` into `startsWith(col, 'value')` and `col LIKE '%value'` into `endsWith(col, 'value')`.
 Needles that span several tokens keep using the complete tokens of the needle and do not need a dictionary scan.
 
+With the `array` tokenizer a token is the whole column value, so the dictionary is the set of distinct values and **any** pattern qualifies: anchors, punctuation, `_` wildcards, several `%`-separated needles and escaped metacharacters.
+The scan then decides every such pattern on its own, including `value%` and `%value`, because a token and the value are the same string.
+The one exception is a pattern that matches the empty string, which the tokenizer stores no token for.
+
 When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Luckily, there is a fallback mechanism to prevent that.
 
 The speed-up of a `value%` or `%value` pattern comes from skipping granules, so it depends on how the matching rows are laid out. Needles that match rows in every granule prune nothing, and the query pays for the dictionary scan on top of the full scan it would have done anyway. Disable [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) for such workloads.
@@ -1419,7 +1424,7 @@ The optimization is controlled by a setting:
 - [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
 The fallback mechanism is controlled by two settings:
-- [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
+- [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length) (with `array`, the non-wildcard characters of the whole pattern are counted, so `%alpha%prod%` scores nine)
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`.

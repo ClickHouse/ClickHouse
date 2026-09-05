@@ -36,7 +36,13 @@ Expression ((Project names + Projection))
         Condition: true
         Parts: 3/3
         Granules: 3/3
-      Ranges: 3
+      Skip
+        Name: idx_name_fts
+        Description: text GRANULARITY 100000000
+        Condition: (mode: All; tokens: [])
+        Parts: 1/3
+        Granules: 1/3
+      Ranges: 1
 1	ClickHouse is a fast analytical database
 tokenizer: splitByString
 Expression ((Project names + Projection))
