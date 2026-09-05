@@ -35,6 +35,12 @@ struct LazyMaterializingRows : public ILazyMaterializingRows
     RowsInParts rows_in_parts;
     RangesInDataParts ranges_in_data_parts;
 
+    /// Whether any part of the first-phase read set was stored on a remote disk.
+    /// `filterRangesAndFillRows` drops parts whose ranges become empty, so the second phase alone
+    /// cannot tell whether the query touched remote parts. Decisions that must consider the whole
+    /// query (e.g. the automatic uncompressed cache mode) use this flag.
+    bool any_source_parts_on_remote_disk = false;
+
     explicit LazyMaterializingRows(RangesInDataParts ranges_in_data_parts_);
 
     void filterRangesAndFillRows(const PaddedPODArray<UInt64> & sorted_indexes) override;

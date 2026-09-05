@@ -198,6 +198,8 @@ void SelectStreamFactory::createForShardImpl(
         /// `updateSettings`. The local plan (`emplace_local_stream`) keeps the unstripped `query_ast`.
         auto forwarded_query = query_ast->clone();
         stripInitiatorOnlySettingsFromQuery(forwarded_query);
+        /// An explicit `use_uncompressed_cache = 0` is lost on the shard, so bake the opt-out into the query text too.
+        resolveAutomaticUncompressedCacheOptOutInQuery(*forwarded_query, context->getSettingsRef());
 
         remote_shards.emplace_back(Shard{
             .query = forwarded_query,

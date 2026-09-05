@@ -40,10 +40,15 @@ def start_cluster():
 def run_skip_index_query(query_id):
     # Filtering on `s` forces the bloom_filter skip index to be loaded for every
     # mark range, which is the path that exhibited the bug.
+    # The data and index uncompressed caches share the same `UncompressedCache*`
+    # profile events, so the data column read must not use the (data) uncompressed
+    # cache here, otherwise it would be attributed to the index cache events this
+    # test inspects. Disable it explicitly so only the index uncompressed cache,
+    # which is governed by `index_uncompressed_cache_size`, can produce events.
     node.query(
         "SELECT count() FROM t WHERE s = '12345'",
         query_id=query_id,
-        settings={"use_skip_indexes": 1},
+        settings={"use_skip_indexes": 1, "use_uncompressed_cache": 0},
     )
 
 
