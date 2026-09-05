@@ -566,6 +566,56 @@ def do_clickhouse_only_query_test(
     ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
 
 
+def do_clickhouse_only_range_query_test(
+    query,
+    start_time,
+    end_time,
+    step,
+    result,
+    chresult,
+    eps=0,
+):
+    actual_chresult = execute_range_query_in_clickhouse_sql(
+        query, start_time, end_time, step
+    )
+    assert tsv_close_to(
+        actual_chresult, chresult, eps=eps
+    ), f"actual result: {actual_chresult}, expected: {chresult}"
+
+    actual_result_from_http_api = execute_range_query_in_clickhouse_http_api(
+        query, start_time, end_time, step
+    )
+    assert http_api_response_close_to(
+        actual_result_from_http_api, result, eps=eps
+    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+
+
+def do_clickhouse_only_range_query_test_expect_error(
+    query,
+    start_time,
+    end_time,
+    step,
+    expected_cherror,
+):
+    quoted_query = "'" + query.replace("'", "''") + "'"
+    sql_query = (
+        f"SELECT * FROM prometheusQueryRange(prometheus, {quoted_query}, {start_time}, {end_time}, {step})"
+    )
+    assert expected_cherror in node.query_and_get_error(sql_query)
+
+    actual_result_from_http_api = execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        query,
+        start_time,
+        end_time,
+        step,
+        expect_error=True,
+    )
+    assert expected_cherror in actual_result_from_http_api
+
+
 def test_up():
     do_query_test(
         "up",
@@ -1364,6 +1414,77 @@ def test_unary_operators():
                 "[('1970-01-01 00:02:00.000',-1),('1970-01-01 00:02:15.000',-3),('1970-01-01 00:02:30.000',-4),('1970-01-01 00:02:45.000',-4),('1970-01-01 00:03:00.000',-4)]",
             ]
         ],
+    )
+
+    send_data(
+        [
+            ({"__name__": "unary_requests", "job": "unary"}, {0: 2}),
+            ({"__name__": "unary_errors", "job": "unary"}, {1200: 4}),
+        ]
+    )
+
+    # Removing __name__ must merge series that have no samples at the same timestamp.
+    do_query_test(
+        '-{job="unary"}',
+        0,
+        '{"resultType": "vector", "result": [{"metric": {"job": "unary"}, "value": [0, "-2"]}]}',
+        [["[('job','unary')]", "1970-01-01 00:00:00.000", -2]],
+    )
+
+    do_query_test(
+        '-{job="unary"}',
+        1200,
+        '{"resultType": "vector", "result": [{"metric": {"job": "unary"}, "value": [1200, "-4"]}]}',
+        [["[('job','unary')]", "1970-01-01 00:20:00.000", -4]],
+    )
+
+    # Prometheus v3.5.0 rejects duplicate labelsets across a range result even when
+    # the samples occur at different timestamps, so this checks ClickHouse directly.
+    do_clickhouse_only_range_query_test(
+        '-{job="unary"}',
+        0,
+        1200,
+        1200,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "unary"}, "values": [[0, "-2"], [1200, "-4"]]}]}',
+        [[
+            "[('job','unary')]",
+            "[('1970-01-01 00:00:00.000',-2),('1970-01-01 00:20:00.000',-4)]",
+        ]],
+    )
+
+    send_data(
+        [
+            ({"__name__": "unary_requests", "job": "unary_overlap"}, {2400: 1}),
+            ({"__name__": "unary_errors", "job": "unary_overlap"}, {2400: 2}),
+        ]
+    )
+
+    # The same labelset at the same timestamp is still an error.
+    do_query_test_expect_error(
+        '-{job="unary_overlap"}',
+        2400,
+        "vector cannot contain metrics with the same labelset",
+        "Multiple series have the same tags {'job': 'unary_overlap'}",
+    )
+
+    send_data(
+        [
+            ({"__name__": "metric_a"}, {0: 1}),
+            ({"__name__": "metric_b"}, {0: 3, 600: 4}),
+        ]
+    )
+
+    # Unary metric-name removal must also compose correctly with the OR operator.
+    do_range_query_test(
+        "-metric_a or -metric_b",
+        0,
+        1200,
+        600,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[0, "-1"], [600, "-4"]]}]}',
+        [[
+            "[]",
+            "[('1970-01-01 00:00:00.000',-1),('1970-01-01 00:10:00.000',-4)]",
+        ]],
     )
 
 
@@ -2683,6 +2804,23 @@ def test_multiple_series_in_same_resultset():
         200,
         "vector cannot contain metrics with the same labelset",
         "Multiple series have the same tags {'http_code': '404'}",
+    )
+
+    send_data(
+        [
+            ({"__name__": "rate_requests", "job": "rate_scope"}, {10: 1, 60: 2}),
+            ({"__name__": "rate_errors", "job": "rate_scope"}, {1210: 3, 1260: 5}),
+        ]
+    )
+
+    # Range functions keep the strict duplicate-labelset behavior. The two rate
+    # series do not overlap in the grid, but they still collapse to one labelset.
+    do_clickhouse_only_range_query_test_expect_error(
+        'rate({job="rate_scope"}[60s])',
+        0,
+        1260,
+        60,
+        "Multiple series have the same tags {'job': 'rate_scope'}",
     )
 
     # FIXME: Function count_over_time() is not implemented yet.
