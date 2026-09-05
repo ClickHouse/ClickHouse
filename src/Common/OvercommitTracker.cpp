@@ -22,7 +22,7 @@ using namespace std::chrono_literals;
 
 constexpr std::chrono::microseconds ZERO_MICROSEC = 0us;
 
-/// `wait_for` adds its duration to `steady_clock::now()` in nanoseconds, which cannot represent a
+/// `wait_for` adds its duration to `steady_clock::now` in nanoseconds, which cannot represent a
 /// far-future deadline, so a wait longer than one slice is taken in slices and re-armed.
 constexpr std::chrono::microseconds MAX_WAIT_SLICE = std::chrono::hours(24);
 
