@@ -680,6 +680,21 @@ public:
         // scheduler between `fair` stints; eliminating it entirely would require storing vruntime
         // per fair-instance (with drain-time cleanup to avoid an unbounded per-query map), which is
         // not worth the added state and lifetime complexity for so rare a case.
+        // A request pulled from `fair` carries its real-vs-estimate correction already folded into
+        // `scheduling_charge` (fair charges at push), while every other algorithm re-derives the
+        // charge from `scheduling_cost` plus the shared `cost_correction` at pop and ignores
+        // `scheduling_charge`. Return the consumed delta to the shared state before re-pushing, so a
+        // live swap does not drop it. A no-op for a request coming from a pop-charging algorithm,
+        // where `reset()` keeps `scheduling_charge == scheduling_cost`.
+        for (ResourceRequest * request : pending)
+            if (auto * ctx = request->scheduling_context)
+            {
+                auto & state = ctx->getResourceState(this);
+                state.cost_correction.fetch_add(
+                    static_cast<Int64>(request->scheduling_charge) - static_cast<Int64>(request->scheduling_cost),
+                    std::memory_order_relaxed);
+                request->scheduling_charge = request->scheduling_cost;
+            }
         if (new_algorithm == SchedulerAlgorithm::Fair)
             for (ResourceRequest * request : pending)
                 if (auto * ctx = request->scheduling_context)

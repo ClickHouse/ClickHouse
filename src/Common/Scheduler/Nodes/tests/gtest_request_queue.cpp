@@ -399,6 +399,23 @@ TEST(RequestQueue, FairSwapRoundTripNoVruntimeDoubleCount)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 3, 2}));
 }
 
+/// A correction consumed by `fair::push` (folded into `scheduling_charge`) must survive a live swap
+/// to `las`. `fair` charges at push and stores the corrected cost on the request; `las` charges at
+/// pop and re-derives it from `scheduling_cost` + the shared `cost_correction`, ignoring
+/// `scheduling_charge`. `setScheduler` returns the consumed delta to `cost_correction` before
+/// re-pushing, so the migrated request's real cost still lands in attained under `las` — not just
+/// the estimate. Regression for the swap silently dropping the correction.
+TEST(RequestQueue, FairToLasSwapPreservesCorrection)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery();
+    f.addCorrection(a, /*real=*/100, /*estimate=*/10);   // +90 pending on the shared state
+    f.enqueue(1, a, 10);                                 // fair::push consumes it into scheduling_charge (=100)
+    f.queue->setScheduler(SchedulerAlgorithm::Las);      // migrate the pending request to las
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1}));    // popped under las
+    EXPECT_EQ(f.attainedOf(a), 100);                     // corrected cost preserved across the swap, not 10
+}
+
 /// Cancellation from the middle works for both algorithms; counters update.
 TEST(RequestQueue, CancelFromMiddle)
 {
