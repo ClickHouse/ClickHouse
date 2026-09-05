@@ -1080,7 +1080,7 @@ class BackportPRs:
         cherry-pick was merged.
         """
         # branch -> (release branch, original PR number)
-        branches = {}  # type: Dict[str, Tuple[str, int]]
+        branches: Dict[str, Tuple[str, int]] = {}
         for release in self.release_branches:
             refs = git_runner(
                 "git for-each-ref --format='%(refname:short)' "
@@ -1121,7 +1121,7 @@ class BackportPRs:
             [ReleaseBranch.cp_branch(*branches[branch]) for branch in stranded],
         )
         # original PR number -> release branches it is stranded on
-        to_recover = {}  # type: Dict[int, List[str]]
+        to_recover: Dict[int, List[str]] = {}
         for branch in stranded:
             release, number = branches[branch]
             states = [
