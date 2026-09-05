@@ -697,6 +697,7 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     /// workers never write a manifest (writeBackupMetadata asserts !is_internal_backup), so this is the id readers see.
     backup_create_params.backup_id = backup_settings.id.empty() ? toString(*backup_settings.backup_uuid) : backup_settings.id;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
+    backup_create_params.fsync_backup_files = backup_settings.fsync_backup_files;
     backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
     backup_create_params.allow_azure_native_copy = backup_settings.allow_azure_native_copy;
     backup_create_params.use_same_s3_credentials_for_base_backup = backup_settings.use_same_s3_credentials_for_base_backup;

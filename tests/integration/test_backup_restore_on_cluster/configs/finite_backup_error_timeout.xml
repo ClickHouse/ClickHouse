@@ -1,0 +1,10 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- user_config.xml pins compatibility to 24.9, which predates this setting and so
+                 leaves it at 0, meaning "wait forever". A test whose old host refuses the internal
+                 query before joining the coordination would then hang in error cleanup. -->
+            <backup_restore_finish_timeout_after_error_sec>3</backup_restore_finish_timeout_after_error_sec>
+        </default>
+    </profiles>
+</clickhouse>

@@ -4,6 +4,8 @@
 #include <Disks/DiskType.h>
 
 #include <filesystem>
+#include <mutex>
+#include <set>
 
 
 namespace DB
@@ -51,6 +53,9 @@ public:
     void removeFile(const String & file_name) override;
     void removeEmptyDirectories() override;
 
+    void syncFileToDisk(const String & file_name) override;
+    void syncDirectoriesToDisk() override;
+
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
     void removeEmptyDirectoriesImpl(const std::filesystem::path & current_dir);
@@ -58,6 +63,16 @@ private:
     const DiskPtr disk;
     const std::filesystem::path root_path;
     const DataSourceDescription data_source_description;
+
+    /// Whether this disk keeps the backup as plain files in the local filesystem, so that fsyncing
+    /// those files and their directories makes the backup durable. See `syncFileToDisk`.
+    const bool destination_is_plain_local_files;
+
+    /// Directories that received a file synced via `syncFileToDisk`, collected so they can be
+    /// fsynced (deepest-first) in `syncDirectoriesToDisk`. Written from the concurrent backup
+    /// write path, hence guarded. Only used for local disks.
+    std::mutex dirs_to_sync_mutex;
+    std::set<std::filesystem::path> dirs_to_sync TSA_GUARDED_BY(dirs_to_sync_mutex);
 };
 
 }

@@ -90,6 +90,14 @@ public:
     /// Removes the backup folder if it's empty or contains empty subfolders.
     virtual void removeEmptyDirectories() = 0;
 
+    /// fsync one already-written file and remember its parent directories for
+    /// `syncDirectoriesToDisk`. No-op where a completed upload is already durable.
+    virtual void syncFileToDisk(const String & /* file_name */) {}
+
+    /// fsync the directories recorded by `syncFileToDisk`: a created file is durable only once
+    /// its parent directory entry is persisted. Called once after all files are synced.
+    virtual void syncDirectoriesToDisk() {}
+
     virtual const ReadSettings & getReadSettings() const = 0;
     virtual const WriteSettings & getWriteSettings() const = 0;
     virtual size_t getWriteBufferSize() const = 0;
