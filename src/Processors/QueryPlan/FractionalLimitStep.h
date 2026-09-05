@@ -36,6 +36,10 @@ public:
 
     bool hasCorrelatedExpressions() const override { return false; }
 
+    /// The fraction is resolved against the whole result, so `apply_prelimit` never pushes this to a
+    /// shard and it runs on the initiator.
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
 private:
     void updateOutputHeader() override { output_header = input_headers.front(); }
 

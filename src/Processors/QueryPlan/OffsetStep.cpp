@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/OffsetTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -38,6 +39,10 @@ void OffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
             pipeline.getHeader(), offset, pipeline.getNumStreams());
 
     pipeline.addTransform(std::move(transform));
+
+    if (dataflow_cache_updater)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
 }
 
 void OffsetStep::describeActions(FormatSettings & settings) const
