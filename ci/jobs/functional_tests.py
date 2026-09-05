@@ -10,6 +10,10 @@ from pathlib import Path
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.jobs.scripts.test_selection_manifest import (
+    SELECTION_MANIFEST,
+    load_selection,
+)
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
@@ -708,10 +712,13 @@ def main():
     elif is_targeted_check:
         rerun_count = 50
 
-    if is_flaky_check:
+    if is_targeted_check:
+        runner_options += " --long-test-runs-ratio 1"
+
+    if is_flaky_check or is_targeted_check:
         # Run no-parallel and no-flaky-check tests sequentially with fewer iterations.
         # Derived from rerun_count so the ratio stays stable as policy evolves.
-        runner_options += f" --sequential-test-runs {rerun_count // 2}"
+        runner_options += f" --sequential-test-runs {rerun_count if is_targeted_check else rerun_count // 2}"
 
     if (is_azure_storage or is_s3_storage) and is_encrypted_storage:
         config_installs_args += " --encrypted-storage"
@@ -859,48 +866,32 @@ def main():
                 status=Result.Status.SKIPPED, info="No tests to run"
             ).complete_job()
 
-    if is_targeted_check:
-        assert not args.test, "--test not supposed to be used for targeted check"
-        tests, results_with_info = targeter.get_all_relevant_tests_with_info()
-        results.append(results_with_info)
-
-        if not tests:
-            # early exit
-            Result.create_from(
-                status=Result.Status.SKIPPED,
-                info="No failed tests found from previous runs",
-            ).complete_job()
-
-    if is_selected_tests_run:
-        assert not args.test, "--test not supposed to be used for a selected tests run"
+    if is_targeted_check or is_selected_tests_run:
+        assert not args.test, "--test cannot override a selection manifest"
         try:
-            tests, results_with_info = targeter.get_all_relevant_tests_with_info(
-                include_changed_tests=True
+            selection_manifest = load_selection(info)
+            tests = selection_manifest["tests"]
+            if "parallel" in test_options or "sequential" in test_options:
+                tests = filter_selected_tests_by_flavor(
+                    tests, keep_sequential="sequential" in test_options
+                )
+            results.append(
+                Result(
+                    name="Fetch relevant tests",
+                    status=Result.Status.OK,
+                    info=f"Base selection: {len(selection_manifest['tests'])}; compatible flavor: {len(tests)}",
+                    files=[str(SELECTION_MANIFEST)],
+                )
             )
-            results.append(results_with_info)
-        except Exception as e:
-            # Selecting the tests needs the pull request diff and the coverage
-            # database. Do not silently run a weaker, unbatched version of the
-            # former sanitizer configuration: its original shards and repeated
-            # newly modified tests cannot be reconstructed from this job. Fail
-            # the check so the selection service problem is visible and retried.
+        except Exception as ex:
             Result.create_from(
-                status=Result.Status.ERROR,
-                info=f"Failed to select tests: {e}",
+                status=Result.Status.ERROR, info=f"Failed to load test selection: {ex}"
             ).complete_job()
-
-    if is_selected_tests_run:
-        if "parallel" in test_options or "sequential" in test_options:
-            tests = filter_selected_tests_by_flavor(
-                tests, keep_sequential="sequential" in test_options
-            )
-        print(f"[selected tests] {len(tests)} tests to run: {tests}")
-
         if not tests:
-            # early exit
             Result.create_from(
                 status=Result.Status.SKIPPED,
-                info="No tests selected for this change",
+                info="No compatible selected tests",
+                results=results,
             ).complete_job()
 
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
