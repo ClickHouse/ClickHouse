@@ -2,6 +2,8 @@
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
+#include <numeric>
+#include <ranges>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -17,6 +19,8 @@
 #include <Interpreters/HashTablesStatistics.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Core/SortCursor.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -28,11 +32,15 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
+#include <Processors/Transforms/BufferedShardByHashTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <Processors/Transforms/VirtualRowTransform.h>
+#include <Storages/MergeTree/MergeTreeSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/SettingsEnums.h>
 
@@ -230,7 +238,8 @@ std::vector<size_t> AggregatingStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(AggregatingStage::PartialAggregation),
-        static_cast<size_t>(AggregatingStage::FinalAggregation)
+        static_cast<size_t>(AggregatingStage::FinalAggregation),
+        static_cast<size_t>(AggregatingStage::Scatter)
     };
 }
 
@@ -240,6 +249,7 @@ String AggregatingStep::getStepGroupName(size_t group) const
     {
         case AggregatingStage::PartialAggregation: return "partial aggregation";
         case AggregatingStage::FinalAggregation: return "final aggregation";
+        case AggregatingStage::Scatter: return "scatter";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown AggregatingStep group {}", group);
 }
@@ -575,6 +585,168 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 pipeline, SortingStep::Settings(params.max_block_size), sort_description_for_merging, 0 /* limit */);
         }
 
+        /// Shuffled aggregation-in-order.
+        /// The default in-order pipeline funnels every partially-aggregated stream through a single
+        /// FinishAggregatingInOrderTransform, which serializes the finish/merge stage and caps the whole
+        /// aggregation at a couple of cores. Instead, reshuffle-then-merge: scatter each sorted input stream
+        /// by hash(GROUP BY keys) into `num_shards` groups, merge each group back into a single sorted
+        /// stream (disjoint keys across groups), then run streaming in-order aggregation on each group in
+        /// parallel. This parallelizes aggregation-in-order across threads while keeping its bounded memory
+        /// (the reshuffle buffering is capped by aggregation_in_order_shuffle_max_buffered_bytes). The output
+        /// is no longer globally ordered by the GROUP BY keys, so this is only used when the order is not
+        /// relied upon downstream (see the gate below).
+        /// The order in which the rows of one group reach the aggregate function is preserved, so aggregates
+        /// that are a pure function of that order (`groupArray`, `any`, `anyLast`) are not affected: the
+        /// per-shard `MergingSortedTransform` merges on `InputOrderInfo::sort_description_for_merging`, which
+        /// is always a prefix of the GROUP BY keys, so all rows of one group compare equal in that merge and,
+        /// as `SortCursor` breaks such ties by input index, it can only concatenate whole per-input runs in
+        /// input order - exactly what the funnel path does, where
+        /// `FinishAggregatingInOrderAlgorithm::addToAggregation` appends each input's slice in input order
+        /// (see 05055_aggregation_in_order_shuffle_order_dependent_aggregates). What is preserved is the order
+        /// the funnel produces for the *same* input streams; aggregation-in-order does not define a per-group
+        /// order beyond that on its own, since which rows one stream carries already depends on `max_threads`
+        /// and on `read_in_order_two_level_merge_threshold`.
+        /// An aggregate that additionally depends on how the partial states are combined can still differ:
+        /// `sum` over `Float*` is accumulated once per input stream and then merged on the funnel path, but in
+        /// a single pass over the merged rows here, so the two build a different addition tree over the same
+        /// rows in the same order and the results can differ in the last bits. That is the non-determinism
+        /// float aggregation already has across `max_threads` (on the funnel path alone,
+        /// `sum(toFloat64(v) / 3)` differs between `max_threads = 8` and `max_threads = 2`), not something
+        /// this optimization introduces.
+        /// aggregation-in-order does not enforce `max_rows_to_group_by`: it keeps only a bounded working set
+        /// of keys (completed groups are streamed out as the sorted input advances), so neither the streaming
+        /// per-shard path (executeOnBlockSmall / mergeOnBlockSmall) nor the ordinary funnel path (whose
+        /// MergingAggregatedBucketTransform merges each bucket via Aggregator::mergeBlocks) ever calls
+        /// Aggregator::checkLimits. To keep this experimental optimization from changing the observable
+        /// behavior of a query that sets the limit, do not use it when `max_rows_to_group_by` is set (fall
+        /// back to the ordinary aggregation-in-order pipeline).
+        const bool has_virtual_rows = std::ranges::any_of(pipeline.getProcessors(), [](const auto & processor)
+        {
+            if (typeid_cast<const VirtualRowTransform *>(processor.get()))
+                return true;
+
+            const auto * source = typeid_cast<const MergeTreeSource *>(processor.get());
+            return source && source->hasVirtualRowConversions();
+        });
+
+        const bool use_shuffle_in_order
+            = settings.aggregation_in_order_shuffle
+            && !memoryBoundMergingWillBeUsed()
+            && !should_produce_results_in_order_of_bucket_number
+            && limit_hint == 0
+            && !skip_merging
+            && transform_params->params.max_rows_to_group_by == 0
+            /// Virtual rows steer the ordinary merging transform toward the next primary-key range. The
+            /// reshuffle turns one input chunk into separate shard chunks, so it cannot preserve that stream
+            /// metadata for every shard merge. Check both pipeline carriers: `VirtualRowTransform` inserts an
+            /// initial boundary, while `MergeTreeSource` can emit later per-block boundaries directly. Both
+            /// are already present here: the child steps build their part of the pipeline first, so
+            /// `ReadFromMergeTree` has installed the conversions on its sources by the time this step runs.
+            /// Do not gate on the `read_in_order_use_virtual_row_per_block` setting itself - it is enabled
+            /// per profile and says nothing about whether the current pipeline actually plans virtual rows.
+            && !has_virtual_rows
+            && max_threads > 1
+            && pipeline.getNumStreams() > 1
+            /// The reshuffle wires an intermediate graph of `num_streams * num_shards`
+            /// (== getNumStreams() * max_threads) scatter->merge ports. On very wide pipelines this fan-out
+            /// makes pipeline construction itself a memory/time regression before aggregation begins, so bail
+            /// out to the ordinary in-order funnel above the same threshold the (now removed) sharded
+            /// aggregation used.
+            && pipeline.getNumStreams() * max_threads < 100'000;
+
+        if (use_shuffle_in_order)
+        {
+            const size_t num_shards = max_threads;
+            const size_t num_streams = pipeline.getNumStreams();
+            auto stream_header = pipeline.getSharedHeader();
+
+            ColumnNumbers key_columns;
+            key_columns.reserve(transform_params->params.keys.size());
+            for (const auto & key : transform_params->params.keys)
+                key_columns.push_back(stream_header->getPositionByName(key));
+
+            /// Stage 1: reshuffle. Scatter each sorted stream by hash(keys) into num_shards (order is
+            /// preserved per output), producing num_shards groups of num_streams sorted sub-streams that
+            /// are non-intersecting by key across groups. Then merge each group's sub-streams back into a
+            /// single sorted stream. Scatter + merge are added in one transform() so the intermediate
+            /// num_streams * num_shards port count does not inflate the pipeline's parallelism limit.
+            ///
+            /// The scatter does not use per-queue back-pressure. A per-shard sorted
+            /// merge is a *selective* consumer (it waits for the smallest-key input), so bounding the scatter
+            /// with back-pressure could deadlock (a stalled merge backs the scatter up across all shards).
+            /// Instead, the scatter pulls new input only on demand (to feed a starving lane), which keeps the
+            /// buffering small in practice because all shard merges advance through the global key order
+            /// roughly in lockstep. The demand-driven read-ahead is still unbounded in the worst case (long
+            /// runs of a single key park everything on one shard while another lane starves), so all scatters
+            /// share a byte budget; exceeding it fails the query instead of buffering without limit. The shared
+            /// `budget` also carries the stage-wide de-duplication table, so a physical buffer several scatters
+            /// hold at once (e.g. a constant aggregate argument every stream buffers) is charged only once.
+            auto budget = std::make_shared<BufferedShardByHashBudget>();
+            const size_t max_buffered_bytes = settings.aggregation_in_order_shuffle_max_buffered_bytes;
+            pipeline.transform([&](OutputPortRawPtrs ports)
+            {
+                chassert(ports.size() == num_streams);
+                Processors processors;
+
+                /// scatter_outputs[stream * num_shards + shard]
+                VectorWithMemoryTracking<OutputPort *> scatter_outputs;
+                scatter_outputs.reserve(num_streams * num_shards);
+                for (size_t stream = 0; stream < num_streams; ++stream)
+                {
+                    auto scatter_transform = std::make_shared<BufferedShardByHashTransform>(
+                        stream_header, num_shards, key_columns, max_buffered_bytes, budget);
+                    connect(*ports[stream], scatter_transform->getInputs().front());
+                    for (auto & output : scatter_transform->getOutputs())
+                        scatter_outputs.push_back(&output);
+                    processors.push_back(std::move(scatter_transform));
+                }
+
+                for (size_t shard = 0; shard < num_shards; ++shard)
+                {
+                    auto merge = std::make_shared<MergingSortedTransform>(
+                        stream_header, num_streams, sort_description_for_merging,
+                        max_block_size, /*max_block_size_bytes=*/ 0,
+                        /*max_dynamic_subcolumns=*/ std::nullopt,
+                        SortingQueueStrategy::Batch);
+                    auto input_it = merge->getInputs().begin();
+                    for (size_t stream = 0; stream < num_streams; ++stream, ++input_it)
+                        connect(*scatter_outputs[stream * num_shards + shard], *input_it);
+                    processors.push_back(std::move(merge));
+                }
+                return processors;
+            });
+
+            chassert(pipeline.getNumStreams() == num_shards);
+            scatter = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Scatter));
+
+            /// Stage 2: streaming in-order aggregation per shard. Keys are disjoint across shards, so each
+            /// shard aggregates independently and emits completed key groups as it goes (O(1) memory).
+            /// Each per-shard transform produces part of the aggregation step's final output, so they all
+            /// feed the step's `dataflow_cache_updater`: without it the aggregation step would report
+            /// `output_bytes == 0` and `considerEnablingParallelReplicas` would underestimate the cost of
+            /// shipping the aggregated result on later executions. Sharing one updater across the shards is
+            /// safe - it samples output chunks under its own mutex - and mirrors both the single-stream
+            /// in-order path below (which passes the updater to its `AggregatingInOrderTransform`) and the
+            /// multi-stream funnel path (which passes it to every `MergingAggregatedBucketTransform`).
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+            {
+                /// Keep the total unfinished in-order aggregation batch across all shards within
+                /// `aggregation_in_order_max_block_bytes`, as in the ordinary multi-stream path below.
+                return std::make_shared<AggregatingInOrderTransform>(
+                    header, transform_params,
+                    sort_description_for_merging, group_by_sort_description,
+                    max_block_size, aggregation_in_order_max_block_bytes / num_shards,
+                    limit_hint, dataflow_cache_updater);
+            });
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<FinalizeAggregatedTransform>(header, transform_params);
+            });
+
+            aggregating_in_order = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
+            return;
+        }
+
         if (pipeline.getNumStreams() > 1)
         {
             /** The pipeline is the following:
@@ -756,9 +928,11 @@ void AggregatingStep::describePipeline(FormatSettings & settings) const
     }
     else
     {
-        /// Processors are printed in reverse order.
+        /// Processors are printed in reverse order (most downstream first).
         IQueryPlanStep::describePipeline(aggregating_sorted, settings);
         IQueryPlanStep::describePipeline(aggregating_in_order, settings);
+        /// Non-empty only for shuffled aggregation-in-order (the scatter + per-shard merge stage).
+        IQueryPlanStep::describePipeline(scatter, settings);
     }
 }
 
@@ -864,6 +1038,7 @@ String AggregatingProjectionStep::getStepGroupName(size_t group) const
     {
         case AggregatingStep::AggregatingStage::PartialAggregation: return "partial aggregation";
         case AggregatingStep::AggregatingStage::FinalAggregation: return "final aggregation";
+        case AggregatingStep::AggregatingStage::Scatter: break;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown AggregatingProjectionStep group {}", group);
 }

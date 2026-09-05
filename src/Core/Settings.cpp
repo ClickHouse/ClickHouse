@@ -4425,6 +4425,21 @@ Possible values:
     DECLARE(Bool, optimize_aggregation_in_order_limit, true, R"(
 When enabled and aggregation in order is active, pushes LIMIT into the aggregation step to enable early termination after producing enough groups. This reduces the amount of data read when ORDER BY matches the GROUP BY key prefix. May reduce the value reported by `rows_before_limit_at_least`; use `exact_rows_before_limit` if exact counts are needed.
 )", 0) \
+    DECLARE(Bool, aggregation_in_order_shuffle, false, R"(
+When enabled together with [optimize_aggregation_in_order](#optimize_aggregation_in_order), repartitions the sorted input by the hash of the `GROUP BY` keys into independent shards so that aggregation-in-order runs in parallel across threads, instead of funneling all partially-aggregated streams through the single-threaded `FinishAggregatingInOrderTransform`. Each shard aggregates a disjoint set of keys, so no cross-shard merge is needed, while keeping the bounded memory of aggregation-in-order.
+
+The order of `GROUP BY` keys in the output is not preserved, so this optimization is only applied when the result order is not relied upon downstream (i.e. when memory-bound merging is not used). It is also not applied when [max_rows_to_group_by](#max_rows_to_group_by) is set to a non-zero value, because the shuffled path does not enforce that limit.
+
+Possible values:
+
+- 0 — Shuffled aggregation-in-order is disabled.
+- 1 — Shuffled aggregation-in-order is enabled.
+)", 0) \
+    DECLARE(UInt64, aggregation_in_order_shuffle_max_buffered_bytes, 536870912, R"(
+The maximum total number of bytes buffered by the repartitioning stage of [aggregation_in_order_shuffle](#aggregation_in_order_shuffle), shared across all of its scatter transforms. Repartitioning has to read ahead when a shard waits for rows that appear much later in the input (e.g. on long runs of a single set of `GROUP BY` keys); when the buffered data exceeds this limit, the query fails with a `TOO_MANY_ROWS_OR_BYTES` exception instead of buffering without limit. 0 means unlimited.
+
+The limit is enforced at block granularity: it is checked against measured sizes when a block is admitted into the buffer and re-checked after the block is split into per-shard chunks (a block's size cannot be known before it is read, and the split can grow it), so the buffered bytes can transiently exceed the limit by up to one block's post-split footprint per scatter transform before the query fails. It is a guardrail against unbounded read-ahead, not an exact memory cap; the memory used by the query is still limited by [max_memory_usage](#max_memory_usage).
+)", 0) \
     DECLARE(Bool, enable_adaptive_aggregator, true, R"(
 Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys (or `adaptive_aggregator_freeze_threshold_bytes` of memory), then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are routed by their hash into per-bucket backlogs and aggregated exactly once, inside the bucket-parallel merge. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
 

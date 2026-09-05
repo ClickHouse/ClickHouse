@@ -60,8 +60,10 @@ private:
 
     /// Arenas used by function states that are created elsewhere. We own these
     /// arenas in the sense of extending their lifetime, but do not modify them.
-    /// Even reading these arenas is unsafe, because they may be shared with
-    /// other data blocks and modified by other threads concurrently.
+    /// Reading the contents of these arenas is unsafe, because they may be
+    /// shared with other data blocks and modified by other threads concurrently.
+    /// The one exception is the allocation-size counter (`Arena::allocatedBytes`),
+    /// which is atomic and may be read while the arena grows.
     ConstArenas foreign_arenas;
 
     /// Arena for allocating the internals of function states created by current
@@ -118,6 +120,21 @@ public:
 
     /// Take shared ownership of Arena, that holds memory for states of aggregate functions.
     void addArena(ConstArenaPtr arena_);
+
+    /// Every arena this column keeps alive: the one it allocates its own states into, if any (`is_owned`), and
+    /// the ones it only extends the lifetime of. An arena is shared - a view produced by `scatter`, `filter` or
+    /// `permute` holds its source's arena as a foreign one, and `addArena` attaches an arena that no column owns
+    /// at all (e.g. an aggregator pool) - so the same `Arena` object is typically reachable from many columns at
+    /// once. `is_owned` tells apart what `allocatedBytes` counts (the owned arena, in full) from what it ignores
+    /// (every foreign one). Exposed for memory accounting that must charge every physical buffer exactly once,
+    /// which `allocatedBytes` cannot express. The callback must not touch a foreign arena beyond its atomic
+    /// `allocatedBytes` counter - the contents may be grown by another thread concurrently.
+    void forEachArena(const std::function<void(const Arena & arena, bool is_owned)> & callback) const;
+
+    /// The column this one is a view of, or null if it owns its states. A view holds its source alive (that is
+    /// where the state pointers in `getData` point), so accounting that walks what a column keeps resident has to
+    /// follow it; the states themselves live in the arenas above.
+    const ColumnPtr & getSourceColumn() const { return src; }
 
     /// Transform column with states of aggregate functions to column with final result values.
     /// It expects ColumnAggregateFunction as an argument, this column will be destroyed.
