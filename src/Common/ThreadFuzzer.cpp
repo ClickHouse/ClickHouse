@@ -185,11 +185,11 @@ bool ThreadFuzzer::isEffective() const
     return false;
 }
 
+static constexpr UInt64 timer_precision = 1000000;
+
 /// A period of 0 disarms the timer.
 static void setPerturbationTimer(uint64_t cpu_time_period_us)
 {
-    static constexpr UInt32 timer_precision = 1000000;
-
     struct timeval interval{};
     interval.tv_sec = cpu_time_period_us / timer_precision;
     interval.tv_usec = cpu_time_period_us % timer_precision;
@@ -198,6 +198,20 @@ static void setPerturbationTimer(uint64_t cpu_time_period_us)
 
     if (0 != setitimer(ITIMER_PROF, &timer, nullptr))
         throw ErrnoException(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to set profiling timer for thread fuzzer");
+}
+
+/// `ITIMER_PROF` is process-wide and nothing reserves it, so an out-of-tree CPU profiler can take it
+/// over after `setup` armed it. A reload period other than the configured one means the timer has
+/// been rewritten since, and is not the fuzzer's to disarm.
+static bool perturbationTimerIsOurs(uint64_t cpu_time_period_us)
+{
+    struct itimerval current{};
+    if (0 != getitimer(ITIMER_PROF, &current))
+        throw ErrnoException(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to read profiling timer for thread fuzzer");
+
+    const UInt64 interval_us
+        = static_cast<UInt64>(current.it_interval.tv_sec) * timer_precision + static_cast<UInt64>(current.it_interval.tv_usec);
+    return interval_us == cpu_time_period_us;
 }
 
 /// Serializes the (`started`, `ITIMER_PROF`) pair: ordering alone permits an interleaving that
@@ -209,7 +223,7 @@ void ThreadFuzzer::stop()
 {
     std::lock_guard lock(perturbation_state_mutex);
     started.store(false, std::memory_order_relaxed);
-    if (instance().needsSetup())
+    if (instance().needsSetup() && perturbationTimerIsOurs(instance().cpu_time_period_us))
         setPerturbationTimer(0);
 }
 
@@ -218,6 +232,7 @@ void ThreadFuzzer::start()
     std::lock_guard lock(perturbation_state_mutex);
     if (!instance().isEffective())
         return;
+    /// Unguarded, unlike the disarm: perturbation needs this timer, so an explicit start claims it.
     if (instance().needsSetup())
         setPerturbationTimer(instance().cpu_time_period_us);
     started.store(true, std::memory_order_relaxed);
