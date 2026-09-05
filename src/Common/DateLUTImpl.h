@@ -1273,24 +1273,20 @@ public:
         // Checking the week across the year
         yw.first = toYear(i + (7 - toDayOfWeek(i + offset_day)));
 
-        auto first_day = makeLUTIndex(yw.first, 1, 1);
-        auto this_day = i;
+        /// Round both days down to the day the week starts on, and count the weeks between them.
+        /// The rounding is done on day numbers rather than on LUT indexes: the Sunday that starts the first
+        /// week of 1900 is 1899-12-31, which lies before the beginning of the LUT, so subtracting it from a
+        /// LUT index would underflow (`toDayOfWeek` numbers the days 1 for Monday to 7 for Sunday).
+        auto day_num_of_start_of_week = [this, monday_first_mode](LUTIndex index)
+        {
+            const UInt8 day_of_week = toDayOfWeek(index);
+            const Int64 days_since_start_of_week = monday_first_mode ? day_of_week - 1 : day_of_week % 7;
+            return static_cast<Int64>(toDayNum(index)) - days_since_start_of_week;
+        };
 
-        // TODO: do not perform calculations in terms of DayNum, since that would under/overflow for extended range.
-        if (monday_first_mode)
-        {
-            // Rounds down a date to the nearest Monday.
-            first_day = toFirstDayNumOfWeek(first_day);
-            this_day = toFirstDayNumOfWeek(i);
-        }
-        else
-        {
-            // Rounds down a date to the nearest Sunday.
-            if (toDayOfWeek(first_day) != 7)
-                first_day = ExtendedDayNum(first_day - toDayOfWeek(first_day));
-            if (toDayOfWeek(i) != 7)
-                this_day = ExtendedDayNum(i - toDayOfWeek(i));
-        }
+        const Int64 first_day = day_num_of_start_of_week(makeLUTIndex(yw.first, 1, 1));
+        const Int64 this_day = day_num_of_start_of_week(i);
+
         yw.second = static_cast<UInt8>((this_day - first_day) / 7 + 1);
         return yw;
     }
