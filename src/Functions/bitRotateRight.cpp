@@ -43,7 +43,8 @@ struct BitRotateRightImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true;
+    /// See note in `bitRotateLeft.cpp` about the argument types that stay uncompiled.
+    static constexpr bool compilable = !is_big_int_v<A> && !is_big_int_v<B>;
 
     static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {

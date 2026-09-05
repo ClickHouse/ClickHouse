@@ -47,7 +47,9 @@ struct BitRotateLeftImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true;
+    /// Compiled code cannot throw, so the argument types `apply` refuses are left uncompiled and raise there.
+    /// A negative count needs no such treatment: `apply` masks it, and `llvm.fshl` takes its operand modulo the bit width.
+    static constexpr bool compilable = !is_big_int_v<A> && !is_big_int_v<B>;
 
     static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {

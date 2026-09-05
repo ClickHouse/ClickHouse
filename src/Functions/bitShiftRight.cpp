@@ -131,13 +131,17 @@ struct BitShiftRightImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true;
+    /// See note in `bitShiftLeft.cpp` about the count types that stay uncompiled and about the comparison below.
+    static constexpr bool compilable = !is_big_int_v<B> && !is_signed_v<B>;
 
     static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
     {
         if (!left->getType()->isIntegerTy())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "BitShiftRightImpl expected an integral type");
-        return is_signed ? b.CreateAShr(left, right) : b.CreateLShr(left, right);
+        auto * width_of_a = llvm::ConstantInt::get(left->getType(), 8 * sizeof(A));
+        auto * zero = llvm::ConstantInt::get(left->getType(), 0);
+        auto * shifted = is_signed ? b.CreateAShr(left, right) : b.CreateLShr(left, right);
+        return b.CreateSelect(b.CreateICmpUGE(right, width_of_a), zero, shifted);
     }
 #endif
 };
