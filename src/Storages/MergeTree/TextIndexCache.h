@@ -53,6 +53,7 @@ public:
     static UInt128 hash(Args... args)
     {
         SipHash hasher;
+        hasher.update(UInt8{0}); /// Token postings, including negative cache entries.
         (hasher.update(args),...);
         return hasher.get128();
     }
@@ -90,8 +91,12 @@ public:
 
     static UInt128 hashPatternBypass(const String & index_id, UInt128 patterns_hash, UInt64 max_postings_to_read)
     {
-        static constexpr std::string_view key_kind = "pattern_bypass";
-        return hash(index_id, key_kind, patterns_hash, max_postings_to_read);
+        SipHash hasher;
+        hasher.update(UInt8{1}); /// Pattern bypass entries must not alias arbitrary token bytes.
+        hasher.update(index_id);
+        hasher.update(patterns_hash);
+        hasher.update(max_postings_to_read);
+        return hasher.get128();
     }
 
 private:
