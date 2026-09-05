@@ -6,6 +6,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Common/Exception.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/StructuredSubstreamNames.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <Formats/FormatSettings.h>
@@ -411,7 +412,9 @@ String getNameForSubstreamPath(
 
 String ISerialization::getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings)
 {
-    return getFileNameForStream(column.getNameInStorage(), path, settings);
+    auto settings_with_type = settings;
+    settings_with_type.column_type = column.getTypeInStorage().get();
+    return getFileNameForStream(column.getNameInStorage(), path, settings_with_type);
 }
 
 static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path)
@@ -450,7 +453,31 @@ String ISerialization::getFileNameForStream(const String & name_in_storage, cons
         stream_name = escapeForFileName(name_in_storage);
     }
 
-    return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false, settings.escape_variant_substreams);
+    /// Which naming scheme applies is decided by the column's type, not by the substream path: the
+    /// same path can require different names for different types. `[ArrayElements, NullMap]` is
+    /// `.null` for `Array(Nullable(UInt32))` and `.array.null` for
+    /// `Array(Nullable(Array(Nullable(UInt32))))`. The path-based check is therefore not a second
+    /// opinion on the same question - it covers `Dynamic`/`Object` columns, whose static type does not
+    /// reveal the runtime variant that needs structured names.
+    const bool structured_by_type = settings.column_type && needsStructuredSubstreamNames(*settings.column_type);
+    const bool structured_by_path = needsStructuredSubstreamNamesForPath(path);
+
+    if (structured_by_type || structured_by_path)
+    {
+        stream_name += getStructuredSubstreamNameSuffix(path);
+    }
+    else
+    {
+        /// A caller that supplies no column type gets legacy names. That is correct for every type
+        /// that exists today, which is why the remaining string-only call sites still work - see
+        /// `MergeTreeDataPartWide` and `IMergedBlockOutputStream`. It stops being correct once
+        /// `Nullable(Array)` columns can be created, so making every MergeTree caller pass the type
+        /// is a prerequisite for opening the gate rather than an optional cleanup.
+        stream_name += getNameForSubstreamPath(
+            {}, path.begin(), path.end(), true, false, settings.escape_variant_substreams);
+    }
+
+    return stream_name;
 }
 
 String ISerialization::getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name)
@@ -469,6 +496,17 @@ String ISerialization::getFileNameForRenamedColumnStream(const String & name_fro
 String ISerialization::getFileNameForRenamedColumnStream(const NameAndTypePair & column_from, const NameAndTypePair & column_to, const String & file_name)
 {
     return getFileNameForRenamedColumnStream(column_from.getNameInStorage(), column_to.getNameInStorage(), file_name);
+}
+
+String ISerialization::getLegacyNameForSubstreamPath(
+    const SubstreamPath & path,
+    bool escape_for_file_name,
+    bool encode_sparse_stream,
+    bool escape_variant_substreams,
+    size_t initial_array_level)
+{
+    return getNameForSubstreamPath(
+        {}, path.begin(), path.end(), escape_for_file_name, encode_sparse_stream, escape_variant_substreams, initial_array_level);
 }
 
 String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream, size_t initial_array_level)
@@ -698,6 +736,9 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
         return false;
 
     size_t last_elem = prefix_len - 1;
+    /// `NullMapHidden` is deliberately absent. It exists to hide the null map when the nested type
+    /// already exposes a `null` subcolumn of its own - `Nullable(JSON)` being the case that matters -
+    /// so listing it here would let the null map shadow that path.
     return path[last_elem].type == Substream::NullMap
             || path[last_elem].type == Substream::SparseNullMap
             || path[last_elem].type == Substream::TupleElement

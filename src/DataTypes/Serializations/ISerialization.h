@@ -692,6 +692,9 @@ public:
 
         bool escape_variant_substreams = true;
         bool share_nested_offsets = true;
+
+        /// When set, structured substream names are used for types that require them.
+        const IDataType * column_type = nullptr;
     };
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings);
@@ -701,6 +704,19 @@ public:
 
     static String getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream = false, size_t initial_array_level = 0);
     static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream = false, size_t initial_array_level = 0);
+
+    /// The legacy substream name suffix for `path`: the naming used by every type that does not
+    /// require structured names. Exposed so that the structured naming code can fall back to exactly
+    /// this implementation instead of keeping a copy of it. A copy drifts - new substream types are
+    /// added to this list regularly, and one that is added here but missed in a copy silently loses
+    /// its name component, which can make two distinct streams share a file name.
+    static String getLegacyNameForSubstreamPath(
+        const SubstreamPath & path,
+        bool escape_for_file_name,
+        bool encode_sparse_stream,
+        bool escape_variant_substreams,
+        size_t initial_array_level = 0);
+
 
     static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
     static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
