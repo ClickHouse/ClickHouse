@@ -1,0 +1,63 @@
+ground truth
+1
+text ngrams
+2
+2
+2
+2
+text splitByNonAlpha
+2
+2
+text array on a String column
+2
+2
+2
+2
+text array on a FixedString column
+2
+2
+2
+2
+ngrams on a FixedString column
+2
+2
+ngrambf_v1
+2
+2
+2
+2
+sparseGrams on a FixedString column
+2
+2
+2
+2
+hasAny and hasAll ignore the padding too
+2
+2
+2
+2
+2
+2
+2
+2
+has and mapContains keep the padding
+0
+0
+2
+2
+0
+0
+0
+0
+2
+2
+startsWith and endsWith keep the padding
+0
+0
+0
+0
+unpadded constant still prunes
+2
+0
+2
+0
