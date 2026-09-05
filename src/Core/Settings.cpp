@@ -22,6 +22,7 @@
 #include <base/types.h>
 #include <Common/NamePrompter.h>
 #include <Common/typeid_cast.h>
+#include <base/sanitizer_defs.h>
 
 #include <boost/program_options.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -31,6 +32,12 @@
 
 namespace
 {
+#if defined(MEMORY_SANITIZER)
+constexpr UInt64 default_query_profiler_period_ns = 0;
+#else
+constexpr UInt64 default_query_profiler_period_ns = DB::QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS;
+#endif
+
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
 #else
@@ -77,6 +84,7 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /** List of settings: type, name, default value, description, flags
@@ -3066,7 +3074,7 @@ If it is set to true, then a user is allowed to executed distributed DDL queries
     DECLARE(Bool, allow_suspicious_codecs, false, R"(
 If it is set to true, allow to specify meaningless compression codecs.
 )", 0) \
-    DECLARE(UInt64, query_profiler_real_time_period_ns, QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS, R"(
+    DECLARE(UInt64, query_profiler_real_time_period_ns, default_query_profiler_period_ns, R"(
 Sets the period for a real clock timer of the [query profiler](/concepts/features/performance/troubleshoot/sampling-query-profiler). Real clock timer counts wall-clock time.
 
 Possible values:
@@ -3080,13 +3088,15 @@ Possible values:
 
 - 0 for turning off the timer.
 
+Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.
+
 See also:
 
 - System table [trace_log](/reference/system-tables/trace_log)
 
 Cloud default value: `3000000000`.
 )", 0) \
-    DECLARE(UInt64, query_profiler_cpu_time_period_ns, QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS, R"(
+    DECLARE(UInt64, query_profiler_cpu_time_period_ns, default_query_profiler_period_ns, R"(
 Sets the period for a CPU clock timer of the [query profiler](/concepts/features/performance/troubleshoot/sampling-query-profiler). This timer counts only CPU time.
 
 Possible values:
@@ -3099,6 +3109,8 @@ Possible values:
   - 1000000000 (once a second) for cluster-wide profiling.
 
 - 0 for turning off the timer.
+
+Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.
 
 See also:
 
@@ -9583,6 +9595,19 @@ VectorWithMemoryTracking<String> SettingsImpl::getAllRegisteredNames() const
 
 void SettingsImpl::set(std::string_view name, const Field & value)
 {
+#if defined(MEMORY_SANITIZER)
+    if (name == "query_profiler_real_time_period_ns" || name == "query_profiler_cpu_time_period_ns")
+    {
+        if (BaseSettings::castValueUtil(name, value).safeGet<UInt64>() != 0)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The setting `{}` is not supported in a MemorySanitizer build",
+                name);
+        }
+    }
+#endif
+
     if (name == "compatibility")
     {
         if (value.getType() != Field::Types::Which::String)
