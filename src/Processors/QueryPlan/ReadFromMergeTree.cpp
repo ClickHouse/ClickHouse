@@ -2100,6 +2100,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     {
         size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
         auto order_key_prefix_ast = storage_snapshot->metadata->getSortingKey().expression_list_ast->clone();
+        /// `resize` must only ever cut here: growing the list would pad it with null `ASTPtr`s, and the
+        /// `sorting_columns` loop below would index past the end for the same reason. The prefix is
+        /// bounded by this table's sorting key in `requestReadingInOrder`, which is the only way an
+        /// `input_order_info` gets installed.
         order_key_prefix_ast->children.resize(prefix_size);
 
         auto sorting_key_prefix_expr = analyzeExpressionToActionsDAG(order_key_prefix_ast, storage_snapshot->metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()), context);
