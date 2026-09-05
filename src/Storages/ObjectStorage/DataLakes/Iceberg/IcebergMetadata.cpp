@@ -1009,6 +1009,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         ReadBufferFromString in(value);
         DateTime64 time = 0;
         readDateTime64Text(time, 6, in);
+        assertEOF(in);
         return time;
     };
 

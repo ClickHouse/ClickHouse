@@ -417,6 +417,10 @@ namespace
                 ReadBufferFromString in(value);
                 time_t time = 0;
                 readDateTimeText(time, in, assert_cast<const DataTypeDateTime &>(data_type).getTimeZone());
+                /// MySQL may store fractional seconds; tolerate them (a plain DateTime has no use for
+                /// them), but reject any other trailing characters instead of silently dropping them.
+                skipDateTimeFractionalSeconds(in);
+                assertEOF(in);
                 time = std::max<time_t>(time, 0);
                 assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
                 read_bytes_size += 4;

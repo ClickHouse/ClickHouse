@@ -213,6 +213,14 @@ void assertString(const char * s, ReadBuffer & buf);
 void assertEOF(ReadBuffer & buf);
 void assertNotEOF(ReadBuffer & buf);
 
+/// Consume a fractional-seconds tail of a date and time value, if there is one, and drop it.
+/// A plain `DateTime` has no place for subsecond precision, so `readDateTimeText` stops in front of
+/// the dot, while external sources such as MySQL, SQLite, Redis or PostgreSQL render the fraction
+/// anyway. Callers that read a complete, already isolated value follow this with `assertEOF`, so the
+/// tail has to be recognized here to avoid rejecting a legitimate value. A dot with no digit after
+/// it is not a fraction and is rejected instead of being silently accepted.
+void skipDateTimeFractionalSeconds(ReadBuffer & buf);
+
 [[noreturn]] void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
 
 inline bool checkChar(char c, ReadBuffer & buf)
@@ -853,17 +861,27 @@ inline T parseFromStringWithoutAssertEOF(std::string_view str)
     return parseWithoutAssertEOF<T>(str.data(), str.size());
 }
 
-template <typename ReturnType = void, bool dt64_mode = false>
-ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true);
-
 template <typename ReturnType = void, bool t64_mode = false>
 ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr);
+
+/// While disambiguating a small decimal unix timestamp (e.g. 1234.5) from a YYYY-MM-DD date,
+/// `readDateTimeTextFallback` may consume the dot and up to two fractional digits from the buffer.
+/// They are passed to the DateTime64 parsing code through this struct.
+struct DateTimeFractionPrefix
+{
+    bool has_fraction = false;
+    UInt8 count = 0;
+    char digits[2]{};
+};
+
+template <typename ReturnType = void, bool dt64_mode = false>
+ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true, DateTimeFractionPrefix * fraction_prefix = nullptr);
 
 /** In YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format, according to specified time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
 template <typename ReturnType = void, bool dt64_mode = false>
-inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true)
+inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true, DateTimeFractionPrefix * fraction_prefix = nullptr)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -885,95 +903,158 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     static constexpr auto date_time_broken_down_length = 19;
     /// YYYY-MM-DD
     static constexpr auto date_broken_down_length = 10;
-    bool optimistic_path_for_date_time_input = s + date_time_broken_down_length <= buf.buffer().end();
 
-    if (optimistic_path_for_date_time_input)
+    /// If the buffer does not contain a whole broken-down date and time, the value may still continue
+    /// beyond the end of the current buffer (e.g. it is read from a stream and is split between two
+    /// buffers), so parse it character by character.
+    /// Compare lengths as integers; forming `s + date_time_broken_down_length` when fewer bytes remain
+    /// would create a pointer more than one past the buffer (undefined behavior) for short/split inputs.
+    if (buf.buffer().end() - s < date_time_broken_down_length)
+        return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow, fraction_prefix);
+
+    /// In DateTime64 mode a value like ".5" or "-.5" has no integer part: the whole part is zero and the
+    /// caller reads the fraction. Handle it before the date/integer classification below, because zero
+    /// padding (FixedString) or a long fractional tail can make s[4] == s[7] look like a date delimiter,
+    /// which the fallback avoids but this optimistic path would otherwise reject.
+    if constexpr (dt64_mode)
     {
-        if (s[4] < '0' || s[4] > '9')
+        /// Require a digit after the dot so a bare "."/"+."/"-." is not accepted as the epoch.
+        if ((s[0] == '.' && isNumericASCII(s[1]))
+            || ((s[0] == '-' || s[0] == '+') && s[1] == '.' && isNumericASCII(s[2])))
         {
-            if constexpr (!throw_exception)
-            {
-                if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
-                    || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
-                    return ReturnType(false);
-
-                if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
-                    return ReturnType(false);
-            }
-
-            UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
-            UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
-            UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
-
-            UInt8 hour = 0;
-            UInt8 minute = 0;
-            UInt8 second = 0;
-
-            /// Simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario
-            bool dt_long = (s[10] == ' ' || s[10] == 'T');
-            if (dt_long)
-            {
-                if constexpr (!throw_exception)
-                {
-                    if (!isNumericASCII(s[11]) || !isNumericASCII(s[12]) || !isNumericASCII(s[14]) || !isNumericASCII(s[15])
-                        || !isNumericASCII(s[17]) || !isNumericASCII(s[18]))
-                        return ReturnType(false);
-
-                    if (!isSymbolIn(s[13], allowed_time_delimiters) || !isSymbolIn(s[16], allowed_time_delimiters))
-                        return ReturnType(false);
-                }
-
-                hour = (s[11] - '0') * 10 + (s[12] - '0');
-                minute = (s[14] - '0') * 10 + (s[15] - '0');
-                second = (s[17] - '0') * 10 + (s[18] - '0');
-            }
-
-            if constexpr (throw_exception)
-            {
-                if (unlikely(year == 0))
-                    datetime = 0;
-                else
-                    datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
-            }
-            else
-            {
-                if (saturate_on_overflow)
-                {
-                    /// Use saturating version - makeDateTime saturates out-of-range years
-                    if (unlikely(year == 0))
-                        datetime = 0;
-                    else
-                        datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
-                }
-                else
-                {
-                    /// Use non-saturating version - return false for out-of-range values
-                    auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
-                    if (!datetime_maybe)
-                        return false;
-
-                    /// For usual DateTime check if value is within supported range
-                    if constexpr (!dt64_mode)
-                    {
-                        if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
-                            return false;
-                    }
-
-                    datetime = *datetime_maybe;
-                }
-            }
-
-            if (dt_long)
-                buf.position() += date_time_broken_down_length;
-            else
-                buf.position() += date_broken_down_length;
-
+            if (s[0] == '-' || s[0] == '+')
+                ++buf.position();
+            datetime = 0;
             return ReturnType(true);
         }
+    }
+
+    /// Mirror the fallback: only a plausible date delimiter (the same one at positions 4 and 7) starts a
+    /// broken-down date. A field delimiter such as a tab must not be treated as a date separator, otherwise
+    /// a 4-digit field in a row format would be parsed across the following columns.
+    const bool may_be_date = s[4] == '-' || s[4] == '/' || s[4] == '.'
+        || (allowed_date_delimiters != nullptr && isSymbolIn(s[4], allowed_date_delimiters));
+    if (!(s[4] == s[7] && may_be_date))
+    {
+        /// Not a YYYY-MM-DD date, so it is a unix timestamp, possibly with a fractional part that is handled by the caller.
+
+        /// A value that starts with a character that can be neither a date nor a timestamp is an error.
+        /// Do not leave zero (as readIntText would), because not every caller checks that the buffer
+        /// was fully consumed, and would silently turn garbage into the unix epoch
+        /// (e.g. the `timestamp` function or the binary formats).
+        if (!isNumericASCII(s[0]) && s[0] != '-' && s[0] != '+')
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+            else
+                return ReturnType(false);
+        }
+
+        if constexpr (!dt64_mode)
+        {
+            /// For plain DateTime, only a unix timestamp of at least 5 digits is accepted; a shorter
+            /// bare number like '2018' stays invalid (it is neither a plausible timestamp nor a date).
+            /// Short values are meaningful only for DateTime64, where a small decimal timestamp like
+            /// 1234.5 is valid; this rule matches the fallback.
+            /// When the fifth character is a digit, the value is not a bare short number: the digit run
+            /// was interrupted by other characters (e.g. '01-02-2020 20:00:00'). Parse the numeric
+            /// prefix and let the caller report the trailing characters, so that a cast produces the
+            /// usual "syntax error at position" message with the whole value in it.
+            const char * digits_begin = s + (isNumericASCII(s[0]) ? 0 : 1);
+            const char * digit_pos = digits_begin;
+            /// The buffer holds at least 19 characters here, so a digit run shorter than 5 has really ended.
+            while (digit_pos < digits_begin + 5 && isNumericASCII(*digit_pos))
+                ++digit_pos;
+
+            if (digit_pos - digits_begin < 5 && !isNumericASCII(s[4]))
+            {
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+                else
+                    return ReturnType(false);
+            }
+        }
+
         /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
         return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
-    return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow);
+
+    if constexpr (!throw_exception)
+    {
+        if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
+            || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
+            return ReturnType(false);
+
+        if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
+            return ReturnType(false);
+    }
+
+    UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+    UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
+    UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
+    UInt8 hour = 0;
+    UInt8 minute = 0;
+    UInt8 second = 0;
+
+    UInt8 bytes_read = date_broken_down_length;
+
+    /// Simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario
+    if (s[10] == ' ' || s[10] == 'T')
+    {
+        if constexpr (!throw_exception)
+        {
+            if (!isNumericASCII(s[11]) || !isNumericASCII(s[12]) || !isNumericASCII(s[14]) || !isNumericASCII(s[15])
+                || !isNumericASCII(s[17]) || !isNumericASCII(s[18]))
+                return ReturnType(false);
+
+            if (!isSymbolIn(s[13], allowed_time_delimiters) || !isSymbolIn(s[16], allowed_time_delimiters))
+                return ReturnType(false);
+        }
+
+        hour = (s[11] - '0') * 10 + (s[12] - '0');
+        minute = (s[14] - '0') * 10 + (s[15] - '0');
+        second = (s[17] - '0') * 10 + (s[18] - '0');
+
+        bytes_read += date_time_broken_down_length - date_broken_down_length;
+    }
+
+    if constexpr (throw_exception)
+    {
+        if (unlikely(year == 0))
+            datetime = 0;
+        else
+            datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+    }
+    else
+    {
+        if (saturate_on_overflow)
+        {
+            /// Use saturating version - makeDateTime saturates out-of-range years
+            if (unlikely(year == 0))
+                datetime = 0;
+            else
+                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+        }
+        else
+        {
+            /// Use non-saturating version - return false for out-of-range values
+            auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+            if (!datetime_maybe)
+                return false;
+
+            /// For usual DateTime check if value is within supported range
+            if constexpr (!dt64_mode)
+            {
+                if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
+                    return false;
+            }
+
+            datetime = *datetime_maybe;
+        }
+    }
+
+    buf.position() += bytes_read;
+    return ReturnType(true);
 }
 
 /** In hhh:mm:ss format, according to specified time zone.
@@ -1168,6 +1249,8 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     time_t whole = 0;
     bool is_negative_timestamp = (!buf.eof() && *buf.position() == '-');
     bool is_empty = buf.eof();
+    DateTimeFractionPrefix fraction_prefix;
+    bool recovered_at_dot = false;
 
     if (!is_empty)
     {
@@ -1175,17 +1258,24 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         {
             try
             {
-                readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow);
+                readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow, &fraction_prefix);
             }
             catch (const DB::Exception &)
             {
                 if (buf.eof() || *buf.position() != '.')
                     throw;
+                /// The whole part failed to parse and the failure position is a dot, so the value can only be
+                /// a fraction with no integer digits, like ".5". Recover only when at least one fractional digit
+                /// follows the dot: a bare "." (e.g. from a zero-padded FixedString) must not become the epoch.
+                ++buf.position();
+                if (buf.eof() || !isNumericASCII(*buf.position()))
+                    throw;
+                recovered_at_dot = true;
             }
         }
         else
         {
-            if (!readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow))
+            if (!readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow, &fraction_prefix))
                 return ReturnType(false);
         }
     }
@@ -1194,14 +1284,25 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
 
     DB::DecimalUtils::DecimalComponents<DateTime64> components{static_cast<DateTime64::NativeType>(whole), 0};
 
-    if (!buf.eof() && *buf.position() == '.')
+    if (fraction_prefix.has_fraction || recovered_at_dot || (!buf.eof() && *buf.position() == '.'))
     {
-        ++buf.position();
+        /// The dot has already been consumed when the fallback pre-read the fraction prefix
+        /// or when the throwing path recovered at the dot.
+        if (!fraction_prefix.has_fraction && !recovered_at_dot)
+            ++buf.position();
 
-        /// Read digits, up to 'scale' positions.
+        /// Read digits, up to 'scale' positions, starting with the digits that were already consumed
+        /// from the buffer while disambiguating the value from a YYYY-MM-DD date.
+        size_t prefix_pos = 0;
         for (size_t i = 0; i < scale; ++i)
         {
-            if (!buf.eof() && isNumericASCII(*buf.position()))
+            if (prefix_pos < fraction_prefix.count)
+            {
+                components.fractional *= 10;
+                components.fractional += fraction_prefix.digits[prefix_pos] - '0';
+                ++prefix_pos;
+            }
+            else if (!buf.eof() && isNumericASCII(*buf.position()))
             {
                 components.fractional *= 10;
                 components.fractional += *buf.position() - '0';
@@ -1232,6 +1333,11 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
                 negative_fraction_multiplier = -1;
             }
         }
+
+        /// A value in (-1, 0), e.g. `-0.1`, has a zero whole part, so its sign is lost in the components.
+        /// Restore it the same way the Time64 path does.
+        if (is_negative_timestamp && components.whole == 0 && components.fractional != 0)
+            negative_fraction_multiplier = -1;
     }
     /// 253402300800 is the time_t value for 10000-01-01 UTC (a bit over the last year supported by DateTime64).
     /// A whole-seconds value at or above it cannot be a date (DateTime64 goes up to 9999), so it is interpreted
