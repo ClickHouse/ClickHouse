@@ -1,0 +1,4 @@
+--- string values summing to more than 1 GiB in a single block ---
+9	1132462080
+--- objects read as strings summing to more than 1 GiB in a single block ---
+9	1132462152
