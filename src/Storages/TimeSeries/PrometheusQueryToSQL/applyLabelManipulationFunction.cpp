@@ -278,7 +278,10 @@ SQLQueryPiece applyLabelManipulationFunction(
             res.select_query = std::move(column_renaming_query);
 
             if (dest_label == kMetricName)
+            {
                 res.metric_name_dropped = false;
+                res.metric_name_is_constant = false;
+            }
 
             return res;
         }
