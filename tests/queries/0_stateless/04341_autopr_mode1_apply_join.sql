@@ -51,6 +51,11 @@ SET query_plan_join_swap_table='false';
 SET query_plan_optimize_join_order_randomize=0, enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows=1000;
 -- For runs with the old analyzer
 SET enable_analyzer=1;
+-- Pinned to the query-based implementation: with join runtime filters the plan-based local branch
+-- carries an extra pass-through `Expression`, so the node hashes of the two plans differ and no
+-- statistics are collected for the INNER and RIGHT joins. See
+-- https://github.com/ClickHouse/ClickHouse/issues/118265.
+SET parallel_replicas_plan_based = 0;
 -- Small blocks so enough are fed to the statistics collector.
 SET max_threads=4, max_block_size=128;
 -- Don't let the min-bytes gate or remote-read task sizing disable parallel replicas for this data.
