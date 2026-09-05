@@ -113,6 +113,7 @@ struct ClientSettings
     /// files.
     bool gcs_issue_compose_request = false;
     bool is_s3express_bucket = false;
+    bool is_mrap = false;
 };
 
 /// Client that improves the client from the AWS SDK
@@ -158,6 +159,9 @@ public:
     const String & getRegion() const { return explicit_region; }
 
     Aws::Auth::AWSCredentials getCredentials() const;
+
+    /// Verify that effective SDK settings preserve the checked MRAP destination.
+    void validateMRAPTarget(const URI & target) const;
 
     /// We want to manually handle permanent moves (status code 301) because:
     /// - redirect location is written in XML format inside the response body something that doesn't exist for HEAD

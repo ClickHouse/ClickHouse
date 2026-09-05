@@ -1102,4 +1102,26 @@ TEST(IOTestAwsS3Client, ReadWithMatchingIfMatchSucceeds)
     EXPECT_EQ(content, body);
 }
 
+TEST(IOTestAwsS3Client, MRAPDoesNotDiscoverBucketRegion)
+{
+    DB::RemoteHostFilter host_filter;
+    auto config = DB::S3::ClientFactory::instance().createClientConfiguration(
+        "us-east-1", host_filter, 0, {}, false, false, false, false, {}, {}, "https");
+    auto cache = std::make_shared<DB::S3::ClientCache>();
+    const auto target = DB::S3::URI::fromMRAPArn(
+        "arn:aws:s3::123456789012:accesspoint/mfzwi23gnjvgw.mrap", "key");
+    {
+        std::lock_guard lock(cache->region_cache_mutex);
+        cache->region_for_bucket_cache.emplace(target.bucket, "eu-west-1");
+    }
+    auto client = DB::S3::ClientFactory::instance().create(
+        config, {.use_virtual_addressing = true, .is_mrap = true}, "access", "secret", "", {}, {},
+        DB::S3::CredentialsConfiguration{.use_environment_credentials = false}, "", cache);
+    EXPECT_NO_THROW(client->validateMRAPTarget(target));
+    EXPECT_TRUE(client->getRegionForBucket(target.bucket).empty());
+    EXPECT_TRUE(client->getRegionForBucket(target.bucket, true).empty());
+    auto clone = client->clone();
+    EXPECT_TRUE(clone->getRegionForBucket(target.bucket, true).empty());
+}
+
 #endif

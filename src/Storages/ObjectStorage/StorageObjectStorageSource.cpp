@@ -267,12 +267,20 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
     auto path = object_info.getPath();
-    if (path.starts_with("/"))
-        path = path.substr(1);
-
-    std::string result = include_connection_info
-        ? fs::path(configuration.getDataSourceDescription()) / path
-        : fs::path(configuration.getNamespace()) / path;
+    const auto namespace_name = configuration.getNamespace();
+    const auto prefix = include_connection_info ? configuration.getDataSourceDescription() : namespace_name;
+    std::string result;
+    if (configuration.getType() == ObjectStorageType::S3 && namespace_name.starts_with("arn:"))
+    {
+        /// ARN targets accept literal keys; filesystem normalization would conflate distinct S3 objects.
+        result = prefix + "/" + path;
+    }
+    else
+    {
+        if (path.starts_with("/"))
+            path = path.substr(1);
+        result = fs::path(prefix) / path;
+    }
 
     /// For web URL shards the same relative path can be produced by different expanded URL options
     /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache
