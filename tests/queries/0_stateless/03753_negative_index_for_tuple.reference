@@ -23,6 +23,5 @@ set optimize_functions_to_subcolumns = 1;
 drop table if exists test;
 create table test (tuple Tuple(b UInt32, c Int32)) engine=Memory;
 explain syntax run_query_tree_passes=1 select tupleElement(tuple, -1) from test;
-SELECT __table1.`tuple.c` AS `tupleElement(tuple, -1)`
-FROM default.test AS __table1
+SELECT __table1.`tuple.c` AS `tupleElement(tuple, -1)`\nFROM default.test AS __table1
 drop table test;

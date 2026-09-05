@@ -1,11 +1,16 @@
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
 
+#include <Core/Joins.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -31,6 +36,15 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
+/// Is this the branch of the plan that reads from the other replicas? Both implementations of parallel
+/// replicas are recognized: the query-based one (`ReadFromParallelRemoteReplicasStep`) and the plan-based
+/// one (`ReadFromParallelReplicasStep`, enabled by `parallel_replicas_plan_based`).
+bool isReadFromOtherReplicas(const IQueryPlanStep & step)
+{
+    return typeid_cast<const ReadFromParallelRemoteReplicasStep *>(&step)
+        || typeid_cast<const ReadFromParallelReplicasStep *>(&step);
+}
+
 /// Find the top node of the parallel replicas plan. E.g.:
 ///
 /// Expression ((Project names + Projection))
@@ -41,6 +55,10 @@ namespace
 ///          Expression ((WHERE + Change column names to column identifiers))
 ///            ReadFromMergeTree (default.hits)
 ///      ReadFromRemoteParallelReplicas (Query: ... Replicas: ...)
+///
+/// The plan-based implementation of parallel replicas (`parallel_replicas_plan_based`) builds the very
+/// same shape, the only difference being that the branch reading from the other replicas is a
+/// `ReadFromParallelReplicas` step, which ships a serialized plan fragment instead of a query.
 ///
 QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel_replicas_root)
 {
@@ -54,7 +72,7 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
         auto & frame = stack.back();
 
         /// Currently the approach is very simple: we look for Union step in the plan tree,
-        /// and consider its children. The first child that is not ReadFromParallelRemoteReplicas
+        /// and consider its children. The first child that is not a read from the other replicas
         /// is considered the top node of replicas plan.
         if (typeid_cast<UnionStep *>(frame.node->step.get()))
         {
@@ -75,7 +93,7 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
                     chassert(!node->children.empty());
                     node = node->children.front();
                 }
-                if (!typeid_cast<const ReadFromParallelRemoteReplicasStep *>(node->step.get()))
+                if (!isReadFromOtherReplicas(*node->step))
                 {
                     if (replicas_plan_top_node)
                     {
@@ -164,6 +182,37 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
         // TODO(nickitat): support multiple read steps with parallel replicas
         const auto * lazy_joining = typeid_cast<const JoinLazyColumnsStep *>(reading_step->step.get());
 
+        // For a physical `JoinStep` (a plain `SELECT ... FROM a JOIN b` leaves it at/near the top of
+        // the replicas plan), follow the parallelized side: child 0, or child 1 for `RIGHT`. This
+        // mirrors the physical-slot selector used by `calculateHashTableCacheKeys` and
+        // `ParallelReplicasLocalPlan`, so both resolve the same table as the parallelized input.
+        if (const auto * join_step = typeid_cast<const JoinStep *>(reading_step->step.get());
+            join_step && reading_step->children.size() == 2)
+        {
+            // `swap_streams` swaps the physical pipelines at execution without reordering the plan
+            // children, so the kind-based side selection below would then descend into the wrong
+            // child. In the analyzer path that AutoPR requires this is never set: joins are built as
+            // `JoinStepLogical` and the logical->physical conversion applies any swap by reordering
+            // the children and flipping the kind together (only the dead `optimizeJoinLegacy` path
+            // sets `swap_streams`). Guard against it explicitly so that if a future change ever revives
+            // it, AutoPR fails closed (skips) instead of instrumenting/parallelizing the wrong side.
+            if (join_step->swap_streams)
+                return nullptr;
+            // Descending exactly one side is only a valid decomposition for join kinds that can be
+            // evaluated by parallelizing one input while the other is read in full on every replica:
+            // `INNER` (ALL), `LEFT`, and a leftmost `RIGHT`. It is NOT valid for `FULL` or
+            // position-sensitive joins like `PASTE`, where a preserved-side row matched on another
+            // replica would be emitted as unmatched here (or duplicated once per replica). We rely on
+            // the upstream parallel-replicas eligibility checks for that: `findParallelReplicasQuery`
+            // (`getSupportingParallelReplicasQueries` / `findTableForParallelReplicas`) admits only
+            // those decomposable kinds and rejects `FULL`/`PASTE`/`CROSS`/etc., so for any other kind no
+            // parallel-replicas plan is built and this function is never reached. The split below is
+            // therefore safe by that invariant, not by a check here.
+            const auto kind = join_step->getJoin()->getTableJoin().kind();
+            reading_step = reading_step->children[isRight(kind) ? 1 : 0];
+            continue;
+        }
+
         if (!lazy_joining && reading_step->children.size() > 1)
             return nullptr;
         reading_step = reading_step->children.front();
@@ -180,52 +229,42 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
     return nullptr;
 }
 
-/// Transplant the sets from the single-replica plan to the parallel-replicas plan once we decided to enable parallel replicas
+/// Transplant the sets from the single-replica plan to the parallel-replicas plan once we decided to enable parallel replicas.
+///
+/// Both walks use `forEachSubquerySet` rather than a plain `traverseQueryPlan`, which follows only
+/// `node->children`. A delayed set can also sit inside a set's own source plan (a nested `IN`) or -
+/// on the parallel-replicas side - inside the local branch under `ReadFromLocalParallelReplicaStep`,
+/// which is not a child node. A set missed here is not adopted from the single-replica plan and its
+/// subquery runs a second time at execution, which is exactly what this transplant exists to avoid.
 void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
 {
-    Stack stack;
     std::map<FutureSet::Hash, SetAndKeyPtr> sets_map;
 
     // Create a map: set_key -> set
-    stack.clear();
-    traverseQueryPlan(
-        stack,
-        *single_replica_plan.getRootNode(),
-        [&](auto & frame_node)
+    forEachSubquerySet(
+        &single_replica_plan,
+        [&](FutureSetFromSubquery & future_set)
         {
-            if (auto * creating_sets_step = typeid_cast<DelayedCreatingSetsStep *>(frame_node.step.get()))
-            {
-                const auto sets = creating_sets_step->detachSets();
-                for (const auto & future_set : sets)
-                {
-                    if (auto set = future_set->detachSetAndKey())
-                        sets_map[future_set->getHash()] = std::move(set);
-                }
-            }
+            if (auto set = future_set.detachSetAndKey())
+                sets_map[future_set.getHash()] = std::move(set);
+            return true;
         });
 
     // Now transplant the sets
-    stack.clear();
-    traverseQueryPlan(
-        stack,
-        *parallel_replicas_plan.getRootNode(),
-        [&](auto & frame_node)
+    forEachSubquerySet(
+        &parallel_replicas_plan,
+        [&](FutureSetFromSubquery & future_set)
         {
-            if (const auto * creating_sets_step = typeid_cast<DelayedCreatingSetsStep *>(frame_node.step.get()))
-            {
-                for (const auto & future_set : creating_sets_step->getSets())
-                {
-                    if (auto it = sets_map.find(future_set->getHash()); it != sets_map.end())
-                    {
-                        future_set->replaceSetAndKey(it->second);
-                    }
-                    else
-                    {
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR, "Cannot find a matching set in the map of sets from single-replica plan");
-                    }
-                }
-            }
+            auto it = sets_map.find(future_set.getHash());
+            if (it == sets_map.end())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Cannot find a matching set in the map of sets from single-replica plan");
+
+            future_set.replaceSetAndKey(it->second);
+            /// The set is built now, so this plan will not run and the sets nested in it will never be
+            /// created. The single-replica plan has no counterparts for them either - its own nested
+            /// sources are long gone by this point - so descending would only fail the lookup above.
+            return false;
         });
 }
 }
@@ -246,8 +285,10 @@ void considerEnablingParallelReplicas(
     Stack stack;
     // Technically, it isn't required for all steps to support dataflow statistics collection,
     // but only for those that we will actually instrument (see `setRuntimeDataflowStatisticsCacheUpdater` calls below).
-    // However, currently only relatively simple plans are supported (no JOINs, CreatingSets from subqueries, UNIONs, etc.),
-    // since all these steps obviously don't support statistics collection, `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
+    // However, currently only relatively simple plans are supported (no UNIONs, etc.),
+    // since such steps obviously don't support statistics collection, `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
+    // `BuildRuntimeFilterStep` and `*CreatingSetsStep` don't collect statistics themselves but always appear below the instrumented top node,
+    // so they are allowed to pass through the check.
     bool plan_is_simple_enough = true;
     String unsupported_steps;
     traverseQueryPlan(
@@ -256,6 +297,7 @@ void considerEnablingParallelReplicas(
         [&](auto & frame_node)
         {
             const bool step_is_supported = frame_node.step->supportsDataflowStatisticsCollection()
+                || typeid_cast<const BuildRuntimeFilterStep *>(frame_node.step.get())
                 || typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get())
                 || typeid_cast<const CreatingSetsStep *>(frame_node.step.get());
             if (!step_is_supported)
@@ -271,7 +313,9 @@ void considerEnablingParallelReplicas(
         return;
     }
 
-    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder();
+    /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
+    /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
+    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
     if (!plan_with_parallel_replicas)
         return;
 
@@ -379,9 +423,32 @@ void considerEnablingParallelReplicas(
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
                 if (!local_replica_plan_reading_step)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
-                /// The step may already carry an analysis (planner runs index analysis on it when
-                /// parallel_replicas_min_number_of_rows_per_replica > 0); overwrite it to reuse the single-replica one.
-                local_replica_plan_reading_step->setAnalyzedResult(analysis);
+
+                /// Transplant the single-node index analysis onto the parallel-replicas branch read to honor
+                /// parallel_replicas_index_analysis_only_on_coordinator (analyze once, reuse on the replica).
+                /// For a plain table-on-top plan the freshly built branch read has no analysis yet. But the step
+                /// may already carry an analysis: the planner runs index analysis on it when
+                /// parallel_replicas_min_number_of_rows_per_replica > 0, and when a JOIN sits on top
+                /// findReadingStep descends into one side whose read may already have been analyzed while
+                /// planning the join (e.g. a top-level DISTINCT or a scalar subquery in the query). In that case
+                /// keep its own analysis instead of overwriting it: it is the same parallelized table
+                /// (findReadingStep runs the same descent on the hash-matched JOIN node in both plans, and the
+                /// swap_streams case is already diverted to the throw above), so the existing result is
+                /// equivalent. A read for a *different* table would mean the single-node and parallel-replicas
+                /// plans diverged at the matched node - a broken invariant, so fail loudly rather than silently
+                /// apply a mismatched analysis.
+                if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
+                {
+                    local_replica_plan_reading_step->setAnalyzedResult(analysis);
+                }
+                else if (&local_replica_plan_reading_step->getMergeTreeData() != &source_reading_step->getMergeTreeData())
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Parallel replicas branch read is analyzed for table {} but the single-node plan reads {}",
+                        local_replica_plan_reading_step->getStorageID().getNameForLogs(),
+                        source_reading_step->getStorageID().getNameForLogs());
+                }
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
                 return;

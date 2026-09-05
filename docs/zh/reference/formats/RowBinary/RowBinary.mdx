@@ -227,7 +227,7 @@ SELECT CAST('2024-01-15', 'Date') AS d
 
 以 `Int32` (4 字节) 存储，表示相对于 `1970-01-01` ***之前或之后*** 的天数。
 
-支持的取值范围：`[1900-01-01, 2299-12-31]`。
+支持的取值范围：`[0000-01-01, 9999-12-31]`。
 
 `Date32` 的底层值示例：
 
@@ -236,7 +236,7 @@ SELECT CAST('2024-01-15', 'Date32') AS d
 ```
 
 ```text
-0x19, 0x4D, 0x00, 0x00, // 19737 以 Int32 表示（小端序）= 自 1970-01-01 起的第 19737 天
+0x19, 0x4D, 0x00, 0x00, // 19737 as Int32 (小端序) = 19737 days since 1970-01-01
 ```
 
 早于纪元的日期：
@@ -246,7 +246,7 @@ SELECT CAST('1900-01-01', 'Date32') AS d
 ```
 
 ```text
-0x21, 0x9C, 0xFF, 0xFF, // -25567 以 Int32 表示（小端序）= 1970-01-01 之前 25567 天
+0x21, 0x9C, 0xFF, 0xFF, // -25567 as Int32 (小端序) = 25567 days before 1970-01-01
 ```
 
 <div id="datetime">
@@ -580,7 +580,7 @@ SELECT
   列可以定义为 `LowCardinality(Nullable(T))`，但不能定义为 `Nullable(LowCardinality(T))`——这样定义始终会导致服务器报错。
 </Note>
 
-在测试时，可以将 [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/zh/reference/settings/session-settings#allow_suspicious_low_cardinality_types) 设置为 `1`，以允许在 `LowCardinality` 中使用大多数数据类型，从而获得更好的覆盖率。
+在测试时，可以将 [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/zh/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types) 设置为 `1`，以允许在 `LowCardinality` 中使用大多数数据类型，从而获得更好的覆盖率。
 
 <div id="array">
   ### 数组
@@ -735,8 +735,8 @@ SET allow_experimental_variant_type = 1,
     allow_suspicious_variant_types = 1;
 CREATE OR REPLACE TABLE foo
 (
-  -- 用户输入中类型的顺序不影响结果；
-  -- 类型在传输格式中始终按字母顺序排列。
+  -- It does not matter what is the order of types in the user input;
+  -- the types are always sorted alphabetically in the wire format.
   `var` Variant(
            Array(Int16),
            Bool,
@@ -755,20 +755,20 @@ SELECT * FROM foo FORMAT RowBinary;
 ```
 
 ```text
-0x01,                               // 类型索引 -> Bool
+0x01,                               // type index -> Bool
  0x01,                               // true
- 0x03,                               // 类型索引 -> FixedString(6)
+ 0x03,                               // type index -> FixedString(6)
  0x66, 0x6F, 0x6F, 0x62, 0x61, 0x72, // 'foobar' 
- 0x05,                               // 类型索引 -> Float64
+ 0x05,                               // type index -> Float64
  0x00, 0x00, 0x00, 0x00, 
  0x00, 0x20, 0x59, 0x40,             // 100.5 as Float64
- 0x06,                               // 类型索引 -> Int128
+ 0x06,                               // type index -> Int128
  0x64, 0x00, 0x00, 0x00, 
  0x00, 0x00, 0x00, 0x00, 
  0x00, 0x00, 0x00, 0x00, 
  0x00, 0x00, 0x00, 0x00,             // 100 as Int128
- 0x00,                               // 类型索引 -> Array(Int16)
- 0x03,                               // LEB128 - 数组包含 3 个元素
+ 0x00,                               // type index -> Array(Int16)
+ 0x03,                               // LEB128 - the array has 3 elements
  0x01, 0x00,                         // 1 as Int16
  0x02, 0x00,                         // 2 as Int16
  0x03, 0x00,                         // 3 as Int16
@@ -784,7 +784,7 @@ SELECT NULL :: Variant(UInt32, String)
 0xFF, // discriminant = NULL
 ```
 
-[allow&#95;suspicious&#95;variant&#95;types](/zh/reference/settings/session-settings#allow_suspicious_variant_types) 设置可用于更充分地测试 `Variant` 类型。
+[allow&#95;suspicious&#95;variant&#95;types](/zh/reference/settings/session-settings/allow-suspicious#allow_suspicious_variant_types) 设置可用于更充分地测试 `Variant` 类型。
 
 <div id="dynamic">
   ### Dynamic
@@ -993,13 +993,14 @@ Schema: `JSON()`
 Geo 是一类用于表示地理数据的数据类型，包括：
 
 * `Point` - 表示为 `Tuple(Float64, Float64)`。
+* `MultiPoint` - 表示为 `Array(Point)`，或 `Array(Tuple(Float64, Float64))`。
 * `Ring` - 表示为 `Array(Point)`，或 `Array(Tuple(Float64, Float64))`。
 * `Polygon` - 表示为 `Array(Ring)`，或 `Array(Array(Tuple(Float64, Float64)))`。
 * `MultiPolygon` - 表示为 `Array(Polygon)`，或 `Array(Array(Array(Tuple(Float64, Float64))))`。
 * `LineString` - 表示为 `Array(Point)`，或 `Array(Tuple(Float64, Float64))`。
 * `MultiLineString` - 表示为 `Array(LineString)`，或 `Array(Array(Tuple(Float64, Float64)))`。
 
-Geo 值的传输格式与 Tuple 和 Array 完全相同。`RowBinaryWithNamesAndTypes` 格式的头部将包含这些类型的别名，例如 `Point`、`Ring`、`Polygon`、`MultiPolygon`、`LineString` 和 `MultiLineString`。
+Geo 值的传输格式与 Tuple 和 Array 完全相同。`RowBinaryWithNamesAndTypes` 格式的头部将包含这些类型的别名，例如 `Point`、`MultiPoint`、`Ring`、`Polygon`、`MultiPolygon`、`LineString` 和 `MultiLineString`。
 
 ```sql
 SELECT    (1.0, 2.0)                                       :: Point           AS point,
@@ -1088,12 +1089,13 @@ Geometry 的判别值索引如下：
 | 3     | Point           |
 | 4     | Polygon         |
 | 5     | Ring            |
+| 6     | MultiPoint      |
 
 传输格式结构：
 
 ```text
-// 1 字节 discriminant（0-5）
-// 后跟对应的 geo 类型数据
+// 1 byte discriminant (0-6)
+// followed by the corresponding geo type data
 ```
 
 `Point` 编码为 `Geometry` 的示例：
@@ -1103,20 +1105,20 @@ SELECT ((1.0, 2.0)::Point)::Geometry
 ```
 
 ```text
-0x03,                                           // 判别值 = 3 (Point)
-0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // Point.X = 1.0，Float64 类型
-0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, // Point.Y = 2.0，Float64 类型
+0x03,                                           // discriminant = 3 (Point)
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // Point.X = 1.0 as Float64
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, // Point.Y = 2.0 as Float64
 ```
 
 将 `Ring` 编码为 `Geometry` 的示例：
 
 ```text
-0x05,       // 判别值 = 5 (Ring)
-0x02,       // LEB128 - 数组包含 2 个点
-// 点 #1
+0x05,       // discriminant = 5 (Ring)
+0x02,       // LEB128 - array has 2 points
+// Point #1
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x40, // X = 3.0
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x40, // Y = 4.0
-// 点 #2
+// Point #2
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x40, // X = 5.0
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x40, // Y = 6.0
 ```

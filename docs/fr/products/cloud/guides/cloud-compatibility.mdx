@@ -7,6 +7,8 @@ keywords: ['ClickHouse Cloud', 'compatibilité']
 doc_type: 'guide'
 ---
 
+import CloudUnsupportedFeatures from '/snippets/fr/_cloud_unsupported_features.mdx';
+
 Ce guide donne un aperçu de ce à quoi vous attendre, sur les plans fonctionnel et opérationnel, dans ClickHouse Cloud. Bien que ClickHouse Cloud repose sur la distribution ClickHouse open-source, il peut y avoir certaines différences d’architecture et d’implémentation. Vous pourriez trouver intéressant et utile, pour le contexte, ce billet de blog sur [la manière dont nous avons conçu ClickHouse Cloud](https://clickhouse.com/blog/building-clickhouse-cloud-from-scratch-in-a-year).
 
 <div id="clickhouse-cloud-architecture">
@@ -34,7 +36,7 @@ ClickHouse Cloud donne accès à un ensemble sélectionné de fonctionnalités d
   ### Moteurs de base de données et moteurs de table
 </div>
 
-ClickHouse Cloud est, par défaut, un service hautement disponible et répliqué, basé sur la famille de moteurs de table [SharedMergeTree](/fr/products/cloud/features/infrastructure/shared-merge-tree). Lorsque vous créez une table avec un moteur standard de la famille MergeTree, Cloud le remplace automatiquement par le moteur `Shared*` correspondant. Vous n’avez pas à ajouter vous-même le préfixe `Shared` ou `Replicated`.
+ClickHouse Cloud est, par défaut, un service à haute disponibilité et répliqué, basé sur la famille de moteurs de table [SharedMergeTree](/fr/products/cloud/features/infrastructure/shared-merge-tree). Lorsque vous créez une table avec un moteur standard de la famille MergeTree, Cloud le remplace automatiquement par le moteur `Shared*` correspondant. Vous n’avez pas à ajouter vous-même le préfixe `Shared` ou `Replicated`.
 
 | Vous indiquez                  | Cloud utilise                        |
 | ------------------------------ | ------------------------------------ |
@@ -48,7 +50,7 @@ ClickHouse Cloud est, par défaut, un service hautement disponible et répliqué
 
 Les moteurs `Replicated*` sont convertis en leurs équivalents `Shared*`. Cette substitution est visible dans `SHOW CREATE TABLE`, qui affiche le moteur `Shared*` même si votre instruction spécifiait la variante non préfixée.
 
-Les moteurs suivants sont également pris en charge et utilisés tels quels :
+Les moteurs de table suivants sont également pris en charge et utilisés tels quels. Le moteur de table `MySQL` pris en charge est distinct du moteur de base de données `MySQL` non pris en charge :
 
 * URL
 * View
@@ -57,6 +59,7 @@ Les moteurs suivants sont également pris en charge et utilisés tels quels :
 * Null
 * Buffer
 * Memory
+* `IcebergS3` et `IcebergAzure`
 * Deltalake
 * Hudi
 * MySQL
@@ -66,6 +69,8 @@ Les moteurs suivants sont également pris en charge et utilisés tels quels :
 * PostgreSQL
 * S3
 * Kafka
+
+Les moteurs de table expérimentaux `PaimonS3` et `PaimonAzure` peuvent être activés sur certains services ClickHouse Cloud. Contactez le Support pour confirmer leur disponibilité.
 
 <div id="interfaces">
   ### Interfaces
@@ -85,6 +90,8 @@ Les dictionnaires sont un moyen courant d’accélérer les recherches dans Clic
 
 Nous prenons en charge les requêtes fédérées ClickHouse pour la communication entre clusters dans le cloud, ainsi que pour la communication avec des clusters ClickHouse externes autogérés. ClickHouse Cloud prend actuellement en charge les requêtes fédérées à l’aide des moteurs d’intégration suivants :
 
+* `IcebergS3` et `IcebergAzure`
+* `PaimonS3` et `PaimonAzure` (expérimental ; contactez le Support pour connaître la disponibilité)
 * Deltalake
 * Hudi
 * MySQL
@@ -128,7 +135,7 @@ Les fonctionnalités expérimentales sont désactivées dans les services ClickH
   ### Collections nommées
 </div>
 
-Les [collections nommées](/fr/concepts/features/configuration/server-config/named-collections) ne sont pas prises en charge actuellement dans ClickHouse Cloud.
+Les [collections nommées](/fr/concepts/features/configuration/server-config/named-collections) créées avec DDL peuvent être activées sur certains services ClickHouse Cloud. Contactez le Support pour confirmer leur disponibilité. Les collections nommées définies dans des fichiers de configuration ne sont pas disponibles, car les utilisateurs ne peuvent pas modifier les fichiers de configuration du serveur dans ClickHouse Cloud.
 
 <div id="operational-defaults-and-considerations">
   ## Valeurs par défaut et considérations opérationnelles
@@ -151,9 +158,7 @@ La valeur par défaut du paramètre `max_parts_in_total` pour les tables MergeTr
 </div>
 
 Ce paramètre serveur a été augmenté de `100` à `1000` par rapport à la valeur par défaut afin de permettre davantage de requêtes concurrentes.
-Cela se traduira par `nombre de répliques * 1,000` requêtes concurrentes pour les services des niveaux d’offre proposés.
-`1000` requêtes concurrentes pour le service du niveau Basic, limité à une seule réplique, et `1000+` pour Scale et Enterprise,
-selon le nombre de répliques configurées.
+Cela se traduit par `nombre de répliques * 1,000` requêtes concurrentes pour un service. Un service à réplique unique prend en charge jusqu’à `1000` requêtes concurrentes, quel que soit le niveau. Les services à plusieurs répliques des niveaux Scale et Enterprise prennent en charge jusqu’à `1000` requêtes concurrentes par réplique.
 
 <div id="max_table_size_to_drop-1000000000000">
   #### `max_table_size_to_drop: 1,000,000,000,000`
@@ -172,6 +177,12 @@ ClickHouse Cloud est optimisé pour des charges de travail variables ; c’est p
 </div>
 
 Dans le cadre de la création du service ClickHouse, nous créons une base de données par défaut, ainsi que l&#39;utilisateur par défaut, qui dispose d&#39;autorisations étendues sur cette base de données. Cet utilisateur initial peut créer des utilisateurs supplémentaires et leur attribuer des autorisations sur cette base de données. En revanche, la possibilité d&#39;activer dans la base de données les fonctionnalités de sécurité suivantes à l&#39;aide de l&#39;authentification Kerberos, LDAP ou par certificat SSL X.509 n&#39;est pas prise en charge pour le moment.
+
+<div id="list-of-unsupported-features">
+  ## Liste des fonctionnalités non prises en charge
+</div>
+
+<CloudUnsupportedFeatures />
 
 <div id="roadmap">
   ## Feuille de route

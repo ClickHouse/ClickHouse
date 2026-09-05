@@ -11,11 +11,6 @@ from .utils import Shell, Utils
 
 class Job:
     @dataclass
-    class Requirements:
-        python: bool = False
-        python_requirements_txt: str = ""
-
-    @dataclass
     class CacheDigestConfig:
         include_paths: List[str] = field(default_factory=list)
         exclude_paths: List[str] = field(default_factory=list)
@@ -56,8 +51,6 @@ class Job:
         #   May be only `Artifact.Config.name`
         provides: List[str] = field(default_factory=list)
 
-        job_requirements: Optional["Job.Requirements"] = None
-
         timeout: int = 5 * 3600
 
         timeout_shell_cleanup: Optional[str] = None
@@ -66,7 +59,7 @@ class Job:
 
         run_in_docker: str = ""
 
-        run_unless_cancelled: bool = False
+        always_run: bool = False
 
         # If True, the job failure does not block PR merge, but the job
         # is still shown as failed in the CI report.
@@ -77,9 +70,25 @@ class Job:
         # experimental jobs that are not yet stable enough to be enforced.
         force_success: bool = False
 
+        # GitHub Actions engine only: post this job as a commit status.
+        # Ignored (no-op) on the Praktika engine, which always publishes
+        # workflow/job status via the GitHub Checks API.
         enable_commit_status: bool = False
 
         enable_gh_auth: bool = False
+
+        # If False, `actions/checkout` is generated with
+        # `persist-credentials: false`, so the workflow token is not written
+        # into the local git config (`http.<server>/.extraheader`). Set it for
+        # a job that runs untrusted code in the checkout and must not leave a
+        # GitHub credential within its reach; its plain `git fetch` runs
+        # unauthenticated, and anything privileged has to mint its own token
+        # with an explicit `GHAuth.auth(...)` call after the untrusted code
+        # has run. `enable_gh_auth` is refused together with this flag: it
+        # authenticates `gh` in the runner before the job command starts and
+        # would hand the untrusted code the very credential this flag keeps
+        # out of its reach.
+        checkout_persist_credentials: bool = True
 
         # If a job Result contains multiple sub-results, and only a specific sub-result should be sent to CIDB, set its name here.
         result_name_for_cidb: str = ""
@@ -97,6 +106,19 @@ class Job:
 
         # List of commands to call after job completes
         post_hooks: List[str] = field(default_factory=list)
+
+        def __post_init__(self):
+            # `enable_gh_auth` pre-authenticates `gh` before the job command
+            # starts, which recreates exactly the credential exposure that
+            # `checkout_persist_credentials=False` exists to prevent.
+            assert self.checkout_persist_credentials or not self.enable_gh_auth, (
+                f"Job [{self.name}]: checkout_persist_credentials=False keeps "
+                f"GitHub credentials away from the untrusted code the job runs, "
+                f"and enable_gh_auth=True would hand them right back by "
+                f"pre-authenticating gh before the job starts; mint a token "
+                f"with an explicit GHAuth.auth(...) call after the untrusted "
+                f"phase instead"
+            )
 
         def parametrize(self, *param_sets: "Job.ParamSet"):
             res = []
@@ -181,12 +203,6 @@ class Job:
             return res
 
         def set_run_after(self, job, reset=False):
-            """
-            Return a copy of this `Job.Config` that must start after the named jobs.
-
-            `set_run_after` controls execution order only. Use `set_requires` when
-            the job consumes artifacts produced by another job.
-            """
             res = copy.deepcopy(self)
             if not (isinstance(job, list) or isinstance(job, tuple)):
                 job = [job]
@@ -249,14 +265,12 @@ class Job:
             res.allow_failure = value
             return res
 
+        def set_allow_merge_on_failure(self, value=True):
+            return self.set_allow_failure(value)
+
         def set_post_hooks(self, post_hooks):
             res = copy.deepcopy(self)
             res.post_hooks = post_hooks
-            return res
-
-        def set_digest_config(self, digest_config):
-            res = copy.deepcopy(self)
-            res.digest_config = digest_config
             return res
 
         def set_timeout(self, timeout):
@@ -294,9 +308,9 @@ class Job:
                     # Check if included
                     for include in self.digest_config.include_paths:
                         include_norm = os.path.normpath(include)
-                        if PurePosixPath("/" + file).match("/" + include_norm) or file.startswith(
-                            include_norm + os.sep
-                        ):
+                        if PurePosixPath("/" + file).match(
+                            "/" + include_norm
+                        ) or file.startswith(include_norm + os.sep):
                             return True
 
             # Optionally check for submodule changes

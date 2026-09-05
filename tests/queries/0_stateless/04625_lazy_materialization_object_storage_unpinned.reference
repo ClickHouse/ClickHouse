@@ -1,0 +1,14 @@
+-- s3_validate_etag_on_read = 1
+-- number of lazy read steps in the plan (1 only when the reread is ETag-pinned)
+1
+-- results are the same regardless of the plan
+0	val_0
+1	val_1
+2	val_2
+-- s3_validate_etag_on_read = 0
+-- number of lazy read steps in the plan (1 only when the reread is ETag-pinned)
+0
+-- results are the same regardless of the plan
+0	val_0
+1	val_1
+2	val_2

@@ -1,10 +1,10 @@
 ---
-description: 'O conjunto de dados e as consultas do Join Order Benchmark (JOB).'
-sidebarTitle: 'JOB'
-slug: /getting-started/example-datasets/job
-title: 'Join Order Benchmark (JOB)'
-doc_type: 'guide'
-keywords: ['example dataset', 'job', 'join order benchmark', 'benchmark', 'performance testing', 'query optimizer', 'join ordering']
+title: "Join Order Benchmark (JOB)"
+description: "O conjunto de dados e as consultas do Join Order Benchmark (JOB)."
+sidebarTitle: "JOB"
+slug: "/getting-started/example-datasets/job"
+doc_type: "guide"
+keywords: ["example dataset", "job", "join order benchmark", "benchmark", "performance testing", "query optimizer", "join ordering"]
 ---
 
 O Join Order Benchmark (JOB) coloca o otimizador de consultas sob pressão com 113 consultas analíticas sobre um conjunto de dados real e altamente correlacionado (um snapshot do IMDb). Desde sua introdução, o benchmark JOB tornou-se o padrão de fato para avaliar o desempenho de otimizadores de consultas de bancos de dados relacionais, incluindo estimativa de cardinalidade e otimização da ordem de JOIN. Diferentemente de benchmarks sintéticos que assumem dados uniformes e independentes, o JOB usa dados reais com distribuição desigual e correlações, o que o torna um teste desafiador para a ordenação de JOINs e a estimativa de cardinalidade.
@@ -38,12 +38,9 @@ clickhouse client --database job --queries-file init_cloud.sql
   ## Carregando os dados
 </div>
 
-Os dados vêm do snapshot original do IMDb usado pelo JOB, distribuído como um arquivo CSV por tabela (`aka_name.csv`, `title.csv`, ...).
-Esses arquivos CSV usam a semântica de `COPY` do PostgreSQL com `ESCAPE '\'`: uma barra invertida escapa o caractere de aspas apenas dentro de um campo entre aspas, enquanto, fora das aspas, a barra invertida é um caractere literal.
-O ClickHouse espera CSV no formato RFC 4180 (aspas duplicadas, sem escape com barra invertida), portanto os arquivos precisam ser recodificados primeiro.
+Os dados vêm do snapshot original do IMDb usado pelo JOB, distribuído como um arquivo CSV por tabela (`aka_name.csv`, `title.csv`, ...). Esses arquivos CSV usam a semântica de `COPY` do PostgreSQL com `ESCAPE '\'`: uma barra invertida escapa o caractere de aspas apenas dentro de um campo entre aspas, enquanto, fora das aspas, a barra invertida é um caractere literal. O ClickHouse espera CSV no formato RFC 4180 (aspas duplicadas, sem escape com barra invertida), portanto os arquivos precisam ser recodificados primeiro.
 
-[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) faz essa recodificação.
-Ele lê o CSV original em stdin e grava o CSV padrão em stdout, duplicando aspas internas e preservando campos vazios sem aspas (que o ClickHouse mapeia para `NULL` em colunas `Nullable`).
+[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) faz essa recodificação. Ele lê o CSV original em stdin e grava o CSV padrão em stdout, duplicando aspas internas e preservando campos vazios sem aspas (que o ClickHouse mapeia para `NULL` em colunas `Nullable`).
 
 Para criar as tabelas a partir dos arquivos CSV originais:
 
@@ -100,9 +97,7 @@ Tamanhos detalhados das tabelas:
   ## Consultas
 </div>
 
-As 113 consultas JOB podem ser encontradas [aqui](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries), no repositório do ClickHouse.
-As configurações usadas para executá-las estão em [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json).
-Consulte o [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) para ver problemas conhecidos e observações sobre consultas específicas.
+As 113 consultas JOB podem ser encontradas [aqui](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries), no repositório do ClickHouse. As configurações usadas para executá-las estão em [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json). Consulte o [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) para ver problemas conhecidos e observações sobre consultas específicas.
 
 As consultas fazem referência às tabelas pelo nome, portanto execute-as no banco de dados `job` (por exemplo, com `clickhouse client --database job`).
 
@@ -128,3 +123,9 @@ WHERE ct.kind = 'production companies'
   AND mc.movie_id = mi_idx.movie_id
   AND it.id = mi_idx.info_type_id;
 ```
+
+<div id="performance-benchmark">
+  ## Benchmark de desempenho
+</div>
+
+O ClickHouse acompanha o desempenho das consultas JOB em todas as versões lançadas. Você pode consultar os tempos de execução das 113 consultas JOB na página de [benchmark de versões do ClickHouse](https://benchmark.clickhouse.com/versions/#version=+s\&dataset=+ob\&metric=hot\&queries=-) para ver como o desempenho evoluiu ao longo do tempo.

@@ -16,14 +16,14 @@ doc_type: 'reference'
 
 ```xml
 <users>
-    <!-- Если имя пользователя не указано, используется пользователь 'default'. -->
+    <!-- If user name was not specified, the user from the 'default_session_user' server setting is used ('default' unless configured otherwise). -->
     <user_name>
-        <!-- На уровне users.user_name можно указать ровно один метод аутентификации. Например: -->
+        <!-- Exactly one authentication method may be specified at the users.user_name level. For example: -->
         <password></password>
-        <!-- Или (взаимоисключающий вариант) -->
+        <!-- Or (exclusive) -->
         <password_sha256_hex></password_sha256_hex>
  
-        <!-- Или (взаимоисключающий вариант) (примечание: несколько SSH-ключей допускается для обратной совместимости) -->
+        <!-- Or (exclusive) (N.B. multiple SSH keys are allowed for backwards compatibility) -->
         <ssh_keys>
             <ssh_key>
                 <type>ssh-ed25519</type>
@@ -39,7 +39,7 @@ doc_type: 'reference'
             </ssh_key>
         </ssh_keys>
 
-        <!-- Или (взаимоисключающий вариант) для нескольких методов аутентификации: -->
+        <!-- Or (exclusive) for multiple authentication methods: -->
         <auth_methods>
             <method1>
                 <password></password>
@@ -74,7 +74,7 @@ doc_type: 'reference'
             <query>GRANT SELECT ON system.*</query>
         </grants>
     </user_name>
-    <!-- Настройки остальных пользователей -->
+    <!-- Other users settings -->
 </users>
 ```
 

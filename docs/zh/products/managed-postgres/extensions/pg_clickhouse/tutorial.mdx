@@ -14,6 +14,11 @@ keywords: ['PostgreSQL', 'Postgres', 'FDW', '外部数据包装器', 'pg_clickho
 本教程基于 [ClickHouse 教程]，但其中所有查询均通过
 pg&#95;clickhouse 运行。
 
+选择配置 `pg_clickhouse` 的方式：
+
+* 如果您使用 ClickHouse Managed Postgres，请[从控制台](#from-console)进行配置。
+* 如果您自行安装和配置扩展，请[从 PSQL](#from-psql)进行配置。
+
 <div id="start-clickhouse">
   ## 启动 ClickHouse
 </div>
@@ -164,6 +169,41 @@ SELECT count() FROM taxi.trips;
 quit
 ```
 
+<div id="from-console">
+  ## 在控制台中
+</div>
+
+如果您使用 ClickHouse Managed Postgres，可以通过 ClickHouse Cloud
+控制台配置 `pg_clickhouse` 并连接到 ClickHouse 服务。打开您的 Managed Postgres 服务，选择 **设置**，然后找到
+**ClickHouse 集成** 部分。点击 **启用 pg&#95;clickhouse**。
+
+在设置表单中，为 foreign server 输入名称。选择用于连接的 ClickHouse
+服务、数据库和用户。输入 ClickHouse
+密码，然后选择要导入 ClickHouse 表的 Postgres 数据库和目标 schema。点击 **连接**，创建 foreign
+server 并导入 schema。
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="ClickHouse Cloud 控制台中 taxi 数据库的 pg_clickhouse 设置表单" size="lg" border />
+
+设置完成后，控制台会显示确认信息，foreign
+server 将出现在 server 列表中。
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="ClickHouse Cloud 控制台中 taxi 数据库的 pg_clickhouse 设置已完成" size="lg" border />
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="显示 taxi pg_clickhouse 连接的 foreign server 列表" size="lg" border />
+
+现在，您可以打开 Postgres **SQL 控制台**并查询已导入的表：
+
+```sql
+SELECT * FROM <schema>.<table>;
+```
+
+要按照本教程中的出租车示例操作，请选择 `taxi` ClickHouse
+数据库，并将其导入 `taxi` 目标端 schema。
+
+<div id="from-psql">
+  ## 从 PSQL 连接
+</div>
+
 <div id="install-pg_clickhouse">
   ### 安装 pg_clickhouse
 </div>
@@ -193,8 +233,7 @@ docker exec -it pg_clickhouse psql -U postgres
 CREATE EXTENSION pg_clickhouse;
 ```
 
-使用主机名、端口和 ClickHouse 数据库的数据库名称来创建
-foreign server。
+使用主机名、端口和 ClickHouse 数据库创建 foreign server。
 
 ```sql
 CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
@@ -203,6 +242,14 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
 
 这里我们选择使用二进制驱动，它使用 ClickHouse 二进制
 协议。你也可以使用 &quot;http&quot; 驱动，它使用 HTTP 接口。
+
+<Note>
+  如果你使用 ClickHouse Cloud 控制台运行 SQL，请向控制台 admin 用户授予 foreign server 的访问权限：
+
+  ```sql
+  GRANT USAGE ON FOREIGN SERVER taxi_srv TO chpg_console_admin;
+  ```
+</Note>
 
 接下来，将 PostgreSQL 用户映射到 ClickHouse 用户。最简单的做法
 就是将当前 PostgreSQL 用户映射到 foreign
@@ -479,11 +526,12 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
   ## 创建字典
 </div>
 
-在你的 ClickHouse 服务中创建一个与表关联的字典。该表和字典基于一个 CSV file，其中包含纽约市每个街区的一行数据。
+在你的 ClickHouse 服务中创建一个与表关联的字典。该表和字典基于一个 CSV file，其中包含纽约市每个社区的一行数据。
 
-这些街区映射到纽约市五个行政区的名称 (Bronx、Brooklyn、Manhattan、Queens 和 Staten Island) ，以及 Newark Airport (EWR)。
+这些社区映射到纽约市五个行政区的名称 (Bronx、Brooklyn、Manhattan、Queens 和 Staten Island) ，以及 Newark Airport (EWR)。
 
-下面是所用 CSV file 的部分内容，以表格形式展示。文件中的 `LocationID` 列映射到 trips 表中的 `pickup_nyct2010_gid` 和 `dropoff_nyct2010_gid` 列：
+下面是所用 CSV file 的部分内容，以表格形式展示。文件中的 `LocationID` 列映射到 trips 表中的 `pickup_nyct2010_gid` 和
+`dropoff_nyct2010_gid` 列：
 
 | LocationID | Borough       | Zone                    | service&#95;zone |
 | ---------: | ------------- | ----------------------- | ---------------- |
@@ -493,10 +541,11 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 |          4 | Manhattan     | Alphabet City           | Yellow Zone      |
 |          5 | Staten Island | Arden Heights           | Boro Zone        |
 
-1. 仍在 Postgres 中，使用 `clickhouse_raw_query` 函数创建一个名为 `taxi_zone_dictionary` 的 ClickHouse [字典]，并通过 S3 中的 CSV file 为该字典填充数据：
+1. 仍在 Postgres 中，使用 `clickhouse_raw_query` 函数创建一个名为 `taxi_zone_dictionary` 的
+   ClickHouse [字典]，并通过 S3 中的 CSV file 为该字典填充数据：
 
    ```sql
-   SELECT clickhouse_raw_query($$
+   CALL clickhouse_perform('taxi_srv', $$
        CREATE DICTIONARY taxi.taxi_zone_dictionary (
            LocationID Int64 DEFAULT 0,
            Borough String,
@@ -507,63 +556,63 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
        SOURCE(HTTP(URL 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv' FORMAT 'CSVWithNames'))
        LIFETIME(MIN 0 MAX 0)
        LAYOUT(HASHED_ARRAY())
-   $$, 'host=localhost dbname=taxi');
+   $$);
    ```
 
-<Note>
-  将 `LIFETIME` 设置为 0 会禁用自动更新，从而避免对我们的 S3 bucket 产生不必要的流量。在其他情况下，你也可以采用不同的配置。详情请参见[使用 LIFETIME 刷新字典数据](/zh/reference/statements/create/dictionary/lifetime)。
-</Note>
+   <Note>
+     将 `LIFETIME` 设置为 0 会禁用自动更新，从而避免对我们的 S3 bucket 产生不必要的流量。在其他情况下，你也可以采用不同的配置。详情请参见[使用 LIFETIME 刷新字典数据](/zh/reference/statements/create/dictionary/lifetime)。
+   </Note>
 
-2. 现在导入它：
+   2. 现在导入它：
 
-```sql
-    IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
-    FROM SERVER taxi_srv INTO taxi;
-```
+   ```sql
+   IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
+   FROM SERVER taxi_srv INTO taxi;
+   ```
 
-3. 确认可以查询它：
+   3. 确认可以查询它：
 
-```pgsql
-    taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
-     LocationID |  Borough  |                     Zone                      | service_zone
-    ------------+-----------+-----------------------------------------------+--------------
-             77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
-            106 | Brooklyn  | Gowanus                                       | Boro Zone
-            103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
-    (3 rows)
-```
+   ```pgsql
+   taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
+    LocationID |  Borough  |                     Zone                      | service_zone
+   ------------+-----------+-----------------------------------------------+--------------
+            77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
+           106 | Brooklyn  | Gowanus                                       | Boro Zone
+           103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
+   (3 rows)
+   ```
 
-4. 很好。现在在查询中使用 `dictGet` 函数来获取
-   某个行政区的名称。下面这个查询会汇总终点为 LaGuardia 或 JFK 机场的
-   各行政区出租车行程数量：
+   4. 很好。现在在查询中使用 `dictGet` 函数来获取
+      某个行政区的名称。下面这个查询会汇总终点为 LaGuardia 或 JFK 机场的
+      各行政区出租车行程数量：
 
-```pgsql
-    taxi=# SELECT
-            count(1) AS total,
-            COALESCE(NULLIF(dictGet(
-                'taxi.taxi_zone_dictionary', 'Borough',
-                toUInt64(pickup_nyct2010_gid)
-            ), ''), 'Unknown') AS borough_name
-        FROM taxi.trips
-        WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
-        GROUP BY borough_name
-        ORDER BY total DESC;
-     total | borough_name
-    -------+---------------
-     23683 | Unknown
-      7053 | Manhattan
-      6828 | Brooklyn
-      4458 | Queens
-      2670 | Bronx
-       554 | Staten Island
-        53 | EWR
-    (7 rows)
+   ```pgsql
+   taxi=# SELECT
+           count(1) AS total,
+           COALESCE(NULLIF(dictGet(
+               'taxi.taxi_zone_dictionary', 'Borough',
+               toUInt64(pickup_nyct2010_gid)
+           ), ''), 'Unknown') AS borough_name
+       FROM taxi.trips
+       WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
+       GROUP BY borough_name
+       ORDER BY total DESC;
+    total | borough_name
+   -------+---------------
+    23683 | Unknown
+     7053 | Manhattan
+     6828 | Brooklyn
+     4458 | Queens
+     2670 | Bronx
+      554 | Staten Island
+       53 | EWR
+   (7 rows)
 
-    Time: 66.245 ms
-```
+   Time: 66.245 ms
+   ```
 
-该查询汇总了终点为 LaGuardia 或 JFK 机场的出租车行程，按各 borough 统计数量。请注意，其中有不少行程的
-上车区域未知。
+   该查询汇总了终点为 LaGuardia 或 JFK 机场的出租车行程，按各行政区统计数量。请注意，其中有不少行程的
+   上车区域未知。
 
 <div id="perform-a-join">
   ## 执行 JOIN
@@ -599,31 +648,31 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
    Time: 48.449 ms
    ```
 
-<Note>
-  请注意，上面的 `JOIN` 查询输出与上文的 `dictGet`
-  查询相同 (只是未包含 `Unknown` 值) 。在底层，
-  ClickHouse 实际上会对 `taxi_zone_dictionary` 字典调用 `dictGet` 函数，
-  但 `JOIN` 语法对 SQL 开发者来说更熟悉。
-</Note>
+   <Note>
+     请注意，上面的 `JOIN` 查询输出与上文的 `dictGet`
+     查询相同 (只是未包含 `Unknown` 值) 。在底层，
+     ClickHouse 实际上会对 `taxi_zone_dictionary` 字典调用 `dictGet` 函数，
+     但 `JOIN` 语法对 SQL 开发者来说更熟悉。
+   </Note>
 
-```pgsql
-    taxi=# explain SELECT
-            count(1) AS total,
-            "Borough"
-        FROM taxi.trips
-        JOIN taxi.taxi_zone_dictionary
-          ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
-        WHERE pickup_nyct2010_gid > 0
-          AND dropoff_nyct2010_gid IN (132, 138)
-        GROUP BY "Borough"
-        ORDER BY total DESC;
-                                  QUERY PLAN
-    -----------------------------------------------------------------------
-     Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
-       Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
-    (2 rows)
-    Time: 2.012 ms
-```
+   ```pgsql
+   taxi=# explain SELECT
+           count(1) AS total,
+           "Borough"
+       FROM taxi.trips
+       JOIN taxi.taxi_zone_dictionary
+         ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
+       WHERE pickup_nyct2010_gid > 0
+         AND dropoff_nyct2010_gid IN (132, 138)
+       GROUP BY "Borough"
+       ORDER BY total DESC;
+                                 QUERY PLAN
+   -----------------------------------------------------------------------
+    Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
+      Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
+   (2 rows)
+   Time: 2.012 ms
+   ```
 
 2. 此查询会返回小费金额最高的 1000 条行程记录，
    然后将每一行与该字典执行内连接：

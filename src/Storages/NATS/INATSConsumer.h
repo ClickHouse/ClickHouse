@@ -44,6 +44,12 @@ public:
     };
 
     bool isSubscribed() const;
+
+    /// True when the NATS client has closed a subscription we still hold: consuming has stopped
+    /// and only a re-subscribe resumes it. Base implementation always returns false, because
+    /// recovery drops buffered messages and only JetStream redelivers them.
+    virtual bool needsResubscribe() const { return false; }
+
     void subscribe();
     void unsubscribe(bool finish_queue);
 
@@ -75,6 +81,10 @@ protected:
     const String & getQueueName() const { return queue_name; }
 
     void setSubscriptions(std::vector<NATSSubscriptionPtr> subscriptions_) { subscriptions = std::move(subscriptions_); }
+
+    /// True if the client has closed any subscription we hold. An empty vector reads as false:
+    /// nothing is subscribed, so there is nothing to recover.
+    bool hasClosedSubscription() const;
 
     static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * consumer);
 

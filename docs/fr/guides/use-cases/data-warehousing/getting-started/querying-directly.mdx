@@ -97,7 +97,7 @@ Les exemples suivants utilisent le dataset [hits](/fr/get-started/sample-dataset
 
     ### Moteur de table
 
-    Plutôt que d&#39;utiliser la table function dans chaque requête, vous pouvez créer une table persistante à l&#39;aide du [moteur de table `Iceberg`](/fr/reference/engines/table-engines/integrations/iceberg). Les données résident toujours dans l&#39;object storage et sont lues à la demande — aucune donnée n&#39;est copiée dans ClickHouse. L&#39;avantage est que la table definition est stockée dans ClickHouse et peut être partagée entre utilisateurs et sessions sans que chaque utilisateur ait à spécifier le path de stockage et les credentials. Des variantes du moteur existent pour chaque backend de stockage : `IcebergS3` (ou l&#39;alias `Iceberg`), `IcebergAzure`, `IcebergHDFS` et `IcebergLocal`.
+    Plutôt que d&#39;utiliser la fonction de table dans chaque requête, vous pouvez créer une table persistante à l&#39;aide du [moteur de table `Iceberg`](/fr/reference/engines/table-engines/integrations/iceberg). Les données résident toujours dans le stockage d&#39;objets et sont lues à la demande - aucune donnée n&#39;est copiée dans ClickHouse. L&#39;avantage est que la définition de la table est stockée dans ClickHouse et peut être partagée entre utilisateurs et sessions sans que chaque utilisateur ait à spécifier le chemin de stockage et les identifiants. Des variantes du moteur existent pour chaque backend de stockage : `IcebergS3` (ou l&#39;alias `Iceberg`), `IcebergAzure`, `IcebergHDFS` et `IcebergLocal`.
 
     Le table engine et la table function prennent tous deux en charge la [mise en cache des données](/fr/reference/engines/table-engines/integrations/iceberg#data-cache), en utilisant le même mécanisme de mise en cache que les moteurs de stockage S3, AzureBlobStorage et HDFS. De plus, un [metadata cache](/fr/reference/engines/table-engines/integrations/iceberg#metadata-cache) stocke les informations des fichiers manifest en mémoire, réduisant ainsi les lectures répétées des métadonnées Iceberg. Ce cache est activé par défaut via le paramètre `use_iceberg_metadata_files_cache`.
 
@@ -213,7 +213,7 @@ Les exemples suivants utilisent le dataset [hits](/fr/get-started/sample-dataset
     <Info>
       **Prise en charge de GCS**
 
-      La variante S3 de ces fonctions peut être utilisée avec Google Cloud Storage (GCS).
+      La variante S3 des fonctions peut être utilisée avec Google Cloud Storage (GCS).
     </Info>
 
     **Exemple (ClickHouse Cloud) :**
@@ -233,7 +233,7 @@ Les exemples suivants utilisent le dataset [hits](/fr/get-started/sample-dataset
 
     ### Moteur de table
 
-    En alternative à l&#39;utilisation de la table function dans chaque requête, vous pouvez créer une persistent table à l&#39;aide du [`DeltaLake` table engine](/fr/reference/engines/table-engines/integrations/deltalake) si vous utilisez un stockage compatible S3. Les données résident toujours dans l&#39;object storage et sont lues à la demande — aucune donnée n&#39;est copiée dans ClickHouse. L&#39;avantage est que la table definition est stockée dans ClickHouse et peut être partagée entre utilisateurs et sessions sans que chaque utilisateur ait à spécifier le path de stockage et les credentials.
+    Comme alternative à l&#39;utilisation de la fonction de table dans chaque requête, vous pouvez créer une table persistante à l&#39;aide du [moteur de table `DeltaLake`](/fr/reference/engines/table-engines/integrations/deltalake) si vous utilisez un stockage compatible S3. Les données résident toujours dans le stockage d&#39;objets et sont lues à la demande - aucune donnée n&#39;est copiée dans ClickHouse. L&#39;avantage est que la définition de la table est stockée dans ClickHouse et peut être partagée entre les utilisateurs et les sessions sans que chaque utilisateur ait besoin de spécifier le chemin de stockage et les identifiants.
 
     Le table engine et la table function prennent tous deux en charge la [mise en cache des données](/fr/reference/engines/table-engines/integrations/deltalake#data-cache), en utilisant le même mécanisme de mise en cache que les moteurs de stockage S3, AzureBlobStorage et HDFS.
 
@@ -247,7 +247,7 @@ Les exemples suivants utilisent le dataset [hits](/fr/get-started/sample-dataset
     <Info>
       **Prise en charge de GCS**
 
-      Ce moteur de table peut être utilisé pour Google Cloud Storage (GCS).
+      Ce moteur de table peut être utilisé avec Google Cloud Storage (GCS).
     </Info>
 
     **Exemple :**
@@ -345,7 +345,7 @@ Les exemples suivants utilisent le dataset [hits](/fr/get-started/sample-dataset
 
     ### Moteur de table
 
-    Paimon ne dispose actuellement pas d’un moteur de table dédié dans ClickHouse. Utilisez les fonctions de table ci-dessus pour interroger les tables Paimon.
+    ClickHouse fournit des [moteurs de table `PaimonS3`, `PaimonAzure`, `PaimonHDFS` et `PaimonLocal` expérimentaux](/fr/reference/engines/table-engines/integrations/paimon). Activez-les avec `allow_experimental_paimon_storage_engine = 1`.
 
     Pour connaître les fonctionnalités prises en charge, notamment les backends de stockage et autres, consultez la [matrice de prise en charge](/fr/guides/use-cases/data-warehousing/support-matrix#format-support). Pour une référence complète, consultez la documentation de la [fonction de table `paimon`](/fr/reference/functions/table-functions/paimon).
   </Tab>

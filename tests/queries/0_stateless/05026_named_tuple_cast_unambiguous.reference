@@ -1,0 +1,14 @@
+Tuples with disjoint sets of element names are converted positionally
+(1,2)
+(1,2)
+(1,2)
+Matching by name still works, extra source elements are dropped
+(2,1)
+(2)
+New elements of the target tuple are filled by default values
+(2,1,0)
+Tuples with common element names are matched by name (schema evolution by ALTER)
+(2,0)
+Disjoint sets of element names with different tuple sizes cannot be converted
+Inserting the result of function tuple into a differently named tuple keeps the data
+0	[(-10,10)]

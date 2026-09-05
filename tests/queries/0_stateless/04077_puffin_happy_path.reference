@@ -1,0 +1,28 @@
+--- spark_deletion_vector.puffin ---
+deletion-vector-v1	-1	-1	4	58		['cardinality','referenced-data-file']	['5','/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet']
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	[2,5,7,100,65536]
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	2
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	5
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	7
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	100
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	65536
+--- compressed_footer.puffin ---
+deletion-vector-v1	-1	-1	4	58		['cardinality','referenced-data-file']	['5','/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet']
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	[2,5,7,100,65536]
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	2
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	5
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	7
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	100
+/tmp/clickhouse_spark_puffin_9eiw_i48/default/spark_puffin_source/data/00000-0-15387e93-06e3-48bb-ab87-ea4bfedb0c1d-0-00001.parquet	65536
+--- file_properties_ok.puffin ---
+deletion-vector-v1	-1	-1	4	44		['cardinality','referenced-data-file']	['2','/data/table/part-00000.parquet']
+/data/table/part-00000.parquet	[2,5]
+/data/table/part-00000.parquet	2
+/data/table/part-00000.parquet	5
+--- dense_range_100k.puffin ---
+100000	0	99999
+--- subset without deleted_rows ---
+/data/table/part-00000.parquet
+/data/table/part-00000.parquet
+/data/table/part-00000.parquet
+/data/table/part-00000.parquet

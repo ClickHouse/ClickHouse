@@ -17,6 +17,14 @@
 namespace mysqlxx
 {
 
+/** The cache key of a shared pool (`share_connection = 1`): it has to encode every parameter that
+  * decides which MySQL instance the pool talks to and as whom (the endpoint, the database, the user,
+  * the compression and the TLS credentials), plus the settings of the pool itself. Empty for a pool
+  * that is not shared, which is never cached. Exposed for testing.
+  */
+std::string getPoolEntryName(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_name, unsigned default_max_connections);
+
 /*
  * PoolFactory.h
  * This class is a helper singleton to mutualize connections to MySQL.

@@ -73,7 +73,8 @@ keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
 If you want to configure operator deployment options, follow the steps below.
 
 <Steps>
-<Step title="Clone the Repository" id="clone-the-repository">
+<Step>
+### Clone the Repository {#clone-the-repository}
 
 ```bash
 git clone https://github.com/ClickHouse/clickhouse-operator.git
@@ -81,7 +82,8 @@ cd clickhouse-operator
 ```
 </Step>
 
-<Step title="Configure installation options" id="configure-installation-options">
+<Step>
+### Configure installation options {#configure-installation-options}
 
 Edit config/default/kustomization.yaml to enable/disable features as needed.
 
@@ -91,7 +93,8 @@ Edit config/default/kustomization.yaml to enable/disable features as needed.
 * To enable operator network policies, uncomment the `[NETWORK POLICY]` section.
 </Step>
 
-<Step title="Build and Deploy" id="build-and-deploy">
+<Step>
+### Build and Deploy {#build-and-deploy}
 
 Build the operator manifests and apply them:
 

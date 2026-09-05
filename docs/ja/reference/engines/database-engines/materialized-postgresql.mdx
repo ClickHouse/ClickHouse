@@ -171,7 +171,7 @@ WHERE oid = 'postgres_table'::regclass;
 ```
 
 <Note>
-  [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) の値のレプリケーションはサポートされていません。代わりに、データ型のデフォルト値が使用されます。
+  [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) の値はレプリケートされます。PostgreSQL が更新時に変更されていない TOAST 参照を送信した場合、既存の値が保持されます。変更されていない TOAST replica identity カラムでは、PostgreSQL が古いキーのタプルを送信する必要があります。そうしないと、行を識別できません。
 </Note>
 
 <div id="settings">
@@ -257,6 +257,24 @@ PostgreSQL の `date` および `timestamp`/`timestamptz` 型を、これらの 
 `0` に設定すると、代わりにより範囲の狭い `Date` および `DateTime` 型が使用されます (それらの範囲外の値や、秒未満の精度を持つ値は表現できません) 。
 
 この設定が制御するのは、ネストされたテーブルの作成時に型推論によって選択されるカラム型のみであるため、`CREATE DATABASE` の時点で指定する必要があります。その後に `ALTER DATABASE ... MODIFY SETTING` で変更することはできません (すでに作成されたネストされたテーブルは固定のカラム型を保持するため、このような変更は拒否されます) 。変更するには、データベースを再作成してください。カラム型が明示的に宣言される `MaterializedPostgreSQL` テーブルエンジンには適用されません。
+
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
+
+TLS/SSLパラメータは`libpq`に渡され、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections)またはエンジンの末尾に指定するキー・バリュー引数として指定できます。指定できるのは、`sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca`、`verify-full`。未設定の場合は`libpq`のデフォルトである`prefer`が適用されます) と、証明書および秘密鍵です。証明書と秘密鍵は、次の2つの形式のいずれかで指定できます。`sslrootcert` (CA証明書) 、`sslcert` (クライアント証明書) 、`sslkey` (クライアント秘密鍵) はサーバーローカルファイルへのパスであり、サーバー設定ファイルで定義された名前付きコレクションからのみ指定できます。一方、`sslrootcert_pem`、`sslcert_pem`、`sslkey_pem`には対応するファイルの内容をリテラルとして指定でき、SQLから設定可能です。また、パスワードと同様に、ログおよび`SHOW`クエリではマスクされます。
+
+TLSを必須とするPostgreSQLサーバーに接続し、サーバー証明書を検証する例:
+
+```sql
+CREATE DATABASE postgres_db
+ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'postgres_user', 'postgres_password',
+                                sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
+```
+
+TLS/SSL パラメータは、データベース の作成時に固定される PostgreSQL 接続パラメータの一部です。変更するには、データベース を再作成する必要があります。
 
 <div id="notes">
   ## 注記

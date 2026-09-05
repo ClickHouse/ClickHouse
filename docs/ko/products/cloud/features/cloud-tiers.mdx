@@ -72,7 +72,7 @@ ClickHouse Cloud에서는 여러 티어를 사용할 수 있습니다.
       <td />
 
       <td>✓ 자동 스케일링</td>
-      <td>✓ 표준 프로필은 자동, 사용자 지정 프로필은 수동</td>
+      <td>✓ 표준 프로필은 자동, 사용자 지정 프로필은 지원팀 지원</td>
     </tr>
 
     <tr>
@@ -87,15 +87,6 @@ ClickHouse Cloud에서는 여러 티어를 사용할 수 있습니다.
     <tr>
       <td>ClickPipes</td>
       <td>✓</td>
-      <td>✓</td>
-      <td>✓</td>
-    </tr>
-
-    <tr>
-      <td>조기 업그레이드</td>
-
-      <td />
-
       <td>✓</td>
       <td>✓</td>
     </tr>
@@ -253,7 +244,7 @@ ClickHouse Cloud에서는 여러 티어를 사용할 수 있습니다.
 * [HIPAA](/ko/products/cloud/reference/security/compliance-overview#hipaa-since-2024) 및 PCI 컴플라이언스를 제공합니다.
 
 <Note>
-  세 가지 티어 모두에서 단일 레플리카 서비스는 크기가 고정되어 있으며(`8 GiB`, `12 GiB`), 조정할 수 없습니다.
+  Scale 및 Enterprise 티어는 [대규모 단일 레플리카 서비스](/ko/products/cloud/features/large-single-replica-services)를 지원합니다. Scale 서비스와 표준 `1:4` 프로필을 사용하는 Enterprise 서비스는 셀프서비스 수직 자동 스케일링을 지원하며, 사용자 지정 프로필을 사용하는 Enterprise 서비스는 지원팀의 도움을 받아 수직 크기를 조정해야 합니다. Basic 티어 단일 레플리카 서비스는 크기가 고정되어 있습니다(`8 GiB` 또는 `12 GiB`).
 </Note>
 
 <div id="upgrading-to-a-different-tier">

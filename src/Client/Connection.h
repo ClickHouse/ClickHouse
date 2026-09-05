@@ -2,6 +2,9 @@
 
 #include <Poco/Net/StreamSocket.h>
 
+#include <functional>
+#include <memory>
+
 #include <Common/callOnce.h>
 #include <Common/SSHWrapper.h>
 #include <Common/SettingsChanges.h>
@@ -53,6 +56,10 @@ class Connection : public IServerConnection
     friend class MultiplexedConnections;
 
 public:
+    using SocketFactory = std::function<std::unique_ptr<Poco::Net::StreamSocket>(bool secure)>;
+
+    static std::unique_ptr<Poco::Net::StreamSocket> defaultSocketFactory(bool secure);
+
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
@@ -70,6 +77,7 @@ public:
 #if USE_JWT_CPP && USE_SSL
         , std::shared_ptr<JWTProvider> jwt_provider_ = nullptr
 #endif
+        , SocketFactory socket_factory_ = &Connection::defaultSocketFactory
     );
 
     ~Connection() override;
@@ -77,6 +85,27 @@ public:
     IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::SERVER; }
 
     static ServerConnectionPtr createConnection(const ConnectionParameters & parameters, ContextPtr context);
+
+    /// Tell the connection which address of the host is already known to accept connections, so that it is
+    /// tried first. The host can resolve to several addresses and connecting to them is sequential, so an
+    /// unresponsive address in front of the list delays the connection by a whole connection timeout.
+    /// The address is only a preference: if it is gone by the time of the connection (or of a reconnect),
+    /// the remaining addresses are tried as usual.
+    void setPreferredAddress(const Poco::Net::SocketAddress & address) { preferred_address = address; }
+
+    /// The address of the host the connection has been established to, if it has been resolved.
+    /// It is the address to pass to `setPreferredAddress` of a subsequent connection to the same host.
+    std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
+
+    /// Hand over an already-established TCP connection to `address`, to be used instead of opening a new
+    /// one. The socket has to be connected and non-blocking; the handshake (including the TLS handshake
+    /// for a secure connection) is still performed by this class. It is used only for the first connect,
+    /// so a later reconnect opens a connection of its own.
+    void setAdoptedSocket(const Poco::Net::SocketAddress & address, const Poco::Net::StreamSocket & connected_socket)
+    {
+        adopted_address = address;
+        adopted_socket = connected_socket;
+    }
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     void setThrottler(const ThrottlerPtr & throttler_) override
@@ -150,6 +179,13 @@ public:
 
     bool checkConnected(const ConnectionTimeouts & timeouts) override { return isConnected() && ping(timeouts); }
 
+    /// Note that a server that went away without closing the connection is not detected here, and
+    /// neither is a close that has not arrived yet; that only shows up when the connection is used.
+    /// Pinging the server to find out would add a round trip to every query, and a pong that does
+    /// not arrive in time is indistinguishable from a closed connection, so it would make the client
+    /// drop live sessions under load.
+    bool checkConnectedWithoutRoundTrip() override { return isConnected() && !isStale(); }
+
     void disconnect() override;
 
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
@@ -221,13 +257,17 @@ private:
     /// Use it only for logging purposes
     std::optional<Poco::Net::SocketAddress> current_resolved_address;
 
+    /// See setPreferredAddress.
+    std::optional<Poco::Net::SocketAddress> preferred_address;
+
+    /// See setAdoptedSocket. Consumed by the first connect.
+    std::optional<Poco::Net::SocketAddress> adopted_address;
+    std::optional<Poco::Net::StreamSocket> adopted_socket;
+
     /// For messages in log and in exceptions.
     String description;
     String full_description;
     void setDescription();
-
-    /// Returns resolved address if it was resolved.
-    std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
 
     String client_name;
 
@@ -255,6 +295,7 @@ private:
     Protocol::Secure secure;             /// Enable data encryption for communication.
     String tls_sni_override;             /// Override for TLS SNI field.
     String bind_host;
+    SocketFactory socket_factory;
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
     CompressionCodecPtr compression_codec;
@@ -312,6 +353,11 @@ private:
     std::optional<FormatSettings> format_settings;
 
     void connect(const ConnectionTimeouts & timeouts);
+
+    /// Establishes the transport for `connect`: either by connecting to one of the addresses the host
+    /// resolves to, or by taking over a connection that has already been established (see setAdoptedSocket).
+    void connectToAnyAddress(const ConnectionTimeouts & timeouts);
+    void adoptSocket(Poco::Net::StreamSocket connected_socket);
     void sendHello();
 
     void cancel() noexcept;
@@ -328,6 +374,9 @@ private:
     void sendClusterNameAndSalt();
 #endif
     bool ping(const ConnectionTimeouts & timeouts);
+
+    /// Whether the connection can no longer serve a request, checked without a round trip.
+    bool isStale();
 
     Block receiveData();
     Block receiveLogData();
