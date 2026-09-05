@@ -14,6 +14,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
 
 #include <unordered_map>
@@ -146,4 +147,70 @@ private:
 };
 
 using IcebergSchemaProcessorPtr = std::shared_ptr<IcebergSchemaProcessor>;
+
+/// The schema processor of one table, replaceable when that table is replaced.
+///
+/// Everything a processor holds is derived from the metadata of a single Iceberg table, and an
+/// external writer that recreates a table at the same root restarts its own `schema-id`
+/// numbering, so the two tables bind the same ids to different fields - which
+/// `addIcebergTableSchema` rejects. When `IcebergMetadata::update` proves such a replacement it
+/// installs a fresh processor here; a query that already took the previous one keeps it alive
+/// through its own `shared_ptr` and finishes against the incarnation it was planned for.
+class SharedSchemaProcessor
+{
+public:
+    explicit SharedSchemaProcessor(bool allow_geo_parser_)
+        : allow_geo_parser(allow_geo_parser_), processor(std::make_shared<IcebergSchemaProcessor>(allow_geo_parser_))
+    {
+    }
+
+    /// The processor of the incarnation that is current right now. Only for callers that have no
+    /// pinned state to be consistent with, such as `IcebergMetadata::update` itself.
+    IcebergSchemaProcessorPtr get() const
+    {
+        SharedLockGuard lock(mutex);
+        return processor;
+    }
+
+    /// The current processor together with the incarnation it describes, observed as one. A
+    /// caller that has to build state against a processor and pin the result to an incarnation
+    /// needs both from the same observation, or it can register one incarnation's schemas in the
+    /// other's processor.
+    std::pair<IcebergSchemaProcessorPtr, UInt64> getWithIncarnation() const
+    {
+        SharedLockGuard lock(mutex);
+        return {processor, incarnation};
+    }
+
+    /// The processor of the incarnation a query was validated against.
+    ///
+    /// A query pins one `TableStateSnapshot` from analysis through execution, and the schemas it
+    /// resolves at execution time must be the schemas of the incarnation it was analyzed for. The
+    /// cell is shared and mutable, so by then a concurrent query may have moved it to a table that
+    /// replaced the analyzed one in place - and a recreated table restarts its own `schema-id`
+    /// numbering, so registering the pinned incarnation's schemas in the replacement's processor
+    /// would either collide with an id it has already registered or poison it for the queries that
+    /// follow. Neither outcome is recoverable here, so the query fails and is retried against the
+    /// table that is in storage now.
+    ///
+    /// A pin that carries no incarnation - one deserialized on another server, whose cell counts
+    /// its own incarnations - cannot be checked and is served the current processor.
+    IcebergSchemaProcessorPtr getForPinnedIncarnation(std::optional<UInt64> pinned_incarnation) const;
+
+    void replaceWithFreshInstance(UInt64 new_incarnation)
+    {
+        std::lock_guard lock(mutex);
+        processor = std::make_shared<IcebergSchemaProcessor>(allow_geo_parser);
+        incarnation = new_incarnation;
+    }
+
+private:
+    const bool allow_geo_parser;
+    mutable SharedMutex mutex;
+    IcebergSchemaProcessorPtr processor TSA_GUARDED_BY(mutex);
+    /// The `TrustedTableUuid` incarnation `processor` describes.
+    UInt64 incarnation TSA_GUARDED_BY(mutex) = 0;
+};
+
+using SharedSchemaProcessorPtr = std::shared_ptr<SharedSchemaProcessor>;
 }

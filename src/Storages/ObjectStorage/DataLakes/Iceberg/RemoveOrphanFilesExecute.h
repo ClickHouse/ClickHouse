@@ -17,7 +17,8 @@ Pipe executeRemoveOrphanFiles(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_components);
+    const PersistentTableComponents & persistent_components,
+    std::optional<UInt64> validated_incarnation);
 
 }
 

@@ -183,7 +183,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     ContextPtr context_,
     LoggerPtr log)
 {
-    const auto [metadata_version, metadata_file_path, compression_method]
+    const auto [metadata_version, metadata_file_path, compression_method, metadata_file_identity]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, true);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_object
@@ -208,14 +208,17 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     }
     auto table_path = configuration->getPathForRead().path;
     auto root_derivation = IcebergPathResolver::deriveTableRoot(table_location, table_path, metadata_file_path);
+    /// The UUID was just read from the metadata file we selected, so that file is already validated.
+    auto trusted_table_uuid = std::make_shared<TrustedTableUuid>(table_uuid);
+    trusted_table_uuid->markValidated(metadata_version, metadata_file_path, metadata_file_identity);
     return PersistentTableComponents{
-        .schema_processor = std::make_shared<IcebergSchemaProcessor>(context_->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg]),
+        .shared_schema_processor = std::make_shared<SharedSchemaProcessor>(context_->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg]),
         .metadata_cache = cache_ptr,
         .format_version = format_version,
         .table_location = table_location,
         .metadata_compression_method = compression_method,
         .table_path = table_path,
-        .table_uuid = table_uuid,
+        .trusted_table_uuid = std::move(trusted_table_uuid),
         .path_resolver = IcebergPathResolver(
             table_location, root_derivation.table_root, Iceberg::BlobStorageDescription::fromConfiguration(*configuration)),
         .table_root_was_derived = root_derivation.relation == IcebergPathResolver::RootRelation::AdoptedDescendant,
@@ -224,17 +227,120 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata) const
 {
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    /// The pin has to describe the very metadata file the state below is built from. Observing the
+    /// incarnation on one side of that only is not enough: a replacement committed in between would
+    /// stamp the state of one incarnation with the number of the other, and every later lookup
+    /// pinned to it would either throw or resolve against the wrong table's schemas. Observe it on
+    /// both sides and rebuild the state when a replacement landed in between.
+    for (size_t attempt = 0; attempt < 100; ++attempt)
+    {
+        /// The processor comes from the same observation as the incarnation, and the state below is
+        /// built against it. `getState` is not pure - it registers the schemas and snapshots it
+        /// parses in the processor it is given - so an attempt that turns out to have raced with a
+        /// replacement leaves its schema ids in the processor of the incarnation it was reading,
+        /// which is exactly where they belong, and never in the replacement's fresh one.
+        const auto [schema_processor, incarnation_before] = persistent_components.getSchemaProcessorWithIncarnation();
+
+        const auto [metadata_version, metadata_file_path, compression_method, _identity] = getLatestOrExplicitMetadataFileAndVersion(
+            object_storage,
+            persistent_components.table_path,
+            data_lake_settings,
+            persistent_components.metadata_cache,
+            context,
+            log.get(),
+            persistent_components.getTableUuid(),
+            persistent_components.metadata_compression_method,
+            force_fetch_latest_metadata);
+        /// The read above can miss the cache and go to storage, where it may land on a table that
+        /// replaced this one without anyone having observed the replacement yet, so the incarnation
+        /// alone cannot vouch for what was read: the file's own `table-uuid` has to.
+        auto state = getState(context, metadata_file_path, metadata_version, schema_processor, incarnation_before);
+
+        if (persistent_components.trusted_table_uuid->getIncarnation() != incarnation_before)
+            continue;
+
+        state.second.trusted_uuid_incarnation = incarnation_before;
+        return state;
+    }
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "The Iceberg table at {} is being replaced so often that no consistent state of it could be read",
+        persistent_components.table_path);
+}
+
+void IcebergMetadata::update(const ContextPtr & local_context)
+{
+    /// One update at a time per metadata object. Revalidation below is a read-modify-write of the
+    /// trusted UUID - select the metadata file, read its own `table-uuid`, commit it - and two
+    /// concurrent queries interleaving those steps could commit their observations out of order,
+    /// moving the trusted UUID back to a table that was already known to have been replaced.
+    std::lock_guard update_lock(update_mutex);
+
+    auto & trusted_table_uuid = *persistent_components.trusted_table_uuid;
+
+    const auto [metadata_version, metadata_file_path, compression_method, metadata_file_identity] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         data_lake_settings,
         persistent_components.metadata_cache,
-        context,
+        local_context,
         log.get(),
-        persistent_components.table_uuid,
+        persistent_components.getTableUuid(),
         persistent_components.metadata_compression_method,
-        force_fetch_latest_metadata);
-    return getState(context, metadata_file_path, metadata_version);
+        /*force_fetch_latest_metadata=*/false);
+
+    if (!trusted_table_uuid.needsRevalidation(metadata_file_path, metadata_file_identity))
+    {
+        /// The selected file is the very same unchanged file that was validated before, so the
+        /// trusted UUID still describes it and the extra uncached read is skipped.
+        trusted_table_uuid.markValidated(metadata_version, metadata_file_path, metadata_file_identity);
+        return;
+    }
+
+    /// Read the selected metadata file bypassing the UUID-keyed content cache: the whole point of
+    /// this read is that the currently trusted UUID may belong to a previous table at this root,
+    /// so probing the cache with it is exactly what would return the stale content.
+    auto metadata_object = getMetadataJSONObject(
+        metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, std::nullopt);
+
+    std::optional<String> actual_table_uuid;
+    if (metadata_object->has(f_table_uuid))
+        actual_table_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
+
+    auto previous_table_uuid = trusted_table_uuid.get();
+    if (trusted_table_uuid.commitValidated(
+            actual_table_uuid,
+            metadata_version,
+            metadata_file_path,
+            metadata_file_identity,
+            computeMetadataContentToken(metadata_object)))
+    {
+        LOG_INFO(
+            log,
+            "Iceberg table at path {} was replaced: table UUID changed from {} to {}. Dropping its cached metadata.",
+            persistent_components.table_path,
+            previous_table_uuid.value_or("no_uuid"),
+            actual_table_uuid.value_or("no_uuid"));
+
+        /// Everything the schema processor holds describes the previous table. The replacement
+        /// restarts its own `schema-id` numbering, so its schemas would be rejected as a
+        /// rebinding of an existing id, and its snapshot ids would resolve through the previous
+        /// table's mapping. Install a fresh processor for the queries that follow; a query that
+        /// is already running keeps the previous one alive and finishes against the incarnation
+        /// it was planned for.
+        persistent_components.shared_schema_processor->replaceWithFreshInstance(trusted_table_uuid.getIncarnation());
+
+        /// The content cells keyed by the previous UUID are unreachable once the trusted UUID
+        /// moves, but the latest-version cells under the previous UUID and under the table path
+        /// are not - they still point at the replaced table's metadata file - so drop them.
+        if (persistent_components.metadata_cache)
+        {
+            persistent_components.metadata_cache->remove(persistent_components.table_path);
+            if (previous_table_uuid.has_value())
+                persistent_components.metadata_cache->remove(*previous_table_uuid);
+        }
+    }
 }
 
 IcebergMetadata::IcebergMetadata(
@@ -252,7 +358,7 @@ IcebergMetadata::IcebergMetadata(
     if (persistent_components.metadata_cache && data_lake_settings[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms] != 0)
     {
         background_metadata_prefetch_task = context_->getIcebergSchedulePool()->createTask(
-            StorageID("", persistent_components.table_uuid ? *persistent_components.table_uuid : persistent_components.table_path),
+            StorageID("", persistent_components.getTableUuid().value_or(persistent_components.table_path)),
             "backgroundMetadataPrefetcherThread",
             [this]
             {
@@ -302,7 +408,8 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
             {
                 /// second, we fetch, parse and cache each manifest file
                 auto manifest_file_ptr = getManifestFileEntriesHandle(
-                    object_storage, persistent_components, ctx, log, entry, actual_table_state_snapshot.schema_id);
+                    object_storage, persistent_components, ctx, log, entry, actual_table_state_snapshot.schema_id,
+                    actual_table_state_snapshot.trusted_uuid_incarnation);
             }
         }
 
@@ -310,7 +417,7 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
                  interval,
                  watch.elapsedMilliseconds(),
                  persistent_components.table_path,
-                 persistent_components.table_uuid ? *(persistent_components.table_uuid) : "no_uuid",
+                 persistent_components.getTableUuid().value_or("no_uuid"),
                  actual_table_state_snapshot.metadata_version,
                  actual_table_state_snapshot.metadata_file_path);
     }
@@ -441,13 +548,35 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
 }
 
 IcebergDataSnapshotPtr
-IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const
+IcebergMetadata::getIcebergDataSnapshot(
+    Poco::JSON::Object::Ptr metadata_object,
+    Int64 snapshot_id,
+    ContextPtr local_context,
+    const IcebergSchemaProcessorPtr & schema_processor) const
 {
-    auto object = traverseMetadataAndFindNecessarySnapshotObject(metadata_object, snapshot_id, persistent_components.schema_processor);
+    auto object = traverseMetadataAndFindNecessarySnapshotObject(metadata_object, snapshot_id, schema_processor);
     if (!object)
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot found for id `{}`", snapshot_id);
 
     return createIcebergDataSnapshotFromSnapshotJSON(object, snapshot_id, local_context);
+}
+
+namespace
+{
+
+/// The incarnation the statement was validated for, taken from the metadata snapshot the
+/// interpreter pinned rather than from the shared cell, which a concurrent query may already have
+/// moved on to a table that replaced this one in place. Empty when the statement carries no
+/// snapshot of an Iceberg table state, which leaves nothing to compare against.
+std::optional<UInt64> getValidatedIncarnation(const StorageMetadataPtr & metadata_snapshot)
+{
+    if (!metadata_snapshot || !metadata_snapshot->datalake_table_state.has_value())
+        return {};
+    if (const auto * iceberg_state = std::get_if<TableStateSnapshot>(&*metadata_snapshot->datalake_table_state))
+        return iceberg_state->trusted_uuid_incarnation;
+    return {};
+}
+
 }
 
 bool IcebergMetadata::optimize(
@@ -472,7 +601,8 @@ bool IcebergMetadata::optimize(
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto snapshots_info = getHistory(context);
+        const auto validated_incarnation = getValidatedIncarnation(metadata_snapshot);
+        auto snapshots_info = getHistory(context, validated_incarnation);
         compactIcebergTable(
             snapshots_info,
             persistent_components,
@@ -481,7 +611,8 @@ bool IcebergMetadata::optimize(
             format_settings,
             sample_block,
             context,
-            write_format);
+            write_format,
+            validated_incarnation);
         return true;
     }
     else
@@ -520,7 +651,8 @@ bool IcebergMetadata::optimizeManifestFiles(
             context,
             write_format,
             catalog,
-            storage_id);
+            storage_id,
+            getValidatedIncarnation(metadata_snapshot));
 
         return true;
     }
@@ -532,7 +664,10 @@ bool IcebergMetadata::optimizeManifestFiles(
 }
 
 std::pair<IcebergDataSnapshotPtr, Int32>
-IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const
+IcebergMetadata::getStateImpl(
+    const ContextPtr & local_context,
+    Poco::JSON::Object::Ptr metadata_object,
+    const IcebergSchemaProcessorPtr & schema_processor) const
 {
     std::optional<String> manifest_list_file;
 
@@ -573,18 +708,18 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
                 ErrorCodes::BAD_ARGUMENTS,
                 "No snapshot found in snapshot log before requested timestamp for iceberg table {}",
                 persistent_components.table_path);
-        auto data_snapshot = getIcebergDataSnapshot(metadata_object, *current_snapshot_id, local_context);
+        auto data_snapshot = getIcebergDataSnapshot(metadata_object, *current_snapshot_id, local_context, schema_processor);
         return {data_snapshot, static_cast<Int32>(data_snapshot->schema_id_on_snapshot_commit)};
     }
     else if (snapshot_id_changed)
     {
         Int64 current_snapshot_id = local_context->getSettingsRef()[Setting::iceberg_snapshot_id];
-        auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, local_context);
+        auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, local_context, schema_processor);
         return {data_snapshot, static_cast<Int32>(data_snapshot->schema_id_on_snapshot_commit)};
     }
     else
     {
-        auto schema_id = parseTableSchema(metadata_object, *persistent_components.schema_processor, log);
+        auto schema_id = parseTableSchema(metadata_object, *schema_processor, log);
         if (!metadata_object->has(f_current_snapshot_id))
         {
             return {nullptr, schema_id};
@@ -596,18 +731,29 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
         {
             return {nullptr, schema_id};
         }
-        auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, local_context);
+        auto data_snapshot = getIcebergDataSnapshot(metadata_object, current_snapshot_id, local_context, schema_processor);
         return {data_snapshot, schema_id};
     }
 }
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot>
-IcebergMetadata::getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const
+IcebergMetadata::getState(
+    const ContextPtr & local_context,
+    const String & metadata_path,
+    Int32 metadata_version,
+    const IcebergSchemaProcessorPtr & schema_processor,
+    std::optional<UInt64> validated_incarnation) const
 {
     IcebergDataSnapshotPtr data_snapshot;
     TableStateSnapshot table_state_snapshot;
+    /// The codec belongs to the file being opened, not to the file this table object was opened
+    /// with: a table is allowed to change `write.metadata.compression-codec` between metadata
+    /// files, and an external writer replacing the table in place may pick a different one
+    /// altogether. It is fully described by the file name.
     auto metadata_object = getMetadataJSONObject(
-        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, persistent_components.metadata_compression_method, persistent_components.table_uuid);
+        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, getCompressionMethodFromMetadataFile(metadata_path), persistent_components.getTableUuid());
+
+    persistent_components.checkMetadataBelongsToValidatedTable(metadata_object, validated_incarnation, "the query");
 
     insertRowToLogTable(
         local_context,
@@ -618,10 +764,11 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
         std::nullopt,
         std::nullopt);
 
-    std::tie(data_snapshot, table_state_snapshot.schema_id) = getStateImpl(local_context, metadata_object);
+    std::tie(data_snapshot, table_state_snapshot.schema_id) = getStateImpl(local_context, metadata_object, schema_processor);
     table_state_snapshot.snapshot_id = data_snapshot ? std::optional{data_snapshot->snapshot_id} : std::nullopt;
     table_state_snapshot.metadata_version = metadata_version;
     table_state_snapshot.metadata_file_path = metadata_path;
+    table_state_snapshot.metadata_content_token = computeMetadataContentToken(metadata_object);
     return {data_snapshot, table_state_snapshot};
 }
 
@@ -633,7 +780,8 @@ std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(Conte
     /// if we need schema evolution or have equality deletes files, we need to read all the columns.
     return (iceberg_object_info->info.underlying_format_read_schema_id != iceberg_object_info->info.schema_id_relevant_to_iterator
             || (!iceberg_object_info->info.equality_deletes_objects.empty()))
-        ? persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_object_info->info.underlying_format_read_schema_id)
+        ? persistent_components.getSchemaProcessorForPinnedIncarnation(iceberg_object_info->pinned_incarnation)
+              ->getClickHouseTableSchemaById(iceberg_object_info->info.underlying_format_read_schema_id)
         : nullptr;
 }
 
@@ -643,7 +791,8 @@ std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextP
     if (!iceberg_object_info)
         return nullptr;
     return (iceberg_object_info->info.underlying_format_read_schema_id != iceberg_object_info->info.schema_id_relevant_to_iterator)
-        ? persistent_components.schema_processor->getSchemaTransformationDagByIds(
+        ? persistent_components.getSchemaProcessorForPinnedIncarnation(iceberg_object_info->pinned_incarnation)
+              ->getSchemaTransformationDagByIds(
               iceberg_object_info->info.underlying_format_read_schema_id, iceberg_object_info->info.schema_id_relevant_to_iterator)
         : nullptr;
 }
@@ -739,7 +888,8 @@ void IcebergMetadata::alter(
     const AlterCommands & params,
     ContextPtr context,
     const StorageID & storage_id,
-    std::shared_ptr<DataLake::ICatalog> catalog)
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const StorageMetadataPtr & metadata_snapshot)
 {
     if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
     {
@@ -749,7 +899,9 @@ void IcebergMetadata::alter(
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 
-    Iceberg::alter(params, context, storage_id, object_storage, data_lake_settings, persistent_components, write_format, catalog);
+    Iceberg::alter(
+        params, context, storage_id, object_storage, data_lake_settings, persistent_components, write_format, catalog,
+        getValidatedIncarnation(metadata_snapshot));
 }
 
 Pipe IcebergMetadata::executeCommand(
@@ -759,7 +911,8 @@ Pipe IcebergMetadata::executeCommand(
     StorageObjectStorageConfigurationPtr /*configuration*/,
     std::shared_ptr<DataLake::ICatalog> catalog_,
     ContextPtr context,
-    const StorageID & storage_id)
+    const StorageID & storage_id,
+    const StorageMetadataPtr & metadata_snapshot)
 {
     if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
     {
@@ -782,7 +935,7 @@ Pipe IcebergMetadata::executeCommand(
         checkTableRootIsQueriedPath("expire_snapshots");
         return Iceberg::executeExpireSnapshots(
             args, context, object_storage_, data_lake_settings, persistent_components,
-            write_format, catalog_, storage_id.getTableName());
+            write_format, catalog_, storage_id.getTableName(), getValidatedIncarnation(metadata_snapshot));
     }
     else if (command_name == "remove_orphan_files")
     {
@@ -796,7 +949,7 @@ Pipe IcebergMetadata::executeCommand(
 
         checkTableRootIsQueriedPath("remove_orphan_files");
         return Iceberg::executeRemoveOrphanFiles(
-            args, context, object_storage_, data_lake_settings, persistent_components);
+            args, context, object_storage_, data_lake_settings, persistent_components, getValidatedIncarnation(metadata_snapshot));
     }
     else
     {
@@ -913,18 +1066,38 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const
 {
     IcebergDataSnapshotPtr data_snapshot;
+    /// The pinned file is content-cached only while the table is still the incarnation that was
+    /// analyzed. A concurrent query may have moved the trusted UUID to a table that replaced this
+    /// one in place - possibly reusing the very same metadata file path - and keying the cache
+    /// with the moved UUID would then hand the pinned query the wrong table's metadata.
     auto metadata_object = getMetadataJSONObject(
         table_state_snapshot.metadata_file_path,
         object_storage,
         persistent_components.metadata_cache,
         local_context,
         log,
-        persistent_components.metadata_compression_method,
-        persistent_components.table_uuid);
+        getCompressionMethodFromMetadataFile(table_state_snapshot.metadata_file_path),
+        persistent_components.trusted_table_uuid->getForPinnedIncarnation(table_state_snapshot.trusted_uuid_incarnation));
+
+    /// The pin only keys the content cache: a read that misses it goes to storage and can return
+    /// the file of a table that replaced this one at the same root. The file's own `table-uuid`
+    /// settles which table this snapshot really describes.
+    persistent_components.checkMetadataBelongsToValidatedTable(
+        metadata_object, table_state_snapshot.trusted_uuid_incarnation, "the query");
+
+    /// A format-version 1 table may carry no `table-uuid`, and then the check above has nothing to
+    /// compare. The pinned file's own content is what settles it for such a table: metadata files
+    /// are immutable, so this path answering with different content means another table took it
+    /// over between the analysis and this reopen.
+    persistent_components.checkMetadataMatchesPinnedState(
+        metadata_object, table_state_snapshot.metadata_content_token, "the query");
+
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
-        metadata_object, *table_state_snapshot.snapshot_id, persistent_components.schema_processor);
+        metadata_object,
+        *table_state_snapshot.snapshot_id,
+        persistent_components.getSchemaProcessorForPinnedIncarnation(table_state_snapshot.trusted_uuid_incarnation));
 
     return createIcebergDataSnapshotFromSnapshotJSON(snapshot_object, *table_state_snapshot.snapshot_id, local_context);
 }
@@ -952,20 +1125,22 @@ DataLakeMetadataPtr IcebergMetadata::create(
 }
 
 
-IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
+IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context, std::optional<UInt64> validated_incarnation) const
 {
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, compression_method, _identity] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         data_lake_settings,
         persistent_components.metadata_cache,
         local_context,
         log.get(),
-        persistent_components.table_uuid,
+        persistent_components.getTableUuid(),
         persistent_components.metadata_compression_method);
 
     auto metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.table_uuid);
+        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.getTableUuid());
+    persistent_components.checkMetadataBelongsToValidatedTable(metadata_object, validated_incarnation, "the query");
+
     chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
 
     /// History
@@ -1137,7 +1312,8 @@ IcebergMetadata::IcebergFiles IcebergMetadata::getFilesForManifest(
 
     const auto & manifest_list_entry = data_snapshot->manifest_list_entries[manifest_index];
     auto handle = getManifestFileEntriesHandle(
-        object_storage, persistent_components, local_context, log, manifest_list_entry, table_state.schema_id);
+        object_storage, persistent_components, local_context, log, manifest_list_entry, table_state.schema_id,
+        table_state.trusted_uuid_incarnation);
 
     IcebergFiles result;
     for (auto content_type : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
@@ -1174,7 +1350,8 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
         auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
+            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id,
+            table_state_snapshot->trusted_uuid_incarnation);
 
         if (!files_handle.areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
             return false;
@@ -1205,7 +1382,8 @@ bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_met
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
         auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
+            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id,
+            table_state_snapshot->trusted_uuid_incarnation);
 
         if (!files_handle.areAllDataFilesEligibleForLazyMaterialization(table_state_snapshot->schema_id))
             return false;
@@ -1243,7 +1421,8 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
-            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
+            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id,
+            actual_table_state_snapshot.trusted_uuid_incarnation);
 
         /// Live delete files make an exact metadata-only count impossible:
         /// - the record count of an equality delete file is the number of delete predicates,
@@ -1297,7 +1476,8 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
-            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
+            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id,
+            actual_table_state_snapshot.trusted_uuid_incarnation);
         auto count = manifest_file_ptr.getBytesCountInAllDataFilesExcludingDeleted();
         if (!count.has_value())
             return {};
@@ -1343,7 +1523,8 @@ ObjectIterator IcebergMetadata::iterate(
 NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
-    return *persistent_components.schema_processor->getClickHouseTableSchemaById(actual_table_state_snapshot.schema_id);
+    return *persistent_components.getSchemaProcessorForPinnedIncarnation(actual_table_state_snapshot.trusted_uuid_incarnation)
+                ->getClickHouseTableSchemaById(actual_table_state_snapshot.schema_id);
 }
 
 std::optional<DataLakeTableStateSnapshot> IcebergMetadata::getTableStateSnapshot(ContextPtr local_context) const
@@ -1359,8 +1540,9 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
     chassert(std::holds_alternative<Iceberg::TableStateSnapshot>(state));
     const auto & iceberg_state = std::get<Iceberg::TableStateSnapshot>(state);
     auto result = std::make_unique<StorageInMemoryMetadata>();
-    result->setColumns(
-        ColumnsDescription{*persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id)});
+    result->setColumns(ColumnsDescription{
+        *persistent_components.getSchemaProcessorForPinnedIncarnation(iceberg_state.trusted_uuid_incarnation)
+             ->getClickHouseTableSchemaById(iceberg_state.schema_id)});
     result->setDataLakeTableState(state);
     result->sorting_key = getSortingKey(local_context, iceberg_state);
     return result;
@@ -1423,7 +1605,8 @@ void IcebergMetadata::addDeleteTransformers(
             for (Int32 col_id : equality_ids)
             {
                 NameAndTypePair name_and_type
-                    = persistent_components.schema_processor->getFieldCharacteristics(delete_file.schema_id, col_id);
+                    = persistent_components.getSchemaProcessorForPinnedIncarnation(iceberg_object_info->pinned_incarnation)
+                          ->getFieldCharacteristics(delete_file.schema_id, col_id);
                 size_t position_in_delete_file = delete_file_header.getPositionByName(name_and_type.name);
                 /// Take the type from the delete file header rather than from the table schema:
                 /// the nullability of a column in the delete file may differ from its nullability
@@ -1478,7 +1661,9 @@ void IcebergMetadata::addDeleteTransformers(
             /// select columns to use in 'notIn' function
             for (Int32 col_id : equality_ids)
             {
-                NameAndTypePair name_and_type = persistent_components.schema_processor->getFieldCharacteristics(
+                NameAndTypePair name_and_type
+                    = persistent_components.getSchemaProcessorForPinnedIncarnation(iceberg_object_info->pinned_incarnation)
+                          ->getFieldCharacteristics(
                     iceberg_object_info->info.underlying_format_read_schema_id, col_id);
                 auto it = outputs.find(name_and_type.name);
                 if (it == outputs.end())
@@ -1513,6 +1698,7 @@ SinkToStoragePtr IcebergMetadata::write(
     const StorageID & table_id,
     ObjectStoragePtr /*object_storage*/,
     StorageObjectStorageConfigurationPtr configuration,
+    const StorageMetadataPtr & metadata_snapshot,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
@@ -1520,7 +1706,17 @@ SinkToStoragePtr IcebergMetadata::write(
     if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
         checkTableRootIsQueriedPath("INSERT");
-        return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
+
+        return std::make_shared<IcebergStorageSink>(
+            object_storage,
+            configuration,
+            format_settings,
+            sample_block,
+            context,
+            catalog,
+            persistent_components,
+            table_id,
+            getValidatedIncarnation(metadata_snapshot));
     }
     else
     {
@@ -1563,7 +1759,8 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     if (Poco::toLower(*object_info->getFileFormat()) != "parquet")
         return nullptr;
 
-    return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
+    return persistent_components.getSchemaProcessorForPinnedIncarnation(iceberg_object_info->pinned_incarnation)
+        ->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
 }
 
 // (TODO): usage of this function is wrong and should be removed completely (it was done as a temporary workaround for a bug which occurred during supporting concurrent SELECTs).
@@ -1578,22 +1775,37 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadata
         auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(context);
         iceberg_table_state = std::make_shared<TableStateSnapshot>(actual_table_state_snapshot);
     }
-    return persistent_components.schema_processor->getColumnMapperById(iceberg_table_state->schema_id);
+    return persistent_components.getSchemaProcessorForPinnedIncarnation(iceberg_table_state->trusted_uuid_incarnation)
+        ->getColumnMapperById(iceberg_table_state->schema_id);
 }
 
 KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableStateSnapshot actual_table_state_snapshot) const
 {
+    /// Same pin as in `getRelevantDataSnapshotFromTableStateSnapshot`: reading this file under a
+    /// UUID that has since moved to a replacement would mix the pinned state's `schema_id` with
+    /// the other incarnation's sort order, and `sort_order_id` is only meaningful within one.
     auto metadata_object = getMetadataJSONObject(
         actual_table_state_snapshot.metadata_file_path,
         object_storage,
         persistent_components.metadata_cache,
         local_context,
         log,
-        persistent_components.metadata_compression_method,
-        persistent_components.table_uuid);
+        getCompressionMethodFromMetadataFile(actual_table_state_snapshot.metadata_file_path),
+        persistent_components.trusted_table_uuid->getForPinnedIncarnation(actual_table_state_snapshot.trusted_uuid_incarnation));
+
+    /// Same reason as in `getRelevantDataSnapshotFromTableStateSnapshot`: validate the file that
+    /// came back before its `schema_id` and `sort_order_id` are read as this table's.
+    persistent_components.checkMetadataBelongsToValidatedTable(
+        metadata_object, actual_table_state_snapshot.trusted_uuid_incarnation, "the query");
+    persistent_components.checkMetadataMatchesPinnedState(
+        metadata_object, actual_table_state_snapshot.metadata_content_token, "the query");
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-    auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickHouseTableSchemaById(current_schema_id), local_context);
+    auto result = getSortingKeyDescriptionFromMetadata(
+        metadata_object,
+        *persistent_components.getSchemaProcessorForPinnedIncarnation(actual_table_state_snapshot.trusted_uuid_incarnation)
+             ->getClickHouseTableSchemaById(current_schema_id),
+        local_context);
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     result.sort_order_id = sort_order_id;
     return result;
@@ -1624,15 +1836,14 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
     auto standard_persistent_components
         = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr, local_context, log);
-    auto schema_processor = standard_persistent_components.schema_processor;
     auto deserialized_persistent_components = Iceberg::PersistentTableComponents{
-        .schema_processor = schema_processor,
+        .shared_schema_processor = standard_persistent_components.shared_schema_processor,
         .metadata_cache = standard_persistent_components.metadata_cache,
         .format_version = format_version,
         .table_location = table_location,
         .metadata_compression_method = metadata_compression_method,
         .table_path = standard_persistent_components.table_path,
-        .table_uuid = standard_persistent_components.table_uuid,
+        .trusted_table_uuid = standard_persistent_components.trusted_table_uuid,
         .path_resolver = IcebergPathResolver(
             table_location,
             standard_persistent_components.table_path,

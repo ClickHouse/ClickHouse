@@ -60,6 +60,10 @@ private:
     Iceberg::TableStateSnapshotPtr table_snapshot;
     Iceberg::IcebergDataSnapshotPtr data_snapshot;
     PersistentTableComponents persistent_components;
+    /// Pinned for the lifetime of the iterator: the manifests it decodes belong to the incarnation
+    /// the query was validated against, and must be resolved through that incarnation's schemas
+    /// even if the table is replaced in place while the iteration is running.
+    IcebergSchemaProcessorPtr schema_processor;
     LoggerPtr log;
 
     size_t manifest_file_index = 0;
@@ -105,6 +109,8 @@ private:
     const Iceberg::TableStateSnapshotPtr table_state_snapshot;
     Iceberg::IcebergDataSnapshotPtr data_snapshot;
     Iceberg::PersistentTableComponents persistent_components;
+    /// Pinned for the lifetime of the iterator, as in `SingleThreadIcebergKeysIterator`.
+    Iceberg::IcebergSchemaProcessorPtr schema_processor;
     std::shared_ptr<const ActionsDAG> deletes_filter_dag;
     Iceberg::SingleThreadIcebergKeysIterator data_files_iterator;
     ConcurrentBoundedQueue<Iceberg::ProcessedManifestFileEntryPtr> blocking_queue;

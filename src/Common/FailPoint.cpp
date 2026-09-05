@@ -347,6 +347,7 @@ static struct InitFiu
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     PAUSEABLE(iceberg_compaction_merge_pause_in_step) \
     PAUSEABLE_ONCE(iceberg_compaction_pause_before_metadata_commit) \
+    PAUSEABLE_ONCE(iceberg_mutation_pause_before_metadata_reread) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
     PAUSEABLE(keeper_changelog_read_plan_resolved) \

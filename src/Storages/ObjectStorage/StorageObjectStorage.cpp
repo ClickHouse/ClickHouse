@@ -811,7 +811,7 @@ SinkToStoragePtr StorageObjectStorage::write(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
     if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
-        return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
+        return configuration->write(sample_block, storage_id, object_storage, metadata_snapshot, format_settings, local_context, catalog);
 
     /// Not a data lake, just raw object storage
 
@@ -1066,13 +1066,12 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
-    /// For datalake tables (e.g. Iceberg), refresh external metadata so that the
-    /// storage snapshot contains the `datalake_table_state`. Without this the mutation
-    /// pipeline will hit a `LOGICAL_ERROR` exception in `iterate` when building the read side.
-    /// Normally `updateExternalDynamicMetadataIfExists` is called by the
-    /// analyzer/interpreter for `SELECT` and `INSERT` queries, but `InterpreterAlterQuery`
-    /// does not call it before invoking `mutate`.
-    updateExternalDynamicMetadataIfExists(context_);
+    /// The external metadata is deliberately *not* refreshed here. For a datalake table the
+    /// storage snapshot must contain the `datalake_table_state`, but the caller has already
+    /// refreshed it before validating the mutation - `InterpreterAlterQuery`,
+    /// `InterpreterDeleteQuery`, and the forwarding storages all do. Refreshing again would
+    /// let an external replacement landing in between make the mutation execute against a
+    /// different incarnation of the table than the one that was validated.
     auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
     auto storage = getStorageID();
     configuration->mutate(commands, context_, shared_from_this(), storage, metadata_snapshot, catalog, format_settings);
@@ -1088,7 +1087,10 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
     auto metadata = getExternalMetadata(context);
     if (!metadata)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
-    return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
+    /// The state the command is validated against, pinned for the whole of its execution.
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    return metadata->executeCommand(
+        command_name, args, object_storage, configuration, catalog, context, storage_id, metadata_snapshot);
 }
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
@@ -1103,7 +1105,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     /// Check that the resulting metadata does not exceed max_query_size before mutating external state.
     checkMetadataDoesNotExceedMaxQuerySize(storage_id, new_metadata, context);
 
-    configuration->alter(object_storage, params, context, getStorageID(), catalog);
+    configuration->alter(object_storage, params, context, getStorageID(), catalog, metadata_snapshot);
 
     if (catalog)
         return;

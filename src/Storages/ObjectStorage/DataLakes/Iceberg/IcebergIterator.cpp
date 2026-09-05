@@ -226,7 +226,7 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
             manifest_file_cacheable_part.deserializer,
             manifest_list_entry.manifest_file_path,
             persistent_components.path_resolver,
-            *persistent_components.schema_processor,
+            *schema_processor,
             manifest_list_entry.added_sequence_number,
             manifest_list_entry.added_snapshot_id,
             manifest_list_entry.first_row_id,
@@ -278,6 +278,7 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     , table_snapshot(table_snapshot_)
     , data_snapshot(data_snapshot_)
     , persistent_components(persistent_components_)
+    , schema_processor(persistent_components_.getSchemaProcessorForPinnedIncarnation(table_snapshot_->trusted_uuid_incarnation))
     , log(getLogger("IcebergIterator"))
     , manifest_file_content_type(manifest_file_content_type_)
     , prefetch_runner(threadPoolCallbackRunnerUnsafe<Iceberg::ManifestFileCacheableInfo>(
@@ -301,6 +302,7 @@ IcebergIterator::IcebergIterator(
     , table_state_snapshot(table_snapshot_)
     , data_snapshot(data_snapshot_)
     , persistent_components(persistent_components_)
+    , schema_processor(persistent_components_.getSchemaProcessorForPinnedIncarnation(table_snapshot_->trusted_uuid_incarnation))
     , deletes_filter_dag(makeManifestFilterDag(filter_dag_, local_context_))
     , data_files_iterator(
           object_storage,
@@ -423,7 +425,7 @@ void IcebergIterator::decodeDeleteManifests()
                     manifest_file_cacheable_part.deserializer,
                     manifest_list_entry.manifest_file_path,
                     persistent_components.path_resolver,
-                    *persistent_components.schema_processor,
+                    *schema_processor,
                     manifest_list_entry.added_sequence_number,
                     manifest_list_entry.added_snapshot_id,
                     manifest_list_entry.first_row_id,
@@ -473,7 +475,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 manifest_file_entry,
                 persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
                 table_state_snapshot->schema_id,
-                Iceberg::getIdentityPartitionColumnValues(*manifest_file_entry, *persistent_components.schema_processor));
+                Iceberg::getIdentityPartitionColumnValues(*manifest_file_entry, *schema_processor));
+        object_info->pinned_incarnation = table_state_snapshot->trusted_uuid_incarnation;
         for (const auto & position_delete :
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {

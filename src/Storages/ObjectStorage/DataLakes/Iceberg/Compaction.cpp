@@ -190,25 +190,38 @@ static Plan getPlan(
     ObjectStoragePtr object_storage,
     const String & write_format,
     ContextPtr context,
-    CompressionMethod compression_method)
+    CompressionMethod compression_method,
+    std::optional<UInt64> validated_incarnation)
 {
     LoggerPtr log = getLogger("IcebergCompaction::getPlan");
 
     Plan plan;
     plan.generator = FileNamesGenerator(persistent_table_components.path_resolver.getTableLocation(), false, compression_method, write_format);
 
-    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, _, _identity] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
         persistent_table_components.metadata_cache,
         context,
         log.get(),
-        persistent_table_components.table_uuid,
+        persistent_table_components.getTableUuid(),
         persistent_table_components.metadata_compression_method);
 
-    Poco::JSON::Object::Ptr initial_metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+    /// The codec of the file being read is described by its name, and it is not necessarily the
+    /// codec this table object was opened with or the one new metadata is written with.
+    Poco::JSON::Object::Ptr initial_metadata_object = getMetadataJSONObject(
+        metadata_file_path,
+        object_storage,
+        persistent_table_components.metadata_cache,
+        context,
+        log,
+        getCompressionMethodFromMetadataFile(metadata_file_path),
+        persistent_table_components.getTableUuid());
+
+    /// The read may have gone to storage rather than to the cache, so the incarnation alone does
+    /// not vouch for the file: check that it still belongs to the validated table.
+    persistent_table_components.checkMetadataBelongsToValidatedTable(initial_metadata_object, validated_incarnation, "OPTIMIZE");
 
     /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
     /// a v3 table must not be accepted either -- writeMetadataFiles rebuilds the metadata
@@ -244,7 +257,8 @@ static Plan getPlan(
             if (!plan.manifest_file_lineage.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_lineage[manifest_file.manifest_file_path] = {manifest_file.added_snapshot_id};
             auto files_handle = getManifestFileEntriesHandle(
-                object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
+                object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id),
+                validated_incarnation);
 
             if (!manifest_files.contains(manifest_file.manifest_file_path))
             {
@@ -265,7 +279,8 @@ static Plan getPlan(
                     data_file,
                     persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key),
                     0,
-                    Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor));
+                    Iceberg::getIdentityPartitionColumnValues(
+                        *data_file, *persistent_table_components.getSchemaProcessorForPinnedIncarnation(validated_incarnation)));
                 /// One DataFilePlan per source *data file*, keyed by the data file's own path.
                 /// Keying by the manifest path made every data file after the first in a
                 /// manifest reuse the first file's plan, so writeDataFiles rewrote only one
@@ -429,9 +444,16 @@ static bool writeConsolidatedManifestFile(
     CompressionMethod compression_method,
     const DataLakeStorageSettings & data_lake_settings,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const StorageID & table_id)
+    const StorageID & table_id,
+    std::optional<UInt64> validated_incarnation)
 {
     auto log = getLogger("IcebergManifestConsolidation");
+
+    /// Every schema lookup below - and, above all, `addIcebergTableSchema`, which registers this
+    /// table's schemas - has to go to the processor of the incarnation this statement was
+    /// validated for. Resolving the shared cell here would register `metadata_object`'s schemas in
+    /// the fresh processor of a table that replaced this one in the meantime.
+    auto schema_processor = persistent_table_components.getSchemaProcessorForPinnedIncarnation(validated_incarnation);
 
     // Derive current snapshot info directly from the metadata file.
     if (!metadata_object->has(Iceberg::f_current_snapshot_id))
@@ -534,12 +556,12 @@ static bool writeConsolidatedManifestFile(
 
         /// Derive partition value types from a schema that defines every source column the spec references, preferring the current schema then any historical one; register all schemas first so they can be queried by id.
         for (UInt32 i = 0; i < schemas->size(); ++i)
-            persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i));
+            schema_processor->addIcebergTableSchema(schemas->getObject(i));
 
         auto build_sample_block = [&](Int32 schema_id) -> std::optional<Block>
         {
             auto fields_characteristics
-                = persistent_table_components.schema_processor->tryGetFieldsCharacteristics(schema_id, source_ids);
+                = schema_processor->tryGetFieldsCharacteristics(schema_id, source_ids);
             /// A short result means this schema does not define every partition source column.
             if (fields_characteristics.size() != source_ids.size())
                 return std::nullopt;
@@ -572,7 +594,7 @@ static bool writeConsolidatedManifestFile(
                 "No Iceberg schema defines all source columns referenced by partition spec {}",
                 spec_id);
 
-        auto schema_for_spec = persistent_table_components.schema_processor->getIcebergTableSchemaById(schema_id_for_spec);
+        auto schema_for_spec = schema_processor->getIcebergTableSchemaById(schema_id_for_spec);
         auto shared_sample_block = std::make_shared<const Block>(std::move(*spec_sample_block));
         resolved.partition_types
             = ChunkPartitioner(spec_fields, schema_for_spec->getArray(Iceberg::f_fields), context, shared_sample_block).getResultTypes();
@@ -656,7 +678,8 @@ static bool writeConsolidatedManifestFile(
         }
 
         auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
+            object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id),
+            validated_incarnation);
 
         for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {
@@ -905,6 +928,12 @@ static bool writeConsolidatedManifestFile(
             /* entry_partition_spec_ids */ entry_partition_spec_ids,
             /* entry_partition_summaries */ entry_partition_summaries);
         buffer_manifest_list->finalize();
+
+        /// The version-hint CAS only guards against another writer of *this* table claiming the
+        /// same version; it does not notice that the table itself was replaced. Fail close here.
+        Iceberg::checkStorageStillHoldsValidatedTable(
+            persistent_table_components, object_storage, data_lake_settings, context, validated_incarnation,
+            "OPTIMIZE TABLE ... MANIFEST");
 
         // Commit: write metadata file with If-None-Match + ETag-based CAS version hint; returns false if another writer claimed this version, so the caller retries.
         {
@@ -1352,7 +1381,8 @@ void compactIcebergManifests(
     ContextPtr context_,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const StorageID & table_id)
+    const StorageID & table_id,
+    std::optional<UInt64> validated_incarnation)
 {
     auto log = getLogger("IcebergManifestCompaction");
     LOG_INFO(log, "Starting manifest-only compaction for Iceberg table");
@@ -1364,26 +1394,34 @@ void compactIcebergManifests(
         if (attempt > 0)
             LOG_INFO(log, "Retrying manifest compaction (attempt {}/{})", attempt + 1, MAX_COMPACTION_RETRIES);
 
-        const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+        persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "OPTIMIZE TABLE ... MANIFEST");
+
+        const auto [metadata_version, metadata_file_path, _, _identity] = getLatestOrExplicitMetadataFileAndVersion(
             object_storage_,
             persistent_table_components.table_path,
             data_lake_settings,
             persistent_table_components.metadata_cache,
             context_,
             log.get(),
-            persistent_table_components.table_uuid,
+            persistent_table_components.getTableUuid(),
             persistent_table_components.metadata_compression_method,
             /* force_fetch_latest_metadata */ true,
             /* ignore_explicit_metadata_file_path */ true);
 
+        /// As in `getPlan`: read the selected file with the codec that belongs to it.
         auto metadata_object = getMetadataJSONObject(
             metadata_file_path,
             object_storage_,
             persistent_table_components.metadata_cache,
             context_,
             log,
-            persistent_table_components.metadata_compression_method,
-            persistent_table_components.table_uuid);
+            getCompressionMethodFromMetadataFile(metadata_file_path),
+            persistent_table_components.getTableUuid());
+
+        /// The read may have gone to storage rather than to the cache, so the incarnation alone
+        /// does not vouch for the file: check that it still belongs to the validated table.
+        persistent_table_components.checkMetadataBelongsToValidatedTable(
+            metadata_object, validated_incarnation, "OPTIMIZE TABLE ... MANIFEST");
 
         /// Validate the format version on the freshly-fetched metadata (before the threshold early-return), since the table may have been upgraded to v3 by another writer after this table object was created.
         const Int32 format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
@@ -1406,6 +1444,8 @@ void compactIcebergManifests(
             return;
         }
 
+        persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "OPTIMIZE TABLE ... MANIFEST");
+
         if (writeConsolidatedManifestFile(
                 metadata_version,
                 metadata_object,
@@ -1417,14 +1457,15 @@ void compactIcebergManifests(
                 persistent_table_components.metadata_compression_method,
                 data_lake_settings,
                 catalog,
-                table_id))
+                table_id,
+                validated_incarnation))
         {
             // Invalidate metadata cache so the next reader picks up the new state
             if (persistent_table_components.metadata_cache)
             {
                 persistent_table_components.metadata_cache->remove(persistent_table_components.table_path);
-                if (persistent_table_components.table_uuid)
-                    persistent_table_components.metadata_cache->remove(*persistent_table_components.table_uuid);
+                if (auto table_uuid = persistent_table_components.getTableUuid())
+                    persistent_table_components.metadata_cache->remove(*table_uuid);
             }
             LOG_INFO(log, "Successfully compacted manifest list");
             return;
@@ -1443,9 +1484,15 @@ void compactIcebergTable(
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
     ContextPtr context_,
-    const String & write_format)
+    const String & write_format,
+    std::optional<UInt64> validated_incarnation)
 {
     checkIfIcebergHistorySupported(snapshots_info);
+
+    /// The plan is built against whatever the table looks like now, and the rewrite below replaces
+    /// the table with the result of that plan. Both have to describe the incarnation the OPTIMIZE
+    /// was validated for, so the check is repeated after the plan and before the rewrite.
+    persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "OPTIMIZE");
 
     auto plan = getPlan(
         std::move(snapshots_info),
@@ -1454,7 +1501,10 @@ void compactIcebergTable(
         object_storage_,
         write_format,
         context_,
-        persistent_table_components.metadata_compression_method);
+        persistent_table_components.metadata_compression_method,
+        validated_incarnation);
+    persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "OPTIMIZE");
+
     if (plan.need_optimize)
     {
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
@@ -1467,6 +1517,13 @@ void compactIcebergTable(
             context_,
             write_format,
             persistent_table_components.metadata_compression_method);
+        /// `clearOldFiles` deletes the files the plan started from, so the last word before the
+        /// destructive step is that they still belong to the table this statement was validated for.
+        persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "OPTIMIZE");
+        /// `writeMetadataFiles` publishes unconditionally, and the new metadata wins by version
+        /// number, so this is the last point at which publishing over a replacement can be refused.
+        Iceberg::checkStorageStillHoldsValidatedTable(
+            persistent_table_components, object_storage_, data_lake_settings, context_, validated_incarnation, "OPTIMIZE");
         writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, context_, sample_block_, write_format, persistent_table_components.table_path);
         clearOldFiles(object_storage_, old_files);
     }

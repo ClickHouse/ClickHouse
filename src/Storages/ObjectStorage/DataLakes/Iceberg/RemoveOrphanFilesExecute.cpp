@@ -256,12 +256,18 @@ RemoveOrphanFilesResult removeOrphanFiles(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_table_components)
+    const PersistentTableComponents & persistent_table_components,
+    std::optional<UInt64> validated_incarnation)
 {
     auto log = getLogger("IcebergRemoveOrphanFiles");
 
+    /// The reachability set below decides which files are orphans, so it has to be collected from
+    /// the incarnation the statement was validated for: a table replaced at the same root reaches
+    /// a different set of files, and every file of the old table would look like an orphan.
+    persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "EXECUTE remove_orphan_files");
+
     auto [reachable, metadata_version] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log);
+        object_storage, persistent_table_components, data_lake_settings, context, log, validated_incarnation);
 
     String scan_path = resolveScanPath(persistent_table_components.table_path, params);
     if (!object_storage->existsOrHasAnyChild(scan_path))
@@ -278,12 +284,14 @@ RemoveOrphanFilesResult removeOrphanFiles(
         return tallyByCategory(scan.orphan_paths, scan.skipped_missing_metadata);
 
     auto [_recheck_files, recheck_version] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log);
+        object_storage, persistent_table_components, data_lake_settings, context, log, validated_incarnation);
     if (recheck_version != metadata_version)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Metadata version changed during orphan scan (v{} -> v{}); "
             "aborting to avoid deleting files referenced by a concurrent commit",
             metadata_version, recheck_version);
+
+    persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "EXECUTE remove_orphan_files");
 
     auto delete_result = deleteOrphanFiles(scan.orphan_paths, object_storage, log);
     LOG_INFO(log, "Deleted {}/{} orphan files ({} failed)",
@@ -306,25 +314,32 @@ Pipe executeRemoveOrphanFiles(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_components)
+    const PersistentTableComponents & persistent_components,
+    std::optional<UInt64> validated_incarnation)
 {
+    persistent_components.checkTableWasNotReplaced(validated_incarnation, "EXECUTE remove_orphan_files");
+
     /// `persistent_components.format_version` is captured when the table was opened and
     /// can become stale if an external tool (e.g. Spark) upgrades the table v1 -> v2
     /// between queries. Read the latest metadata file to get the authoritative version
     /// for this command gate.
     auto log = getLogger("IcebergRemoveOrphanFiles");
-    auto [_metadata_version, latest_metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    auto [_metadata_version, latest_metadata_path, compression_method, _identity] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         data_lake_settings,
         persistent_components.metadata_cache,
         context,
         log.get(),
-        persistent_components.table_uuid,
+        persistent_components.getTableUuid(),
         persistent_components.metadata_compression_method,
         /* force_fetch_latest_metadata */ true,
         /* ignore_explicit_metadata_file_path */ true);
 
+    /// Read it bypassing the UUID-keyed content cache: the cache is keyed by the trusted UUID and
+    /// the path, so a table replaced at the same root would be answered with the previous table's
+    /// cached JSON, and the check below would re-confirm the UUID that came from it while the
+    /// deletion acts on the table now in storage.
     auto latest_metadata = getMetadataJSONObject(
         latest_metadata_path,
         object_storage,
@@ -332,7 +347,12 @@ Pipe executeRemoveOrphanFiles(
         context,
         log,
         compression_method,
-        persistent_components.table_uuid);
+        /* table_uuid */ std::nullopt);
+
+    /// The read may have gone to storage rather than to the cache, so the incarnation alone does
+    /// not vouch for the file: check that it still belongs to the validated table.
+    persistent_components.checkMetadataBelongsToValidatedTable(
+        latest_metadata, validated_incarnation, "EXECUTE remove_orphan_files");
 
     Int32 current_format_version = latest_metadata->getValue<Int32>(f_format_version);
     if (current_format_version < 2)
@@ -370,7 +390,7 @@ Pipe executeRemoveOrphanFiles(
         params.location = parsed.getAs<String>("location");
     params.dry_run = parsed.getAs<UInt64>("dry_run") != 0;
 
-    auto result = removeOrphanFiles(params, context, object_storage, data_lake_settings, persistent_components);
+    auto result = removeOrphanFiles(params, context, object_storage, data_lake_settings, persistent_components, validated_incarnation);
 
     return resultToPipe(result);
 }

@@ -984,6 +984,28 @@ void generateManifestList(
     writer.close();
 }
 
+void IcebergStorageSink::checkMetadataBelongsToValidatedTable() const
+{
+    /// The reads above are only cache-keyed by the validated incarnation's UUID; on a miss they go
+    /// to object storage and can land on a table that replaced this one before any `update` has
+    /// observed the replacement, which leaves the incarnation unchanged. The metadata file's own
+    /// `table-uuid` is what settles which table the sink is about to write to.
+    persistent_table_components.checkMetadataBelongsToValidatedTable(metadata, pinned_incarnation, "the write");
+}
+
+void IcebergStorageSink::checkTableWasNotReplaced() const
+{
+    /// A change of incarnation means the table this write was validated for was dropped and
+    /// recreated at the same root, and `sample_block` describes the table that is gone. Comparing
+    /// schema ids does not catch it: the recreated table restarts its own `schema-id` numbering
+    /// and legitimately reuses the same id for different fields.
+    if (pinned_incarnation.has_value() && *pinned_incarnation != persistent_table_components.trusted_table_uuid->getIncarnation())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Table {} was replaced while the write was running. Retry the write.",
+            table_id.getNameForLogs());
+}
+
 IcebergStorageSink::IcebergStorageSink(
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
@@ -992,7 +1014,8 @@ IcebergStorageSink::IcebergStorageSink(
     ContextPtr context_,
     std::shared_ptr<DataLake::ICatalog> catalog_,
     const Iceberg::PersistentTableComponents & persistent_table_components_,
-    const StorageID & table_id_)
+    const StorageID & table_id_,
+    std::optional<UInt64> validated_incarnation_)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
     , object_storage(object_storage_)
@@ -1001,10 +1024,18 @@ IcebergStorageSink::IcebergStorageSink(
     , catalog(catalog_)
     , table_id(table_id_)
     , persistent_table_components(persistent_table_components_)
+    , pinned_incarnation(validated_incarnation_)
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
 {
-    auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+    checkTableWasNotReplaced();
+
+    /// Both reads are keyed by the UUID of the validated incarnation rather than by the live one,
+    /// which a concurrent query may already have moved to a table that replaced this one, and the
+    /// check is repeated afterwards: a replacement landing between the check above and these reads
+    /// would otherwise start the sink off the replacement's metadata while `sample_block` still
+    /// describes the table the write was validated for.
+    auto [last_version, metadata_path, compression_method, _identity] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
         table_id.getTableName(),
@@ -1013,7 +1044,7 @@ IcebergStorageSink::IcebergStorageSink(
         persistent_table_components.metadata_cache,
         context_,
         log.get(),
-        persistent_table_components.table_uuid,
+        persistent_table_components.trusted_table_uuid->getForPinnedIncarnation(pinned_incarnation),
         persistent_table_components.metadata_compression_method,
         /* ignore_explicit_metadata_file_path */ false);
 
@@ -1024,7 +1055,9 @@ IcebergStorageSink::IcebergStorageSink(
         context,
         log,
         compression_method,
-        persistent_table_components.table_uuid);
+        persistent_table_components.trusted_table_uuid->getForPinnedIncarnation(pinned_incarnation));
+
+    checkMetadataBelongsToValidatedTable();
     metadata_compression_method = compression_method;
     filename_generator = FileNamesGenerator(
         persistent_table_components.path_resolver.getTableLocation(),
@@ -1308,7 +1341,7 @@ bool IcebergStorageSink::initializeMetadata()
             /// with iceberg_metadata_file_path (e.g. for time-travel reads), the retry
             /// loop must still discover the real latest version to advance past it.
             /// Otherwise the loop keeps regenerating the same target version and fails.
-            auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+            auto [last_version, metadata_path, compression_method, _identity] = getLatestMetadataFileAndVersionWithCatalog(
                 object_storage,
                 catalog,
                 table_id.getTableName(),
@@ -1317,9 +1350,11 @@ bool IcebergStorageSink::initializeMetadata()
                 persistent_table_components.metadata_cache,
                 context,
                 getLogger("IcebergWrites").get(),
-                persistent_table_components.table_uuid,
+                persistent_table_components.trusted_table_uuid->getForPinnedIncarnation(pinned_incarnation),
                 persistent_table_components.metadata_compression_method,
                 /* ignore_explicit_metadata_file_path */ true);
+
+            checkTableWasNotReplaced();
 
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 
@@ -1333,7 +1368,9 @@ bool IcebergStorageSink::initializeMetadata()
                 context,
                 getLogger("IcebergWrites"),
                 compression_method,
-                persistent_table_components.table_uuid);
+                persistent_table_components.trusted_table_uuid->getForPinnedIncarnation(pinned_incarnation));
+
+            checkMetadataBelongsToValidatedTable();
             partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
             auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
 
@@ -1447,6 +1484,11 @@ bool IcebergStorageSink::initializeMetadata()
 
         {
             std::string json_representation = stringifyJSON(metadata, 4);
+
+            /// The version-hint CAS only guards against another writer of *this* table claiming
+            /// the same version; it does not notice that the table itself was replaced.
+            Iceberg::checkStorageStillHoldsValidatedTable(
+                persistent_table_components, object_storage, data_lake_settings, context, pinned_incarnation, "the write");
 
             fiu_do_on(FailPoints::iceberg_writes_cleanup,
             {

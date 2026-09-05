@@ -810,6 +810,16 @@ Poco::JSON::Object::Ptr IcebergSchemaProcessor::getIcebergTableSchemaById(Int32 
     return it->second;
 }
 
+IcebergSchemaProcessorPtr SharedSchemaProcessor::getForPinnedIncarnation(std::optional<UInt64> pinned_incarnation) const
+{
+    SharedLockGuard lock(mutex);
+    if (pinned_incarnation.has_value() && *pinned_incarnation != incarnation)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The table was replaced while the query was running. Retry the query.");
+    return processor;
+}
+
 void IcebergSchemaProcessor::registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id)
 {
     std::lock_guard lock(mutex);

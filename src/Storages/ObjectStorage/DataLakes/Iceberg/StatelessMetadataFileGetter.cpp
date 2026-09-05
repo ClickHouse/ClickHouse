@@ -105,10 +105,11 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
         return Iceberg::ManifestFileCacheableInfo{std::move(manifest_file_deserializer), manifest_file_bytes};
     };
 
-    if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
+    auto table_uuid = persistent_table_components.getTableUuid();
+    if (use_iceberg_metadata_cache && table_uuid.has_value())
     {
         auto manifest_file = persistent_table_components.metadata_cache->getOrSetManifestFile(
-            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
+            IcebergMetadataFilesCache::getKey(*table_uuid, filename.serialize()), create_fn);
         return manifest_file;
     }
     return create_fn();
@@ -120,7 +121,8 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
     ContextPtr local_context,
     LoggerPtr log,
     const ManifestFileCacheKey & cache_key,
-    Int32 table_snapshot_schema_id)
+    Int32 table_snapshot_schema_id,
+    std::optional<UInt64> pinned_incarnation)
 {
     auto cacheable_info = getManifestFile(
         object_storage,
@@ -133,7 +135,11 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
         cacheable_info.deserializer,
         cache_key.manifest_file_path,
         persistent_table_components.path_resolver,
-        *persistent_table_components.schema_processor,
+        /// `ManifestFileIterator::create` registers the manifest's schema in this processor, so it
+        /// must be the processor of the incarnation the caller was validated against. Resolving the
+        /// live cell here would register the pinned table's schema ids in the processor of a table
+        /// that replaced it in the meantime.
+        *persistent_table_components.getSchemaProcessorForPinnedIncarnation(pinned_incarnation),
         cache_key.added_sequence_number,
         cache_key.added_snapshot_id,
         cache_key.first_row_id,
@@ -270,9 +276,10 @@ ManifestFileCacheKeys getManifestList(
     };
 
     ManifestFileCacheKeys manifest_file_cache_keys;
-    if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
+    auto table_uuid = persistent_table_components.getTableUuid();
+    if (use_iceberg_metadata_cache && table_uuid.has_value())
         manifest_file_cache_keys = persistent_table_components.metadata_cache->getOrSetManifestFileCacheKeys(
-            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
+            IcebergMetadataFilesCache::getKey(*table_uuid, filename.serialize()), create_fn);
     else
         manifest_file_cache_keys = create_fn();
     return manifest_file_cache_keys;

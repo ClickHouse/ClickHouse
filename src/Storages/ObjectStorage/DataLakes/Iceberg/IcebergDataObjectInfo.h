@@ -94,6 +94,12 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
 
     void addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object, const String & resolved_storage_path);
     Iceberg::IcebergObjectSerializableInfo info;
+
+    /// The incarnation of the table this object was iterated out of, so that the schema ids it
+    /// carries are resolved through that incarnation's schemas, however long the reader setup
+    /// takes after the iteration. Empty for an object deserialized on another server, which has
+    /// no local incarnation to be consistent with.
+    std::optional<UInt64> pinned_incarnation;
 };
 
 using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;

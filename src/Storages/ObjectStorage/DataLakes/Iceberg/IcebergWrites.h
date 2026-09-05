@@ -148,7 +148,8 @@ public:
         ContextPtr context_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
         const Iceberg::PersistentTableComponents & persistent_table_components_,
-        const StorageID & table_id_);
+        const StorageID & table_id_,
+        std::optional<UInt64> validated_incarnation_);
 
     ~IcebergStorageSink() override;
 
@@ -176,6 +177,8 @@ private:
     Int64 total_rows = 0;
     Int64 total_chunks_size = 0;
 
+    void checkTableWasNotReplaced() const;
+    void checkMetadataBelongsToValidatedTable() const;
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
@@ -190,6 +193,13 @@ private:
     StorageID table_id;
     CompressionMethod metadata_compression_method;
     Iceberg::PersistentTableComponents persistent_table_components;
+    /// The incarnation of the table this write was validated for, taken from the metadata
+    /// snapshot the interpreter pinned. An external writer may drop and recreate the table at the
+    /// same root while the write is running, and every metadata read here resolves through the
+    /// shared trusted `table-uuid`, so the write would otherwise silently continue into the
+    /// replacement while `sample_block` still describes the validated table. Empty for a state
+    /// deserialized on another server, whose cell counts its own incarnations.
+    std::optional<UInt64> pinned_incarnation;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
 

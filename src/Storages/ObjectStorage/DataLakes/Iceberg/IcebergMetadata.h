@@ -14,6 +14,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
+#include <mutex>
 #include <optional>
 #include <base/defines.h>
 
@@ -105,10 +106,15 @@ public:
         LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
+
+    /// Refresh the `table-uuid` trusted as a metadata content cache key, so that a table dropped
+    /// and recreated at the same storage root by an external writer is not served the previous
+    /// table's `metadata.json` out of `IcebergMetadataFilesCache`.
+    void update(const ContextPtr & local_context) override;
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
 
-    IcebergHistory getHistory(ContextPtr local_context) const;
+    IcebergHistory getHistory(ContextPtr local_context, std::optional<UInt64> validated_incarnation = {}) const;
 
     /// Returns file records contributed by a single manifest list entry of `data_snapshot`.
     IcebergFiles getFilesForManifest(
@@ -135,6 +141,7 @@ public:
         const StorageID & table_id,
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationPtr /*configuration*/,
+        const StorageMetadataPtr & metadata_snapshot,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override;
@@ -166,7 +173,8 @@ public:
         const AlterCommands & params,
         ContextPtr context,
         const StorageID & storage_id,
-        std::shared_ptr<DataLake::ICatalog> catalog) override;
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const StorageMetadataPtr & metadata_snapshot) override;
 
     Pipe executeCommand(
         const String & command_name,
@@ -175,7 +183,8 @@ public:
         StorageObjectStorageConfigurationPtr configuration,
         std::shared_ptr<DataLake::ICatalog> catalog,
         ContextPtr context,
-        const StorageID & storage_id) override;
+        const StorageID & storage_id,
+        const StorageMetadataPtr & metadata_snapshot) override;
 
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
@@ -200,6 +209,12 @@ public:
     }
 
 private:
+    /// Serializes `update`, whose revalidation of the trusted `table-uuid` is a read-modify-write
+    /// spanning several steps. `DataLakeConfiguration::update` reuses one metadata object across
+    /// concurrent queries, so without this two of them could commit their observations out of
+    /// order and move the trusted UUID back to an already replaced table.
+    std::mutex update_mutex;
+
     static Iceberg::PersistentTableComponents initializePersistentTableComponents(
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationPtr configuration,
@@ -208,13 +223,25 @@ private:
         LoggerPtr log);
 
     Iceberg::IcebergDataSnapshotPtr
-    getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const;
+    getIcebergDataSnapshot(
+        Poco::JSON::Object::Ptr metadata_object,
+        Int64 snapshot_id,
+        ContextPtr local_context,
+        const Iceberg::IcebergSchemaProcessorPtr & schema_processor) const;
 
     Iceberg::IcebergDataSnapshotPtr createIcebergDataSnapshotFromSnapshotJSON(Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Int32>
-    getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const;
+    getStateImpl(
+        const ContextPtr & local_context,
+        Poco::JSON::Object::Ptr metadata_object,
+        const Iceberg::IcebergSchemaProcessorPtr & schema_processor) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
-    getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
+    getState(
+        const ContextPtr & local_context,
+        const String & metadata_path,
+        Int32 metadata_version,
+        const Iceberg::IcebergSchemaProcessorPtr & schema_processor,
+        std::optional<UInt64> validated_incarnation) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
     StorageObjectStorageConfigurationPtr getConfiguration() const;

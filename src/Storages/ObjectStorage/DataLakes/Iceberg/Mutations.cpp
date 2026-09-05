@@ -57,6 +57,7 @@ extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
 namespace DB::FailPoints
 {
 extern const char iceberg_writes_cleanup[];
+extern const char iceberg_mutation_pause_before_metadata_reread[];
 }
 
 namespace DB::Iceberg
@@ -372,7 +373,9 @@ static bool writeMetadataFiles(
     Poco::JSON::Object::Ptr partititon_spec,
     Int32 partition_spec_id,
     std::optional<ChunkPartitioner> & chunk_partitioner,
-    SharedHeader data_sample_block)
+    SharedHeader data_sample_block,
+    const PersistentTableComponents & persistent_table_components,
+    std::optional<UInt64> validated_incarnation)
 {
     auto delete_sample_block = std::make_shared<const Block>(getPositionDeleteFileSampleBlock());
 
@@ -526,6 +529,12 @@ static bool writeMetadataFiles(
 
         std::string json_representation = stringifyJSON(metadata, 4);
 
+        /// The version-hint CAS only guards against another writer of *this* table claiming the
+        /// same version; it does not notice that the table itself was replaced. Fail close here.
+        Iceberg::checkStorageStillHoldsValidatedTable(
+            persistent_table_components, object_storage, data_lake_settings, context, validated_incarnation,
+            "the mutation");
+
         fiu_do_on(FailPoints::iceberg_writes_cleanup,
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");
@@ -596,7 +605,8 @@ void validateSnapshotDataFileFormatsForMutation(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id)
+    Int32 current_schema_id,
+    std::optional<UInt64> validated_incarnation)
 {
     if (!metadata->has(f_current_snapshot_id) || metadata->isNull(f_current_snapshot_id))
         return;
@@ -626,7 +636,8 @@ void validateSnapshotDataFileFormatsForMutation(
     for (const auto & manifest_list_entry : manifest_list_entries)
     {
         auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_table_components, context, log, manifest_list_entry, current_schema_id);
+            object_storage, persistent_table_components, context, log, manifest_list_entry, current_schema_id,
+            validated_incarnation);
 
         for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {
@@ -658,6 +669,15 @@ void mutate(
 {
     validateMutationWriteFormat(write_format);
 
+    /// The incarnation the mutation was validated for. Every metadata read below has to describe
+    /// that table, and the state handed to the read phase has to be pinned to it.
+    std::optional<UInt64> validated_incarnation;
+    if (storage_metadata->datalake_table_state.has_value())
+    {
+        if (const auto * validated_state = std::get_if<TableStateSnapshot>(&*storage_metadata->datalake_table_state))
+            validated_incarnation = validated_state->trusted_uuid_incarnation;
+    }
+
     auto common_path = persistent_table_components.table_path;
     if (!common_path.starts_with('/'))
         common_path = "/" + common_path;
@@ -667,7 +687,10 @@ void mutate(
     {
         auto log = getLogger("IcebergMutations");
 
-        auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+        /// Lets a test change the table between the validation of the mutation and its execution.
+        FailPointInjection::pauseFailPoint(FailPoints::iceberg_mutation_pause_before_metadata_reread);
+
+        auto [last_version, metadata_path, compression_method, _identity] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             storage_id.getTableName(),
@@ -676,14 +699,19 @@ void mutate(
             persistent_table_components.metadata_cache,
             context,
             log.get(),
-            persistent_table_components.table_uuid,
+            persistent_table_components.getTableUuid(),
             persistent_table_components.metadata_compression_method);
 
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
-        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.getTableUuid());
+
+        /// The reread above can miss the cache and go to storage, where it may land on a table that
+        /// replaced this one without any `update` having observed the replacement yet. The
+        /// incarnation would then still match, so the file's own `table-uuid` has to be checked.
+        persistent_table_components.checkMetadataBelongsToValidatedTable(metadata, validated_incarnation, "the mutation");
 
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations are supported only for the second version of iceberg format");
@@ -715,7 +743,8 @@ void mutate(
         /// metadata version, so a concurrent writer that commits non-Parquet
         /// data files between iterations is caught by the next retry.
         validateSnapshotDataFileFormatsForMutation(
-            metadata, object_storage, persistent_table_components, context, log, static_cast<Int32>(current_schema_id));
+            metadata, object_storage, persistent_table_components, context, log, static_cast<Int32>(current_schema_id),
+            validated_incarnation);
 
         TableStateSnapshot current_iceberg_snapshot;
         current_iceberg_snapshot.metadata_file_path = metadata_path;
@@ -727,6 +756,43 @@ void mutate(
             if (snapshot_id_val >= 0)
                 current_iceberg_snapshot.snapshot_id = snapshot_id_val;
         }
+        /// The mutation was validated against one incarnation of the table, and the columns and
+        /// the sample block below still come from it. Committing on top of a metadata file that
+        /// describes a different table, or a different schema of the same table, would execute a
+        /// mutation that was never validated for it, so fail instead: the statement can be retried
+        /// against the table that is in storage now.
+        ///
+        /// The incarnation has to be compared as well as the schema id: a table dropped and
+        /// recreated at the same root restarts its own `schema-id` numbering, so the validated
+        /// incarnation and its replacement can both be at `schema-id` 0 while describing entirely
+        /// different fields.
+        if (storage_metadata->datalake_table_state.has_value())
+        {
+            const auto * validated_state = std::get_if<TableStateSnapshot>(&*storage_metadata->datalake_table_state);
+            if (validated_state)
+            {
+                if (validated_state->trusted_uuid_incarnation.has_value()
+                    && *validated_state->trusted_uuid_incarnation != persistent_table_components.trusted_table_uuid->getIncarnation())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Table {} was replaced while the mutation was running. Retry the mutation.",
+                        storage_id.getNameForLogs());
+
+                if (validated_state->schema_id != static_cast<Int32>(current_schema_id))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The schema of table {} changed from {} to {} while the mutation was running. Retry the mutation.",
+                        storage_id.getNameForLogs(),
+                        validated_state->schema_id,
+                        current_schema_id);
+            }
+        }
+
+        /// The reread was just confirmed to describe the validated incarnation, so the state the
+        /// read phase runs against is pinned to it: without the pin, `IcebergIterator` and the
+        /// schema lookups it drives would resolve against whatever the shared cell holds by then.
+        current_iceberg_snapshot.trusted_uuid_incarnation = validated_incarnation;
+
         auto fresh_storage_metadata = std::make_shared<StorageInMemoryMetadata>(*storage_metadata);
         fresh_storage_metadata->setDataLakeTableState(DataLakeTableStateSnapshot{current_iceberg_snapshot});
 
@@ -765,7 +831,9 @@ void mutate(
                     partititon_spec,
                     static_cast<Int32>(partition_spec_id),
                     chunk_partitioner,
-                    sample_block))
+                    sample_block,
+                    persistent_table_components,
+                    validated_incarnation))
                 continue;
         }
         break;
@@ -783,7 +851,8 @@ void alter(
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
     const String & write_format,
-    std::shared_ptr<DataLake::ICatalog> catalog)
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    std::optional<UInt64> validated_incarnation)
 {
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
@@ -793,7 +862,12 @@ void alter(
     while (i < MAX_TRANSACTION_RETRIES)
     {
         auto log = getLogger("IcebergMutations");
-        auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+
+        /// The columns being altered were resolved against the incarnation the statement was
+        /// validated for, so the metadata read below must describe that same table.
+        persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "ALTER");
+
+        auto [last_version, metadata_path, compression_method, _identity] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             storage_id.getTableName(),
@@ -802,14 +876,18 @@ void alter(
             persistent_table_components.metadata_cache,
             context,
             log.get(),
-            persistent_table_components.table_uuid,
+            persistent_table_components.getTableUuid(),
             persistent_table_components.metadata_compression_method);
 
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
-        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.getTableUuid());
+
+        /// As in `mutate`: the reread can observe a replacement directly from storage, which the
+        /// incarnation does not report, so the file's own `table-uuid` decides.
+        persistent_table_components.checkMetadataBelongsToValidatedTable(metadata, validated_incarnation, "ALTER");
 
         const auto previous_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 
@@ -848,6 +926,14 @@ void alter(
         }
 
         std::string json_representation = stringifyJSON(metadata, 4);
+
+        /// A replacement landing while the new metadata was being built would make the rewrite
+        /// below overwrite another table's metadata with this one's schema.
+        persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "ALTER");
+        /// The incarnation only moves when some query observed the replacement; the metadata in
+        /// storage is the authority on which table this `ALTER` would publish over.
+        Iceberg::checkStorageStillHoldsValidatedTable(
+            persistent_table_components, object_storage, data_lake_settings, context, validated_incarnation, "ALTER");
 
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
 

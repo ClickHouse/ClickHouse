@@ -4,6 +4,7 @@
 
 #if USE_AVRO
 
+#include <optional>
 #include <unordered_set>
 
 #include <Common/Logger_fwd.h>
@@ -35,7 +36,8 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id);
+    Int32 current_schema_id,
+    std::optional<UInt64> validated_incarnation = {});
 
 struct ReachableFilesResult
 {
@@ -54,7 +56,8 @@ ReachableFilesResult collectReachableFiles(
     const PersistentTableComponents & persistent_table_components,
     const DataLakeStorageSettings & data_lake_settings,
     ContextPtr context,
-    LoggerPtr log);
+    LoggerPtr log,
+    std::optional<UInt64> validated_incarnation = {});
 
 }
 

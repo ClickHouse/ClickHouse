@@ -410,6 +410,42 @@ def get_uuid_str():
     return str(uuid.uuid4()).replace("-", "_")
 
 
+def relocate_iceberg_table_in_place(instance, root, source_table, target_table):
+    """Make `target_table` hold `source_table`'s metadata, the way an external writer that
+    dropped and recreated the table at the same storage root would leave it.
+
+    The two table names must be of equal length: the metadata is relocated byte-for-byte, and
+    the Avro manifests only survive a length-preserving rename. `target_table`'s own data files
+    are deliberately left behind and only its metadata is replaced, so that reading the stale
+    metadata still resolves and returns the previous table's rows instead of raising.
+
+    Every path is passed as its own argv element rather than interpolated into a shell command
+    line, so no part of a generated name can be taken for shell syntax. Only the two steps that
+    genuinely need a shell - the glob and the pipeline - go through `bash -c`, and they take
+    their paths and names from positional arguments.
+    """
+    source_root = f"{root}/{source_table}"
+    target_root = f"{root}/{target_table}"
+    commands = [
+        ["bash", "-c", 'set -e; mv -- "$1"/data/* "$2"/data/', "_", source_root, target_root],
+        ["rm", "-rf", "--", f"{target_root}/metadata"],
+        ["mv", "--", f"{source_root}/metadata", f"{target_root}/metadata"],
+        ["rm", "-rf", "--", source_root],
+        [
+            "bash",
+            "-c",
+            'set -e -o pipefail; LC_ALL=C grep -rla -- "$1" "$3" '
+            '| xargs -r -I{} sed -i "s/$1/$2/g" {}',
+            "_",
+            source_table,
+            target_table,
+            target_root,
+        ],
+    ]
+    for command in commands:
+        instance.exec_in_container(command, user="root")
+
+
 def iceberg_local_interop_dir(node):
     """Absolute Iceberg data dir for the local Spark<->ClickHouse interop tests.
 

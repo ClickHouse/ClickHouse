@@ -200,10 +200,11 @@ public:
         const AlterCommands & params,
         ContextPtr context,
         const StorageID & storage_id,
-        std::shared_ptr<DataLake::ICatalog> catalog) override
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        const StorageMetadataPtr & metadata_snapshot) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        getMetadata()->alter(params, context, storage_id, catalog);
+        getMetadata()->alter(params, context, storage_id, catalog, metadata_snapshot);
     }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, StorageObjectStorageConfiguration::CredentialsConfigurationCallback refresh_credentials_callback) override
@@ -342,6 +343,7 @@ public:
         SharedHeader sample_block,
         const StorageID & table_id,
         ObjectStoragePtr object_storage,
+        const StorageMetadataPtr & metadata_snapshot,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override
@@ -357,6 +359,7 @@ public:
             table_id,
             object_storage,
             shared_from_this(),
+            metadata_snapshot,
             format_settings.has_value() ? *format_settings : getFormatSettings(context),
             context,
             catalog);
