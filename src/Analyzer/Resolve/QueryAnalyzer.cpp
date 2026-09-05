@@ -3183,10 +3183,22 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         auto node_type = node->getNodeType();
         if (!allow_table_expression && (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION))
         {
-            IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(node, &scope /*parent_scope*/);
-            subquery_scope.subquery_depth = scope.subquery_depth + 1;
+            /// A correlated subquery is no scalar the analyzer can evaluate - the planner decorrelates
+            /// it - so it is left alone where it is resolved for the first time, and it has to be left
+            /// alone here as well. Otherwise one that appears twice in an expression, such as
+            /// `if(1 = 1, sub, sub)` whose second occurrence is resolved from this cache, is rejected
+            /// with "Cannot evaluate correlated scalar subquery".
+            const bool is_correlated_subquery = node_type == QueryTreeNodeType::QUERY
+                ? node->as<QueryNode>()->isCorrelated()
+                : node->as<UnionNode>()->isCorrelated();
 
-            evaluateScalarSubqueryIfNeeded(node, subquery_scope);
+            if (!is_correlated_subquery)
+            {
+                IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(node, &scope /*parent_scope*/);
+                subquery_scope.subquery_depth = scope.subquery_depth + 1;
+
+                evaluateScalarSubqueryIfNeeded(node, subquery_scope);
+            }
         }
 
         return resolved_expression_it->second;
