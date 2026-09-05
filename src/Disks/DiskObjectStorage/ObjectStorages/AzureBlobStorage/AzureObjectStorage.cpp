@@ -648,7 +648,6 @@ void AzureObjectStorage::copyObject( /// NOLINT
         client_ptr,
         connection_params.getContainer(),
         object_from.remote_path,
-        0,
         object_metadata.size_bytes,
         /// The size and the generation come from the same `HEAD`; a read-and-write fallback copies
         /// exactly that generation or fails.

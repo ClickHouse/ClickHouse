@@ -18,20 +18,24 @@ class SeekableReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 
-/// Copies a file from AzureBlobStorage to AzureBlobStorage.
-/// The parameters `src_offset` and `src_size` specify a part in the source to copy.
+/// Copies a whole blob from AzureBlobStorage to AzureBlobStorage. `src_size` is the size of the source blob.
 /// `src_etag` is the `ETag` of the generation of the source blob that the caller has decided to
 /// copy (from the listing or the `HEAD` that produced `src_size`), or empty when it is not known.
 /// When the copy falls back to reading and writing, every read of the source is pinned to that
-/// generation and bounded by `src_offset + src_size`, so that a source blob overwritten during the
-/// copy cannot end up as a destination stitched together from two generations, and an endpoint
-/// that answers with more or fewer bytes than requested cannot corrupt the destination.
+/// generation and bounded by `src_size`, so that a source blob overwritten during the copy cannot
+/// end up as a destination stitched together from two generations, and an endpoint that answers
+/// with more or fewer bytes than requested cannot corrupt the destination.
+///
+/// There is deliberately no way to ask for a part of the source: the native copy (`CopyFromUri` /
+/// `StartCopyFromUri`) carries no byte range and always transfers the entire source blob, so a range
+/// argument could only be honored by the read-write fallback and would be silently ignored whenever
+/// the native copy is enabled. Callers that need a range read the source themselves and use
+/// `copyDataToAzureBlobStorageFile()`.
 void copyAzureBlobStorageFile(
     std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client,
     std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & src_container_for_logging,
     const String & src_blob,
-    size_t src_offset,
     size_t src_size,
     const String & src_etag,
     const String & dest_container_for_logging,

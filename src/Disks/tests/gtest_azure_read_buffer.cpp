@@ -451,7 +451,6 @@ std::string copyThroughReadAndWrite(
         container_client,
         /* src_container_for_logging */ "container",
         /* src_blob */ "blob",
-        /* src_offset */ 0,
         /* src_size */ blob_size,
         expected_etag,
         /* dest_container_for_logging */ "container",
