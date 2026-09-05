@@ -299,7 +299,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
             database_name += '.';
         database_name += table_identifier[i];
     }
-    std::string table_name = table_identifier[parts_size - 1];
+    const std::string & table_name = table_identifier[parts_size - 1];
 
     StorageID storage_id(database_name, table_name);
     storage_id = context->resolveStorageID(storage_id);
