@@ -104,6 +104,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
+#include <Databases/DatabaseOnDisk.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/getTableExpressions.h>
@@ -3052,6 +3053,30 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         if (!table->isView() && !table->isDictionary()
             && !access->isGranted(AccessType::TABLE_ENGINE, table->getName()))
             continue;
+
+        /// The `ATTACH` back also has to fit the database's own `max_tables` limit, which
+        /// `InterpreterCreateQuery` enforces through `DatabaseOnDisk::checkTablesLimit` for an `ATTACH`
+        /// exactly as for a `CREATE`. A database may legitimately hold more tables than its limit allows —
+        /// `ALTER DATABASE ... MODIFY SETTING max_tables` lowers the limit without detaching anything — and
+        /// then the `ATTACH` back is rejected with `TOO_MANY_TABLES`, leaving the table detached and failing
+        /// an outer query that the limit does not concern at all (`DROP TABLE` and `SELECT` never consult
+        /// it). The limit is checked while this table is already detached, so one slot is free by then;
+        /// asking here — while it is still attached — whether *no* additional table would fit answers
+        /// exactly whether the `ATTACH` back is going to be rejected.
+        /// The server-wide limits of `InterpreterCreateQuery::throwIfTooManyEntities` need no counterpart:
+        /// they are not checked for internal queries, which the `ATTACH` below is. Like the checks above,
+        /// this is a best-effort, point-in-time check.
+        if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
+        {
+            try
+            {
+                database_on_disk->checkTablesLimit(/* tables_to_add */ 0);
+            }
+            catch (const Exception &)
+            {
+                continue;
+            }
+        }
 
         /// A table another query is using right now must not be reattached. The internal
         /// `DETACH TABLE ... SYNC` below removes the table from its database and then waits, with no

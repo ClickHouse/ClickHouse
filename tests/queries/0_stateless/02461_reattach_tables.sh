@@ -1172,3 +1172,45 @@ wait "$busy_pid" 2>/dev/null
 check_if_detached "SELECT count() FROM t_reattach_busy" "t_reattach_busy"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_busy"
+
+# A database may hold more tables than its own `max_tables` limit allows: `ALTER DATABASE ... MODIFY
+# SETTING max_tables` lowers the limit without detaching anything. The internal `ATTACH TABLE` of the
+# reattach cycle is subject to that limit exactly as a `CREATE` is, so reattaching a table of such a
+# database would fail with `TOO_MANY_TABLES` and leave the table detached — failing an outer query that
+# the limit does not concern at all. The hook must skip such a table, and the query must succeed.
+LIMIT_DB="${CLICKHOUSE_DATABASE}_max_tables"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${LIMIT_DB}"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${LIMIT_DB} ENGINE = Atomic"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${LIMIT_DB}.t_reattach_limit_1 (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${LIMIT_DB}.t_reattach_limit_2 (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "ALTER DATABASE ${LIMIT_DB} MODIFY SETTING max_tables = 1"
+
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} \
+    --reattach_tables_before_query_execution=1 \
+    --query "SELECT count() FROM ${LIMIT_DB}.t_reattach_limit_1" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -ne 0 ]; then
+    echo "FAIL (client error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE ${LIMIT_DB}.t_reattach_limit_1"; then
+    echo "FAIL (a table of a database over its max_tables limit was detached)"
+else
+    echo "OK"
+fi
+
+# A database sitting exactly at its limit is not over it: the `ATTACH` back happens while this table is
+# already detached, so the slot it frees is the one it takes again. Such a table stays a candidate.
+${CLICKHOUSE_CLIENT} -q "ALTER DATABASE ${LIMIT_DB} MODIFY SETTING max_tables = 2"
+
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} \
+    --reattach_tables_before_query_execution=1 \
+    --query "SELECT count() FROM ${LIMIT_DB}.t_reattach_limit_1" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -ne 0 ]; then
+    echo "FAIL (client error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE ${LIMIT_DB}.t_reattach_limit_1"; then
+    echo "OK"
+else
+    echo "FAIL (table not detached although its database is within its max_tables limit)"
+fi
+
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${LIMIT_DB}"
