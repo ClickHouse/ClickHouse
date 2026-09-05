@@ -87,6 +87,8 @@ struct Optimization
         /// Neither can survive serialization to remote workers, so we suppress the
         /// optimization when the plan is going to be distributed or serialized.
         bool make_distributed_plan = false;
+
+        bool push_down_limit_through_array_join = false;
         bool serialize_query_plan = false;
         /// When short-circuit is off, a FilterStep still masks a throwing atom by splitting the AND into
         /// sequential filters. fuseFilterIntoArrayJoin can't reproduce that, so it won't fuse a multi-atom
@@ -238,6 +240,10 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
 /// the preserved-side input must produce before joining.
 size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// Push ORDER BY ... LIMIT n down through an ARRAY JOIN when the sort key does not reference any
+/// joined column. Restricts how many rows the ARRAY JOIN has to expand.
+size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
 inline const auto & getOptimizations()
 {
     static const std::array<Optimization, 23> optimizations = {{
@@ -273,6 +279,9 @@ inline const auto & getOptimizations()
         {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
         {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
+        /// Runs after liftUpArrayJoin/liftUpFunctions/mergeExpressions, so the sort key computation
+        /// has already been pushed below the ARRAY JOIN and the SortingStep is usually its direct parent.
+        {tryTopKThroughArrayJoin, "topKThroughArrayJoin", &QueryPlanOptimizationSettings::top_k_through_array_join},
     }};
 
     return optimizations;

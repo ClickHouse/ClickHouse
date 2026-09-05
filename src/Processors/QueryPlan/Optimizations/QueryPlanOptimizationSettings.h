@@ -53,6 +53,7 @@ struct QueryPlanOptimizationSettings
     /// --- First-pass optimizations
     bool lift_up_array_join;
     bool push_down_limit;
+    bool push_down_limit_through_array_join;
     bool aggregation_bucket_top_k;
     bool split_filter;
     bool merge_expressions;
@@ -84,6 +85,7 @@ struct QueryPlanOptimizationSettings
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;
     bool top_k_through_join;
+    bool top_k_through_array_join;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
     UInt64 top_k_optimization_observation_rows = 65536;
@@ -109,6 +111,7 @@ struct QueryPlanOptimizationSettings
     bool distinct_in_order;
     bool limit_by_in_order;
     bool optimize_sorting_by_input_stream_properties;
+    bool preserve_order_through_array_join;
     bool aggregation_in_order;
     bool optimize_projection;
     bool use_query_condition_cache;

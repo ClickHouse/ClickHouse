@@ -1,0 +1,292 @@
+-- inner ARRAY JOIN
+0	0
+0	1000
+2	2
+2	1002
+4	4
+4	1004
+6	6
+6	1006
+8	8
+8	1008
+0	0
+0	1000
+2	2
+2	1002
+4	4
+4	1004
+6	6
+6	1006
+8	8
+8	1008
+-- LEFT ARRAY JOIN
+0
+0
+1
+2
+2
+3
+4
+4
+5
+6
+0
+0
+1
+2
+2
+3
+4
+4
+5
+6
+-- descending order
+90	90
+90	1090
+92	92
+92	1092
+94	94
+94	1094
+96	96
+96	1096
+98	98
+98	1098
+90	90
+90	1090
+92	92
+92	1092
+94	94
+94	1094
+96	96
+96	1096
+98	98
+98	1098
+-- LIMIT with OFFSET
+4
+4
+6
+6
+8
+8
+4
+4
+6
+6
+8
+8
+-- several aligned joined arrays
+0	0	0
+0	1000	0
+2	2	4
+2	1002	6
+4	4	8
+4	1004	12
+6	6	12
+6	1006	18
+8	8	16
+8	1008	24
+0	0	0
+0	1000	0
+2	2	4
+2	1002	6
+4	4	8
+4	1004	12
+6	6	12
+6	1006	18
+8	8	16
+8	1008	24
+-- Map
+0	('a',0)
+0	('b',1)
+2	('a',2)
+2	('b',3)
+4	('a',4)
+4	('b',5)
+6	('a',6)
+6	('b',7)
+8	('a',8)
+8	('b',9)
+0	('a',0)
+0	('b',1)
+2	('a',2)
+2	('b',3)
+4	('a',4)
+4	('b',5)
+6	('a',6)
+6	('b',7)
+8	('a',8)
+8	('b',9)
+-- computed sort key
+999902	98
+999902	1098
+999904	96
+999904	1096
+999906	94
+999906	1094
+999908	92
+999908	1092
+999910	90
+999910	1090
+999902	98
+999902	1098
+999904	96
+999904	1096
+999906	94
+999906	1094
+999908	92
+999908	1092
+999910	90
+999910	1090
+-- chained ARRAY JOINs
+0	0	0
+0	0	0
+0	1000	0
+0	1000	0
+2	2	4
+2	2	6
+2	1002	4
+2	1002	6
+4	4	8
+4	4	12
+4	1004	8
+4	1004	12
+0	0	0
+0	0	0
+0	1000	0
+0	1000	0
+2	2	4
+2	2	6
+2	1002	4
+2	1002	6
+4	4	8
+4	4	12
+4	1004	8
+4	1004	12
+-- LIMIT larger than the whole result
+100	4900
+100	4900
+-- ORDER BY a joined column must not be rewritten
+0
+2
+4
+6
+8
+0
+2
+4
+6
+8
+-- ORDER BY an expression over a joined column must not be rewritten
+0
+14
+28
+42
+56
+0
+14
+28
+42
+56
+-- WITH TIES
+10
+10
+-- WITH FILL
+0
+0
+1
+2
+2
+3
+4
+0
+0
+1
+2
+2
+3
+4
+-- a WHERE on the joined column stays between the sort and the ARRAY JOIN
+0	1000
+2	1002
+4	1004
+6	1006
+8	1008
+10	1010
+0	1000
+2	1002
+4	1004
+6	1006
+8	1008
+10	1010
+-- a WHERE that does not reference the joined column is pushed below the ARRAY JOIN
+22	22
+22	1022
+24	24
+24	1024
+26	26
+26	1026
+22	22
+22	1022
+24	24
+24	1024
+26	26
+26	1026
+-- LIMIT BY between the sort and the ARRAY JOIN
+0	0
+2	2
+4	4
+6	6
+8	8
+0	0
+2	2
+4	4
+6	6
+8	8
+-- constant array
+0	1
+0	2
+1	1
+1	2
+2	1
+2	2
+0	1
+0	2
+1	1
+1	2
+2	1
+2	2
+-- constant empty array
+0
+0
+-- every array empty, inner
+0
+0
+-- every array empty, LEFT
+10	45
+10	45
+-- ragged, inner
+17	83	1	9
+17	83	1	9
+-- ragged, LEFT
+17	71	0	8
+17	71	0	8
+-- ragged, unaligned, inner
+17	76	1	8
+17	76	1	8
+-- ragged, unaligned, LEFT
+17	68	0	8
+17	68	0	8
+-- sizes of arrays do not match
+-- Array(Nullable)
+0	0
+0	\N
+2	2
+2	\N
+4	4
+4	\N
+0	0
+0	\N
+2	2
+2	\N
+4	4
+4	\N

@@ -103,6 +103,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.parallel_replicas_filter_pushdown,
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
+        optimization_settings.push_down_limit_through_array_join,
         optimization_settings.serialize_query_plan,
         optimization_settings.short_circuit_function_evaluation_disabled,
         optimization_settings.lower_array_join_function,
@@ -236,6 +237,7 @@ void optimizeTreeSecondPass(
         optimization_settings.parallel_replicas_filter_pushdown,
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
+        optimization_settings.push_down_limit_through_array_join,
         optimization_settings.serialize_query_plan,
     };
 

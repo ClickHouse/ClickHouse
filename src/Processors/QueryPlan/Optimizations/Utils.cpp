@@ -2,11 +2,19 @@
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Common/typeid_cast.h>
 
 #include <utility>
 
@@ -217,5 +225,134 @@ FilterResult filterResultForNotMatchedRows(
 
     return FilterResult::UNKNOWN;
 }
+
+bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel)
+{
+    for (size_t peeled = 0; peeled < max_peel; ++peeled)
+    {
+        const auto * expression_step = typeid_cast<const ExpressionStep *>(node->step.get());
+        if (!expression_step)
+            return true;
+        if (node->children.size() != 1)
+            return false;
+
+        const ActionsDAG & dag = expression_step->getExpression();
+        if (dag.hasArrayJoin())
+            return false;
+
+        for (auto & sort_column : description)
+        {
+            const auto * out_node = dag.tryFindInOutputs(sort_column.column_name);
+            if (!out_node)
+                return false;
+
+            while (out_node->type == ActionsDAG::ActionType::ALIAS)
+                out_node = out_node->children.front();
+
+            if (out_node->type != ActionsDAG::ActionType::INPUT)
+                return false;
+
+            sort_column.column_name = out_node->result_name;
+        }
+
+        node = node->children.front();
+    }
+
+    return true;
+}
+
+bool addArrayJoinEmptinessFilter(
+    ArrayJoinStep & array_join,
+    QueryPlan::Node *& input_node,
+    QueryPlan::Nodes & nodes)
+{
+    const Names & array_join_columns = array_join.getColumns();
+    if (array_join_columns.empty())
+        return false;
+
+    Names source_columns;
+    source_columns.reserve(array_join_columns.size());
+    for (const auto & column_name : array_join_columns)
+        source_columns.push_back(array_join.getSourceColumnName(column_name));
+
+    const Block & array_join_input_header = *array_join.getInputHeaders().front();
+
+    ActionsDAG dag(input_node->step->getOutputHeader()->getColumnsWithTypeAndName());
+
+    auto length_function = FunctionFactory::instance().get("length", nullptr);
+    auto greater_function = FunctionFactory::instance().get("greater", nullptr);
+
+    DataTypePtr zero_type = std::make_shared<DataTypeUInt8>();
+    const auto * zero = &dag.addColumn(zero_type->createColumnConst(0, Field(UInt64(0))), zero_type, "0");
+
+    ActionsDAG::NodeRawConstPtrs non_empty;
+    non_empty.reserve(array_join_columns.size());
+
+    for (size_t i = 0; i < array_join_columns.size(); ++i)
+    {
+        /// The filter may be inserted at different depths: immediately below `ArrayJoinStep`
+        /// (limit push-down, where the header contains analyzer aliases) or below the whole
+        /// `ARRAY JOIN` expression chain (top-K, where the header contains original input names).
+        const auto * input = dag.tryFindInOutputs(source_columns[i]);
+        if (!input)
+            input = dag.tryFindInOutputs(array_join_columns[i]);
+        if (!input)
+        {
+            if (auto pos = source_columns[i].rfind('.'); pos != String::npos && pos + 1 < source_columns[i].size())
+                input = dag.tryFindInOutputs(source_columns[i].substr(pos + 1));
+        }
+        if (!input)
+        {
+            if (!array_join_input_header.has(array_join_columns[i]))
+                return false;
+
+            const auto & fallback = array_join_input_header.getByName(array_join_columns[i]);
+            if (!fallback.column || !isColumnConst(*fallback.column))
+                return false;
+
+            input = &dag.addColumn(
+                assert_cast<const ColumnConst &>(*fallback.column).getPtr(),
+                fallback.type,
+                fallback.name);
+        }
+
+        const auto & type = input->result_type;
+        if (!typeid_cast<const DataTypeArray *>(type.get()) && !typeid_cast<const DataTypeMap *>(type.get()))
+            return false;
+
+        const auto & length = dag.addFunction(length_function, {input}, {});
+        non_empty.push_back(&dag.addFunction(greater_function, {&length, zero}, {}));
+    }
+
+    const auto * guard = non_empty.front();
+    if (non_empty.size() > 1)
+    {
+        /// Unlike `greatest`, `or` does not require a `Context`, which plan optimizations do not have.
+        auto or_function = FunctionFactory::instance().get("or", nullptr);
+        guard = &dag.addFunction(or_function, std::move(non_empty), {});
+    }
+
+    /// A constant empty array always emits zero rows, while a constant non-empty array always emits
+    /// at least one. In either case restricting the input before the `ARRAY JOIN` is safe without a
+    /// runtime filter.
+    if (guard->column)
+        return true;
+
+    dag.getOutputs().push_back(guard);
+    String filter_column_name = guard->result_name;
+
+    auto & filter_node = nodes.emplace_back();
+    filter_node.children.push_back(input_node);
+    filter_node.step = std::make_unique<FilterStep>(
+        input_node->step->getOutputHeader(),
+        std::move(dag),
+        std::move(filter_column_name),
+        /*remove_filter_column_=*/ true);
+    filter_node.step->setStepDescription("Non-empty arrays for ARRAY JOIN");
+    input_node = &filter_node;
+
+    return true;
+}
+
 }
 }

@@ -25,6 +25,7 @@
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/ArrayJoinTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/DroppingTransform.h>
@@ -246,6 +247,14 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         }
         else if (limit_being_counted)
         {
+            /// `ARRAY JOIN` may sit between a query limit and a sorting transform after the
+            /// sorting was moved below the expansion. In that shape the sorting transform sees
+            /// input rows, while `rows_before_limit_at_least` must continue to describe expanded
+            /// rows seen by the query limit. Stop searching toward the source so Case 7 attaches
+            /// the counter to the limit's input port.
+            if (typeid_cast<ArrayJoinTransform *>(processor))
+                continue;
+
             /// Case 2.
             if (typeid_cast<PartialSortingTransform *>(processor))
             {

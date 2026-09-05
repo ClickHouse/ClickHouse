@@ -1,0 +1,178 @@
+-- inner
+1	1
+1	101
+2	2
+2	102
+4	4
+4	104
+5	5
+5	105
+7	7
+1	1
+1	101
+2	2
+2	102
+4	4
+4	104
+5	5
+5	105
+7	7
+-- LEFT
+0	0
+1	1
+1	101
+2	2
+2	102
+3	0
+4	4
+4	104
+5	5
+0	0
+1	1
+1	101
+2	2
+2	102
+3	0
+4	4
+4	104
+5	5
+-- offset
+4	104
+5	5
+5	105
+7	7
+7	107
+8	8
+8	108
+4	104
+5	5
+5	105
+7	7
+7	107
+8	8
+8	108
+-- aligned arrays
+1	1	2
+1	101	3
+2	2	4
+2	102	6
+4	4	8
+4	104	12
+5	5	10
+5	105	15
+7	7	14
+1	1	2
+1	101	3
+2	2	4
+2	102	6
+4	4	8
+4	104	12
+5	5	10
+5	105	15
+7	7	14
+-- unaligned arrays
+1	1	2
+1	101	0
+2	2	4
+2	102	0
+4	4	8
+4	104	0
+5	5	10
+5	105	0
+7	7	14
+1	1	2
+1	101	0
+2	2	4
+2	102	0
+4	4	8
+4	104	0
+5	5	10
+5	105	0
+7	7	14
+-- Map
+1	('a',1)
+1	('b',2)
+2	('a',2)
+2	('b',3)
+4	('a',4)
+4	('b',5)
+5	('a',5)
+5	('b',6)
+7	('a',7)
+1	('a',1)
+1	('b',2)
+2	('a',2)
+2	('b',3)
+4	('a',4)
+4	('b',5)
+5	('a',5)
+5	('b',6)
+7	('a',7)
+-- constant array
+0	1
+0	2
+1	1
+1	2
+2	1
+2	2
+3	1
+0	1
+0	2
+1	1
+1	2
+2	1
+2	2
+3	1
+-- chained ARRAY JOIN
+1	1	2
+1	1	3
+1	101	2
+1	101	3
+2	2	4
+2	2	6
+2	102	4
+2	102	6
+4	4	8
+1	1	2
+1	1	3
+1	101	2
+1	101	3
+2	2	4
+2	2	6
+2	102	4
+2	102	6
+4	4	8
+-- all empty
+0
+0
+-- exact rows before limit is not rewritten
+1
+-- plan shape off/on: Limit Filter
+1	0
+2	1
+-- chained plan shape: one inner Limit and guard per ARRAY JOIN
+Output: x
+
+Limit
+│  Limit 7
+│  Offset 0
+└──ArrayJoin
+   │  ARRAY JOIN arr2
+   └──Limit
+      │  Limit 7
+      │  Offset 0
+      └──ArrayJoin
+         │  ARRAY JOIN arr
+         └──Filter
+            │  Filter column: length(arr2) > 0
+            └──Limit
+               │  Limit 7
+               │  Offset 0
+               └──Filter
+                  │  Filter column: length(arr) > 0
+                  └──ReadFromMergeTree
+                        Read type: Default
+                        Parts: 1 | Granules: 1
+                        Output: x, arr, arr2
+-- serialized plan
+7
