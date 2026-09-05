@@ -1980,9 +1980,10 @@ class QueryProgressElement extends HTMLElement
                 /* The view toggles sit at the front of the line (just before the progress area) and
                    switch the result element(s) between the query result and one of the streamed
                    extras: the server logs (Logs) or the extended profile-event metrics (Metrics,
-                   like the clickhouse-client progress table shown on Space). Dotted underline; a
-                   yellow background while that view is active. Each is hidden until the query
-                   provides the corresponding data (see showLogsToggle / showMetricsToggle). */
+                   like the clickhouse-client progress table shown on Space), or the query plan of an
+                   EXPLAIN (Plan). Dotted underline; a yellow background while that view is active.
+                   Each is hidden until the query provides the corresponding data (see
+                   showLogsToggle / showMetricsToggle / showPlanToggle). */
                 .progress-toggle
                 {
                     display: none;
@@ -2002,8 +2003,8 @@ class QueryProgressElement extends HTMLElement
                     background-color: var(--button-color);
                 }
 
-                /* Keep the two toggles close together, tightening the :host row gap between them. */
-                #logs-toggle + #metrics-toggle { margin-left: -0.75rem; }
+                /* Keep the toggles close together, tightening the :host row gap between them. */
+                #logs-toggle + #metrics-toggle, #metrics-toggle + #plan-toggle { margin-left: -0.75rem; }
 
                 #hourglass
                 {
@@ -2118,6 +2119,7 @@ class QueryProgressElement extends HTMLElement
             <span id="check-mark">&#10004;</span>
             <span id="logs-toggle" class="progress-toggle">Logs</span>
             <span id="metrics-toggle" class="progress-toggle">Metrics</span>
+            <span id="plan-toggle" class="progress-toggle">Plan</span>
             <div id="progress"><span id="progress-text"></span><span id="stats"></span></div>
         `;
         this._hourglass = this.shadowRoot.getElementById('hourglass');
@@ -2127,27 +2129,50 @@ class QueryProgressElement extends HTMLElement
         this._progressText = this.shadowRoot.getElementById('progress-text');
         this._stats = this.shadowRoot.getElementById('stats');
 
-        /// The Logs and Metrics toggles switch the result view between the query result and one of
-        /// the streamed extras (server logs, or the extended profile-event metrics). The progress
-        /// element only tracks which view is selected and announces changes via a `set-view` event;
-        /// the page listener applies the view to the result element(s).
+        /// The Logs, Metrics and Plan toggles switch the result view between the query result and one
+        /// of the streamed extras (server logs, or the extended profile-event metrics) or the query
+        /// plan of an `EXPLAIN`. The progress element only tracks which view is selected and announces
+        /// changes via a `set-view` event; the page listener applies the view to the result element(s).
         this._logsToggle = this.shadowRoot.getElementById('logs-toggle');
         this._metricsToggle = this.shadowRoot.getElementById('metrics-toggle');
+        this._planToggle = this.shadowRoot.getElementById('plan-toggle');
         this._view = 'result';
         this._logsToggle.addEventListener('click', () => this._toggleView('logs'));
         this._metricsToggle.addEventListener('click', () => this._toggleView('metrics'));
+        this._planToggle.addEventListener('click', () => this._toggleView('plan'));
 
         this.resetResources();
     }
 
-    /// Toggle the given view: activate it (deactivating the other toggle), or return to the result
-    /// view if it is already active. Announces the new view via a `set-view` event.
+    /// The toggle of each non-result view, by the view name it selects.
+    get _viewToggles()
+    {
+        return { logs: this._logsToggle, metrics: this._metricsToggle, plan: this._planToggle };
+    }
+
+    /// Mark the toggle of the selected view active and the others not, from `this._view`.
+    _paintToggles()
+    {
+        for (const [view, toggle] of Object.entries(this._viewToggles))
+            toggle.classList.toggle('active', this._view === view);
+    }
+
+    /// Toggle the given view: activate it (deactivating the others), or return to the result view if
+    /// it is already active. Announces the new view via a `set-view` event.
     _toggleView(target)
     {
         this._view = (this._view === target) ? 'result' : target;
-        this._logsToggle.classList.toggle('active', this._view === 'logs');
-        this._metricsToggle.classList.toggle('active', this._view === 'metrics');
+        this._paintToggles();
         this.dispatchEvent(new CustomEvent('set-view', { detail: { view: this._view } }));
+    }
+
+    /// Select a view WITHOUT announcing it, for the one case where the page - not a click - chooses:
+    /// an `EXPLAIN` opening on its plan (see `_markPlanAvailable`). The caller is the code that would
+    /// handle the event anyway, so dispatching one would only re-enter it.
+    selectView(view)
+    {
+        this._view = view;
+        this._paintToggles();
     }
 
     /// Reveal the Logs toggle. Called once the query has produced at least one log line, so it is
@@ -2164,28 +2189,36 @@ class QueryProgressElement extends HTMLElement
         this._metricsToggle.style.display = 'inline-block';
     }
 
-    /// Hide both view toggles and return to the result view (used when a new query starts).
+    /// Reveal the Plan toggle. Called once the query has produced an `EXPLAIN PLAN json = 1` tree, so
+    /// it is shown only for a result that has a plan. Idempotent (reset by `resetViewToggles`).
+    showPlanToggle()
+    {
+        this._planToggle.style.display = 'inline-block';
+    }
+
+    /// Hide every view toggle and return to the result view (used when a new query starts).
     resetViewToggles()
     {
         this._view = 'result';
-        for (const t of [this._logsToggle, this._metricsToggle])
+        for (const t of Object.values(this._viewToggles))
         {
             t.classList.remove('active');
             t.style.display = 'none';
         }
     }
 
-    /// Restore the shared view toggles from a tab's own state (see `syncActiveTabChrome`): reveal
-    /// each toggle only if that tab produced logs / metrics, and mark the tab's selected view active.
-    /// The view and toggle visibility are tab-owned, so switching tabs does not carry one tab's
-    /// selection or toggle visibility onto another (see the `set-view` handler and `_markLogsAvailable`).
-    setViewState(view, logsAvailable, metricsAvailable)
+    /// Restore the shared view toggles from a tab's own state (see `syncActiveTabChrome`): reveal each
+    /// toggle only if that tab produced logs / metrics / a plan, and mark the tab's selected view
+    /// active. The view and toggle visibility are tab-owned, so switching tabs does not carry one
+    /// tab's selection or toggle visibility onto another (see the `set-view` handler and
+    /// `_markLogsAvailable`).
+    setViewState(view, logsAvailable, metricsAvailable, planAvailable)
     {
         this._view = view;
         this._logsToggle.style.display = logsAvailable ? 'inline-block' : 'none';
         this._metricsToggle.style.display = metricsAvailable ? 'inline-block' : 'none';
-        this._logsToggle.classList.toggle('active', view === 'logs');
-        this._metricsToggle.classList.toggle('active', view === 'metrics');
+        this._planToggle.style.display = planAvailable ? 'inline-block' : 'none';
+        this._paintToggles();
     }
 
     clear()
@@ -3830,6 +3863,215 @@ class QueryResultElement extends HTMLElement
                     margin: auto;
                 }
 
+                /* The Plan view: the EXPLAIN PLAN json = 1 tree. A top-level view like the Logs and
+                   Metrics ones, so its visibility is owned by showView, not by the renderer. */
+                #plan_div
+                {
+                    display: none;
+                    margin-top: 1rem;
+                    padding: 0.5rem;
+                    background-color: var(--element-background-color);
+                    filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
+                }
+
+                #plan-controls
+                {
+                    margin-bottom: 0.5rem;
+                }
+
+                .plan-button
+                {
+                    cursor: pointer;
+                    user-select: none;
+                    font-size: 90%;
+                    padding: 0.1rem 0.4rem;
+                    margin-right: 0.4rem;
+                    border: 1px solid var(--border-color);
+                    border-radius: 3px;
+                    color: var(--misc-text-color);
+                }
+
+                .plan-button:hover
+                {
+                    color: var(--text-color);
+                    border-color: var(--border-color-selected);
+                }
+
+                /* The selected rendering (Tree / Graph), matching how the view toggles mark theirs. */
+                .plan-button.active
+                {
+                    color: var(--button-active-text-color);
+                    background-color: var(--button-color);
+                    border-color: var(--button-color);
+                }
+
+                /* Separate the fold controls from the Tree/Graph pair they belong behind. They apply
+                   only to the tree, so they are hidden while the graph is up. */
+                #plan-fold-controls
+                {
+                    margin-left: 0.8rem;
+                }
+
+                /* Graphviz output is drawn for a light background, exactly as the pipeline graph is. */
+                #plan-graph
+                {
+                    display: none;
+                    margin: auto;
+                    overflow: auto;
+                    background: white;
+                    color: black;
+                    padding: 0.5rem;
+                    border-radius: 3px;
+                }
+
+                #plan-graph svg
+                {
+                    display: block;
+                    margin: auto;
+                }
+
+                .plan-list
+                {
+                    list-style: none;
+                    margin: 0;
+                    padding: 0;
+                    font-size: 90%;
+                }
+
+                /* Every level but the outermost is indented, with a guide line so the parentage of a
+                   deep plan stays readable. */
+                .plan-list .plan-list
+                {
+                    margin-left: 0.35rem;
+                    padding-left: 1rem;
+                    border-left: 1px dotted var(--border-color);
+                }
+
+                .plan-row
+                {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: baseline;
+                    gap: 0.4rem;
+                    padding: 0.05rem 0;
+                }
+
+                /* A row with nothing to unfold still gets an (empty, inert) caret, so the labels on a
+                   level all start at the same column. */
+                .plan-caret
+                {
+                    flex: none;
+                    width: 0.8rem;
+                    cursor: pointer;
+                    user-select: none;
+                    color: var(--misc-text-color);
+                }
+
+                .plan-type
+                {
+                    color: var(--syntax-keyword);
+                }
+
+                .plan-desc, .plan-id
+                {
+                    color: var(--misc-text-color);
+                }
+
+                .plan-props
+                {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 0.1rem 0.8rem;
+                    padding-left: 1.2rem;
+                }
+
+                .plan-key
+                {
+                    color: var(--syntax-identifier);
+                }
+
+                .plan-val
+                {
+                    color: var(--syntax-string);
+                    margin-left: 0.3rem;
+                }
+
+                .plan-collapsed > .plan-list, .plan-collapsed > .plan-props
+                {
+                    display: none;
+                }
+
+                /* A node row is clickable: clicking it offers that node's details. */
+                .plan-row-selectable
+                {
+                    cursor: pointer;
+                    border-radius: 3px;
+                }
+
+                .plan-row-selectable:hover
+                {
+                    background-color: var(--current-query-background-color);
+                }
+
+                .plan-row-selected
+                {
+                    background-color: var(--selection-background-color);
+                    color: var(--selection-color);
+                }
+
+                /* The details pane, under whichever rendering is up. */
+                #plan-details
+                {
+                    display: none;
+                    margin-top: 0.75rem;
+                    padding-top: 0.5rem;
+                    border-top: 1px solid var(--border-color);
+                    font-size: 90%;
+                }
+
+                .plan-details-heading
+                {
+                    color: var(--syntax-keyword);
+                    margin-bottom: 0.3rem;
+                }
+
+                .plan-details-row
+                {
+                    padding: 0.05rem 0;
+                }
+
+                .plan-details-section
+                {
+                    margin-top: 0.5rem;
+                }
+
+                .plan-details-title
+                {
+                    color: var(--misc-text-color);
+                    margin-bottom: 0.2rem;
+                }
+
+                .plan-details-table
+                {
+                    border-collapse: collapse;
+                }
+
+                .plan-details-table th
+                {
+                    text-align: left;
+                    font-weight: normal;
+                    color: var(--misc-text-color);
+                    border-bottom: 1px solid var(--border-color);
+                }
+
+                .plan-details-table th, .plan-details-table td
+                {
+                    padding: 0.1rem 0.6rem 0.1rem 0;
+                    vertical-align: top;
+                    /* The Index cell puts the search algorithm on its own line. */
+                    white-space: pre-line;
+                }
+
                 #chart
                 {
                     border: 1px solid var(--border-color);
@@ -4029,6 +4271,20 @@ class QueryResultElement extends HTMLElement
             </div>
             <div id="logs_div"><div id="logs-content" class="monospace"></div></div>
             <div id="metrics_div"><table id="metrics-table" class="monospace"><tbody id="metrics-body"></tbody></table></div>
+            <div id="plan_div">
+                <div id="plan-controls">
+                    <span class="plan-button active" id="plan-mode-tree">Tree</span>
+                    <span class="plan-button" id="plan-mode-graph">Graph</span>
+                    <span id="plan-fold-controls">
+                        <span class="plan-button" id="plan-expand">Expand all</span>
+                        <span class="plan-button" id="plan-collapse">Collapse all</span>
+                    </span>
+                    <span class="plan-button" id="plan-details-button"></span>
+                </div>
+                <div id="plan-tree" class="monospace"></div>
+                <div id="plan-graph"></div>
+                <div id="plan-details" class="monospace"></div>
+            </div>
         `;
 
         this._resultGroup = this.shadowRoot.getElementById('result-group');
@@ -4040,6 +4296,19 @@ class QueryResultElement extends HTMLElement
         this._metricsDiv = this.shadowRoot.getElementById('metrics_div');
         this._metricsTable = this.shadowRoot.getElementById('metrics-table');
         this._metricsBody = this.shadowRoot.getElementById('metrics-body');
+        this._planDiv = this.shadowRoot.getElementById('plan_div');
+        this._planTree = this.shadowRoot.getElementById('plan-tree');
+        this._planGraph = this.shadowRoot.getElementById('plan-graph');
+        this._planFoldControls = this.shadowRoot.getElementById('plan-fold-controls');
+        this._btnPlanTree = this.shadowRoot.getElementById('plan-mode-tree');
+        this._btnPlanGraph = this.shadowRoot.getElementById('plan-mode-graph');
+        this._planDetails = this.shadowRoot.getElementById('plan-details');
+        this._btnPlanDetails = this.shadowRoot.getElementById('plan-details-button');
+        this._btnPlanTree.addEventListener('click', () => this.setPlanMode('tree'));
+        this._btnPlanGraph.addEventListener('click', () => this.setPlanMode('graph'));
+        this._btnPlanDetails.addEventListener('click', () => this.togglePlanDetails());
+        this.shadowRoot.getElementById('plan-expand').addEventListener('click', () => this._setPlanFolded(false));
+        this.shadowRoot.getElementById('plan-collapse').addEventListener('click', () => this._setPlanFolded(true));
         /// The extended profile-event metrics model (the Metrics view). Each metric name maps to
         /// its per-host aggregation; `_metrics_final` switches the rate column from the recent rate
         /// to the query-average once the query finishes. See `updateMetrics`/`renderMetricsTable`.
@@ -4127,6 +4396,33 @@ class QueryResultElement extends HTMLElement
         this._incomplete_result = false;
         this._is_explain_graph = false;
         this._explain_graph = '';
+        /// The normalized `EXPLAIN PLAN json = 1` tree the Plan view renders, or null when this result
+        /// is not a plan; and whether the request behind it asked for that payload in the first place
+        /// (stamped by `postImpl`, see the `explainPlanRequested` setter).
+        this._explain_plan = null;
+        this._explain_plan_requested = false;
+        /// The tree `renderPlanTree` last painted, which is what makes it idempotent, and the fold
+        /// controls it built for Expand all / Collapse all.
+        this._explain_plan_rendered = null;
+        this._plan_folds = [];
+        /// The tree the graph was last drawn from, for the same reason, and which of the two
+        /// renderings the Plan view is showing.
+        this._explain_plan_graphed = null;
+        this._plan_mode = 'tree';
+        /// The node whose details are on offer, whether the pane is open, and the per-node handles the
+        /// two renderings register so a selection can be painted in either of them.
+        this._plan_selected = null;
+        this._plan_details_open = false;
+        this._plan_rows = [];
+        this._plan_boxes = [];
+        this._plan_dot_nodes = {};
+        /// Nothing is selected, so the details button is not on offer and the pane is shut. Reset here
+        /// (rather than only on the next render) so a new run cannot leave the previous plan's node
+        /// named on a button that would open details for a node no longer on screen.
+        this._btnPlanDetails.style.display = 'none';
+        this._btnPlanDetails.classList.remove('active');
+        this._planDetails.style.display = 'none';
+        this._planDetails.replaceChildren();
         this._column_is_number = {};
         /// Date/DateTime columns are colorable by their numeric (time) value, but are kept
         /// separate from `_column_is_number` so they stay left-aligned and unformatted.
@@ -4252,6 +4548,16 @@ class QueryResultElement extends HTMLElement
     get incompleteResult() { return this._incomplete_result; }
     get isExplainGraph() { return this._is_explain_graph; }
     get explainGraph() { return this._explain_graph; }
+    get isExplainPlan() { return this._explain_plan !== null; }
+    get explainPlan() { return this._explain_plan; }
+    /// Whether the request behind this result asks for an `EXPLAIN PLAN json = 1` payload, decided
+    /// from the query's tokens by `explainPlanRequest` before the request goes out. `update` reads the
+    /// single `explain` value as a plan ONLY when this is set, so an ordinary result whose one column
+    /// happens to be named `explain` is never mistaken for one - and, because the flag says the
+    /// payload IS json, malformed JSON there is a real anomaly and is left to propagate rather than
+    /// being swallowed into a fallback rendering.
+    set explainPlanRequested(v) { this._explain_plan_requested = v; }
+    get explainPlanRequested() { return this._explain_plan_requested; }
     /// Every path that shows a result in this element - a live run and both restore paths (the tab's
     /// own snapshot and a history entry) - stamps the producing query here, so this is also the one
     /// place from which the sort availability can be (re)resolved for whatever is displayed.
@@ -4309,6 +4615,33 @@ class QueryResultElement extends HTMLElement
         this._incomplete_result = false;
         this._is_explain_graph = false;
         this._explain_graph = '';
+        /// Both reset here rather than only the tree: every launch calls `clearPanel` BEFORE
+        /// `postImpl` stamps `explainPlanRequested`, so a cleared element cannot carry the previous
+        /// run's answer into a query that is not an `EXPLAIN` at all.
+        this._explain_plan = null;
+        this._explain_plan_requested = false;
+        /// The tree `renderPlanTree` last painted, which is what makes it idempotent, and the fold
+        /// controls it built for Expand all / Collapse all.
+        this._explain_plan_rendered = null;
+        this._plan_folds = [];
+        /// The tree the graph was last drawn from, for the same reason, and which of the two
+        /// renderings the Plan view is showing.
+        this._explain_plan_graphed = null;
+        this._plan_mode = 'tree';
+        /// The node whose details are on offer, whether the pane is open, and the per-node handles the
+        /// two renderings register so a selection can be painted in either of them.
+        this._plan_selected = null;
+        this._plan_details_open = false;
+        this._plan_rows = [];
+        this._plan_boxes = [];
+        this._plan_dot_nodes = {};
+        /// Nothing is selected, so the details button is not on offer and the pane is shut. Reset here
+        /// (rather than only on the next render) so a new run cannot leave the previous plan's node
+        /// named on a button that would open details for a node no longer on screen.
+        this._btnPlanDetails.style.display = 'none';
+        this._btnPlanDetails.classList.remove('active');
+        this._planDetails.style.display = 'none';
+        this._planDetails.replaceChildren();
         this._table_layout_pending = false;
         this._current_selected_cell = null;
         this._emphasized_col_idx = null;
@@ -6522,6 +6855,25 @@ class QueryResultElement extends HTMLElement
         progressEl.showMetricsToggle();
     }
 
+    /// Record that this result carries a query plan, so its Plan toggle can be offered - and make the
+    /// Plan view this tab's SELECTED one, since a tree is what the user asked for by running an
+    /// `EXPLAIN`. Selecting it here is safe: every launch runs `clearPanel` first, which resets
+    /// `tab.view` to `'result'`, and a plan arrives once per run, so this cannot fight a choice the
+    /// user makes afterwards (the `set-view` handler records that on the tab instead).
+    _markPlanAvailable()
+    {
+        const tab = this._ownerTab;
+        if (tab)
+        {
+            tab.planAvailable = true;
+            tab.view = 'plan';
+            if (tab.id !== activeTabId) return;
+        }
+        progressEl.showPlanToggle();
+        progressEl.selectView('plan');
+        this.showView('plan');
+    }
+
     /// Queue a server log entry (from a framing `log` packet) for the logs view. Lines are buffered
     /// and appended in batches per animation frame (see `_flushLogs`), so streaming many lines does
     /// not do a DOM insertion, reflow and counter update per line.
@@ -6655,14 +7007,25 @@ class QueryResultElement extends HTMLElement
     /// Switch between the query result, the server logs, and the extended metrics table.
     showView(view)
     {
+        /// The Plan view needs a plan. The shared toggle applies to EVERY result element of the tab
+        /// (see the `set-view` handler), so in a multi-statement run the statements that are not
+        /// `EXPLAIN`s keep showing their own result rather than an empty Plan panel.
+        view = (view === 'plan' && this._explain_plan === null) ? 'result' : view;
         this._view = view;
         this._resultGroup.style.display = view === 'result' ? '' : 'none';
         this._logsDiv.style.display = view === 'logs' ? 'block' : 'none';
         this._metricsDiv.style.display = view === 'metrics' ? 'block' : 'none';
+        this._planDiv.style.display = view === 'plan' ? 'block' : 'none';
         /// The metrics table is rendered lazily - only while its view is visible, plus once more on
         /// finish - so switching to it must render the current snapshot.
         if (view === 'metrics')
             this.renderMetricsTable();
+        /// The plan, likewise, is built only when its view is actually shown: a result the user never
+        /// switches to Plan pays nothing for the DOM of a deep plan, nor for the Viz.js load its Graph
+        /// rendering needs. Both renderers are idempotent, so re-entering the view keeps what is
+        /// already drawn - and, in the tree, the user's fold state.
+        if (view === 'plan')
+            this.setPlanMode(this._plan_mode);
         /// If the fixed table layout was deferred because the table was hidden (see
         /// _changeTableLayout), run it now that the result group is visible again.
         if (view === 'result' && this._table_layout_pending)
@@ -7053,6 +7416,23 @@ class QueryResultElement extends HTMLElement
             }
             else
             {
+                /// An `EXPLAIN PLAN json = 1` response is ONE row whose single `explain` column holds
+                /// the whole plan as JSON - unlike the `digraph` above, which arrives a line per row
+                /// and so has to be accumulated. The row is still appended to the table: the Result
+                /// view shows the payload the server actually returned, and the tree parsed from it
+                /// feeds the Plan view alongside.
+                ///
+                /// Guarded by `_explain_plan_requested`, so only a request that ASKED for a JSON plan
+                /// is read as one and an ordinary result whose one column happens to be named
+                /// `explain` is never mistaken for a plan. Because that flag says the payload is JSON,
+                /// a `JSON.parse` failure here is a genuine anomaly and is left to propagate rather
+                /// than being swallowed into a fallback rendering.
+                if (this._explain_plan_requested && this._explain_plan === null
+                    && Object.keys(json.row).length == 1 && typeof json.row.explain === 'string')
+                {
+                    this._explain_plan = parseExplainPlan(JSON.parse(json.row.explain));
+                    if (this._explain_plan !== null) this._markPlanAvailable();
+                }
                 return this.appendRow(json.row, fragment);
             }
         }
@@ -7202,6 +7582,452 @@ class QueryResultElement extends HTMLElement
         const svg = viz.renderSVGElement(this._explain_graph);
         this._graph.replaceChildren(svg);
         this._graph.style.display = 'block';
+    }
+
+    /// Build the Plan view's tree from the plan `update` parsed. Unlike `renderGraph` this needs no
+    /// external library and no async load, so there is no staleness guard to take - by the time it
+    /// runs the tree is already in hand - and its visibility belongs to `showView`, since Plan is a
+    /// top-level view rather than something painted inside the result group.
+    ///
+    /// Idempotent by the identity of the tree it last painted, so re-entering the view keeps the DOM
+    /// and with it the user's fold state. A new run parses a new tree object and so repaints.
+    renderPlanTree()
+    {
+        if (this._explain_plan_rendered === this._explain_plan) return;
+        this._plan_folds = [];
+        this._plan_rows = [];
+        const list = document.createElement('ul');
+        list.className = 'plan-list';
+        list.appendChild(this._planNodeElement(this._explain_plan));
+        this._planTree.replaceChildren(list);
+        this._explain_plan_rendered = this._explain_plan;
+        this._paintPlanSelection();
+    }
+
+    /// The plan as a Graphviz digraph, for the Plan view's Graph rendering.
+    ///
+    /// `EXPLAIN PLAN` has no `graph` setting of its own - that one belongs to `EXPLAIN PIPELINE` and
+    /// `EXPLAIN AST`, and `PLAN` rejects it - so there is no server-drawn plan graph to ask for. The
+    /// DOT is written here from the same parsed tree the Tree rendering walks, and drawn with the very
+    /// Viz.js that already renders those pipeline graphs.
+    ///
+    /// A node's label carries what its tree row carries: the node type, its description, its scalar
+    /// properties, and each structured property as a name and a count (the contents of those stay in
+    /// the Tree rendering, where they can be unfolded - inlining them here would draw a wall of text).
+    _planDot()
+    {
+        /// A Graphviz string literal escapes `\` and `"`. Label lines end with `\l`, which breaks the
+        /// line AND left-aligns it; a plain `\n` centres them, which makes properties hard to scan.
+        const quote = (s) => String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        /// Edges run CHILD -> PARENT, the direction the data actually moves: a plan node consumes the
+        /// output of the nodes below it, so the arrows point from the sources up to the final output.
+        /// `rankdir="BT"` then keeps the picture the same way up as the tree rendering and as the
+        /// server's own indented text - root at the top, leaves at the bottom - because the tail of an
+        /// edge takes the earlier rank, which under `BT` is the lower one.
+        const lines = [
+            'digraph plan',
+            '{',
+            '  rankdir="BT";',
+            '  node [shape=rect, style=rounded, fontname="monospace", fontsize=10];',
+            '  edge [arrowsize=0.7];',
+        ];
+        let next_id = 0;
+        /// Which plan node each DOT id stands for, so a click on a rendered box finds its way back to
+        /// the node (Graphviz writes the id into the SVG group's `<title>`).
+        this._plan_dot_nodes = {};
+        /// Emit one node and the edges up from its children, depth first; returns its own node id.
+        const emit = (node) =>
+        {
+            const id = 'n' + (next_id++);
+            this._plan_dot_nodes[id] = node;
+            const label = [node.type]
+                .concat(node.description ? [node.description] : [])
+                .concat(node.scalars.map(([key, value]) => key + ': ' + value))
+                .concat(node.structured.map(([key, value]) =>
+                    key + ' ' + (Array.isArray(value) ? '[' + value.length + ']' : '{' + Object.keys(value).length + '}')))
+                .map((line) => quote(line) + '\\l')
+                .join('');
+            lines.push('  ' + id + ' [label="' + label + '"];');
+            for (const child of node.children)
+                lines.push('  ' + emit(child) + ' -> ' + id + ';');
+            return id;
+        };
+        emit(this._explain_plan);
+        lines.push('}');
+        return lines.join('\n');
+    }
+
+    /// Draw the Plan view's Graph rendering. Async, because Viz.js is loaded on demand, and idempotent
+    /// by the identity of the tree it last drew.
+    ///
+    /// `isValid` (optional) is checked after the load and before any DOM mutation, exactly as in
+    /// `renderGraph`: a tab switch during a slow first load must not paint into the now-active tab.
+    async renderPlanGraph(isValid)
+    {
+        if (this._explain_plan_graphed === this._explain_plan) return;
+        const viz = await this._getViz();
+        if (isValid && !isValid()) return;
+        const svg = viz.renderSVGElement(this._planDot());
+        this._planGraph.replaceChildren(svg);
+        this._explain_plan_graphed = this._explain_plan;
+        this._plan_boxes = [];
+        this._wirePlanGraphClicks(svg);
+        this._paintPlanSelection();
+    }
+
+    /// Make every box of the rendered graph select its plan node, and record the box so a selection
+    /// can be painted on it.
+    ///
+    /// Graphviz emits one `<g class="node">` per node, whose first `<title>` is the DOT id and whose
+    /// shape is a `polygon` / `path` / `ellipse`. The groups are found by walking the SVG rather than
+    /// with a selector: `class` on an SVG element is an `SVGAnimatedString`, not a string, so matching
+    /// on the `<title>` text - which is what actually carries the identity - is both simpler and exact.
+    _wirePlanGraphClicks(root)
+    {
+        const walk = (element) =>
+        {
+            const children = Array.from(element.children || []);
+            const title = children.find((c) => (c.tagName || '').toLowerCase() === 'title');
+            const node = title ? this._plan_dot_nodes[(title.textContent || '').trim()] : undefined;
+            if (node)
+            {
+                const shape = children.find((c) => ['polygon', 'path', 'ellipse', 'rect']
+                    .includes((c.tagName || '').toLowerCase()));
+                /// An edge's group is titled `a->b`, which is not a node id, so only real node groups
+                /// get here - and only a node group has a shape to highlight.
+                if (shape)
+                {
+                    element.style.cursor = 'pointer';
+                    element.addEventListener('click', () => this.selectPlanNode(node));
+                    this._plan_boxes.push({ node, shape });
+                }
+            }
+            for (const child of children) walk(child);
+        };
+        walk(root);
+    }
+
+    /// Select a plan node, from a tree row or a graph box, and OFFER its details: the button appears
+    /// naming the node, so it is clear both that there is more to see and which node it belongs to.
+    /// An already-open pane follows the selection to the newly clicked node.
+    selectPlanNode(node)
+    {
+        this._plan_selected = node;
+        this._btnPlanDetails.textContent = node.type + ' details';
+        this._btnPlanDetails.style.display = 'inline-block';
+        this._paintPlanSelection();
+        if (this._plan_details_open) this._renderPlanDetails();
+    }
+
+    /// Open or close the details pane for the selected node.
+    togglePlanDetails()
+    {
+        this._plan_details_open = !this._plan_details_open;
+        this._btnPlanDetails.classList.toggle('active', this._plan_details_open);
+        if (this._plan_details_open) this._renderPlanDetails();
+        this._planDetails.style.display = this._plan_details_open ? 'block' : 'none';
+    }
+
+    /// Mark the selected node in whichever rendering is on screen: the tree row gets a class, the graph
+    /// box a thicker outline. Re-run after either rendering is (re)built, since the handles are new.
+    _paintPlanSelection()
+    {
+        for (const { node, row } of this._plan_rows)
+            row.classList.toggle('plan-row-selected', node === this._plan_selected);
+        for (const { node, shape } of this._plan_boxes)
+            shape.setAttribute('stroke-width', node === this._plan_selected ? '2.5' : '1');
+    }
+
+    /// Build the details pane for the selected node: everything the plan carries about it.
+    ///
+    /// `Header` and `Indexes` get purpose-built tables, because those are the two sections whose value
+    /// lies in comparing one row against the next - the columns a node outputs, and what each index
+    /// stage actually eliminated. Every other structured property (`Expression`, `Actions`,
+    /// `Sort Description`, ...) falls through to the same collapsible walk the tree uses, so nothing
+    /// the server sent is withheld.
+    _renderPlanDetails()
+    {
+        const node = this._plan_selected;
+        const parts = [];
+
+        const heading = document.createElement('div');
+        heading.className = 'plan-details-heading';
+        heading.textContent = node.type + (node.id ? '  ' + node.id : '');
+        parts.push(heading);
+
+        /// `Description` is where `ReadFromMergeTree` names the table it scans, so for that node it is
+        /// labelled as the table rather than left as an unlabelled aside.
+        if (node.description)
+            parts.push(this._planDetailRow(node.type === 'ReadFromMergeTree' ? 'Table' : 'Description', node.description));
+        for (const [key, value] of node.scalars)
+            parts.push(this._planDetailRow(key, value));
+
+        for (const [key, value] of node.structured)
+        {
+            const section = document.createElement('div');
+            section.className = 'plan-details-section';
+            const title = document.createElement('div');
+            title.className = 'plan-details-title';
+            title.textContent = key;
+            section.appendChild(title);
+            if (key === 'Header' && Array.isArray(value))
+                section.appendChild(this._planHeaderTable(value));
+            else if (key === 'Indexes' && Array.isArray(value))
+                section.appendChild(this._planIndexTable(value));
+            else
+            {
+                const list = document.createElement('ul');
+                list.className = 'plan-list';
+                /// `_planValueElement` registers its carets for Expand all / Collapse all, which
+                /// belong to the TREE; keep the pane's own carets out of that list.
+                const tree_folds = this._plan_folds;
+                this._plan_folds = [];
+                list.appendChild(this._planValueElement(key, value));
+                this._plan_folds = tree_folds;
+                section.appendChild(list);
+            }
+            parts.push(section);
+        }
+
+        this._planDetails.replaceChildren(...parts);
+    }
+
+    /// One `key value` line of the details pane.
+    _planDetailRow(key, value)
+    {
+        const row = document.createElement('div');
+        row.className = 'plan-details-row';
+        row.appendChild(this._planPropElement(key, value));
+        return row;
+    }
+
+    /// The columns a node outputs.
+    _planHeaderTable(header)
+    {
+        return this._planTable(['Column', 'Type'], header.map((column) => [
+            column && column.Name !== undefined ? String(column.Name) : '',
+            column && column.Type !== undefined ? String(column.Type) : '',
+        ]));
+    }
+
+    /// What each index stage eliminated: the plan's own initial and selected counts for parts and
+    /// granules, the condition it evaluated, and the search algorithm where it names one.
+    _planIndexTable(indexes)
+    {
+        /// `initial -> selected`, plus the share the stage removed - the number actually being looked
+        /// for, and the one thing here the plan does not state itself. Blank when it gave no counts.
+        const pruned = (initial, selected) =>
+        {
+            if (typeof initial !== 'number' || typeof selected !== 'number') return '';
+            if (initial <= 0) return String(selected);
+            const dropped = Math.round((1 - selected / initial) * 100);
+            return initial + ' → ' + selected + (dropped > 0 ? '  (-' + dropped + '%)' : '');
+        };
+        const text = (v) => (v === undefined || v === null ? '' : String(v));
+        return this._planTable(['Index', 'Keys', 'Parts', 'Granules', 'Condition'], indexes.map((index) => [
+            [index.Type, index['Search Algorithm']].filter(Boolean).map(text).join('\n'),
+            Array.isArray(index.Keys) ? index.Keys.join(', ') : text(index.Keys),
+            pruned(index['Initial Parts'], index['Selected Parts']),
+            pruned(index['Initial Granules'], index['Selected Granules']),
+            text(index.Condition),
+        ]));
+    }
+
+    /// A small table of the details pane, built from a header row and a row per record.
+    _planTable(headers, rows)
+    {
+        const table = document.createElement('table');
+        table.className = 'plan-details-table';
+        const head = document.createElement('tr');
+        for (const heading of headers)
+        {
+            const th = document.createElement('th');
+            th.textContent = heading;
+            head.appendChild(th);
+        }
+        table.appendChild(head);
+        for (const cells of rows)
+        {
+            const tr = document.createElement('tr');
+            for (const cell of cells)
+            {
+                const td = document.createElement('td');
+                td.textContent = cell;
+                tr.appendChild(td);
+            }
+            table.appendChild(tr);
+        }
+        return table;
+    }
+
+    /// Switch the Plan view between its Tree and Graph renderings. Whichever is selected is built on
+    /// demand, and only once per plan, so a plan nobody looks at as a graph never loads Viz.js.
+    ///
+    /// A Viz.js load failure is reported WHERE THE GRAPH WOULD HAVE BEEN rather than through
+    /// `renderError`: the result group is hidden while the Plan view is up, so a message put there
+    /// would not be seen. This reports the failure; it does not quietly substitute another rendering.
+    setPlanMode(mode)
+    {
+        this._plan_mode = mode;
+        this._btnPlanTree.classList.toggle('active', mode === 'tree');
+        this._btnPlanGraph.classList.toggle('active', mode === 'graph');
+        /// Expand all / Collapse all fold tree rows, so they belong to the Tree rendering alone.
+        this._planFoldControls.style.display = mode === 'tree' ? '' : 'none';
+        this._planTree.style.display = mode === 'tree' ? '' : 'none';
+        this._planGraph.style.display = mode === 'graph' ? 'block' : 'none';
+        if (this._explain_plan === null) return;
+        if (mode === 'tree')
+        {
+            this.renderPlanTree();
+            return;
+        }
+        this.renderPlanGraph().catch((e) =>
+        {
+            console.log(e);
+            this._planGraph.replaceChildren(document.createTextNode(e.toString()));
+        });
+    }
+
+    /// The fold control of one tree row. A row with nothing to unfold still gets the element - empty
+    /// and inert - so every label on a level starts at the same column.
+    ///
+    /// A foldable row is also recorded in `_plan_folds`, which is what Expand all / Collapse all walk:
+    /// the rows are known at build time, so there is no reason to re-find them in the DOM afterwards.
+    _planCaret(li, foldable)
+    {
+        const caret = document.createElement('span');
+        caret.className = 'plan-caret';
+        if (!foldable) return caret;
+        caret.textContent = '▾';
+        caret.addEventListener('click', (e) =>
+        {
+            /// The row around the caret selects the node (see `_planNodeElement`); folding must not
+            /// also do that, or every fold would move the details pane.
+            e.stopPropagation();
+            caret.textContent = li.classList.toggle('plan-collapsed') ? '▸' : '▾';
+        });
+        this._plan_folds.push({ li, caret });
+        return caret;
+    }
+
+    /// `key` and `value` as one label of a node's inline property list.
+    _planPropElement(key, value)
+    {
+        const prop = document.createElement('span');
+        const k = document.createElement('span');
+        k.className = 'plan-key';
+        k.textContent = key;
+        const v = document.createElement('span');
+        v.className = 'plan-val';
+        v.textContent = value;
+        prop.append(k, v);
+        return prop;
+    }
+
+    /// One plan node: its line (caret, node type, description, node id), its scalar properties inline
+    /// beneath that line, and a nested list holding its structured properties followed by its child
+    /// plans. The plan levels are expanded on creation - a plan is shallow, and its shape is the
+    /// point of the view - while the structured properties come collapsed (see `_planValueElement`).
+    _planNodeElement(node)
+    {
+        const li = document.createElement('li');
+        const row = document.createElement('div');
+        row.className = 'plan-row';
+
+        /// How much this node has to unfold, taken from the parsed node rather than from the DOM it
+        /// produces - the counts are already known here.
+        const nested = node.structured.length + node.children.length;
+
+        const children = document.createElement('ul');
+        children.className = 'plan-list';
+        for (const [key, value] of node.structured)
+            children.appendChild(this._planValueElement(key, value));
+        for (const child of node.children)
+            children.appendChild(this._planNodeElement(child));
+
+        const props = document.createElement('div');
+        props.className = 'plan-props';
+        for (const [key, value] of node.scalars)
+            props.appendChild(this._planPropElement(key, value));
+
+        row.appendChild(this._planCaret(li, node.scalars.length + nested > 0));
+        const type = document.createElement('span');
+        type.className = 'plan-type';
+        type.textContent = node.type;
+        row.appendChild(type);
+        for (const [text, cls] of [[node.description, 'plan-desc'], [node.id, 'plan-id']])
+        {
+            if (!text) continue;
+            const span = document.createElement('span');
+            span.className = cls;
+            span.textContent = text;
+            row.appendChild(span);
+        }
+
+        /// The row is the node's click target: selecting it offers its details. Registered here (not
+        /// found by a selector later) so the mapping from element back to plan node is exact.
+        row.classList.add('plan-row-selectable');
+        row.addEventListener('click', () => this.selectPlanNode(node));
+        this._plan_rows.push({ node, row });
+
+        li.appendChild(row);
+        if (node.scalars.length) li.appendChild(props);
+        if (nested) li.appendChild(children);
+        return li;
+    }
+
+    /// A structured property (`Header`, `Expression`, `Indexes`, `Actions`, ...) as a collapsible
+    /// subtree: an object contributes a row per key, an array a row per element (labelled by its
+    /// index), and a scalar renders as `key value` exactly like an inline property. The row is
+    /// labelled with the element/key count so a collapsed one still says how much is inside.
+    ///
+    /// Collapsed on creation, at every depth: under `actions = 1` these run to hundreds of rows and
+    /// would bury the plan the view exists to show.
+    _planValueElement(key, value)
+    {
+        const li = document.createElement('li');
+        const row = document.createElement('div');
+        row.className = 'plan-row';
+        li.appendChild(row);
+
+        if (value === null || typeof value !== 'object')
+        {
+            row.appendChild(this._planCaret(li, false));
+            row.appendChild(this._planPropElement(key, String(value)));
+            return li;
+        }
+
+        const entries = Array.isArray(value) ? value.map((v, i) => [String(i), v]) : Object.entries(value);
+        const caret = this._planCaret(li, entries.length > 0);
+        row.appendChild(caret);
+        const k = document.createElement('span');
+        k.className = 'plan-key';
+        k.textContent = key;
+        const count = document.createElement('span');
+        count.className = 'plan-desc';
+        count.textContent = Array.isArray(value) ? '[' + entries.length + ']' : '{' + entries.length + '}';
+        row.append(k, count);
+
+        if (!entries.length) return li;
+        const children = document.createElement('ul');
+        children.className = 'plan-list';
+        for (const [child_key, child_value] of entries)
+            children.appendChild(this._planValueElement(child_key, child_value));
+        li.appendChild(children);
+        li.classList.add('plan-collapsed');
+        caret.textContent = '▸';
+        return li;
+    }
+
+    /// Expand or collapse every foldable row of the Plan view at once, over the fold controls
+    /// `_planCaret` recorded while building the tree.
+    _setPlanFolded(folded)
+    {
+        for (const { li, caret } of this._plan_folds)
+        {
+            li.classList.toggle('plan-collapsed', folded);
+            caret.textContent = folded ? '▸' : '▾';
+        }
     }
 
     _legendAsTooltipPlugin({ className, style = {} } = {})
@@ -10626,7 +11452,23 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// page's own `EventStream` request (losing the streamed logs and metrics).
     const explicit_format = await detectExplicitFormat(query);
     const default_format_applies = !explicit_format;
-    if (default_format_applies) url += '&extremes=1';
+
+    /// An `EXPLAIN` whose plan the Plan view can render is SENT with `json = 1` added, so the response
+    /// is the tree of objects `parseExplainPlan` reads instead of the indented text. The decision is
+    /// made from the lexer's tokens (`explainPlanRequest`), not a text match, so an `EXPLAIN` inside a
+    /// string literal or a comment is not mistaken for one, and a kind that rejects the setting
+    /// (`PIPELINE`, `AST`, ...) is left alone.
+    ///
+    /// Only the bytes on the wire change: `queryText` below, the tab's history and
+    /// `last_query_for_download` all keep the query as the user wrote it, so re-running from history
+    /// re-derives the same request and the Download button re-runs what the editor shows.
+    const plan_request = await stampExplainPlanRequested(targetResultEl, query);
+    const wire_query = applyExplainPlanInsertion(query, plan_request.insertion);
+
+    /// Extremes are withheld from a plan request, and not merely because an `EXPLAIN` has no extremes
+    /// worth showing: `extremes = 1` puts an `Extremes` NODE in the plan, so asking for them would
+    /// show the user a plan of the page's request rather than a plan of their query.
+    if (default_format_applies && !plan_request.plan_json) url += '&extremes=1';
 
     /// Always stream progress, server logs, and profile events (metrics), regardless of the output
     /// format, by multiplexing them with the formatted data in a single response stream (the
@@ -10677,6 +11519,16 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// the URL parameters, so a query that intentionally chooses a framing still overrides this.
     url += '&framing_output_format=None&default_format=' + (user_framing ? framed_default_format : default_format);
 
+    /// An `EXPLAIN` whose plan the Plan view can render is SENT with `json = 1` added, so the response
+    /// is the tree of objects `parseExplainPlan` reads instead of the indented text. The decision is
+    /// made from the lexer's tokens (`explainPlanRequest`), not a text match, so an `EXPLAIN` inside a
+    /// string literal or a comment is not mistaken for one, and a kind that rejects the setting
+    /// (`PIPELINE`, `AST`, ...) is left alone.
+    ///
+    /// Only the bytes on the wire change: `queryText` below, the tab's history and
+    /// `last_query_for_download` all keep the query as the user wrote it, so re-running from history
+    /// re-derives the same request and the Download button re-runs what the editor shows.
+    ///
     targetResultEl.queryText = query;
 
     let is_table = false;
@@ -10737,7 +11589,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             throw new Error("This page requires framing to render results; it cannot run a query that sets framing_output_format = 'None' - or to a value it cannot know upfront (DEFAULT, or a query-parameter placeholder like {fmt:String}).");
         }
 
-        const fetch_options = { method: "POST", body: query, signal: abortController.signal, headers: { 'Authorization': 'never' } };
+        const fetch_options = { method: "POST", body: wire_query, signal: abortController.signal, headers: { 'Authorization': 'never' } };
         response = await fetch(use_framing ? framing_url : url, fetch_options);
 
         /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
@@ -12228,6 +13080,9 @@ function snapshotFramingKind(snap) {
 /// `matToken` and bails without using the value).
 async function renderSnapshotIntoElement(el, snap, tab, matToken) {
     el.queryText = snap.query;
+    /// Re-derive whether this statement's saved payload is a query plan, so replaying it rebuilds the
+    /// Plan view just as the live run did (see `stampExplainPlanRequested`).
+    await stampExplainPlanRequested(el, snap.query);
     /// `data == null` means no stored payload for this statement - an image (streamed as a blob,
     /// kept as `data: null`) or a statement that never ran - so restore it as blank. A successful
     /// statement with a legitimately empty body (`data === ''`, e.g. a raw-format `SELECT ... WHERE
@@ -12653,8 +13508,10 @@ async function materializeResult(tab) {
     /// export different rows, or the same rows in a different order, than the result on screen.
     tab.downloadShape = shapeUrlParams(tab);
     /// Graph detection keys off the producing query, so a snapshot still renders as a graph
-    /// even if the editor query was changed without rerunning.
+    /// even if the editor query was changed without rerunning. Plan detection keys off it for the
+    /// same reason (see `stampExplainPlanRequested`).
     el.queryText = result.query ?? tab.query;
+    await stampExplainPlanRequested(el, result.query ?? tab.query);
 
     /// A snapshotted multi-query ("Run all") result is restored into this tab's multi-query
     /// container, rebuilding one result element per statement, rather than into `tab.resultEl`.
@@ -13070,9 +13927,10 @@ function tabRuntimeDefaults() {
         progressPhase: 'idle',  /// 'idle' | 'running' | 'done' | 'error' — drives the shared bar on activation
         finalStats: null,       /// { rowCount, elapsedNs, incomplete } shown when a run finishes
         logoVisible: true,      /// whether the shared logo shows for this tab (hidden by errors / multi)
-        view: 'result',         /// this tab's selected view ('result' | 'logs' | 'metrics'), replayed by syncActiveTabChrome
+        view: 'result',         /// this tab's selected view ('result' | 'logs' | 'metrics' | 'plan'), replayed by syncActiveTabChrome
         logsAvailable: false,   /// this tab produced server logs (its Logs toggle can be offered)
         metricsAvailable: false,/// this tab produced profile-event metrics (its Metrics toggle can be offered)
+        planAvailable: false,   /// this tab produced an EXPLAIN query plan (its Plan toggle can be offered)
         resources: null,        /// tab-owned resource-meter state (see `freshResourceState` / `readEventStream`)
         colorModes: {},         /// per-column color modes for this tab's result (shared with its element)
         pinnedColumns: {},      /// pinned columns for this tab's result (shared with its element)
@@ -13205,11 +14063,12 @@ function clearPanel(tab) {
     tab.downloadUrl = '';
     tab.downloadUser = '';
     tab.logoVisible = true;
-    /// A cleared tab has no logs/metrics and shows the result view; its toggles are re-offered as the
-    /// new run streams them (see `_markLogsAvailable`). Reset the shared toggles too when active.
+    /// A cleared tab has no logs/metrics/plan and shows the result view; its toggles are re-offered as
+    /// the new run streams them (see `_markLogsAvailable`). Reset the shared toggles too when active.
     tab.view = 'result';
     tab.logsAvailable = false;
     tab.metricsAvailable = false;
+    tab.planAvailable = false;
     /// Drop the tab-owned resource-meter state too, so a stale meter from a previous run is not
     /// re-adopted by `syncActiveTabChrome`; the next framed run creates a fresh one.
     tab.resources = null;
@@ -13282,7 +14141,7 @@ function syncActiveTabChrome() {
     /// for what this tab produced, and switch its result element(s) to its own view. The view and
     /// toggles are tab-owned (see the `set-view` handler and `_markLogsAvailable`), so opening a tab
     /// never inherits the previously active tab's selection or leaves a result hidden with no toggle.
-    progressEl.setViewState(tab.view || 'result', !!tab.logsAvailable, !!tab.metricsAvailable);
+    progressEl.setViewState(tab.view || 'result', !!tab.logsAvailable, !!tab.metricsAvailable, !!tab.planAvailable);
     if (tab.panel)
         for (const el of tab.panel.querySelectorAll('query-result'))
             el.showView(tab.view || 'result');
@@ -15602,6 +16461,27 @@ async function tokenizeWithFallback(text)
     return await tokenizeOrNull(text) ?? fallbackTokenize(text);
 }
 
+/// Stamp `el` with whether the response it is about to receive - or to REPLAY - is an
+/// `EXPLAIN PLAN json = 1` payload, and hand the caller the full `explainPlanRequest` verdict so the
+/// live path can also apply its insertion.
+///
+/// Called from the live path before the request goes out and from both restore paths before a saved
+/// stream is replayed, which is what makes a restored `EXPLAIN` rebuild its Plan view exactly as the
+/// live run did: a snapshot stores the query as the USER wrote it (the `json = 1` only ever went on
+/// the wire), so the decision is recomputed from that same text and comes out the same.
+///
+/// The token walk is skipped unless the text mentions `explain` at all. An `EXPLAIN` statement always
+/// does, so this cannot miss one; it only keeps an ordinary query - already tokenized twice on the
+/// live path, for the format and the framing - from paying for another pass.
+async function stampExplainPlanRequested(el, query)
+{
+    const request = /explain/i.test(query ?? '')
+        ? explainPlanRequest(await tokenizeWithFallback(query))
+        : { plan_json: false, insertion: null };
+    el.explainPlanRequested = request.plan_json;
+    return request;
+}
+
 /// `ParserInsertQuery` treats everything after `INSERT ... FORMAT <input format>` as inline input
 /// data, including an `INSERT ... SELECT input(...) FORMAT ...`. Although an optional `SETTINGS`
 /// list can be parsed there when `allow_settings_after_format_in_insert` is enabled, the page cannot
@@ -16517,6 +17397,186 @@ const CLOSING_BRACKETS = new Set([TT.ClosingRoundBracket, TT.ClosingSquareBracke
 const EXPLAIN_KIND_WORDS = new Set([
     'ast', 'syntax', 'query', 'tree', 'pipeline', 'plan', 'estimate', 'table', 'override',
     'current', 'transaction', 'analyze', 'whatif']);
+/// The leading words of the `EXPLAIN` kinds OTHER than `PLAN`. `PLAN` is the only kind that accepts
+/// the `json` setting - `ParserExplainQuery` rejects it for every other kind with `UNKNOWN_SETTING` -
+/// and an absent kind means `PLAN`, so `explainPlanRequest` recognizes an out-of-scope statement by
+/// its kind word and leaves it exactly as written.
+const EXPLAIN_NON_PLAN_KIND_WORDS = new Set([
+    'ast', 'syntax', 'query', 'tree', 'pipeline', 'estimate', 'table', 'override',
+    'current', 'transaction', 'analyze', 'whatif']);
+
+/// The `EXPLAIN PLAN` settings the page turns on for itself, in the order they are spelled into the
+/// statement.
+///
+///   json    - the plan as the tree of objects the Plan view renders at all;
+///   indexes - the `Indexes` section on every `ReadFromMergeTree`: the index type and keys, the
+///             condition, the search algorithm, and the initial/selected parts AND granules, which is
+///             where the node details' pruning numbers come from;
+///   header  - the `Header` section on every node: the columns it outputs, with their types.
+///
+/// `indexes` and `header` are safe to add because they are purely ADDITIVE - they attach sections to
+/// the plan's nodes without changing its shape. `extremes` is the cautionary counter-example: it puts
+/// an `Extremes` NODE in the plan, which is why `postImpl` withholds it from a plan request. `actions`
+/// is deliberately NOT here: it triples the payload with a full expression DAG per node, which the
+/// details pane can show whenever the user asks for it themselves.
+const EXPLAIN_PLAN_SETTINGS = ['json', 'indexes', 'header'];
+
+/// The setting name a token spells. `ParserSetQuery` parses a settings-list name with a full
+/// identifier parser, so it may also arrive as a quoted identifier; both spellings name the same
+/// setting and are compared by the unquoted, lowercased text. Null for a token that cannot be a
+/// name, which is also how the settings walk below learns that the list has ended. (Mirrors the
+/// `settingName` closure in `detectFramingSetting`, which is local to that walk.)
+function explainSettingName(tok)
+{
+    if (!tok) return null;
+    if (tok.type === TT.BareWord) return tok.token.toLowerCase();
+    if (tok.type === TT.QuotedIdentifier) return tok.token.slice(1, -1).toLowerCase();
+    return null;
+}
+
+/// Whether a settings-list value token means "on". Only the two spellings a boolean-ish `EXPLAIN`
+/// setting actually takes are accepted - a non-zero number, or the bare word `true` - and anything
+/// else counts as off, so an unrecognized value never makes the page claim a tree it will not get.
+function explainSettingIsOn(tok)
+{
+    if (!tok) return false;
+    if (tok.type === TT.Number) return parseFloat(tok.token) !== 0;
+    if (tok.type === TT.BareWord) return tok.token.toLowerCase() === 'true';
+    return false;
+}
+
+/// What the Plan view needs to know about one statement, decided from its tokens alone:
+///
+///   plan_json - the response will be an `EXPLAIN PLAN json = 1` payload, i.e. the tree of objects
+///               `parseExplainPlan` reads, either because the statement already asks for one or
+///               because `insertion` is about to make it;
+///   insertion - `{offset, text}` to splice into the statement text, or null to send it as written.
+///               Spells out every `EXPLAIN_PLAN_SETTINGS` entry the statement does not already
+///               mention, so the node details have their index and header sections to work from.
+///
+/// Takes the RAW token list, not the `significant`-only one the other request-path walks use: the
+/// tokens tile the text exactly, so an insertion offset is the sum of the token lengths before it,
+/// and filtering out the whitespace and comments would lose exactly the lengths that sum needs.
+///
+/// A statement is out of scope - `{false, null}` - unless it is an `EXPLAIN` whose kind is absent or
+/// `PLAN`. That kind check alone also keeps the SVG path (`renderGraph`) intact: a `digraph` response
+/// comes from `graph = 1`, which is a setting of `EXPLAIN PIPELINE` and `EXPLAIN AST` only - `PLAN`
+/// rejects it outright - so a graph query is always excluded by its kind and never reaches the walk
+/// below. A `json` setting already present is never rewritten: the user chose, and `json = 0` is the
+/// way to ask for the classic indented text back.
+///
+/// The insertion goes at the FRONT of the settings list, right after `EXPLAIN` or its `PLAN`, so the
+/// walk only has to learn whether a list is there - never where it ends.
+function explainPlanRequest(tokens)
+{
+    const nothing = { plan_json: false, insertion: null };
+
+    /// The offset just past each token, so an insertion point can be named by the token it follows.
+    const ends = [];
+    let offset = 0;
+    for (const t of tokens)
+    {
+        offset += t.token.length;
+        ends.push(offset);
+    }
+    /// The significant tokens, each carrying that end offset so it survives the filtering.
+    const sig = [];
+    for (let i = 0; i < tokens.length; ++i)
+        if (tokens[i].significant) sig.push({ tok: tokens[i], end: ends[i] });
+
+    const word = (k) => (sig[k] && sig[k].tok.type === TT.BareWord ? sig[k].tok.token.toLowerCase() : null);
+
+    let at = 0;
+    if (word(at) !== 'explain') return nothing;
+    ++at;
+    if (EXPLAIN_NON_PLAN_KIND_WORDS.has(word(at))) return nothing;
+    /// A spelled-out `PLAN` is consumed so the insertion lands after it; an absent kind leaves the
+    /// insertion right after `EXPLAIN`, which the server reads as `PLAN` all the same.
+    if (word(at) === 'plan') ++at;
+
+    /// Walk the optional settings list - entries of `name = value` separated by commas, ahead of the
+    /// explained query - for the one name that decides the outcome, and for whether a list is there
+    /// at all. The extent of the list is never needed: the insertion goes at its front.
+    let has_settings = false;
+    let json_tok = null;
+    const present = new Set();
+    for (let k = at; ; )
+    {
+        const name = explainSettingName(sig[k] && sig[k].tok);
+        if (name === null || !sig[k + 1] || sig[k + 1].tok.type !== TT.Equals) break;
+        has_settings = true;
+        /// The value is one token, possibly behind a sign.
+        let v = k + 2;
+        if (sig[v] && (sig[v].tok.type === TT.Minus || sig[v].tok.type === TT.Plus)) ++v;
+        if (!sig[v]) break;
+        present.add(name);
+        if (name === 'json') json_tok = sig[v].tok;
+        ++v;
+        if (!sig[v] || sig[v].tok.type !== TT.Comma) break;
+        k = v + 1;
+    }
+
+    /// A `json` the user wrote settles it: their query is sent exactly as written, detail settings and
+    /// all. `json = 0` is how the classic indented text is asked for back.
+    if (json_tok) return { plan_json: explainSettingIsOn(json_tok), insertion: null };
+
+    /// Only the settings the statement does not already mention, so an explicit `indexes = 0` is not
+    /// overridden by the entry added here.
+    const entries = EXPLAIN_PLAN_SETTINGS.filter((name) => !present.has(name)).map((name) => name + ' = 1').join(', ');
+    /// A list already there continues after the inserted entries, so they need the separating comma.
+    return { plan_json: true, insertion: { offset: sig[at - 1].end, text: ' ' + entries + (has_settings ? ',' : '') } };
+}
+
+/// `query` with an `explainPlanRequest` insertion applied, or `query` unchanged. Split from the
+/// decision so each is testable on its own.
+function applyExplainPlanInsertion(query, insertion)
+{
+    if (!insertion) return query;
+    return query.slice(0, insertion.offset) + insertion.text + query.slice(insertion.offset);
+}
+
+/// The keys of a plan node that are its own identity or its children, and so are never shown as
+/// properties: everything else is a property of the node.
+const EXPLAIN_PLAN_IDENTITY_KEYS = new Set(['Node Type', 'Node Id', 'Description', 'Plans']);
+
+/// Normalize one `EXPLAIN PLAN json = 1` payload into the tree the Plan view renders. Each node
+/// becomes `{type, id, description, scalars, structured, children}`, where the node's own properties
+/// are split by how the view shows them: a scalar (`Limit`, `Reads All Data`, `Sort Description`, ...)
+/// renders inline beside the node, while an array- or object-valued property (`Header`, `Expression`,
+/// `Indexes`, `Actions`, ...) becomes a collapsible sub-node, because those run to hundreds of lines
+/// once `actions = 1` is on.
+///
+/// Returns null when the payload is not a plan at all - the top level must be the `[{"Plan": ...}]`
+/// that `EXPLAIN PLAN json = 1` produces. The JSON itself is parsed by the CALLER, which only reaches
+/// here when `explainPlanRequest` said the response would be this payload, so malformed JSON is a
+/// genuine anomaly and is left to propagate rather than being swallowed into a fallback rendering.
+function parseExplainPlan(parsed)
+{
+    if (!Array.isArray(parsed) || parsed.length !== 1) return null;
+    const root = parsed[0];
+    if (!root || typeof root !== 'object' || !root.Plan || typeof root.Plan !== 'object') return null;
+
+    const node = (raw) =>
+    {
+        const scalars = [];
+        const structured = [];
+        for (const [key, value] of Object.entries(raw))
+        {
+            if (EXPLAIN_PLAN_IDENTITY_KEYS.has(key)) continue;
+            if (value !== null && typeof value === 'object') structured.push([key, value]);
+            else scalars.push([key, String(value)]);
+        }
+        return {
+            type: typeof raw['Node Type'] === 'string' ? raw['Node Type'] : '(unknown)',
+            id: typeof raw['Node Id'] === 'string' ? raw['Node Id'] : '',
+            description: typeof raw.Description === 'string' ? raw.Description : '',
+            scalars,
+            structured,
+            children: Array.isArray(raw.Plans) ? raw.Plans.filter((c) => c && typeof c === 'object').map(node) : [],
+        };
+    };
+    return node(root.Plan);
+}
 /// The keywords a query-level settings list may run into: the output clauses of
 /// `ParserQueryWithOutput` (`FORMAT`, `INTO OUTFILE`) and the data of an `INSERT ... SETTINGS ...
 /// VALUES ...`, or the `SELECT` source of `INSERT ... SETTINGS ...`. Used by `detectFramingSetting` to tell a real settings list that begins with a
