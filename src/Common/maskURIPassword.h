@@ -152,32 +152,55 @@ inline bool maskPresignedURLParameters(std::string & url)
         return false;
     };
 
-    bool masked = false;
+    static constexpr std::string_view REPLACEMENT = "[HIDDEN]";
+
+    /// Built in one pass rather than replacing in place: a replacement of a different length shifts
+    /// the rest of the string, which is quadratic in the number of masked parameters. A setting value
+    /// reaches this from the logging path and its length is chosen by whoever set the setting.
+    std::string result;
+    size_t copied = 0;
+
     for (size_t position = url.find_first_of("?&"); position != std::string::npos;
          position = url.find_first_of("?&", position + 1))
     {
         size_t name_begin = position + 1;
-        size_t equal_sign = url.find('=', name_begin);
-        if (equal_sign == std::string::npos)
-            break;
 
-        if (!is_secret_parameter(std::string_view(url).substr(name_begin, equal_sign - name_begin)))
+        /// Bounded by the next separator instead of scanning on to the next '=', which is quadratic
+        /// on a string of separators. None of the names above contains one, so a name that runs into
+        /// a separator is not one of them anyway.
+        size_t name_end = url.find_first_of("=?&", name_begin);
+        if (name_end == std::string::npos)
+            break;
+        if (url[name_end] != '=')
+        {
+            /// Rescan from the separator itself, so it is not skipped.
+            position = name_end - 1;
+            continue;
+        }
+
+        if (!is_secret_parameter(std::string_view(url).substr(name_begin, name_end - name_begin)))
             continue;
 
         /// `[^&#]*` - the value.
-        size_t value_begin = equal_sign + 1;
+        size_t value_begin = name_end + 1;
         size_t value_end = url.find_first_of("&#", value_begin);
         if (value_end == std::string::npos)
             value_end = url.length();
 
-        static constexpr std::string_view REPLACEMENT = "[HIDDEN]";
-        url.replace(value_begin, value_end - value_begin, REPLACEMENT);
-        masked = true;
-        /// Continue after the replacement, not inside it.
-        position = value_begin + REPLACEMENT.length() - 1;
+        result.append(url, copied, value_begin - copied);
+        result.append(REPLACEMENT);
+        copied = value_end;
+
+        /// Continue after the value, not inside it.
+        position = value_end - 1;
     }
 
-    return masked;
+    if (copied == 0)
+        return false;
+
+    result.append(url, copied, std::string::npos);
+    url = std::move(result);
+    return true;
 }
 
 }

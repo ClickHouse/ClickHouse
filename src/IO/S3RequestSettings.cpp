@@ -323,7 +323,7 @@ std::map<String, String> S3RequestSettings::getSettingsRepresentation() const //
 {
     std::map<String, String> res; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     for (const auto & field : impl->all())
-        res[String{field.getName()}] = field.getValueString();
+        res[String{field.getName()}] = field.getValueString(/* show_secrets */ true);
     return res;
 }
 
