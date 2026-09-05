@@ -38,6 +38,7 @@ your_profile_name:
       secure: [False] # Use TLS (native protocol) or HTTPS (http protocol)
       client_cert: [null] # Path to a TLS client certificate in .pem format
       client_cert_key: [null] # Path to the private key for the TLS client certificate
+      server_host_name: [null] # Override the TLS SNI and hostname verification target. Useful when connecting via a DNS alias (e.g. an internal CNAME or AWS PrivateLink endpoint) where the TLS certificate is issued for a different hostname than the one used in `host`.
       retries: [1] # Number of times to retry a "retriable" database exception (such as a 503 'Service Unavailable' error)
       compression: [<empty string>] # Use gzip compression if truthy (http), or compression type for a native connection
       connect_timeout: [10] # Timeout in seconds to establish a connection to ClickHouse
@@ -49,7 +50,7 @@ your_profile_name:
       local_db_prefix: [<empty string>] # Database prefix of local tables on shards for distributed materializations. If empty, it uses the same database as the distributed table.
       allow_automatic_deduplication: [False] # Enable ClickHouse automatic deduplication for Replicated tables
       tcp_keepalive: [False] # Native client only, specify TCP keepalive configuration. Specify custom keepalive settings as [idle_time_sec, interval_sec, probes].
-      reuse_connections: [True] # Re-use the same connection across models. Set to `False` to close the connection at the end of each model — useful on multi-replica ClickHouse Cloud services where the load balancer routes by TCP connection.
+      reuse_connections: [True] # Re-use the same connection across models. Set to `False` to close the connection at the end of each model — useful on multi-replica ClickHouse Cloud services where the load balancer routes by TCP connection. Note: disabling connection reuse adds a new TCP/TLS handshake per model, which increases total `dbt run` wall time (typically ~200-500 ms per model). Combine with `threads > 1` for the best balance between distribution and throughput.
       custom_settings: [{}] # A dictionary/mapping of custom ClickHouse settings for the connection - default is empty.
       database_engine: '' # Database engine to use when creating new ClickHouse schemas (databases).  If not set (the default), new databases will use the default ClickHouse database engine (usually Atomic).
       threads: [1] # Number of threads to use when running queries. Before setting it to a number higher than 1, make sure to read the [read-after-write consistency](#read-after-write-consistency) section.
@@ -63,10 +64,10 @@ your_profile_name:
   ### Schema vs Banco de dados
 </div>
 
-O identificador de relation do model do dbt `database.schema.table` não é compatível com o ClickHouse porque o ClickHouse não
+O identificador de relation do modelo do dbt `database.schema.table` não é compatível com o ClickHouse porque o ClickHouse não
 dá suporte a `schema`.
 Por isso, usamos uma abordagem simplificada, `schema.table`, em que `schema` é o banco de dados do ClickHouse. Não é
-recomendável usar o banco de dados `default`.
+trecomendável usar o banco de dados `default`.
 
 <div id="set-statement-warning">
   ### Aviso sobre a instrução SET
@@ -138,8 +139,8 @@ sem a cláusula `on cluster` para esse modelo.
 
 O dbt depende de um modelo de consistência de leitura após inserção. Isso não é compatível com clusters do ClickHouse com mais de uma réplica se você não puder garantir que todas as operações sejam direcionadas à mesma réplica. Você pode até não encontrar problemas no uso diário do dbt, mas, dependendo do seu cluster, há algumas estratégias para garantir isso:
 
-* Se você estiver usando um cluster do ClickHouse Cloud, basta definir `select_sequential_consistency: 1` na propriedade `custom_settings` do seu perfil. Você pode encontrar mais informações sobre essa configuração [aqui](/pt-BR/reference/settings/session-settings#select_sequential_consistency).
-* Se você estiver usando um cluster self-hosted, certifique-se de que todas as solicitações do dbt sejam enviadas para a mesma réplica do ClickHouse. Se houver um balanceador de carga na frente dele, tente usar algum mecanismo de `replica aware routing`/`sticky sessions` para sempre alcançar a mesma réplica. Adicionar a configuração `select_sequential_consistency = 1` em clusters fora do ClickHouse Cloud [não é recomendado](/pt-BR/reference/settings/session-settings#select_sequential_consistency).
+* Se você estiver usando um cluster do ClickHouse Cloud, basta definir `select_sequential_consistency: 1` na propriedade `custom_settings` do seu perfil. Você pode encontrar mais informações sobre essa configuração [aqui](/pt-BR/reference/settings/session-settings/other#select_sequential_consistency).
+* Se você estiver usando um cluster self-hosted, certifique-se de que todas as solicitações do dbt sejam enviadas para a mesma réplica do ClickHouse. Se houver um balanceador de carga na frente dele, tente usar algum mecanismo de `replica aware routing`/`sticky sessions` para sempre alcançar a mesma réplica. Adicionar a configuração `select_sequential_consistency = 1` em clusters fora do ClickHouse Cloud [não é recomendado](/pt-BR/reference/settings/session-settings/other#select_sequential_consistency).
 
 <div id="additional-clickhouse-macros">
   ## Macros adicionais do ClickHouse
@@ -176,20 +177,38 @@ primeiro procura o dicionário nas `vars` do perfil e, depois, na configuração
 qualquer uma das seguintes
 chaves usadas para preencher os parâmetros da função de tabela S3:
 
-| Nome do argumento                 | Descrição                                                                                                                                                                                                        |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| bucket                            | A URL base do bucket, como `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi`. `https://` é presumido se nenhum protocolo for informado.                                                       |
-| path                              | O caminho do S3 a ser usado na consulta da tabela, como `/trips_4.gz`. Os curingas do S3 são compatíveis.                                                                                                        |
-| fmt                               | O formato de entrada esperado pelo ClickHouse (como `TSV` ou `CSVWithNames`) dos objetos S3 referenciados.                                                                                                       |
-| structure                         | A estrutura de colunas dos dados no bucket, como uma lista de pares nome/tipo de dado, como `['id UInt32', 'date DateTime', 'value String']`. Se não for fornecida, o ClickHouse inferirá a estrutura.           |
-| aws&#95;access&#95;key&#95;id     | O ID da chave de acesso do S3.                                                                                                                                                                                   |
-| aws&#95;secret&#95;access&#95;key | A chave secreta do S3.                                                                                                                                                                                           |
-| role&#95;arn                      | O ARN de uma IAM role ClickhouseAccess a ser usada para acessar com segurança os objetos S3. Consulte esta [documentação](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para mais informações. |
-| compression                       | O método de compressão usado com os objetos S3. Se não for fornecido, o ClickHouse tentará determinar a compressão com base no nome do arquivo.                                                                  |
+| Nome do argumento                 | Descrição                                                                                                                                                                                              |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| bucket                            | A URL base do bucket, como `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi`. `https://` é presumido se nenhum protocolo for informado.                                             |
+| path                              | O caminho do S3 a ser usado na consulta da tabela, como `/trips_4.gz`. Os curingas do S3 são compatíveis.                                                                                              |
+| fmt                               | O formato de entrada esperado pelo ClickHouse (como `TSV` ou `CSVWithNames`) dos objetos S3 referenciados.                                                                                             |
+| structure                         | A estrutura de colunas dos dados no bucket, como uma lista de pares nome/tipo de dado, como `['id UInt32', 'date DateTime', 'value String']`. Se não for fornecida, o ClickHouse inferirá a estrutura. |
+| aws&#95;access&#95;key&#95;id     | O ID da chave de acesso do S3.                                                                                                                                                                         |
+| aws&#95;secret&#95;access&#95;key | A chave secreta do S3.                                                                                                                                                                                 |
+| role&#95;arn                      | O ARN da IAM role criada para acesso seguro ao S3. Consulte esta [documentação](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para mais informações.                                 |
+| external&#95;id                   | O ID externo a ser passado juntamente com `role_arn` ao assumir a IAM role. Requer que `role_arn` esteja definido. Disponível a partir do dbt-clickhouse 1.10.2.                                       |
+| compression                       | O método de compressão usado com os objetos S3. Se não for fornecido, o ClickHouse tentará determinar a compressão com base no nome do arquivo.                                                        |
 
-Consulte
-o [arquivo de teste do S3](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)
-para ver exemplos de como usar esta macro.
+<div id="s3source-example">
+  #### Exemplo
+</div>
+
+Defina a configuração compartilhada em `dbt_project.yml` (o nome do dicionário deve terminar em `s3`):
+
+```yaml
+vars:
+  taxi_s3:
+    bucket: 'datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi'
+    fmt: 'TabSeparatedWithNames'
+```
+
+Em seguida, chame a macro em um modelo. Qualquer um dos argumentos acima também pode ser passado diretamente na chamada, tendo precedência sobre os valores do dicionário:
+
+```sql
+select * from {{ clickhouse_s3source('taxi_s3', path='/trips_4.gz') }}
+```
+
+Consulte o [arquivo de teste do S3](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py) para mais exemplos.
 
 <div id="cross-database-macro-support">
   ### Suporte a macros entre bancos de dados

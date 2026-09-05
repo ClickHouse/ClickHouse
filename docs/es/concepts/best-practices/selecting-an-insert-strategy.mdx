@@ -126,13 +126,13 @@ Práctica recomendada: usa LZ4, salvo que tengas un ancho de banda limitado o co
   #### La compresión reduce el uso de recursos
 </div>
 
-La compresión no solo reduce el tráfico de red, sino que también mejora la eficiencia en el uso de CPU y memoria en el servidor. Con datos comprimidos, ClickHouse recibe menos bytes y dedica menos tiempo a procesar entradas grandes. Este beneficio es especialmente importante al ingestar desde varios clientes concurrentes, como en escenarios de observabilidad.
+La compresión no solo reduce el tráfico de red, sino que también mejora la eficiencia en el uso de CPU y memoria en el servidor. Con datos comprimidos, ClickHouse recibe menos bytes y dedica menos tiempo al análisis de entradas grandes. Este beneficio es especialmente importante al ingestar desde varios clientes concurrentes, como en escenarios de observabilidad.
 
 El impacto de la compresión en la CPU y la memoria es modesto con LZ4 y moderado con ZSTD. Incluso bajo carga, la eficiencia del lado del servidor mejora debido al menor volumen de datos.
 
 **Combinar la compresión con la agrupación en lotes y un formato de entrada eficiente (como Native) ofrece el mejor rendimiento de ingestión.**
 
-Al usar la interfaz nativa (p. ej., [clickhouse-client](/es/concepts/features/interfaces/cli)), la compresión LZ4 está habilitada de forma predeterminada. Opcionalmente, puedes cambiar a ZSTD mediante la configuración.
+Al usar la interfaz nativa (p. ej., [clickhouse-client](/es/concepts/features/interfaces/client)), la compresión LZ4 está habilitada de forma predeterminada. Opcionalmente, puedes cambiar a ZSTD mediante la configuración.
 
 Con la [interfaz HTTP](/es/concepts/features/interfaces/http), usa el encabezado Content-Encoding para aplicar compresión (p. ej., Content-Encoding: lz4). Todo el payload debe comprimirse antes de enviarlo.
 
@@ -159,10 +159,10 @@ Cuando los datos llegan ya ordenados, ClickHouse puede omitir o simplificar el p
 </div>
 
 <div id="choose-an-interface-native">
-  ### Interfaz nativa
+  ### Nativa
 </div>
 
-ClickHouse ofrece dos interfaces principales para la ingestión de datos: la **interfaz nativa** y la **interfaz HTTP**, cada una con sus ventajas e inconvenientes en términos de rendimiento y flexibilidad. La interfaz nativa, utilizada por [clickhouse-client](/es/concepts/features/interfaces/cli) y por algunos clientes para lenguajes como Go y C++, está diseñada específicamente para ofrecer el máximo rendimiento. Siempre transmite los datos en el formato Native, muy eficiente, de ClickHouse, admite compresión por bloques con LZ4 o ZSTD y minimiza el procesamiento del lado del servidor al trasladar al cliente tareas como el análisis y la conversión de formato.
+ClickHouse ofrece dos interfaces principales para la ingestión de datos: la **interfaz nativa** y la **interfaz HTTP**, cada una con sus ventajas e inconvenientes en términos de rendimiento y flexibilidad. La interfaz nativa, utilizada por [clickhouse-client](/es/concepts/features/interfaces/client) y por algunos clientes para lenguajes como Go y C++, está diseñada específicamente para ofrecer el máximo rendimiento. Siempre transmite los datos en el formato Native, muy eficiente, de ClickHouse, admite compresión por bloques con LZ4 o ZSTD y minimiza el procesamiento del lado del servidor al trasladar al cliente tareas como el análisis y la conversión de formato.
 
 Incluso permite calcular en el lado del cliente los valores de las columnas MATERIALIZED y DEFAULT, lo que permite al servidor omitir por completo estos pasos. Esto hace que la interfaz nativa sea ideal para escenarios de ingestión de alto rendimiento en los que la eficiencia es fundamental.
 

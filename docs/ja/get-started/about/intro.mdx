@@ -31,19 +31,19 @@ ClickHouse® は、オンライン分析処理 (OLAP) 向けの高性能なカ�
 
 行指向データベースでは、テーブルの連続する行が1つずつ順番に格納されます。このレイアウトでは、各行のカラム値がまとめて保存されるため、行を高速に取り出せます。
 
-ClickHouse はカラム指向データベースです。このようなシステムでは、テーブルはカラムの集合として格納され、各カラムの値が順番に連続して保存されます。このレイアウトでは、単一の行を取り出しにくくなります (行の値の間にギャップが生じるため) 。一方で、フィルタや集約などのカラム単位の操作は、行指向データベースに比べてはるかに高速になります。
+ClickHouse はカラム指向データベースです。このようなシステムでは、テーブルはカラムの集合として格納され、各カラムの値が順番に連続して保存されます。このレイアウトでは、単一の行を取り出しにくくなります (行の値の間にギャップが生じるため) 。一方で、フィルタや集計などのカラム単位の操作は、行指向データベースに比べてはるかに高速になります。
 
 この違いは、[実際の匿名化されたウェブアナリティクスデータ](/ja/get-started/sample-datasets/anon-web-analytics-metrica)の1億行に対して実行するクエリ例を見ると、最もわかりやすく理解できます。
 
 ```sql
-SELECT MobilePhoneModel, COUNT() AS c
+SELECT MobilePhoneModel, count() AS c
 FROM metrica.hits
 WHERE
       RegionID = 229
   AND EventDate >= '2013-07-01'
   AND EventDate <= '2013-07-31'
   AND MobilePhone != 0
-  AND MobilePhoneModel not in ['', 'iPad']
+  AND MobilePhoneModel NOT IN ('', 'iPad')
 GROUP BY MobilePhoneModel
 ORDER BY c DESC
 LIMIT 8;

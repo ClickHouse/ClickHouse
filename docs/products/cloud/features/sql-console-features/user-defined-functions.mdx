@@ -9,11 +9,13 @@ keywords: ['user defined function', 'UDF']
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-User-defined functions (UDF) allow users to extend the behavior of ClickHouse beyond what is offered by over a thousand different out-of-box [functions](/reference/functions/regular-functions/regular-functions-index).
+User-defined functions (UDF) allow users to extend the behavior of ClickHouse beyond what is offered by over a thousand different out-of-box [functions](/reference/functions/regular-functions/overview).
 
-In ClickHouse Cloud, there are two ways to create user-defined functions:
+In ClickHouse Cloud, there are several ways to create and manage user-defined functions:
 1. Using SQL
 2. Using the UI and your own code (public beta)
+3. Using the [Cloud API](#manage-udfs-with-the-cloud-api) (beta)
+4. Using [Terraform](#manage-udfs-with-terraform) (beta)
 
 ## SQL user-defined functions {#sql-udfs}
 
@@ -180,3 +182,78 @@ To change a UDF's code, create a new version. The **Edit** panel only manages wh
 You have successfully added your first user-defined function via the UI, confirmed it runs and seen how to create a new version of it if needed.
 </Step>
 </Steps>
+
+## Manage UDFs with the Cloud API {#manage-udfs-with-the-cloud-api}
+
+<BetaBadge/>
+
+Everything available in the UI is also available programmatically through the [ClickHouse Cloud API](/products/cloud/features/admin-features/api/api-overview).
+The UDF endpoints let you script the full lifecycle of a UDF: uploading source archives, creating functions and versions, attaching them to services, and cleaning them up.
+
+<Note>
+These endpoints are in beta and the API contract may change.
+</Note>
+
+The typical workflow to create and deploy a UDF via the API is:
+
+1. [Create an upload URL](/products/cloud/api-reference/udf/udf-upload-session-create) to receive a presigned `application/zip` upload URL, then upload your ZIP archive to it. Each upload ID may be used for only one create or version attempt; request a new upload URL when retrying.
+2. [Create the UDF](/products/cloud/api-reference/udf/udf-create) from the uploaded archive, specifying the function name, runtime, arguments, and return type.
+3. [Attach the UDF to a service](/products/cloud/api-reference/udf/udf-attach). When the version is omitted, the latest ready version is attached. The service must be running; idle services can be woken up first.
+
+The full set of endpoints:
+
+| Endpoint | Description |
+|----------|-------------|
+| [Create UDF upload URL](/products/cloud/api-reference/udf/udf-upload-session-create) | Creates an org-scoped presigned `application/zip` upload URL |
+| [Create UDF](/products/cloud/api-reference/udf/udf-create) | Creates a new UDF from an uploaded archive |
+| [List UDFs](/products/cloud/api-reference/udf/udf-list) | Returns the latest version of each UDF in the organization |
+| [Get UDF](/products/cloud/api-reference/udf/udf-get) | Returns the latest version of a UDF |
+| [Delete UDF](/products/cloud/api-reference/udf/udf-delete) | Deletes every version of a UDF and detaches it from all services |
+| [Create UDF version](/products/cloud/api-reference/udf/udf-version-create) | Consumes a source archive, assigns a version, and starts the UDF build |
+| [List UDF versions](/products/cloud/api-reference/udf/udf-version-list) | Returns all versions of a UDF |
+| [Delete UDF version](/products/cloud/api-reference/udf/udf-version-delete) | Deletes a UDF version that is not attached to any service |
+| [Attach UDF to service](/products/cloud/api-reference/udf/udf-attach) | Attaches one UDF version to a service, replacing the current version when necessary |
+| [List UDF attachments](/products/cloud/api-reference/udf/udf-attachment-list) | Returns the current service attachments for a UDF |
+| [Get UDF attachment](/products/cloud/api-reference/udf/udf-attachment-get) | Returns the current attachment of a UDF to one service |
+| [Detach UDF from service](/products/cloud/api-reference/udf/udf-detach) | Detaches a UDF from a service |
+
+See the [UDF API reference](/products/cloud/api-reference/udf/udf-create) for request and response schemas.
+
+## Manage UDFs with Terraform {#manage-udfs-with-terraform}
+
+<BetaBadge/>
+
+The official [ClickHouse Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) includes two resources for managing UDFs as Infrastructure as Code:
+
+- [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) manages the function itself. It takes a ZIP archive with the function source code and publishes a new version whenever the archive hash changes, waiting for the build to complete.
+- [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) attaches a UDF version to a service. A service holds at most one version of a function at a time. You can pin a fixed version number, or reference `clickhouse_udf.<name>.version` to automatically roll services forward to the latest version.
+
+<Note>
+These resources are available in provider version 3.24.0 and later. They are in beta and their behavior may change in future provider versions.
+</Note>
+
+For example, to deploy the `isBusinessHours` UDF from the earlier example with Terraform:
+
+```terraform
+resource "clickhouse_udf" "is_business_hours" {
+  function_name = "isBusinessHours"
+  runtime       = "python3.11"
+  type          = "executable_pool"
+  return_type   = "Bool"
+
+  arguments = [
+    { name = "timestamp", type = "DateTime" },
+  ]
+
+  source_archive_path = "${path.module}/is_business_hours.zip"
+  source_archive_hash = filebase64sha256("${path.module}/is_business_hours.zip")
+}
+
+resource "clickhouse_udf_attachment" "production" {
+  function_name = clickhouse_udf.is_business_hours.function_name
+  service_id    = var.service_id
+  version       = clickhouse_udf.is_business_hours.version
+}
+```
+
+Attaching only succeeds for versions that are ready, and can take several minutes; idle services are woken up automatically. Deleting a `clickhouse_udf` resource removes all versions of the function and detaches it from all services.

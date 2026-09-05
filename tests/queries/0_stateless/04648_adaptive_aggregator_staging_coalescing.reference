@@ -1,0 +1,18 @@
+General aggregates coalesced across many small blocks
+1
+String arguments cross the seal target mid-production
+1
+Count-only value staging coalesced
+1
+-Array combinator across coalesced batches
+1
+Constant argument stays correct across batches
+1
+Freeze at the first opportunity (threshold 0)
+1
+Large batches are enqueued without coalescing
+1
+LowCardinality argument gathered across batches
+1
+Analytic guard
+30000	449985000	7199940000	120000

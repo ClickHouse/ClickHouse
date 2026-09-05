@@ -1,0 +1,12 @@
+-- one of the matched keys is deleted concurrently
+mutation failed
+2	22
+-- one matched key is deleted and another is updated concurrently
+mutation failed
+2	222
+-- a multi-block strict delete is one atomic request
+0
+1
+-- a non-strict delete stays block by block
+0
+1

@@ -330,18 +330,23 @@ UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
     }
 
     UInt64 items = 0;
-    for (size_t i = 0; i < args.longitude_items; ++i)
+    /// A zero item count on either axis makes the loops below produce nothing, while the other
+    /// axis can still be ~2^32 wide. Skip them and let the fallback emit the single geohash.
+    if (args.longitude_items != 0 && args.latitude_items != 0)
     {
-        for (size_t j = 0; j < args.latitude_items; ++j)
+        for (size_t i = 0; i < args.longitude_items; ++i)
         {
-            size_t length = geohashEncodeImpl(
-                args.longitude_min + args.longitude_step * static_cast<Float64>(i),
-                args.latitude_min + args.latitude_step * static_cast<Float64>(j),
-                args.precision,
-                out);
+            for (size_t j = 0; j < args.latitude_items; ++j)
+            {
+                size_t length = geohashEncodeImpl(
+                    args.longitude_min + args.longitude_step * static_cast<Float64>(i),
+                    args.latitude_min + args.latitude_step * static_cast<Float64>(j),
+                    args.precision,
+                    out);
 
-            out += length;
-            ++items;
+                out += length;
+                ++items;
+            }
         }
     }
 

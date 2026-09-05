@@ -214,17 +214,17 @@ static String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const Str
     return it->second;
 }
 
-void setClickhouseAttemptNumber(Aws::AmazonWebServiceRequest & request, size_t attempt)
+void setClickHouseAttemptNumber(Aws::AmazonWebServiceRequest & request, size_t attempt)
 {
     request.SetAdditionalCustomHeaderValue("clickhouse-request", fmt::format("attempt={}", attempt));
 }
 
-size_t getClickhouseAttemptNumber(const Aws::AmazonWebServiceRequest & request)
+size_t getClickHouseAttemptNumber(const Aws::AmazonWebServiceRequest & request)
 {
     return getAttemptFromInfo(getOrEmpty(request.GetHeaders(), "clickhouse-request"));
 }
 
-size_t getClickhouseAttemptNumber(const Aws::Http::HttpRequest & request)
+size_t getClickHouseAttemptNumber(const Aws::Http::HttpRequest & request)
 {
     return getAttemptFromInfo(getOrEmpty(request.GetHeaders(), "clickhouse-request"));
 }

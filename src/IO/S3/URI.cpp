@@ -11,6 +11,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <aws/s3/S3EndpointProvider.h>
 
 namespace DB
 {
@@ -261,6 +262,19 @@ void URI::validateKey(const String & key, const Poco::URI & uri)
             onError();
         }
     }
+}
+
+std::string expandRegionToAmazonPath(const std::string & region)
+{
+    Aws::S3::Endpoint::S3EndpointProvider provider;
+    provider.AccessBuiltInParameters().SetStringParameter("Region", Aws::String(region));
+    auto outcome = provider.ResolveEndpoint({});
+    if (outcome.IsSuccess())
+    {
+        auto uri = outcome.GetResult().GetURI();
+        return uri.GetURIString();
+    }
+    return "https://s3." + region + ".amazonaws.com";
 }
 
 }

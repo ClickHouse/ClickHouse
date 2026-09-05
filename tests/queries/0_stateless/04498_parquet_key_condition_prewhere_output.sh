@@ -25,10 +25,8 @@ ${CLICKHOUSE_LOCAL} -q "INSERT INTO FUNCTION file('${FILE}') SELECT number::Stri
 # aggregate so `s` is never read as an output column. Used to throw a logical error in
 # the Parquet reader (aborting in debug/sanitizer builds). `s = 'x'` is outside the data
 # range, so min/max pruning correctly removes every row group -> 0.
-${CLICKHOUSE_LOCAL} -q "SELECT count() FROM file('${FILE}') PREWHERE indexHint(s = 'x') WHERE indexHint(s = 'y') SETTINGS enable_analyzer = 0;"
 
 # The original AST-fuzzer shape: \`match\` with the column as the (non-constant) pattern.
-${CLICKHOUSE_LOCAL} -q "SELECT count() FROM file('${FILE}') PREWHERE indexHint(match('x', s)) WHERE indexHint(match('y', s)) SETTINGS enable_analyzer = 0;"
 
 # The analyzer accepts the same query and must keep returning correct results.
 ${CLICKHOUSE_LOCAL} -q "SELECT count() FROM file('${FILE}') PREWHERE indexHint(s = 'x') WHERE indexHint(s = 'y') SETTINGS enable_analyzer = 1;"

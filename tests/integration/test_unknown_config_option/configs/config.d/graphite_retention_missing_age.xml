@@ -1,0 +1,18 @@
+<clickhouse>
+    <!--
+        Negative case: a section shaped like a `GraphiteMergeTree` rollup whose `<pattern>` carries a
+        `<retention>` block with a `<precision>` but no `<age>`. Every child *name* is a recognized
+        rollup key, but `appendGraphitePattern` materializes the block by reading both `.age` and
+        `.precision` with `getUInt`, so the missing `<age>` makes the parser throw and the section would
+        never load. The unknown-key validator must mirror that and reject the whole section as an
+        unknown top-level key (a typo). The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    -->
+    <graphite_retention_missing_age>
+        <pattern>
+            <regexp>.*</regexp>
+            <retention>
+                <precision>60</precision>
+            </retention>
+        </pattern>
+    </graphite_retention_missing_age>
+</clickhouse>

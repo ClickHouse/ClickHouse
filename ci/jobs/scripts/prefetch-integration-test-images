@@ -10,11 +10,15 @@
 # Environment variables:
 #   PULL_RETRIES   Number of pull attempts per image (default: 3)
 #   PULL_TIMEOUT   Per-attempt timeout in seconds (default: 300)
+#   PULL_PARALLEL  Images pulled at once (default: 8); 0 means all at once
 
 set -uo pipefail
 
 PULL_RETRIES="${PULL_RETRIES:-3}"
 PULL_TIMEOUT="${PULL_TIMEOUT:-300}"
+# Bounds the daemon's anon working set, which follows the pulls in flight. The layer page cache it
+# also writes through is charged per batch, not per pull, so that is capped on the cgroup instead.
+PULL_PARALLEL="${PULL_PARALLEL:-8}"
 
 images=("$@")
 if [[ ${#images[@]} -eq 0 ]]; then
@@ -22,7 +26,11 @@ if [[ ${#images[@]} -eq 0 ]]; then
     exit 0
 fi
 
-echo "Pre-fetching ${#images[@]} Docker image(s) in parallel:"
+if ((PULL_PARALLEL > 0)); then
+    echo "Pre-fetching ${#images[@]} Docker image(s), $PULL_PARALLEL at a time:"
+else
+    echo "Pre-fetching ${#images[@]} Docker image(s) in parallel:"
+fi
 for img in "${images[@]}"; do
     echo "  $img"
 done
@@ -62,25 +70,37 @@ pull_one()
     return 1
 }
 
-# Launch all pulls in parallel; each writes its image name to a unique file on failure.
-pids=()
-for image in "${images[@]}"; do
-    # Sanitize image name to a safe filename.
-    safe="${image//[^a-zA-Z0-9._-]/_}"
-    pull_one "$image" "$work_dir/fail_${safe}" &
-    pids+=($!)
+# Freeing a slot reaps a child, so its exit status is no longer available to a later `wait`:
+# every pull records its own outcome on disk, and a missing outcome below is a failure.
+# Keyed by index rather than by the image name, which is not injective once sanitized to a
+# filename: `foo:bar` and `foo/bar` are distinct references that would share one outcome, so a
+# killed pull could read as its namesake's success.
+for i in "${!images[@]}"; do
+    if ((PULL_PARALLEL > 0)); then
+        # `jobs -rp` lists only running children, so this counts pulls in flight.
+        while (($(jobs -rp | wc -l) >= PULL_PARALLEL)); do
+            wait -n 2>/dev/null || :
+        done
+    fi
+    (
+        if pull_one "${images[i]}" "$work_dir/fail_$i"; then
+            echo ok > "$work_dir/done_$i"
+        else
+            echo failed > "$work_dir/done_$i"
+        fi
+    ) &
 done
-
-# Collect exit statuses.
-any_fail=0
-for pid in "${pids[@]}"; do
-    wait "$pid" || any_fail=1
-done
+wait
 
 # Report failures.
 failed=()
-for f in "$work_dir"/fail_*; do
-    [[ -s "$f" ]] && failed+=("$(cat "$f")")
+missing=()
+for i in "${!images[@]}"; do
+    if [[ -s "$work_dir/fail_$i" ]]; then
+        failed+=("${images[i]}")
+    elif [[ ! -s "$work_dir/done_$i" ]]; then
+        missing+=("${images[i]}")
+    fi
 done
 
 if [[ ${#failed[@]} -gt 0 ]]; then
@@ -88,10 +108,9 @@ if [[ ${#failed[@]} -gt 0 ]]; then
     exit 1
 fi
 
-if [[ $any_fail -ne 0 ]]; then
-    # A pull_one returned non-zero without writing a fail file — shouldn't happen,
-    # but guard against it anyway.
-    echo "ERROR: One or more image pulls failed unexpectedly."
+if [[ ${#missing[@]} -gt 0 ]]; then
+    # A pull left no outcome at all, e.g. its shell was killed. Never a success.
+    echo "ERROR: No pull outcome recorded for: ${missing[*]}"
     exit 1
 fi
 

@@ -1,0 +1,10 @@
+index_consulted	1
+granules_plain	Granules: 5/50
+granules_widened	Granules: 50/50
+granules_widened_nullable	Granules: 50/50
+plain	5
+widened	5
+widened_nullable	5
+no_skip_indexes	5
+nobulk_widened	5
+nobulk_widened_nullable	5

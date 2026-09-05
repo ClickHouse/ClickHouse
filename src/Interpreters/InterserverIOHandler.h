@@ -25,6 +25,7 @@ namespace ErrorCodes
 }
 
 class HTMLForm;
+class HTTPServerRequest;
 class HTTPServerResponse;
 class ReadBuffer;
 class WriteBuffer;
@@ -36,6 +37,14 @@ class InterserverIOEndpoint
 public:
     virtual std::string getId(const std::string & path) const = 0;
     virtual void processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response) = 0;
+
+    /// Whether this endpoint authenticates a per-request `Bearer` credential (default false).
+    virtual bool acceptsBearerAuth() const { return false; }
+
+    /// Per-endpoint authentication for a deferred `Bearer` credential, run before `processQuery`.
+    /// The default rejects `Bearer`; endpoints that accept it override. Throw to reject.
+    virtual void authenticate(const HTTPServerRequest & request) const;
+
     virtual ~InterserverIOEndpoint() = default;
 
     /// You need to stop the data transfer if blocker is activated.
@@ -75,6 +84,14 @@ public:
     catch (...)
     {
         throw Exception(ErrorCodes::NO_SUCH_INTERSERVER_IO_ENDPOINT, "No interserver IO endpoint named {}", name);
+    }
+
+    /// Non-throwing `getEndpoint`: returns nullptr if no endpoint is registered under `name`.
+    InterserverIOEndpointPtr tryGetEndpoint(const String & name) const
+    {
+        std::lock_guard lock(mutex);
+        auto it = endpoint_map.find(name);
+        return it == endpoint_map.end() ? nullptr : it->second;
     }
 
 private:
