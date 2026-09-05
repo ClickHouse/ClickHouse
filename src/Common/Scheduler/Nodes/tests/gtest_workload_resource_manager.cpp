@@ -93,6 +93,13 @@ public:
         WorkloadEntityStorageBase::loadEntities(config);
     }
 
+    // Drive the config/Keeper load path (setLocalEntities) directly from SQL text, the way
+    // WorkloadEntityConfigStorage / WorkloadEntityKeeperStorage do (parse -> setLocalEntities).
+    void loadFromString(const String & data)
+    {
+        setLocalEntities(parseEntitiesFromString(data, getLogger("WorkloadEntityTestStorage")));
+    }
+
     void executeQuery(const String & query)
     {
         ParserCreateWorkloadQuery create_workload_p;
@@ -3666,6 +3673,38 @@ TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxConcurrentThreadsRatio
         changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(0)), "");
         ws.initFromChanges(changes);
         EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited);
+    }
+}
+
+// The config/Keeper load path (setLocalEntities) must enforce the same setting-value contract as the
+// SQL path (storeEntity). Regression: it previously ran only the `FOR <resource>` unit check, so an
+// invalid value loaded from config/Keeper was accepted and only surfaced later, when the scheduler
+// node was built.
+TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
+{
+    {
+        ResourceTest t;
+        // Bad value in a `... FOR <resource>` clause (the reported case).
+        EXPECT_THROW(
+            t.storage.loadFromString(
+                "CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD);\n"
+                "CREATE WORKLOAD all SETTINGS scheduler = 'bogus' FOR cpu"),
+            DB::Exception);
+    }
+    {
+        ResourceTest t;
+        // Bad value in the base settings.
+        EXPECT_THROW(
+            t.storage.loadFromString("CREATE WORKLOAD all SETTINGS scheduler = 'nope'"),
+            DB::Exception);
+    }
+    {
+        ResourceTest t;
+        // A valid config loads without error.
+        EXPECT_NO_THROW(
+            t.storage.loadFromString(
+                "CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD);\n"
+                "CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR cpu"));
     }
 }
 

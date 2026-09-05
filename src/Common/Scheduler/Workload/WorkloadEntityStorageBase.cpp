@@ -777,15 +777,32 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
                 change.name);
     }
 
-    // Same `scheduler = ... FOR <resource>` unit check as the SQL path (storeEntity), for workloads
-    // loaded from config/Keeper which bypass it. Only new/changed entities are checked (like the
-    // cost-unit check above), so a pre-existing entity is not re-validated on every refresh.
+    // Validate new/changed workloads the same way the SQL path (storeEntity) does — config/Keeper
+    // loads bypass storeEntity, so without this a bad setting value (e.g. scheduler = 'bogus', a
+    // negative weight, or such a value inside a `... FOR <resource>` clause) is accepted here and
+    // only surfaces later, when the scheduler node is built. Check the setting values (the base
+    // group and each per-resource group) and the `scheduler = ... FOR <resource>` unit targets.
+    // Only new/changed entities are checked (like the cost-unit check above), so a pre-existing
+    // entity is not re-validated on every refresh.
     for (const auto & change : changes)
     {
         if (!change.after)
             continue;
         if (auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(change.after.get()))
+        {
+            WorkloadSettings validator;
+            validator.initFromChanges(workload->changes);
+            std::unordered_set<String> validated_resources;
+            for (const auto & setting_change : workload->changes)
+            {
+                if (!setting_change.resource.empty() && validated_resources.insert(setting_change.resource).second)
+                {
+                    WorkloadSettings resource_validator;
+                    resource_validator.initFromChanges(workload->changes, setting_change.resource);
+                }
+            }
             validateSchedulerResourceTargets(*workload, merged_new_entities);
+        }
     }
 
     // Update local entities
