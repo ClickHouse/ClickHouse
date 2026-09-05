@@ -1776,7 +1776,10 @@ void InterpreterCreateQuery::resolveHierarchicalNames(ASTCreateQuery & create, b
     {
         if (placement->table_name != create.getTable())
             create.setTable(placement->table_name);
-        if (!create.database || placement->database_name != create.getDatabase())
+        /// A database that was not written stays unwritten when the placement is the current database: `ON CLUSTER`
+        /// tells a name without a database from a name with one (the hosts of a cluster may have their own default
+        /// databases, see `executeDDLQueryOnCluster`), and a plain name must take the same code paths as before.
+        if (placement->database_name != (create.database ? create.getDatabase() : current_database))
             create.setDatabase(placement->database_name);
     }
 
