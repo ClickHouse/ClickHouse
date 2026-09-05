@@ -277,6 +277,12 @@ struct AdaptiveAggregationSession
     /// records into it early (see `drainStagedChunksUnderMemoryPressure`); it joins the merge
     /// set when it holds data.
     AggregatedDataVariantsPtr early_drain_variants;
+    /// What the drains into `early_drain_variants` were seen to allocate, as the sweeping
+    /// threads' memory trackers count them, summed since the table was last replaced. The
+    /// table's `allocatedBytes` sums its arenas and hash-table buffers; the heap that states
+    /// such as `uniqExact` or `groupBitmap` own outside the arenas is seen only here. Guarded
+    /// by `pressure_sweep_mutex`, like the table itself.
+    size_t early_drain_tracked_bytes = 0;
 
     /// Serializes pressure sweeps: one sweeper at a time sheds memory, and a single sweeper
     /// needs no per-bucket coordination; merge-time drains run after the finish barrier and

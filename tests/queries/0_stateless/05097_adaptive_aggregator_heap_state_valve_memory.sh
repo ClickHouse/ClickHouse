@@ -12,15 +12,19 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # reading, so this is the shape that would let a batch build a working set the threshold cannot
 # hold if their heap were unbounded relative to what is counted. It is not: a state's heap grows
 # with the values it absorbed, which the batch staged as argument bytes, and its per-group floor
-# is a small multiple of the per-record bookkeeping. The sweep also corrects its reservation
-# against the detached-bytes budget to the drain's own tracked allocation, which does see that heap.
+# is a small multiple of the per-record bookkeeping. The sweeps also account the tables they
+# build by the drain's own tracked allocation, which does see that heap: a producer-local table
+# corrects its reservation against the detached-bytes budget to it, and the shared table, which
+# the tail drains grow across many sweeps, reaches the part bound by it.
 #
 # Every key repeats four times in a row, so each group's states hold several values and the stream
 # is still not repeat-dominated: nothing thaws, and every record goes through the staging path
-# where the drains run. `groupArray` rides along as the arena-owning kind for comparison, and the
-# three exact totals move if a state contribution is lost across the spill. The thresholds are
-# pinned because the runner randomizes them, and `max_memory_usage` is the cell that encodes the
-# claim: ten times the threshold the query asked to spill at.
+# where the drains run. Most sweeps find a backlog smaller than a part and drain it into the shared
+# table, so the shape covers that table's path to disk as well as the producer-local one: it is
+# asserted to have been written out at the part bound. `groupArray` rides along as the arena-owning
+# kind for comparison, and the three exact totals move if a state contribution is lost across the
+# spill. The thresholds are pinned because the runner randomizes them, and `max_memory_usage` is the
+# cell that encodes the claim: ten times the threshold the query asked to spill at.
 #
 # The query runs in its own clickhouse-local process, so the counters in `system.events` belong to
 # it alone.
@@ -48,6 +52,7 @@ SELECT 'went external', (SELECT coalesce(sum(value), 0) FROM system.events WHERE
 SELECT 'the valve ran', (SELECT coalesce(sum(value), 0) FROM system.events WHERE event = 'AdaptiveAggregationPressureSweeps') > 0;
 SELECT 'the tables froze', (SELECT coalesce(sum(value), 0) FROM system.events WHERE event = 'AdaptiveAggregationLocalFreezes') > 0;
 SELECT 'the drain carried the stream', (SELECT coalesce(sum(value), 0) FROM system.events WHERE event = 'AdaptiveAggregationPressureDrainedRecords') > 500000;
+SELECT 'the shared table was written at the part bound', (SELECT coalesce(sum(value), 0) FROM system.events WHERE event = 'AdaptiveAggregationSharedTableSpills') > 0;
 SELECT 'stayed on the frozen path',
     (SELECT coalesce(sum(value), 0) FROM system.events WHERE event = 'AdaptiveAggregationThaws') = 0
     AND (SELECT coalesce(sum(value), 0) FROM system.events WHERE event = 'AdaptiveAggregationPressureStandDowns') = 0;
