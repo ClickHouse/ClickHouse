@@ -59,18 +59,21 @@ IProcessor::Status BufferChunksTransform::prepare()
             auto chunk = std::move(chunks.front());
             chunks.pop();
 
-            if (isVirtualRow(chunk))
+            num_buffered_rows -= chunk.getNumRows();
+            num_buffered_bytes -= chunk.bytes();
+
+            const bool virtual_row = isVirtualRow(chunk);
+            output.push(std::move(chunk));
+            if (virtual_row)
             {
-                output.push(std::move(chunk));
+                /// Stop reading until downstream has consumed the virtual-row
+                /// marker, otherwise we would pull real chunks past the
+                /// part boundary and defeat the LIMIT/read-in-order
+                /// optimizations.
                 wait_for_demand_after_virtual_row = true;
                 input.setNotNeeded();
                 return Status::PortFull;
             }
-
-            num_buffered_rows -= chunk.getNumRows();
-            num_buffered_bytes -= chunk.bytes();
-
-            output.push(std::move(chunk));
         }
         else if (input.hasData())
         {
@@ -92,7 +95,21 @@ IProcessor::Status BufferChunksTransform::prepare()
         auto chunk = pullChunk(virtual_row);
         if (virtual_row)
         {
-            chunks.push(std::move(chunk));
+            /// Virtual rows must go to the output immediately.
+            /// If the output already has data (from the push above), buffer it
+            /// and it will be pushed first on the next prepare() call.
+            if (!output.canPush())
+            {
+                num_buffered_rows += chunk.getNumRows();
+                num_buffered_bytes += chunk.bytes();
+                chunks.push(std::move(chunk));
+                /// The virtual row is now queued; downstream has not yet observed
+                /// it, so upstream must not push real chunks past the boundary
+                /// before the marker is forwarded.
+                input.setNotNeeded();
+                return Status::PortFull;
+            }
+            output.push(std::move(chunk));
             input.setNotNeeded();
             return Status::PortFull;
         }

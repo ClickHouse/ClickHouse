@@ -111,6 +111,10 @@ public:
 
     const SortDescription & getSortDescription() const override { return result_description; }
 
+    /// The order the input streams already come in, so that only the remaining suffix has to be
+    /// sorted. Non-empty only for the `FinishSorting` flavours.
+    const SortDescription & getPrefixDescription() const { return prefix_description; }
+
     bool hasPartitions() const { return !partition_by_description.empty(); }
     const SortDescription & getPartitionByDescription() const { return partition_by_description; }
     Names getPartitionByColumnNames() const;
@@ -176,6 +180,9 @@ public:
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
 
     void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_);
+
+    /// Whether `pushLimitByIntoSort` attached a per-stream `LIMIT BY` prefilter to this step.
+    bool hasLimitByHint() const { return !limit_by_columns.empty(); }
 
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;

@@ -36,6 +36,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/ConcatProcessor.h>
+#include <Processors/PrefetchingConcatProcessor.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -562,6 +563,11 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         all_ranges_callback_,
         read_task_callback_,
         replica_number);
+    /// The step is reconstructed from `getQueryInfo()`, which keeps `input_order_info` (so it still
+    /// reads in order) but not the post-`requestReadingInOrder` state. Carry it over, exactly as
+    /// `clone` and the lazy-FINAL split do, or the fragment would silently drop the per-part
+    /// `PrefetchingConcat` safeguard, re-enable vertical FINAL, or lose small-`LIMIT` task sizing.
+    parallel_replicas_step->copyReadInOrderContractFrom(*this);
     /// This replaces the read step in place, so it must carry over the same state as `clone`: a step
     /// that was already stamped by `tryOptimizeTopK` would otherwise look like a plain read here and
     /// consult or populate the query condition cache under the unsalted condition hash. As in `clone`,
@@ -1932,10 +1938,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         = context->getClientInfo().connection_parallel_replicas_protocol_version
         >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE;
     const bool is_local_plan_follower = isParallelReplicasLocalPlanForFollower() && upstream_supports_split_topology;
-    /// Genuine range splitting runs only for the initiator and for purely-local reads.
-    /// Followers use all parts for every split and only need `num_streams` as the split count,
-    /// since the initiator is the authority on split topology.
-    const bool need_split = is_local_plan_initiator || !is_parallel_reading_from_replicas;
+    /// The distribute-by-streams pre-splitting below only feeds the parallel-replicas
+    /// *initiator* branch, which hands each split its own subset of parts. The local
+    /// reading case does its own per-part splitting on the raw `parts_with_ranges`, and
+    /// the follower / legacy parallel-replica paths consume `parts_with_ranges` (or a
+    /// copy) directly, so none of them need the pre-split `split_parts_and_ranges`.
+    const bool need_split = is_local_plan_initiator;
 
     /// Only the local-plan follower path needs all parts replicated across per-split pools
     /// (each split reads from a copy and filters down to its assigned subset). The legacy
@@ -2081,14 +2089,256 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
     else /* local reading case */
     {
-        /// Preserve master behaviour: every split gets the unmodified `pool_settings` (with
-        /// `.threads = num_streams`). The per-split divider only exists to keep the new
-        /// parallel-replicas split topology from inflating `min_marks_per_request` across the
-        /// per-split pools — local reads have no such concern.
-        for (auto && item : split_parts_and_ranges)
+        /// The granularity and block size are the same for every read below, so bind them once.
+        auto split_ranges = [this](const MarkRanges & ranges, int direction)
         {
-            pipes.emplace_back(readInOrder(
-                std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+            return splitRangesToAvoidLargeReads(
+                ranges, direction, (*data_settings)[MergeTreeSetting::index_granularity], block_size.max_block_size_rows);
+        };
+
+        /// Split each part independently into multiple streams.
+        /// Within each part, ranges are contiguous and in PK order,
+        /// so we can use PrefetchingConcatProcessor to parallelize reading.
+        /// For reverse direction, the pipe order is reversed so that PrefetchingConcat
+        /// outputs the highest ranges first.
+        /// Between parts, MergingSorted merges the sorted streams.
+        /// PrefetchingConcat merges per-part streams into one while keeping I/O parallel.
+        /// It must be disabled when a downstream step (e.g. aggregation-in-order) benefits
+        /// from receiving multiple streams for parallel processing.
+        /// PrefetchingConcat can only be used with multiple parts: it collapses
+        /// N streams into 1 per part, which is fine when MergingSorted merges
+        /// across parts downstream. But with a single part, collapsing all streams
+        /// into 1 destroys downstream parallelism (distinct, sort, expression
+        /// transforms all become single-threaded).
+        ///
+        /// It is also incompatible with per-block virtual rows
+        /// (`read_in_order_use_virtual_row_per_block`). That mode relies on a per-block
+        /// virtual row being observed by `MergingSortedTransform` before any later real
+        /// chunk from the same source is read, so `MergingSortedTransform` can reprioritize
+        /// inputs and avoid reading past the boundary. `PrefetchingConcatProcessor` pulls
+        /// eagerly from every input with no virtual-row stop logic, so it would buffer the
+        /// following real chunk behind a virtual row before that virtual row is emitted,
+        /// reintroducing read-past-boundary behavior. When per-block virtual rows are
+        /// active we therefore fall back to the non-prefetching path.
+        const bool can_use_per_part_prefetching =
+            !output_each_partition_through_separate_port
+            && input_order_info->limit == 0
+            && !has_outer_limit
+            && !prefer_multiple_streams
+            && num_streams > 1
+            && parts_with_ranges.size() > 1
+            && !(settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion);
+
+        /// Even without PrefetchingConcat, split parts into multiple streams
+        /// when the downstream wants parallel streams (e.g. aggregation-in-order).
+        ///
+        /// Per-part splitting requires at least one stream for every part, so it can
+        /// only stay within the `num_streams` budget when there are no more parts than
+        /// streams. With more parts than streams we fall through to the original
+        /// distribute-by-streams loop below, which groups multiple parts into a single
+        /// stream and keeps the total stream count bounded by `num_streams`.
+        const bool can_split_parts =
+            (can_use_per_part_prefetching || (prefer_multiple_streams && num_streams > 1))
+            && parts_with_ranges.size() <= num_streams;
+
+        if (can_split_parts)
+        {
+            size_t streams_remaining = num_streams;
+            size_t marks_remaining_total = info.sum_marks;
+            size_t parts_left = parts_with_ranges.size();
+
+            for (const auto & part : parts_with_ranges)
+            {
+                const size_t marks_in_part = part.getMarksCount();
+
+                /// Reserve at least one stream for each remaining part (including this one),
+                /// so that the total number of streams never exceeds `num_streams`.
+                const size_t max_streams_for_this_part = streams_remaining > parts_left - 1
+                    ? streams_remaining - (parts_left - 1)
+                    : 1;
+
+                /// Allocate streams proportional to marks, bounded by the per-part cap.
+                size_t part_streams = 1;
+                if (max_streams_for_this_part > 1 && marks_remaining_total > 0)
+                {
+                    part_streams = std::max<size_t>(1,
+                        static_cast<size_t>(std::round(
+                            static_cast<double>(marks_in_part) / static_cast<double>(marks_remaining_total)
+                            * static_cast<double>(streams_remaining))));
+                    part_streams = std::min(part_streams, max_streams_for_this_part);
+
+                    /// Don't create more streams than marks available for concurrent reading.
+                    if (marks_in_part < part_streams * info.min_marks_for_concurrent_read)
+                        part_streams = std::max<size_t>(1, marks_in_part / info.min_marks_for_concurrent_read);
+                }
+
+                streams_remaining -= std::min(part_streams, streams_remaining);
+                marks_remaining_total -= std::min(marks_in_part, marks_remaining_total);
+                --parts_left;
+
+                if (part_streams <= 1)
+                {
+                    /// Single stream for this part — no splitting needed.
+                    RangesInDataParts single_part_vec;
+                    RangesInDataPart part_copy = part;
+                    part_copy.ranges = split_ranges(part_copy.ranges, input_order_info->direction);
+                    single_part_vec.emplace_back(std::move(part_copy));
+                    pipes.emplace_back(readInOrder(
+                        std::move(single_part_vec), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+                    continue;
+                }
+
+                /// Split this part's ranges evenly across part_streams streams.
+                const size_t marks_per_stream = (marks_in_part + part_streams - 1) / part_streams;
+                Pipes part_pipes;
+                MarkRanges remaining_ranges = part.ranges;
+                size_t marks_remaining = marks_in_part;
+
+                for (size_t s = 0; s < part_streams && marks_remaining > 0; ++s)
+                {
+                    size_t need_marks = std::min(marks_per_stream, marks_remaining);
+
+                    /// Don't leave too few marks in the last stream.
+                    if (marks_remaining > need_marks && marks_remaining - need_marks < info.min_marks_for_concurrent_read)
+                        need_marks = marks_remaining;
+
+                    MarkRanges ranges_for_stream;
+                    size_t taken = 0;
+                    while (taken < need_marks && !remaining_ranges.empty())
+                    {
+                        MarkRange & range = remaining_ranges.front();
+                        const size_t marks_in_range = range.end - range.begin;
+                        const size_t to_take = std::min(marks_in_range, need_marks - taken);
+
+                        ranges_for_stream.emplace_back(range.begin, range.begin + to_take);
+                        range.begin += to_take;
+                        taken += to_take;
+                        if (range.begin == range.end)
+                            remaining_ranges.pop_front();
+                    }
+                    marks_remaining -= taken;
+
+                    ranges_for_stream = split_ranges(ranges_for_stream, input_order_info->direction);
+                    RangesInDataParts stream_parts;
+                    stream_parts.emplace_back(
+                        part.data_part, part.parent_part,
+                        part.part_index_in_query, part.part_starting_offset_in_query,
+                        std::move(ranges_for_stream),
+                        part.read_hints);
+                    part_pipes.emplace_back(readInOrder(
+                        std::move(stream_parts), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+                }
+
+                if (can_use_per_part_prefetching && part_pipes.size() > 1)
+                {
+                    /// Concatenate streams within this part using PrefetchingConcatProcessor.
+                    /// For reverse direction, reverse the pipe order so that PrefetchingConcat
+                    /// outputs the highest ranges first, maintaining correct descending order.
+                    if (input_order_info->direction != 1)
+                        std::reverse(part_pipes.begin(), part_pipes.end());
+
+                    LOG_TRACE(log, "Using PrefetchingConcatProcessor for {} streams from part {}",
+                        part_pipes.size(), part.data_part->name);
+                    auto pipe = Pipe::unitePipes(std::move(part_pipes));
+                    pipe.addTransform(std::make_shared<PrefetchingConcatProcessor>(pipe.getSharedHeader(), pipe.numOutputPorts()));
+                    pipes.emplace_back(std::move(pipe));
+                }
+                else
+                {
+                    /// Keep streams separate for downstream parallel processing.
+                    for (auto & p : part_pipes)
+                        pipes.emplace_back(std::move(p));
+                }
+            }
+        }
+        else
+        {
+            /// Fallback: distribute parts across num_streams streams (original behavior).
+            /// Used when per-part splitting is not beneficial (e.g. LIMIT queries where
+            /// early termination is more important than parallel I/O).
+            const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
+
+            /// Named distinctly from the outer `split_parts_and_ranges` (used only by the
+            /// parallel-replicas initiator branch above) to avoid `-Wshadow`.
+            std::vector<RangesInDataParts> fallback_split_parts_and_ranges;
+            fallback_split_parts_and_ranges.reserve(num_streams);
+
+            for (size_t i = 0; i < num_streams && !parts_with_ranges.empty(); ++i)
+            {
+                size_t need_marks = min_marks_per_stream;
+                RangesInDataParts new_parts;
+
+                /// Loop over parts.
+                /// We will iteratively take part or some subrange of a part from the back
+                ///  and assign a stream to read from it.
+                while (need_marks > 0 && !parts_with_ranges.empty())
+                {
+                    RangesInDataPart part = parts_with_ranges.back();
+                    parts_with_ranges.pop_back();
+                    size_t & marks_in_part = info.sum_marks_in_parts.back();
+
+                    /// We will not take too few rows from a part.
+                    if (marks_in_part >= info.min_marks_for_concurrent_read && need_marks < info.min_marks_for_concurrent_read)
+                        need_marks = info.min_marks_for_concurrent_read;
+
+                    /// Do not leave too few rows in the part.
+                    if (marks_in_part > need_marks && marks_in_part - need_marks < info.min_marks_for_concurrent_read)
+                        need_marks = marks_in_part;
+
+                    MarkRanges ranges_to_get_from_part;
+
+                    /// We take full part if it contains enough marks or
+                    /// if we know limit and part contains less than 'limit' rows.
+                    bool take_full_part = marks_in_part <= need_marks
+                        || (input_order_info->limit && input_order_info->limit < part.getRowsCount());
+
+                    /// We take the whole part if it is small enough.
+                    if (take_full_part)
+                    {
+                        ranges_to_get_from_part = part.ranges;
+
+                        need_marks -= marks_in_part;
+                        info.sum_marks_in_parts.pop_back();
+                    }
+                    else
+                    {
+                        /// Loop through ranges in part. Take enough ranges to cover "need_marks".
+                        while (need_marks > 0)
+                        {
+                            if (part.ranges.empty())
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected end of ranges while spreading marks among streams");
+
+                            MarkRange & range = part.ranges.front();
+
+                            const size_t marks_in_range = range.end - range.begin;
+                            const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
+
+                            ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
+                            range.begin += marks_to_get_from_range;
+                            marks_in_part -= marks_to_get_from_range;
+                            need_marks -= marks_to_get_from_range;
+                            if (range.begin == range.end)
+                                part.ranges.pop_front();
+                        }
+                        parts_with_ranges.emplace_back(part);
+                    }
+
+                    ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
+                    new_parts.emplace_back(
+                        part.data_part,
+                        part.parent_part,
+                        part.part_index_in_query,
+                        part.part_starting_offset_in_query,
+                        std::move(ranges_to_get_from_part),
+                        part.read_hints);
+                }
+
+                fallback_split_parts_and_ranges.emplace_back(std::move(new_parts));
+            }
+
+            for (auto && item : fallback_split_parts_and_ranges)
+                pipes.emplace_back(readInOrder(
+                    std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
         }
     }
 
@@ -3816,13 +4066,21 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     query_task_size_limit = query_limit ? query_limit : read_limit;
     reader_settings.read_in_order = true;
 
+    /// If the query has an outer LIMIT that could not be pushed down to the reader
+    /// (e.g. it was zeroed by a JOIN), remember it so the per-part prefetching path
+    /// is disabled: prefetching later ranges would defeat early termination on the
+    /// outer LIMIT. This also covers child readers under a `Merge` table, which
+    /// receive the same `query_limit`/`read_limit` through
+    /// `ReadFromMerge::requestReadingInOrder`.
+    if (query_limit != 0 && read_limit == 0)
+        has_outer_limit = true;
+
     /// The conversion only produces its own leading sort columns; the extra merge columns of a
     /// widened re-request are default-filled by setVirtualRow, so the announced boundary is wrong.
     /// Drop the virtual row here: the merge then falls back to normal cross-part comparison.
     if (widened_over_previous_request && virtual_row_conversion
         && virtual_row_conversion->getSampleBlock().columns() < prefix_size)
         resetVirtualRowConversions();
-
     /// In case of read-in-order, don't create too many reading streams.
     /// Almost always we are reading from a single stream at a time because of merge sort.
     if (output_streams_limit)
@@ -3843,6 +4101,44 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     }
 
     return true;
+}
+
+void ReadFromMergeTree::copyReadInOrderContractFrom(const ReadFromMergeTree & source)
+{
+    has_outer_limit = source.has_outer_limit;
+    prefer_multiple_streams = source.prefer_multiple_streams;
+    output_each_partition_through_separate_port = source.output_each_partition_through_separate_port;
+    enable_vertical_final = source.enable_vertical_final;
+    query_task_size_limit = source.query_task_size_limit;
+    virtual_row_conversion = source.virtual_row_conversion;
+
+    /// Nothing was requested in order — the remaining fields hold their constructor defaults on
+    /// both steps and must stay that way.
+    if (!source.reader_settings.read_in_order || !query_info.input_order_info)
+        return;
+
+    /// Everything below is state `requestReadingInOrder` derives rather than stores, so the
+    /// constructor of the rebuilt step cannot recover it from `query_info` alone.
+    ///
+    /// Without `read_in_order` the rebuilt step reads in order but does not know it: `readsInOrder`
+    /// answers `false`, so the parts are neither kept sorted for the in-order pool nor exempted from
+    /// the trailing `pipeline.resize(requested_num_streams)`.
+    reader_settings.read_in_order = true;
+
+    /// The constructor's asynchronous-read branch re-expands `requested_num_streams` up to
+    /// `max_streams_for_merge_tree_reading`, undoing the in-order stream budget: the source was
+    /// narrowed down to `output_streams_limit` and the rebuilt step must use the same budget.
+    if (output_streams_limit)
+        requested_num_streams = output_streams_limit;
+
+    /// `result_sort_description` is only ever filled by `updateSortDescription`, so a rebuilt step
+    /// would advertise no sort at all and hide its preserved order from later order-aware
+    /// optimizations such as `applyOrder` and redundant-sort removal.
+    updateSortDescription();
+
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->read_type
+            = query_info.input_order_info->direction > 0 ? ReadType::InOrder : ReadType::InReverseOrder;
 }
 
 bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversion_)
@@ -4389,6 +4685,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         read_task_callback,
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
+    cloned_step->copyReadInOrderContractFrom(*this);
     cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
     /// The coordinator-computed mark buckets and their per-task grouping; without them the
     /// fan-out has nothing to ship in the per-read bucket task parameters, and a FINAL read

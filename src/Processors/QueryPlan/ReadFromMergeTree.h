@@ -358,6 +358,33 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
+
+    /// Set when downstream aggregation-in-order benefits from multiple
+    /// input streams (parallel aggregation + memory-bound merging).
+    /// Disables per-part PrefetchingConcat that would collapse streams into one.
+    void setPreferMultipleStreams() { prefer_multiple_streams = true; }
+
+    /// Restore the full post-`requestReadingInOrder` state that is not carried by `query_info`.
+    /// `has_outer_limit`, `prefer_multiple_streams`, `enable_vertical_final`,
+    /// `query_task_size_limit` and `virtual_row_conversion` are set by
+    /// `requestReadingInOrder`/`setPreferMultipleStreams`/`setVirtualRowConversions`,
+    /// not stored in `SelectQueryInfo`; `reader_settings.read_in_order`,
+    /// `requested_num_streams` and `result_sort_description` are *derived* by
+    /// `requestReadingInOrder` and cannot be re-derived by the constructor either.
+    /// When a reading step is reconstructed from
+    /// `getQueryInfo()` (which keeps `input_order_info`, so the step still reads in order) —
+    /// e.g. the lazy-FINAL split in `optimizeLazyFinal`, the local parallel-replica fragment in
+    /// `createLocalParallelReplicasReadingStep`, or an arbitrary optimized subtree cloned through
+    /// `clone` — all of this state must be carried over too. Otherwise the per-part
+    /// `PrefetchingConcat` contract is silently dropped, the constructor re-derives
+    /// `enable_vertical_final` from settings (which can re-enable vertical FINAL on a cloned
+    /// in-order FINAL read and violate its sorted-output contract), the limit-aware
+    /// single-range task sizing keyed on `query_task_size_limit` (see line with
+    /// `has_soft_limit_below_one_block`) is lost, and the rebuilt step silently loses the
+    /// virtual-row optimization — which, with `read_in_order_use_virtual_row_per_block`
+    /// enabled, would also flip `can_use_per_part_prefetching` back to `true` and produce a
+    /// different pipeline shape than the original step it was rebuilt from.
+    void copyReadInOrderContractFrom(const ReadFromMergeTree & source);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
     bool readsInOrder() const;
@@ -549,6 +576,16 @@ private:
 
     size_t requested_num_streams;
     size_t output_streams_limit = 0;
+
+    /// True when a LIMIT exists in the query but could not be pushed
+    /// to input_order_info->limit (e.g. because of a JOIN). Set inside
+    /// `requestReadingInOrder` based on `query_limit`/`read_limit`, so it is
+    /// also recorded for child readers under a `Merge` table.
+    bool has_outer_limit = false;
+
+    /// True when downstream step (e.g. aggregation-in-order) benefits from
+    /// receiving multiple streams for parallel processing.
+    bool prefer_multiple_streams = false;
 
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;

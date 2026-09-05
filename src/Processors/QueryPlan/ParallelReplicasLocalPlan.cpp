@@ -1,3 +1,4 @@
+#include <array>
 #include <memory>
 #include <optional>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
@@ -185,6 +186,100 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     return query_plan;
 }
 
+ContextPtr getShippedFragmentContext(const QueryTreeNodePtr & query_tree, ContextPtr fallback)
+{
+    if (const auto * query_node = query_tree->as<QueryNode>())
+        return query_node->getContext();
+    if (const auto * union_node = query_tree->as<UnionNode>())
+        return union_node->getContext();
+    return fallback;
+}
+
+/// The initiator-local fragment is the initiator's share of the very same fragment the remote replicas run, so
+/// the settings that shape the read-in-order pipeline must be the ones the fragment is shipped with. The step is
+/// built with the outer query context (`buildQueryPlanForParallelReplicas` passes `planner_context->getQueryContext()`,
+/// which is the outer context even when the fragment is a subquery with its own `SETTINGS`), and that context is
+/// also the one every runtime setting lookup in `ReadFromMergeTree` goes through. So a subquery-scoped
+/// `read_in_order_use_virtual_row_per_block` would be honoured by the remote replicas, which re-plan the shipped
+/// fragment under it, but not by the initiator-local fragment, which would keep evaluating the per-part
+/// `PrefetchingConcat` guard under the outer value.
+///
+/// The outer context still has to be the base: it carries the parallel-replicas plumbing the reading step needs
+/// (the cluster for parallel replicas, `max_parallel_replicas`, the client info identifying the local replica).
+/// So copy over exactly the read-in-order settings that `ReadFromMergeTree` consults at pipeline-build time.
+/// This mirrors the optimizer-side override in `optimizeTree` (`ReadFromLocalParallelReplicaStep`): if a new
+/// setting starts gating the in-order read path from the step context, it must be added here too.
+///
+/// The stream-budget pair is on the list because the `ReadFromMergeTree` constructor re-derives the stream
+/// budget from the supplied context: it clamps (or, with the asynchronous-read pool, re-expands)
+/// `requested_num_streams` by `max_streams_for_merge_tree_reading` before `copyReadInOrderContractFrom` runs,
+/// and `output_streams_limit` is re-computed the same way. The rebuilt step is handed the shipped fragment's
+/// already-budgeted stream count, so re-clamping it by the *outer* value would make the initiator-local
+/// rebuild disagree with the remote replicas on how many read streams the fragment has - and for an in-order
+/// read the per-part split streams are a coordinator contract: only the snapshot replica may introduce
+/// stream ids, so streams the initiator did not build are dropped as unknown.
+///
+/// The `merge_tree_min_*_for_concurrent_read` family (with the `_for_remote_filesystem` variants) and
+/// `merge_tree_min_read_task_size` are on the list for the same reason: together they derive
+/// `PartRangesReadInfo::min_marks_for_concurrent_read`, which `spreadMarkRangesAmongStreamsWithOrder` uses both
+/// to shrink the global stream count and to cap the per-part split count. A branch-scoped override of any of
+/// them would make the initiator-local rebuild and the remote replicas choose different `#split_i` topologies
+/// for the same shipped fragment.
+///
+/// `merge_tree_determine_task_size_by_prewhere_columns` and `merge_tree_min_bytes_per_task_for_remote_reading`
+/// are on the list because `MergeTreeReadPoolBase::calculateMinMarksPerTask` consults them (for parts stored on
+/// remote disks) when the reading pipeline is built, and the derived `min_marks_per_task` is not local to the
+/// replica: the snapshot replica writes it into the coordinator's first announcement and the followers reuse it.
+/// Under the outer value the initiator-local fragment would announce a task size that disagrees with what the
+/// remote replicas derive from the shipped fragment's own settings.
+///
+/// `fragment_context` is taken per reading step, not once for the whole fragment: with
+/// `parallel_replicas_allow_view_over_mergetree` a view can expand into a `UNION ALL` whose branches carry their
+/// own `SETTINGS`, and the analyzer gives each branch its own `QueryNode` context. Each branch is planned by its
+/// own `Planner` under that context (`buildPlannerContext` takes the node's context), so on a remote replica each
+/// branch's `ReadFromMergeTree` looks these settings up in the branch context. Deriving one context from the
+/// fragment root would flatten those branches on the initiator only. Optimizer-level gates are not affected:
+/// a plan is optimized once, under the top-level context, on the initiator and on the replicas alike.
+static ContextPtr makeShippedFragmentReadingContext(const ContextPtr & context, const ContextPtr & fragment_context)
+{
+    static constexpr std::array read_in_order_runtime_settings{
+        "read_in_order_use_virtual_row",
+        "read_in_order_use_virtual_row_per_block",
+        "read_in_order_two_level_merge_threshold",
+        "max_streams_for_merge_tree_reading",
+        "allow_asynchronous_read_from_io_pool_for_merge_tree",
+        "merge_tree_min_rows_for_concurrent_read",
+        "merge_tree_min_bytes_for_concurrent_read",
+        "merge_tree_min_rows_for_concurrent_read_for_remote_filesystem",
+        "merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem",
+        "merge_tree_min_read_task_size",
+        "merge_tree_determine_task_size_by_prewhere_columns",
+        "merge_tree_min_bytes_per_task_for_remote_reading",
+    };
+
+    if (!fragment_context || fragment_context.get() == context.get())
+        return context;
+
+    const auto & settings = context->getSettingsRef();
+    const auto & fragment_settings = fragment_context->getSettingsRef();
+
+    ContextMutablePtr reading_context;
+    for (const auto * name : read_in_order_runtime_settings)
+    {
+        auto fragment_value = fragment_settings.get(name);
+        if (fragment_value == settings.get(name))
+            continue;
+
+        if (!reading_context)
+            reading_context = Context::createCopy(context);
+        reading_context->setSetting(name, fragment_value);
+    }
+
+    if (!reading_context)
+        return context;
+    return reading_context;
+}
+
 std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     const QueryTreeNodePtr & query_tree,
     const Block & header,
@@ -292,6 +387,10 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     {
         auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
 
+        /// The step was planned under the context of the query node it belongs to, which is the branch context
+        /// for a view expanded into `UNION ALL`, so it is the shipped scope of this particular read.
+        auto reading_context = makeShippedFragmentReadingContext(context, reading->getContext());
+
         MergeTreeAllRangesCallback all_ranges_cb
             = [coordinator](InitialAllRangesAnnouncement announcement) -> std::optional<InitialAllRangesAnnouncementResponse>
         { return coordinator->handleInitialAllRangesAnnouncement(std::move(announcement)); };
@@ -306,7 +405,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
         };
 
         auto read_from_merge_tree_parallel_replicas = reading->createLocalParallelReplicasReadingStep(
-            context, analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
+            reading_context, analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
         reading_node->step = std::move(read_from_merge_tree_parallel_replicas);
 
         /// Only the first reading step can reuse the pre-analyzed result.
