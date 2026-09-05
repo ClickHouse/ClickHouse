@@ -111,7 +111,7 @@ WhatIfResult buildResultWithoutScan(
         r.name = projection.name;
         r.type = projection.type == ProjectionDescription::Type::Aggregate ? "projection (aggregate)" : "projection (normal)";
         r.status = WhatIfCandidateResult::NotApplicable;
-        /// a definition that no longer fits the table is the more useful answer than the blanket one
+        /// a definition that no longer fits beats the blanket reason
         r.not_applicable_reason = reason;
         refreshHypotheticalProjection(projection, data, metadata, context, r.not_applicable_reason);
         result.candidates.push_back(std::move(r));

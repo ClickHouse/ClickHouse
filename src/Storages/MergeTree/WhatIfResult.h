@@ -23,11 +23,10 @@ struct WhatIfCandidateResult
 
     /// Meaningful only when status == Applicable
     UInt64 estimated_marks = 0;
-    /// signed for projections: negative means the candidate reads more marks than the base table
+    /// signed for projections, negative means more marks than the base table
     double skip_ratio = 0.0;
 
-    /// projections only: what the projection read would touch, and whether the optimizer would
-    /// actually switch to it (it needs strictly fewer marks than the base read)
+    /// projections only, what the projection read would touch and whether the optimizer would switch to it
     std::optional<UInt64> estimated_rows;
     std::optional<UInt64> estimated_bytes;
     std::optional<bool> would_be_chosen;

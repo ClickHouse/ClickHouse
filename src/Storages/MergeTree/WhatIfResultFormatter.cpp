@@ -38,7 +38,7 @@ void WhatIfResult::format(WriteBuffer & out) const
         if (idx.estimated_rows)
             writeString(fmt::format("  rows:         {}\n", *idx.estimated_rows), out);
 
-        /// a projection granule holds different rows than a base granule, so its bytes are measured, not scaled
+        /// projection bytes are measured, a projection granule is not a base granule
         if (idx.estimated_bytes)
             writeString(fmt::format("  est_bytes:    {}\n", ReadableSize(*idx.estimated_bytes)), out);
         else if (baseline_marks > 0 && baseline_est_bytes > 0)

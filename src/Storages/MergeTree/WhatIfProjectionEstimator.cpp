@@ -54,20 +54,18 @@ namespace ErrorCodes
 namespace
 {
 
-/// what the projection part built from one baseline part would look like
 struct ProjectionPartData
 {
-    /// the projection's sorting-key columns, one row per projection row, in read order
+    /// the projection key, one row per projection row, in read order
     Block key_block;
-    /// sorted order over key_block, the projection part stores its rows in this order
+    /// sorted order over key_block
     IColumn::Permutation order;
     size_t rows = 0;
-    /// uncompressed size the projection part would have, drives the granularity
+    /// uncompressed size of the projection part, drives the granularity
     size_t bytes = 0;
 };
 
-/// a normal projection re-sorts every row, so the whole part is read; limits, quota and progress
-/// are wired the same way the empirical index scan does it
+/// a normal projection re-sorts every row, so the whole part is read, wired like the empirical index scan
 Pipe makeWholePartPipe(const DataPartPtr & part, const Names & columns_to_read, ReadFromMergeTree * read_step, const ContextPtr & context)
 {
     const auto & data = read_step->getMergeTreeData();
@@ -96,7 +94,7 @@ Pipe makeWholePartPipe(const DataPartPtr & part, const Names & columns_to_read, 
         false,
         false);
 
-    /// the query's speed limits apply here too, size is checked explicitly by the caller
+    /// speed limits apply here too, size is checked by the caller
     if (auto query_limits = read_step->getQueryInfo().storage_limits)
     {
         auto speed_limits = std::make_shared<StorageLimitsList>(*query_limits);
@@ -113,8 +111,7 @@ Pipe makeWholePartPipe(const DataPartPtr & part, const Names & columns_to_read, 
     return pipe;
 }
 
-/// read the parent part once and keep only the projection's key columns, so peak memory is one
-/// copy of the key plus the permutation. Returns false when a read limit was hit
+/// keep only the key columns, so peak memory is one key copy plus the permutation, false when a read limit was hit
 bool buildProjectionPart(
     ProjectionPartData & out,
     const ProjectionDescription & projection,
@@ -132,7 +129,7 @@ bool buildProjectionPart(
     pipeline.setProcessListElement(context->getProcessListElement());
     pipeline.setProgressCallback(context->getProgressCallback());
     pipeline.setQuota(context->getQuota());
-    /// account the scan to the query's own bucket under a KEYED BY normalized_query_hash quota
+    /// account the scan to the query's own quota bucket
     pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
     PullingPipelineExecutor executor(pipeline);
 
@@ -149,7 +146,7 @@ bool buildProjectionPart(
                 total_rows_read, total_bytes_read, "rows or bytes to read", ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
             return false;
 
-        /// the key expression and the sort need full columns, same as the real projection writer
+        /// the key expression and the sort need full columns
         for (auto & column : block)
             column.column = recursiveRemoveSparse(column.column);
         proj_key.expression->execute(block);
@@ -172,8 +169,7 @@ bool buildProjectionPart(
     for (size_t i = 0; i < key_columns.size(); ++i)
         out.key_block.insert({std::move(key_columns[i]), proj_key.data_types[i], proj_key.column_names[i]});
 
-    /// bytes come from the parent's stored sizes of the projection's columns; compact parts report
-    /// zero per column, then the whole part is an upper bound, which understates the benefit
+    /// compact parts report zero per column, then the whole part is an upper bound and the benefit is understated
     for (const auto & name : projection.required_columns)
         out.bytes += part->getColumnSize(name).data_uncompressed;
     if (out.bytes == 0)
@@ -182,8 +178,7 @@ bool buildProjectionPart(
     return true;
 }
 
-/// build the projection part's primary index in memory and prune it with the engine's own PK-range
-/// pruning. Nothing is written, the synthetic part carries only the index and its granularity
+/// build the primary index in memory and prune it with the engine's own PK-range pruning, nothing is written
 MarkRanges pruneSyntheticProjectionPart(
     ProjectionPartData & data,
     const ProjectionDescription & projection,
@@ -201,7 +196,7 @@ MarkRanges pruneSyntheticProjectionPart(
     for (const auto & name : proj_key.column_names)
         sort_description.emplace_back(name, 1, 1);
 
-    /// sorted order via one permutation, without rearranging the columns
+    /// sorted order via one permutation
     stableGetPermutation(data.key_block, sort_description, data.order);
 
     const size_t granule_rows = computeIndexGranularity(
@@ -217,7 +212,7 @@ MarkRanges pruneSyntheticProjectionPart(
     granularity_out
         = std::make_shared<MergeTreeIndexGranularityConstant>(granule_rows, last_mark_rows, num_marks, /* has_final_mark */ false);
 
-    /// primary index = the key at the first row of every granule, in sorted order
+    /// primary index = the key at the first row of every granule
     Columns index_columns;
     index_columns.reserve(data.key_block.columns());
     for (const auto & key_column : data.key_block)
@@ -228,7 +223,7 @@ MarkRanges pruneSyntheticProjectionPart(
         index_columns.push_back(std::move(index_column));
     }
 
-    /// the builder only reads the parent's storage and settings, it does not mutate the parent
+    /// the builder only reads the parent, it does not mutate it
     auto synthetic_part = const_cast<IMergeTreeDataPart &>(*parent_part)
                               .getProjectionPartBuilder(
                                   projection.name, &projection, PartDirIntent::CreateFresh, /* is_temp_projection */ true)
@@ -245,8 +240,7 @@ MarkRanges pruneSyntheticProjectionPart(
         synthetic_ranges, projection.metadata, key_condition, nullptr, nullptr, nullptr, nullptr, query_settings, log);
 }
 
-/// the optimizer builds projection candidates only from parts that survived the base analysis
-/// (analyzeProjectionCandidate iterates parts_with_ranges), so the estimate does the same
+/// the optimizer only considers parts that survived the base analysis, so do the same
 bool tryEstimateProjection(
     WhatIfCandidateResult & result,
     const ProjectionDescription & projection,
@@ -260,7 +254,7 @@ bool tryEstimateProjection(
     const auto & mt_settings = *data.getSettings();
     const auto & query_settings = context->getSettingsRef();
 
-    /// the whole-part scan is not the normal read pipeline, so enforce the query's read limits
+    /// not the normal read pipeline, so enforce the read limits by hand
     const SizeLimits read_limits(
         query_settings[Setting::max_rows_to_read], query_settings[Setting::max_bytes_to_read], query_settings[Setting::read_overflow_mode]);
     UInt64 total_rows_read = 0;
@@ -309,12 +303,11 @@ bool tryEstimateProjection(
     result.estimated_marks = projection_marks;
     result.estimated_rows = projection_rows;
     result.estimated_bytes = projection_bytes;
-    /// signed on purpose: a projection can read more marks than the base table, and that is the answer
+    /// signed on purpose, a projection can read more marks than the base table
     result.skip_ratio = baseline_marks > 0
         ? (static_cast<double>(baseline_marks) - static_cast<double>(projection_marks)) / static_cast<double>(baseline_marks)
         : 0.0;
-    /// the optimizer switches only when the projection reads strictly fewer marks than the base
-    /// read; every baseline part has the candidate, so there is no parent remainder to add
+    /// the optimizer switches only for strictly fewer marks, every baseline part has the candidate so nothing to add
     result.would_be_chosen = baseline_marks > 0 && projection_marks < baseline_marks;
     result.estimate_source = WhatIfCandidateResult::Empirical;
     result.empirical_status = WhatIfCandidateResult::Ok;
@@ -333,8 +326,7 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     const ContextPtr & context,
     String & reason)
 {
-    /// the same ADD PROJECTION validation as CREATE ran, so a dropped column or a setting change
-    /// since then becomes not_applicable instead of an exception
+    /// same validation as CREATE, so a dropped column or a setting change becomes not_applicable, not an exception
     try
     {
         checkHypotheticalProjectionIsAddable(data, metadata, stored.definition_ast, /* if_not_exists */ false, context);
@@ -365,7 +357,7 @@ WhatIfCandidateResult evaluateProjection(
     result.total_parts = data.getActivePartsCount();
     result.total_marks = data.getTotalMarksCount();
 
-    /// context already has the inner SELECT settings applied, so this matches a real read
+    /// context already carries the inner SELECT settings
     if (!context->getSettingsRef()[Setting::optimize_use_projections])
     {
         result.not_applicable_reason = "Projections are disabled by `optimize_use_projections = 0`";
@@ -397,7 +389,7 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    /// the engine's own preconditions for even considering a projection on this read
+    /// the engine's own preconditions for considering a projection here
     if (!QueryPlanOptimizations::canUseProjectionForReadingStep(read_step))
     {
         result.not_applicable_reason = "The optimizer does not consider projections for this read (for example FINAL, SAMPLE, "
@@ -405,7 +397,7 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    /// same coverage rule as optimizeUseNormalProjections: every column the read needs must be there
+    /// same coverage rule as optimizeUseNormalProjections
     for (const auto & column_name : read_step->getAllColumnNames())
     {
         if (!projection->sample_block.findColumnOrSubcolumnByName(column_name) && !projection->metadata->virtuals.has(column_name))
@@ -423,7 +415,7 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    /// CREATE did not need SELECT, the scan does, so check current grants now
+    /// CREATE did not need SELECT, the scan does
     if (!projection->required_columns.empty())
         context->checkAccess(AccessType::SELECT, data.getStorageID(), projection->required_columns);
 
@@ -434,7 +426,7 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    /// PK-range condition over the projection's own key, derived from the query predicate
+    /// PK-range condition over the projection key, from the query predicate
     ActionsDAGWithInversionPushDown predicate_dag(filter_dag->getOutputs().front(), context, /* boolean_context */ true);
     KeyCondition key_condition(predicate_dag, context, proj_key.column_names, proj_key.expression);
     if (key_condition.alwaysUnknownOrTrue())
