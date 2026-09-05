@@ -159,6 +159,8 @@ mkdir -p ci/tmp  # praktika keeps its local state here, the job fails without it
 PYTHONPATH=./ci:. python3 ci/jobs/check_style.py
 ```
 
+On a clean tree this still exits 1 with three failures that are about the environment and not about your change: `yamllint` and `xmllint` need tools that are usually not installed, and `settings_changes_history` reads a changed-files list that only a CI run records. Treat any other failure as yours.
+
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
 
 Avoid fallback paths. When an operation fails, prefer letting the error propagate over silently substituting a default value or alternate behavior. Fallbacks hide bugs and make incidents harder to diagnose. If a fallback is genuinely needed, follow the fail-close principle: never perform a destructive, expensive, or otherwise consequential action on the fallback path. Skip the operation and surface the error instead — for example, when label-attribution data is unavailable, do not assume "human-added" and create backports anyway; let the run fail and retry once the data is available.
