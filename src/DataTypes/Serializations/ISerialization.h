@@ -362,6 +362,8 @@ public:
         MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version = MergeTreeObjectSharedDataSerializationVersion::MAP;
         /// Number of buckets that should be used for Object shared data serialization.
         size_t object_shared_data_buckets = 1;
+        /// Target number of rows per chunk in ADVANCED_CHUNKED Object shared data serialization.
+        size_t object_shared_data_target_chunk_rows = 8192;
         /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
         size_t max_buckets_in_map = 1;
         /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.
@@ -435,6 +437,8 @@ public:
 
         /// Number of buckets to use in Object shared data serialization if corresponding version supports it.
         size_t object_shared_data_buckets = 1;
+        /// Target number of rows per chunk in ADVANCED_CHUNKED Object shared data serialization.
+        size_t object_shared_data_target_chunk_rows = 8192;
         /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
         size_t max_buckets_in_map = 1;
         /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.

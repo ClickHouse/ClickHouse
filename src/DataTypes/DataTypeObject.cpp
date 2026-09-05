@@ -1238,7 +1238,7 @@ SELECT json.^a.b, json.^d.e.f FROM test;
 ```
 
 <Note>
-When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading sub-object sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets` or `advanced` shared data serialization, reading sub-columns from shared data is highly optimized.
+When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading sub-object sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets`, `advanced`, or `advanced_chunked` shared data serialization, reading sub-columns from shared data is highly optimized.
 </Note>
 
 ## Reading JSON combined sub-columns {#reading-json-combined-sub-columns}
@@ -1291,7 +1291,7 @@ FROM test;
 - Row 3: `a` is absent entirely. Both `json.a` and `json.@a` return `NULL`, while `json.^a` returns an empty `{}`.
 
 <Note>
-When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading combined sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets` or `advanced` shared data serialization, reading sub-columns from shared data is highly optimized.
+When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading combined sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets`, `advanced`, or `advanced_chunked` shared data serialization, reading sub-columns from shared data is highly optimized.
 </Note>
 
 ## Type inference for paths {#type-inference-for-paths}
@@ -1761,8 +1761,8 @@ To extract a path subcolumn from it, we just iterate over all rows in this `Map`
 ### Shared data structure in MergeTree parts {#shared-data-structure-in-merge-tree-parts}
 
 In [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables we store data in data parts that stores everything on disk (local or remote). And data on disk can be stored in a different way compared to memory.
-Currently, there are 3 different shared data structure serializations in MergeTree data parts: `map`, `map_with_buckets`
-and `advanced`.
+Currently, there are 4 different shared data structure serializations in MergeTree data parts: `map`, `map_with_buckets`,
+`advanced`, and `advanced_chunked`.
 
 The serialization version is controlled by MergeTree
 settings [object_shared_data_serialization_version](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
@@ -1805,6 +1805,16 @@ Note: because of storing some additional information inside the data structure, 
 `map` and `map_with_buckets` serializations.
 
 For more detailed overview of the new shared data serializations and implementation details read the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better).
+
+#### Advanced chunked {#shared-data-advanced-chunked}
+
+`advanced_chunked` serialization is the same as `advanced` but with support for splitting rows into smaller chunks during serialization.
+This reduces peak memory usage during merges of JSON columns with many unique paths, because only one chunk worth of data
+needs to be materialized at a time instead of the entire row range.
+
+The chunk size is controlled by the MergeTree setting [object_shared_data_target_chunk_rows](/reference/settings/merge-tree-settings/object-shared#object_shared_data_target_chunk_rows) (8192 by default).
+This is not a hard limit: if the last chunk would be smaller than half the target, it is merged with the previous chunk,
+so actual chunk sizes range from `target/2` to `1.5 * target`.
 
 ## Controlling the number of dynamic paths inside JSON in MergeTree parts {#controlling-the-number-of-dynamic-paths}
 

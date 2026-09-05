@@ -464,7 +464,8 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"map", MergeTreeObjectSharedDataSerializationVersion::MAP},
      {"map_with_buckets", MergeTreeObjectSharedDataSerializationVersion::MAP_WITH_BUCKETS},
-     {"advanced", MergeTreeObjectSharedDataSerializationVersion::ADVANCED}})
+     {"advanced", MergeTreeObjectSharedDataSerializationVersion::ADVANCED},
+     {"advanced_chunked", MergeTreeObjectSharedDataSerializationVersion::ADVANCED_CHUNKED}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeDynamicSerializationVersion,

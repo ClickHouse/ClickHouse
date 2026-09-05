@@ -325,15 +325,23 @@ void SerializationArray::serializeOffsetsBinaryBulk(
     const IColumn & offsets_column,
     size_t offset,
     size_t limit,
+    WriteBuffer & stream,
+    bool position_independent_encoding)
+{
+    if (position_independent_encoding)
+        serializeArraySizesPositionIndependent(offsets_column, stream, offset, limit);
+    else
+        SerializationNumber<ColumnArray::Offset>::create()->serializeBinaryBulk(offsets_column, stream, offset, limit);
+}
+
+void SerializationArray::serializeOffsetsBinaryBulk(
+    const IColumn & offsets_column,
+    size_t offset,
+    size_t limit,
     ISerialization::SerializeBinaryBulkSettings & settings)
 {
     if (auto * stream = settings.getter(settings.path))
-    {
-        if (settings.position_independent_encoding)
-            serializeArraySizesPositionIndependent(offsets_column, *stream, offset, limit);
-        else
-            SerializationNumber<ColumnArray::Offset>::create()->serializeBinaryBulk(offsets_column, *stream, offset, limit);
-    }
+        serializeOffsetsBinaryBulk(offsets_column, offset, limit, *stream, settings.position_independent_encoding);
 }
 
 void SerializationArray::serializeBinaryBulkWithMultipleStreams(
