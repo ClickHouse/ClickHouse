@@ -558,6 +558,12 @@ bool MergeTreeReaderWide::canContinueColumnsCacheWrite() const
 
 void MergeTreeReaderWide::accumulateRowsForColumnsCache(size_t pos, const IColumn & column, size_t offset, size_t rows)
 {
+    /// A column with some of its streams missing from the part (a member of a `Nested` that was
+    /// added after the part was written, whose offsets are read from a sibling) is never cached.
+    /// Its rows are not even copyable: the offsets are read, the elements stay empty.
+    if (partially_read_columns.contains(columns_to_read[pos].name))
+        return;
+
     auto & accumulated = cache_accumulated_columns[pos];
     if (!accumulated)
     {
@@ -595,7 +601,7 @@ void MergeTreeReaderWide::writeToColumnsCacheIfRangeComplete()
     for (size_t pos = 0; pos < cache_accumulated_columns.size(); ++pos)
     {
         auto & column = cache_accumulated_columns[pos];
-        if (!column || column->empty() || partially_read_columns.contains(columns_to_read[pos].name))
+        if (!column || column->empty())
             continue;
 
         /// Check the budget BEFORE the entry allocation, so an exhausted budget does not

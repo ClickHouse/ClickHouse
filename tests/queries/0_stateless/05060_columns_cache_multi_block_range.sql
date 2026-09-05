@@ -57,3 +57,33 @@ WHERE current_database = currentDatabase()
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_cc_multi_block;
+
+-- A member of a `Nested` that was added after the part was written has no data stream in the
+-- part: only its offsets are read, from a sibling, and its elements stay empty. Such a column is
+-- never cached, and its rows must not be copied for the cache either, whichever block of the
+-- range they come out in. The siblings that are fully present in the part are cached as usual.
+DROP TABLE IF EXISTS t_cc_nested_added;
+
+CREATE TABLE t_cc_nested_added (id UInt64, n Nested(a UInt64, b String))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192;
+
+INSERT INTO t_cc_nested_added SELECT number, [number, number + 1], ['x', 'y'] FROM numbers(200000);
+
+ALTER TABLE t_cc_nested_added ADD COLUMN n.c Array(Float64);
+
+SYSTEM DROP COLUMNS CACHE;
+
+SELECT sum(arraySum(n.a)), sum(length(arrayStringConcat(n.b))), countIf(n.c != [0., 0.]) FROM t_cc_nested_added
+SETTINGS max_block_size = 65536, preferred_block_size_bytes = 1000000;
+
+SELECT sum(arraySum(n.a)), sum(length(arrayStringConcat(n.b))), countIf(n.c != [0., 0.]) FROM t_cc_nested_added
+SETTINGS max_block_size = 65536, preferred_block_size_bytes = 1000000;
+
+SELECT column, min(row_begin), max(row_end), sum(rows), count()
+FROM system.columns_cache
+WHERE database = currentDatabase() AND table = 't_cc_nested_added'
+GROUP BY column
+ORDER BY column;
+
+DROP TABLE t_cc_nested_added;
