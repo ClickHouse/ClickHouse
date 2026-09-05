@@ -820,6 +820,30 @@ String describeManifest(const Manifest & manifest)
     return out.str();
 }
 
+/// The plan versions of the payload formats must strictly increase: an older reader reads the
+/// formats up to the one it knows and skips the rest, which only works when a later format's version
+/// is above every earlier one. A base format (ordinal 1) has no predecessor to compare against.
+template <typename Manifest>
+constexpr bool formatVersionsStrictlyIncrease(const Manifest & manifest)
+{
+    bool ok = true;
+    UInt64 previous = 0;
+    [&]<size_t... I>(std::index_sequence<I...>)
+    {
+        (
+            [&]
+            {
+                constexpr size_t ordinal = I + 1;
+                const UInt64 version = manifest.template formatIntroducedIn<ordinal>();
+                if (ordinal > 1 && version <= previous)
+                    ok = false;
+                previous = version;
+            }(),
+            ...);
+    }(std::make_index_sequence<Manifest::formatCount()>{});
+    return ok;
+}
+
 /// The coverage rule: the manifest binds every member of the wire struct exactly once.
 template <typename Manifest>
 constexpr bool manifestCoversWire(const Manifest & manifest)
@@ -860,6 +884,8 @@ void registerManifest(QueryPlanStepRegistry & registry, QueryPlanStepRegistry::S
     static_assert(manifestCoversWire(manifest), "the manifest must bind every member of its wire struct exactly once");
     static_assert(manifest.arityIsResolved(),
         "declare the step's input count with .inputs(n) or .variableInputs(): it derives from neither a source nor a transforming step");
+    static_assert(formatVersionsStrictlyIncrease(manifest),
+        "each appended payload format must be introduced in a strictly higher plan version than the one before it");
     checkSettingInitializers(manifest);
     registry.registerStep(manifest.name, std::move(create), manifestRegistryInfo(manifest), describeManifest(manifest));
 }
