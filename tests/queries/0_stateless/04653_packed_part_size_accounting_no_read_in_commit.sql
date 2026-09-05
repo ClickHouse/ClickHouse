@@ -12,17 +12,10 @@
 -- `ThreadPoolImpl::scheduleImpl`): a pool that cannot schedule throws `CANNOT_SCHEDULE_TASK`, not a
 -- memory-tracker exception, so `LockMemoryExceptionInThread` does not suppress it and it escapes.
 --
--- The commit must therefore read nothing. The oracle is the `MutatePart` row of `system.part_log`:
--- `ProfileEventsScope` in `MutatePlainMergeTreeTask::executeStep` covers `transaction.commit`, and
--- `write_part_log` runs after it on the same thread. An object-storage disk is used not because the
--- scheduling happens there, but because it makes the extra access deterministically measurable as
--- read volume: on it the read runs synchronously (`AsynchronousBoundedReadBuffer::readSync` ->
--- `ThreadPoolRemoteFSReader::execute`), so the test observes the access, not the scheduling.
---
--- The cold arm is compared against a warm control rather than against an absolute count: with
--- `columns_and_secondary_indices_sizes_lazy_calculation = 0` the part is warmed when it is loaded,
--- so that arm always contains exactly one archive read and never needs another one in the commit.
--- Absolute counts would depend on the fixture, the control makes the assertion self-normalizing.
+-- The commit must therefore read nothing. `PackedSkipIndicesArchiveIndexLoads` counts that read, and
+-- is read per table from the `MutatePart` row of `system.part_log`: `ProfileEventsScope` in
+-- `MutatePlainMergeTreeTask::executeStep` covers `transaction.commit`, and `write_part_log` runs after
+-- it on the same thread, so the counters it collects are the mutation's own.
 
 DROP TABLE IF EXISTS packed_commit_cold SYNC;
 DROP TABLE IF EXISTS packed_commit_warm SYNC;
@@ -99,34 +92,16 @@ SELECT 'untouched',
 FROM system.part_log
 WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
 
--- The warm control computes the sizes when it loads the cloned part, so its `MutatePart` row always
--- contains that one archive read. The cold arm must contain strictly fewer file opens, because
--- after the fix it does not read the archive at all: not when loading (the sizes stay lazy) and not
--- in the commit (the aggregates are dropped instead of updated). Before the fix it read in the
--- commit, so it opened the same number of files as the control.
---
--- Strictly fewer, not "no more than": the unfixed build reads exactly as much as the control, so a
--- "no more than" assertion would hold on both builds and the test would prove nothing.
---
--- `FileOpen` is the counter because it does not depend on which reader implementation serves the
--- read, so the assertion survives `local_filesystem_read_method` and `remote_filesystem_read_method`
--- randomization.
-SELECT 'fewer_file_open',
-    maxIf(ProfileEvents['FileOpen'], table = 'packed_commit_cold')
-   < maxIf(ProfileEvents['FileOpen'], table = 'packed_commit_warm')
+-- The commit must not load the skip-indices archive index at all, so the cold arm's count is 0. The
+-- warm control computes the sizes when it loads the cloned part, and a part storage loads that index
+-- at most once, so its count is exactly 1.
+SELECT 'cold_no_archive_load',
+    maxIf(ProfileEvents['PackedSkipIndicesArchiveIndexLoads'], table = 'packed_commit_cold') = 0
 FROM system.part_log
 WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
 
--- The same statement in bytes moved through `ThreadPoolRemoteFSReader::execute`, which as noted above
--- runs synchronously on the mutation thread here, so the `MutatePart` counter scope collects it.
---
--- It is a second read-volume signal beside `FileOpen`, not the scheduling observable: on the
--- scheduled path the same increment happens on a pool worker under its own thread group, which the
--- part-log snapshot cannot collect. The claim that the read is handed to a pool, and so can raise
--- `CANNOT_SCHEDULE_TASK`, is carried by the fix's rationale and by the boundary probe instead.
-SELECT 'fewer_pool_read',
-    maxIf(ProfileEvents['ThreadpoolReaderReadBytes'], table = 'packed_commit_cold')
-   < maxIf(ProfileEvents['ThreadpoolReaderReadBytes'], table = 'packed_commit_warm')
+SELECT 'warm_one_archive_load',
+    maxIf(ProfileEvents['PackedSkipIndicesArchiveIndexLoads'], table = 'packed_commit_warm') = 1
 FROM system.part_log
 WHERE database = currentDatabase() AND table LIKE 'packed_commit_%' AND event_type = 'MutatePart';
 
