@@ -31,6 +31,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -53,6 +54,20 @@ StorageURLCluster::StorageURLCluster(
     : IStorageCluster(cluster_name_, table_id_, getLogger("StorageURLCluster (" + table_id_.getFullTableName() + ")"))
     , uri(uri_), format_name(format_)
 {
+    /// A subquery `body(...)` is executed at request time, so every worker would re-execute it
+    /// locally and could send a different payload (and receive a response of a different schema)
+    /// than the one this constructor infers from below. The callers reject or avoid this case
+    /// before any schema-inference request is sent (`TableFunctionURLCluster` throws,
+    /// `TableFunctionURL` falls back to a non-clustered read); this check only guards
+    /// against new callers taking a clustered read with a subquery body.
+    if (configuration_.body.query)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "A clustered read from `url` does not support a subquery in the 'body' argument: "
+            "every shard would re-execute the subquery locally, so the request body and the response "
+            "schema could differ between the shards and the initiator. "
+            "Use a constant string in 'body' instead.");
+
     auto headers = configuration_.headers;
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
     context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
@@ -64,10 +79,10 @@ StorageURLCluster::StorageURLCluster(
         ColumnsDescription columns;
         if (format_name == "auto")
             std::tie(columns, format_name) = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context);
+                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, configuration_.body, std::nullopt, context);
         else
             columns = StorageURL::getTableStructureFromData(
-                format_, uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context);
+                format_, uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, configuration_.body, std::nullopt, context);
 
         storage_metadata.setColumns(columns);
     }
@@ -75,7 +90,7 @@ StorageURLCluster::StorageURLCluster(
     {
         if (format_name == "auto")
             format_name = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context).second;
+                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, configuration_.body, std::nullopt, context).second;
 
         storage_metadata.setColumns(columns_);
     }

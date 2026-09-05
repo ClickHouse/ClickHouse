@@ -8,6 +8,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+#include <Access/ContextAccess.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -96,6 +97,21 @@ namespace
 
         return engine_args;
     }
+
+    /// Listable path wildcards (`*` / `**`) are expanded by listing HTTP index pages through the `web`
+    /// object storage, which issues plain `GET` requests and has no way to carry a request body. The AST
+    /// rebuilt by `makeWebObjectStorageEngineArgs` above does not forward `body(...)`, so without this check
+    /// the body would be silently dropped and the read would fall back to a `GET`. Reject it explicitly,
+    /// consistently with the other surfaces that cannot send a body.
+    void rejectBodyForListableWildcard(const IStorageURLBase::Body & body)
+    {
+        if (!body.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The 'body' argument is not supported for `url` with listable path wildcards "
+                "(expanded from HTTP index pages): the wildcard expansion reads through the `web` "
+                "object-storage path, which sends plain GET requests and cannot carry a request body.");
+    }
 }
 
 VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
@@ -108,9 +124,14 @@ VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(cons
 
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
-        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "headers")
-            result.push_back(i);
+        if (auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>())
+        {
+            const auto & function_name = function_node->getFunctionName();
+            if (function_name == "headers" || function_name == "body")
+            {
+                result.push_back(i);
+            }
+        }
     }
 
     return result;
@@ -134,24 +155,26 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
         format = configuration.format;
 
-        StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
+        StorageURL::evalArgsAndCollectHeadersAndBody(args, configuration.headers, configuration.body, context);
     }
     else
     {
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
-        /// ITableFunctionFileLike cannot parse headers argument, so remove it.
-        ASTPtr headers_ast;
-        if (count != args.size())
+        size_t count = StorageURL::evalArgsAndCollectHeadersAndBody(args, configuration.headers, configuration.body, context);
+        /// ITableFunctionFileLike cannot parse `headers(...)` or `body(...)`, so set them aside.
+        const size_t extra = args.size() - count;
+        chassert(extra <= 2);
+        ASTs extras;
+        extras.reserve(extra);
+        for (size_t i = 0; i < extra; ++i)
         {
-            chassert(count + 1 == args.size());
-            headers_ast = args.back();
+            extras.push_back(std::move(args.back()));
             args.pop_back();
         }
 
         ITableFunctionFileLike::parseArgumentsImpl(args, context);
 
-        if (headers_ast)
-            args.push_back(headers_ast);
+        for (auto it = extras.rbegin(); it != extras.rend(); ++it)
+            args.push_back(std::move(*it));
     }
 
     /// Resolve relative URLs against the url_base setting.
@@ -178,6 +201,16 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The url table function does not support headers(...) when dispatching to the {} engine (URL '{}')",
+                storageEngineNameForURLScheme(target), filename);
+
+        /// The delegate argument list rebuilt in `buildDelegate` carries only the source, format,
+        /// structure and compression method, and the delegate backends read without an HTTP request
+        /// body anyway, so a `body(...)` argument would be silently dropped. Reject it explicitly,
+        /// consistently with the `headers(...)` rejection above.
+        if (!configuration.body.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The url table function does not support body(...) when dispatching to the {} engine (URL '{}')",
                 storageEngineNameForURLScheme(target), filename);
 
         buildDelegate(target, context);
@@ -323,6 +356,16 @@ StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr context,
     const std::string & table_name, const String & compression_method_, bool is_insert_query) const
 {
+    /// The `body(...)` argument only makes sense for reading, where it forms the HTTP request body.
+    /// For `INSERT INTO FUNCTION url(...)` the inserted rows themselves are sent as the request body
+    /// (see `IStorageURLBase::write`), so a user-provided `body` would be silently ignored. Reject it
+    /// explicitly instead of dropping it.
+    if (is_insert_query && !configuration.body.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The 'body' argument is not supported for INSERT INTO FUNCTION url(...): "
+            "the inserted data is sent as the request body.");
+
     const auto & settings = context->getSettingsRef();
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
@@ -334,13 +377,21 @@ StoragePtr TableFunctionURL::getStorage(
     /// old literal/template expansion and read different (or no) files than the non-cluster path.
     const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(source);
 
+    /// A subquery `body(...)` is executed at request time, so on a clustered read every replica
+    /// would re-execute the subquery locally and could send a different payload (and receive a
+    /// response of a different schema) than the one the initiator inferred from. Parallel replicas
+    /// is an opportunistic optimization, so fall back to a plain single-server read instead of
+    /// failing; a constant string body is identical everywhere and stays eligible.
+    const bool has_subquery_body = configuration.body.query != nullptr;
+
     const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
         && settings[Setting::parallel_replicas_for_cluster_engines]
         && context->canUseTaskBasedParallelReplicas()
         && !context->isDistributed()
         && !is_secondary_query
         && !is_insert_query
-        && !use_web_wildcard;
+        && !use_web_wildcard
+        && !has_subquery_body;
 
     if (can_use_parallel_replicas)
     {
@@ -351,13 +402,14 @@ StoragePtr TableFunctionURL::getStorage(
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            getActualTableStructure(context, true),
+            getActualTableStructure(context, is_insert_query),
             ConstraintsDescription{},
             configuration);
     }
 
     if (use_web_wildcard)
     {
+        rejectBodyForListableWildcard(configuration.body);
         checkExperimentalURLWildcardFromIndexPages(context);
         auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
 
@@ -399,6 +451,7 @@ StoragePtr TableFunctionURL::getStorage(
         context,
         compression_method_,
         configuration.headers,
+        configuration.body,
         configuration.http_method,
         nullptr,
         /*distributed_processing=*/false);
@@ -411,11 +464,25 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
 
     if (structure == "auto")
     {
+        /// An insert-style structure resolution (`INSERT INTO FUNCTION url(...)`,
+        /// `CREATE TABLE ... AS url(...)`) must not send the body-carrying schema-inference
+        /// request: the insert-style execution itself rejects `body(...)` later (see `getStorage`),
+        /// so the endpoint would receive the payload from a query that is doomed to fail.
+        /// Fail before any request is made instead.
+        if (is_insert_query && !configuration.body.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Schema inference is not supported for the url table function with the 'body' argument when "
+                "the structure is resolved for an insert-style query (e.g. INSERT INTO FUNCTION url(...) or "
+                "CREATE TABLE ... AS url(...)): it would send the body-carrying HTTP request even though such "
+                "a query rejects the 'body' argument. Specify the 'structure' argument explicitly instead.");
+
         ColumnsDescription columns;
         String sample_path = filename;
 
         if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
         {
+            rejectBodyForListableWildcard(configuration.body);
             checkExperimentalURLWildcardFromIndexPages(context);
 
             auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
@@ -442,6 +509,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 filename,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
+                configuration.body,
                 std::nullopt,
                 context).first;
         }
@@ -451,6 +519,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 filename,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
+                configuration.body,
                 std::nullopt,
                 context);
         }
@@ -497,7 +566,7 @@ import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBa
 ## Syntax {#syntax}
 
 ```sql
-url(URL [,format] [,structure] [,headers])
+url(URL [,format] [,structure] [,headers] [,body])
 ```
 
 ## Parameters {#parameters}
@@ -508,6 +577,7 @@ url(URL [,format] [,structure] [,headers])
 | `format`    | [Format](/reference/formats/index) of the data. Type: [String](/reference/data-types/string).                                                  |
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).     |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
+| `body`      | Request body in `body(content [, format])` form. `content` is either a constant string or a `SELECT` subquery. When a subquery is used, its output rows are streamed into the request body using the given output `format` (defaults to `JSONLines`). Specifying a body promotes the request from `GET` to `POST`.                                              |
 
 ## Returned value {#returned-value}
 
@@ -528,6 +598,60 @@ CREATE TABLE test_table (column1 String, column2 UInt32) ENGINE=Memory;
 INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FORMAT+CSV', 'CSV', 'column1 String, column2 UInt32') VALUES ('http interface', 42);
 SELECT * FROM test_table;
 ```
+
+## Sending an HTTP request body {#sending-a-body}
+
+When the remote endpoint expects a `POST` payload, pass the body via the `body(...)` argument. The body can be a constant string or the result of a `SELECT` subquery. Specifying a body promotes the request from `GET` to `POST`; the body is streamed to the server as the subquery produces rows, so no intermediate buffering is required.
+
+Constant string body:
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/echo',
+    JSONEachRow,
+    headers('Content-Type'='application/json'),
+    body('{"user":"alice"}')
+);
+```
+
+Subquery body (default output format is `JSONLines`):
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/lookup',
+    JSONEachRow,
+    headers('Content-Type'='application/json'),
+    body((SELECT id, name FROM local_table WHERE active))
+);
+```
+
+Subquery body with an explicit output format:
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/lookup',
+    JSONEachRow,
+    headers('Content-Type'='text/csv'),
+    body((SELECT id, name FROM local_table WHERE active), CSVWithNames)
+);
+```
+
+:::note
+When the `structure` argument is omitted, `url` first sends a request to infer the response schema and then sends a second request to read the data. This double request is the same behavior as for plain `GET` reads with automatic structure, but with a body it means the `POST` (and any subquery used to build the body) is sent twice. Specifying an explicit `structure` avoids the extra schema-inference request:
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/lookup',
+    JSONEachRow,
+    'id UInt64, name String',
+    body((SELECT id, name FROM local_table WHERE active))
+);
+```
+
+Even with an explicit `structure`, the request is not guaranteed to be delivered exactly once: the HTTP layer re-sends the same method and body when following redirects, and retries the request (re-running the subquery that builds the body) on retriable network failures. Endpoints that receive a body should be prepared to handle repeated delivery, for example by being idempotent.
+:::
+
+A subquery body is not supported for clustered reads: [`urlCluster`](/reference/functions/table-functions/urlCluster) rejects it, and `url` does not use parallel replicas when the body is a subquery. Every participating server would re-execute the subquery locally, so the request body could differ between the servers. A constant string body is identical everywhere and works with both.
 
 ## Dispatching by URL scheme {#scheme-dispatch}
 

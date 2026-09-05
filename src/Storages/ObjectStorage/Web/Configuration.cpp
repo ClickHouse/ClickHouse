@@ -82,7 +82,16 @@ void WebStorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wi
     /// positional argument and wrongly reject valid signatures such as
     /// `url('http://host/*.gz', 'TSV', 'x UInt64', 'gzip', headers('X'='Y'))`, which the plain
     /// `url` path accepts (see `StorageURL::getConfiguration`).
-    size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
+    StorageURL::Body body;
+    size_t count = StorageURL::evalArgsAndCollectHeadersAndBody(args, headers_from_ast, body, context);
+
+    /// `body(...)` is supported only by the `url` table function, not by the `web` object storage.
+    /// `evalArgsAndCollectHeadersAndBody` extracts it into `body`, so reject it explicitly to avoid
+    /// silently dropping the payload (mirroring the S3 / object-storage rejections).
+    if (!body.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The 'body' argument is supported only by the 'url' table function, not by the 'web' object storage.");
 
     if (count == 0 || count > WebStorageParsedArguments::getMaxNumberOfArguments(with_structure))
         throw Exception(
