@@ -175,18 +175,16 @@ ColumnsCache::getIntersecting(
     return result;
 }
 
-std::pair<UInt64, UInt64> ColumnsCache::getInvalidationGenerations(const UUID & table_uuid, const String & part_name)
+UInt64 ColumnsCache::getInvalidationGeneration(const UUID & table_uuid)
 {
     std::lock_guard lock(interval_index_mutex);
-    const PartIdentifier part_id{table_uuid, part_name};
-    return {currentGeneration(table_uuid), currentPartGeneration(part_id)};
+    return currentGeneration(table_uuid);
 }
 
 bool ColumnsCache::set(
     const Key & key,
     const MappedPtr & mapped,
-    UInt64 expected_table_generation,
-    UInt64 expected_part_generation)
+    UInt64 expected_table_generation)
 {
     /// Hold interval_index_mutex across all updates so getIntersecting / clearAll
     /// observe a consistent view, and so that overlap detection cannot race with
@@ -204,8 +202,7 @@ bool ColumnsCache::set(
     /// lock removeTable and clearAll use, so the comparison cannot race with a
     /// concurrent bump.
     const PartIdentifier part_id{key.table_uuid, key.part_name};
-    if (currentGeneration(key.table_uuid) != expected_table_generation
-        || currentPartGeneration(part_id) != expected_part_generation)
+    if (currentGeneration(key.table_uuid) != expected_table_generation)
         return false;
 
     /// An entry whose weight exceeds the cache size limit would be evicted by
@@ -345,7 +342,6 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
     {
         global_generation = nextGeneration();
         table_generations.clear();
-        part_generations.clear();
         return;
     }
 
@@ -353,7 +349,6 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
     /// deferred set() from a reader that captured an older generation is rejected
     /// and cannot repopulate the cache with stale data after this invalidation.
     table_generations[table_uuid] = nextGeneration();
-    std::erase_if(part_generations, [&](const auto & item) { return item.first.table_uuid == table_uuid; });
 
     std::vector<PartIdentifier> parts_to_remove;
     std::vector<Key> keys_to_remove;
@@ -387,18 +382,9 @@ void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
     /// same order, so there is no lock-order cycle.
     std::lock_guard lock(interval_index_mutex);
 
-    /// While the cache is disabled, advance the cache-wide stamp instead of a per-part one,
-    /// see removeTable.
-    if (Base::maxSizeInBytes() == 0)
-    {
-        global_generation = nextGeneration();
-        table_generations.clear();
-        part_generations.clear();
-        return;
-    }
-
+    /// No invalidation stamp is advanced here, see the declaration: the part is removed from
+    /// the cache only once no reader can hold it, so there is no deferred write to reject.
     PartIdentifier part_id{table_uuid, part_name};
-    part_generations[part_id] = nextGeneration();
     auto part_it = interval_index.find(part_id);
     if (part_it == interval_index.end())
         return;

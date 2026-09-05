@@ -1082,11 +1082,10 @@ void IMergeTreeDataPart::clearCaches()
         && !isProjectionPart()
         && storage.getStorageID().uuid != UUIDHelpers::Nil)
     {
-        /// Call removePart even when the cache is sized to zero: a reader that started
-        /// while the cache was still enabled holds an invalidation stamp and could
-        /// repopulate entries for this removed part after a config reload re-enables
-        /// the cache. ColumnsCache::removePart handles the zero-sized case internally
-        /// by advancing the cache-wide invalidation stamp.
+        /// No reader can hold this part any more: clearCaches runs from the destructor of the
+        /// part and for outdated parts that are uniquely owned, while a reader owns the part
+        /// through its `data_part_info_for_read` as long as it may still write to the cache. So
+        /// there is no in-flight write to guard against, and removing the entries is enough.
         if (auto columns_cache = storage.getContext()->getColumnsCache())
         {
             columns_cache->removePart(storage.getStorageID().uuid, name);

@@ -193,18 +193,15 @@ size_t MergeTreeReaderWide::readRows(
         if (!continue_reading)
             cache_write_pending = false;
 
-        /// Capture the invalidation generations before anything is read, so that any
-        /// invalidation racing with this read is observed. They are passed to `set()` by the
-        /// deferred write below: the write is dropped if the table was invalidated, its part
-        /// removed, or the whole cache dropped, after this point. The schema token of the
-        /// cache keys is not taken from here but from the metadata snapshot of the query
+        /// Capture the invalidation generation before anything is read, so that any
+        /// invalidation racing with this read is observed. It is passed to `set()` by the
+        /// deferred write below: the write is dropped if the table was invalidated or the
+        /// whole cache dropped after this point. The schema token of the cache keys is not
+        /// taken from here but from the metadata snapshot of the query
         /// (`settings.columns_cache_schema_identity`), so that it cannot disagree with the
         /// schema this read actually uses, see `ColumnsCacheKey::schema_identity`.
         if (cache_enabled && (settings.enable_columns_cache_reads || settings.enable_columns_cache_writes))
-        {
-            std::tie(cache_table_generation, cache_part_generation) = columns_cache->getInvalidationGenerations(
-                data_part_info_for_read->getTableUUID(), data_part_info_for_read->getPartName());
-        }
+            cache_table_generation = columns_cache->getInvalidationGeneration(data_part_info_for_read->getTableUUID());
 
         bool serving_from_cache = false;
         std::vector<std::pair<ColumnsCacheKey, ColumnPtr>> cached_columns;
@@ -613,7 +610,7 @@ size_t MergeTreeReaderWide::readRows(
                             /// this range; a no-op write must not consume the budget, otherwise
                             /// a query could exhaust the cap and skip later real inserts even
                             /// though those bytes were never written to the cache.
-                            if (columns_cache->set(cache_key, entry, cache_table_generation, cache_part_generation) && bytes_written)
+                            if (columns_cache->set(cache_key, entry, cache_table_generation) && bytes_written)
                                 bytes_written->fetch_add(entry_weight, std::memory_order_relaxed);
 
                             LOG_TEST(log, "Cached column: {}, row_begin={}, row_end={}, rows={}",

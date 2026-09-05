@@ -128,18 +128,12 @@ private:
     mutable std::mutex interval_index_mutex;
 
     /// Per-table invalidation stamp, advanced by removeTable. See
-    /// getInvalidationGenerations. Guarded by interval_index_mutex.
+    /// getInvalidationGeneration. Guarded by interval_index_mutex.
     std::unordered_map<UUID, UInt64> table_generations;
-
-    /// Per-part invalidation generation, advanced by removePart. Unlike the
-    /// interval index, this retains tombstones for removed parts so a reader
-    /// that started before removal cannot repopulate the cache afterwards.
-    /// Guarded by interval_index_mutex.
-    std::unordered_map<PartIdentifier, UInt64, PartIdentifierHash> part_generations;
 
     /// Cache-wide invalidation stamp, advanced by clearAll (`SYSTEM DROP COLUMNS
     /// CACHE`). It participates in the token returned by
-    /// getInvalidationGenerations, so a drop also rejects deferred writes from
+    /// getInvalidationGeneration, so a drop also rejects deferred writes from
     /// readers that started before it. Guarded by interval_index_mutex.
     UInt64 global_generation = 0;
 
@@ -160,12 +154,6 @@ private:
     {
         auto it = table_generations.find(table_uuid);
         return std::max(global_generation, it == table_generations.end() ? UInt64(0) : it->second);
-    }
-
-    UInt64 currentPartGeneration(const PartIdentifier & part_id) const
-    {
-        auto it = part_generations.find(part_id);
-        return it == part_generations.end() ? 0 : it->second;
     }
 
     /// Counts set() calls since the last compaction. Used to amortize the cost of
@@ -226,10 +214,10 @@ public:
     /// size limit). Callers use the return value to avoid charging the per-query
     /// write budget for writes that never landed in the cache.
     ///
-    /// The expected generations are captured through getInvalidationGenerations
-    /// when the reader starts. A mismatch means the table, whole cache, or part
+    /// The expected generation is captured through getInvalidationGeneration
+    /// when the reader starts. A mismatch means the table or the whole cache
     /// was invalidated after the read began, so the deferred write is dropped.
-    bool set(const Key & key, const MappedPtr & mapped, UInt64 expected_table_generation, UInt64 expected_part_generation);
+    bool set(const Key & key, const MappedPtr & mapped, UInt64 expected_table_generation);
 
     /// Current invalidation token for a table. Advances each time removeTable is
     /// called (a metadata change that can remap column names) and each time
@@ -238,10 +226,15 @@ public:
     /// by a reader that started before the invalidation cannot repopulate the
     /// cache with stale data, and cannot resurrect entries an explicit drop
     /// removed.
-    std::pair<UInt64, UInt64> getInvalidationGenerations(const UUID & table_uuid, const String & part_name);
+    UInt64 getInvalidationGeneration(const UUID & table_uuid);
 
     /// Remove all cached entries for a specific data part.
-    /// Should be called when a part is dropped, merged, or mutated.
+    /// Called when the part leaves the table for good: from the destructor of the part, and for
+    /// outdated parts that nobody else holds any more (`isSharedPtrUnique`). A reader holds the
+    /// part through its `data_part_info_for_read` for as long as its deferred write is pending,
+    /// so no reader can still write entries for the part after this call, and unlike removeTable
+    /// this needs no invalidation stamp: nothing per part is retained once the entries are gone.
+    /// Part names are not reused within a table, so a later part cannot find these entries either.
     void removePart(const UUID & table_uuid, const String & part_name);
 
     /// Remove all cached entries for a specific table.
@@ -266,9 +259,8 @@ public:
         std::lock_guard lock(interval_index_mutex);
         global_generation = nextGeneration();
         /// The new cache-wide stamp already invalidates every token captured so far, so the
-        /// per-table and per-part stamps can be reclaimed instead of being kept forever.
+        /// per-table stamps can be reclaimed instead of being kept forever.
         table_generations.clear();
-        part_generations.clear();
         Base::clear();
         interval_index.clear();
         sets_since_compaction = 0;

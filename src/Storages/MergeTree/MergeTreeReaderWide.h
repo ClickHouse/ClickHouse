@@ -127,13 +127,11 @@ private:
     size_t cache_row_begin = 0;
     size_t cache_range_last_mark = 0;
     std::vector<size_t> cache_column_sizes_at_task_start;
-    /// Invalidation generations captured when this task's read started.
+    /// Invalidation generation captured when this task's read started.
     /// Passed to ColumnsCache::set so a deferred write is dropped if the table was
     /// invalidated (e.g. RENAME COLUMN), or the whole cache dropped by `SYSTEM DROP
-    /// COLUMNS CACHE`, or its part removed, after the read began. See
-    /// getInvalidationGenerations.
+    /// COLUMNS CACHE`, after the read began. See getInvalidationGeneration.
     UInt64 cache_table_generation = 0;
-    UInt64 cache_part_generation = 0;
 
 };
 
