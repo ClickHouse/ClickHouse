@@ -17,6 +17,9 @@ struct Settings;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+struct BuiltSetsByHash;
+using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
+
 class QueryPlan;
 
 struct QueryPlanOptimizationSettings
@@ -55,6 +58,7 @@ struct QueryPlanOptimizationSettings
     bool merge_expressions;
     bool merge_filters;
     bool filter_push_down;
+    bool propagate_predicate_across_join;
     bool fuse_filter_into_array_join;
     bool lower_array_join_function;
     bool enable_lazy_columns_replication;
@@ -120,6 +124,7 @@ struct QueryPlanOptimizationSettings
     bool query_plan_join_shard_by_pk_ranges;
 
     bool enable_cascades_optimizer = false;
+    bool cascades_aggregation_pushdown = true;
 
     bool make_distributed_plan = false;
     bool serialize_query_plan = false;
@@ -238,7 +243,9 @@ struct QueryPlanOptimizationSettings
 
     bool is_explain;
 
-    std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
+    /// Takes the sets the single-node plan already filled, so the probe plan can adopt them instead
+    /// of re-running the same subqueries.
+    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
 
     bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;

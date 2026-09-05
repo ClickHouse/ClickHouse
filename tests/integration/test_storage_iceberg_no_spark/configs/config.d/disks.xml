@@ -1,0 +1,14 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3_warehouse>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/warehouse-rest/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <skip_access_check>true</skip_access_check>
+            </disk_s3_warehouse>
+        </disks>
+    </storage_configuration>
+    <allowed_disks_for_table_engines>disk_s3_warehouse</allowed_disks_for_table_engines>
+</clickhouse>
