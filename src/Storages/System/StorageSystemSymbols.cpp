@@ -53,21 +53,19 @@ namespace
 class SymbolsBlockSource final : public ISource
 {
 private:
-    using Iterator = std::vector<SymbolIndex::Symbol>::const_iterator;
-    Iterator it;
-    const Iterator end;
+    SymbolIndex::SymbolIterator iterator;
+    bool iteration_finished = false;
     std::vector<UInt8> columns_mask;
     UInt64 max_block_size;
 
 public:
     SymbolsBlockSource(
-        Iterator begin_,
-        Iterator end_,
+        const SymbolIndex & symbol_index,
         std::vector<UInt8> columns_mask_,
         Block header,
         UInt64 max_block_size_)
         : ISource(std::make_shared<const Block>(std::move(header)))
-        , it(begin_), end(end_), columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
+        , iterator(symbol_index.iterateSymbols()), columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
     {
     }
 
@@ -76,7 +74,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (it == end)
+        if (iteration_finished)
             return {};
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
@@ -86,15 +84,24 @@ protected:
 #endif
 
         size_t rows_count = 0;
-        while (rows_count < max_block_size && it != end)
+        while (rows_count < max_block_size)
         {
+            const SymbolIndex::Symbol * symbol = nullptr;
+            std::string_view symbol_name;
+            if (!iterator.next(symbol, symbol_name))
+            {
+                iteration_finished = true;
+                break;
+            }
+
             size_t src_index = 0;
             size_t res_index = 0;
 
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(it->name);
+                res_columns[res_index++]->insertData(symbol_name.empty() ? "" : symbol_name.data(), symbol_name.size());
 #if USE_XRAY
-            const auto function_name = demangle(it->name);
+            const char * symbol_name_c_string = SymbolIndex::instance().getSymbolNameCString(*symbol);
+            const auto function_name = *symbol_name_c_string ? demangle(symbol_name_c_string) : String{};
             const auto instrumentation_function = instrumentation_functions.get<InstrumentationManager::FunctionName>().find(function_name);
 
             /// Not every function is instrumented, so we need to look for those which are.
@@ -114,14 +121,15 @@ protected:
             }
 #endif
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(reinterpret_cast<uintptr_t>(it->offset_begin));
+                res_columns[res_index++]->insert(reinterpret_cast<uintptr_t>(symbol->offset_begin));
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(reinterpret_cast<uintptr_t>(it->offset_end));
+                res_columns[res_index++]->insert(reinterpret_cast<uintptr_t>(symbol->offset_end));
 
             ++rows_count;
-            ++it;
         }
 
+        if (!rows_count)
+            return {};
         return Chunk(std::move(res_columns), rows_count);
     }
 };
@@ -144,10 +152,10 @@ Pipe StorageSystemSymbols::read(
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
     auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
-    const auto & symbols = SymbolIndex::instance().symbols();
+    const auto & symbol_index = SymbolIndex::instance();
 
     return Pipe(std::make_shared<SymbolsBlockSource>(
-        symbols.cbegin(), symbols.cend(), std::move(columns_mask), std::move(res_block), max_block_size));
+        symbol_index, std::move(columns_mask), std::move(res_block), max_block_size));
 }
 
 }

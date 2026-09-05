@@ -269,6 +269,18 @@ endif ()
 # Optionally split binaries and debug symbols.
 option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
+option(BUILD_COMPACT_SYMBOLS_TOOL "Build the standalone compact symbols writer" OFF)
+set(SYMBOL_SECTIONS "symtab" CACHE STRING "Symbol sections retained in stripped binaries")
+set_property(CACHE SYMBOL_SECTIONS PROPERTY STRINGS symtab compact)
+
+set(SYMBOL_SECTIONS_VALID_VALUES symtab compact)
+if (NOT SYMBOL_SECTIONS IN_LIST SYMBOL_SECTIONS_VALID_VALUES)
+    message(FATAL_ERROR "Unknown SYMBOL_SECTIONS value '${SYMBOL_SECTIONS}'. Valid values: ${SYMBOL_SECTIONS_VALID_VALUES}")
+endif()
+if (SYMBOL_SECTIONS STREQUAL "compact" AND NOT SPLIT_DEBUG_SYMBOLS)
+    message(FATAL_ERROR "SYMBOL_SECTIONS=compact requires SPLIT_DEBUG_SYMBOLS=ON")
+endif()
+
 if (SPLIT_DEBUG_SYMBOLS)
     message(STATUS "Will split binaries and debug symbols")
     set(SPLIT_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
@@ -844,6 +856,8 @@ if (NATIVE_BUILD_TARGETS
             "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
             "-DUSE_BINARY_HASH=${USE_BINARY_HASH}"
+            "-DSPLIT_DEBUG_SYMBOLS=${SPLIT_DEBUG_SYMBOLS}"
+            "-DSYMBOL_SECTIONS=${SYMBOL_SECTIONS}"
         ${PROJECT_SOURCE_DIR}
         WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
         COMMAND_ECHO STDOUT
