@@ -415,7 +415,7 @@ On sqlflow 1.0.4 and earlier, a source field present with an explicit JSON `null
 
 On sqlflow 1.0.4 and earlier, a `handlers.StructuredBatch` pipeline whose SQL has a `WHERE` clause inserts nothing: DuckDB planned the query once against the still-empty batch table and folded the filter to always-false. Upgrade to 1.0.5, or use `handlers.InferredMemBatch`, which plans per batch.
 
-Otherwise, check the batching. A batch is executed and inserted when `batch_size` messages have arrived, or when `flush_interval_seconds` elapses with a partial batch waiting — whichever comes first. On a low-volume topic set `flush_interval_seconds` (for example `5`) so partial batches are inserted on a cadence rather than waiting for `batch_size` messages. With `--max-msgs`, the final partial batch is inserted on exit.
+Otherwise, check the batching. A batch is executed and inserted when `batch_size` messages have arrived, or when `flush_interval_seconds` elapses with a partial batch waiting — whichever comes first. `flush_interval_seconds` defaults to `30`, which is also the smallest value the config schema accepts, so a partial batch on a low-volume topic waits up to 30 seconds and a lower setting fails validation at startup. For faster inserts on a quiet topic, lower `batch_size` instead. With `--max-msgs`, the final partial batch is inserted on exit.
 
 ## Further reading {#further-reading}
 
