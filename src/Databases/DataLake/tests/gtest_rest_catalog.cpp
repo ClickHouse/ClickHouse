@@ -24,6 +24,7 @@
 #include <Poco/SharedPtr.h>
 #include <Poco/URI.h>
 
+#include <algorithm>
 #include <atomic>
 #include <iterator>
 #include <memory>
@@ -63,6 +64,39 @@ enum class CatalogShape
     /// echoes the same top-level namespace for every parent. A REST catalog would recurse on this
     /// forever (gold -> gold.gold -> ...); a flat-namespace catalog must list the top level only.
     ParentIgnoringEcho,
+    /// The shapes below advertise two namespaces, `alive` (holding `table_a`) and `doomed`, and then
+    /// fail one of the two calls that read `doomed` — modelling a namespace another client dropped
+    /// after it was listed. The status varies so that only the not-found case may be tolerated.
+    VanishedChildListing,
+    VanishedChildListingUnauthorized,
+    VanishedChildListingServerError,
+    VanishedTableListing,
+    VanishedTableListingUnauthorized,
+    /// The two shapes below serve a non-empty FIRST page and then 404 the follow-up page, modelling
+    /// a namespace dropped part-way through a paginated listing. A 404 names the namespace, so every
+    /// page collected so far must be discarded: returning the pages already read would report a
+    /// subset of a dropped namespace as if it were the whole of a live one.
+    VanishedChildListingSecondPage,
+    VanishedTableListingSecondPage,
+    /// The root `/v1/namespaces` route itself 404s: a misconfigured endpoint, never a race.
+    MissingRootRoute,
+};
+
+bool isVanishingShape(CatalogShape shape)
+{
+    return shape == CatalogShape::VanishedChildListing || shape == CatalogShape::VanishedChildListingUnauthorized
+        || shape == CatalogShape::VanishedChildListingServerError || shape == CatalogShape::VanishedTableListing
+        || shape == CatalogShape::VanishedTableListingUnauthorized
+        || shape == CatalogShape::VanishedChildListingSecondPage || shape == CatalogShape::VanishedTableListingSecondPage;
+}
+
+/// Requests the fake catalog served, so a test can assert the tolerant branch was really reached
+/// (a fixture that never 404s would otherwise pass vacuously).
+struct RequestCounters
+{
+    std::atomic<size_t> doomed_child_listing{0};
+    std::atomic<size_t> doomed_table_listing{0};
+    std::atomic<size_t> root_listing{0};
 };
 
 void writeJSON(Poco::Net::HTTPServerResponse & response, const std::string & body, Poco::Net::HTTPResponse::HTTPStatus status = Poco::Net::HTTPResponse::HTTP_OK)
@@ -89,13 +123,20 @@ std::string getRawPath(const std::string & uri)
     return uri.substr(0, query_pos);
 }
 
+constexpr auto NO_SUCH_NAMESPACE_BODY
+    = R"({"error":{"message":"Namespace doomed not found.","type":"NoSuchNamespaceException","code":404}})";
+constexpr auto NOT_AUTHORIZED_BODY = R"({"error":{"message":"The access token has expired","type":"NotAuthorizedException","code":401}})";
+constexpr auto SERVER_ERROR_BODY = R"({"error":{"message":"Internal error","type":"ServerError","code":500}})";
+
 class RestCatalogRequestHandler final : public Poco::Net::HTTPRequestHandler
 {
 public:
-    RestCatalogRequestHandler(CatalogShape shape_, int token_expires_in_seconds_, std::atomic<size_t> & token_requests_)
+    RestCatalogRequestHandler(
+        CatalogShape shape_, int token_expires_in_seconds_, std::atomic<size_t> & token_requests_, RequestCounters * counters_)
         : shape(shape_)
         , token_expires_in_seconds(token_expires_in_seconds_)
         , token_requests(token_requests_)
+        , counters(counters_)
     {
     }
 
@@ -151,12 +192,46 @@ public:
             const auto parent = getParent(params);
             if (parent.empty())
             {
+                if (counters)
+                    ++counters->root_listing;
+                if (shape == CatalogShape::MissingRootRoute)
+                {
+                    /// A wrong catalog prefix 404s the root listing, which carries no `parent`.
+                    writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, R"({"error_code":"ENDPOINT_NOT_FOUND"})");
+                    return;
+                }
                 if (shape == CatalogShape::NestedTableThenEmptySibling)
                     writeJSON(response, R"({"namespaces":[["parent"],["empty_later"]]})");
                 else if (shape == CatalogShape::ParentIgnoringEcho)
                     writeJSON(response, R"({"namespaces":[["gold"]]})");
+                else if (isVanishingShape(shape))
+                    writeJSON(response, R"({"namespaces":[["alive"],["doomed"]]})");
                 else
                     writeJSON(response, R"({"namespaces":[["namespace"]]})");
+                return;
+            }
+
+            if (parent == "doomed" && isVanishingShape(shape))
+            {
+                /// Both pages count, so an arm can require >= 2 and thereby prove the follow-up
+                /// request really was issued and really did 404.
+                if (counters)
+                    ++counters->doomed_child_listing;
+                if (shape == CatalogShape::VanishedChildListing)
+                    writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, NO_SUCH_NAMESPACE_BODY);
+                else if (shape == CatalogShape::VanishedChildListingUnauthorized)
+                    writeError(response, Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED, NOT_AUTHORIZED_BODY);
+                else if (shape == CatalogShape::VanishedChildListingServerError)
+                    writeError(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, SERVER_ERROR_BODY);
+                else if (shape == CatalogShape::VanishedChildListingSecondPage)
+                {
+                    if (getPageToken(params).empty())
+                        writeJSON(response, R"({"namespaces":[["doomed","ghost"]],"next-page-token":"p2"})");
+                    else
+                        writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, NO_SUCH_NAMESPACE_BODY);
+                }
+                else
+                    writeJSON(response, R"({"namespaces":[]})");
                 return;
             }
 
@@ -167,6 +242,50 @@ public:
                 writeJSON(response, R"({"namespaces":[["gold"]]})");
             else
                 writeJSON(response, R"({"namespaces":[]})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/alive/tables")
+        {
+            writeJSON(response, R"({"identifiers":[{"name":"table_a"}]})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/doomed/tables")
+        {
+            /// `getRawPath` drops the query, so the follow-up page arrives on this same route and is
+            /// counted too: an arm requiring >= 2 proves the second request happened.
+            if (counters)
+                ++counters->doomed_table_listing;
+            if (shape == CatalogShape::VanishedTableListing)
+                writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, NO_SUCH_NAMESPACE_BODY);
+            else if (shape == CatalogShape::VanishedTableListingUnauthorized)
+                writeError(response, Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED, NOT_AUTHORIZED_BODY);
+            else if (shape == CatalogShape::VanishedTableListingSecondPage)
+            {
+                if (getPageToken(params).empty())
+                    writeJSON(response, R"({"identifiers":[{"name":"ghost_table"}],"next-page-token":"p2"})");
+                else
+                    writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, NO_SUCH_NAMESPACE_BODY);
+            }
+            else
+                writeJSON(response, R"({"identifiers":[]})");
+            return;
+        }
+
+        /// A surviving first-page child of `doomed` is only ever requested when the child listing
+        /// wrongly keeps it, so serving a table here gives that failure a name to assert on. An
+        /// empty list would instead let the wrong behaviour produce the expected table set.
+        if (path == "/v1/namespaces/doomed%1Fghost/tables")
+        {
+            writeJSON(response, R"({"identifiers":[{"name":"ghost_table"}]})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/doomed/tables/t")
+        {
+            /// A user who NAMES a table in the vanished namespace must still be told it is absent.
+            writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, NO_SUCH_NAMESPACE_BODY);
             return;
         }
 
@@ -238,38 +357,54 @@ private:
         return {};
     }
 
+    /// Empty when absent, i.e. when the request is for the first page.
+    static std::string getPageToken(const Poco::URI::QueryParameters & params)
+    {
+        for (const auto & [key, value] : params)
+        {
+            if (key == "pageToken")
+                return value;
+        }
+        return {};
+    }
+
     CatalogShape shape;
     int token_expires_in_seconds;
     std::atomic<size_t> & token_requests;
+    RequestCounters * counters;
 };
 
 class RestCatalogRequestHandlerFactory final : public Poco::Net::HTTPRequestHandlerFactory
 {
 public:
-    RestCatalogRequestHandlerFactory(CatalogShape shape_, int token_expires_in_seconds_, std::atomic<size_t> & token_requests_)
+    RestCatalogRequestHandlerFactory(
+        CatalogShape shape_, int token_expires_in_seconds_, std::atomic<size_t> & token_requests_, RequestCounters * counters_)
         : shape(shape_)
         , token_expires_in_seconds(token_expires_in_seconds_)
         , token_requests(token_requests_)
+        , counters(counters_)
     {
     }
 
     Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
     {
-        return new RestCatalogRequestHandler(shape, token_expires_in_seconds, token_requests);
+        return new RestCatalogRequestHandler(shape, token_expires_in_seconds, token_requests, counters);
     }
 
 private:
     CatalogShape shape;
     int token_expires_in_seconds;
     std::atomic<size_t> & token_requests;
+    RequestCounters * counters;
 };
 
 class RestCatalogTestServer
 {
 public:
-    explicit RestCatalogTestServer(CatalogShape shape, int token_expires_in_seconds = DEFAULT_TOKEN_EXPIRES_IN_SECONDS)
+    explicit RestCatalogTestServer(
+        CatalogShape shape, int token_expires_in_seconds = DEFAULT_TOKEN_EXPIRES_IN_SECONDS, RequestCounters * counters = nullptr)
         : server_socket(std::make_unique<Poco::Net::ServerSocket>(Poco::Net::SocketAddress("127.0.0.1", 0)))
-        , handler_factory(new RestCatalogRequestHandlerFactory(shape, token_expires_in_seconds, token_requests))
+        , handler_factory(new RestCatalogRequestHandlerFactory(shape, token_expires_in_seconds, token_requests, counters))
         , server_params(new Poco::Net::HTTPServerParams())
     {
         server_params->setKeepAlive(false);
@@ -311,6 +446,35 @@ void expectThrowsCode(std::function<void()> fn, int expected_code)
     {
         EXPECT_EQ(e.code(), expected_code);
     }
+}
+
+std::unique_ptr<RestCatalog> makeRestCatalog(const RestCatalogTestServer & server, const DB::ContextMutablePtr & context)
+{
+    /// Collapse the retry backoff: the arms that exercise a retriable status would otherwise sleep
+    /// through the default ladder, which is about 33 seconds. The attempt count is left alone so
+    /// that the retry path itself is still exercised.
+    context->setSetting("http_retry_initial_backoff_ms", 1u);
+    context->setSetting("http_retry_max_backoff_ms", 2u);
+
+    return std::make_unique<RestCatalog>(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"",
+        /* auth_scope */"",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        context);
+}
+
+DB::Names sortedTableNames(const CatalogTables & tables)
+{
+    DB::Names names;
+    names.reserve(tables.size());
+    for (const auto & table : tables)
+        names.push_back(table.name);
+    std::sort(names.begin(), names.end());
+    return names;
 }
 
 bool restCatalogEmpty(CatalogShape shape)
@@ -442,6 +606,157 @@ TEST(RestCatalog, TryGetTableMetadataAuthErrorPropagates)
     }
 
     EXPECT_THROW(catalog.existsTable("namespace", "expired_token_table"), DB::HTTPException);
+}
+
+/// The tests below cover a namespace that another client drops after it was listed but before its
+/// own listing is read. Such a namespace has no tables, so a listing must skip it and return the
+/// rest of the catalog; every other error, and a user naming the namespace, must still be reported.
+
+TEST(RestCatalog, GetTablesSkipsNamespaceVanishedDuringChildListing)
+{
+    RequestCounters counters;
+    RestCatalogTestServer server(
+        CatalogShape::VanishedChildListing, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    EXPECT_EQ(sortedTableNames(catalog->getTables()), DB::Names{"alive.table_a"});
+    /// Anti-vacuity: the tolerant branch was really reached.
+    EXPECT_GE(counters.doomed_child_listing.load(), 1u);
+}
+
+TEST(RestCatalog, GetTablesSkipsNamespaceVanishedDuringTableListing)
+{
+    RequestCounters counters;
+    RestCatalogTestServer server(
+        CatalogShape::VanishedTableListing, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    EXPECT_EQ(sortedTableNames(catalog->getTables()), DB::Names{"alive.table_a"});
+    EXPECT_FALSE(catalog->empty());
+    EXPECT_GE(counters.doomed_table_listing.load(), 1u);
+}
+
+TEST(RestCatalog, ChildListingDiscardsEarlierPagesWhenNamespaceVanishes)
+{
+    /// The namespace is dropped after its first page of children was already read. That page named
+    /// `doomed.ghost`, which owns a table, so keeping the page would report `doomed.ghost.ghost_table`
+    /// as a live table of a namespace that no longer exists.
+    RequestCounters counters;
+    RestCatalogTestServer server(
+        CatalogShape::VanishedChildListingSecondPage, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    EXPECT_EQ(sortedTableNames(catalog->getTables()), DB::Names{"alive.table_a"});
+    /// Anti-vacuity: the follow-up page really was requested, and it is the request that 404'd.
+    /// `>=` rather than an exact count, because a retriable status may reissue a request.
+    EXPECT_GE(counters.doomed_child_listing.load(), 2u);
+}
+
+TEST(RestCatalog, TableListingDiscardsEarlierPagesWhenNamespaceVanishes)
+{
+    /// Same race one level down: the first page of `doomed`'s tables was read before the namespace
+    /// was dropped, so keeping it would report `doomed.ghost_table`.
+    RequestCounters counters;
+    RestCatalogTestServer server(
+        CatalogShape::VanishedTableListingSecondPage, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    EXPECT_EQ(sortedTableNames(catalog->getTables()), DB::Names{"alive.table_a"});
+    EXPECT_GE(counters.doomed_table_listing.load(), 2u);
+}
+
+TEST(RestCatalog, FilteredListingSkipsVanishedNamespace)
+{
+    RequestCounters counters;
+    RestCatalogTestServer server(
+        CatalogShape::VanishedTableListing, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    /// `name = 'doomed.t'` and `name LIKE 'do%'` both push the listing down to `doomed` only. The
+    /// filtered overload lives on the base class, which is also how `DatabaseDataLake` reaches it.
+    /// The count is snapshotted around each call separately: a single assertion after both would
+    /// still hold if only one of the two pushdowns ever reached the listing, and each has to be
+    /// shown to reach it. `>` rather than an exact count, because a retry may reissue the request.
+    const ICatalog & base = *catalog;
+
+    const auto before_equals = counters.doomed_table_listing.load();
+    EXPECT_TRUE(base.getTables(TableNameFilter{TableNameFilter::Kind::Equals, "doomed.t"}).empty());
+    const auto after_equals = counters.doomed_table_listing.load();
+    EXPECT_GT(after_equals, before_equals);
+
+    EXPECT_TRUE(base.getTables(TableNameFilter{TableNameFilter::Kind::Like, "do%"}).empty());
+    EXPECT_GT(counters.doomed_table_listing.load(), after_equals);
+}
+
+TEST(RestCatalog, ChildListingUnauthorizedStillThrows)
+{
+    RestCatalogTestServer server(CatalogShape::VanishedChildListingUnauthorized);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    expectThrowsCode([&] { catalog->getTables(); }, DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
+}
+
+TEST(RestCatalog, ChildListingServerErrorStillThrows)
+{
+    RestCatalogTestServer server(CatalogShape::VanishedChildListingServerError);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    expectThrowsCode([&] { catalog->getTables(); }, DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
+}
+
+TEST(RestCatalog, MissingRootListingRouteStillThrows)
+{
+    /// A 404 on the root listing means the catalog endpoint is misconfigured, not that a namespace
+    /// vanished — it carries no `parent`, so tolerance must not apply to it.
+    RequestCounters counters;
+    RestCatalogTestServer server(
+        CatalogShape::MissingRootRoute, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    expectThrowsCode([&] { catalog->getTables(); }, DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
+    EXPECT_GE(counters.root_listing.load(), 1u);
+    /// The root 404 short-circuits before any descent request is issued.
+    EXPECT_EQ(counters.doomed_child_listing.load(), 0u);
+}
+
+TEST(RestCatalog, TableListingUnauthorizedStillThrows)
+{
+    RestCatalogTestServer server(CatalogShape::VanishedTableListingUnauthorized);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    EXPECT_THROW(catalog->getTables(), DB::HTTPException);
+}
+
+TEST(RestCatalog, NamedTableInVanishedNamespaceStillReportedAbsent)
+{
+    /// Listing tolerance must not leak into the path a user reaches by naming a table: it has to
+    /// report absence so the engine still answers UNKNOWN_TABLE.
+    RestCatalogTestServer server(CatalogShape::VanishedTableListing);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    TableMetadata metadata;
+    EXPECT_FALSE(catalog->tryGetTableMetadata("doomed", "t", metadata));
+    EXPECT_FALSE(catalog->existsTable("doomed", "t"));
 }
 
 TEST(RestCatalog, ApplySettingsChangesWithoutAuthenticationRejected)

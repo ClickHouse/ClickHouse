@@ -1308,6 +1308,9 @@ void RestCatalog::getNamespacesRecursive(
     checkStackSize();
 
     auto namespaces = listChildNamespaces(base_namespace);
+    /// A namespace whose own child listing has since vanished stays in the result: an empty listing
+    /// is indistinguishable from a genuinely childless namespace, so dropping it here would also
+    /// drop leaf namespaces. Listing its tables yields nothing either way.
     result.reserve(result.size() + namespaces.size());
     result.insert(result.end(), namespaces.begin(), namespaces.end());
 
@@ -1412,6 +1415,15 @@ RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & bas
     }
     catch (const DB::HTTPException & e)
     {
+        /// A namespace listed by its parent a moment ago may already be dropped, and then has no
+        /// children. Only a descent (non-empty parent) can race: a 404 on the root listing means
+        /// the catalog endpoint itself is wrong and must still be reported.
+        if (!base_namespace.empty() && e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+        {
+            LOG_DEBUG(log, "Namespace `{}` disappeared while listing its children: {}", base_namespace, e.displayText());
+            return {};
+        }
+
         std::string message = fmt::format(
             "Received error while fetching list of namespaces from iceberg catalog `{}`. ",
             warehouse);
@@ -1521,45 +1533,59 @@ DB::Names RestCatalog::listTablesInNamespace(const std::string & base_namespace,
     /// any revisit triggers a duplicate `insert`.
     std::unordered_set<String> seen_tokens;
 
-    while (true)
+    try
     {
-        /// The Iceberg REST OpenAPI spec uses `pageToken` (request) / `next-page-token` (response)
-        /// for paginating the list-tables endpoint. Without this loop we silently return only the
-        /// first page when the catalog server (e.g. OneLake / BigLake / Microsoft Fabric) caps the
-        /// page size — making tables on later pages invisible to `SHOW TABLES` and `system.tables`.
-        Poco::URI::QueryParameters params;
-        if (!page_token.empty())
-            params.push_back({"pageToken", page_token});
+        while (true)
+        {
+            /// The Iceberg REST OpenAPI spec uses `pageToken` (request) / `next-page-token` (response)
+            /// for paginating the list-tables endpoint. Without this loop we silently return only the
+            /// first page when the catalog server (e.g. OneLake / BigLake / Microsoft Fabric) caps the
+            /// page size — making tables on later pages invisible to `SHOW TABLES` and `system.tables`.
+            Poco::URI::QueryParameters params;
+            if (!page_token.empty())
+                params.push_back({"pageToken", page_token});
 
-        auto buf = createReadBuffer(
-            *state_snapshot, state_snapshot->config.prefix / endpoint, params, /* headers */ {}, /* auth_headers */ std::nullopt);
+            auto buf = createReadBuffer(
+                *state_snapshot, state_snapshot->config.prefix / endpoint, params, /* headers */ {}, /* auth_headers */ std::nullopt);
 
-        /// Pass through the remaining limit so that single-page short-circuiting still works
-        /// when the caller is in `empty()` (limit=1) and the first page already contains a row.
-        const size_t remaining_limit = (limit == 0) ? 0 : (limit > tables.size() ? limit - tables.size() : 0);
-        String next_page_token;
-        auto page_tables = parseTables(*buf, base_namespace, remaining_limit, next_page_token);
+            /// Pass through the remaining limit so that single-page short-circuiting still works
+            /// when the caller is in `empty()` (limit=1) and the first page already contains a row.
+            const size_t remaining_limit = (limit == 0) ? 0 : (limit > tables.size() ? limit - tables.size() : 0);
+            String next_page_token;
+            auto page_tables = parseTables(*buf, base_namespace, remaining_limit, next_page_token);
 
-        tables.insert(
-            tables.end(),
-            std::make_move_iterator(page_tables.begin()),
-            std::make_move_iterator(page_tables.end()));
+            tables.insert(
+                tables.end(),
+                std::make_move_iterator(page_tables.begin()),
+                std::make_move_iterator(page_tables.end()));
 
-        if (limit && tables.size() >= limit)
-            break;
-        if (next_page_token.empty())
-            break;
-        /// Cycle guard: if the catalog returns a `next-page-token` we have already seen
-        /// on this request, iterating further would loop forever. Treat it as a malformed
-        /// catalog response rather than hanging `SHOW TABLES` / `system.tables`. This
-        /// covers immediate repeats (`A -> A`) and longer cycles (`A -> B -> A`, etc.).
-        if (!seen_tokens.insert(next_page_token).second)
-            throw DB::Exception(
-                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-                "Iceberg REST catalog returned a `next-page-token` (`{}`) already seen on this "
-                "request while listing tables in namespace `{}` — refusing to loop.",
-                next_page_token, base_namespace);
-        page_token = std::move(next_page_token);
+            if (limit && tables.size() >= limit)
+                break;
+            if (next_page_token.empty())
+                break;
+            /// Cycle guard: if the catalog returns a `next-page-token` we have already seen
+            /// on this request, iterating further would loop forever. Treat it as a malformed
+            /// catalog response rather than hanging `SHOW TABLES` / `system.tables`. This
+            /// covers immediate repeats (`A -> A`) and longer cycles (`A -> B -> A`, etc.).
+            if (!seen_tokens.insert(next_page_token).second)
+                throw DB::Exception(
+                    DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                    "Iceberg REST catalog returned a `next-page-token` (`{}`) already seen on this "
+                    "request while listing tables in namespace `{}` — refusing to loop.",
+                    next_page_token, base_namespace);
+            page_token = std::move(next_page_token);
+        }
+    }
+    catch (const DB::HTTPException & e)
+    {
+        /// The namespace was dropped between being listed and being read; it has no tables. A 404
+        /// names the namespace, so no page collected so far is trustworthy: report none.
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+        {
+            LOG_DEBUG(log, "Namespace `{}` disappeared while listing its tables: {}", base_namespace, e.displayText());
+            return {};
+        }
+        throw;
     }
 
     return tables;
