@@ -15,8 +15,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # about 70 bytes make a table of some 20 MB, and a threshold of 30 MB keeps every sweep in the tail
 # regime, so the residue is the whole drained stream and the dominant resident term when a thread
 # back on the baseline path reaches the spill decision. A low threshold also means many small parts,
-# and the merge holds a reader per part, so those scenarios read fewer rows than the others to keep
-# the merge itself well inside the memory limit.
+# and the merge holds a reader per part, so the row counts are kept low enough for the merge itself to
+# stay well inside the memory limit.
+#
+# The scenarios spill on every one of their rows, and a sanitizer build pays several times over for
+# each part written and read back, so every scenario processes only as many rows as its assertions
+# need: the flaky check runs the test on every core of a runner at once and fails a run that takes
+# longer than its time limit, whichever copy was slowed down by the others.
 #
 # Each query runs in its own clickhouse-local process, so the counters in `system.events` belong to
 # that query alone.
@@ -44,20 +49,20 @@ SET collect_hash_table_stats_during_aggregation = 0;
 SELECT count() FROM
 (
     SELECT concat(toString(number % 150000), repeat('x', 60)) AS k
-    FROM numbers_mt(3000000)
+    FROM numbers_mt(1500000)
     GROUP BY k
 );
 
 -- The sweep and thaw counters are asserted next to the release, so the test cannot pass by never
 -- engaging the adaptive aggregator or never reaching memory pressure at all. The parts are bounded
--- against the block count - 3000000 rows in blocks of 8192 - because one part per block is the
+-- against the block count - 1500000 rows in blocks of 8192 - because one part per block is the
 -- defect: a thread that finds the residue resident on every block writes its own few keys out on
 -- every block. A released residue lets a table grow over several blocks before it is written, and
 -- the sweeps' own parts hold hundreds of thousands of records each.
 SELECT 'residue released', sumIf(value, event = 'AdaptiveAggregationResidueReleases') > 0 FROM system.events;
 SELECT 'parts stay far below the block count',
        sumIf(value, event = 'ExternalAggregationWritePart') > 0
-       AND sumIf(value, event = 'ExternalAggregationWritePart') * 2 < intDiv(3000000, 8192)
+       AND sumIf(value, event = 'ExternalAggregationWritePart') * 2 < intDiv(1500000, 8192)
 FROM system.events;
 SELECT 'swept under pressure', coalesce(max(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationPressureSweeps';
 SELECT 'thawed', coalesce(max(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationThaws';
@@ -66,7 +71,9 @@ SELECT 'thawed', coalesce(max(value), 0) > 0 FROM system.events WHERE event = 'A
 # A session in which no thread ever froze has no shared drain table at all, while a learning thread
 # still reaches the baseline path on its own by giving up on freezing. The hot prefix holds every
 # thread below the freeze threshold in keys and the unique tail carries query memory over the
-# external threshold, so the baseline spill decision runs with the shared table absent.
+# external threshold, so the baseline spill decision runs with the shared table absent. The
+# threshold is kept well above the residue scenarios': a threshold the tail crosses too early
+# in a thread's learning lets that thread freeze after all instead of giving up.
 $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4;
 SET max_block_size = 8192;
@@ -75,14 +82,14 @@ SET adaptive_aggregator_freeze_threshold = 1000;
 SET adaptive_aggregator_freeze_threshold_bytes = 0;
 SET group_by_two_level_threshold = 1000;
 SET group_by_two_level_threshold_bytes = 1000000;
-SET max_bytes_before_external_group_by = 80000000;
+SET max_bytes_before_external_group_by = 60000000;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET collect_hash_table_stats_during_aggregation = 0;
 
 SELECT count() FROM
 (
-    SELECT if(number < 1500000, 'hot', concat(toString(number), repeat('x', 60))) AS k
-    FROM numbers_mt(3000000)
+    SELECT if(number < 1000000, 'hot', concat(toString(number), repeat('x', 60))) AS k
+    FROM numbers_mt(2000000)
     GROUP BY k
 );
 
@@ -99,7 +106,8 @@ SELECT 'no shared table was created', coalesce(max(value), 0) = 0 FROM system.ev
 # here. The release has to follow that decision: writing the shared table on a block that was never
 # going to spill would be a write the threshold did not ask for. The pressure sweeps may still write
 # parts of their own at the part bound - that is the valve doing its job - so what is asserted is the
-# release counter, not the absence of parts.
+# release counter, not the absence of parts. The shape is the first scenario's, whose residue and
+# producer tables together are what carry query memory over the threshold.
 $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4;
 SET max_block_size = 8192;
@@ -111,14 +119,14 @@ SET adaptive_aggregator_freeze_threshold_bytes = 0;
 -- outright turns the adaptive aggregator off, and then there is no shared table to leave alone.
 SET group_by_two_level_threshold = 100000000;
 SET group_by_two_level_threshold_bytes = 100000000000;
-SET max_bytes_before_external_group_by = 80000000;
+SET max_bytes_before_external_group_by = 30000000;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET collect_hash_table_stats_during_aggregation = 0;
 
 SELECT count() FROM
 (
-    SELECT concat(toString(number % 400000), repeat('x', 60)) AS k
-    FROM numbers_mt(6000000)
+    SELECT concat(toString(number % 150000), repeat('x', 60)) AS k
+    FROM numbers_mt(1500000)
     GROUP BY k
 );
 
@@ -149,7 +157,7 @@ SET collect_hash_table_stats_during_aggregation = 0;
 SELECT count(), sum(s), sum(c) FROM
 (
     SELECT concat(toString(number % 150000), repeat('x', 60)) AS k, sum(number) AS s, count() AS c
-    FROM numbers_mt(3000000)
+    FROM numbers_mt(1500000)
     GROUP BY k
 );
 
