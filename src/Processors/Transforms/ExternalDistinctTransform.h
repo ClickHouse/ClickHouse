@@ -19,9 +19,10 @@ class MergingSortedTransform;
 /// The final hash-based `DISTINCT` streams first occurrences until tracked query memory exceeds its
 /// external-memory threshold. Its set retains extractable keys, including serialized keys when needed.
 ///
-/// At the first spill, the set's keys become a sorted suppression run carrying already-emitted flags.
-/// The set is released after extraction. Further input becomes sorted, locally deduplicated runs, and
-/// output waits until all input has been consumed. `DistinctSpillLayout` owns the column conversions.
+/// At the first spill, the set's keys become sorted suppression runs carrying already-emitted flags.
+/// Extraction fills one bounded run at a time and waits for its file to finish before continuing. The
+/// set is released after its last keys are extracted. Further input becomes sorted, locally deduplicated
+/// runs, and output waits until all input is consumed. `DistinctSpillLayout` owns the column conversions.
 ///
 /// `MergingSortedTransform` merges the runs, including any in-memory tail, and `DistinctSortedFilter`
 /// removes duplicate keys and keys emitted before spilling. Runs are ordered by key and then by the
@@ -57,8 +58,15 @@ private:
     enum class Stage : uint8_t
     {
         Consume = 0,
+        ExtractSuppression,
         Generate,
         Serialize,
+    };
+
+    enum class RunKind : uint8_t
+    {
+        Input,
+        Suppression,
     };
 
     enum class PipelineUpdateKind : uint8_t
@@ -82,14 +90,15 @@ private:
     Status prepareGenerate();
 
     void consume(Chunk chunk);
+    void extractSuppressionRun();
     void serialize();
     void generate();
 
     /// Stably sorts suppression rows and stably sorts and deduplicates ordinary input rows.
-    Chunk sortSpillChunk(Chunk chunk, bool already_emitted) const;
+    Chunk sortSpillChunk(Chunk chunk, RunKind kind) const;
 
     void startFirstSpill();
-    void startSpillRun(Chunks run_chunks, size_t run_bytes, bool is_first_run);
+    void startSpillRun(Chunks run_chunks, size_t run_bytes, RunKind kind);
     void createMergedStream(PendingPipelineUpdate & update);
     void connectMergedStream(const Processors & merged_stream);
     void attachSpilledRun(const ProcessorPtr & source, const ProcessorPtr & sink);
@@ -99,6 +108,8 @@ private:
 
     /// Owns hashing state until the first spill. Resetting it permanently ends the hashing phase.
     std::optional<DistinctSetFilter> distinct_set;
+    /// Owns the set and arena while successive suppression runs are extracted and written.
+    std::unique_ptr<DistinctSetFilter::KeyExtractor> suppression_keys;
     const UInt64 limit_hint;
     const SizeLimits set_size_limits;
 
@@ -120,9 +131,14 @@ private:
     /// Removes duplicates across chunks while writing an ordinary run. Each chunk is already locally
     /// deduplicated by `sortSpillChunk`, so single-chunk runs and suppression rows bypass this filter.
     DistinctSortedFilter run_dedup;
-    bool current_run_is_deduplicated = false;
+    bool deduplicate_current_run = false;
     std::shared_ptr<MergingSortedTransform> external_merging_sorted;
     std::optional<PendingPipelineUpdate> pending_pipeline_update;
+
+    InputPort * merged_input = nullptr;
+    OutputPort * run_write_output = nullptr;
+    InputPort * run_completion_input = nullptr;
+    OutputPort * run_readiness_output = nullptr;
 
     Stage stage = Stage::Consume;
     /// The in-memory tail closes merge-input registration exactly once, even when it contains no rows.

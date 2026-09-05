@@ -30,11 +30,9 @@ namespace ErrorCodes
 namespace
 {
 
-/// A run is written only when at least this much data was accumulated (but never more than the spill
-/// threshold itself, so that tiny thresholds still spill deterministically). Without a floor, when it is
-/// some *other* operator that keeps the memory usage of the query above the threshold, every consumed
-/// chunk would be dumped as its own temporary file.
-constexpr size_t MIN_BYTES_IN_RUN = DEFAULT_BLOCK_SIZE * 256;
+/// Suppression extraction targets this many bytes per run, independently of the spill threshold.
+/// Ordinary runs use the smaller of this value and the threshold as their minimum accumulated size.
+constexpr size_t DEFAULT_BYTES_IN_RUN = DEFAULT_BLOCK_SIZE * 256;
 
 /// Deduplicates merged runs with `DistinctSortedFilter` and removes the emitted flag column.
 class MergedRunsDistinctTransform final : public ISimpleTransform
@@ -91,16 +89,16 @@ ExternalDistinctTransform::~ExternalDistinctTransform() = default;
 
 size_t ExternalDistinctTransform::minBytesInRun() const
 {
-    return std::min(max_bytes_before_external_distinct, MIN_BYTES_IN_RUN);
+    return std::min(max_bytes_before_external_distinct, DEFAULT_BYTES_IN_RUN);
 }
 
-Chunk ExternalDistinctTransform::sortSpillChunk(Chunk chunk, bool already_emitted) const
+Chunk ExternalDistinctTransform::sortSpillChunk(Chunk chunk, RunKind kind) const
 {
     /// Stable sorting retains the first-arriving payload and the first binary representation among
     /// keys that compare equal. The flag is constant within a chunk, so key order also satisfies the
     /// run order. The service columns follow the same permutation as the input columns.
     Block block = spill_layout.getSpillHeader()->cloneWithColumns(chunk.detachColumns());
-    if (already_emitted)
+    if (kind == RunKind::Suppression)
         sortBlock(block, spill_layout.getKeySortDescription(), /*limit=*/ 0, IColumn::PermutationSortStability::Stable);
     else
         sortBlockAndDeduplicate(block, spill_layout.getKeySortDescription(), IColumn::PermutationSortStability::Stable);
@@ -114,25 +112,43 @@ void ExternalDistinctTransform::startFirstSpill()
         formatReadableSizeWithBinarySuffix(getCurrentQueryMemoryUsage()),
         formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct));
 
+    suppression_keys = std::move(*distinct_set).extractKeys();
+    distinct_set.reset();
+    stage = Stage::ExtractSuppression;
+}
+
+void ExternalDistinctTransform::extractSuppressionRun()
+{
     Chunks run_chunks;
     size_t run_bytes = 0;
-    /// Suppression rows need only the extracted keys. Release the set before sorting, so the transient
-    /// peak contains the set and raw keys without also retaining their sorted copies.
-    auto key_batches = distinct_set->extractKeyColumns(max_block_size_rows);
-    distinct_set.reset();
 
-    for (auto & key_columns : key_batches)
+    /// Bound the working columns to one run while the extractor retains the set and arena. A complete
+    /// key can exceed the byte target, and sorting needs additional temporary buffers.
+    while (!isCancelled() && run_bytes < DEFAULT_BYTES_IN_RUN)
     {
+        auto key_columns = suppression_keys->next(max_block_size_rows, DEFAULT_BYTES_IN_RUN - run_bytes);
+        if (key_columns.empty())
+        {
+            suppression_keys.reset();
+            break;
+        }
+
         auto prepared = sortSpillChunk(
-            spill_layout.prepareSuppressionChunk(std::move(key_columns)), /*already_emitted=*/ true);
+            spill_layout.prepareSuppressionChunk(std::move(key_columns)), RunKind::Suppression);
         run_bytes += prepared.allocatedBytes();
         run_chunks.push_back(std::move(prepared));
     }
 
-    startSpillRun(std::move(run_chunks), run_bytes, /*is_first_run=*/ true);
+    if (isCancelled())
+        return;
+
+    if (run_chunks.empty())
+        stage = Stage::Consume;
+    else
+        startSpillRun(std::move(run_chunks), run_bytes, RunKind::Suppression);
 }
 
-void ExternalDistinctTransform::startSpillRun(Chunks run_chunks, size_t run_bytes, bool is_first_run)
+void ExternalDistinctTransform::startSpillRun(Chunks run_chunks, size_t run_bytes, RunKind kind)
 {
     const auto & spill_header = spill_layout.getSpillHeader();
     ++temporary_files_num;
@@ -147,8 +163,8 @@ void ExternalDistinctTransform::startSpillRun(Chunks run_chunks, size_t run_byte
     const size_t reserve_size = run_bytes + min_free_disk_space;
     TemporaryBlockStreamHolder tmp_stream(spill_header, tmp_data, reserve_size);
 
-    current_run_is_deduplicated = is_first_run || run_chunks.size() == 1;
-    if (!current_run_is_deduplicated)
+    deduplicate_current_run = kind == RunKind::Input && run_chunks.size() > 1;
+    if (deduplicate_current_run)
         run_dedup.reset();
 
     /// Deduplication follows sorting, so applying the hint inside the sort could lose distinct values.
@@ -238,7 +254,8 @@ void ExternalDistinctTransform::connectMergedStream(const Processors & merged_st
     }
 
     inputs.emplace_back(*spill_layout.getMergedHeader(), this);
-    connect(*output, inputs.back());
+    merged_input = &inputs.back();
+    connect(*output, *merged_input);
 }
 
 void ExternalDistinctTransform::attachSpilledRun(const ProcessorPtr & source, const ProcessorPtr & sink)
@@ -247,9 +264,18 @@ void ExternalDistinctTransform::attachSpilledRun(const ProcessorPtr & source, co
     connect(source->getOutputs().back(), external_merging_sorted->getInputs().back());
 
     outputs.emplace_back(*spill_layout.getSpillHeader(), this);
-    /// The completion dependency prevents the source from reading a run before its sink finishes it.
-    connect(sink->getOutputs().front(), source->getInputs().front());
-    connect(outputs.back(), sink->getInputs().back());
+    run_write_output = &outputs.back();
+    connect(*run_write_output, sink->getInputs().back());
+
+    /// The sink finishes this dependency after finalizing the file. Waiting here releases its writing
+    /// buffers before extracting another run, and the source remains gated until the file is complete.
+    inputs.emplace_back(Block(), this);
+    run_completion_input = &inputs.back();
+    connect(sink->getOutputs().front(), *run_completion_input);
+
+    outputs.emplace_back(Block(), this);
+    run_readiness_output = &outputs.back();
+    connect(*run_readiness_output, source->getInputs().front());
 }
 
 void ExternalDistinctTransform::attachInMemoryTail(const ProcessorPtr & source)
@@ -292,8 +318,11 @@ IProcessor::Status ExternalDistinctTransform::prepare()
         if (status != Status::Finished)
             return status;
 
-        stage = Stage::Consume;
+        stage = suppression_keys ? Stage::ExtractSuppression : Stage::Consume;
     }
+
+    if (stage == Stage::ExtractSuppression)
+        return Status::Ready;
 
     if (stage == Stage::Consume)
     {
@@ -360,21 +389,27 @@ IProcessor::Status ExternalDistinctTransform::prepareConsume()
 
 IProcessor::Status ExternalDistinctTransform::prepareSerialize()
 {
-    auto & output = outputs.back();
+    if (!run_write_output->isFinished())
+    {
+        if (!run_write_output->canPush())
+            return Status::PortFull;
 
-    if (output.isFinished())
-        return Status::Finished;
+        if (current_chunk)
+            run_write_output->push(std::move(current_chunk));
 
-    if (!output.canPush())
-        return Status::PortFull;
+        if (merge_sorter)
+            return Status::Ready;
 
-    if (current_chunk)
-        output.push(std::move(current_chunk));
+        run_write_output->finish();
+    }
 
-    if (merge_sorter)
-        return Status::Ready;
+    if (!run_completion_input->isFinished())
+    {
+        run_completion_input->setNeeded();
+        return Status::NeedData;
+    }
 
-    output.finish();
+    run_readiness_output->finish();
     return Status::Finished;
 }
 
@@ -412,8 +447,7 @@ IProcessor::Status ExternalDistinctTransform::prepareGenerate()
         return Status::Finished;
     }
 
-    /// The extra input carries the merged and deduplicated spill output.
-    auto & input = inputs.back();
+    auto & input = *merged_input;
 
     if (input.isFinished())
     {
@@ -434,6 +468,9 @@ void ExternalDistinctTransform::work()
 {
     if (stage == Stage::Consume)
         consume(std::move(current_chunk));
+
+    if (stage == Stage::ExtractSuppression)
+        extractSuppressionRun();
 
     if (stage == Stage::Serialize)
         serialize();
@@ -479,7 +516,7 @@ void ExternalDistinctTransform::consume(Chunk chunk)
     else
     {
         auto prepared = sortSpillChunk(
-            spill_layout.prepareInputChunk(std::move(chunk), first_arrival_number), /*already_emitted=*/ false);
+            spill_layout.prepareInputChunk(std::move(chunk), first_arrival_number), RunKind::Input);
         sum_bytes_in_chunks += prepared.allocatedBytes();
         chunks.push_back(std::move(prepared));
 
@@ -490,7 +527,7 @@ void ExternalDistinctTransform::consume(Chunk chunk)
         {
             auto run_chunks = std::move(chunks);
             chunks.clear();
-            startSpillRun(std::move(run_chunks), sum_bytes_in_chunks, /*is_first_run=*/ false);
+            startSpillRun(std::move(run_chunks), sum_bytes_in_chunks, RunKind::Input);
         }
     }
 }
@@ -506,7 +543,7 @@ void ExternalDistinctTransform::serialize()
         if (!current_chunk)
             break;
 
-        if (current_run_is_deduplicated)
+        if (!deduplicate_current_run)
             return;
 
         /// Deduplicate the run locally. Pushing an empty chunk would end the temporary file stream

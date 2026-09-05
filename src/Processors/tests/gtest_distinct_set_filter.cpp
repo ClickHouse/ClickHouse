@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <optional>
 #include <set>
 
 #include <Columns/ColumnFixedString.h>
@@ -46,16 +47,17 @@ RowsMultiset collectRows(const Columns & columns, size_t num_rows)
 /// Feeds the chunks through the filter and checks that the keys extracted from the set are exactly
 /// the emitted (distinct) rows.
 void checkExtractionRoundTrip(
-    const Block & header, std::vector<Columns> chunks, size_t max_batch_rows = 1000, bool require_extractable_keys = false)
+    const Block & header, std::vector<Columns> chunks, size_t max_batch_rows = 1, bool require_extractable_keys = false)
 {
-    DistinctSetFilter filter(header, /*columns=*/ {}, SizeLimits{}, /*skip_null_keys_=*/ false, require_extractable_keys);
+    std::optional<DistinctSetFilter> filter(
+        std::in_place, header, Names{}, SizeLimits{}, /*skip_null_keys_=*/ false, require_extractable_keys);
 
     RowsMultiset emitted;
     size_t emitted_count = 0;
     for (auto & columns : chunks)
     {
         const size_t num_rows = columns.front()->size();
-        Chunk filtered = filter.filter(Chunk(std::move(columns), num_rows));
+        Chunk filtered = filter->filter(Chunk(std::move(columns), num_rows));
         if (filtered.hasRows())
         {
             emitted_count += filtered.getNumRows();
@@ -64,25 +66,43 @@ void checkExtractionRoundTrip(
         }
     }
 
-    ASSERT_TRUE(filter.supportsKeyExtraction());
+    ASSERT_TRUE(filter->supportsKeyExtraction());
+    const size_t expected_count = filter->getTotalRowCount();
+    auto extractor = std::move(*filter).extractKeys();
+    filter.reset();
 
-    RowsMultiset extracted;
+    std::vector<Columns> batches;
     size_t extracted_count = 0;
-    for (auto & batch : filter.extractKeyColumns(max_batch_rows))
+    while (true)
     {
+        auto batch = extractor->next(max_batch_rows, /*max_bytes=*/ 0);
+        if (batch.empty())
+            break;
+
         const size_t num_rows = batch.front()->size();
+        EXPECT_GT(num_rows, 0);
         EXPECT_LE(num_rows, max_batch_rows);
         extracted_count += num_rows;
 
         Columns columns;
         for (auto & column : batch)
             columns.push_back(std::move(column));
-        auto rows = collectRows(columns, num_rows);
+        batches.push_back(std::move(columns));
+    }
+
+    EXPECT_TRUE(extractor->next(max_batch_rows, /*max_bytes=*/ 0).empty());
+    extractor.reset();
+
+    /// The materialized values remain readable after the extractor and its table are released.
+    RowsMultiset extracted;
+    for (const auto & columns : batches)
+    {
+        auto rows = collectRows(columns, columns.front()->size());
         extracted.merge(rows);
     }
 
     EXPECT_EQ(extracted_count, emitted_count);
-    EXPECT_EQ(extracted_count, filter.getTotalRowCount());
+    EXPECT_EQ(extracted_count, expected_count);
     EXPECT_EQ(extracted, emitted);
 }
 
@@ -160,11 +180,11 @@ TEST(DistinctSetFilterExtraction, KeyString)
 
 TEST(DistinctSetFilterExtraction, KeyFixedString)
 {
-    auto column = ColumnFixedString::create(4);
-    for (const auto * value : {"aaaa", "bbbb", "aaaa", "cc\0d"})
-        column->insertData(value, 4);
+    auto column = ColumnFixedString::create(40);
+    for (const auto & value : {String(40, 'a'), String(40, 'b'), String(40, 'a'), String(40, 'c')})
+        column->insertData(value.data(), value.size());
 
-    const Block header = {ColumnWithTypeAndName(std::make_shared<DataTypeFixedString>(4), "k")};
+    const Block header = {ColumnWithTypeAndName(std::make_shared<DataTypeFixedString>(40), "k")};
     checkExtractionRoundTrip(header, {{std::move(column)}});
 }
 
@@ -223,9 +243,11 @@ TEST(DistinctSetFilterExtraction, FloatBitPatternsSurviveExtraction)
     Chunk filtered = filter.filter(Chunk({column}, 4));
     ASSERT_EQ(filtered.getNumRows(), 2u);
 
-    auto batches = filter.extractKeyColumns(1000);
-    ASSERT_EQ(batches.size(), 1u);
-    const auto & extracted = assert_cast<const ColumnFloat64 &>(*batches[0][0]).getData();
+    auto extractor = std::move(filter).extractKeys();
+    auto batch = extractor->next(2, /*max_bytes=*/ 0);
+    ASSERT_EQ(batch.size(), 1u);
+    EXPECT_TRUE(extractor->next(2, /*max_bytes=*/ 0).empty());
+    const auto & extracted = assert_cast<const ColumnFloat64 &>(*batch[0]).getData();
     ASSERT_EQ(extracted.size(), 2u);
     EXPECT_NE(std::signbit(extracted[0]), std::signbit(extracted[1]));
 }
@@ -496,7 +518,7 @@ TEST(DistinctSetFilterExtraction, SerializedKeysOnRequest)
     checkExtractionRoundTrip(
         header,
         {{makeStringColumn({"a", "b", "a"}), makeStringColumn({"x", "y", "x"})}, {makeStringColumn({"a", "c"}), makeStringColumn({"y", "z"})}},
-        /*max_batch_rows=*/ 1000,
+        /*max_batch_rows=*/ 2,
         /*require_extractable_keys=*/ true);
 }
 
@@ -513,7 +535,7 @@ TEST(DistinctSetFilterExtraction, SerializedLowCardinalityKey)
             column->insertData(value.data(), value.size());
         chunks.push_back({std::move(column)});
     }
-    checkExtractionRoundTrip(header, std::move(chunks), /*max_batch_rows=*/ 1000, /*require_extractable_keys=*/ true);
+    checkExtractionRoundTrip(header, std::move(chunks), /*max_batch_rows=*/ 2, /*require_extractable_keys=*/ true);
 }
 
 TEST(DistinctSetFilterExtraction, SerializedNullableStringKey)
@@ -527,5 +549,91 @@ TEST(DistinctSetFilterExtraction, SerializedNullableStringKey)
     column->insert(Field("b"));
     column->insert(Field("a"));
     column->insertDefault(); /// NULL
-    checkExtractionRoundTrip(header, {{std::move(column)}}, /*max_batch_rows=*/ 1000, /*require_extractable_keys=*/ true);
+    checkExtractionRoundTrip(header, {{std::move(column)}}, /*max_batch_rows=*/ 2, /*require_extractable_keys=*/ true);
+}
+
+TEST(DistinctSetFilterExtraction, ByteTargetSplitsVariableWidthKeys)
+{
+    const Block header = {ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "k")};
+    std::vector<String> values;
+    for (size_t i = 0; i < 100; ++i)
+        values.push_back(std::to_string(i) + String(1000 + i, 'x'));
+
+    auto input = makeStringColumn(values);
+    const auto expected = collectRows({input}, values.size());
+    DistinctSetFilter filter(header, {}, SizeLimits{});
+    filter.filter(Chunk({std::move(input)}, values.size()));
+    auto extractor = std::move(filter).extractKeys();
+
+    RowsMultiset extracted;
+    size_t batch_count = 0;
+    while (true)
+    {
+        const size_t byte_target = batch_count % 2 == 0 ? 4096 : 8192;
+        auto batch = extractor->next(1000, byte_target);
+        if (batch.empty())
+            break;
+        ASSERT_EQ(batch.size(), 1);
+        const size_t rows = batch.front()->size();
+        EXPECT_GT(rows, 0);
+        EXPECT_LT(rows, values.size());
+
+        Columns columns;
+        columns.push_back(std::move(batch.front()));
+        auto current_rows = collectRows(columns, rows);
+        extracted.merge(current_rows);
+        if (extracted.size() < values.size())
+            EXPECT_GE(columns.front()->allocatedBytes(), byte_target);
+        ++batch_count;
+    }
+
+    EXPECT_GT(batch_count, 1);
+    EXPECT_EQ(extracted, expected);
+}
+
+TEST(DistinctSetFilterExtraction, KeyLargerThanByteTargetMakesProgress)
+{
+    const Block header = {ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "k")};
+    const String value(16384, 'x');
+    DistinctSetFilter filter(header, {}, SizeLimits{});
+    filter.filter(Chunk({makeStringColumn({value})}, 1));
+    auto extractor = std::move(filter).extractKeys();
+
+    auto batch = extractor->next(1000, /*max_bytes=*/ 1024);
+    ASSERT_EQ(batch.size(), 1);
+    ASSERT_EQ(batch.front()->size(), 1);
+    EXPECT_GT(batch.front()->allocatedBytes(), 1024);
+    EXPECT_TRUE(extractor->next(1000, /*max_bytes=*/ 1024).empty());
+    extractor.reset();
+    EXPECT_EQ((*batch.front())[0].safeGet<String>(), value);
+}
+
+TEST(DistinctSetFilterExtraction, ReturnedColumnsSurviveEarlyExtractorDestruction)
+{
+    for (const size_t key_count : {1, 2})
+    {
+        SCOPED_TRACE(key_count);
+        auto type = std::make_shared<DataTypeString>();
+        Block header = {ColumnWithTypeAndName(type, "a")};
+        Columns columns = {makeStringColumn({"first", "second", "third"})};
+        if (key_count == 2)
+        {
+            header.insert(ColumnWithTypeAndName(type, "b"));
+            columns.push_back(makeStringColumn({"first suffix", "second suffix", "third suffix"}));
+        }
+
+        /// One string uses the string table; two strings use serialized keys backed by the arena.
+        DistinctSetFilter filter(header, {}, SizeLimits{}, /*skip_null_keys_=*/ false, /*require_extractable_keys_=*/ true);
+        filter.filter(Chunk(std::move(columns), 3));
+        auto extractor = std::move(filter).extractKeys();
+        auto batch = extractor->next(1, /*max_bytes=*/ 0);
+        ASSERT_EQ(batch.size(), key_count);
+        ASSERT_EQ(batch.front()->size(), 1);
+        extractor.reset();
+
+        const auto key = (*batch.front())[0].safeGet<String>();
+        EXPECT_TRUE(key == "first" || key == "second" || key == "third");
+        if (key_count == 2)
+            EXPECT_EQ((*batch[1])[0].safeGet<String>(), key + " suffix");
+    }
 }

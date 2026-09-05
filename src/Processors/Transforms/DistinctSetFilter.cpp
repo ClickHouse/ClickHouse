@@ -313,114 +313,106 @@ bool DistinctSetFilter::supportsKeyExtraction() const
     return !skip_null_keys && data->type != SetVariants::Type::EMPTY && data->type != SetVariants::Type::hashed;
 }
 
-std::vector<MutableColumns> DistinctSetFilter::extractKeyColumns(size_t max_batch_rows) const
+namespace
 {
-    chassert(supportsKeyExtraction());
-    chassert(max_batch_rows > 0);
 
-    std::vector<MutableColumns> batches;
-    std::vector<IColumn *> current_batch_raw;
-    size_t rows_in_batch = max_batch_rows;
-
-    auto insert_into_batch = [&](auto && insert_key)
+/// Keeps the set alive while a typed iterator materializes owning columns one batch at a time.
+template <typename Method>
+class KeyExtractorImpl final : public DistinctSetFilter::KeyExtractor
+{
+public:
+    KeyExtractorImpl(
+        const Method & method, std::unique_ptr<SetVariants> data_, DataTypes key_types_, Sizes key_sizes_)
+        : data(std::move(data_))
+        , key_types(std::move(key_types_))
+        , key_sizes(std::move(key_sizes_))
+        , position(method.data.begin())
+        , end(method.data.end())
     {
-        if (rows_in_batch == max_batch_rows)
+        if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
+            unpack_order = Method::State::packedKeysOrder(key_sizes);
+    }
+
+    MutableColumns next(size_t max_rows, size_t max_bytes) override
+    {
+        if (!data)
+            return {};
+
+        MutableColumns columns;
+        std::vector<IColumn *> raw_columns;
+        columns.reserve(key_types.size());
+        raw_columns.reserve(key_types.size());
+        for (const auto & type : key_types)
         {
-            MutableColumns batch;
-            batch.reserve(key_types.size());
-            current_batch_raw.clear();
-            for (const auto & type : key_types)
+            columns.push_back(type->createColumn());
+            raw_columns.push_back(columns.back().get());
+        }
+
+        size_t rows = 0;
+        while (position != end && rows < max_rows)
+        {
+            if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
+                Method::insertKeyIntoColumns(
+                    position->getValue(), raw_columns, key_sizes, unpack_order ? &*unpack_order : nullptr);
+            else
+                Method::insertKeyIntoColumns(position->getValue(), raw_columns, key_sizes);
+
+            ++position;
+            ++rows;
+
+            if (max_bytes)
             {
-                batch.push_back(type->createColumn());
-                current_batch_raw.push_back(batch.back().get());
+                size_t bytes = 0;
+                for (const auto & column : columns)
+                    bytes += column->allocatedBytes();
+                if (bytes >= max_bytes)
+                    break;
             }
-            batches.push_back(std::move(batch));
-            rows_in_batch = 0;
         }
 
-        insert_key(current_batch_raw);
-        ++rows_in_batch;
-    };
+        /// Returned columns own their values, including strings and deserialized aggregate states.
+        if (position == end)
+            data.reset();
 
-    /// All the hash tables (including the fixed ones, where the key is the cell index) support
-    /// iteration with cell.getValue() returning the key.
-    auto extract = [&](const auto & method)
+        return columns;
+    }
+
+private:
+    std::unique_ptr<SetVariants> data;
+    const DataTypes key_types;
+    const Sizes key_sizes;
+    typename Method::Data::const_iterator position;
+    const typename Method::Data::const_iterator end;
+    std::optional<Sizes> unpack_order;
+};
+
+}
+
+std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys() &&
+{
+    auto create_extractor = [this]<typename Method>(const Method & method) -> std::unique_ptr<KeyExtractor>
     {
-        for (const auto & cell : method.data)
+        if constexpr (requires { &Method::insertKeyIntoColumns; })
         {
-            insert_into_batch([&](std::vector<IColumn *> & batch)
-            {
-                std::decay_t<decltype(method)>::insertKeyIntoColumns(cell.getValue(), batch, key_sizes);
-            });
+            return std::make_unique<KeyExtractorImpl<Method>>(
+                method, std::move(data), std::move(key_types), std::move(key_sizes));
         }
-    };
-
-    auto extract_fixed_keys = [&](const auto & method)
-    {
-        using Method = std::decay_t<decltype(method)>;
-
-        /// The prepared-keys optimization packs the columns grouped by their size instead of the
-        /// original order.
-        const auto order = Method::State::packedKeysOrder(key_sizes);
-        const std::vector<size_t> * unpack_order = order ? &*order : nullptr;
-
-        for (const auto & cell : method.data)
-        {
-            insert_into_batch([&](std::vector<IColumn *> & batch)
-            {
-                Method::insertKeyIntoColumns(cell.getValue(), batch, key_sizes, unpack_order);
-            });
-        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Keys cannot be extracted from this DISTINCT set variant");
     };
 
     switch (data->type)
     {
-        case SetVariants::Type::key8:
-            extract(*data->key8);
-            break;
-        case SetVariants::Type::key16:
-            extract(*data->key16);
-            break;
-        case SetVariants::Type::key32:
-            extract(*data->key32);
-            break;
-        case SetVariants::Type::key64:
-            extract(*data->key64);
-            break;
-        case SetVariants::Type::key_string:
-            extract(*data->key_string);
-            break;
-        case SetVariants::Type::key_fixed_string:
-            extract(*data->key_fixed_string);
-            break;
-        case SetVariants::Type::keys32:
-            extract_fixed_keys(*data->keys32);
-            break;
-        case SetVariants::Type::keys64:
-            extract_fixed_keys(*data->keys64);
-            break;
-        case SetVariants::Type::keys128:
-            extract_fixed_keys(*data->keys128);
-            break;
-        case SetVariants::Type::keys256:
-            extract_fixed_keys(*data->keys256);
-            break;
-        case SetVariants::Type::nullable_keys128:
-            extract_fixed_keys(*data->nullable_keys128);
-            break;
-        case SetVariants::Type::nullable_keys256:
-            extract_fixed_keys(*data->nullable_keys256);
-            break;
-        case SetVariants::Type::serialized:
-            extract(*data->serialized);
-            break;
         case SetVariants::Type::EMPTY:
-        case SetVariants::Type::hashed:
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Keys cannot be extracted from this DISTINCT set variant");
+            break;
+#define M(NAME) \
+        case SetVariants::Type::NAME: \
+            return create_extractor(*data->NAME);
+        APPLY_FOR_SET_VARIANTS(M)
+#undef M
     }
 
-    return batches;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Keys cannot be extracted from an uninitialized DISTINCT set");
 }
 
 Chunk DistinctSetFilter::filter(Chunk chunk)

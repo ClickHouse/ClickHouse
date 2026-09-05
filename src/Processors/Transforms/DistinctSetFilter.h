@@ -132,11 +132,23 @@ public:
     /// first one).
     bool supportsKeyExtraction() const;
 
-    /// Materializes all the keys of the set into columns, in batches of at most max_batch_rows. The
-    /// columns of each batch follow getKeyColumnsPositions(): types are those of the corresponding
-    /// header columns, in the same order. The keys are returned in the iteration order of the hash
-    /// table (no particular order).
-    std::vector<MutableColumns> extractKeyColumns(size_t max_batch_rows) const;
+    /// Reads owning key columns from a frozen set in hash-table iteration order.
+    class KeyExtractor
+    {
+    public:
+        virtual ~KeyExtractor() = default;
+
+        /// Returns at most `max_rows` keys, stopping after a complete key reaches `max_bytes` of
+        /// allocated column memory. The byte target is soft because a key or an allocation can exceed
+        /// it; zero disables it. `max_rows` must be positive. An empty vector marks exhaustion.
+        virtual MutableColumns next(size_t max_rows, size_t max_bytes) = 0;
+    };
+
+    /// Transfers the hash table, arena, and key metadata into an extractor. The columns it returns
+    /// follow `getKeyColumnsPositions` and own their values independently of the extractor. The table
+    /// is released after its final key is materialized, or when the extractor is destroyed early.
+    /// The set must support key extraction and contain at least one retained key.
+    std::unique_ptr<KeyExtractor> extractKeys() &&;
 
     /// Filters the chunk leaving only the rows whose key was not seen before (and inserts their keys
     /// into the set). This is also the enforcement point of the DISTINCT size limits
@@ -159,7 +171,7 @@ private:
     /// Types of the key columns (following key_columns_pos), for the key extraction.
     DataTypes key_types;
 
-    /// Owns the hash table and its arena for the lifetime of the filter.
+    /// Owns the hash table and arena until the filter is destroyed or extraction takes ownership.
     std::unique_ptr<SetVariants> data;
     Sizes key_sizes;
     /// The context of the hashing state of the set method; only the serialized method needs one.
