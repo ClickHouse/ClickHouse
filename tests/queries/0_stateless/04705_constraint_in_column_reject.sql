@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS c8;
 DROP TABLE IF EXISTS c9;
 DROP TABLE IF EXISTS c10;
 DROP TABLE IF EXISTS c11;
+DROP TABLE IF EXISTS c12;
 DROP TABLE IF EXISTS ok1;
 DROP TABLE IF EXISTS ok2;
 DROP TABLE IF EXISTS ok3;
@@ -23,6 +24,7 @@ DROP TABLE IF EXISTS ok5;
 DROP TABLE IF EXISTS ok6;
 DROP TABLE IF EXISTS ok7;
 DROP TABLE IF EXISTS ok8;
+DROP TABLE IF EXISTS ok9;
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS s1;
 
@@ -57,6 +59,10 @@ CREATE TABLE c11 (a UInt16, b UInt16, CONSTRAINT c CHECK a > 0, CONSTRAINT c CHE
     ENGINE = MergeTree ORDER BY a;
 ALTER TABLE c11 DROP CONSTRAINT c,
     MODIFY CONSTRAINT IF EXISTS c CHECK a IN (b); -- { serverError BAD_ARGUMENTS }
+
+-- A two-part name is convertible into a table reference, so it is rejected like a bare one.
+CREATE TABLE c12 (a UInt16, CONSTRAINT c CHECK a IN (some_db.some_table))
+    ENGINE = MergeTree ORDER BY a; -- { serverError BAD_ARGUMENTS }
 
 -- A full definition under ATTACH is user input, not a definition read back from stored metadata.
 ATTACH TABLE c8 UUID '5cf0a1f2-4b21-4b9f-9a3e-1d7c0e6b2a41'
@@ -118,3 +124,16 @@ CREATE TABLE ok8 (a UInt16, b UInt16) ENGINE = MergeTree ORDER BY a;
 ALTER TABLE ok8 ADD CONSTRAINT c CHECK a > 0, ADD CONSTRAINT IF NOT EXISTS c CHECK a IN (b);
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'ok8'
     AND create_table_query LIKE '%CONSTRAINT c CHECK a > 0%' AND create_table_query NOT LIKE '%IN (%';
+
+-- A name of three or more parts is a subcolumn path that no rewrite turns into a table reference, so
+-- it stays row-scoped: accepted, enforced, and spelled the same way after a reload.
+CREATE TABLE ok9 (x UInt8, n Tuple(a Tuple(b UInt8)), CONSTRAINT c CHECK x IN (n.a.b))
+    ENGINE = MergeTree ORDER BY x;
+INSERT INTO ok9 VALUES (1, ((1)));
+INSERT INTO ok9 VALUES (1, ((2))); -- { serverError VIOLATED_CONSTRAINT }
+DETACH TABLE ok9;
+ATTACH TABLE ok9;
+INSERT INTO ok9 VALUES (5, ((5)));
+SELECT count() FROM ok9;
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'ok9'
+    AND create_table_query LIKE '%CHECK x IN (n.a.b)%';

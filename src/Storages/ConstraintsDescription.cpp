@@ -53,8 +53,12 @@ void checkConstraintExpressionIsValid(const IAST & ast)
         if (args && args->children.size() == 2)
         {
             const auto & rhs = args->children[1];
+            const auto * identifier = rhs->as<ASTIdentifier>();
+            /// A name the visitor cannot turn into a table reference stays row-scoped and evaluates as
+            /// an expression, so only a convertible one is rejected: `createTable` declines a name of
+            /// three or more parts, such as the subcolumn path `t.a.b`, and a parameterised name.
             /// `typeid_cast` matches the exact type only, so `ASTTableIdentifier` needs its own test.
-            if (rhs->as<ASTIdentifier>() || rhs->as<ASTTableIdentifier>())
+            if (rhs->as<ASTTableIdentifier>() || (identifier && identifier->createTable()))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS, "Constraint expressions cannot contain a table in the 'IN' operator");
         }
