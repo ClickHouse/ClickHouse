@@ -2711,17 +2711,6 @@ void Planner::buildPlanForQueryNode()
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
 
-    if (select_query_options.to_stage == QueryProcessingStage::FetchColumns)
-        return;
-
-    PlannerQueryProcessingInfo query_processing_info(from_stage, select_query_options.to_stage);
-    QueryAnalysisResult query_analysis_result(query_tree, query_processing_info, planner_context);
-    auto expression_analysis_result = buildExpressionAnalysisResult(query_tree,
-        query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
-        planner_context,
-        query_processing_info,
-        join_tree_query_plan.source_constants);
-
     auto useful_sets = std::move(join_tree_query_plan.useful_sets);
 
     for (auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
@@ -2732,6 +2721,23 @@ void Planner::buildPlanForQueryNode()
         if (table_expression_data.getRowLevelFilterActions())
             appendSetsFromActionsDAG(*table_expression_data.getRowLevelFilterActions(), useful_sets);
     }
+
+    if (select_query_options.to_stage == QueryProcessingStage::FetchColumns)
+    {
+        /// The reader evaluates PREWHERE and row-level filter expressions itself, so the sets they
+        /// reference need their sources attached even though no expression step is added past here.
+        if (!select_query_options.only_analyze)
+            addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, useful_sets);
+        return;
+    }
+
+    PlannerQueryProcessingInfo query_processing_info(from_stage, select_query_options.to_stage);
+    QueryAnalysisResult query_analysis_result(query_tree, query_processing_info, planner_context);
+    auto expression_analysis_result = buildExpressionAnalysisResult(query_tree,
+        query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+        planner_context,
+        query_processing_info,
+        join_tree_query_plan.source_constants);
 
     if (query_processing_info.isIntermediateStage())
     {
