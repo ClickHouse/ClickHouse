@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <optional>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnArray.h>
@@ -383,16 +384,27 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
         auto filter_column = element_block.getByName(array_join->element_filter_column_name).column;
 
         ConstantFilterDescription constant_filter(*filter_column);
-        IColumn::Filter mask;
+        /// Reference the filter column's data directly; only the constant filters need a synthesized mask.
+        /// Avoids copying the whole filter into a fresh vector on every window.
+        IColumn::Filter constant_mask;
+        std::optional<FilterDescription> filter_description;
+        const IColumn::Filter * mask_data = nullptr;
         if (constant_filter.always_true)
-            mask.assign(num_elements, static_cast<UInt8>(1));
+        {
+            constant_mask.assign(num_elements, static_cast<UInt8>(1));
+            mask_data = &constant_mask;
+        }
         else if (constant_filter.always_false)
-            mask.assign(num_elements, static_cast<UInt8>(0));
+        {
+            constant_mask.assign(num_elements, static_cast<UInt8>(0));
+            mask_data = &constant_mask;
+        }
         else
         {
-            FilterDescription filter_description(*filter_column);
-            mask.assign(filter_description.data->begin(), filter_description.data->end());
+            filter_description.emplace(*filter_column);
+            mask_data = filter_description->data;
         }
+        const IColumn::Filter & mask = *mask_data;
 
         size_t survivors = countBytesInFilter(mask);
         /// Skip dead windows, but still emit one structured empty block for the last one
@@ -405,21 +417,28 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
         /// Fast path: the filter dropped nothing, so this window expands exactly like the unfiltered next()
         const bool all_survive = survivors == num_elements;
 
-        /// Per-row survivor counts, cumulative - offsets for the non-lazy replicate path. When everything
-        /// survives these equal win_offsets, so reuse those directly and skip the recount.
+        /// Per-row survivor counts, cumulative - offsets for the non-lazy replicate path. Built lazily on
+        /// first use: a query without eagerly-replicated passengers (e.g. count()) never needs them.
         IColumn::Offsets new_offsets;
-        if (!all_survive)
+        bool new_offsets_built = false;
+        auto get_result_offsets = [&]() -> const IColumn::Offsets &
         {
-            new_offsets.resize(window_rows);
-            size_t accumulated = 0;
-            for (size_t row = 0; row != window_rows; ++row)
+            if (all_survive)
+                return win_offsets;
+            if (!new_offsets_built)
             {
-                for (size_t pos = win_offsets[row - 1]; pos != win_offsets[row]; ++pos)
-                    accumulated += (mask[pos] != 0);
-                new_offsets[row] = accumulated;
+                new_offsets.resize(window_rows);
+                size_t accumulated = 0;
+                for (size_t row = 0; row != window_rows; ++row)
+                {
+                    for (size_t pos = win_offsets[row - 1]; pos != win_offsets[row]; ++pos)
+                        accumulated += (mask[pos] != 0);
+                    new_offsets[row] = accumulated;
+                }
+                new_offsets_built = true;
             }
-        }
-        const IColumn::Offsets & result_offsets = all_survive ? win_offsets : new_offsets;
+            return new_offsets;
+        };
 
         Block res;
         ColumnPtr indexes;
@@ -447,7 +466,7 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
                     current.column = ColumnReplicated::create(cut_col, indexes);
                 }
                 else
-                    current.column = cut_col->replicate(result_offsets);
+                    current.column = cut_col->replicate(get_result_offsets());
             }
             res.insert(std::move(current));
         }

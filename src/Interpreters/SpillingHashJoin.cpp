@@ -37,6 +37,8 @@ SpillingHashJoin::SpillingHashJoin(
     hash_join = std::make_shared<HashJoin>(
         table_join, right_sample_block_, any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
         /*is_concurrent_hash_join_=*/false, stats_collecting_params_);
+    /// Until the build phase ends this join may have to hand its right blocks to `GraceHashJoin`.
+    hash_join->keepRightBlocksForAnotherAlgorithm();
 }
 
 SpillingHashJoin::SpillingHashJoin(
@@ -66,6 +68,8 @@ SpillingHashJoin::SpillingHashJoin(
         stats_collecting_params_,
         any_take_last_row,
         max_bytes_before_external_join);
+    /// As above: the slots' blocks go to `GraceHashJoin` if the switch happens.
+    concurrent_join->keepRightBlocksForAnotherAlgorithm();
     supports_parallel_non_joined_blocks_processing = concurrent_join->supportParallelNonJoinedBlocksProcessing();
 }
 
@@ -273,6 +277,17 @@ void SpillingHashJoin::onBuildPhaseFinish()
     }
 
     chosen_join->onBuildPhaseFinish();
+
+    /// The switch to `GraceHashJoin` can only happen while collecting, and that is over: whatever
+    /// right blocks were kept in case it did are now dead weight for the whole probe phase, so a
+    /// join that stores only the keys can drop them.
+    if (state.load(std::memory_order_acquire) == State::IN_MEMORY_JOIN)
+    {
+        if (concurrent_join)
+            concurrent_join->dropRightBlocksKeptForAnotherAlgorithm();
+        else
+            hash_join->dropRightBlocksKeptForAnotherAlgorithm();
+    }
 }
 
 void SpillingHashJoin::onProbePhaseFinish(size_t matched_right_rows)

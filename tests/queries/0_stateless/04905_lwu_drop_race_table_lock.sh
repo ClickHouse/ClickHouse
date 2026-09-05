@@ -38,7 +38,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FP}" < /dev/null 2>/dev
 function setup_table()
 {
     ${CLICKHOUSE_CLIENT} --query "
-        DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC SETTINGS ignore_drop_queries_probability = 0;
+        DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC;
 
         CREATE TABLE ${CLICKHOUSE_DATABASE_1}.t (id UInt64, c2 String)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04905_$1/', '1')
@@ -96,8 +96,7 @@ function race_with_drop()
     fi
 
     ${CLICKHOUSE_CLIENT} --query_id "$drop_qid" --query "
-        DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC
-        SETTINGS ignore_drop_queries_probability = 0" < /dev/null > /dev/null 2>&1 &
+        DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.t SYNC" < /dev/null > /dev/null 2>&1 &
     local dropper=$!
 
     # The sink is still parked, so the drop reaches the table lock and blocks on it while the
@@ -153,7 +152,7 @@ race_with_drop alter --enable_lightweight_update 1 --alter_update_mode 'lightwei
 # An Alias table resolves a different storage, so the update has to hold the target's lock as well.
 setup_table alias
 ${CLICKHOUSE_CLIENT} --allow_experimental_alias_table_engine 1 --query "
-    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.a SYNC SETTINGS ignore_drop_queries_probability = 0;
+    DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE_1}.a SYNC;
     CREATE TABLE ${CLICKHOUSE_DATABASE_1}.a ENGINE = Alias('${CLICKHOUSE_DATABASE_1}', 't');
 " < /dev/null
 race_with_drop alias --allow_experimental_alias_table_engine 1 --enable_lightweight_update 1 \

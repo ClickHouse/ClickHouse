@@ -34,6 +34,7 @@
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -132,6 +133,7 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
+    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
@@ -534,6 +536,11 @@ namespace
     /// series id. The supported types are the ones `TimeSeriesIDGenerator` can generate hashes for.
     std::optional<std::pair<ASTPtr, ASTPtr>> makeMinMaxLiteralsForIDComponent(const IDataType & type)
     {
+        /// A LowCardinality component has the value space of its dictionary type: the range bounds
+        /// are the dictionary type's bounds (constants have no dictionary encoding of their own).
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
+            return makeMinMaxLiteralsForIDComponent(*low_cardinality_type->getDictionaryType());
+
         WhichDataType which(type);
 
         if (which.isUInt64())
@@ -811,6 +818,7 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* num_streams */)
 {
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
+    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_settings = time_series_storage->getStorageSettings();
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
@@ -871,7 +879,15 @@ void StorageTimeSeriesSelector::readImpl(
         context,
         log);
 
-    ContextPtr interpreter_context = context;
+    auto modified_context = Context::createCopy(context);
+    ContextPtr interpreter_context = modified_context;
+
+    if (!context->getSettingsRef().isChanged("merge_tree_min_bytes_for_concurrent_read"))
+        modified_context->setSetting("merge_tree_min_bytes_for_concurrent_read", UInt64{4 * 1024 * 1024});
+
+    if (!context->getSettingsRef().isChanged("merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem"))
+        modified_context->setSetting("merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem", UInt64{4 * 1024 * 1024});
+
     if (!whole_metric_id_range_conditions.empty())
     {
         /// The `id IN <tags subquery>` condition stays in the WHERE for exact row-level filtering
@@ -882,9 +898,7 @@ void StorageTimeSeriesSelector::readImpl(
         /// the same granules through the cheap continuous-range path. Setting
         /// `use_index_for_in_with_subqueries_max_values = 1` makes the set unusable for index
         /// analysis without affecting the row-level filter.
-        auto modified_context = Context::createCopy(context);
         modified_context->setSetting("use_index_for_in_with_subqueries_max_values", UInt64{1});
-        interpreter_context = modified_context;
         LOG_DEBUG(log, "Selector {} matches the whole metric: adding a primary-key range on id and excluding the id set from index analysis",
                   quoteString(config.selector.toString()));
     }

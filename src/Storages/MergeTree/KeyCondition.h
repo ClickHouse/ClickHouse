@@ -105,6 +105,10 @@ public:
     {
         virtual ~BloomFilter() = default;
 
+        /// `hashes` are the hashes of the query constants of one atom for one column. They are sorted
+        /// and deduplicated (see `prepareBloomFilterData`), which lets an implementation with a sorted
+        /// value set intersect the two sequences in one pass instead of searching for each hash
+        /// separately. Returns true if any of them may be present.
         virtual bool findAnyHash(const std::vector<uint64_t> & hashes) = 0;
     };
 
@@ -491,6 +495,15 @@ public:
         bool date_time_overflow_behavior_ignore_);
 
 private:
+    /// Whether any atom reads a `Nullable` key column whose analysed range may hold a NULL value.
+    /// A NULL satisfies neither a comparison nor its negation, which the two-valued range algebra of
+    /// `checkInHyperrectangle` cannot express, so it costs the analysis its `can_be_false` claim.
+    bool mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const;
+    bool mayReadNullKeyValue(
+        const std::vector<int> & key_col_to_sparse_pos,
+        const Hyperrectangle & sparse_hyperrectangle,
+        const DataTypes & sparse_key_types) const;
+
     /// Information used when building a KeyCondition out of ActionsDAG.
     struct BuildInfo
     {

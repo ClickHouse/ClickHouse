@@ -18,7 +18,6 @@
 #include <Parsers/stripQuerySettings.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Common/re2.h>
 #include <string_view>

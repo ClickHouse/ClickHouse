@@ -339,13 +339,14 @@ private:
     std::vector<String> separators;
 };
 
-/// Parser extracting tokens which are separated by a regular expression.
-/// The regexp plays the role of the separator (like `splitByRegexp`): tokens are the pieces of text
-/// between successive matches. Empty pieces (produced by leading, trailing or consecutive separators) are
-/// not emitted, since empty tokens are useless for a text index.
+/// Parser extracting tokens separated by a regular expression, or - in `match_tokens` mode - tokens
+/// that are the regexp's capture group matches themselves. Default mode: tokens are the (non-empty)
+/// pieces of text between successive matches, like `splitByRegexp`. `match_tokens` mode: each match
+/// contributes at most one token, capture group 1 (or the whole match if the pattern has none);
+/// scanning always resumes after the whole match, so matches never overlap.
 struct SplitByRegexpTokenizer final : public ITokenizerHelper<SplitByRegexpTokenizer>
 {
-    explicit SplitByRegexpTokenizer(const String & regexp_);
+    explicit SplitByRegexpTokenizer(const String & regexp_, bool match_tokens_ = false);
 
     static const char * getName() { return "splitByRegexp"; }
     static const char * getExternalName() { return getName(); }
@@ -377,13 +378,25 @@ struct SplitByRegexpTokenizer final : public ITokenizerHelper<SplitByRegexpToken
 
 private:
     /// Single split step, taking caller-owned RE2 match scratch so the hot path can reuse one buffer.
+    /// Dispatches to `nextMatchedToken` when `match_tokens` is set.
     bool nextInStringImpl(
         const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const;
 
+    /// `match_tokens` mode's split step. Can't reuse `nextRegexpMatch`: it treats an empty leftmost match
+    /// as "no further match", which would silently drop every match past the first empty one.
+    bool nextMatchedToken(
+        const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const;
+
     String regexp_str;
+    bool match_tokens;
     /// `shared_ptr` (rather than a plain member) so that the tokenizer stays copyable for `clone`, since
     /// `OptimizedRegularExpression` is non-copyable. The compiled regexp is immutable and safe to share.
     std::shared_ptr<OptimizedRegularExpression> regexp;
+    /// Index into the RE2 match vector of the span that becomes the token in `match_tokens` mode:
+    /// capture group 1 when the pattern has capture groups, otherwise 0 (the whole match).
+    /// Loop-invariant, so it is resolved once at construction rather than per match. Unused otherwise.
+    /// Declared after `regexp` because it is derived from it.
+    size_t token_group;
 };
 
 /// Parser doing "no operation". Returns the entire input as a single token.
