@@ -71,17 +71,35 @@ NodePath NodePath::parentPath() const
     return NodePath(Coordination::parentNodePath(str()), depth - 1);
 }
 
+size_t NodePath::childPathLen(size_t child_name_len) const
+{
+    return len + child_name_len + (depth > 0);
+}
+
+NodePath NodePath::makeChildPath(std::string_view child_name, std::span<char> out) const
+{
+    chassert(len > 0);
+    chassert((ptr[len - 1] == '/') == (depth == 0));
+    chassert(out.size() == childPathLen(child_name.size()));
+
+    memcpy(out.data(), ptr, len);
+    if (depth > 0)
+        out[len] = '/';
+    memcpy(out.data() + len + (depth > 0), child_name.data(), child_name.size());
+    return NodePath(std::string_view(out.data(), out.size()), depth + 1);
+}
+
 NodePath NodePath::childPath(std::string_view child_name, std::string & path_buf) const
 {
-    path_buf.clear();
-    path_buf.reserve(len + child_name.size() + (depth > 0));
-    path_buf.append(str());
-    if (depth == 0)
-        chassert(str() == "/");
-    if (depth > 0)
-        path_buf.push_back('/');
-    path_buf.append(child_name);
-    return NodePath(path_buf, depth + 1);
+    path_buf.resize(childPathLen(child_name.size()));
+    return makeChildPath(child_name, std::span(path_buf.data(), path_buf.size()));
+}
+
+NodePath NodePath::childPath(std::string_view child_name, DB::Arena & arena) const
+{
+    size_t out_len = childPathLen(child_name.size());
+    char * out = arena.alloc(out_len);
+    return makeChildPath(child_name, std::span(out, out_len));
 }
 
 std::string_view NodePath::baseName() const
@@ -143,7 +161,7 @@ BlockPtr BlockData::copyAndShrinkToFit() const
     return new_block;
 }
 
-void BlockData::readHeader()
+void BlockData::parseHeader()
 {
     /// serialization_version is stored in the file header, not per block, and assigned by the caller.
     if (serialization_version == 0)
@@ -347,7 +365,10 @@ NodeRef BlockData::appendNodeNoResize(BlockPtr block, FullNode & node)
     memcpy(p, path_suffix_str, path_suffix_size);
     p += path_suffix_size;
     if (data_size != 0)
+    {
         memcpy(p, node.data_ptr, data_size);
+        node.data_ptr = p;
+    }
     p += data_size;
     memcpy(p, &digest, 8);
     p += 8;

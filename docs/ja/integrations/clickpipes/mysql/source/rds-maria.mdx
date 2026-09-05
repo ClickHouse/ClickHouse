@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.mdx";
 
 これは、MySQL ClickPipe 経由でデータをレプリケーションするために、RDS MariaDB インスタンスを設定する手順をまとめたガイドです。
 
@@ -111,6 +112,16 @@ Global Transaction Identifiers (GTID) は、MySQL/MariaDB でコミットされ�
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
+<div id="iam-authentication">
+  ### IAM認証を使用する (任意)
+</div>
+
+<Note>
+  AWS は、[バージョン 10.6.5 で RDS for MariaDB 向けの IAM database authentication を導入しました](https://aws.amazon.com/blogs/database/iam-authentication-with-amazon-rds-for-mariadb/) 。サポート状況は、使用するエンジンの正確なバージョンと AWS リージョンによって異なります。このオプションを使用する前に、[AWS の現在のサポート対象リージョンとエンジンバージョン](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RDS_Fea_Regions_DB-eng.Feature.IamDatabaseAuthentication.html)を確認してください。
+</Note>
+
+<IAMAuthentication engine="mysql" service="rds" />
+
 <div id="configure-network-access">
   ## ネットワークアクセスを設定する
 </div>
@@ -119,7 +130,7 @@ Global Transaction Identifiers (GTID) は、MySQL/MariaDB でコミットされ�
   ### IP ベースのアクセス制御
 </div>
 
-RDS インスタンスへのトラフィックを制限する場合は、RDS のセキュリティグループの `Inbound rules` に、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/home#list-of-static-ips) を追加してください。
+RDS インスタンスへのトラフィックを制限する場合は、RDS のセキュリティグループの `Inbound rules` に、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips) を追加してください。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="RDS でセキュリティグループはどこにありますか？" size="lg" border />
 

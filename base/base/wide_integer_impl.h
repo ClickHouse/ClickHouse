@@ -13,6 +13,7 @@
 #include <cassert>
 #include <tuple>
 #include <limits>
+#include <type_traits>
 #include <utility>
 
 
@@ -288,6 +289,161 @@ struct common_type<Arithmetic, wide::integer<Bits, Signed>> : common_type<wide::
 namespace wide
 {
 
+/// Divides `high` : `low` by `divisor`, for a quotient that is known to fit in a limb. On x86-64
+/// this is a single `divq`; the portable form promotes to a 128 / 128 division, for which the
+/// compiler emits a `__udivti3` call.
+constexpr uint64_t divide_128_by_64(uint64_t high, uint64_t low, uint64_t divisor, uint64_t & remainder)
+{
+#if defined(__x86_64__)
+    if (!std::is_constant_evaluated())
+    {
+        uint64_t quotient;
+        __asm__("divq %[divisor]" : "=a"(quotient), "=d"(remainder) : "a"(low), "d"(high), [divisor] "r"(divisor));
+        return quotient;
+    }
+#endif
+    const unsigned __int128 dividend = (static_cast<unsigned __int128>(high) << 64) | low;
+    remainder = static_cast<uint64_t>(dividend % divisor);
+    return static_cast<uint64_t>(dividend / divisor);
+}
+
+/// Divides `numerator` (`m` limbs, little-endian) by the single limb `denominator`.
+/// Writes `m` quotient limbs into `quotient` and returns the remainder.
+///
+/// Every step is a 128 / 64 division whose quotient is known to fit in a limb, because the
+/// remainder carried in from the previous step is below the divisor.
+constexpr uint64_t divide_by_single_limb(const uint64_t * numerator, unsigned m, uint64_t denominator, uint64_t * quotient)
+{
+    uint64_t remainder = 0;
+    for (unsigned i = m; i > 0; --i)
+        quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], denominator, remainder);
+    return remainder;
+}
+
+/// Knuth's Algorithm D, "The Art of Computer Programming" vol. 2, 4.3.1, in base 2^64.
+///
+/// `numerator` holds `m` limbs and `denominator` holds `n` limbs, both little-endian and both
+/// without leading zero limbs; `n >= 2` and `m >= n`. Writes `m - n + 1` quotient limbs into
+/// `quotient` and `n` remainder limbs into `remainder`. `numerator_buffer` needs room for
+/// `m + 1` limbs and `denominator_buffer` for `n` limbs.
+///
+/// One quotient limb is produced per iteration, against one quotient *bit* per iteration for
+/// shift-and-subtract long division.
+constexpr void divide_knuth(
+    const uint64_t * numerator, unsigned m, const uint64_t * denominator, unsigned n,
+    uint64_t * quotient, uint64_t * remainder, uint64_t * numerator_buffer, uint64_t * denominator_buffer)
+{
+    /// D1. Normalize, so that the top limb of the divisor has its high bit set. This is what
+    /// bounds the error of the quotient estimate in D3 to at most 2.
+    const unsigned shift = static_cast<unsigned>(std::countl_zero(denominator[n - 1]));
+
+    if (shift == 0)
+    {
+        for (unsigned i = 0; i < n; ++i)
+            denominator_buffer[i] = denominator[i];
+
+        for (unsigned i = 0; i < m; ++i)
+            numerator_buffer[i] = numerator[i];
+        numerator_buffer[m] = 0;
+    }
+    else
+    {
+        for (unsigned i = n; i > 1; --i)
+            denominator_buffer[i - 1] = (denominator[i - 1] << shift) | (denominator[i - 2] >> (64 - shift));
+        denominator_buffer[0] = denominator[0] << shift;
+
+        numerator_buffer[m] = numerator[m - 1] >> (64 - shift);
+        for (unsigned i = m; i > 1; --i)
+            numerator_buffer[i - 1] = (numerator[i - 1] << shift) | (numerator[i - 2] >> (64 - shift));
+        numerator_buffer[0] = numerator[0] << shift;
+    }
+
+    const uint64_t divisor_high = denominator_buffer[n - 1];
+    const uint64_t divisor_next = denominator_buffer[n - 2];
+
+    for (unsigned j = m - n + 1; j > 0; --j)
+    {
+        const unsigned pos = j - 1;
+
+        /// D3. Estimate the next quotient limb from the top two limbs of the running remainder.
+        /// The estimate is never too small, and at most 2 too large.
+        const uint64_t top_high = numerator_buffer[pos + n];
+        const uint64_t top_low = numerator_buffer[pos + n - 1];
+
+        uint64_t estimate = 0;
+        unsigned __int128 estimate_remainder = 0;
+        if (top_high >= divisor_high)
+        {
+            /// The true estimate is at least 2^64, so it saturates at the largest limb.
+            estimate = UINT64_MAX;
+            const unsigned __int128 top = (static_cast<unsigned __int128>(top_high) << 64) | top_low;
+            estimate_remainder = top - static_cast<unsigned __int128>(estimate) * divisor_high;
+        }
+        else
+        {
+            /// The quotient fits in a limb, which is what lets this be a single division
+            /// instruction rather than a call into the compiler runtime.
+            uint64_t division_remainder = 0;
+            estimate = divide_128_by_64(top_high, top_low, divisor_high, division_remainder);
+            estimate_remainder = division_remainder;
+        }
+
+        while (estimate_remainder <= UINT64_MAX
+               && static_cast<unsigned __int128>(estimate) * divisor_next
+                   > ((estimate_remainder << 64) | numerator_buffer[pos + n - 2]))
+        {
+            --estimate;
+            estimate_remainder += divisor_high;
+        }
+
+        /// D4. Multiply the divisor by the estimate and subtract.
+        unsigned __int128 carry = 0;
+        __int128 borrow = 0;
+        for (unsigned i = 0; i < n; ++i)
+        {
+            const unsigned __int128 product = static_cast<unsigned __int128>(estimate) * denominator_buffer[i] + carry;
+            carry = product >> 64;
+
+            const __int128 difference = static_cast<__int128>(numerator_buffer[pos + i])
+                - static_cast<__int128>(static_cast<uint64_t>(product)) - borrow;
+            numerator_buffer[pos + i] = static_cast<uint64_t>(difference);
+            borrow = difference < 0 ? 1 : 0;
+        }
+
+        const __int128 difference = static_cast<__int128>(numerator_buffer[pos + n]) - static_cast<__int128>(carry) - borrow;
+        numerator_buffer[pos + n] = static_cast<uint64_t>(difference);
+
+        /// D5, D6. The subtraction went negative, so the estimate was one too large. This happens
+        /// with probability about 2 / 2^64; undo it by adding the divisor back.
+        if (difference < 0)
+        {
+            --estimate;
+            unsigned __int128 add_carry = 0;
+            for (unsigned i = 0; i < n; ++i)
+            {
+                add_carry += static_cast<unsigned __int128>(numerator_buffer[pos + i]) + denominator_buffer[i];
+                numerator_buffer[pos + i] = static_cast<uint64_t>(add_carry);
+                add_carry >>= 64;
+            }
+            numerator_buffer[pos + n] += static_cast<uint64_t>(add_carry);
+        }
+
+        quotient[pos] = estimate;
+    }
+
+    /// D8. Undo the normalization to recover the remainder.
+    if (shift == 0)
+    {
+        for (unsigned i = 0; i < n; ++i)
+            remainder[i] = numerator_buffer[i];
+    }
+    else
+    {
+        for (unsigned i = 0; i < n; ++i)
+            remainder[i] = (numerator_buffer[i] >> shift) | (numerator_buffer[i + 1] << (64 - shift));
+    }
+}
+
 template <size_t Bits, typename Signed>
 struct integer<Bits, Signed>::_impl
 {
@@ -471,6 +627,7 @@ struct integer<Bits, Signed>::_impl
         // Calculate remainder: t - floor(alpha) * max_int
         // On platforms with >64-bit mantissa, round the multiplication to 64-bit precision
         // to match x86's 80-bit extended behavior
+        using std::floor;
         T remainder_subtrahend = floor(alpha) * static_cast<T>(max_int);
 #if (LDBL_MANT_DIG > 64)
         if constexpr (std::is_same_v<T, FromDoubleIntermediateType>)
@@ -1080,6 +1237,25 @@ public:
         {
             using CompilerUInt128 = unsigned __int128;
 
+            /// Both operands in a single limb is a 64-bit division, which the 128 / 128 division
+            /// below cannot become: every target without a double-word divide instruction calls
+            /// __udivti3, whose 128 / 64 kernel tests only the divisor for a zero high word, so a
+            /// 64 / 64 division still runs Knuth's algorithm over 32-bit digits.
+            if ((numerator.items[little(1)] | denominator.items[little(1)]) == 0)
+            {
+                const base_type a_low = numerator.items[little(0)];
+                const base_type b_low = denominator.items[little(0)];
+
+                integer<Bits, Signed> res;
+                res.items[little(0)] = a_low / b_low;
+                res.items[little(1)] = 0;
+
+                numerator.items[little(0)] = a_low % b_low;
+                numerator.items[little(1)] = 0;
+
+                return res;
+            }
+
             CompilerUInt128 a = (CompilerUInt128(numerator.items[little(1)]) << 64) + numerator.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 b = (CompilerUInt128(denominator.items[little(1)]) << 64) + denominator.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 c = a / b; // NOLINT
@@ -1095,27 +1271,104 @@ public:
             return res;
         }
 
-        integer<Bits2, unsigned> x = 1;
-        integer<Bits2, unsigned> quotient = 0;
+        static_assert(sizeof(base_type) == 8);
+        using Wide = integer<Bits2, unsigned>;
+        constexpr unsigned items = Wide::_impl::item_count;
 
-        while (!operator_greater(denominator, numerator) && is_zero(operator_amp(shift_right(denominator, Bits2 - 1), 1)))
-        {
-            x = shift_left(x, 1);
-            denominator = shift_left(denominator, 1);
-        }
+        /// Both algorithms below work on the significant limbs only, which is also what makes
+        /// them fast: the cost follows the magnitude of the operands, not the width of the type.
+        unsigned n = items;
+        while (n > 0 && denominator.items[Wide::_impl::little(n - 1)] == 0)
+            --n;
+        unsigned m = items;
+        while (m > 0 && numerator.items[Wide::_impl::little(m - 1)] == 0)
+            --m;
 
-        while (!is_zero(x))
+        /// Wide types routinely hold values far smaller than their width, so the narrow cases go
+        /// to the compiler instead: merely laying out the limb arrays the algorithms below need
+        /// already costs more than these divisions do.
+        if (m <= 1)
         {
-            if (!operator_greater(denominator, numerator))
+            /// A numerator of at most one limb is either divided by a divisor of one limb, or is
+            /// smaller than the divisor, in which case the quotient is zero and the remainder is
+            /// the numerator, which `numerator` already holds.
+            integer<Bits2, unsigned> quotient{};
+            if (n <= 1)
             {
-                numerator = operator_minus(numerator, denominator);
-                quotient = operator_pipe(quotient, x);
+                uint64_t a = numerator.items[Wide::_impl::little(0)];
+                uint64_t b = denominator.items[Wide::_impl::little(0)];
+                quotient.items[Wide::_impl::little(0)] = a / b;
+                numerator.items[Wide::_impl::little(0)] = a % b;
             }
-
-            x = shift_right(x, 1);
-            denominator = shift_right(denominator, 1);
+            return quotient;
         }
 
+        if (m <= 2 && n <= 2)
+        {
+            using CompilerUInt128 = unsigned __int128;
+
+            CompilerUInt128 a = CompilerUInt128(numerator.items[Wide::_impl::little(1)]) << 64;
+            a += numerator.items[Wide::_impl::little(0)];
+            CompilerUInt128 b = CompilerUInt128(denominator.items[Wide::_impl::little(1)]) << 64;
+            b += denominator.items[Wide::_impl::little(0)];
+
+            CompilerUInt128 c = a / b;
+            CompilerUInt128 remainder = a - b * c;
+
+            integer<Bits2, unsigned> quotient{};
+            quotient.items[Wide::_impl::little(0)] = static_cast<uint64_t>(c);
+            quotient.items[Wide::_impl::little(1)] = static_cast<uint64_t>(c >> 64);
+            numerator.items[Wide::_impl::little(0)] = static_cast<uint64_t>(remainder);
+            numerator.items[Wide::_impl::little(1)] = static_cast<uint64_t>(remainder >> 64);
+            return quotient;
+        }
+
+        uint64_t u[items];
+        uint64_t v[items];
+        for (unsigned i = 0; i < items; ++i)
+        {
+            u[i] = numerator.items[Wide::_impl::little(i)];
+            v[i] = denominator.items[Wide::_impl::little(i)];
+        }
+
+        uint64_t q[items] = {};
+        uint64_t r[items] = {};
+
+        bool numerator_is_smaller = m < n;
+        if (m == n)
+        {
+            for (unsigned i = n; i > 0; --i)
+            {
+                if (u[i - 1] == v[i - 1])
+                    continue;
+
+                numerator_is_smaller = u[i - 1] < v[i - 1];
+                break;
+            }
+        }
+
+        if (numerator_is_smaller)
+        {
+            for (unsigned i = 0; i < items; ++i)
+                r[i] = u[i];
+        }
+        else if (n == 1)
+        {
+            r[0] = divide_by_single_limb(u, m, v[0], q);
+        }
+        else
+        {
+            uint64_t numerator_buffer[items + 1] = {};
+            uint64_t denominator_buffer[items] = {};
+            divide_knuth(u, m, v, n, q, r, numerator_buffer, denominator_buffer);
+        }
+
+        integer<Bits2, unsigned> quotient;
+        for (unsigned i = 0; i < items; ++i)
+        {
+            quotient.items[Wide::_impl::little(i)] = q[i];
+            numerator.items[Wide::_impl::little(i)] = r[i];
+        }
         return quotient;
     }
 
@@ -1124,26 +1377,16 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (use_BitInt256)
-            {
-                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
-                {
-                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
-                    return fromBitInt256(toBitInt256(lhs) / toBitInt256(new_rhs));
-                }
-                else
-                    return fromBitInt256(toBitInt256(lhs) / toBitInt256(rhs));
-            }
-            else
-            {
-                integer<Bits, unsigned> numerator = make_positive(lhs);
-                integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-                integer<Bits, unsigned> quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
+            /// Not routed through _BitInt(256), unlike addition and multiplication: for division
+            /// the compiler emits a generic bignum sequence that is an order of magnitude slower
+            /// than `divide` below.
+            integer<Bits, unsigned> numerator = make_positive(lhs);
+            integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
+            integer<Bits, unsigned> quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
 
-                if (std::is_same_v<Signed, signed> && is_negative(rhs) != is_negative(lhs))
-                    quotient = operator_unary_minus(quotient);
-                return quotient;
-            }
+            if (std::is_same_v<Signed, signed> && is_negative(rhs) != is_negative(lhs))
+                quotient = operator_unary_minus(quotient);
+            return quotient;
         }
         else
         {
@@ -1157,26 +1400,14 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if constexpr (use_BitInt256)
-            {
-                if constexpr (!std::same_as<T, integer<Bits, signed>>)
-                {
-                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
-                    return fromBitInt256(toBitInt256(lhs) % toBitInt256(new_rhs));
-                }
-                else
-                    return fromBitInt256(toBitInt256(lhs) % toBitInt256(rhs));
-            }
-            else
-            {
-                integer<Bits, unsigned> remainder = make_positive(lhs);
-                integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-                integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
+            /// See the note in operator_slash about _BitInt(256).
+            integer<Bits, unsigned> remainder = make_positive(lhs);
+            integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
+            integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
 
-                if (std::is_same_v<Signed, signed> && is_negative(lhs))
-                    remainder = operator_unary_minus(remainder);
-                return remainder;
-            }
+            if (std::is_same_v<Signed, signed> && is_negative(lhs))
+                remainder = operator_unary_minus(remainder);
+            return remainder;
         }
         else
         {

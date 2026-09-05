@@ -350,4 +350,4 @@ FROM hackernews_views_vcmt
 
 أحد أسباب عدم إزالة التكرار من الصفوف المُدرجة هو استخدام دالة أو تعبير غير idempotent في عبارة `INSERT`. على سبيل المثال، إذا كنت تُدرج صفوفًا بالعمود `createdAt DateTime64(3) DEFAULT now()`، فستكون صفوفك فريدة حتمًا لأن كل صف سيحصل على قيمة افتراضية فريدة للعمود `createdAt`. ولن يتمكن محرك الجدول MergeTree / ReplicatedMergeTree من معرفة ضرورة إزالة التكرار، لأن كل صف مُدرج سينتج قيمة checksum فريدة.
 
-في هذه الحالة، يمكنك تحديد `insert_deduplication_token` خاص بك لكل دفعة من الصفوف لضمان ألّا تؤدي عمليات `INSERT` متعددة للدفعة نفسها إلى إعادة إدراج الصفوف نفسها. يُرجى مراجعة [وثائق `insert_deduplication_token`](/ar/reference/settings/session-settings#insert_deduplication_token) لمزيد من التفاصيل حول كيفية استخدام هذا الإعداد.
+في هذه الحالة، يمكنك تحديد `insert_deduplication_token` خاص بك لكل دفعة من الصفوف لضمان ألّا تؤدي عمليات `INSERT` متعددة للدفعة نفسها إلى إعادة إدراج الصفوف نفسها. يُرجى مراجعة [وثائق `insert_deduplication_token`](/ar/reference/settings/session-settings/insert#insert_deduplication_token) لمزيد من التفاصيل حول كيفية استخدام هذا الإعداد.

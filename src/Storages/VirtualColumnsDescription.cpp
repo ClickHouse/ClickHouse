@@ -11,10 +11,11 @@ namespace ErrorCodes
 }
 
 VirtualColumnDescription::VirtualColumnDescription(
-    String name_, DataTypePtr type_, ASTPtr codec_, String comment_, VirtualsKind kind_, VirtualsMaterializationPlace place_)
+    String name_, DataTypePtr type_, ASTPtr codec_, String comment_, VirtualsKind kind_, VirtualsMaterializationPlace place_, bool deterministic_)
     : ColumnDescription(std::move(name_), std::move(type_), std::move(codec_), std::move(comment_))
     , kind(kind_)
     , place(place_)
+    , deterministic(deterministic_)
 {
 }
 
@@ -28,14 +29,14 @@ void VirtualColumnsDescription::add(VirtualColumnDescription desc)
     container.get<0>().push_back(std::move(desc));
 }
 
-void VirtualColumnsDescription::addEphemeral(String name, DataTypePtr type, String comment, VirtualsMaterializationPlace place)
+void VirtualColumnsDescription::addEphemeral(String name, DataTypePtr type, String comment, VirtualsMaterializationPlace place, bool deterministic)
 {
-    add({std::move(name), std::move(type), nullptr, std::move(comment), VirtualsKind::Ephemeral, place});
+    add({std::move(name), std::move(type), nullptr, std::move(comment), VirtualsKind::Ephemeral, place, deterministic});
 }
 
 void VirtualColumnsDescription::addPersistent(String name, DataTypePtr type, ASTPtr codec, String comment)
 {
-    add({std::move(name), std::move(type), std::move(codec), std::move(comment), VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader});
+    add({std::move(name), std::move(type), std::move(codec), std::move(comment), VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader, /*deterministic=*/ true});
 }
 
 std::optional<ColumnDefault> VirtualColumnsDescription::getDefault(const String & column_name) const

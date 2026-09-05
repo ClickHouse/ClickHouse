@@ -14,7 +14,7 @@ doc_type: 'guide'
 
 ClickHouse は、[W3C 勧告](https://www.w3.org/TR/trace-context/)で説明されているトレースコンテキストの HTTP ヘッダーを受け付けます。また、ClickHouse サーバー間、またはクライアントとサーバー間の通信に使用されるネイティブプロトコル経由でもトレースコンテキストを受け付けます。手動テストでは、Trace Context 勧告に準拠したトレースコンテキストのヘッダーを、`--opentelemetry-traceparent` および `--opentelemetry-tracestate` フラグを使用して `clickhouse-client` に渡せます。
 
-親トレースコンテキストが渡されていない場合、または渡されたトレースコンテキストが上記の W3C 標準に準拠していない場合、ClickHouse は新しいトレースを開始できます。このときの確率は、[opentelemetry&#95;start&#95;trace&#95;probability](/ja/reference/settings/session-settings#opentelemetry_start_trace_probability) 設定で制御されます。
+親トレースコンテキストが渡されていない場合、または渡されたトレースコンテキストが上記の W3C 標準に準拠していない場合、ClickHouse は新しいトレースを開始できます。このときの確率は、[opentelemetry&#95;start&#95;trace&#95;probability](/ja/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability) 設定で制御されます。
 
 <div id="propagating-the-trace-context">
   ## トレースコンテキストの伝播
@@ -101,7 +101,7 @@ ClickHouse は、各クエリおよびクエリプランニングや分散クエ
   ## Log-query-settings
 </div>
 
-設定 [log&#95;query&#95;settings](/ja/reference/settings/session-settings) を使用すると、クエリ実行中にクエリ設定の変更を記録できます。有効にすると、クエリ設定に加えられた変更はすべて OpenTelemetry の スパン ログに記録されます。この機能は、クエリのパフォーマンスに影響する可能性がある設定変更を追跡する必要がある本番環境で特に役立ちます。
+設定 [log&#95;query&#95;settings](/ja/reference/settings/session-settings/log-query#log_query_settings) を使用すると、クエリ実行中にクエリ設定の変更を記録できます。有効にすると、クエリ設定に加えられた変更はすべて OpenTelemetry の スパン ログに記録されます。この機能は、クエリのパフォーマンスに影響する可能性がある設定変更を追跡する必要がある本番環境で特に役立ちます。
 
 <div id="integration-with-monitoring-systems">
   ## 監視システムとのインテグレーション

@@ -4,6 +4,9 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <base/unit.h>
+
+#include <limits>
 
 
 namespace DB
@@ -37,6 +40,7 @@ class SettingsChanges;
     M(CLASS_NAME, ParquetCompression) \
     M(CLASS_NAME, ParquetVersion) \
     M(CLASS_NAME, SchemaInferenceMode) \
+    M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
@@ -84,6 +88,62 @@ If empty, incremental read is not allowed.
     DECLARE(String, paimon_replica_name, "", R"(
 Replica name for Paimon incremental read state. Must be set and unique per replica.
 )", 0) \
+    DECLARE(String, iceberg_compaction_keeper_path, "", R"(
+No longer used. Background Iceberg compaction is serialized across replicas by a lock in object
+storage, see `iceberg_compaction_lock_lease_seconds`, and no longer needs a Keeper path. Setting
+this to a non-empty value is an error, so that a table is never silently left without the
+cross-replica locking its definition asks for.
+)", 0) \
+    DECLARE(UInt64, iceberg_compaction_lock_lease_seconds, 60, R"(
+Lease period, in seconds, of the lock that serializes background Iceberg compaction across
+replicas, so that several replicas do not repeat the same merge. The lock is the object
+`metadata/compaction.lock` under the table root, created with a conditional write, and requires no
+Keeper. The replica holding it rewrites the object while it needs it; a lock whose object has not
+been rewritten for a whole lease period may be taken over by another replica.
+Set to 0 to run compaction without the lock, relying solely on the optimistic commit CAS.
+)", 0) \
+    DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
+Per-table counterpart of the query-level setting of the same name: allows background compaction and `OPTIMIZE` for this Iceberg table.
+Unlike the query-level setting, this one is stored in the table definition, so it survives a server restart.
+When it is not set explicitly in the table definition, the query-level setting of the context that initializes the table metadata is used instead.
+)", 0) \
+    DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
+Per-table counterpart of the query-level setting of the same name: allows removing old data files after they were merged by compaction.
+Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
+)", 0) \
+    DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
+Per-table counterpart of the query-level setting of the same name: minimum delay between two background compaction operations.
+Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
+)", 0) \
+    DECLARE(Seconds, iceberg_compaction_data_cleanup, 60 * 60 * 3, R"(
+Per-table counterpart of the query-level setting of the same name: the time after which data files replaced by compaction are deleted.
+Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
+)", 0) \
+    DECLARE(UInt64, iceberg_compaction_commit_batch_size, 100, R"(
+Per-table counterpart of the query-level setting of the same name: number of merged data files accumulated before compaction
+publishes them in a new snapshot.
+Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
+)", 0) \
+    DECLARE(UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), R"(
+Per-table counterpart of the query-level setting of the same name: max rows of a data file produced by compaction.
+Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
+)", 0) \
+    DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, std::numeric_limits<UInt64>::max(), R"(
+Per-table counterpart of the query-level setting of the same name: max bytes of a data file produced by compaction.
+Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
+)", 0) \
+    DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
+Per-table counterpart of the query-level setting of the same name: max number of data files considered by a single compaction operation.
+Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
+)", 0) \
+    DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 10_MiB, R"(
+Per-table counterpart of the query-level setting of the same name: data files smaller than this are selected for compaction.
+Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
+)", 0) \
+    DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 10_GiB, R"(
+Per-table counterpart of the query-level setting of the same name: data files larger than this are selected for compaction.
+Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
+)", 0) \
     DECLARE(DatabaseDataLakeCatalogType, storage_catalog_type, DatabaseDataLakeCatalogType::NONE, "Catalog type", 0) \
     DECLARE(String, storage_catalog_credential, "", "", 0)             \
     DECLARE(String, storage_auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
@@ -122,6 +182,8 @@ struct DataLakeStorageSettings
     void loadFromSettingsChanges(const SettingsChanges & changes);
 
     Field get(const std::string & name);
+
+    bool isChanged(std::string_view name) const;
 
     static bool hasBuiltin(std::string_view name);
 

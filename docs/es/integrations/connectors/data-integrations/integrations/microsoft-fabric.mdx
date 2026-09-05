@@ -1,0 +1,331 @@
+---
+sidebarTitle: 'Microsoft Fabric'
+slug: /integrations/microsoft-fabric
+description: 'ClickHouse para Microsoft Fabric es una capa de aceleración para OneLake que ofrece analítica rentable en menos de un segundo sobre tus datos de OneLake sin salir de Fabric.'
+keywords: ['clickhouse', 'microsoft fabric', 'onelake', 'workload', 'power bi', 'mcp']
+title: 'ClickHouse para Microsoft Fabric'
+doc_type: 'guide'
+hidden: true
+integration:
+  - support_level: 'core'
+  - category: 'data_integration'
+---
+
+import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+La carga de trabajo de ClickHouse para Microsoft Fabric es una capa de aceleración para OneLake. Incorpora ClickHouse, la base de datos analítica de código abierto más rápida, directamente en su espacio de trabajo de Fabric como una carga de trabajo nativa.
+
+Sus datos ya residen en OneLake. La carga de trabajo le permite sincronizar las tablas seleccionadas con un servicio dedicado de ClickHouse Cloud y consultarlas con tiempos de respuesta inferiores a un segundo, alta concurrencia y capacidad de cómputo dedicada rentable. OneLake sigue siendo la fuente de referencia en todo momento.
+
+Casos de uso habituales:
+
+* **Agentes de IA**: proporcione a los agentes acceso SQL gobernado y de solo lectura a sus datos mediante MCP desde Copilot Studio, Azure AI Foundry, GitHub Copilot y cualquier herramienta compatible con MCP
+* **Analítica interactiva**: dashboards y exploración de datos de miles de millones de filas con latencia de consulta de milisegundos
+* **Aplicaciones orientadas al cliente**: ofrezca consultas analíticas en tiempo real a escala de petabytes para su uso en aplicaciones
+
+<Frame>
+  ![Página de carga de trabajo de ClickHouse en el centro de cargas de trabajo de Microsoft Fabric](/images/integrations/tools/data-integration/microsoft-fabric/fabric-01-workload-hub-card.webp)
+</Frame>
+
+La carga de trabajo está disponible en el centro de cargas de trabajo de Microsoft Fabric. Para obtener información sobre seguridad, privacidad y cumplimiento normativo, consulte la [declaración del proveedor](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation).
+
+<div id="provisioning">
+  ## Aprovisionamiento
+</div>
+
+Para crear un elemento de ClickHouse:
+
+1. En el espacio de trabajo de Fabric, seleccione **+ Nuevo elemento**
+2. Busque **ClickHouse** y selecciónelo
+3. Asigne un nombre al elemento y seleccione **Crear**
+
+<Frame>
+  ![Configuración de ClickHouse: creación de la organización de Cloud y aprovisionamiento del servicio](/images/integrations/tools/data-integration/microsoft-fabric/fabric-02-provisioning-canvas.webp)
+</Frame>
+
+La primera vez que se crea un elemento de ClickHouse en un espacio de trabajo, un administrador de Fabric con permisos de facturación instala la carga de trabajo y acepta los [términos de servicio](https://cms-new.clickhouse.com/uploads/Click_House_Letterhead_Azure_MP_terms_2a78c37a10.pdf). Los miembros del espacio de trabajo tendrán acceso posteriormente.
+
+Los servicios se aprovisionan en la región de Azure de ClickHouse Cloud más cercana a la región de capacidad de Fabric. Consulte las [regiones compatibles](/es/products/cloud/reference/supported-regions). Para obtener más información sobre dónde se almacenan y procesan los datos, consulte la [sección sobre residencia de datos de la declaración](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation).
+
+<div id="clickhouse-cloud-trial">
+  ## Prueba de ClickHouse Cloud
+</div>
+
+Al crear tu primer elemento de ClickHouse, se inicia automáticamente una prueba. La organización de prueba y un servicio dedicado se aprovisionan con tu identidad de Microsoft Entra.
+
+La prueba incluye:
+
+* Créditos de prueba válidos durante 30 días
+* Un servicio dedicado en el [nivel ClickHouse Scale](https://clickhouse.com/docs/products/cloud/features/cloud-tiers)
+* La inactividad del servicio está habilitada de forma predeterminada, por lo que un servicio de prueba inactivo no consume créditos de compute mientras está pausado
+
+Cuando finalice la prueba o se agoten los créditos, conviértela en una organización de pago mediante la [oferta de ClickHouse Cloud en Azure Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud).
+
+<div id="syncing-data-from-onelake">
+  ## Sincronización de datos desde OneLake
+</div>
+
+El flujo Sync permite transferir tablas de OneLake a ClickHouse:
+
+1. Abra su elemento de ClickHouse y seleccione **Sync**
+2. Seleccione **Sync from OneLake** y elija un Lakehouse de su espacio de trabajo
+3. Seleccione las tablas que desea acelerar
+4. Seleccione **Save and sync** para iniciar una sincronización de sus datos en un momento dado
+
+<Frame>
+  ![Configuración de Sync para crear una nueva tabla de destino con una clave de ordenación](/images/integrations/tools/data-integration/microsoft-fabric/fabric-03-sync-table-selection.webp)
+</Frame>
+
+Puede crear una tabla de destino con tipos de datos inferidos y una configuración predeterminada basada en el esquema detectado en OneLake. Si prefiere tener más control sobre la definición de la tabla, puede crearla de antemano y utilizar una tabla existente como destino.
+
+<Frame>
+  ![Correspondencia de columnas de Sync desde una tabla de origen de OneLake a una tabla de ClickHouse existente](/images/integrations/tools/data-integration/microsoft-fabric/fabric-04-sync-existing-table.webp)
+</Frame>
+
+El estado de sincronización se muestra para cada tabla. Cuando una tabla termina, puede consultarse inmediatamente desde la consola SQL. Las tablas grandes se sincronizan en segundo plano, por lo que puede seguir trabajando mientras se cargan.
+
+<Note>
+  En la versión preliminar pública, solo se admite la copia de una instantánea en un momento dado. Se prevén más opciones de replicación en futuras versiones.
+</Note>
+
+<div id="powered-by-clickpipes">
+  ### Con tecnología de ClickPipes
+</div>
+
+Cada tabla sincronizada se basa en un [ClickPipe](/es/integrations/clickpipes/home), el servicio de ingestión administrado de ClickHouse Cloud:
+
+1. La carga de trabajo lee la tabla directamente desde OneLake mediante sus credenciales autorizadas.
+2. Un ClickPipe transmite los datos a una tabla de su servicio de ClickHouse y asigna los tipos de OneLake a tipos de ClickHouse.
+
+<div id="cost">
+  ### Coste
+</div>
+
+La sincronización de datos de OneLake a ClickHouse es gratuita durante la versión preliminar pública de Microsoft Fabric. La facturación comenzará cuando la carga de trabajo de Fabric alcance la disponibilidad general. Los detalles de precios se publicarán cuando la carga de trabajo alcance la GA.
+
+<div id="sql-console-and-saved-queries">
+  ## Consola SQL y consultas guardadas
+</div>
+
+La consola SQL integrada permite consultar los datos de ClickHouse sin salir de Fabric.
+
+<Frame>
+  ![Consola SQL integrada de ClickHouse consultando la tabla sincronizada de taxis de Nueva York](/images/integrations/tools/data-integration/microsoft-fabric/fabric-05-sql-console.webp)
+</Frame>
+
+<div id="saved-queries">
+  ### Consultas guardadas
+</div>
+
+Guarda cualquier consulta con un nombre para reutilizarla más adelante. Las consultas guardadas se almacenan con el elemento, de modo que todos los usuarios del espacio de trabajo trabajan con el mismo conjunto de consultas.
+
+<div id="go-further-with-clickhouse-sql">
+  ### Profundiza en ClickHouse SQL
+</div>
+
+ClickHouse ofrece mucho más que SELECTs rápidos: vistas materializadas que precalculan resultados a medida que llegan los datos, búsqueda de texto completo, agregaciones aproximadas y cientos de funciones especializadas. Para obtener más información sobre todo lo que ofrece ClickHouse, consulta las [buenas prácticas de ClickHouse](/es/concepts/best-practices/index), las [vistas materializadas](/es/concepts/features/materialized-views/index) y los [casos de uso de ejemplo](/es/guides/use-cases/index).
+
+<div id="connecting-your-data">
+  ## Conecta tus datos
+</div>
+
+La pantalla **Conectar** proporciona instrucciones para copiar y pegar para todo lo que puede conectarse a tu servicio.
+
+* **Analítica y BI**: Power BI Desktop y el servicio de Power BI, notebooks de Fabric con el client de Python y más
+* **Agentes e IA**: el servidor MCP de ClickHouse para Copilot Studio, Azure AI Foundry y GitHub Copilot
+* **Compilación e interfaces**: HTTPS, JDBC/ODBC y clients oficiales de ClickHouse (Python, Node.js, Java, Go, C#, Rust y más)
+
+<Frame>
+  ![Pantalla Conectar que muestra los detalles de conexión de Power BI para el servicio de ClickHouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-06-connect-power-bi.webp)
+</Frame>
+
+El acceso MCP es opcional por servicio y de solo lectura. Al habilitarlo, se expone un endpoint controlado que los agentes pueden consultar mediante SQL. Obtienen las mismas respuestas en menos de un segundo que en la consola, sin utilizar tu capacidad de Fabric. Consulta [cómo habilitar el servidor MCP remoto](/es/products/cloud/features/ai-ml/remote-mcp#enabling) para ver los pasos de configuración y la [referencia del servidor MCP de ClickHouse](/es/products/cloud/features/ai-ml/remote-mcp#available-tools) para conocer las herramientas disponibles.
+
+<div id="administration-and-management">
+  ## Administración y gestión
+</div>
+
+<div id="open-in-clickhouse-cloud">
+  ### Abrir en ClickHouse Cloud
+</div>
+
+Selecciona **Abrir en ClickHouse Cloud** para abrir la consola completa de ClickHouse Cloud con tu identidad de Microsoft. Puedes sincronizar datos con ClickHouse y ejecutar cualquier sentencia SQL desde la carga de trabajo de Fabric, pero para realizar tareas administrativas deberás acceder a Cloud Console para administrar el servicio.
+
+<Frame>
+  ![Configuración del servicio en la consola de ClickHouse Cloud abierta desde la carga de trabajo](/images/integrations/tools/data-integration/microsoft-fabric/fabric-07-cloud-console-service.webp)
+</Frame>
+
+<div id="scaling">
+  ### Escalado
+</div>
+
+Los servicios se escalan vertical y horizontalmente dentro de los límites configurados. Ajuste los tamaños mínimo y máximo de las réplicas en la Cloud Console, en **Settings**. Para cargas de trabajo predecibles y sensibles a la latencia, fije el tamaño mínimo de la réplica para mantener el servicio activo. Consulte [escalado automático](/es/products/cloud/features/autoscaling/overview) para obtener más información.
+
+<div id="idling">
+  ### Inactividad
+</div>
+
+La inactividad pausa los recursos de cómputo cuando el servicio no recibe consultas y se reanuda automáticamente cuando llega la siguiente consulta, tras un breve retraso de inicio. Los servicios de prueba se crean con la inactividad activada.
+
+* Mantenga la inactividad **activada** para cargas de trabajo de desarrollo e intermitentes a fin de minimizar los costos.
+* Desactive la inactividad para los dashboards, las aplicaciones y los agentes de producción que requieren una latencia constante de milisegundos.
+
+Configure la inactividad en Cloud Console, en la página **Configuración**. Consulte [inactividad automática](/es/products/cloud/features/autoscaling/idling) para conocer el comportamiento completo.
+
+<div id="monitoring-the-service">
+  ### Supervisión del servicio
+</div>
+
+El estado del servicio, el rendimiento de las consultas y el uso de recursos se supervisan desde la consola de ClickHouse Cloud. Consulte [la supervisión de ClickHouse Cloud](/es/guides/use-cases/observability/cloud-monitoring) para conocer las funciones de supervisión integradas y las opciones de integración. Para consultar el estado general de la plataforma y el historial de incidentes, visite [status.clickhouse.com](https://status.clickhouse.com).
+
+<div id="monitoring-clickpipes">
+  ### Supervisión de ClickPipes
+</div>
+
+Cada sincronización desde OneLake se ejecuta como un ClickPipe. Supervise el progreso de la sincronización, el rendimiento y los errores en la [página de ClickPipes](/es/integrations/clickpipes/monitoring) de la consola de ClickHouse Cloud.
+
+<div id="mapping-to-clickhouse-cloud">
+  ## Correspondencia con ClickHouse Cloud
+</div>
+
+La carga de trabajo se ejecuta en [ClickHouse Cloud](https://clickhouse.com/cloud) sobre Azure. Tres correspondencias definen cómo se relacionan los conceptos de Fabric con los de ClickHouse:
+
+| Fabric                 | ClickHouse Cloud | Relación                                                                              |
+| ---------------------- | ---------------- | ------------------------------------------------------------------------------------- |
+| Espacio de trabajo     | Organización     | 1:1, se crea cuando se crea el primer elemento de ClickHouse en un espacio de trabajo |
+| Elemento de ClickHouse | Servicio         | 1:1, fijo al crear el elemento                                                        |
+| Usuario                | Usuario          | 1:1, se crea la primera vez que un usuario abre un elemento de ClickHouse             |
+
+**Espacio de trabajo a organización.** Cada espacio de trabajo de Fabric se corresponde con exactamente una organización de ClickHouse Cloud. La organización se crea automáticamente la primera vez que alguien crea un elemento de ClickHouse en el espacio de trabajo. El acceso se limita a su tenant de Microsoft Entra y los datos no se pueden compartir entre tenants mediante la carga de trabajo.
+
+**Elemento a servicio.** Cada elemento de ClickHouse de su espacio de trabajo se corresponde con exactamente un servicio dedicado de ClickHouse. Al crear un elemento, se aprovisiona el servicio y, al eliminarlo, también se elimina. El servicio cuenta con infraestructura dedicada. Sus consultas nunca compiten con las de otros tenants, y una carga elevada de consultas nunca consume su capacidad de Fabric.
+
+**Usuarios.** Cuando un miembro del espacio de trabajo de Fabric abre un elemento de ClickHouse por primera vez, se aprovisiona automáticamente un usuario de ClickHouse en la organización de ClickHouse Cloud correspondiente al espacio de trabajo.
+
+<div id="support">
+  ## Soporte
+</div>
+
+ClickHouse ofrece soporte para la carga de trabajo de ClickHouse. Encontrará todos los detalles, incluidos los niveles de gravedad y los tiempos de respuesta, en el [programa de soporte de ClickHouse](https://clickhouse.com/support/program). Puede abrir un caso desde allí o directamente en la consola de ClickHouse Cloud. Para consultar el estado de la plataforma y el historial de incidentes, visite [status.clickhouse.com](https://status.clickhouse.com).
+
+<div id="azure-marketplace">
+  ## Azure Marketplace
+</div>
+
+La carga de trabajo se comercializa mediante la [oferta de ClickHouse Cloud en Azure Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud):
+
+* Cuando finalice la prueba, el flujo de actualización de la carga de trabajo le guiará a través de la compra en el marketplace para su organización. El uso se facturará posteriormente según el modelo de pago por uso a través de su cuenta de Azure. Consulte la [facturación PAYG de Azure Marketplace](/es/products/cloud/reference/billing/marketplace/azure-marketplace-payg) para obtener más información.
+* Para completar una compra en el marketplace, se requiere el permiso de facturación de la organización de ClickHouse, que poseen los administradores del espacio de trabajo. Un administrador de la organización puede concedérselo a otros usuarios en la consola de Cloud.
+
+<div id="getting-started-tutorial">
+  ## Tutorial de introducción
+</div>
+
+Esta guía utiliza los datos de ejemplo integrados de Fabric, por lo que puede probar la carga de trabajo sin necesidad de aportar su propio conjunto de datos.
+
+<div id="load-the-sample-data">
+  ### Cargar los datos de ejemplo
+</div>
+
+En el espacio de trabajo de Fabric, seleccione **+ Nuevo elemento** y luego **Lakehouse de ejemplo** para agregar el ejemplo **Días festivos públicos**. Confirme que la tabla `publicholidays` aparezca en Tablas.
+
+<Frame>
+  ![Tabla de ejemplo de días festivos públicos en un lakehouse de Fabric](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-sample-lakehouse.webp)
+</Frame>
+
+<div id="create-a-clickhouse-item-and-sync">
+  ### Cree un elemento de ClickHouse y sincronícelo
+</div>
+
+1. Cree un elemento de ClickHouse en el mismo espacio de trabajo, como se describe en [el aprovisionamiento](#provisioning).
+2. Abra **Sync**, elija su Lakehouse y seleccione la tabla `publicholidays`.
+3. Ordene por las columnas que filtre con más frecuencia: `countryOrRegion, date`.
+4. Inicie la sincronización; los datos se poblarán en breve. Una tabla de este tamaño se completa en segundos.
+
+<div id="query-the-data">
+  ### Consultar los datos
+</div>
+
+Abra la consola SQL y pruebe lo siguiente:
+
+```sql
+-- Which countries have the most holidays?
+SELECT countryOrRegion, count() AS holidays
+FROM publicholidays
+GROUP BY countryOrRegion
+ORDER BY holidays DESC
+LIMIT 10;
+```
+
+```sql
+-- Paid time off vs. observance days by year
+SELECT
+    toYear(date) AS year,
+    countIf(isPaidTimeOff) AS paid_days,
+    count() AS all_days
+FROM publicholidays
+GROUP BY year
+ORDER BY year;
+```
+
+Guarda la primera consulta como **Días festivos por país** para ver cómo funcionan las consultas guardadas.
+
+<div id="connect-to-mcp">
+  ### Conectarse a MCP
+</div>
+
+1. En la pantalla **Conectar**, habilite **MCP** para el servicio.
+2. Registre el servidor MCP de ClickHouse con el cliente MCP que prefiera, como se describe en [primeros pasos con el servidor MCP remoto](/es/products/cloud/features/ai-ml/remote-mcp#getting-started).
+3. Pregunte: *&quot;¿Qué país tiene más días festivos en 2026 y cuántos son días libres remunerados?&quot;*
+
+El agente responde ejecutando SQL gobernado y de solo lectura en su tabla sincronizada.
+
+<div id="known-limitations">
+  ## Limitaciones conocidas
+</div>
+
+La carga de trabajo de ClickHouse está en versión preliminar pública. Las limitaciones que se indican a continuación reflejan el estado actual, no el objetivo final; la mayoría figuran en la hoja de ruta.
+
+<div id="data-movement">
+  ### Movimiento de datos
+</div>
+
+* **Las copias son instantáneas en un momento dado.** Aún no hay replicación programada ni continua. Para actualizar una tabla con los datos más recientes de OneLake, vuelva a ejecutar la sincronización. Las actualizaciones y eliminaciones de la tabla de origen no se propagan a la copia de ClickHouse.
+* **Solo tablas de Lakehouse.** Sync lee tablas de un Lakehouse en el mismo espacio de trabajo.
+* **Sin escritura de vuelta en OneLake.** Los datos fluyen en una sola dirección, desde OneLake hacia ClickHouse. Está previsto poder escribir los resultados de las consultas de vuelta en OneLake.
+
+<div id="service-management">
+  ### Administración del servicio
+</div>
+
+* **Un servicio por elemento, definido de forma fija en el momento de la creación.** No puede asociar un servicio existente de ClickHouse Cloud a un elemento de Fabric ni conectar la carga de trabajo a una organización existente de ClickHouse Cloud.
+* **Eliminar el servicio desde la Cloud Console deja el elemento de Fabric huérfano e irrecuperable.** Al eliminar un elemento de Fabric, se elimina su servicio, pero la operación inversa no se admite actualmente.
+* **La configuración del servicio se gestiona en la Cloud Console.** El escalado, la inactividad y las copias de seguridad se gestionan desde ClickHouse Cloud, no desde la configuración del elemento de Fabric.
+
+<div id="access-and-identity">
+  ### Acceso e identidad
+</div>
+
+* **Los cambios de rol se aplican la próxima vez que abras un elemento.** Tu rol en la organización de ClickHouse se asigna según tu rol en el espacio de trabajo de Fabric cada vez que abres un elemento de ClickHouse. Fabric no puede notificar a ClickHouse los cambios de rol, por lo que un cambio en el rol del espacio de trabajo no surte efecto de inmediato.
+* **Eliminar o degradar a un usuario en Fabric no revoca su acceso a ClickHouse.** Como los roles solo se aplican cuando un usuario abre un elemento de ClickHouse, un usuario que se elimina del espacio de trabajo o cuyo rol se degrada puede conservar su acceso existente en ClickHouse Cloud y, si nunca vuelve a abrir el elemento, ese cambio no se propaga en absoluto. Para revocar el acceso de inmediato y de forma fiable, elimina al usuario de la organización en la consola de ClickHouse Cloud.
+* **Acceso a nivel de espacio de trabajo.** Todos los usuarios del espacio de trabajo pueden usar sus elementos de ClickHouse. Actualmente no se admite la sincronización granular de permisos por tabla desde OneLake.
+* **El SSO de Console requiere una dirección de correo electrónico en tu perfil de Entra.** Los usuarios de ClickHouse Cloud necesitan una dirección de correo electrónico; si no tienes una configurada en tu perfil de Microsoft Entra, no podrás iniciar sesión en la consola de Cloud.
+
+<div id="reference">
+  ## Referencia
+</div>
+
+* [Acreditación del proveedor](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation)
+* [ClickHouse Cloud en Microsoft Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud)
+* [Facturación PAYG de Azure Marketplace](/es/products/cloud/reference/billing/marketplace/azure-marketplace-payg)
+* [Regiones compatibles](/es/products/cloud/reference/supported-regions)
+* [Dimensiones de precios de ClickPipes](/es/products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage)
+* [Programa de soporte](https://clickhouse.com/support/program)
+* [Estado del servicio](https://status.clickhouse.com)
+* [Términos de servicio](https://cms-new.clickhouse.com/uploads/Click_House_Letterhead_Azure_MP_terms_2a78c37a10.pdf)

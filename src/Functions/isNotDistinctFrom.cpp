@@ -1,9 +1,12 @@
-#include <Functions/isNotDistinctFrom.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/isNotDistinctFrom.h>
 
 namespace DB
 {
+
+/// The null-safe comparison falls back to the plain one for tuples; instantiated in equals.cpp.
+extern template class FunctionComparison<EqualsOp, NameEquals>;
 
 REGISTER_FUNCTION(IsNotDistinctFrom)
 {
@@ -66,6 +69,22 @@ ColumnPtr FunctionComparison<EqualsOp, NameEquals, true /* is null safe cmp*/>::
         func_builder_equals,
         func_builder_and,
         x, y, tuple_size, input_rows_count);
+}
+
+template <>
+ColumnPtr FunctionComparison<EqualsOp, NameEquals, true /* is null safe cmp*/>::executeArrayLexicographic(
+    const ColumnWithTypeAndName & column_type_name0,
+    const ColumnWithTypeAndName & column_type_name1,
+    size_t input_rows_count) const
+{
+    FunctionOverloadResolverPtr equals_resolver
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNotDistinctFrom>(params));
+
+    return executeArrayLexicographicEqualityImpl(
+        equals_resolver,
+        column_type_name0,
+        column_type_name1,
+        input_rows_count);
 }
 
 }

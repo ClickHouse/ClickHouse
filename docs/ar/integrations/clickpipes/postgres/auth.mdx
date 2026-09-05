@@ -1,18 +1,25 @@
 ---
+description: 'اختر الدليل الخاص بالمصدر لإعداد مصادقة AWS IAM لقاعدة البيانات مع ClickPipes.'
+sidebar_label: 'مصادقة AWS IAM لقاعدة البيانات'
+sidebar_position: 1
 slug: /integrations/clickpipes/postgres/auth
-sidebarTitle: 'مصادقة AWS IAM لقاعدة البيانات ‏(RDS/Aurora)'
-title: 'مصادقة AWS IAM لقاعدة البيانات ‏(RDS/Aurora)'
-description: 'توضح هذه المقالة كيف يمكن لعملاء ClickPipes الاستفادة من الوصول المستند إلى الأدوار للمصادقة على Amazon RDS/Aurora والوصول إلى قاعدة بياناتهم بأمان.'
+title: 'مصادقة AWS IAM لقاعدة البيانات'
 doc_type: 'guide'
-keywords: ['clickpipes', 'rds', 'الأمان', 'aws', 'اتصال خاص']
+keywords: ['clickpipes', 'rds', 'aurora', 'الأمان', 'aws', 'اتصال خاص']
 integration:
    - support_level: 'core'
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
+إعداد مصادقة AWS IAM لقاعدة البيانات موثّق في كل دليل مصدر من أدلة ClickPipes. اختر الدليل المطابق لمحرك قاعدة البيانات وخدمة AWS اللذين تستخدمهما:
 
-توضح هذه المقالة كيف يمكن لعملاء ClickPipes الاستفادة من الوصول المستند إلى الأدوار للمصادقة مع Amazon Aurora وRDS والوصول إلى قواعد بياناتهم بأمان.
+* [Amazon RDS for PostgreSQL](/ar/integrations/clickpipes/postgres/source/rds#iam-authentication)
+* [Amazon Aurora PostgreSQL-Compatible Edition](/ar/integrations/clickpipes/postgres/source/aurora#iam-authentication)
+* [Amazon RDS for MySQL](/ar/integrations/clickpipes/mysql/source/rds#iam-authentication)
+* [Amazon Aurora MySQL-Compatible Edition](/ar/integrations/clickpipes/mysql/source/aurora#iam-authentication)
+* [Amazon RDS for MariaDB](/ar/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)
+
+تحتفظ صفحة التوافق هذه بروابط إلى أقسام الدليل المشترك السابق. استخدم الروابط أدناه لفتح قسم مصادقة IAM في الدليل الخاص بمصدرك.
 
 <div id="setup">
   ## الإعداد
@@ -23,106 +30,65 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <div id="make-sure-iam-authentication-is-enabled">
-  #### تأكد من تمكين مصادقة IAM
+  #### فعِّل مصادقة IAM
 </div>
 
-1. سجّل الدخول إلى حساب AWS الخاص بك، ثم انتقل إلى مثيل RDS الذي تريد تهيئته.
-2. انقر على الزر **Modify**.
-3. مرّر لأسفل إلى قسم **Database authentication**.
-4. فعّل خيار **Password and IAM database authentication**.
-5. انقر على الزر **Continue**.
-6. راجع التغييرات، ثم انقر على خيار **Apply immediately**.
+افتح قسم مصادقة IAM المناسب:
+
+* [PostgreSQL على Amazon RDS](/ar/integrations/clickpipes/postgres/source/rds#iam-authentication)
+* [PostgreSQL على Amazon Aurora](/ar/integrations/clickpipes/postgres/source/aurora#iam-authentication)
+* [MySQL على Amazon RDS](/ar/integrations/clickpipes/mysql/source/rds#iam-authentication)
+* [MySQL على Amazon Aurora](/ar/integrations/clickpipes/mysql/source/aurora#iam-authentication)
+* [MariaDB على Amazon RDS](/ar/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)
 
 <div id="setting-up-the-database-user">
-  #### إعداد مستخدم قاعدة البيانات
+  #### أنشئ مستخدم قاعدة البيانات
 </div>
 
-اتصل بمثيل RDS/Aurora الخاص بك وأنشئ مستخدم قاعدة بيانات مع تفعيل مصادقة IAM، ثم اتبع بقية الخطوات الواردة في دليل إعداد المصدر لتهيئة مثيلك لاستخدام ClickPipes:
+افتح القسم المطابق لمصادقة IAM:
 
-* [دليل إعداد مصدر AWS Aurora لـ PostgreSQL](/ar/integrations/clickpipes/postgres/source/aurora#configure-database-user)
-* [دليل إعداد مصدر AWS RDS لـ PostgreSQL](/ar/integrations/clickpipes/postgres/source/rds#configure-database-user)
-* [دليل إعداد مصدر AWS Aurora لـ MySQL](/ar/integrations/clickpipes/mysql/source/aurora#configure-database-user)
-* [دليل إعداد مصدر AWS RDS لـ MySQL](/ar/integrations/clickpipes/mysql/source/rds#configure-database-user)
+* [PostgreSQL على Amazon RDS](/ar/integrations/clickpipes/postgres/source/rds#iam-authentication)
+* [PostgreSQL على Amazon Aurora](/ar/integrations/clickpipes/postgres/source/aurora#iam-authentication)
+* [MySQL على Amazon RDS](/ar/integrations/clickpipes/mysql/source/rds#iam-authentication)
+* [MySQL على Amazon Aurora](/ar/integrations/clickpipes/mysql/source/aurora#iam-authentication)
+* [MariaDB على Amazon RDS](/ar/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)
 
 <div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ### الحصول على دور IAM ARN لخدمة ClickHouse
+  ### احصل على role ARN الخاص بـ IAM لخدمة ClickHouse
 </div>
 
-1 - سجّل الدخول إلى حساب ClickHouse Cloud الخاص بك.
+افتح قسم مصادقة IAM المطابق:
 
-2 - حدّد خدمة ClickHouse التي تريد إنشاء التكامل لها
-
-3 - حدّد علامة التبويب **Settings**
-
-4 - مرّر إلى أسفل الصفحة حتى تصل إلى قسم **Network security information**
-
-5 - انسخ قيمة **Service role ID (IAM)** الخاصة بالخدمة كما هو موضح أدناه.
-
-<Image img="/images/cloud/security/secures3_arn.webp" alt="ARN لـ S3 الآمن" size="lg" border />
-
-لنسمِّ هذه القيمة `{ClickHouse_IAM_ARN}`. هذا هو دور IAM الذي سيُستخدم للوصول إلى مثيل RDS/Aurora الخاص بك.
+* [PostgreSQL على Amazon RDS](/ar/integrations/clickpipes/postgres/source/rds#iam-authentication)
+* [PostgreSQL على Amazon Aurora](/ar/integrations/clickpipes/postgres/source/aurora#iam-authentication)
+* [MySQL على Amazon RDS](/ar/integrations/clickpipes/mysql/source/rds#iam-authentication)
+* [MySQL على Amazon Aurora](/ar/integrations/clickpipes/mysql/source/aurora#iam-authentication)
+* [MariaDB على Amazon RDS](/ar/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)
 
 <div id="setting-up-iam-role">
   ### إعداد دور IAM
 </div>
 
 <div id="obtaining-the-rds-resource-id">
-  #### الحصول على معرّف المورد لـ RDS/Aurora
+  #### احصل على معرّف المورد لـ RDS أو Aurora
 </div>
 
-1. سجّل الدخول إلى حساب AWS الخاص بك وانتقل إلى مثيل RDS أو عنقود Aurora الذي تريد تكوينه.
-2. انقر على علامة التبويب **Configuration**.
-3. دوّن قيمة **Resource ID**. ينبغي أن تكون بالشكل `db-xxxxxxxxxxxxxx` في RDS أو `cluster-xxxxxxxxxxxxxx` في عنقود Aurora. ولنسمِّ هذه القيمة `{RDS_RESOURCE_ID}`. هذا هو معرّف المورد الذي سيُستخدم في سياسة IAM للسماح بالوصول إلى مثيل RDS.
+افتح قسم مصادقة IAM المطابق:
+
+* [PostgreSQL على Amazon RDS](/ar/integrations/clickpipes/postgres/source/rds#iam-authentication)
+* [PostgreSQL على Amazon Aurora](/ar/integrations/clickpipes/postgres/source/aurora#iam-authentication)
+* [MySQL على Amazon RDS](/ar/integrations/clickpipes/mysql/source/rds#iam-authentication)
+* [MySQL على Amazon Aurora](/ar/integrations/clickpipes/mysql/source/aurora#iam-authentication)
+* [MariaDB على Amazon RDS](/ar/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)
 
 <div id="manually-create-iam-role">
-  #### أنشئ دور IAM يدويًا.
+  #### إنشاء دور IAM
 </div>
 
-1 - سجّل الدخول إلى AWS account الخاص بك عبر متصفح الويب باستخدام IAM user لديه permission لإنشاء دور IAM وإدارته.
+افتح قسم مصادقة IAM المطابق:
 
-2 - انتقل إلى IAM Service Console
-
-3 - أنشئ دور IAM جديدًا باستخدام سياسة IAM وtrust policy التاليتين.
-
-Trust policy (يُرجى استبدال `{ClickHouse_IAM_ARN}` بـ دور IAM arn الخاص بـ ClickHouse instance لديك):
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "AWS": "{ClickHouse_IAM_ARN}"
-      },
-      "Action": [
-        "sts:AssumeRole",
-        "sts:TagSession"
-      ]
-    }
-  ]
-}
-```
-
-سياسة IAM (يرجى استبدال `{RDS_RESOURCE_ID}` بمعرّف المورد الخاص بمثيل RDS لديك). يُرجى التأكد من استبدال `{RDS_REGION}` بمنطقة مثيل RDS/Aurora لديك و`{AWS_ACCOUNT}` بمعرّف حساب AWS الخاص بك:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "rds-db:connect"
-      ],
-      "Resource": [
-        "arn:aws:rds-db:{RDS_REGION}:{AWS_ACCOUNT}:dbuser:{RDS_RESOURCE_ID}/clickpipes_iam_user"
-      ]
-    }
-  ]
-}
-```
-
-4 - انسخ **دور IAM Arn** الجديد بعد إنشائه. هذا هو المعرّف المطلوب للوصول الآمن إلى قاعدة بيانات AWS الخاصة بك من ClickPipes. لِنُسمِّه `{RDS_ACCESS_IAM_ROLE_ARN}`.
-
-يمكنك الآن استخدام دور IAM هذا للمصادقة على مثيل RDS/Aurora الخاص بك من ClickPipes.
+* [PostgreSQL على Amazon RDS](/ar/integrations/clickpipes/postgres/source/rds#iam-authentication)
+* [PostgreSQL على Amazon Aurora](/ar/integrations/clickpipes/postgres/source/aurora#iam-authentication)
+* [MySQL على Amazon RDS](/ar/integrations/clickpipes/mysql/source/rds#iam-authentication)
+* [MySQL على Amazon Aurora](/ar/integrations/clickpipes/mysql/source/aurora#iam-authentication)
+* [MariaDB على Amazon RDS](/ar/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)

@@ -31,8 +31,12 @@
 #include <memory>
 #include <atomic>
 #include <cstdint>
+#include <exception>
 #include <optional>
 #include <random>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 
 /** ZooKeeper C++ library, a replacement for libzookeeper.
@@ -350,6 +354,14 @@ private:
 
     ThreadReference send_thread;
     ThreadReference receive_thread;
+
+    /// Exceptions from session cleanup are logged only after all pending callbacks have run.
+    /// Contexts are string literals and remain valid until deferred logging.
+    std::mutex deferred_exceptions_mutex;
+    std::vector<std::pair<std::exception_ptr, std::string_view>> deferred_exceptions;
+
+    void deferException(std::exception_ptr exception, std::string_view context) noexcept;
+    void logDeferredExceptions() noexcept;
 
     LoggerPtr log;
 

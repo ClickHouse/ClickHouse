@@ -4,6 +4,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/IProcessor.h>
 
 namespace DB
 {

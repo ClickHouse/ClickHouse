@@ -3,7 +3,7 @@
 -- rejected at DDL time, the per-vector length is rejected at write time, and the codec cannot be chained with a
 -- compression codec.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 DROP TABLE IF EXISTS quantize_neg;
 

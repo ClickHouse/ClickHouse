@@ -40,13 +40,23 @@ Une data part est créée chaque fois qu&#39;un ensemble de lignes est inséré 
 
 Lorsqu&#39;un serveur ClickHouse traite l&#39;exemple d&#39;insertion avec 4 lignes (par ex. via une [instruction INSERT INTO](/fr/reference/statements/insert-into)) illustré dans le schéma ci-dessus, il effectue plusieurs étapes :
 
-① **Tri** : Les lignes sont triées selon la clé de tri de la table `(town, street)`, et un [index primaire sparse](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) est généré pour les lignes triées.
+<Steps>
+  <Step title="Tri">
+    Les lignes sont triées selon la clé de tri de la table `(town, street)`, et un [index primaire sparse](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) est généré pour les lignes triées.
+  </Step>
 
-② **Découpage** : Les données triées sont réparties en colonnes.
+  <Step title="Découpage">
+    Les données triées sont réparties en colonnes.
+  </Step>
 
-③ **Compression** : Chaque colonne est [compressée](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+  <Step title="Compression">
+    Chaque colonne est [compressée](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+  </Step>
 
-④ **Écriture sur disque** : Les colonnes compressées sont enregistrées sous forme de fichiers binaires de colonnes dans un nouveau répertoire représentant la data part de l&#39;insertion. L&#39;index primaire sparse est également compressé et stocké dans le même répertoire.
+  <Step title="Écriture sur disque">
+    Les colonnes compressées sont enregistrées sous forme de fichiers binaires de colonnes dans un nouveau répertoire représentant la data part de l&#39;insertion. L&#39;index primaire sparse est également compressé et stocké dans le même répertoire.
+  </Step>
+</Steps>
 
 Selon le moteur spécifique de la table, des transformations supplémentaires [peuvent](/fr/reference/settings/session-settings) avoir lieu en parallèle du tri.
 
@@ -56,7 +66,7 @@ Les data parts sont autonomes et incluent toutes les métadonnées nécessaires 
   ## Fusions de parts
 </div>
 
-Pour gérer le nombre de parts par table, une tâche de [fusion en arrière-plan](/fr/concepts/core-concepts/merges) combine périodiquement les petites parts en parts plus volumineuses jusqu&#39;à atteindre une taille compressée [configurable](/fr/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) (généralement ~150 Go). Les parts fusionnées sont marquées comme inactives puis supprimées après un intervalle de temps [configurable](/fr/reference/settings/merge-tree-settings#old_parts_lifetime). Au fil du temps, ce processus crée une structure hiérarchique de parts fusionnées, d&#39;où le nom de table MergeTree :
+Pour gérer le nombre de parts par table, une tâche de [fusion en arrière-plan](/fr/concepts/core-concepts/merges) combine périodiquement les petites parts en parts plus volumineuses jusqu&#39;à atteindre une taille compressée [configurable](/fr/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) (généralement ~150 Go). Les parts fusionnées sont marquées comme inactives puis supprimées après un intervalle de temps [configurable](/fr/reference/settings/merge-tree-settings/other#old_parts_lifetime). Au fil du temps, ce processus crée une structure hiérarchique de parts fusionnées, d&#39;où le nom de table MergeTree :
 
 <Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
 

@@ -1,8 +1,8 @@
 ---
-sidebarTitle: 'JavaScript'
+sidebarTitle: '개요'
 keywords: ['clickhouse', 'js', 'JavaScript', 'NodeJS', 'web', 'browser', 'Cloudflare', 'workers', 'client', 'connect', 'integrate']
 slug: /integrations/javascript
-description: 'ClickHouse 연결을 위한 공식 JS 클라이언트입니다.'
+description: 'ClickHouse에 연결하기 위한 공식 JS 클라이언트입니다.'
 title: 'ClickHouse JS'
 doc_type: 'reference'
 integration:
@@ -33,7 +33,7 @@ TypeScript를 사용하는 경우, [version 4.5](https://www.typescriptlang.org/
   JS 클라이언트에는 코딩 에이전트가 클라이언트를 사용하는 데 도움이 되는 AI agent 스킬이 함께 제공됩니다. 다음과 같이 설치하십시오:
 
   ```sh
-  npm skills add ClickHouse/clickhouse-js
+  npx skills add ClickHouse/clickhouse-js
   ```
 </Info>
 
@@ -1008,7 +1008,7 @@ await client.query({
 server는 이를 숫자로 받을 수 있지만, 이러한 타입의 최댓값이 `Number.MAX_SAFE_INTEGER`보다 크기 때문에 정수 오버플로우를 방지하기 위해 `JSON*` 계열 출력 형식에서는 문자열로 반환됩니다.
 
 하지만 이 동작은
-[`output_format_json_quote_64bit_integers` 설정](/ko/reference/settings/formats#output_format_json_quote_64bit_integers)
+[`output_format_json_quote_64bit_integers` 설정](/ko/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
 으로 변경할 수 있습니다.
 
 **예시:** 64비트 숫자에 대한 JSON 출력 형식을 조정합니다.
@@ -1101,7 +1101,7 @@ await client.query({
 })
 ```
 
-자세한 내용은 https://clickhouse.com/docs/interfaces/cli#cli-queries-with-parameters-syntax를 참조하십시오.
+자세한 내용은 https://clickhouse.com/docs/interfaces/client#cli-queries-with-parameters-syntax를 참조하십시오.
 
 <div id="compression">
   ### 압축
