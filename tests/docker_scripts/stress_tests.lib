@@ -167,6 +167,10 @@ function script_failure_info()
     # `info` cell of a `Test script failed` row: the exit code plus the tail of the wrapped
     # script's captured output, so the reason reaches the parsed result and not just the job
     # console. Falls back to the exit code alone, naming the encoder if that is what failed.
+    # `local -` restores the caller's options on return, so this `set +x` cannot leak. The
+    # payload is this function's return value; tracing repeats it once per composition step.
+    local -
+    set +x
     local exit_code="$1"
     local captured="$2"
     local info=" script exit code: $exit_code"
