@@ -97,6 +97,35 @@ SELECT indexOf(materialize(CAST(['a', NULL, ''], 'Array(LowCardinality(Nullable(
 SELECT countEqual(materialize(CAST([NULL, 'a', NULL], 'Array(LowCardinality(Nullable(String)))')), NULL) AS lc, countEqual(materialize(CAST([NULL, 'a', NULL], 'Array(Nullable(String))')), NULL) AS oracle;
 SELECT indexOf(materialize(CAST(['a', NULL, ''], 'Array(LowCardinality(Nullable(String)))')), '') AS lc, indexOf(materialize(CAST(['a', NULL, ''], 'Array(Nullable(String))')), '') AS oracle;
 
+SELECT 'a needle counting another unit is compared in the type the pair meets in';
+-- https://github.com/ClickHouse/ClickHouse/pull/117313#discussion_r3936389715
+-- A `Date` counts days and a `DateTime` counts seconds since the epoch, and both paths that compare
+-- values read the two as the raw numbers they are stored as -- 19723 days against 1704067200 seconds
+-- -- so neither found `toDateTime('2024-01-01 00:00:00')` in an array holding that same instant,
+-- while `equals` and `IN` both consider the pair equal, and so did the `LowCardinality` encoding of
+-- the same haystack, which resolves the needle by a cast. Every encoding now answers in the type the
+-- pair meets in, which is the type `equals` compares them in.
+-- The timezone is pinned because it is randomized in CI and it decides which instant the needle is.
+SET session_timezone = 'UTC';
+SELECT toDate('2024-01-01') = toDateTime('2024-01-01 00:00:00') AS equals, toDateTime('2024-01-01 00:00:00') IN (toDate('2024-01-01')) AS in_operator;
+SELECT has(CAST([toDate('2024-01-01')], 'Array(Date)'), toDateTime('2024-01-01 00:00:00')) AS const, has(materialize(CAST([toDate('2024-01-01')], 'Array(Date)')), toDateTime('2024-01-01 00:00:00')) AS materialized, has(materialize(CAST([toDate('2024-01-01')], 'Array(LowCardinality(Date))')), toDateTime('2024-01-01 00:00:00')) AS low_cardinality;
+SELECT indexOf(CAST([toDate('2024-01-02'), toDate('2024-01-01')], 'Array(Date)'), toDateTime('2024-01-01 00:00:00')) AS const, indexOf(materialize(CAST([toDate('2024-01-02'), toDate('2024-01-01')], 'Array(Date)')), toDateTime('2024-01-01 00:00:00')) AS materialized, indexOf(materialize(CAST([toDate('2024-01-02'), toDate('2024-01-01')], 'Array(LowCardinality(Date))')), toDateTime('2024-01-01 00:00:00')) AS low_cardinality;
+SELECT countEqual(CAST([toDate('2024-01-01'), toDate('2024-01-02'), toDate('2024-01-01')], 'Array(Date)'), toDateTime('2024-01-01 00:00:00')) AS const, countEqual(materialize(CAST([toDate('2024-01-01'), toDate('2024-01-02'), toDate('2024-01-01')], 'Array(Date)')), toDateTime('2024-01-01 00:00:00')) AS materialized, countEqual(materialize(CAST([toDate('2024-01-01'), toDate('2024-01-02'), toDate('2024-01-01')], 'Array(LowCardinality(Date))')), toDateTime('2024-01-01 00:00:00')) AS low_cardinality;
+-- A `Date32` element counts days too, and so does a `Date32` needle over a `Date` element.
+SELECT has(CAST([toDate32('2024-01-01')], 'Array(Date32)'), toDateTime('2024-01-01 00:00:00')) AS const, has(materialize(CAST([toDate32('2024-01-01')], 'Array(Date32)')), toDateTime('2024-01-01 00:00:00')) AS materialized, has(materialize(CAST([toDate32('2024-01-01')], 'Array(LowCardinality(Date32))')), toDateTime('2024-01-01 00:00:00')) AS low_cardinality;
+SELECT countEqual(CAST([toDate32('2024-01-01'), toDate32('2024-01-02'), toDate32('2024-01-01')], 'Array(Date32)'), toDateTime('2024-01-01 00:00:00')) AS const, countEqual(materialize(CAST([toDate32('2024-01-01'), toDate32('2024-01-02'), toDate32('2024-01-01')], 'Array(Date32)')), toDateTime('2024-01-01 00:00:00')) AS materialized, countEqual(materialize(CAST([toDate32('2024-01-01'), toDate32('2024-01-02'), toDate32('2024-01-01')], 'Array(LowCardinality(Date32))')), toDateTime('2024-01-01 00:00:00')) AS low_cardinality;
+SELECT indexOf(CAST([toDate('2024-01-02'), toDate('2024-01-01')], 'Array(Date)'), toDate32('2024-01-01')) AS const, indexOf(materialize(CAST([toDate('2024-01-02'), toDate('2024-01-01')], 'Array(Date)')), toDate32('2024-01-01')) AS materialized, indexOf(materialize(CAST([toDate('2024-01-02'), toDate('2024-01-01')], 'Array(LowCardinality(Date))')), toDate32('2024-01-01')) AS low_cardinality;
+-- The other direction: a `Date` needle over a `DateTime` element, which the pair meets as `DateTime`.
+SELECT has(CAST([toDateTime('2024-01-01 00:00:00')], 'Array(DateTime)'), toDate('2024-01-01')) AS const, has(materialize(CAST([toDateTime('2024-01-01 00:00:00')], 'Array(DateTime)')), toDate('2024-01-01')) AS materialized, has(materialize(CAST([toDateTime('2024-01-01 00:00:00')], 'Array(LowCardinality(DateTime))')), toDate('2024-01-01')) AS low_cardinality;
+SELECT has(CAST([toDateTime('2024-01-01 00:00:00')], 'Array(DateTime)'), toDateTime64('2024-01-01 00:00:00', 3)) AS const, has(materialize(CAST([toDateTime('2024-01-01 00:00:00')], 'Array(DateTime)')), toDateTime64('2024-01-01 00:00:00', 3)) AS materialized, has(materialize(CAST([toDateTime('2024-01-01 00:00:00')], 'Array(LowCardinality(DateTime))')), toDateTime64('2024-01-01 00:00:00', 3)) AS low_cardinality;
+-- A non-constant needle skips the dictionary shortcut in both encodings.
+SELECT has(materialize(CAST([toDate('2024-01-01')], 'Array(Date)')), materialize(toDateTime('2024-01-01 00:00:00'))) AS plain, has(materialize(CAST([toDate('2024-01-01')], 'Array(LowCardinality(Date))')), materialize(toDateTime('2024-01-01 00:00:00'))) AS low_cardinality;
+-- A needle that the element does not represent is still found nowhere: the pair meets as `DateTime`,
+-- where the element is midnight and the needle is not.
+SELECT toDate('2024-01-01') = toDateTime('2024-01-01 00:00:05') AS equals, has(CAST([toDate('2024-01-01')], 'Array(Date)'), toDateTime('2024-01-01 00:00:05')) AS const, has(materialize(CAST([toDate('2024-01-01')], 'Array(Date)')), toDateTime('2024-01-01 00:00:05')) AS materialized, has(materialize(CAST([toDate('2024-01-01')], 'Array(LowCardinality(Date))')), toDateTime('2024-01-01 00:00:05')) AS low_cardinality;
+-- A NULL element of a nullable array is still not the needle, and a NULL needle still finds nothing.
+SELECT has(materialize(CAST([toDate('2024-01-01'), NULL], 'Array(Nullable(Date))')), toDateTime('2024-01-01 00:00:00')) AS materialized, has(materialize(CAST([toDate('2024-01-01'), NULL], 'Array(Nullable(Date))')), CAST(NULL, 'Nullable(DateTime)')) AS null_needle;
+
 DROP TABLE t_array_index_accurate;
 DROP TABLE t_array_index_accurate_float;
 DROP TABLE t_array_index_accurate_lc;

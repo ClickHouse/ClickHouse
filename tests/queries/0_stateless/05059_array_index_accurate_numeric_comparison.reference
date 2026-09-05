@@ -40,3 +40,16 @@ LowCardinality NULL needle
 2	2
 2	2
 3	3
+a needle counting another unit is compared in the type the pair meets in
+1	1
+1	1	1
+2	2	2
+2	2	2
+1	1	1
+2	2	2
+2	2	2
+1	1	1
+1	1	1
+1	1
+0	0	0	0
+1	1
