@@ -4288,17 +4288,21 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
 }
 
 NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(
-    QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, std::vector<bool> * projection_from_matcher)
+    QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, std::vector<bool> * projection_from_matcher,
+    std::vector<bool> * projection_has_explicit_alias)
 {
     /// When `projection_from_matcher` is requested, record for each output column whether it was
-    /// produced by a matcher expansion (`*`, `t.*`, `COLUMNS(...)`). A matcher resolves into a
-    /// ListNode that contributes several columns; every other entry contributes exactly one. This
-    /// mirrors `resolveExpressionNodeList`, tracking expansion boundaries that the in-place rewrite
-    /// would otherwise erase. Duplicate-name disambiguation uses it to leave `*`-expanded columns
-    /// shadowed by a later explicit alias untouched (#14739) while still fixing genuinely distinct
-    /// same-named columns.
+    /// produced by a matcher expansion (`*`, `t.*`, `COLUMNS(...)`), and whether its projection entry
+    /// carried an explicit `AS name`. A matcher resolves into a ListNode that contributes several
+    /// columns; every other entry contributes exactly one. Both properties are read from the entry
+    /// before it is resolved: resolution rewrites the list in place, which erases the expansion
+    /// boundaries and can replace an aliased node (a constant-folded function) with an unaliased one.
+    /// Duplicate-name disambiguation uses them to leave `*`-expanded columns shadowed by a later
+    /// explicit alias untouched (#14739) while still fixing genuinely distinct same-named columns.
     if (projection_from_matcher)
         projection_from_matcher->clear();
+    if (projection_has_explicit_alias)
+        projection_has_explicit_alias->clear();
 
     ProjectionNames projection_names;
     if (projection_from_matcher)
@@ -4310,6 +4314,7 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(
         for (auto & node : node_list_typed.getNodes())
         {
             const bool node_is_matcher = node->getNodeType() == QueryTreeNodeType::MATCHER;
+            const bool node_has_explicit_alias = !node->getAlias().empty();
             auto node_to_resolve = node;
             auto names = resolveExpressionNode(
                 node_to_resolve, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/,
@@ -4332,6 +4337,8 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(
                     "Expression nodes list expected {} projection names. Actual: {}", produced, names.size());
 
             projection_from_matcher->insert(projection_from_matcher->end(), produced, node_is_matcher);
+            if (projection_has_explicit_alias)
+                projection_has_explicit_alias->insert(projection_has_explicit_alias->end(), produced, node_has_explicit_alias);
             projection_names.insert(projection_names.end(), names.begin(), names.end());
         }
 
@@ -6726,13 +6733,16 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// Resolve query node sections.
 
     NamesAndTypes projection_columns;
-    /// Parallel to `projection_columns`: whether each column came from a matcher (`*`) expansion.
-    /// Used by `disambiguateDuplicateProjectionColumnNames` (see #14739 shadowing).
+    /// Parallel to `projection_columns`: whether each column came from a matcher (`*`) expansion, and
+    /// whether its projection entry carried an explicit `AS name`. Used by
+    /// `disambiguateDuplicateProjectionColumnNames` (see #14739 shadowing).
     std::vector<bool> projection_from_matcher;
+    std::vector<bool> projection_has_explicit_alias;
 
     if (!scope.group_by_use_nulls)
     {
-        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope, &projection_from_matcher);
+        projection_columns = resolveProjectionExpressionNodeList(
+            query_node_typed.getProjectionNode(), scope, &projection_from_matcher, &projection_has_explicit_alias);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
@@ -6844,7 +6854,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (scope.group_by_use_nulls)
     {
-        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope, &projection_from_matcher);
+        projection_columns = resolveProjectionExpressionNodeList(
+            query_node_typed.getProjectionNode(), scope, &projection_from_matcher, &projection_has_explicit_alias);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
@@ -6989,18 +7000,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * Example: SELECT count(*) OVER w FROM test_table WINDOW w AS (PARTITION BY id);
       */
     query_node_typed.getWindow().getNodes().clear();
-
-    /// Record which projection positions carry an explicit alias (`expr AS name`) BEFORE the
-    /// aliases are stripped below. An explicit alias that appears AFTER a same-named column
-    /// produced by `*` redefines/shadows it (e.g. `SELECT *, 'x' AS c`) and must NOT be
-    /// disambiguated (see `disambiguateDuplicateProjectionColumnNames`).
-    std::vector<bool> projection_has_explicit_alias;
-    {
-        const auto & projection_list_nodes = query_node_typed.getProjection().getNodes();
-        projection_has_explicit_alias.reserve(projection_list_nodes.size());
-        for (const auto & projection_node : projection_list_nodes)
-            projection_has_explicit_alias.push_back(!projection_node->getAlias().empty());
-    }
 
     /// Remove aliases from expression and lambda nodes.
     ///

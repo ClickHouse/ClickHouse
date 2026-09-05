@@ -280,7 +280,8 @@ private:
     void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
 
     NamesAndTypes resolveProjectionExpressionNodeList(
-        QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, std::vector<bool> * projection_from_matcher = nullptr);
+        QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, std::vector<bool> * projection_from_matcher = nullptr,
+        std::vector<bool> * projection_has_explicit_alias = nullptr);
 
     /// Renames duplicate same-named projection columns backed by different expressions to unique
     /// internal names (mutating `projection_columns`) and returns the original display names parallel
