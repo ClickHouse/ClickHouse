@@ -124,6 +124,10 @@ def check():
         pr_changed_lines_info = d.get("pr_changed_lines_info", "")
         diff_url = d.get("diff_url", "")
         uncovered_code_url = d.get("uncovered_code_url", "")
+        # Set only for PRs with no coverable C/C++ changes (tests-only PRs forced
+        # with `ci-coverage`): the global transitions against the master baseline.
+        newly_covered_info = d.get("newly_covered_info", "")
+        newly_covered_url = d.get("newly_covered_url", "")
 
         if info.pr_number > 0:
             # The "Measured on commit" line attributes the numbers: when a later
@@ -144,6 +148,11 @@ def check():
                 if uncovered_code_url:
                     changed_line += f" · [Uncovered code]({uncovered_code_url})"
                 body += changed_line + "\n"
+            if newly_covered_info:
+                newly_line = f"\n**Newly covered:** {newly_covered_info}"
+                if newly_covered_url:
+                    newly_line += f" · [Details]({newly_covered_url})"
+                body += newly_line + "\n"
             links = []
             if coverage_report_url := d.get("coverage_report_url", ""):
                 links.append(f"[Full report]({coverage_report_url})")
