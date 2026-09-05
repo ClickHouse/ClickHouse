@@ -1,6 +1,8 @@
 #include <cstddef>
 #include <random>
+#include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -58,11 +60,27 @@ static ColumnPtr mockColumn(const DataTypePtr & type, size_t rows)
     return std::move(column);
 }
 
+static ColumnPtr mockNonEmptyStringColumn(size_t rows)
+{
+    auto column = DataTypeFactory::instance().get("String")->createColumn();
+    const String value = "helloworld123456";
+
+    for (size_t i = 0; i < rows; ++i)
+        column->insert(value);
+
+    return column;
+}
+
 
 static NO_INLINE void insertManyFrom(IColumn & dst, const IColumn & src)
 {
     size_t size = src.size();
     dst.insertManyFrom(src, size / 2, size);
+}
+
+static NO_INLINE void insertManyFromNotNullable(ColumnNullable & dst, const IColumn & src, size_t position, size_t length)
+{
+    dst.insertManyFromNotNullable(src, position, length);
 }
 
 
@@ -80,6 +98,29 @@ static void BM_insertManyFrom(benchmark::State & state)
         state.ResumeTiming();
 
         insertManyFrom(*dst, *src);
+        benchmark::DoNotOptimize(dst);
+    }
+}
+
+template <const std::string & str_type>
+static void BM_insertManyFromNotNullable(benchmark::State & state)
+{
+    auto nullable_type = DataTypeFactory::instance().get(str_type);
+    auto type_not_nullable = removeNullable(nullable_type);
+    auto src = isString(type_not_nullable)
+        ? mockNonEmptyStringColumn(ROWS)
+        : mockColumn(type_not_nullable, ROWS);
+    const size_t length = state.range(0);
+
+    for ([[maybe_unused]] auto _ : state)
+    {
+        state.PauseTiming();
+        auto dst = nullable_type->createColumn();
+        dst->reserve(length);
+        state.ResumeTiming();
+
+        auto & dst_nullable = assert_cast<ColumnNullable &>(*dst);
+        insertManyFromNotNullable(dst_nullable, *src, src->size() / 2, length);
         benchmark::DoNotOptimize(dst);
     }
 }
@@ -107,3 +148,10 @@ BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_int64);
 BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_nullable_int64);
 BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_string);
 BENCHMARK_TEMPLATE(BM_insertManyFrom, type_array_nullable_string);
+
+BENCHMARK_TEMPLATE(BM_insertManyFromNotNullable, type_nullable_int64)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
+BENCHMARK_TEMPLATE(BM_insertManyFromNotNullable, type_nullable_string)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
+BENCHMARK_TEMPLATE(BM_insertManyFromNotNullable, type_nullable_decimal)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
