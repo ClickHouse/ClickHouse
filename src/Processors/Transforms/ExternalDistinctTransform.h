@@ -147,8 +147,7 @@ private:
     /// reached. The counterpart of `ISimpleTransform::stopReading`.
     bool read_stopped = false;
 
-    /// Counts distinct rows sent downstream in both phases. Post-spill this is exactly what the cardinality
-    /// of the `DISTINCT` hash set would have been, so the rows limit is enforced against it.
+    /// Counts distinct rows sent downstream in both phases for limit hints and the row limit.
     size_t emitted_rows = 0;
 
     Chunk current_chunk;

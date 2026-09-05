@@ -9,6 +9,7 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/SortingTransform.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -25,6 +26,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SET_SIZE_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char external_distinct_suppression_run_prepared_pause[];
 }
 
 namespace
@@ -145,7 +151,10 @@ void ExternalDistinctTransform::extractSuppressionRun()
     if (run_chunks.empty())
         stage = Stage::Consume;
     else
+    {
         startSpillRun(std::move(run_chunks), run_bytes, RunKind::Suppression);
+        FailPointInjection::pauseFailPoint(FailPoints::external_distinct_suppression_run_prepared_pause);
+    }
 }
 
 void ExternalDistinctTransform::startSpillRun(Chunks run_chunks, size_t run_bytes, RunKind kind)
@@ -588,9 +597,8 @@ void ExternalDistinctTransform::generate()
     emitted_rows += chunk.getNumRows();
     generated_chunk = std::move(chunk);
 
-    /// Post-spill the hash set does not exist anymore. The rows limit stays exact: the number of the
-    /// emitted rows is precisely the number of distinct values. The bytes limit restricts the in-memory
-    /// state of the set, which is bounded by the spilling itself, so it has nothing left to check.
+    /// The rows limit applies to the emitted result. The hash set has been released, so there is no
+    /// set memory left to check against the byte limit.
     if ((limit_hint && emitted_rows >= limit_hint)
         || !set_size_limits.check(emitted_rows, /*bytes=*/ 0, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         read_stopped = true;
