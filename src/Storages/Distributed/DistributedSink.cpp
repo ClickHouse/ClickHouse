@@ -535,13 +535,9 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 /// Forward user settings
                 job.local_context = Context::createCopy(context);
 
-                /// The rows pushed into a local shard are already accounted by the top-level
-                /// CountingTransform of the distributed INSERT. Suppress the nested insert's
-                /// own accounting so the same rows/bytes are not counted twice (otherwise
-                /// system.query_log.written_rows / system.view_refreshes.written_rows are
-                /// inflated and the WRITTEN_BYTES quota is double-charged per local shard).
-                /// This keeps the process-list element on the context, so the local sink still
-                /// honors KILL QUERY / max_execution_time.
+                /// The top-level CountingTransform of this distributed INSERT already accounts
+                /// these rows. The process-list element deliberately stays on the context, so the
+                /// local sink still honors KILL QUERY / max_execution_time.
                 job.local_context->setSkipInsertCounting(true);
 
                 /// Copying of the query AST is required to avoid race,
@@ -877,11 +873,8 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 
     try
     {
-        /// Suppress the nested insert's own accounting: the rows are already counted by the
-        /// top-level CountingTransform of the distributed INSERT, so reusing the parent context
-        /// here would double-count written_rows/bytes and double-charge the WRITTEN_BYTES quota.
-        /// The process-list element stays on the context so the local sink still honors
-        /// KILL QUERY / max_execution_time.
+        /// Already accounted by the top-level CountingTransform, as in runWritingJob; the
+        /// process-list element stays so the local sink still honors KILL QUERY / deadlines.
         auto local_context = Context::createCopy(context);
         local_context->setSkipInsertCounting(true);
 

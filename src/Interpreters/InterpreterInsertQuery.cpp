@@ -386,10 +386,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 {
     auto context = getContext();
 
-    /// skip_insert_counting is one-shot: it must suppress only THIS nested insert's counting
-    /// (the per-shard local INSERT of a distributed INSERT). Capture it, then clear it on the
-    /// context so it does not leak into dependent-view or delegating-storage (e.g. TimeSeries)
-    /// child inserts built below, which must still account their own writes.
+    /// One-shot: capture, then clear on the context, so the flag cannot leak into the
+    /// dependent-view or delegating-storage (e.g. TimeSeries) child inserts built below, which
+    /// must still account their own writes.
     const bool skip_insert_counting = context->getSkipInsertCounting();
     if (skip_insert_counting)
     {
@@ -457,12 +456,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
-        /// When these rows are already accounted by an outer pipeline (e.g. a distributed INSERT
-        /// counting the block before dispatching it to local shards), suppress this nested
-        /// accounting: no WRITTEN_BYTES quota, no progress update, no InsertedRows/InsertedBytes
-        /// profile events. The context's process-list element is intentionally left untouched so
-        /// the storage sinks still honor KILL QUERY / max_execution_time. Use the captured
-        /// one-shot flag, not the context (which was already cleared above so child inserts count).
+        /// The context's process-list element is intentionally left untouched, so the storage
+        /// sinks still honor KILL QUERY / max_execution_time. Read the captured one-shot flag,
+        /// not the context, which was already cleared so child inserts account their own writes.
         auto counting = std::make_shared<CountingTransform>(
             in_header,
             skip_insert_counting ? nullptr : context->getQuota(),
@@ -791,10 +787,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 {
     auto context = getContext();
 
-    /// skip_insert_counting is one-shot: it must suppress only THIS nested insert's counting
-    /// (the per-shard local INSERT of a distributed INSERT). Capture it, then clear it on the
-    /// context so it does not leak into dependent-view or delegating-storage (e.g. TimeSeries)
-    /// child inserts built below, which must still account their own writes.
+    /// One-shot: capture, then clear on the context, so the flag cannot leak into the
+    /// dependent-view or delegating-storage (e.g. TimeSeries) child inserts built below, which
+    /// must still account their own writes.
     const bool skip_insert_counting = context->getSkipInsertCounting();
     if (skip_insert_counting)
     {
@@ -994,9 +989,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
             settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
 
     {
-        /// Suppressing this accounting deliberately leaves the context's process-list element in
-        /// place, so the storage sinks keep honoring KILL QUERY / max_execution_time. Read the
-        /// captured one-shot flag, not the context, which was already cleared so child inserts count.
+        /// The context's process-list element is intentionally left untouched, so the storage
+        /// sinks still honor KILL QUERY / max_execution_time. Read the captured one-shot flag,
+        /// not the context, which was already cleared so child inserts account their own writes.
         auto counting = std::make_shared<CountingTransform>(
             insert_header,
             skip_insert_counting ? nullptr : context->getQuota(),
