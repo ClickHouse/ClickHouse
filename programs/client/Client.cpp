@@ -69,7 +69,6 @@ namespace DB
 {
 namespace Setting
 {
-extern const SettingsDialect dialect;
 extern const SettingsBool use_client_time_zone;
 }
 
@@ -168,12 +167,33 @@ std::vector<String> Client::loadWarningMessages()
         return {};
 
     std::vector<String> messages;
+
+    /// Unlike `\h`, autocomplete and the AI metadata query, this probe is not settings-agnostic: it
+    /// reads `system.warnings`, and part of that table is derived from the settings the server sees for
+    /// this query - a changed obsolete setting produces a warning of its own. So send what an ordinary
+    /// query sends (which also keeps a compatibility-derived value from being serialized as an explicit
+    /// change, and thus from tripping a profile that pins it read-only), rather than only the
+    /// compression knobs of `networkCompressionSettings`.
+    ///
+    /// The one setting that has to be overridden is `dialect`: the probe below is ClickHouse SQL, so a
+    /// session that switched to another dialect could not parse it. `showWarnings` swallows any
+    /// exception from here, so that failure would not be an error the user sees, but server warnings
+    /// silently never being displayed.
+    ///
+    /// The override is unconditional: only changed settings are serialized, so leaving `dialect` alone
+    /// when the local value is already `clickhouse` would let the server take the parser from the
+    /// effective `dialect` of the authenticated user, which a profile may default to Kusto or PRQL.
+    /// Sending the value a user already has is a no-op for setting constraints, so this does not trip a
+    /// profile that pins `dialect` as read-only to `clickhouse`.
+    Settings probe_settings = settingsWithoutCompatibilityDerived().value_or(client_context->getSettingsRef());
+    probe_settings.set("dialect", String("clickhouse"));
+
     connection->sendQuery(connection_parameters.timeouts,
                           "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
                           {} /* query_parameters */,
                           "" /* query_id */,
                           QueryProcessingStage::Complete,
-                          &client_context->getSettingsRef(),
+                          &probe_settings,
                           &client_context->getClientInfo(), false, {}, {});
     while (true)
     {
@@ -1144,7 +1164,10 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         ("password", po::value<std::string>(), "password")
         ("ask-password", "ask-password")
-        ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")
+        ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key to authenticate with the server. "
+            "If the file name is omitted, the key is looked up using SSH configuration: "
+            "the identity files configured for this host in `~/.ssh/config`, the default identity files, such as `~/.ssh/id_ed25519`, "
+            "and the keys held by the ssh-agent.")
         ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
         ("jwt", po::value<std::string>(), "Use JWT for authentication")
@@ -1723,6 +1746,12 @@ void Client::readArguments(
                 /// if the value of --password is omitted, the password will be asked before
                 /// connection start
                 common_arguments.emplace_back(ConnectionParameters::ASK_PASSWORD);
+            }
+            else if (arg == "--ssh-key-file" && ((arg_num + 1) >= argc || std::string_view(argv[arg_num + 1]).starts_with('-')))
+            {
+                common_arguments.emplace_back(arg);
+                /// If the file name is omitted, the key is looked up in `~/.ssh` and in the ssh-agent.
+                common_arguments.emplace_back();
             }
             else
                 common_arguments.emplace_back(arg); /// anything else, eg --hilite

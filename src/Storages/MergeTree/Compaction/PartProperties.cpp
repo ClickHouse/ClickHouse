@@ -38,6 +38,16 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
 
     if (ttl_description)
     {
+        /// If the part's own default codec could not be recovered exactly (see
+        /// `IMergeTreeDataPart::default_codec_is_approximate`), the comparison below cannot be trusted
+        /// either way: treat the codec as unknown and always let the merge selector reconsider the
+        /// part, rather than risk a wrong guess suppressing a recompression that is still needed.
+        if (part->default_codec_is_approximate)
+            return PartProperties::RecompressTTLInfo{
+                .will_change_codec = true,
+                .next_recompress_ttl = part->ttl_infos.getMinimalMaxRecompressionTTL(),
+            };
+
         /// FIXME: Implement in other way -- not string comparison
         const std::string next_codec = astToString(ttl_description->recompression_codec);
         const std::string current_codec = astToString(part->default_codec->getFullCodecDesc());
