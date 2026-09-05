@@ -2264,16 +2264,24 @@ static bool applyDeterministicDagToColumn(
 
             return finalize_output_column_and_type(out_column, out_type);
         };
-
-        if (try_apply_direct_cast_fast_path())
-            return true;
-
+        /// Prefer casting the constant through dag.input_type first: this mirrors the
+        /// normalization (rounding, timezone conversion, widening, etc.) that every stored
+        /// key value already went through, so it's the only path guaranteed to render the
+        /// constant consistently with the key space. Only when this intermediate cast cannot
+        /// be performed safely at all do we fall back to the direct-CAST fast path above,
+        /// which handles round-trips that are a no-op for the value but not expressible as a
+        /// safe cast through dag.input_type (e.g. String -> Dynamic -> String).
         if (!cast_without_nulls(input_column, input_type, dag.input_type))
-            return false;
-    }
+        {
+            if (!try_apply_direct_cast_fast_path())
+                return false;
 
+            return true;
+        }
+    }
     Block block;
     block.insert({input_column, input_type, input_name});
+
 
     /// This can throw. For example, `ORDER BY toUUID(p)` where p is String.
     /// Then,`WHERE p = 'not-a-uuid'` will throw. Maybe `CAST` function arguments could be checked earlier;
