@@ -1,10 +1,13 @@
 #pragma once
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnConst.h>
 #include <Interpreters/Context_fwd.h>
 
 
@@ -38,7 +41,30 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 2; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+
+    /// Injective only for a `FixedString(M)` argument that fits into the target width. A `String` is
+    /// NUL-padded to the target width, so 'a' and 'a\0' both become the same `FixedString(2)`. Every
+    /// value of a `FixedString(M)`, in contrast, has the same length, so padding appends the same
+    /// suffix to all of them - but only when `M <= N`; otherwise execution throws, and eliminating
+    /// the call would silently turn a query that must fail into one that succeeds.
+    /// A caller that passes no arguments gets no claim, because the answer depends on them.
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
+    {
+        if (sample_columns.size() != 2)
+            return false;
+
+        const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(
+            removeNullable(recursiveRemoveLowCardinality(sample_columns[0].type)).get());
+        if (!fixed_string)
+            return false;
+
+        /// The target width has to be known to compare it with the source width.
+        const auto & width_column = sample_columns[1].column;
+        if (!width_column || !isColumnConst(*width_column))
+            return false;
+
+        return fixed_string->getN() <= width_column->getUInt(0);
+    }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

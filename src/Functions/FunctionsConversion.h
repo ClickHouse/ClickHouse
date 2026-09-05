@@ -3116,6 +3116,37 @@ bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result
 llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type);
 #endif
 
+/// Whether rendering a value of this type as text maps distinct values onto the same string:
+///
+/// - a date-time in a time zone with a UTC offset transition: in a fall-back hour two distinct
+///   instants have the same local wall-clock representation;
+/// - a `Date32`, because day numbers out of the type range are saturated to `0000-01-01` and
+///   `9999-12-31` when formatted (see `ToStringMonotonicity`);
+/// - a type-erased type such as `Variant`, `Dynamic` or `Object`, whose alternatives render into a
+///   common text space: `toString(1::Variant(Int64, String))` equals `toString('1'::Variant(Int64, String))`.
+///
+/// An unknown type is assumed to collapse, so that an undecidable case is never claimed to be injective.
+inline bool renderingCollapsesDistinctValues(const DataTypePtr & type)
+{
+    if (!type)
+        return true;
+
+    bool collapses = false;
+    auto check = [&](const IDataType & nested)
+    {
+        if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&nested))
+            collapses = collapses || !date_time->getTimeZone().hasFixedOffset();
+        else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&nested))
+            collapses = collapses || !date_time64->getTimeZone().hasFixedOffset();
+        else if (isDate32(nested) || isVariant(nested) || isDynamic(nested) || isObject(nested))
+            collapses = true;
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return collapses;
+}
+
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
 class FunctionConvert final : public IFunction
 {
@@ -3154,7 +3185,22 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return std::is_same_v<Name, NameToString>; }
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
+    {
+        if constexpr (std::is_same_v<Name, NameToString>)
+        {
+            /// Only the single-argument form is claimed. A caller that passes no arguments gets no
+            /// claim, because the answer depends on them, and the multi-argument forms are rendered
+            /// in the time zone given by the second argument - `toString(dt, 'Europe/Amsterdam')`
+            /// folds even for a fixed-offset `dt`, and `toString(x, NULL)` maps every row to `NULL`.
+            if (sample_columns.size() != 1)
+                return false;
+
+            return !renderingCollapsesDistinctValues(sample_columns.front().type);
+        }
+        else
+            return false;
+    }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));

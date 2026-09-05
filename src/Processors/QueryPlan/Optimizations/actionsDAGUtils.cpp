@@ -651,9 +651,18 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
     return result;
 }
 
+ColumnsWithTypeAndName getFunctionArgumentColumns(const ActionsDAG::Node & node)
+{
+    ColumnsWithTypeAndName arguments;
+    arguments.reserve(node.children.size());
+    for (const auto & child : node.children)
+        arguments.push_back({child->column, child->result_type, child->result_name});
+    return arguments;
+}
+
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
-    if (node->function_base->isInjective({}))
+    if (node->function_base->isInjective(getFunctionArgumentColumns(*node)))
         return true;
 
     size_t fixed_args = 0;
