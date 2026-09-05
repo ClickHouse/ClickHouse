@@ -1,4 +1,5 @@
--- Tags: no-replicated-database, no-shared-merge-tree
+-- Tags: no-parallel, no-replicated-database, no-shared-merge-tree
+-- no-parallel: `SYSTEM DROP REPLICA` reaches server-wide state.
 -- no-replicated-database: the database engine is replaced, which drops the `lazy_load_tables` setting.
 -- no-shared-merge-tree: the table engine is replaced, and these commands take a different path for it.
 
@@ -14,32 +15,36 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t (a UInt64)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/05076_t', 'r1') ORDER BY a;
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t VALUES (1);
 
+-- A stand-in appears when the database is loaded, so every round below starts from a re-attach.
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT 'stand-in', engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't';
-SELECT 'in system.replicas', count() FROM system.replicas WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 't';
+SELECT 'stand-in', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
+SELECT 'in system.replicas', count() FROM system.replicas WHERE database = currentDatabase() AND table = 't';
 
 -- A `SYSTEM` command addressed to the table is an access to it, so it resolves the stand-in instead of
 -- refusing the table as not replicated.
-SYSTEM SYNC REPLICA {CLICKHOUSE_DATABASE_1:Identifier}.t;
+SYSTEM SYNC REPLICA t;
 
-SELECT 'loaded', engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 't';
+SELECT 'loaded', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
 -- Reading a system table only inspects tables and never loads them, but it must see the loaded one.
-SELECT 'in system.replicas', count() FROM system.replicas WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 't';
-SELECT 'in system.replication_queue', count() FROM system.replication_queue WHERE database = {CLICKHOUSE_DATABASE_1:String} AND table = 't';
+SELECT 'in system.replicas', count() FROM system.replicas WHERE database = currentDatabase() AND table = 't';
+SELECT 'in system.replication_queue', count() FROM system.replication_queue WHERE database = currentDatabase() AND table = 't';
 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- `SYSTEM DROP REPLICA` resolves the stand-in as well, so the guard against dropping the replica of a
 -- live local table applies to a lazily loaded table too.
-SYSTEM DROP REPLICA 'r1' FROM TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t; -- { serverError TABLE_WAS_NOT_DROPPED }
+SYSTEM DROP REPLICA 'r1' FROM TABLE t; -- { serverError TABLE_WAS_NOT_DROPPED }
 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SYSTEM RESTART REPLICA {CLICKHOUSE_DATABASE_1:Identifier}.t;
-SELECT 'after restart', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t;
+SYSTEM RESTART REPLICA t;
+SELECT 'after restart', count() FROM t;
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
