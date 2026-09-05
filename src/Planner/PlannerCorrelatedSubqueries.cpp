@@ -1023,6 +1023,24 @@ QueryPlan buildLogicalJoin(
     auto lhs_plan_header = decorrelated_plan.getCurrentHeader();
     auto rhs_plan_header = input_stream_plan.getCurrentHeader();
 
+    /// A nested correlated subquery may reference a column from a scope beyond its immediate outer
+    /// query, skipping an intermediate scope. That column is not in the outer plan at this point:
+    /// decorrelation runs inside-out, while the correlated inputs of the intermediate scope are
+    /// injected later. `decorrelateQueryPlan` rejects the shape where it buffers the outer stream;
+    /// without a buffer the plan lands here instead, so reject it with the same error rather than
+    /// failing deep inside the join's actions DAG with `NOT_FOUND_COLUMN_IN_BLOCK`.
+    for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
+    {
+        if (!rhs_plan_header->has(column_name)
+            || !lhs_plan_header->has(fmt::format("{}.{}", correlated_subquery.action_node_name, column_name)))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subquery is not supported yet, because it references column '{}' from a "
+                "scope beyond the immediate outer query. Current outer query header: {}",
+                column_name,
+                rhs_plan_header->dumpNames());
+    }
+
     using ColumnNameGetter = std::function<String(const String &)>;
     ColumnNameGetter get_lhs_column_name = [&](const String & column_name) -> String {
         return fmt::format("{}.{}", correlated_subquery.action_node_name, column_name);

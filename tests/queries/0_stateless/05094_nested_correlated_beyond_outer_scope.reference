@@ -1,0 +1,6 @@
+a reference that skips the intermediate scope
+the same with the intermediate scope correlated as well
+each level referencing its own immediate outer query still works
+20
+and a single level of correlation works
+20
