@@ -2,11 +2,11 @@
 title: 'Operations'
 sidebarTitle: 'Operations'
 description: 'Day-2 operations for the ClickHouse Connector: upgrades, health, certificates, credential rotation, recovery, and uninstall'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'operations']
+keywords: ['connector', 'clicklink', 'ClickHouse Connector', 'operations']
 doc_type: 'guide'
 ---
 
-This page covers day-2 operation of the ClickHouse Connector on both install targets. For install and enrollment, see [onboarding](/products/bring-your-own-cloud/connector/onboarding).
+This page covers day-2 operation of the ClickHouse Connector on both install targets. For install and enrollment, see [onboarding](/products/clickhouse-connector/onboarding).
 
 ## Upgrades {#upgrades}
 
@@ -33,7 +33,7 @@ An install from a direct chart reference (`oci://`, a URL, or a local archive or
 
 ### Linux VM {#upgrades-linux-vm}
 
-Re-run the installer on the host; it downloads and verifies the newer release the same way it did during [onboarding](/products/bring-your-own-cloud/connector/onboarding), backs up the previous binary, and preserves your live redaction patterns and environment file. Then restart the daemons:
+Re-run the installer on the host; it downloads and verifies the newer release the same way it did during [onboarding](/products/clickhouse-connector/onboarding), backs up the previous binary, and preserves your live redaction patterns and environment file. Then restart the daemons:
 
 ```bash
 curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | sudo bash -s -- --host
@@ -130,7 +130,7 @@ sudo clicklink clctl troubleshoot access provision --provider local \
   --instance <instance-name> --server <kubernetes-api-server-url> --force
 ```
 
-For operator-managed instances, add `--ch-user-via cr` and the pod-selection flags to either form; see the [CLI reference](/products/bring-your-own-cloud/connector/reference/cli).
+For operator-managed instances, add `--ch-user-via cr` and the pod-selection flags to either form; see the [CLI reference](/products/clickhouse-connector/reference/cli).
 
 ### Client certificate {#rotate-client-certificate}
 
@@ -154,7 +154,7 @@ That is the VM form (root rewrites `/etc/clicklink` and manages the services). O
 
 ### Linux VM {#uninstall-linux-vm}
 
-`uninstall.sh` ships in the release tarball. If no extracted tarball remains on the host, fetch and extract one as shown in [manual download and verification](/products/bring-your-own-cloud/connector/onboarding#manual-download-and-verification), then run it from the extracted directory:
+`uninstall.sh` ships in the release tarball. If no extracted tarball remains on the host, fetch and extract one as shown in [manual download and verification](/products/clickhouse-connector/onboarding#manual-download-and-verification), then run it from the extracted directory:
 
 ```bash
 sudo ./uninstall.sh

@@ -2,7 +2,7 @@
 title: 'Support sessions'
 sidebarTitle: 'Support sessions'
 description: 'Enable, scope, audit, and revoke ClickHouse support access through the ClickHouse Connector'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
+keywords: ['connector', 'clicklink', 'ClickHouse Connector']
 doc_type: 'guide'
 ---
 
@@ -53,7 +53,7 @@ clicklink clctl troubleshoot session status --gateway-url http://localhost:8443
 clicklink clctl troubleshoot session disable --gateway-url http://localhost:8443
 ```
 
-The caller's OIDC identity must be on the operator allowlist; unauthenticated or unlisted callers get a 401 or 403 and the attempt is logged. If you prefer not to require cluster credentials, the chart can expose the gateway through an opt-in Ingress that terminates TLS with a CA-issued certificate; see [configuration](/products/bring-your-own-cloud/connector/configuration).
+The caller's OIDC identity must be on the operator allowlist; unauthenticated or unlisted callers get a 401 or 403 and the attempt is logged. If you prefer not to require cluster credentials, the chart can expose the gateway through an opt-in Ingress that terminates TLS with a CA-issued certificate; see [configuration](/products/clickhouse-connector/configuration).
 
 </Tab>
 <Tab title="Linux VM">
@@ -97,7 +97,7 @@ While a session is active, ClickHouse support engineers can run:
 - **Read-only SQL** against your clusters as the `pcm_troubleshooter` user, restricted to an explicit table allowlist. The default allowlist covers ClickHouse `system` tables such as `system.parts`, `system.merges`, `system.replicas`, `system.metrics`, and `system.settings`; `system.query_log` and `system.text_log` are denied unconditionally, so query history never leaves. The default allowlist does include `system.processes`, whose `query` column shows the text of statements running at that moment; remove it from the session table allowlist (`troubleshooter.allowedTables` in the Helm overlay, `troubleshooter.allowed_tables` in the VM configuration file) if live query text must never be visible in a session. The user holds per-table `SELECT` grants only, with no write, DDL, or admin privileges.
 - **Read-only Kubernetes views** on every provisioned deployment (access bundles are anchored to Kubernetes ServiceAccounts on both install targets): `get`, `list`, and `watch` on pods, pod logs, services, configmaps, events, PersistentVolumeClaims, deployments, statefulsets, and replicasets in the granted namespaces. Without a provisioned bundle, the troubleshooter refuses kubectl-type commands outright.
 
-The troubleshooter's RBAC contains no `exec`, `delete`, or `patch` permission, so operators cannot open a shell in your pods or change anything through the connector. The full grant and RBAC listing is in the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model) reference.
+The troubleshooter's RBAC contains no `exec`, `delete`, or `patch` permission, so operators cannot open a shell in your pods or change anything through the connector. The full grant and RBAC listing is in the [privilege model](/products/clickhouse-connector/reference/privilege-model) reference.
 
 ## Audit log {#audit-log}
 
@@ -136,6 +136,6 @@ Everything the troubleshooter returns is redacted before it leaves your environm
 
 ## Related pages {#related-pages}
 
-- [Architecture](/products/bring-your-own-cloud/connector/architecture): every connection the connector makes and the data flow around sessions.
-- [Configuration](/products/bring-your-own-cloud/connector/configuration): gateway, allowlist, and redaction settings.
-- [FAQ](/products/bring-your-own-cloud/connector/reference/faq): revocation, auditing, and data-egress questions in brief.
+- [Architecture](/products/clickhouse-connector/architecture): every connection the connector makes and the data flow around sessions.
+- [Configuration](/products/clickhouse-connector/configuration): gateway, allowlist, and redaction settings.
+- [FAQ](/products/clickhouse-connector/reference/faq): revocation, auditing, and data-egress questions in brief.

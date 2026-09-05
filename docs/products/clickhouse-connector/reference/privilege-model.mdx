@@ -2,11 +2,11 @@
 title: 'Privilege model'
 sidebarTitle: 'Privilege model'
 description: 'Exactly what the ClickHouse Connector can and cannot do: outbound connections, ClickHouse grants, Kubernetes RBAC, attribution, and data minimization'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'privilege', 'security']
+keywords: ['connector', 'clicklink', 'ClickHouse Connector', 'privilege', 'security']
 doc_type: 'reference'
 ---
 
-This page is the security reference for the ClickHouse Connector: the complete set of connections it opens, the exact privileges it holds, what it structurally cannot do, and how every action is attributed. For how the pieces fit together, see [architecture](/products/bring-your-own-cloud/connector/architecture).
+This page is the security reference for the ClickHouse Connector: the complete set of connections it opens, the exact privileges it holds, what it structurally cannot do, and how every action is attributed. For how the pieces fit together, see [architecture](/products/clickhouse-connector/architecture).
 
 ## What the connector can do {#what-the-connector-can-do}
 
@@ -104,8 +104,8 @@ The chart creates namespace-scoped Roles only; there is no ClusterRole or Cluste
 
 ## What requires your action {#what-requires-your-action}
 
-- **Support sessions.** Interactive troubleshooting happens only inside a session you enable, time-boxed to 4 hours by default and 24 hours at most. Disabling takes effect immediately. See [support sessions](/products/bring-your-own-cloud/connector/support-sessions).
-- **The operator allowlist.** Every gateway request must carry an OIDC token whose attested email is on your allowlist. An empty allowlist is closed. You manage the list; see the [configuration guide](/products/bring-your-own-cloud/connector/configuration).
+- **Support sessions.** Interactive troubleshooting happens only inside a session you enable, time-boxed to 4 hours by default and 24 hours at most. Disabling takes effect immediately. See [support sessions](/products/clickhouse-connector/support-sessions).
+- **The operator allowlist.** Every gateway request must carry an OIDC token whose attested email is on your allowlist. An empty allowlist is closed. You manage the list; see the [configuration guide](/products/clickhouse-connector/configuration).
 - **Gateway exposure.** The session gateway is off unless you enable it, and reachable only by port-forward unless you opt into an Ingress. On a VM, its self-signed certificate must be fingerprint-pinned by each operator before the session commands will talk to it.
 - **Network egress.** Under an enforcing CNI, the connector has no egress until you allowlist the endpoint CIDRs in the chart's NetworkPolicy.
 
@@ -114,7 +114,7 @@ The chart creates namespace-scoped Roles only; there is no ClusterRole or Cluste
 - **Deployment identity.** The mTLS client certificate's common name is your org ID, with a single DNS name bound to your endpoint host, so every API connection is attributable to your org. Renewal is automatic and in-daemon; no operator handles the key material.
 - **Request integrity.** Every API request additionally carries an HMAC-SHA256 signature (`Authorization: HMAC-SHA256 AccessKey=..., Signature=..., Timestamp=...`) computed over the method, path, timestamp, and body hash, using the key pair issued at enrollment.
 - **Operator identity.** Gateway calls are attributed to the email attested by the operator's OIDC ID token, verified against your identity provider's JWKS; a self-reported name is never trusted where a token is available.
-- **Audit trail.** Every gateway call and every troubleshoot command, accepted or blocked, is appended to the NDJSON audit log: gateway entries with the attested operator email, VM local session changes with the invoking host user, and session commands with the org identity carried on the authenticated channel. Read it with `clicklink clctl troubleshoot audit tail`; see the [CLI reference](/products/bring-your-own-cloud/connector/reference/cli).
+- **Audit trail.** Every gateway call and every troubleshoot command, accepted or blocked, is appended to the NDJSON audit log: gateway entries with the attested operator email, VM local session changes with the invoking host user, and session commands with the org identity carried on the authenticated channel. Read it with `clicklink clctl troubleshoot audit tail`; see the [CLI reference](/products/clickhouse-connector/reference/cli).
 
 ## Data minimization defaults {#data-minimization-defaults}
 

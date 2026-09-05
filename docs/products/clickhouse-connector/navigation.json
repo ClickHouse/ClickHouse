@@ -1,0 +1,21 @@
+{
+  "item": "ClickHouse Connector",
+  "icon": "/images/icons/icon-cloud-oss.svg",
+  "pages": [
+    "products/clickhouse-connector/overview",
+    "products/clickhouse-connector/onboarding",
+    "products/clickhouse-connector/architecture",
+    "products/clickhouse-connector/support-sessions",
+    "products/clickhouse-connector/configuration",
+    "products/clickhouse-connector/operations",
+    {
+      "group": "Reference",
+      "pages": [
+        "products/clickhouse-connector/reference/cli",
+        "products/clickhouse-connector/reference/configuration",
+        "products/clickhouse-connector/reference/faq",
+        "products/clickhouse-connector/reference/privilege-model"
+      ]
+    }
+  ]
+}

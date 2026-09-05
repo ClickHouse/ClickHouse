@@ -99,6 +99,9 @@
                 "item": "Langfuse"
               },
               {
+                "$ref": "./products/clickhouse-connector/navigation.json"
+              },
+              {
                 "href": "#",
                 "icon": "/images/icons/section-header.svg",
                 "item": "Open source"

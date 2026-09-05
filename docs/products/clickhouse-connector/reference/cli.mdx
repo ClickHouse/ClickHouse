@@ -2,7 +2,7 @@
 title: 'CLI reference'
 sidebarTitle: 'CLI'
 description: 'Reference for the clicklink clctl commands: init, preflight, support sessions, gateway trust, audit, and access provisioning'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'CLI']
+keywords: ['connector', 'clicklink', 'ClickHouse Connector', 'CLI']
 doc_type: 'reference'
 ---
 
@@ -10,7 +10,7 @@ The connector ships as a single binary named `clicklink`; the commands you run l
 
 ## clicklink clctl init {#init}
 
-Bootstraps the connector from an enrollment token, a saved enrollment bundle, or an out-of-band signed certificate. One invocation stages configuration, provisions ClickHouse access, obtains the mTLS client certificate, deploys (Helm chart or systemd units), and verifies health. Re-running is safe: config and the cluster UUID are preserved, credentials are overwritten atomically, and an existing client key is reused unless you pass `--force`. See [onboarding](/products/bring-your-own-cloud/connector/onboarding) for the full flow.
+Bootstraps the connector from an enrollment token, a saved enrollment bundle, or an out-of-band signed certificate. One invocation stages configuration, provisions ClickHouse access, obtains the mTLS client certificate, deploys (Helm chart or systemd units), and verifies health. Re-running is safe: config and the cluster UUID are preserved, credentials are overwritten atomically, and an existing client key is reused unless you pass `--force`. See [onboarding](/products/clickhouse-connector/onboarding) for the full flow.
 
 ### Entry points {#init-entry-points}
 
@@ -96,7 +96,7 @@ The `--k8s-*` flags and the remote channel flags are mutually exclusive; pick on
 
 ## clicklink clctl troubleshoot session {#troubleshoot-session}
 
-Enables, disables, and inspects the support session: the time-boxed window during which the troubleshooter accepts commands. When no session is active, the daemon refuses all commands even while its WebSocket is connected. See [support sessions](/products/bring-your-own-cloud/connector/support-sessions).
+Enables, disables, and inspects the support session: the time-boxed window during which the troubleshooter accepts commands. When no session is active, the daemon refuses all commands even while its WebSocket is connected. See [support sessions](/products/clickhouse-connector/support-sessions).
 
 The commands operate in one of two modes:
 
