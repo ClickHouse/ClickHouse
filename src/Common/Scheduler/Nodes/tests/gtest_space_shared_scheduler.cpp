@@ -2976,6 +2976,44 @@ TEST(SchedulerSpaceShared, LargestMemoryFirstConsidersOnlyRequestsWaitingForSuct
 
 
 
+TEST(SchedulerSpaceShared, ZeroReconciledSuctionRetriesHiddenRequests)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ManualAllocation heavy(queue, "heavy", 8000, true, protectedFromEvictionPolicy());
+    auto releaser = std::make_unique<ManualAllocation>(queue, "releaser", 2000);
+    heavy.protectAfterPressureRounds(1);
+
+    heavy.increaseAsync(5000);
+    auto blocked = std::make_unique<ManualAllocation>(queue, "blocked", 3000, false);
+    heavy.waitPressureCount(1);
+    heavy.recoveryCheckpoint();
+    ASSERT_TRUE(releaser->waitKillsFor(1, std::chrono::seconds(5)));
+
+    /// Queue every state change before the scheduler can react. Suction reconciliation cancels the
+    /// owner's increase, then the decreases create enough capacity for the request hidden behind it.
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    heavy.reconcilePendingIncreaseTo(0);
+    releaser->decreaseAsync(2000);
+    heavy.decreaseAsync(2000);
+    heavy.recoveryCheckpoint();
+    release.set_value();
+
+    ASSERT_TRUE(blocked->waitSyncedFor(std::chrono::seconds(5)))
+        << "Cancelling suction through reconciliation did not republish hidden requests";
+    EXPECT_EQ(blocked->size(), 3000);
+    EXPECT_EQ(heavy.killCount(), 0u);
+}
+
+
 TEST(SchedulerSpaceShared, SuctionMaxAllocationRejectsProspectiveTotalAfterSpill)
 {
     SpaceSharedTest t;

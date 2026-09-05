@@ -258,6 +258,16 @@ void AllocationQueue::consumeSuctionClaim(ResourceAllocation & recovering)
             suction_growth = nullptr;
             recovering.onGrowthPressureResolved();
             recovering.increaseCancelled();
+
+            /// This owner no longer needs memory. Re-open every request hidden while it owned the
+            /// search round so available capacity is reconsidered in this activation.
+            for (ResourceAllocation & pending : pending_allocations)
+            {
+                pending.memory_growth_suspended = false;
+                pending.memory_growth_suspension_attempted = false;
+            }
+            for (ResourceAllocation & increasing : increasing_allocations)
+                increasing.memory_growth_suspended = false;
         }
     }
     memory_growth_suspension_changed = true;
