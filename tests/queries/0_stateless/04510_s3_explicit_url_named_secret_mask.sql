@@ -234,6 +234,22 @@ BACKUP TABLE nonexistent_04510 TO S3(nc_bkporder_missing,
 BACKUP TABLE nonexistent_04510 TO S3('url_bkp_mixed',
                  access_key_id = 'ak', 'SEKRIT_BKPMIX'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
+-- The credential-free engines (Disk, File, Memory, Null) are credential-free only in the shape they
+-- read: File and Memory take one argument, Disk two, Null none. A surplus argument is rejected after
+-- the statement is logged, so it reaches the log holding whatever was written in it, and an engine name
+-- that is not registered at all has no known shape to trust; both must be hidden. The last statement is
+-- the control: the shape Null does read carries nothing to hide, so it stays visible verbatim and gets
+-- as far as resolving the table.
+BACKUP TABLE nonexistent_04510 TO File('nonexistent_04510',
+                 'SEKRIT_TOFILEOVER'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+BACKUP TABLE nonexistent_04510 TO Disk('backups', 'nonexistent_04510',
+                 'SEKRIT_TODISKOVER'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+BACKUP TABLE nonexistent_04510 TO Memory('nonexistent_04510',
+                 'SEKRIT_TOMEMOVER'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+BACKUP TABLE nonexistent_04510 TO Null('SEKRIT_TONULLOVER'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+BACKUP TABLE nonexistent_04510 TO Foo('SEKRIT_TOUNKNOWN'); -- { serverError BACKUP_ENGINE_NOT_FOUND }
+BACKUP TABLE nonexistent_04510 TO Null(); -- { serverError UNKNOWN_TABLE }
+
 -- Backup database engine reconstructs the nested S3 destination; extra_credentials must be masked.
 CREATE DATABASE db_04510_ec ENGINE = Backup('', S3('url_dbec', 'ak', 'SEKRIT_SAK',
                  extra_credentials(external_id = 'SEKRIT_EID'))); -- { serverError BAD_ARGUMENTS }
@@ -306,6 +322,20 @@ CREATE DATABASE db_04510_ident ENGINE = Backup(SEKRIT_DBIDENT,
 -- one. Both the logged text and the not-found message identify the locator, so both must hide it.
 CREATE DATABASE db_04510_ftail ENGINE = Backup('src_04510',
                  File('nonexistent_04510', extra_credentials(external_id = 'SEKRIT_DBFTAIL'))); -- { serverError BACKUP_NOT_FOUND }
+
+-- A surplus literal argument reaches the same locator through the shape check instead of the tail, and
+-- it is rejected only after the statement is logged, so it has to be hidden as well. The two controls
+-- that follow hold the argument counts these engines do read (File one, Disk two), where the locator
+-- names a destination only: nothing is masked, so both the logged text and the not-found message keep
+-- it visible verbatim, and the transcript records the statement as sent rather than a re-formatted AST.
+CREATE DATABASE db_04510_fover ENGINE = Backup('src_04510',
+                 File('nonexistent_04510', 'SEKRIT_DBFILEOVER')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+CREATE DATABASE db_04510_dover ENGINE = Backup('src_04510',
+                 Disk('backups', 'nonexistent_04510', 'SEKRIT_DBDISKOVER')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+CREATE DATABASE db_04510_mover ENGINE = Backup('src_04510',
+                 Memory('nonexistent_04510', 'SEKRIT_DBMEMOVER')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+CREATE DATABASE db_04510_fvalid ENGINE = Backup('src_04510', File('nonexistent_04510')); -- { serverError BACKUP_NOT_FOUND }
+CREATE DATABASE db_04510_dvalid ENGINE = Backup('src_04510', Disk('backups', 'nonexistent_04510')); -- { serverError BACKUP_NOT_FOUND }
 
 -- A credential value given as an expression is hidden in the logged text, but evaluating it can fail
 -- with a message that quotes its input, so the rejection must not carry that message either. The url

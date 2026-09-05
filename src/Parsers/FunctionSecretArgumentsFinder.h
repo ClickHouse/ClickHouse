@@ -184,6 +184,11 @@ protected:
     /// ones that read neither, so an argument that is not a plain literal can carry a credential.
     static bool hasOnlyLiteralArguments(const AbstractFunction & function);
 
+    /// Whether a backup locator names its destination with exactly the literal arguments its engine
+    /// accepts, and therefore holds no credential. An engine that takes fewer rejects the rest only
+    /// after the statement has been formatted for logging, so the count has to be checked here too.
+    static bool isCredentialFreeBackupLocator(const AbstractFunction & function);
+
     /// Hides every argument, for a shape whose valid slots cannot be established.
     void maskEveryArgument();
 

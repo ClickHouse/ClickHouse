@@ -27,11 +27,18 @@ namespace
         return changed;
     }
 
-    /// The backup engines whose locator arguments name a destination without any credential in them.
-    /// `BackupFactory` registers exactly these plus `S3` and `AzureBlobStorage`, which do carry one.
-    bool isCredentialFreeBackupEngine(const String & engine_name)
+    /// The backup engines whose locator arguments name a destination without any credential in them,
+    /// each with the argument count it accepts. `BackupFactory` registers exactly these plus `S3` and
+    /// `AzureBlobStorage`, which do carry one.
+    std::optional<size_t> credentialFreeBackupEngineArity(const String & engine_name)
     {
-        return engine_name == "Disk" || engine_name == "File" || engine_name == "Memory" || engine_name == "Null";
+        if (engine_name == "File" || engine_name == "Memory")
+            return 1;
+        if (engine_name == "Disk")
+            return 2;
+        if (engine_name == "Null")
+            return 0;
+        return {};
     }
 }
 
@@ -49,6 +56,15 @@ bool FunctionSecretArgumentsFinder::hasOnlyLiteralArguments(const AbstractFuncti
         if (!function.arguments->at(i)->tryGetLiteralText(nullptr))
             return false;
     return true;
+}
+
+bool FunctionSecretArgumentsFinder::isCredentialFreeBackupLocator(const AbstractFunction & function)
+{
+    auto arity = credentialFreeBackupEngineArity(function.name());
+    if (!arity)
+        return false;
+    /// An engine reads its own arguments only, so a surplus one holds whatever the statement put there.
+    return (function.hasArguments() ? function.arguments->size() : 0) == *arity && hasOnlyLiteralArguments(function);
 }
 
 void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argument_is_named)
@@ -1218,7 +1234,7 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
 
     if (storage_function->name() != "S3")
     {
-        if (isCredentialFreeBackupEngine(storage_function->name()) && hasOnlyLiteralArguments(*storage_function))
+        if (isCredentialFreeBackupLocator(*storage_function))
             return;
 
         /// Any other locator holds a credential no rule below reconstructs (`AzureBlobStorage` holds
@@ -1422,10 +1438,10 @@ void FunctionSecretArgumentsFinder::findBackupNameSecretArguments()
     {
         findAzureBlobStorageTableEngineSecretArguments();
     }
-    else if (!hasOnlyLiteralArguments(*function))
+    else if (!isCredentialFreeBackupLocator(*function))
     {
-        /// The remaining engines name a destination with literals and hold no credential, but an
-        /// override or map they never read can carry one, and no rule here reconstructs it.
+        /// Everything else either is an engine no rule here reconstructs, or has arguments the named
+        /// engine does not read (an override, a nested map, a surplus slot), which can carry a credential.
         maskEveryArgument();
     }
 }

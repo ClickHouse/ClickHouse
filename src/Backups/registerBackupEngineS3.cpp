@@ -304,20 +304,19 @@ void registerBackupEngineS3(BackupFactory & factory)
                 /// copy: `BackupImpl::writeBackupMetadata` decides whether the base backup may take this
                 /// backup's credentials by comparing the two locators as text, and a locator resolved on
                 /// one side alone no longer matches the other written the same way.
-                /// The rejected argument is never echoed: a nested map like `headers(..)` is masked
-                /// only by its enclosing formatter, so formatting one alone prints its values.
-                bool collected = false;
+                /// The rejected argument is never echoed, so both failure modes report the same way:
+                /// a nested map like `headers(..)` is masked only by its enclosing formatter, so
+                /// formatting one alone prints its values, and evaluating one can throw quoting it.
                 try
                 {
-                    collected = StorageS3Configuration::collectCredentials(
-                        params.backup_info.function_arg->clone(), auth_settings, params.context);
+                    if (!StorageS3Configuration::collectCredentials(
+                            params.backup_info.function_arg->clone(), auth_settings, params.context))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 extra credentials");
                 }
                 catch (const Exception &)
                 {
-                    /// Evaluating a credential value can fail with a message that quotes it.
-                }
-                if (!collected)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid S3 extra credentials");
+                }
 
                 role_arn = std::move(auth_settings[S3AuthSetting::role_arn]);
                 role_session_name = std::move(auth_settings[S3AuthSetting::role_session_name]);
