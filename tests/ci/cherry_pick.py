@@ -531,13 +531,49 @@ close it.
             )
             return False
 
+        # A merge conflict can only land in a file the PR itself touches, so if
+        # nothing arrived on the release branch in those paths since the last
+        # attempt, the merge cannot come out differently. Two tree diffs answer
+        # that in milliseconds, where the retry below costs ~20 s of working-tree
+        # churn per PR: with tens of conflicting cherry-picks open and a release
+        # branch that moves several times a day, this is what keeps the retry from
+        # running on every pass for every one of them.
+        #
+        # `--no-renames` on the release-side diff so a rename shows up as both the
+        # old and the new path, which can only make this less eager to skip. `-z`
+        # because plain `--name-only` does not quote spaces.
+        pr_paths = set(
+            git_runner(
+                "git diff --name-only -z --no-renames "
+                f"{self.pr.merge_commit_sha}^1 {self.pr.merge_commit_sha}"
+            ).split("\0")
+        )
+        release_paths = set(
+            git_runner(
+                f"git diff --name-only -z --no-renames {base_parents[0]} {release_head}"
+            ).split("\0")
+        )
+        overlap = {path for path in pr_paths & release_paths if path}
+        if pr_paths and not overlap:
+            logging.info(
+                "Retry of cherry-pick PR #%s skipped: %s moved to %s but touched "
+                "none of the %s path(s) of #%s",
+                self.cherrypick_pr.number,
+                self.name,
+                release_head,
+                len(pr_paths),
+                self.pr.number,
+            )
+            return False
+
         logging.info(
-            "%s moved from %s to %s since cherry-pick PR #%s was created, "
-            "re-trying the merge",
+            "%s moved from %s to %s since cherry-pick PR #%s was created and "
+            "touched %s of the original PR's paths, re-trying the merge",
             self.name,
             base_parents[0],
             release_head,
             self.cherrypick_pr.number,
+            len(overlap),
         )
         self._prepare_backport_branch(remote_release)
         if not self._try_merge_backport_into_cherrypick():
