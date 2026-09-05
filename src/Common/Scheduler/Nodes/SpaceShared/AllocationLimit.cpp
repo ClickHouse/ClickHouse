@@ -374,6 +374,7 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                 if (!suspended_growth)
                 {
                     suspended = new_increase->kind == IncreaseRequest::Kind::Regular
+                        && new_increase->allocation.isProtectedFromEviction()
                         && new_increase->allocation.queue.trySuspendIncrease(new_increase->allocation);
                     if (suspended)
                     {

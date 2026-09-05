@@ -4081,7 +4081,7 @@ A value of `0` means no reservation.
 This setting takes effect only if MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL) \
     DECLARE(Bool, memory_reservation_protect_from_eviction, false, R"(
-Give this query soft protection from memory-reservation eviction. The existing scheduler skips protected queries while an unprotected victim is available. A protected query remains a final fallback so that a fully protected workload cannot deadlock permanently.
+Allow this query to suspend a memory increase and retry it through suction before eviction. Protected queries are skipped while an unprotected victim is available, but remain the final fallback so a fully protected workload cannot deadlock. When disabled, the query follows the existing eviction path.
 This setting takes effect only if a MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL) \
     DECLARE(Bool, memory_reservation_force_spill_before_eviction, false, R"(
