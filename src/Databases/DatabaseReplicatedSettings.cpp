@@ -80,8 +80,18 @@ void DatabaseReplicatedSettings::loadFromConfig(const String & config_elem, cons
     }
 }
 
+void DatabaseReplicatedSettings::applyChange(const SettingChange & change)
+{
+    impl->applyChange(change);
+}
+
 String DatabaseReplicatedSettings::toString() const
 {
     return impl->toString();
+}
+
+bool DatabaseReplicatedSettings::has(std::string_view name) const
+{
+    return impl->has(name);
 }
 }
