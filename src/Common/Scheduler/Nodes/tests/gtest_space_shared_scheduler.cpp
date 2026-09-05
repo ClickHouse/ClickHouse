@@ -784,7 +784,7 @@ private: // interaction with the scheduler thread
     GrowthPressureAction onGrowthPressure() override
     {
         std::function<void()> callback;
-        GrowthPressureAction action;
+        GrowthPressureAction action = GrowthPressureAction::Protect;
         {
             std::unique_lock lock(mutex);
             recovery_active = has_recovery_controller;

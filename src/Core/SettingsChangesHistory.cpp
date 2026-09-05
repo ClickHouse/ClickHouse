@@ -44,7 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.9",
         {
             {"memory_reservation_protect_from_eviction", false, false, "New setting for soft query-level protection from memory-reservation eviction."},
-            {"memory_reservation_force_spill_before_eviction", true, true, "New setting controlling the forced spill pass before memory-reservation eviction."},
+            {"memory_reservation_force_spill_before_eviction", false, false, "New setting controlling the forced spill pass before memory-reservation eviction."},
             {"memory_reservation_suction_queue_timeout_ms", 0, 0, "New setting bounding the forced-spill phase before memory-reservation suction."},
             {"optimize_read_in_reverse_order_final", false, true, "New setting to enable the read-in-order optimization when reading in reverse order of the sorting key with the `FINAL` modifier from `ReplacingMergeTree` tables."},
             {"ast_fuzzer_oracle", false, false, "New setting to enable correctness oracle checks in the server-side AST fuzzer."},

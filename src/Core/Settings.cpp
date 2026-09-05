@@ -4084,7 +4084,7 @@ This setting takes effect only if MEMORY RESERVATION resource is created.
 Give this query soft protection from memory-reservation eviction. The existing scheduler skips protected queries while an unprotected victim is available. A protected query remains a final fallback so that a fully protected workload cannot deadlock permanently.
 This setting takes effect only if a MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, memory_reservation_force_spill_before_eviction, true, R"(
+    DECLARE(Bool, memory_reservation_force_spill_before_eviction, false, R"(
 Run one exhaustive query-level spill pass when this query enters the memory-reservation eviction queue. `memory_reservation_max_allocation_before_suction_bytes` may allow suction to start before the pass completes, but it does not initiate spilling.
 This setting takes effect only if a MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL) \

@@ -54,7 +54,7 @@ public:
     struct Settings
     {
         MemoryPressurePolicy pressure_policy;
-        bool force_spill_before_eviction = true;
+        bool force_spill_before_eviction = false;
         UInt64 suction_queue_timeout_ms = 0;
     };
 
