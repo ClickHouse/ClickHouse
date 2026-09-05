@@ -609,7 +609,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         all_ranges_callback.value(),
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
-        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+        getActiveReplicasCountForSegmentSizing(),
         data.getStorageID().getFullTableName()};
 
     auto pool = std::make_shared<MergeTreeReadPoolParallelReplicas>(
@@ -1029,6 +1029,24 @@ Pipe ReadFromMergeTree::readInOrder(
     return pipe;
 }
 
+size_t ReadFromMergeTree::getActiveReplicasCountForSegmentSizing()
+{
+    if (!is_parallel_reading_from_replicas)
+        return 1;
+
+    /// Read live liveness only on the first call and reuse it afterwards. Both halves of `chooseSegmentSize`
+    /// -- `PoolSettings.total_query_nodes` (via `calculateMinMarksPerTask`) and
+    /// `ParallelReadingExtension::total_nodes_count` (`number_of_replicas`) -- must see the same replica count
+    /// on a given query. Recomputing at each site would let a replica dropping or returning between the calls
+    /// size the two halves against different denominators, exactly the divergence this heuristic must avoid.
+    /// Each node builds its own `ReadFromMergeTree`, so the snapshot is naturally per-node-per-read.
+    if (!active_replicas_count_for_segment_sizing)
+        active_replicas_count_for_segment_sizing
+            = ClusterProxy::getActiveReplicasCountForParallelReplicas(context, context->getClusterForParallelReplicas());
+
+    return *active_replicas_count_for_segment_sizing;
+}
+
 Pipe ReadFromMergeTree::read(
     RangesInDataParts parts_with_range,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -1041,11 +1059,11 @@ Pipe ReadFromMergeTree::read(
     const auto & settings = context->getSettingsRef();
     size_t sum_marks = parts_with_range.getMarksCountAllParts();
 
-    const size_t total_query_nodes = is_parallel_reading_from_replicas
-        ? std::min<size_t>(
-              context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-              context->getSettingsRef()[Setting::max_parallel_replicas])
-        : 1;
+    /// Match the reading coordinator's replica count (active-and-capped, see `getActiveReplicasCountForParallelReplicas`).
+    /// On remote-disk reads this feeds `calculateMinMarksPerTask` (sum_marks / (threads * total_query_nodes) / 2),
+    /// the other half of `chooseSegmentSize`, so a registered-but-inactive replica would otherwise size the segment
+    /// heuristic differently from the coordinator.
+    const size_t total_query_nodes = getActiveReplicasCountForSegmentSizing();
 
     PoolSettings pool_settings{
         .threads = max_streams,
@@ -1904,11 +1922,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
 
-    const size_t total_query_nodes = is_parallel_reading_from_replicas
-        ? std::min<size_t>(
-              context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-              context->getSettingsRef()[Setting::max_parallel_replicas])
-        : 1;
+    /// Active-and-capped replica count, matching the reading coordinator (see the `read` overload above).
+    const size_t total_query_nodes = getActiveReplicasCountForSegmentSizing();
 
     PoolSettings pool_settings{
         .threads = num_streams,
@@ -5825,7 +5840,7 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         all_ranges_callback.value(),
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
-        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+        getActiveReplicasCountForSegmentSizing(),
         data.getStorageID().getFullTableName());
 }
 

@@ -1442,6 +1442,7 @@ ContextData::ContextData(const ContextData &o) :
     merge_tree_read_task_callback(o.merge_tree_read_task_callback),
     merge_tree_all_ranges_callback(o.merge_tree_all_ranges_callback),
     parallel_replicas_group_uuid(o.parallel_replicas_group_uuid),
+    parallel_replicas_coordinator_count(o.parallel_replicas_coordinator_count),
     block_marshalling_callback(o.block_marshalling_callback),
     is_under_restore(o.is_under_restore),
     client_protocol_version(o.client_protocol_version),
@@ -8489,6 +8490,21 @@ void Context::setParallelReplicasGroupUUID(UUID uuid)
 UUID Context::getParallelReplicasGroupUUID() const
 {
     return parallel_replicas_group_uuid;
+}
+
+void Context::setParallelReplicasCoordinatorCount(size_t count)
+{
+    parallel_replicas_coordinator_count = count;
+}
+
+void Context::clearParallelReplicasCoordinatorCount()
+{
+    parallel_replicas_coordinator_count.reset();
+}
+
+std::optional<size_t> Context::getParallelReplicasCoordinatorCount() const
+{
+    return parallel_replicas_coordinator_count;
 }
 
 AsynchronousInsertQueue * Context::tryGetAsynchronousInsertQueue() const

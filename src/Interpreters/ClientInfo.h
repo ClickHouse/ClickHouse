@@ -177,6 +177,9 @@ public:
 
     /// For parallel processing on replicas
     bool collaborate_with_initiator{false};
+    /// The parallel-replicas coordinator count selected by the initiator. The field has occupied this
+    /// protocol position since `DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS`; old servers safely ignore it.
+    /// Zero means that no initiator-owned count was supplied.
     UInt64 obsolete_count_participating_replicas{0};
     UInt64 number_of_current_replica{0};
 
