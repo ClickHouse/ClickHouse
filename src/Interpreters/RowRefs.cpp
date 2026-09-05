@@ -300,11 +300,12 @@ UInt32 StoredColumnsIndex::add(const StoredBlock * block)
     });
     /// `blocks` and `row_stores` are indexed by the same block number, so grow both before either is
     /// appended to: both appends are then non-allocating and cannot leave the two different lengths.
-    /// The capacity doubles, so growing costs amortised constant time per stored block.
+    /// The target doubles the shared size, so growth is amortised constant per block, and a reserve
+    /// that threw after growing only one vector is retried at the same target.
     chassert(blocks.size() == row_stores.size());
     if (blocks.size() == blocks.capacity() || row_stores.size() == row_stores.capacity())
     {
-        const size_t new_capacity = 2 * blocks.capacity() + 1;
+        const size_t new_capacity = 2 * blocks.size() + 1;
         blocks.reserve(new_capacity);
         row_stores.reserve(new_capacity);
     }
