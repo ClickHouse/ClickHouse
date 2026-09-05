@@ -1669,7 +1669,12 @@ class ScrambleSHA256Auth : public AuthenticationMethod
                     /// Methods verified against an external system never take part in the combination.
                     if (!authenticationTypeIsVerifiedLocally(type))
                         continue;
-                    if (type == AuthenticationType::SCRAM_SHA256_PASSWORD && auth_method.getSalt() == *live_scram_salt)
+                    /// A same-salt `scram_sha256_password` method can be matched by the proof, unless it carries
+                    /// a second factor: a SCRAM proof cannot verify a one-time password, so such a method (only an
+                    /// expired one can reach this point, a live one is refused by the first pass) would drop out of
+                    /// the combination instead of shortening the session lifetime.
+                    if (type == AuthenticationType::SCRAM_SHA256_PASSWORD && auth_method.getSalt() == *live_scram_salt
+                        && !auth_method.getOneTimePassword())
                         continue;
 
                     unsupported_configuration = true;
