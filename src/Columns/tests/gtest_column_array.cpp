@@ -290,6 +290,32 @@ TEST(ColumnArray, InsertManyFromEmptyDynamicPreservesStructure)
     EXPECT_TRUE(repeated->dynamicStructureEquals(*bulk));
 }
 
+TEST(ColumnArray, InsertManyFromSingletonDynamicNull)
+{
+    auto source_data = ColumnDynamic::create(1);
+    source_data->insert(Field(UInt64(1) << 40));
+    source_data->insertDefault();
+
+    auto source_offsets = ColumnArray::ColumnOffsets::create();
+    source_offsets->insertValue(1);
+    source_offsets->insertValue(2);
+    auto source = ColumnArray::create(std::move(source_data), std::move(source_offsets));
+
+    auto destination_data = ColumnDynamic::create(1);
+    destination_data->insert(Field("str"));
+
+    auto destination_offsets = ColumnArray::ColumnOffsets::create();
+    destination_offsets->insertValue(1);
+    auto destination = ColumnArray::create(std::move(destination_data), std::move(destination_offsets));
+
+    destination->insertManyFrom(*source, 1, 3);
+
+    ASSERT_EQ(destination->size(), 4);
+    ASSERT_EQ(destination->getData().size(), destination->getOffsets().back());
+    for (size_t i = 1; i != destination->size(); ++i)
+        EXPECT_EQ((*destination)[i], Field(Array({Field(Null())})));
+}
+
 TEST(ColumnArray, InsertManyFromRollsBackNestedFailure)
 {
     /// Singleton source arrays exercise nested insertManyFrom.

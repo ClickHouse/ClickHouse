@@ -429,6 +429,22 @@ TEST(ColumnDynamic, InsertManyFromOverflow3)
     ASSERT_EQ(field, 42.42);
 }
 
+TEST(ColumnDynamic, InsertManyFromNullDifferentFullVariantLayouts)
+{
+    auto column_from = ColumnDynamic::create(1);
+    column_from->insert(Field(UInt64(1) << 40));
+    column_from->insertDefault();
+
+    auto column_to = ColumnDynamic::create(1);
+    column_to->insert(Field("str"));
+
+    column_to->insertManyFrom(*column_from, 1, 3);
+
+    ASSERT_EQ(column_to->size(), 4);
+    for (size_t i = 1; i != column_to->size(); ++i)
+        EXPECT_TRUE(column_to->isNullAt(i));
+}
+
 /// Helper for the regression test below: returns the set of type names that are physically present
 /// in the shared variant of a ColumnDynamic (decoded from the binary-encoded shared variant rows).
 static std::set<String> getTypeNamesInSharedVariant(const ColumnDynamic & column)
