@@ -3706,6 +3706,14 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
                 "CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD);\n"
                 "CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR cpu"));
     }
+    {
+        ResourceTest t;
+        // Forward-compat: an unknown setting NAME loaded from config/Keeper/disk is tolerated (the
+        // load path passes throw_on_unknown_setting=false, matching the runtime NodeInfo parser), so
+        // a newer node's entity does not make an older node reject the whole workload.
+        EXPECT_NO_THROW(
+            t.storage.loadFromString("CREATE WORKLOAD all SETTINGS some_future_setting = 5"));
+    }
 }
 
 // Unit-test coverage for the lazy-allocation path in CPULeaseAllocation

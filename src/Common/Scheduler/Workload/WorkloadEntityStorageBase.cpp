@@ -777,13 +777,17 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
                 change.name);
     }
 
-    // Validate new/changed workloads the same way the SQL path (storeEntity) does — config/Keeper
-    // loads bypass storeEntity, so without this a bad setting value (e.g. scheduler = 'bogus', a
-    // negative weight, or such a value inside a `... FOR <resource>` clause) is accepted here and
-    // only surfaces later, when the scheduler node is built. Check the setting values (the base
-    // group and each per-resource group) and the `scheduler = ... FOR <resource>` unit targets.
-    // Only new/changed entities are checked (like the cost-unit check above), so a pre-existing
-    // entity is not re-validated on every refresh.
+    // Validate new/changed workloads' setting VALUES on the config/Keeper/disk load path (which
+    // bypasses storeEntity) — otherwise a bad value (e.g. scheduler = 'bogus', a negative weight, or
+    // such a value inside a `... FOR <resource>` clause) is accepted here and only surfaces later,
+    // when the scheduler node is built. Pass `throw_on_unknown_setting = false` so this LOAD path
+    // stays forward-compatible and no stricter than the runtime parser in
+    // `WorkloadResourceManager::NodeInfo` (which also uses `false`): an unknown setting NAME written
+    // by a newer node must not make an older node reject the whole entity. Value checks (scheduler
+    // algorithm, non-negative numerics) fire regardless of that flag, so a genuinely bad value is
+    // still rejected. Both the base group and each per-resource group are checked, plus the
+    // `scheduler = ... FOR <resource>` unit targets. Only new/changed entities are checked (like the
+    // cost-unit check above), so a pre-existing entity is not re-validated on every refresh.
     for (const auto & change : changes)
     {
         if (!change.after)
@@ -791,14 +795,14 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
         if (auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(change.after.get()))
         {
             WorkloadSettings validator;
-            validator.initFromChanges(workload->changes);
+            validator.initFromChanges(workload->changes, /*resource_name=*/{}, /*throw_on_unknown_setting=*/false);
             std::unordered_set<String> validated_resources;
             for (const auto & setting_change : workload->changes)
             {
                 if (!setting_change.resource.empty() && validated_resources.insert(setting_change.resource).second)
                 {
                     WorkloadSettings resource_validator;
-                    resource_validator.initFromChanges(workload->changes, setting_change.resource);
+                    resource_validator.initFromChanges(workload->changes, setting_change.resource, /*throw_on_unknown_setting=*/false);
                 }
             }
             validateSchedulerResourceTargets(*workload, merged_new_entities);
