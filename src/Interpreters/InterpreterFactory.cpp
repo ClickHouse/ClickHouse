@@ -18,7 +18,7 @@
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTParallelWithQuery.h>
-#include <Parsers/ASTHypotheticalIndexQuery.h>
+#include <Parsers/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -386,9 +386,9 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterDropIndexQuery";
     }
-    else if (query->as<ASTHypotheticalIndexQuery>())
+    else if (query->as<ASTHypotheticalObjectQuery>())
     {
-        interpreter_name = "InterpreterHypotheticalIndexQuery";
+        interpreter_name = "InterpreterHypotheticalObjectQuery";
     }
     else if (query->as<ASTBackupQuery>())
     {
