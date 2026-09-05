@@ -6,6 +6,7 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
@@ -215,12 +216,14 @@ namespace
             case Field::Types::Decimal32:
             {
                 auto decimal32 = field.safeGet<Decimal32>();
-                return DecimalUtils::convertTo<T>(scale, decimal32.getValue(), decimal32.getScale());
+                return convertDecimals<DataTypeDecimal<Decimal32>, DataTypeDecimal<T>>(
+                    decimal32.getValue(), decimal32.getScale(), scale);
             }
             case Field::Types::Decimal64:
             {
                 auto decimal64 = field.safeGet<Decimal64>();
-                return DecimalUtils::convertTo<T>(scale, decimal64.getValue(), decimal64.getScale());
+                return convertDecimals<DataTypeDecimal<Decimal64>, DataTypeDecimal<T>>(
+                    decimal64.getValue(), decimal64.getScale(), scale);
             }
             case Field::Types::String:
             {
