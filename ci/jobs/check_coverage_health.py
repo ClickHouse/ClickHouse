@@ -24,7 +24,7 @@ def validate_exports(exports, sha, run_id, config=SELECTION_CONFIG):
         if len(export["exported_tests"]) < config.min_exported_tests_per_shard:
             raise ValueError(f"Insufficient useful coverage: {export['shard']}")
         if (
-            export["path_version"] != config.path_version
+            export["selector_smoke"]["path_version"] != config.path_version
             or not export["randomized_settings"]
         ):
             raise ValueError("Coverage export contract mismatch")

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class SelectionConfig:
-    version: str = "precise-coverage-v1"
+    version: str = "precise-coverage-v2"
     path_version: str = "repo-relative-v1-with-dotted-compatibility"
     narrow_region_max_lines: int = 40
     max_precise_region_owners: int = 150

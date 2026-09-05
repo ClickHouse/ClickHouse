@@ -6,7 +6,7 @@ from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.coverage_selection import (
     build_candidate_query,
-    canonical_coverage_path,
+    build_selector_smoke_seed_query,
     parse_rows,
     rank_candidates,
     snapshot_predicate,
@@ -76,21 +76,13 @@ class CoverageExporter:
             "shard": self.shard,
             "check_start_time": self.check_start_time,
             "check_name": self.job_name,
-            "path_version": SELECTION_CONFIG.path_version,
             "randomized_settings": True,
             "status": "validating",
             "snapshot_identity": "legacy-shard-timestamp",
         }
         self.metadata_path.parent.mkdir(parents=True, exist_ok=True)
         self.metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")
-        canonical_file = "replaceRegexpOne(file, '^([.]/)+', '')"
-        # Generated protobuf files are build outputs, not repository source
-        # coordinates. Keep their inventory visible but do not publish them as source.
-        generated_prefix = "ci/tmp/build/"
-        source = (
-            "system.coverage_log FINAL WHERE notEmpty(test_name) AND test_name != '_selftest' "
-            f"AND NOT startsWith({canonical_file}, {sql_string(generated_prefix)})"
-        )
+        source = "system.coverage_log FINAL WHERE notEmpty(test_name) AND test_name != '_selftest'"
         stats = parse_rows(self._query(f"""
             SELECT test_name, count() AS rows, groupUniqArray(5)(file) AS sample_files
             FROM {source}
@@ -103,15 +95,6 @@ class CoverageExporter:
             raise RuntimeError(
                 "Per-test coverage is empty; no useful shard was published"
             )
-        paths = parse_rows(
-            self._query(
-                "SELECT DISTINCT file FROM system.coverage_log FINAL FORMAT JSONEachRow"
-            )
-        )
-        normalized_paths = [canonical_coverage_path(row["file"]) for row in paths]
-        metadata["excluded_generated_files"] = sorted(
-            path for path in normalized_paths if path.startswith(generated_prefix)
-        )
         events = []
         if self.events_path:
             events = [
@@ -140,13 +123,12 @@ class CoverageExporter:
                 ),
             }
         )
-        # Validate before publication. Historical dotted paths are normalized at
-        # the exporter boundary; absolute paths are rejected above.
+        # Preserve recorded paths; the selector interprets source coordinates.
         if self.to_file:
             directory = Path(temp_dir) / "system_tables"
             directory.mkdir(parents=True, exist_ok=True)
             self._query(
-                f"SELECT time, test_name, {canonical_file} AS file, line_start, line_end, min_depth, branch_flag "
+                "SELECT time, test_name, file, line_start, line_end, min_depth, branch_flag "
                 f"FROM {source} INTO OUTFILE {sql_string(str(directory / 'coverage_log.tsv'))} FORMAT TSVWithNamesAndTypes"
             )
         else:
@@ -158,7 +140,7 @@ class CoverageExporter:
             # not round new exports to an hour or conflate different attempts.
             self._query(
                 f"INSERT INTO FUNCTION {remote} "
-                f"SELECT {canonical_file}, line_start, line_end, "
+                "SELECT file, line_start, line_end, "
                 f"toDateTime({sql_string(self.check_start_time)}, 'UTC'), {sql_string(self.job_name)}, "
                 f"test_name, min_depth, branch_flag FROM {source}"
             )
@@ -177,28 +159,19 @@ class CoverageExporter:
                     "Post-export test inventory differs from the executed shard"
                 )
             # Exercise the production query and scorer against this exact export.
-            seeds = parse_rows(self._query(f"""
-                SELECT {canonical_file} AS file, line_start, line_end
-                FROM {source}
-                GROUP BY file, line_start, line_end
-                HAVING line_end >= line_start
-                   AND line_end - line_start + 1 <= {SELECTION_CONFIG.narrow_region_max_lines}
-                   AND uniqExact(test_name) <= {SELECTION_CONFIG.max_precise_region_owners}
-                ORDER BY line_end - line_start, file, line_start LIMIT 1 FORMAT JSONEachRow
-            """))
+            seeds = parse_rows(self._query(build_selector_smoke_seed_query(source)))
             if not seeds:
                 raise RuntimeError(
                     "Export has no precise coverage region for the selector smoke"
                 )
-            changed = [
-                (canonical_coverage_path(seeds[0]["file"]), int(seeds[0]["line_start"]))
-            ]
+            changed = [(seeds[0]["file"], int(seeds[0]["line_start"]))]
             query = build_candidate_query(changed, {}, snapshot)
             regions = parse_rows(cidb.query(query, log_level=""))
             if not rank_candidates(regions, changed, {}, snapshot):
                 raise RuntimeError(f"Post-export selector smoke failed: {query}")
             metadata["selector_smoke"] = {
                 "status": "OK",
+                "path_version": SELECTION_CONFIG.path_version,
                 "query": query,
                 "region_count": len(regions),
             }

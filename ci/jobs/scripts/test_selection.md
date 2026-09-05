@@ -16,17 +16,19 @@ replay. Change the selector version when changing the persisted contract.
 
 ## Coverage publication
 
-Current builds export bare repository-relative paths. Queries explicitly include
-both bare and historical dotted spellings, preserving filtering by `file`.
-Absolute paths and parent traversal fail export. Generated protobuf coverage
-under `ci/tmp/build/` is listed in metadata and excluded from source coordinates.
-The local instrumentation smoke
-also rejects the historical spelling from new builds.
+Coverage collection and export preserve recorded file paths. The selector
+normalizes diff paths and explicitly queries both bare and dotted spellings,
+preserving filtering by `file`. It combines their observations under one
+repository-relative path before scoring. Absolute paths and parent traversal
+are rejected when interpreting selection inputs. Generated protobuf coverage
+under `ci/tmp/build/` remains in the export; selection only considers changed
+source paths under `src/`.
 
 Each shard publishes `coverage-export-N.json`, including workflow run ID, SHA,
 shard, executed/exported test inventories, randomized-settings fingerprints, and
-post-export selector smoke status. Failed tests retain their coverage. Missing
-attribution for an armed test fails the export check. The final `Coverage health`
+post-export selector smoke status and its path interpretation version. Failed
+tests retain their coverage. Missing attribution for an armed test fails the
+export check. The final `Coverage health`
 job requires all eight exports to come from the same workflow run.
 
 CIDB still has the legacy eight-column `checks_coverage_lines` schema. Until an

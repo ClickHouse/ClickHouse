@@ -648,9 +648,7 @@ class Targeting:
             {
                 (canonical_coverage_path(path), line)
                 for path, line in changed_lines
-                if canonical_coverage_path(path).startswith(
-                    ("src/", "programs/", "utils/", "base/")
-                )
+                if canonical_coverage_path(path).startswith("src/")
                 and canonical_coverage_path(path) not in self.SHARED_REGISTRY_FILES
             }
         )

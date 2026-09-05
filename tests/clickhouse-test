@@ -6674,20 +6674,6 @@ ORDER BY (test_name, callee_offset)
                 "non_empty_file_regions means no coverage region resolved them"
             )
         print(f"Coverage self-test: coverage_log rows for _selftest = {selftest_rows} (OK)")
-        invalid_paths = (
-            clickhouse_execute(
-                args,
-                "SELECT groupUniqArray(5)(file) FROM system.coverage_log FINAL"
-                " WHERE test_name = '_selftest' AND (startsWith(file, '/')"
-                " OR startsWith(file, './') OR has(splitByChar('/', file), '..')"
-                " OR empty(file) OR position(file, ':') > 0)",
-            )
-            .decode()
-            .strip()
-        )
-        if invalid_paths != "[]":
-            raise RuntimeError(f"Coverage path contract failed: {invalid_paths}")
-
         # Validate that the coverage mapping parser produced no bogus line numbers.
         # line_end > 50000 or line_end < line_start indicate cursor-misalignment bugs
         # in the LLVM coverage region decoder (e.g. wrong kKindShift for BranchRegion).

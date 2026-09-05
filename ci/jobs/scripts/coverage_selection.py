@@ -100,6 +100,21 @@ def validate_snapshots(snapshots, cutoff, config=SELECTION_CONFIG):
         raise ValueError(f"Stale coverage shards: {stale}; newest timestamps: {newest}")
 
 
+def build_selector_smoke_seed_query(source, config=SELECTION_CONFIG):
+    # Choose repository source coordinates for the smoke, while preserving all
+    # recorded paths in the coverage export.
+    return f"""
+        SELECT file, line_start, line_end
+        FROM {source}
+          AND (startsWith(file, 'src/') OR startsWith(file, './src/'))
+        GROUP BY file, line_start, line_end
+        HAVING line_end >= line_start
+           AND line_end - line_start + 1 <= {config.narrow_region_max_lines}
+           AND uniqExact(test_name) <= {config.max_precise_region_owners}
+        ORDER BY line_end - line_start, file, line_start LIMIT 1 FORMAT JSONEachRow
+    """
+
+
 def build_candidate_query(
     changed_lines, hunk_ranges, snapshots, config=SELECTION_CONFIG
 ):
