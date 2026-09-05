@@ -1,0 +1,37 @@
+INTERVAL syntax, begin offset
+2024-01-01	10	10
+2024-01-02	20	30
+2024-01-03	30	60
+2024-01-04	40	90
+2024-01-05	50	120
+toIntervalDay function, begin offset
+2024-01-01	10	10
+2024-01-02	20	30
+2024-01-03	30	60
+2024-01-04	40	90
+2024-01-05	50	120
+INTERVAL syntax, end offset
+2024-01-01	10	30
+2024-01-02	20	50
+2024-01-03	30	70
+2024-01-04	40	90
+2024-01-05	50	50
+named window
+2024-01-01	10	10
+2024-01-02	20	30
+2024-01-03	30	60
+2024-01-04	40	90
+2024-01-05	50	120
+view with INTERVAL window frame
+2024-01-01	10	10
+2024-01-02	20	30
+2024-01-03	30	60
+2024-01-04	40	90
+2024-01-05	50	120
+ROWS frame with INTERVAL, old analyzer parity
+0	0
+1	1
+2	3
+3	6
+4	9
+non-constant offset is still rejected
