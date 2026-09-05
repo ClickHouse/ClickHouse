@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadHelpersArena.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -26,6 +27,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace
@@ -61,7 +63,14 @@ struct AggregateFunctionMapCombinatorData<String>
     }
     static void readKey(String & key, ReadBuffer & buf)
     {
-        readStringBinary(key, buf);
+        size_t size = 0;
+        readVarUInt(size, buf);
+
+        if (size > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
+
+        key.clear();
+        readStringGrowing(key, size, buf);
     }
 };
 
