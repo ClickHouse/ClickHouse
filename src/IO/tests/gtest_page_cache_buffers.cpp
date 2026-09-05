@@ -93,14 +93,14 @@ ChainedBuffers makeChain(size_t offset, size_t size, char fill)
     return chain;
 }
 
-/// Claim the writer's range then write - the page cache has no downloader role, so its default
-/// claim always authorizes; mirrors how the executor drives a write under a held claim.
+/// FillRole the writer's range then write - the page cache has no downloader role, so its default
+/// role always authorizes; mirrors how the executor drives a write under a held role.
 size_t claimedWrite(CacheWriter & writer, ChainedBuffers chain)
 {
-    auto lead = writer.claimLeadRole(writer.range());
-    if (!lead.claim)
+    auto role = writer.takeFillRole();
+    if (!role)
         return 0;
-    return writer.write(std::move(chain), lead.claim);
+    return writer.write(std::move(chain), role);
 }
 
 /// Flatten `chain`'s coverage of `[offset, offset + size)` into a std::string,
@@ -141,7 +141,7 @@ TEST(PageCacheBuffers, WriteWholeBlockThenHit)
     EXPECT_TRUE(writer.complete());
 
     /// committed() spans the whole range.
-    EXPECT_TRUE(writer.committed().subtract(ByteRange{0, block_size}).empty());
+    EXPECT_EQ(writer.committed(), block_size);
 
     /// probeView now reports the block as a hit (cell registered).
     auto view = probeView(provider, StoredObject{}, 0, ByteRange{0, block_size});
@@ -313,7 +313,7 @@ TEST(PageCacheBuffers, FirstWriterWins)
     size_t wrote = claimedWrite(writer, makeChain(0, block_size, 'S'));
     EXPECT_EQ(wrote, 0u) << "lost the first-writer-wins race: nothing newly landed";
     EXPECT_TRUE(writer.complete()) << "the byte IS cached (by the first writer), so committed must advance";
-    EXPECT_TRUE(writer.committed().subtract(ByteRange{0, block_size}).empty());
+    EXPECT_EQ(writer.committed(), block_size);
 
     /// read returns the FIRST writer's bytes (the adopted existing cell).
     auto chain = writer.read(ByteRange{0, block_size});
@@ -387,9 +387,7 @@ TEST(PageCacheBuffers, PartialBlockWriteIsSkipped)
     size_t wrote = claimedWrite(writer, makeChain(0, block_size / 2, 'P'));
     EXPECT_EQ(wrote, 0u) << "a partially-covered block is left for a later write";
     EXPECT_FALSE(writer.complete());
-    auto uncommitted = writer.committed().subtract(ByteRange{0, block_size});
-    ASSERT_EQ(uncommitted.size(), 1u);
-    EXPECT_EQ(uncommitted[0].size, block_size) << "the whole range is still uncommitted";
+    EXPECT_EQ(writer.committed(), 0u) << "the whole range is still uncommitted";
 
     /// No partial cell was registered: a subsequent probe still misses.
     auto view = probeView(provider, StoredObject{}, 0, ByteRange{0, block_size});
@@ -471,20 +469,20 @@ TEST(PageCacheBuffers, FirstWriterWinsAcrossProviders)
     size_t wrote = claimedWrite(writer, makeChain(0, block_size, 'S'));
     EXPECT_EQ(wrote, 0u) << "lost the cross-provider first-writer-wins race: nothing newly landed";
     EXPECT_TRUE(writer.complete()) << "the byte IS cached (by provider1), so committed must advance";
-    EXPECT_TRUE(writer.committed().subtract(ByteRange{0, block_size}).empty());
+    EXPECT_EQ(writer.committed(), block_size);
 
     /// read returns the FIRST provider's bytes (the adopted existing cell).
     auto chain = writer.read(ByteRange{0, block_size});
     EXPECT_EQ(flatten(chain, 0, block_size), std::string(block_size, 'F'));
 }
 
-/// (k) claimLeadRole re-probes the cache: a block populated by another writer between the openWriter
-/// (a read-only `resolve`) and the claim is adopted and reported as `available` with NO claim, so the
+/// (k) takeFillRole re-probes the cache: a block populated by another writer between the openWriter
+/// (a read-only `resolve`) and the role is adopted and reported as `available` with NO role, so the
 /// caller serves it from cache instead of re-reading it from the source.
 TEST(PageCacheBuffers, ClaimLeadRoleAdoptsBlockCachedSinceResolve)
 {
     auto cache = makeCache();
-    auto file = makeFile("buffers-claim-recheck");
+    auto file = makeFile("buffers-role-recheck");
     constexpr size_t block_size = 4096;
     PageCacheProvider provider(
         cache, file, block_size, /*inject_eviction=*/false,
@@ -501,14 +499,12 @@ TEST(PageCacheBuffers, ClaimLeadRoleAdoptsBlockCachedSinceResolve)
     /// A concurrent writer populates the block with 'C'.
     EXPECT_EQ(claimedWrite(*early[0].writer, makeChain(0, block_size, 'C')), block_size);
 
-    /// The late writer's claimLeadRole re-probes: the block is now resident, so it is reported as
-    /// available (the whole block) with no claim to fill.
+    /// The late writer's takeFillRole re-probes: the block is now resident, so it is reported as
+    /// available (the whole block) with no role to fill.
     auto & late_writer = *late[0].writer;
-    auto lead = late_writer.claimLeadRole(late_writer.range());
-    EXPECT_EQ(lead.available.offset, 0u);
-    EXPECT_EQ(lead.available.size, block_size);
-    EXPECT_FALSE(static_cast<bool>(lead.claim)) << "nothing left to fill: the block is already committed";
-    EXPECT_TRUE(late_writer.committed().subtract(ByteRange{0, block_size}).empty());
+    auto role = late_writer.takeFillRole();
+    EXPECT_FALSE(static_cast<bool>(role)) << "nothing left to fill: the block is already committed";
+    EXPECT_EQ(late_writer.committed(), block_size);
 
     /// The late writer serves the concurrently-written bytes from cache (adopted its cell).
     auto chain = late_writer.read(ByteRange{0, block_size});

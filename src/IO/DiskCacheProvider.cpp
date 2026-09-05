@@ -223,7 +223,7 @@ DiskCacheWriter::DiskCacheWriter(
         && aligned_range.end() <= seg_range.right + 1 + object_file_offset);
 }
 
-size_t DiskCacheWriter::write(ChainedBuffers data, const Claim & claim)
+size_t DiskCacheWriter::write(ChainedBuffers data, const FillRole & role)
 {
     if (cache_settings.read_if_exists_otherwise_bypass)
         return 0;
@@ -237,15 +237,15 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const Claim & claim)
     const size_t miss_obj_end = miss_obj_off + aligned_range.size;
 
     /// Append append-only at our one segment's live current write offset, never completing it
-    /// here (kept appendable across windows; the claim's release / the destructor finalize it). NEVER
+    /// here (kept appendable across windows; the role's release / the destructor finalize it). NEVER
     /// throws on the soft skips (unclaimed / no-op).
     FileSegment & seg = segment();
     const auto & seg_range = seg.range();
 
-    /// `claimLeadRole` is the sole role-acquisition site; `write` never takes one. So a caller reaches
-    /// here only under a held `claim` that won this segment's role - assert the caller's proof and the
+    /// `takeFillRole` is the sole role-acquisition site; `write` never takes one. So a caller reaches
+    /// here only under a held `role` that won this segment's role - assert the caller's proof and the
     /// live state.
-    chassert(claim);
+    chassert(role);
     chassert(seg.isDownloader());
 
     /// Append-only: start at the live current write offset.
@@ -256,7 +256,7 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const Claim & claim)
         return 0;
 
     /// A gap inside `data` caps the write; the segment stays claimed (partial) for continuation in a
-    /// later call under the same claim.
+    /// later call under the same role.
     const ByteRange target{write_offset, write_end_max - write_offset};
     size_t contiguous = target.size;
     if (auto data_gaps = data.gaps(target); !data_gaps.empty())
@@ -292,18 +292,12 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const Claim & claim)
     }
 
     const bool written_ok = tryWriteToSegment(seg, flat_buf.data(), contiguous, write_offset);
-    /// Keep the segment appendable; the downloader role stays with the open claim (its release
+    /// Keep the segment appendable; the downloader role stays with the open role (its release
     /// finalizes it). Only wake the readers waiting on the committed prefix.
     seg.notifyDownloadProgress();
 
     if (!written_ok)
         return 0;
-
-    /// File-level committed interval.
-    {
-        std::lock_guard lock(committed_mutex);
-        committed_ranges.add(ByteRange{write_offset + object_file_offset, contiguous});
-    }
 
     LOG_TRACE(log, "DiskCacheWriter::write: wrote {} bytes to [{}, {}] at offset {}",
         contiguous, seg_range.left, seg_range.right, write_offset);
@@ -323,43 +317,34 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
     return result;
 }
 
-CacheWriter::Lead DiskCacheWriter::claimLeadRole(ByteRange range)
+size_t DiskCacheWriter::committed() const
 {
-    /// `range` is FILE-space, within our one segment. `available` is the committed prefix; for the
-    /// uncommitted tail we either win the role (hold the returned claim, fetch+write it) or a
-    /// concurrent downloader leads it (hold nothing; the caller derives the remainder and waits).
-    Lead lead;
-    lead.available = ByteRange{range.offset, 0};
+    /// The segment's committed prefix in file space (append-only from its start), clamped to our range.
+    /// Reads the segment's live frontier directly - no separate bookkeeping - so it also reflects a
+    /// prefix another downloader committed on the same segment.
+    const size_t seg_committed_file_end = segmentCommittedEnd(segment()) + object_file_offset;
+    return std::clamp(seg_committed_file_end, aligned_range.offset, aligned_range.end());
+}
 
+CacheWriter::FillRole DiskCacheWriter::takeFillRole()
+{
+    /// Our one segment. If it has an uncommitted tail we either win the role (hold the role, fetch+write
+    /// it) or a concurrent downloader leads it (hold nothing; the caller reads `committed()` and waits).
     FileSegment & seg = segment();
-    const auto & seg_range = seg.range();
-    const size_t seg_file_lo = seg_range.left + object_file_offset;
-    const size_t seg_file_hi = seg_range.right + 1 + object_file_offset;
-
-    const size_t lo = std::max(range.offset, seg_file_lo);
-    const size_t hi = std::min(range.end(), seg_file_hi);
-    if (lo >= hi)
-        return lead;
+    const size_t seg_file_end = seg.range().right + 1 + object_file_offset;
 
     if (seg.state() == FileSegmentState::DOWNLOADED)
-    {
-        lead.available = ByteRange{lo, hi - lo};   // fully cached: whole overlap readable now, no role
-        return lead;
-    }
+        return {};   /// fully cached: readable via committed(), no role
 
-    /// The write offset is monotonic and readable without the role. If it already covers the overlap,
-    /// the whole range is available now - take NO role, skipping a needless acquire+release.
-    if (seg.getCurrentWriteOffset() + object_file_offset >= hi)
-    {
-        lead.available = ByteRange{lo, hi - lo};
-        return lead;
-    }
+    /// The write offset is readable without the role; if it already covers the segment, nothing to fill.
+    if (seg.getCurrentWriteOffset() + object_file_offset >= seg_file_end)
+        return {};
 
-    /// Acquire the role for the tail. Never nested (one claim per write), so we do not already hold it.
+    /// Acquire the role for the tail. Never nested (one role per write), so we do not already hold it.
     chassert(!seg.isDownloader());
     const bool won = seg.getOrSetDownloader() == FileSegment::getCallerId();
 
-    /// If we won, release the role on any exit below unless we hand it to the Claim: a leaked
+    /// If we won, release the role on any exit below unless we hand it to the FillRole: a leaked
     /// DOWNLOADING segment aborts the writer's holder dtor and deadlocks a later waitAndRead.
     bool safe_guard_armed = true;
     SCOPE_EXIT({
@@ -377,21 +362,15 @@ CacheWriter::Lead DiskCacheWriter::claimLeadRole(ByteRange range)
         }
     });
 
-    /// `cwo` after the role decision: exact if we hold the role, else a lower bound. Shift to file space.
-    const size_t current_write_offset = seg.getCurrentWriteOffset() + object_file_offset;
-    const size_t avail_hi = std::min(hi, current_write_offset);
-    lead.available = ByteRange{lo, avail_hi > lo ? avail_hi - lo : 0};
-    const size_t fetch_lo = std::max(lo, current_write_offset);
-
     if (!won)
-        return lead;   /// a concurrent downloader leads the tail: hold nothing, the caller waits on it
+        return {};   /// a concurrent downloader leads the tail: hold nothing, the caller waits on it
 
-    if (fetch_lo >= hi)
-        return lead;   /// committed prefix already covers the range: nothing to fill (the guard releases)
+    if (seg.getCurrentWriteOffset() + object_file_offset >= seg_file_end)
+        return {};   /// filled since the pre-check: nothing left (the guard releases the role)
 
-    /// Hand the role to the Claim (disarming the guard). The release captures the segment (a shared
+    /// Hand the role to the FillRole (disarming the guard). The release captures the segment (a shared
     /// ref), not the writer.
-    lead.claim = makeClaim(/*held=*/true, [seg_ptr = segment_holder->getSingleFileSegment(), logger = log]() noexcept
+    FillRole role = makeFillRole(/*held=*/true, [seg_ptr = segment_holder->getSingleFileSegment(), logger = log]() noexcept
     {
         chassert(seg_ptr->isDownloader());
         try
@@ -405,7 +384,7 @@ CacheWriter::Lead DiskCacheWriter::claimLeadRole(ByteRange range)
         }
     });
     safe_guard_armed = false;
-    return lead;
+    return role;
 }
 
 ChainedBuffers DiskCacheWriter::waitAndRead(ByteRange subrange)
@@ -415,11 +394,11 @@ ChainedBuffers DiskCacheWriter::waitAndRead(ByteRange subrange)
     /// cannot deadlock.
     FileSegment & seg = segment();
     const auto & seg_range = seg.range();
-    const size_t seg_file_lo = seg_range.left + object_file_offset;
-    const size_t seg_file_hi = seg_range.right + 1 + object_file_offset;
+    const size_t seg_file_begin = seg_range.left + object_file_offset;
+    const size_t seg_file_end = seg_range.right + 1 + object_file_offset;
 
-    const size_t lo = std::max(subrange.offset, seg_file_lo);
-    const size_t hi = std::min(subrange.end(), seg_file_hi);
+    const size_t lo = std::max(subrange.offset, seg_file_begin);
+    const size_t hi = std::min(subrange.end(), seg_file_end);
     const auto st = seg.state();
     const bool readable = st == FileSegmentState::DOWNLOADED
         || st == FileSegmentState::PARTIALLY_DOWNLOADED
@@ -564,7 +543,7 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
     /// the ask. The bypass side never fills, so a miss carries no fill geometry - it only tells
     /// the executor which bytes to read from source. Nothing created/reserved/evicted, so a bypass
     /// read (a merge) never perturbs the cache.
-    if (!populatesOnMiss())
+    if (cache_settings.read_if_exists_otherwise_bypass)
     {
         auto got_holder = cache->get(
             resolved_key, ask_lo_obj, ask_hi_obj - ask_lo_obj,

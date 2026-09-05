@@ -10,7 +10,6 @@
 #include <Common/CacheBase.h>
 #include <IO/ReadBufferFromFileBase.h>
 
-#include <mutex>
 
 namespace DB
 {
@@ -65,14 +64,10 @@ public:
         ByteRange aligned_range_in_file);
 
     ByteRange range() const override { return aligned_range; }
-    IntervalSet committed() const override
-    {
-        std::lock_guard lock(committed_mutex);
-        return committed_ranges;
-    }
-    size_t write(ChainedBuffers data, const Claim & claim) override;
+    size_t committed() const override;
+    size_t write(ChainedBuffers data, const FillRole & role) override;
     ChainedBuffers read(ByteRange subrange) override;
-    Lead claimLeadRole(ByteRange range) override;
+    FillRole takeFillRole() override;
     ChainedBuffers waitAndRead(ByteRange subrange) override;
 
 private:
@@ -86,11 +81,6 @@ private:
     size_t object_file_offset;
     FilesystemCacheSettings cache_settings;
     FileSegmentsHolderSharedPtr segment_holder;
-    IntervalSet committed_ranges;
-    /// Guards `committed_ranges` only. The FileCache downloader gives per-segment write exclusion. A
-    /// background prefetch and the foreground read may append disjoint parts of the segment at the
-    /// same time, so both update this set.
-    mutable std::mutex committed_mutex;
     ByteRange aligned_range;
     LoggerPtr log = getLogger("DiskCacheWriter");
 };
@@ -118,7 +108,6 @@ public:
 
     String name() const override { return "DiskCache"; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
-    bool populatesOnMiss() const override { return !cache_settings.read_if_exists_otherwise_bypass; }
 
     /// Resolve `range` into hits (readers) and misses (writers when the tier populates). See the
     /// definition for the get / getOrSet split.
