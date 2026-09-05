@@ -757,10 +757,18 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
           * the filling step added later requires them in the block header.
           *
           * Example: SELECT 1 ORDER BY toDateTime(0) WITH FILL LIMIT 1 BY 1;
+          *
+          * The same holds for LIMIT WITH TIES: the limit step added after LIMIT BY compares the
+          * ORDER BY columns of the last row against its successors, so they have to reach it. A
+          * constant ORDER BY key is otherwise dropped here, because the projection above can create
+          * the constant on its own.
+          *
+          * Example: SELECT 1 FROM numbers(10) ORDER BY ALL LIMIT 1 BY number LIMIT 4 WITH TIES;
           */
         NameSet required_output_nodes_names;
         if (sort_analysis_result_optional.has_value()
             && (sort_analysis_result_optional->has_with_fill
+                || query_node.isLimitWithTies()
                 || (planner_query_processing_info.isFirstStage()
                     && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)))
         {
