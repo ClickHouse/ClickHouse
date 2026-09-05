@@ -18,6 +18,7 @@ This page covers the ClickHouse sink: connecting to ClickHouse Cloud and self-ho
 - sqlflow **v1.0.5** or later. Earlier v1.0.x releases have data-fidelity problems in this path — see the version matrix — so upgrade rather than work around them.
 - ClickHouse Cloud, or self-hosted ClickHouse. Tested against 24.8 and 26.8; no minimum below that has been established.
 - A Kafka broker the pipeline can reach, for the Kafka source used in the example. The WebSocket and webhook sources need no broker.
+- Python 3 with the `confluent-kafka` package (`pip install confluent-kafka`), only for the script in the example that publishes the sample data to Kafka. sqlflow itself needs no Python.
 - Docker is the simplest install — `turbolytics/sql-flow` is published multi-arch for `linux/amd64` and `linux/arm64`. sqlflow can also be built from source; it needs Go, a C toolchain, and `libduckdb` present at runtime.
 
 ### Version matrix {#version-matrix}
@@ -129,9 +130,10 @@ PRIMARY KEY (pickup_datetime, dropoff_datetime);
 
 ### 2. Publish the data to Kafka {#example-publish}
 
-The dataset is published as gzipped TSV. This converts one file (about a million rows) to newline-delimited JSON and publishes it to a topic named `nyc-taxi-trips`.
+The dataset is published as gzipped TSV. This converts one file (about a million rows) to newline-delimited JSON and publishes it to a topic named `nyc-taxi-trips`. The publisher is a Python script and needs the `confluent-kafka` package; install it first, then download the file.
 
 ```bash
+pip install confluent-kafka
 curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz
 ```
 
