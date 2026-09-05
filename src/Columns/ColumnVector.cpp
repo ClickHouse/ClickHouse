@@ -860,9 +860,28 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
             {
                 while (mask)
                 {
-                    size_t index = std::countr_zero(mask);
-                    inserter.insertSingle(data_pos[index]);
-                    mask = blsr(mask);
+                    /// `mask` has one bit per row, with bit 0 corresponding to `data_pos[0]`.
+                    /// Start at the first selected row and align the mask to that row.
+                    const size_t index = std::countr_zero(mask);
+                    const UInt64 shifted_mask = mask >> index;
+
+                    /// A zero second bit means that this selected row is a singleton.
+                    if ((shifted_mask & 2) == 0)
+                    {
+                        inserter.insertSingle(data_pos[index]);
+                        mask = blsr(mask);
+                        continue;
+                    }
+
+                    /// Otherwise, copy the complete contiguous run in one operation.
+                    const size_t run_length = std::countr_one(shifted_mask);
+                    inserter.insertRange(data_pos + index, data_pos + index + run_length);
+
+                    /// Avoid shifting by 64, and clear the run before looking for the next one.
+                    if (run_length == 64)
+                        mask = 0;
+                    else
+                        mask &= ~(((UInt64{1} << run_length) - 1) << index);
                 }
             }
         }
