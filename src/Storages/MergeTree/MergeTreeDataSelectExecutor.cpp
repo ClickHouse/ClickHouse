@@ -2220,6 +2220,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> part_offset_left(2);
     std::vector<FieldRef> part_offset_right(2);
 
+    /// Set by `check_in_range` when a monotonic function chain could not be applied to a range: the resulting mask is
+    /// then only an over-approximation, so the exactness guarantee `matchesExactContinuousRange` gives does not hold for
+    /// it. Reset per analysed `part_range` below, because a chain can fail on one range and succeed on another (whether
+    /// it throws depends on the endpoint values). Only the binary search consults it: the generic exclusion search
+    /// derives exactness from the mask itself, so an over-approximated mask there already yields no exact range.
+    bool chain_application_failed = false;
+
     auto check_in_range = [&](const MarkRange & range, BoolMask initial_mask = {})
     {
         auto check_key_condition = [&]() -> BoolMask
@@ -2285,7 +2292,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     sparse_key_types,
                     equal_boundaries_mask,
                     initial_mask,
-                    &index_bounds);
+                    &index_bounds,
+                    &chain_application_failed);
             }
 
             if (range.end == marks_count)
@@ -2324,7 +2332,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                 }
             }
-            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
+            return key_condition.checkInRange(
+                used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds, &chain_application_failed);
         };
 
         auto check_part_offset_condition = [&]()
@@ -2344,7 +2353,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part_offset_right[1] = part->name;
 
             return part_offset_condition->checkInRange(
-                2, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
+                2,
+                part_offset_left.data(),
+                part_offset_right.data(),
+                part_offset_types,
+                initial_mask,
+                /* key_bounds = */ nullptr,
+                &chain_application_failed);
         };
 
         auto check_total_offset_condition = [&]()
@@ -2360,7 +2375,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part_offset_left[0] = begin + part_starting_offset_in_query;
             part_offset_right[0] = end + part_starting_offset_in_query;
             return total_offset_condition->checkInRange(
-                1, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
+                1,
+                part_offset_left.data(),
+                part_offset_right.data(),
+                part_offset_types,
+                initial_mask,
+                /* key_bounds = */ nullptr,
+                &chain_application_failed);
         };
 
         BoolMask result(true, false);
@@ -2440,6 +2461,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         {
             MarkRange result_range{};
 
+            /// Scoped to this range: a chain that failed here says nothing about the other ranges of the part.
+            chain_application_failed = false;
+
             /// Invariant: !check_in_range(part_range.begin..searched_left).can_be_true
             ///             check_in_range(part_range.begin..searched_right).can_be_true
             /// (part_range.end + 1 is a sentinel out-of-bounds index, such that by definition
@@ -2496,7 +2520,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                     if (result_exact_range.begin < result_exact_range.end)
                     {
-                        if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
+                        const bool exact_range_can_be_false
+                            = check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false;
+
+                        /// An exact range requires the monotonic function chains to be always monotonic (which
+                        /// `matchesExactContinuousRange` checked) AND to have been applied to this range. When applying
+                        /// one failed, every mask computed for this range is only an over-approximation: it supports no
+                        /// exactness claim, and it contradicts nothing either. Same reasoning as the relaxed-condition
+                        /// escape above, but decided per range because whether a chain throws depends on the endpoints.
+                        if (chain_application_failed)
+                        {
+                            /// Neither an exact range nor an inconsistency.
+                        }
+                        else if (exact_range_can_be_false)
                         {
                             /// key_condition.matchesExactContinuousRange returned true, but the
                             /// range doesn't seem to be continuous. Something's broken - most likely a

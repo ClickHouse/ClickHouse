@@ -133,12 +133,15 @@ public:
     /// granule is computed in MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions()
     using UpdatePartialDisjunctionResultFn = std::function<void (size_t position, bool result, bool is_unknown)>;
 
+    /// `chain_application_failed`, when given, is set to true if a monotonic function chain could not be applied to some
+    /// analysed range, so the returned mask is a mere over-approximation. See `applyMonotonicFunctionsChainToRange`.
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
         const Hyperrectangle & hyperrectangle,
         const DataTypes & data_types,
         const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
-        const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
+        const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr,
+        bool * chain_application_failed = nullptr) const;
 
     /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
     /// `key_col_to_sparse_pos` maps key index to position in `sparse_hyperrectangle`, or -1 if not tracked.
@@ -147,7 +150,8 @@ public:
     BoolMask checkInHyperrectangle(
         const std::vector<int> & key_col_to_sparse_pos,
         const Hyperrectangle & sparse_hyperrectangle,
-        const DataTypes & sparse_data_types) const;
+        const DataTypes & sparse_data_types,
+        bool * chain_application_failed = nullptr) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
@@ -156,13 +160,16 @@ public:
     /// one of the resulting mask components (see BoolMask::consider_only_can_be_XXX).
     /// key_bounds - optional per-column bounds the key values are known to lie within (e.g. the part's
     /// partition minmax). A key without a bound defaults to (-inf, +inf).
+    /// `chain_application_failed`, when given, is set to true if a monotonic function chain could not be applied to some
+    /// analysed range, so the returned mask is a mere over-approximation. See `applyMonotonicFunctionsChainToRange`.
     BoolMask checkInRange(
         size_t key_size,
         const FieldRef * left_keys,
         const FieldRef * right_keys,
         const DataTypes & data_types,
         BoolMask initial_mask = BoolMask(false, false),
-        const Hyperrectangle * key_bounds = nullptr) const;
+        const Hyperrectangle * key_bounds = nullptr,
+        bool * chain_application_failed = nullptr) const;
 
     /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
     /// However, `equal_boundaries_mask` must have the information about all/prefix keys. `equal_boundaries_mask` specifies whether ith key's
@@ -187,7 +194,8 @@ public:
         const DataTypes & sparse_data_types,
         const std::vector<UInt8> & equal_boundaries_mask,
         BoolMask initial_mask,
-        const Hyperrectangle * key_bounds = nullptr) const;
+        const Hyperrectangle * key_bounds = nullptr,
+        bool * chain_application_failed = nullptr) const;
 
     const KeyOrder & getKeyOrder() const { return key_order; }
 
@@ -258,11 +266,16 @@ public:
         const TreeRewriterResultPtr & syntax_analyzer_result,
         ContextPtr context);
 
+    /// Returns `std::nullopt` when no range could be derived. That happens for two different reasons, and only the second
+    /// one sets `chain_application_failed` (when the pointer is given): either a function is honestly not monotonic on the
+    /// range, or applying the chain failed (it threw). In the second case the caller's `(true, true)` answer is an
+    /// over-approximation, so an exactness guarantee derived from `matchesExactContinuousRange` no longer holds.
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
         const MonotonicFunctionsChain & functions,
         DataTypePtr current_type,
-        bool single_point = false);
+        bool single_point = false,
+        bool * chain_application_failed = nullptr);
 
     bool matchesExactContinuousRange() const;
 

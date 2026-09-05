@@ -1,0 +1,55 @@
+intDiv by an effective -1, minimum excluded by the predicate
+0	0
+same predicate spelled with IN, so the set index applies the chain
+0	0
+partition pruning, where the chain is applied to a single point
+1	1
+offending granule excluded by a preceding key column
+1	1
+division by zero, so the defect is not specific to the signed minimum
+0	0
+DECIMAL_OVERFLOW from a correctly always-monotonic function
+0	0
+DECIMAL_OVERFLOW while deciding monotonicity, not while applying the chain
+1	1
+LowCardinality key column
+0	0
+exact-range candidate spanning several marks (full primary key representation)
+1	1	false
+exact-range candidate spanning several marks (sparse primary key representation)
+1	1	true
+the same via the set index (full primary key representation)
+1	1	false
+the same via the set index (sparse primary key representation)
+1	1	true
+generic exclusion search instead of binary search
+1	1
+repeated probes over one part after the first failure
+5	5
+exact-range candidate on a LowCardinality key column
+1	1
+default index granularity
+1	1
+an honestly non-monotonic chain is not an application failure
+2	2
+rows that really divide by zero still throw
+a healthy chain still prunes granules
+1
+a healthy chain still prunes granules via the set index
+1
+a healthy range still yields an exact row count
+1
+a healthy chain still yields an exact row count (full primary key representation)
+1	false
+a healthy chain still yields an exact row count (sparse primary key representation)
+1	true
+the same exact row count via the set index (full primary key representation)
+1	false
+the same exact row count via the set index (sparse primary key representation)
+1	true
+two skip indexes over an OR, with the chain-bearing atom before them
+1	1
+the same disjunction still prunes granules (full primary key representation)
+1	false
+the same disjunction still prunes granules (sparse primary key representation)
+1	true
