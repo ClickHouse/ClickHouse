@@ -108,6 +108,13 @@ SELECT count(), min(id) FROM t_map_tokenbf WHERE attrs[CAST('entity', 'LowCardin
 SELECT 'mapkey tokenbf absent-key empty LC(Nullable)';
 SELECT count() FROM t_map_tokenbf WHERE attrs['missing'] = CAST('', 'LowCardinality(Nullable(String))');
 
+-- The same absent-key lookup reaches a SECOND, separate guard once subcolumn folding is on:
+-- `attrs['missing']` is rewritten to a `map.key_*` subcolumn reference, whose branch carries its
+-- own default comparison. Expect all 1024 rows.
+SET optimize_functions_to_subcolumns = 1;
+SELECT 'mapkey tokenbf absent-key empty LC(Nullable), subcolumn';
+SELECT count() FROM t_map_tokenbf WHERE attrs['missing'] = CAST('', 'LowCardinality(Nullable(String))');
+
 DROP TABLE t_text;
 DROP TABLE t_tokenbf;
 DROP TABLE t_ngrambf;
