@@ -1,5 +1,6 @@
 #include <Storages/ConstraintsDescription.h>
 
+#include <Common/quoteString.h>
 #include <Core/Block.h>
 #include <Interpreters/ComparisonGraph.h>
 #include <Interpreters/ExpressionActions.h>
@@ -177,8 +178,9 @@ void ConstraintsDescription::checkExpressionsPreserveRowCount() const
     {
         const auto & declaration = constraint->as<const ASTConstraintDeclaration &>();
         if (declaration.expr && astContainsArrayJoin(*declaration.expr))
-            throw Exception(
-                ErrorCodes::INCORRECT_QUERY, "Constraint '{}' cannot contain `arrayJoin`", declaration.name);
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Constraint {} cannot contain arrayJoin, because it changes the number of rows",
+                backQuote(declaration.name));
     }
 }
 

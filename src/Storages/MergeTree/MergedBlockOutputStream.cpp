@@ -466,7 +466,10 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         write_plain_file(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, [&](auto & buffer)
         {
-            writeText(default_codec->getFullCodecDesc()->formatWithSecretsOneLine(), buffer);
+            if (new_part->default_codec_is_approximate)
+                writeText(IMergeTreeDataPart::UNKNOWN_DEFAULT_COMPRESSION_CODEC, buffer);
+            else
+                writeText(default_codec->getFullCodecDesc()->formatWithSecretsOneLine(), buffer);
         });
     }
     else

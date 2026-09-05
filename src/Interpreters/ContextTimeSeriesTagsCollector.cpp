@@ -1042,9 +1042,8 @@ UInt64 ContextTimeSeriesTagsCollector::getSamplingKeyByGroup(Group group) const
 }
 
 
-VectorWithMemoryTracking<UInt64> ContextTimeSeriesTagsCollector::getSamplingKeyByGroup(const VectorWithMemoryTracking<Group> & groups_) const
+void ContextTimeSeriesTagsCollector::getSamplingKeyByGroup(const VectorWithMemoryTracking<Group> & groups_, PaddedPODArray<UInt64> & res) const
 {
-    VectorWithMemoryTracking<UInt64> res;
     res.resize(groups_.size());
     SharedLockGuard lock{mutex};
     for (size_t i = 0; i != groups_.size(); ++i)
@@ -1054,7 +1053,6 @@ VectorWithMemoryTracking<UInt64> ContextTimeSeriesTagsCollector::getSamplingKeyB
             throwGroupOutOfBound(group, sampling_keys.size());
         res[i] = sampling_keys[group];
     }
-    return res;
 }
 
 
