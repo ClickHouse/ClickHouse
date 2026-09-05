@@ -1367,22 +1367,16 @@ private:
                 offsets_column->getData().assign(batch_offsets);
                 auto batch_array = ColumnArray::create(batch_elements, std::move(offsets_column));
 
+                /// The grouping needs the array flattened and the arm below it needs it constant.
                 ColumnsWithTypeAndName batch_arguments = arguments;
-                batch_arguments[0].column = batch_array;
+                batch_arguments[0].column = arguments[0].column->cloneResized(batch_rows);
                 batch_arguments[1].column = batch_needle;
 
                 batch_result = executeErasedEqualityPerRowGroup(
                     batch_arguments, result_type, *batch_array, batch_needle, element_type, needle_type);
 
                 if (!batch_result)
-                {
-                    /// The fallback compares a constant array's elements as Fields and a materialized
-                    /// one's as columns, and for erased elements the two do not agree, so a batch has
-                    /// to hand it the constant.
-                    ColumnsWithTypeAndName const_arguments = batch_arguments;
-                    const_arguments[0].column = arguments[0].column->cloneResized(batch_rows);
-                    batch_result = executeArrayAfterErasedEquality(const_arguments, result_type);
-                }
+                    batch_result = executeArrayAfterErasedEquality(batch_arguments, result_type);
 
                 batch_result = batch_result->convertToFullColumnIfConst();
             }
@@ -1459,9 +1453,11 @@ private:
         const size_t undecided_rows = countBytesInFilter(undecided);
         if (undecided_rows != 0)
         {
+            /// Filtering keeps a constant argument constant, which these rows need: for an erased element,
+            /// a constant array's elements compare as `Field`s and a materialized one's as columns, and differ.
             auto fallback_arguments = arguments;
             for (auto & argument : fallback_arguments)
-                argument.column = argument.column->convertToFullColumnIfConst()->filter(undecided, -1);
+                argument.column = argument.column->filter(undecided, -1);
 
             auto fallback = executeArrayAfterErasedEquality(fallback_arguments, result_type);
             auto fallback_values = fallback->convertToFullColumnIfConst();

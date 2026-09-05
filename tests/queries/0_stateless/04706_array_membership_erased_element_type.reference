@@ -94,6 +94,12 @@ needle two blocks  	0	1	1	1
 needle two blocks  	1	0	0	0
 needle row alone   	0	1	1	1
 needle row alone   	1	0	0	0
+const array one block   	0	0	0	0	0
+const array one block   	1	1	1	1	1
+const array block size 1	0	0	0	0	0
+const array block size 1	1	1	1	1	1
+const array row alone   	0	0	0	0	0
+const array row alone   	1	1	1	1	1
 variant needle	0	1
 variant needle	1	0
 variant needle size 1	0	1
@@ -148,7 +154,9 @@ no conversion	0
 1	1	1
 -- constant array, varying needle: the rows are paired against the array in batches, so the answer must not depend on where a batch ends
 0	0	0	75
-150	150	0
+mixed needles batched  	300	150	150
+mixed needles grouped  	300	150	150
+mixed needles row alone	300	150	150
 1	1	2	1
 -- notHas resolves has through the same factory, so the two stay negations of one another
 0	1

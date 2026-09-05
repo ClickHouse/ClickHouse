@@ -440,6 +440,28 @@ FROM t_block_needle WHERE id = 0;
 SELECT 'needle row alone   ', id, has(v, n) AS got, indexOf(v, n) AS index_of_got, countEqual(v, n) AS count_equal_got
 FROM t_block_needle WHERE id = 1;
 
+-- Same shape with the array written as a constant literal instead of a column, so the rows the
+-- grouping leaves undecided are answered from that constant. `max_types = 1` leaves row 1's UInt8 in
+-- the shared variant, so exactly one of the two rows is undecided and the block holds both kinds.
+-- Here `=` on the same row is a usable oracle: the needle is compared against a constant, so no
+-- common type is asked of the column and NO_COMMON_TYPE cannot arise.
+DROP TABLE IF EXISTS t_block_const_array;
+CREATE TABLE t_block_const_array (id UInt8, n Dynamic(max_types = 1)) ENGINE = Memory;
+INSERT INTO t_block_const_array VALUES (0, 2::UInt64), (1, 1::UInt8);
+
+SELECT 'const array one block   ', id, has([1::UInt64::Dynamic], n) AS got, indexOf([1::UInt64::Dynamic], n) AS index_of_got,
+    countEqual([1::UInt64::Dynamic], n) AS count_equal_got, n = 1::UInt64::Dynamic AS equals_oracle
+FROM t_block_const_array ORDER BY id;
+SELECT 'const array block size 1', id, has([1::UInt64::Dynamic], n) AS got, indexOf([1::UInt64::Dynamic], n) AS index_of_got,
+    countEqual([1::UInt64::Dynamic], n) AS count_equal_got, n = 1::UInt64::Dynamic AS equals_oracle
+FROM t_block_const_array ORDER BY id SETTINGS max_block_size = 1;
+SELECT 'const array row alone   ', id, has([1::UInt64::Dynamic], n) AS got, indexOf([1::UInt64::Dynamic], n) AS index_of_got,
+    countEqual([1::UInt64::Dynamic], n) AS count_equal_got, n = 1::UInt64::Dynamic AS equals_oracle
+FROM t_block_const_array WHERE id = 0;
+SELECT 'const array row alone   ', id, has([1::UInt64::Dynamic], n) AS got, indexOf([1::UInt64::Dynamic], n) AS index_of_got,
+    countEqual([1::UInt64::Dynamic], n) AS count_equal_got, n = 1::UInt64::Dynamic AS equals_oracle
+FROM t_block_const_array WHERE id = 1;
+
 -- Same shape with a declared Variant needle.
 DROP TABLE IF EXISTS t_block_needle_variant;
 CREATE TABLE t_block_needle_variant (id UInt8, v Array(Dynamic), n Variant(UInt64, String)) ENGINE = Memory;
@@ -647,9 +669,12 @@ SELECT
 FROM (SELECT n, arrayMap(x -> x::UInt64::Dynamic, range(0, 1000, 4)) AS a FROM t_const_batched);
 
 -- Needles carrying different alternatives per row: a batch of them cannot be compared as a whole, so
--- each such batch is grouped on its own rather than the whole block being reprocessed. Only the rows
--- whose needle holds the element's own alternative can match, which is what the two counts separate.
-SELECT
+-- each such batch is grouped on its own rather than the whole block being reprocessed. A needle whose
+-- alternative the comparison cannot relate to the elements at all is declined, and a declined row
+-- keeps the answer the existing dispatch gives it, which against a constant array compares Fields and
+-- so still matches numerically. The three arms take the batched path, the grouped one and neither, and
+-- all of them have to answer alike.
+SELECT 'mixed needles batched  ',
     sum(has(a, d)) AS matched_rows,
     sumIf(has(a, d), dynamicType(d) = 'UInt64') AS matched_same_alternative,
     sumIf(has(a, d), dynamicType(d) = 'String') AS matched_other_alternative
@@ -658,6 +683,24 @@ FROM (
            arrayMap(x -> x::UInt64::Dynamic, range(0, 1000, 2)) AS a
     FROM t_const_batched
 );
+SELECT 'mixed needles grouped  ',
+    sum(has(a, d)) AS matched_rows,
+    sumIf(has(a, d), dynamicType(d) = 'UInt64') AS matched_same_alternative,
+    sumIf(has(a, d), dynamicType(d) = 'String') AS matched_other_alternative
+FROM (
+    SELECT if(n % 2, (n - 1)::String::Dynamic, n::UInt64::Dynamic) AS d,
+           arrayMap(x -> x::UInt64::Dynamic, range(0, 1000, 2)) AS a
+    FROM t_const_batched
+) SETTINGS max_block_size = 40;
+SELECT 'mixed needles row alone',
+    sum(has(a, d)) AS matched_rows,
+    sumIf(has(a, d), dynamicType(d) = 'UInt64') AS matched_same_alternative,
+    sumIf(has(a, d), dynamicType(d) = 'String') AS matched_other_alternative
+FROM (
+    SELECT if(n % 2, (n - 1)::String::Dynamic, n::UInt64::Dynamic) AS d,
+           arrayMap(x -> x::UInt64::Dynamic, range(0, 1000, 2)) AS a
+    FROM t_const_batched
+) SETTINGS max_block_size = 1;
 
 -- A constant array holding two alternatives cannot be compared as a whole batch, and its fallback
 -- keeps comparing the constant, so a UInt8 needle still reaches a UInt64 element. 251 elements fit
@@ -721,6 +764,7 @@ DROP TABLE IF EXISTS t_mixed_var;
 DROP TABLE IF EXISTS t_shared;
 DROP TABLE IF EXISTS t_block_one;
 DROP TABLE IF EXISTS t_block_two;
+DROP TABLE IF EXISTS t_block_const_array;
 DROP TABLE IF EXISTS t_block_plain_elements;
 DROP TABLE IF EXISTS t_block_plain_elements_two;
 DROP TABLE IF EXISTS t_block_plain_nullable;
