@@ -54,18 +54,9 @@ namespace ErrorCodes
         if (ParserStringLiteral{}.parse(pos, ast, expected))
         {
             String name = ast->as<ASTLiteral &>().value.safeGet<String>();
-            /// The string literal may contain 'database.table', split it
-            /// to match what parseDatabaseAndTableAsAST would produce.
-            auto dot_pos = name.find('.');
-            if (dot_pos != String::npos)
-            {
-                res->setDatabase(name.substr(0, dot_pos));
-                res->setTable(name.substr(dot_pos + 1));
-            }
-            else
-            {
-                res->setTable(name);
-            }
+            /// A string literal carries a dictionary name verbatim. In particular,
+            /// a dot may be part of the dictionary name rather than a database separator.
+            res->setTable(name);
             parsed_table = true;
             children_already_added = true; /// setDatabase/setTable already push to children
         }

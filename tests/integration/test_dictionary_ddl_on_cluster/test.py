@@ -262,7 +262,7 @@ def test_reload_dictionary_on_cluster_uses_initiator_database_without_default_de
         drop_issue_114322_dictionaries()
 
 
-def test_reload_dictionary_on_cluster_uses_initiator_database_for_quoted_dotted_name(
+def test_reload_dictionary_on_cluster_uses_initiator_database_for_dotted_string_literal_name(
     started_cluster,
 ):
     try:
@@ -280,7 +280,7 @@ def test_reload_dictionary_on_cluster_uses_initiator_database_for_quoted_dotted_
         )
 
         coordinator.query(
-            f"SYSTEM RELOAD DICTIONARY `{DOTTED_DICTIONARY_NAME}` ON CLUSTER 'workers_only'",
+            f"SYSTEM RELOAD DICTIONARY '{DOTTED_DICTIONARY_NAME}' ON CLUSTER 'workers_only'",
             database=DICTIONARY_DB,
         )
 
