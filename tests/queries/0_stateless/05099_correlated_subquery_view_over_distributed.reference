@@ -1,0 +1,16 @@
+directly over the Distributed table
+through a view
+through a view over a view
+through a parameterized view
+through a Merge over the view
+through a materialized view whose target is a view over the Distributed table
+through a materialized view whose target is the Distributed table
+a view over a local table still works
+100
+100
+a Merge over local tables still works
+100
+a materialized view with a remote source and a local target still works
+0
+an uncorrelated subquery over the view still works
+100

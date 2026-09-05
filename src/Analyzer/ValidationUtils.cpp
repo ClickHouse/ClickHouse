@@ -12,7 +12,12 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/traverseQueryTree.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 
 #include <memory>
 #include <ranges>
@@ -542,11 +547,103 @@ void validateSubqueryDepth(const QueryTreeNodePtr &node, size_t initial_subquery
 
 }
 
-void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
+/// Whether reading this table reaches a remote table. A `VIEW` is an opaque `TABLE` node at this
+/// point - the analyzer expands it later, inside `StorageView::read` - so its own `isRemote` says
+/// nothing about what it reads. Follow the referential dependencies the catalog records for such a
+/// table instead. Without this, a correlated subquery over a view of a `Distributed` table passed the
+/// check below and then broke a planner invariant (`Column identifier ... is already registered`,
+/// a `LOGICAL_ERROR` that aborts a debug build) instead of being refused.
+///
+/// Not every remote read is reachable this way: `DDLDependencyVisitor` records no dependency for the
+/// `remote` and `cluster` table functions, so a view over those stays invisible here, exactly as it
+/// is today. Those spellings execute rather than being refused, so nothing regresses.
+static bool readsFromRemoteTable(
+    const StoragePtr & storage,
+    const StorageID & table_id,
+    const ContextPtr & context,
+    std::unordered_set<String> & visited,
+    size_t depth)
+{
+    static constexpr size_t max_dependency_depth = 16;
+
+    if (!storage)
+        return false;
+
+    if (storage->isRemote())
+        return true;
+
+    if (!context || depth >= max_dependency_depth)
+        return false;
+
+    /// A cycle in the graph would otherwise be bounded only by the depth cap, and every `Merge` level
+    /// iterates over databases. A storage produced by a table function may not be in the catalog and then
+    /// has nothing to key on; the depth cap still bounds those.
+    if (!table_id.table_name.empty() && !visited.insert(table_id.getFullTableName()).second)
+        return false;
+
+    /// A table in a database with `lazy_load_tables`, and a table created `AS` a table function, is attached
+    /// as a `StorageProxy` around the real storage. A proxy forwards `isRemote` and `readsFromOtherTables`
+    /// but not its type, and the look-throughs below are keyed on the concrete storage - so a lazily loaded
+    /// `Merge` would fall through to the dependency walk, which records nothing for `Merge`. Resolving the
+    /// nested storage costs nothing here: the `isRemote` call above already materialized it.
+    StoragePtr nested_storage = storage;
+    for (size_t i = 0; i < max_dependency_depth; ++i)
+    {
+        const auto * proxy = dynamic_cast<const StorageProxy *>(nested_storage.get());
+        if (!proxy)
+            break;
+        nested_storage = proxy->getNested();
+    }
+
+    /// Reading a materialized view only ever reads its target table, so follow that target rather than the
+    /// referential dependencies: those also include the `SELECT` source, which is read at insert time only,
+    /// and following it would refuse a materialized view with a `Distributed` source and a local target - a
+    /// query that works. `StorageMaterializedView::isRemote`, checked above, only asks the target about
+    /// itself, which misses a target that is itself a view over a `Distributed` table.
+    if (const auto * materialized_view = nested_storage->as<StorageMaterializedView>())
+        return readsFromRemoteTable(
+            materialized_view->tryGetTargetTable(), materialized_view->getTargetTableId(), context, visited, depth + 1);
+
+    /// `Merge` matches its source tables by a pattern resolved at read time, so the catalog records no
+    /// referential dependency for it. `StorageMerge::isRemote`, checked above, asks every matched source
+    /// only about itself, which misses a source that is a view over a `Distributed` table. Walk the
+    /// currently matched sources instead.
+    if (const auto * storage_merge = nested_storage->as<StorageMerge>())
+    {
+        return storage_merge->hasChildTable([&](const StoragePtr & source)
+        {
+            return readsFromRemoteTable(source, source->getStorageID(), context, visited, depth + 1);
+        });
+    }
+
+    if (!(nested_storage->isView() || nested_storage->readsFromOtherTables()))
+        return false;
+
+    /// A table function such as `view(SELECT ...)` also wraps a `StorageView`, but it is not in the catalog,
+    /// so there are no dependencies to follow.
+    if (table_id.table_name.empty())
+        return false;
+
+    for (const auto & dependency : DatabaseCatalog::instance().getReferentialDependencies(table_id))
+    {
+        auto dependency_storage = DatabaseCatalog::instance().tryGetTable(dependency, context);
+        if (readsFromRemoteTable(dependency_storage, dependency, context, visited, depth + 1))
+            return true;
+    }
+
+    return false;
+}
+
+void validateCorrelatedSubqueries(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     bool has_remote = false;
     bool has_correlated_subquery = false;
     QueryTreeNodes nodes_to_process = { node };
+
+    /// Tables whose own storage is local but that read from other tables. Resolving what they reach
+    /// takes the catalog's dependency graph, so it is deferred to the end and only done when the query
+    /// actually has a correlated subquery.
+    std::vector<std::pair<StoragePtr, StorageID>> opaque_tables;
 
     while (!nodes_to_process.empty())
     {
@@ -575,6 +672,8 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
                 const auto & storage = table_node.getStorage();
                 if (storage && storage->isRemote())
                     has_remote = true;
+                else if (storage && (storage->isView() || storage->readsFromOtherTables()))
+                    opaque_tables.emplace_back(storage, table_node.getStorageID());
                 break;
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
@@ -583,6 +682,11 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
                 const auto & storage = table_function_node.getStorage();
                 if (storage && storage->isRemote())
                     has_remote = true;
+                /// A parameterized view is resolved as a `TableFunctionNode` wrapping the real `StorageView`,
+                /// not as a `TableNode`, so it needs the same look-through as an ordinary view. The `merge`
+                /// table function arrives the same way.
+                else if (storage && (storage->isView() || storage->readsFromOtherTables()))
+                    opaque_tables.emplace_back(storage, table_function_node.getStorageID());
                 break;
             }
             default:
@@ -599,6 +703,18 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
             if (child)
                 nodes_to_process.push_back(child);
         }
+    }
+
+    if (!has_correlated_subquery)
+        return;
+
+    for (const auto & [storage, storage_id] : opaque_tables)
+    {
+        std::unordered_set<String> visited;
+        if (readsFromRemoteTable(storage, storage_id, context, visited, 0))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subqueries are not supported with remote tables. In query {}",
+                node->formatASTForErrorMessage());
     }
 }
 
