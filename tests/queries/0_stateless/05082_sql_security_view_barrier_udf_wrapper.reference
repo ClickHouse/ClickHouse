@@ -1,10 +1,10 @@
-invoker, analyzer:
+invoker, analyzer: 1
 definer, analyzer:	198
 none, analyzer:	198
 nested udf definer, analyzer:	198
 definer, analyzer, inline views:	198
 nested udf definer, analyzer, inline views:	198
-invoker, legacy analyzer:
+invoker, legacy analyzer: 1
 definer, legacy analyzer:	198
 none, legacy analyzer:	198
 nested udf definer, legacy analyzer:	198
