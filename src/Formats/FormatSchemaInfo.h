@@ -48,8 +48,8 @@ public:
     /// Returns whether this schema info is auto-generated.
     bool isGenerated() const { return generated; }
 
-    /// Removes the schema files in `cache_directory`, except the ones a schema resolution has
-    /// published and not read back yet. Returns {removed, kept}.
+    /// Removes the schema files in `cache_directory`, except the ones in use by a running query.
+    /// Returns {removed, kept}.
     static std::pair<size_t, size_t> removeCachedSchemaFiles(const fs::path & cache_directory);
 
 private:

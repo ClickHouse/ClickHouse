@@ -4,3 +4,6 @@ query succeeded: 1
 cached files after the query: 0
 staged files kept while publishing: 1
 publish succeeded: 1
+query-source cached files kept while in use: 1
+query-source query succeeded: 1
+query-source cached files after the query: 0

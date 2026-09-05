@@ -16,7 +16,7 @@ FAILPOINT=format_schema_cache_pause_before_read
 FAILPOINT_PUBLISH=format_schema_cache_pause_before_publish
 # Unique per run, so the schema is not cached already and really has to be published.
 MESSAGE="M05076_${CLICKHOUSE_DATABASE}"
-CACHE_DIR="$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.server_settings WHERE name = 'format_schema_path'")/__cache__"
+CACHE_DIR="$CLICKHOUSE_SCHEMA_FILES/__cache__"
 
 count_cached() { ls -1 "$CACHE_DIR" 2>/dev/null | wc -l; }
 # Counts staging files only, so a published schema cannot satisfy the assert on its own.
@@ -91,3 +91,37 @@ if wait "$publish_pid"; then
 else
     echo "publish succeeded: 0"
 fi
+
+# A schema given by a query is resolved through a code path of its own, keyed by the querying user, so
+# it is kept in use independently of a schema given as a string. The drop above leaves the arm before
+# this one published, so the cache has to be emptied before this arm counts it.
+${CLICKHOUSE_CLIENT} --query "SYSTEM DROP FORMAT SCHEMA CACHE"
+
+MESSAGE_QUERY="M05076q_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} --query "
+CREATE TABLE dest_query (s String) ENGINE = File(ProtobufSingle)
+SETTINGS format_schema_source = 'query',
+         format_schema = 'SELECT ''syntax = \"proto3\"; message ${MESSAGE_QUERY} { string s = 1; }''',
+         format_schema_message_name = '${MESSAGE_QUERY}';
+"
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT ${FAILPOINT}"
+
+# Publishes the schema file, then pauses before the importer reads it back.
+${CLICKHOUSE_CLIENT} --query "INSERT INTO dest_query VALUES ('hello')" &
+query_source_pid=$!
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM WAIT FAILPOINT ${FAILPOINT} PAUSE"
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM DROP FORMAT SCHEMA CACHE"
+echo "query-source cached files kept while in use: $(count_cached)"
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FAILPOINT}"
+if wait "$query_source_pid"; then
+    echo "query-source query succeeded: 1"
+else
+    echo "query-source query succeeded: 0"
+fi
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM DROP FORMAT SCHEMA CACHE"
+echo "query-source cached files after the query: $(count_cached)"
