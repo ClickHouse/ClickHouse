@@ -1249,8 +1249,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             {
                 const auto * proc_ptr = processor.get();
                 if (dynamic_cast<const RemoteSource *>(proc_ptr)
-                    || dynamic_cast<const RemoteTotalsSource *>(proc_ptr)
-                    || dynamic_cast<const RemoteExtremesSource *>(proc_ptr)
                     || dynamic_cast<const DelayedSource *>(proc_ptr))
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");

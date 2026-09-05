@@ -19,13 +19,27 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_, bool async_query_sending_)
+RemoteSource::RemoteSource(
+    RemoteQueryExecutorPtr executor,
+    bool add_aggregation_info_,
+    bool async_read_,
+    bool async_query_sending_,
+    bool add_totals_port,
+    bool add_extremes_port)
     : ISource(executor->getSharedHeader(), false)
     , add_aggregation_info(add_aggregation_info_)
     , query_executor(std::move(executor))
     , async_read(async_read_)
     , async_query_sending(async_query_sending_)
 {
+    /// ISource binds its `output` reference to `outputs.front`, and OutputPorts is a std::list,
+    /// so appending here leaves that reference valid.
+    if (add_totals_port)
+        totals_port = &outputs.emplace_back(getPort().getHeader(), this);
+
+    if (add_extremes_port)
+        extremes_port = &outputs.emplace_back(getPort().getHeader(), this);
+
     /// Add AggregatedChunkInfo if we expect DataTypeAggregateFunction as a result.
     const auto & sample = getPort().getHeader();
     for (auto & type : sample.getDataTypes())
@@ -73,14 +87,59 @@ void RemoteSource::setStorageLimits(const std::shared_ptr<const StorageLimitsLis
     storage_limits = std::make_shared<const StorageLimitsList>(std::move(list));
 }
 
+ISource::Status RemoteSource::prepareAuxPorts()
+{
+    /// totals/extremes are moved out of the shared executor here - by the same node that received
+    /// them - after the main stream is drained, so no two threads ever touch them.
+    /// Ports are emitted independently, because a consumer may make them needed one at a time.
+    if (totals_port && !totals_emitted)
+    {
+        if (!totals_port->isFinished())
+        {
+            if (!totals_port->canPush())
+                return Status::PortFull;
+
+            if (auto block = query_executor->getTotals(); !block.empty())
+                totals_port->push(Chunk(block.getColumns(), block.rows()));
+        }
+
+        totals_port->finish();
+        totals_emitted = true;
+    }
+
+    if (extremes_port && !extremes_emitted)
+    {
+        if (!extremes_port->isFinished())
+        {
+            if (!extremes_port->canPush())
+                return Status::PortFull;
+
+            if (auto block = query_executor->getExtremes(); !block.empty())
+                extremes_port->push(Chunk(block.getColumns(), block.rows()));
+        }
+
+        extremes_port->finish();
+        extremes_emitted = true;
+    }
+
+    return Status::Finished;
+}
+
 ISource::Status RemoteSource::prepare()
 {
     /// Check if query was cancelled before returning Async status. Otherwise it may lead to infinite loop.
     if (isCancelled())
     {
         getPort().finish();
+        if (totals_port)
+            totals_port->finish();
+        if (extremes_port)
+            extremes_port->finish();
         return Status::Finished;
     }
+
+    if (main_output_finished)
+        return prepareAuxPorts();
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     if (async_query_sending && !was_query_sent && fd < 0)
@@ -96,7 +155,8 @@ ISource::Status RemoteSource::prepare()
     if (query_executor->isFinished())
     {
         getPort().finish();
-        return Status::Finished;
+        main_output_finished = true;
+        return prepareAuxPorts();
     }
 
     Status status = ISource::prepare();
@@ -106,6 +166,7 @@ ISource::Status RemoteSource::prepare()
     {
         is_async_state = false;
         need_drain = true;
+        main_output_finished = true;
         return Status::Ready;
     }
 
@@ -256,45 +317,6 @@ void RemoteSource::onUpdatePorts()
 }
 
 
-RemoteTotalsSource::RemoteTotalsSource(RemoteQueryExecutorPtr executor)
-    : ISource(executor->getSharedHeader())
-    , query_executor(std::move(executor))
-{
-}
-
-RemoteTotalsSource::~RemoteTotalsSource() = default;
-
-Chunk RemoteTotalsSource::generate()
-{
-    if (auto block = query_executor->getTotals(); !block.empty())
-    {
-        UInt64 num_rows = block.rows();
-        return Chunk(block.getColumns(), num_rows);
-    }
-
-    return {};
-}
-
-
-RemoteExtremesSource::RemoteExtremesSource(RemoteQueryExecutorPtr executor)
-    : ISource(executor->getSharedHeader())
-    , query_executor(std::move(executor))
-{
-}
-
-RemoteExtremesSource::~RemoteExtremesSource() = default;
-
-Chunk RemoteExtremesSource::generate()
-{
-    if (auto block = query_executor->getExtremes(); !block.empty())
-    {
-        UInt64 num_rows = block.rows();
-        return Chunk(block.getColumns(), num_rows);
-    }
-
-    return {};
-}
-
 void UnmarshallBlocksTransform::transform(Chunk & chunk)
 {
     const auto rows = chunk.getNumRows();
@@ -318,17 +340,31 @@ Pipe createRemoteSourcePipe(
 {
     chassert(parallel_marshalling_threads);
 
-    Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read, async_query_sending));
-    pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<AddSequenceNumber>(header); });
+    auto source = std::make_shared<RemoteSource>(
+        query_executor, add_aggregation_info, async_read, async_query_sending, add_totals, add_extremes);
 
-    if (add_totals)
-        pipe.addTotalsSource(std::make_shared<RemoteTotalsSource>(query_executor));
+    auto * main_port = &source->getPort();
+    auto * totals_port = source->getTotalsPort();
+    auto * extremes_port = source->getExtremesPort();
 
-    if (add_extremes)
-        pipe.addExtremesSource(std::make_shared<RemoteExtremesSource>(query_executor));
+    Pipe pipe(std::move(source), main_port, totals_port, extremes_port);
+
+    /// The totals/extremes ports now exist from pipe construction, so both simple transforms must
+    /// opt out of them explicitly to keep running on the main streams only.
+    pipe.addSimpleTransform([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
+    {
+        if (stream_type != Pipe::StreamType::Main)
+            return nullptr;
+        return std::make_shared<AddSequenceNumber>(header);
+    });
 
     pipe.resize(parallel_marshalling_threads);
-    pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+    pipe.addSimpleTransform([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
+    {
+        if (stream_type != Pipe::StreamType::Main)
+            return nullptr;
+        return std::make_shared<UnmarshallBlocksTransform>(header);
+    });
     pipe.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipe.getHeader(), parallel_marshalling_threads));
 
     return pipe;
