@@ -184,6 +184,7 @@ Each of the commands above is detailed below:
 | `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | Backs up/restores a temporary table (can be renamed)                                                                                                 |
 | `VIEW view_name [AS view_name_in_backup]`                              | Backs up/restores a view (can be renamed)                                                                                                            |
 | `[EXCEPT TABLES ...]`                                                  | Exclude specific tables when backing up a database                                                                                                   |
+| `[EXCEPT DATA FROM {TABLE\|TABLES} ...]`                               | **(BACKUP only)** Backs up table DDL without data — the table structure is preserved but the table is empty after restore. Differs from `EXCEPT TABLES`, which omits the table entirely. Scoped to the element it is written on: see [Backing up a table without its data](#backup-without-data). |
 | `ALL`                                                                  | Backs up/restores everything (all databases, tables, etc.). Prior to version 23.4 of ClickHouse, `ALL` was only applicable to the `RESTORE` command. |
 | `[EXCEPT {TABLES\|DATABASES}...]`                                      | Exclude specific tables or databases when using `ALL`                                                                                                |
 | `[ON CLUSTER 'cluster_name']`                                          | Execute the backup/restore across a ClickHouse cluster                                                                                               |
@@ -193,6 +194,42 @@ Each of the commands above is detailed below:
 | `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | Store to/restore from Amazon S3 or S3-compatible storage                                                                                             |
 | `[SETTINGS ...]`                                                       | See below for complete list of settings                                                                                                              |                                                                                                                         |
 | `[ASYNC]`                                                              | Makes the operation run asynchronously (returns immediately with an ID you can monitor)                                                              |
+
+### Backing up a table without its data {#backup-without-data}
+
+`EXCEPT DATA FROM {TABLE|TABLES}` puts a table's definition in the backup without its data, so `RESTORE`
+recreates the table empty. It is useful for tables whose contents can be regenerated after a restore, for
+example the target tables of materialized views.
+
+The clause is scoped to the element it is written on:
+
+- On a `DATABASE` or `ALL` element it may name any table that element backs up:
+
+```sql
+BACKUP DATABASE mydb EXCEPT DATA FROM TABLES events, metrics TO Disk('backups', 'mydb/')
+```
+
+- On a single-object element (`TABLE`, `DICTIONARY`, `VIEW`, `TEMPORARY TABLE`) the element's own object is
+  the only one in scope, so the clause must name it and nothing else. Give every table its own element and
+  its own clause:
+
+```sql
+-- Backs up both tables, without the data of `t1`
+BACKUP TABLE mydb.t1 EXCEPT DATA FROM TABLE mydb.t1, TABLE mydb.t2 TO Disk('backups', 'tables/')
+
+-- Rejected: the clause of the `mydb.t2` element names a different table
+BACKUP TABLE mydb.t1, TABLE mydb.t2 EXCEPT DATA FROM TABLE mydb.t1 TO Disk('backups', 'tables/')
+```
+
+If a table is named both by an element of its own and by the `EXCEPT DATA FROM` clause of a wider element,
+its data **is** backed up: an element asking for a table asks for its data. This matches `EXCEPT TABLES`,
+where a table named explicitly is backed up even though a wider element excludes it.
+
+The data of the inner table of a materialized view (or of the inner tables of a `TimeSeries` table) is
+excluded through the outer object's name; inner table names are not accepted by the clause.
+
+`EXCEPT DATA FROM {TABLE|TABLES}` is only valid for `BACKUP`. `RESTORE` rejects it, rather than accepting it
+as a no-op.
 
 ### Settings {#settings}
 

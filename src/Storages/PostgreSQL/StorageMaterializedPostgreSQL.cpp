@@ -1,6 +1,7 @@
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 #include <Core/UUID.h>
+#include <Backups/BackupEntriesCollector.h>
 
 #if USE_LIBPQXX
 #include <Common/logger_useful.h>
@@ -38,6 +39,8 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
 #include <Storages/StoragePostgreSQL.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <QueryPipeline/Pipe.h>
 
@@ -56,6 +59,7 @@ namespace MaterializedPostgreSQLSetting
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_extended_date_and_time_types;
 }
+
 
 namespace ErrorCodes
 {
@@ -413,6 +417,17 @@ void StorageMaterializedPostgreSQL::backupData(
             "finished its initial synchronization from PostgreSQL yet). Failing closed instead of producing a "
             "backup with table metadata but no data.",
             getStorageID().getNameForLogs());
+
+    /// Check if the OUTER MaterializedPostgreSQL table's data is excluded via EXCEPT DATA FROM TABLE.
+    auto outer_storage_id = getStorageID();
+    QualifiedTableName outer_name{outer_storage_id.database_name, outer_storage_id.table_name};
+    if (backup_entries_collector.isTableDataExcluded(outer_name))
+    {
+        LOG_TRACE(getLogger("StorageMaterializedPostgreSQL"),
+                  "Skipping nested table data for MaterializedPostgreSQL table {} (outer table excluded via EXCEPT DATA FROM TABLE)",
+                  outer_storage_id.getNameForLogs());
+        return;
+    }
 
     nested->backupData(backup_entries_collector, data_path_in_backup, partitions);
 }

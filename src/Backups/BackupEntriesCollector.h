@@ -68,6 +68,11 @@ public:
     /// 1) we need to join (in a backup) the data of replicated tables gathered on different hosts.
     void addPostTask(std::function<void()> task);
 
+    /// Returns true if the table's data is excluded via EXCEPT DATA FROM TABLE.
+    /// Used by delegated storages (MaterializedView, TimeSeries, MaterializedPostgreSQL) to check
+    /// the OUTER table's exclusion state before delegating backupData() to inner/nested tables.
+    bool isTableDataExcluded(const QualifiedTableName & table_name) const;
+
 private:
     void calculateRootPathInBackup();
 
@@ -85,8 +90,10 @@ private:
         const std::optional<String> & table_name,
         bool throw_if_table_not_found,
         const std::optional<ASTs> & partitions,
+        bool exclude_table_data,
         bool all_tables,
-        const std::set<DatabaseAndTableName> & except_table_names);
+        const std::set<DatabaseAndTableName> & except_table_names,
+        const std::set<DatabaseAndTableName> & except_data_table_names);
 
     void gatherTablesMetadata();
     std::vector<std::pair<ASTPtr, StoragePtr>> findTablesInDatabase(const String & database_name) const;
@@ -101,6 +108,7 @@ private:
         const QualifiedTableName & table_name,
         /// Used in the Cloud build.
         [[maybe_unused]] const StoragePtr & storage,
+        const ASTPtr & create_table_query,
         const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const;
 
     void addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry);
@@ -154,12 +162,25 @@ private:
         {
             bool throw_if_table_not_found = false;
             std::optional<ASTs> partitions;
+
+            /// The table was named by a single-table element (TABLE/DICTIONARY/VIEW/TEMPORARY TABLE) which
+            /// carried EXCEPT DATA FROM TABLE, and by no such element which didn't. An element asking for the
+            /// table without that clause asks for its data, so it keeps the data in the backup: we would
+            /// rather back up data the user meant to exclude than silently drop data they asked for.
+            bool except_data = false;
         };
 
+        /// Tables named explicitly by single-table elements of the BACKUP query.
         std::unordered_map<String, TableParams> tables;
 
         bool all_tables = false;
         std::unordered_set<String> except_table_names;
+
+        /// Tables excluded by EXCEPT DATA FROM TABLE/TABLES written on a DATABASE or ALL element covering this
+        /// database. It never holds exclusions coming from a single-table element: those are element-scoped and
+        /// live in `tables[...].except_data`, so a clause written on one element cannot change another element's
+        /// tables. See `isTableDataExcluded` for how the two are combined.
+        std::unordered_set<String> except_data_table_names;
     };
 
     struct TableInfo

@@ -1061,7 +1061,6 @@ def test_table_in_replicated_database_with_not_synced_def():
         "SELECT name, type FROM system.columns WHERE database='mydb' AND table='tbl'"
     ) == TSV([["x", "String"], ["y", "String"]])
 
-
 def has_mutation_in_backup(mutation_id, backup_name, database, table):
     return (
         os.path.exists(
@@ -1277,3 +1276,71 @@ def test_replicated_table_after_alters():
     assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV(
         [[1, 0, 0], [2, 20, 0], [3, 30, 300]]
     )
+def test_except_data_from_table_on_cluster():
+    """
+    Regression test for EXCEPT DATA FROM TABLE clause distribution to worker hosts.
+
+    Before commits ba96353/3cc6fc2, the EXCEPT DATA FROM TABLE clause was lost when
+    BackupsWorker::sendQueryToOtherHosts formatted the query to send to worker nodes,
+    causing worker hosts to back up table data instead of just DDL. This test verifies
+    that after BACKUP ... EXCEPT DATA FROM TABLE ... ON CLUSTER, all nodes restore
+    the table structure but not the data.
+    """
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster3' ("
+        "x UInt32, y String"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY x"
+    )
+
+    # Insert data on multiple nodes
+    node1.query("INSERT INTO tbl VALUES (1, 'node1_a'), (2, 'node1_b')")
+    node2.query("INSERT INTO tbl VALUES (3, 'node2_a'), (4, 'node2_b')")
+    node3.query("INSERT INTO tbl VALUES (5, 'node3_a'), (6, 'node3_b')")
+
+    # Sync all replicas
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster3' tbl")
+
+    # Verify all nodes have the data before backup
+    expected_before = TSV(
+        [[1, "node1_a"], [2, "node1_b"], [3, "node2_a"],
+         [4, "node2_b"], [5, "node3_a"], [6, "node3_b"]]
+    )
+    assert node1.query("SELECT * FROM tbl ORDER BY x") == expected_before
+    assert node2.query("SELECT * FROM tbl ORDER BY x") == expected_before
+    assert node3.query("SELECT * FROM tbl ORDER BY x") == expected_before
+
+    backup_name = new_backup_name()
+
+    # CRITICAL: This is the clause that was being lost on worker hosts before the fix.
+    # The initiator (node1) would correctly exclude data, but worker nodes (node2, node3)
+    # would back up data because the EXCEPT DATA FROM TABLE clause was stripped during
+    # the format-and-send step in BackupsWorker::sendQueryToOtherHosts.
+    node1.query(
+        f"BACKUP TABLE tbl EXCEPT DATA FROM TABLE tbl ON CLUSTER 'cluster3' TO {backup_name}"
+    )
+
+    # Drop table on all nodes
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster3' SYNC")
+
+    # Restore from backup
+    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster3' FROM {backup_name}")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster3' tbl")
+
+    # Verify table structure exists on all nodes (columns match)
+    expected_schema = TSV([["x", "UInt32"], ["y", "String"]])
+    assert node1.query(
+        "SELECT name, type FROM system.columns WHERE database='default' AND table='tbl' ORDER BY name"
+    ) == expected_schema
+    assert node2.query(
+        "SELECT name, type FROM system.columns WHERE database='default' AND table='tbl' ORDER BY name"
+    ) == expected_schema
+    assert node3.query(
+        "SELECT name, type FROM system.columns WHERE database='default' AND table='tbl' ORDER BY name"
+    ) == expected_schema
+
+    # VERIFY THE FIX: All nodes should have zero rows (data was excluded from backup)
+    # Before the fix, worker nodes would have 6 rows because they backed up data.
+    assert node1.query("SELECT count() FROM tbl") == "0\n"
+    assert node2.query("SELECT count() FROM tbl") == "0\n"
+    assert node3.query("SELECT count() FROM tbl") == "0\n"
