@@ -506,6 +506,31 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     auto res_values = values->cloneEmpty();
     res_values->insertDefault();
 
+    auto insert_run = [&](size_t value_index, size_t output_start, size_t length)
+    {
+        if (value_index == 0)
+            return;
+
+        if (length == 1)
+        {
+            res_values->insertFrom(*values, value_index);
+            res_offsets_data.push_back(output_start);
+            return;
+        }
+
+        res_values->insertManyFrom(*values, value_index, length);
+        for (size_t i = 0; i < length; ++i)
+            res_offsets_data.push_back(output_start + i);
+    };
+
+    auto get_run_end = [&](size_t start)
+    {
+        size_t end = start + 1;
+        while (end < limit && indexes[end] == indexes[start])
+            ++end;
+        return end;
+    };
+
     /// If we need to permute full column, or if limit is large enough,
     /// it's better to save indexes of values in O(size)
     /// and avoid binary search for obtaining every index.
@@ -520,26 +545,20 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
         for (size_t i = 0; i < _size; ++i, ++offset_it)
             values_index[i] = offset_it.getValueIndex();
 
-        for (size_t i = 0; i < limit; ++i)
+        for (size_t i = 0; i < limit;)
         {
-            size_t index = values_index[indexes[i]];
-            if (index != 0)
-            {
-                res_values->insertFrom(*values, index);
-                res_offsets_data.push_back(i);
-            }
+            size_t run_end = get_run_end(i);
+            insert_run(values_index[indexes[i]], i, run_end - i);
+            i = run_end;
         }
     }
     else
     {
-        for (size_t i = 0; i < limit; ++i)
+        for (size_t i = 0; i < limit;)
         {
-            size_t index = getValueIndex(indexes[i]);
-            if (index != 0)
-            {
-                res_values->insertFrom(*values, index);
-                res_offsets_data.push_back(i);
-            }
+            size_t run_end = get_run_end(i);
+            insert_run(getValueIndex(indexes[i]), i, run_end - i);
+            i = run_end;
         }
     }
 
