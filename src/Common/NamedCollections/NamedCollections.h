@@ -4,7 +4,9 @@
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 
+#include <map>
 #include <mutex>
+#include <optional>
 
 
 namespace Poco { namespace Util { class AbstractConfiguration; } }
@@ -58,8 +60,14 @@ public:
 
     /// Record that `key` was overridden by a user query argument (e.g. `s3(collection, key = ...)`) rather
     /// than coming from the stored collection, so callers can keep operator and user values distinct.
+    /// Must be called before the override is written into the collection: it remembers the stored
+    /// value the override replaces (see `getValueBeforeQueryOverride`).
     void markQueryOverridden(const Key & key);
     bool isQueryOverridden(const Key & key) const;
+    /// The value the collection itself stored for a query-overridden `key` at the time it was marked
+    /// (see `markQueryOverridden`); nullopt when the collection had no such key or the key was not
+    /// marked as overridden.
+    std::optional<String> getValueBeforeQueryOverride(const Key & key) const;
 
     template <bool locked = false> void remove(const Key & key);
 
@@ -108,6 +116,7 @@ protected:
     const bool is_mutable;
     const SourceId source_id;
     Keys query_overridden_keys;
+    std::map<Key, String, std::less<>> values_before_query_override;
     mutable std::mutex mutex;
 };
 

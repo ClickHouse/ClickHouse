@@ -57,6 +57,7 @@ class ClickHouseService:
             src_dir / "config.d",
             config_dir / "config.d",
             symlinks=False,
+            ignore=shutil.ignore_patterns("keeper_port.xml"),
         )
 
     def __enter__(self):

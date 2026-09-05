@@ -101,7 +101,9 @@ struct ProjectionDescription
         const ColumnsDescription & columns,
         const KeyDescription * partition_key,
         const ContextPtr & query_context,
-        LoadingStrictnessLevel mode = LoadingStrictnessLevel::ATTACH);
+        LoadingStrictnessLevel mode = LoadingStrictnessLevel::ATTACH,
+        /// Of the `ATTACH` carrying this projection; leave the default when the definition is not attached
+        bool attach_short_syntax = true);
 
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,
@@ -199,6 +201,9 @@ struct ProjectionsDescription : public IHints<>
     void
     add(ProjectionDescription && projection, const String & after_projection = String(), bool first = false, bool if_not_exists = false);
     void remove(const String & projection_name, bool if_exists);
+
+    /// Replace an existing projection in place, keeping its position (for `ALTER TABLE ... MODIFY PROJECTION`).
+    void replace(ProjectionDescription && projection);
 
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 

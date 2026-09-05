@@ -42,43 +42,99 @@ Pour démarrer le processus d’onboarding, veuillez [nous contacter](https://cl
 Préparez un nouveau compte AWS, un projet GCP ou un abonnement Azure au sein de votre organisation.
 
 <Steps>
-  <Step title="Choisissez un fournisseur Cloud" id="choose-cloud-provider">
-    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choisir un CSP" background="black" />
+  <Step title="Choisissez un fournisseur de services cloud" id="choose-cloud-provider">
+    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="Sélectionner un CSP pour BYOC" background="black" />
   </Step>
 
-  <Step title="Configuration du compte/projet/abonnement" id="account-setup">
-    La configuration initiale de BYOC peut être effectuée à l&#39;aide d&#39;un [modèle CloudFormation (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml), d&#39;un [module Terraform (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) ou d&#39;un [module Terraform (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). Elle crée une identité hautement privilégiée (rôle IAM/compte de service/principal de service), qui permet aux contrôleurs BYOC de ClickHouse Cloud de gérer votre infrastructure.
+  <Step title="Configuration du compte, du projet ou de l’abonnement" id="account-setup">
+    La configuration initiale de BYOC peut être effectuée à l’aide d’un [modèle CloudFormation (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml), d’un [module Terraform (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) ou d’un [module Terraform (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). Elle crée une identité hautement privilégiée (rôle IAM/compte de service/principal de service), permettant aux contrôleurs BYOC de ClickHouse Cloud de gérer votre infrastructure.
 
-    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialiser le compte" background="black" />
+    <Warning>
+      **Appliquez les artefacts d’onboarding exactement tels qu’ils sont fournis.** Ne modifiez rien dans le modèle CloudFormation ou le module Terraform — notamment en renommant des ressources ou en ajoutant des paramètres tels que `PermissionsBoundary` — sans l’accord explicite de ClickHouse. L’automatisation de ClickHouse dépend des ressources exactes créées par ces artefacts ; les personnalisations prises en charge sont exposées sous forme de paramètres. En particulier, sur AWS, le rôle IAM doit conserver son nom par défaut, `ClickHouseManagementRole` — sans préfixe ni suffixe — sauf si ClickHouse a explicitement accepté au préalable un autre nom. Le module Terraform expose techniquement une entrée `role_name`, mais l’automatisation de ClickHouse doit être configurée en conséquence ; la modifier sans coordination (ou renommer le rôle dans le modèle CloudFormation, qui ne propose pas ce paramètre) crée une pile qui s’applique correctement, mais dont le provisionnement de l’infrastructure échoue, car ClickHouse ne peut pas assumer le rôle attendu.
+    </Warning>
+
+    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="Initialiser un compte BYOC" background="black" />
 
     <Note>
-      Les buckets de stockage, le VPC/VNet, le cluster Kubernetes et les ressources de calcul nécessaires à l&#39;exécution de ClickHouse ne sont pas inclus dans cette configuration initiale. Ils seront provisionnés à l&#39;étape suivante.
+      Les buckets de stockage, le VPC/VNet, le cluster Kubernetes et les ressources de calcul nécessaires à l’exécution de ClickHouse ne sont pas inclus dans cette configuration initiale. Ils seront provisionnés à l’étape suivante.
     </Note>
 
-    #### Module Terraform alternatif pour AWS
+    #### Module Terraform pour AWS
 
-    Si vous préférez utiliser Terraform plutôt que CloudFormation pour les déploiements AWS, nous proposons également un [module Terraform pour AWS](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz).
-
-    Utilisation :
+    Si vous préférez utiliser Terraform plutôt que CloudFormation pour les déploiements AWS, utilisez le module [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) :
 
     ```hcl
     module "clickhouse_onboarding" {
-      source   = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
-      byoc_env = "production"
+      source      = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+      external_id = "<external-id-provided-by-clickhouse>"
     }
     ```
+
+    Remplacez `<version>` par le dernier tag de la [page des versions](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) du module — utilisez toujours la version la plus récente.
+
+    Le module génère `clickhouse_management_role_arn`. Dans le flux standard, vous n’avez rien à faire avec cette sortie — l’onboarding se poursuit dans la console ClickHouse Cloud — mais conservez-la à portée de main : ClickHouse vous la demandera si votre configuration diffère des valeurs par défaut (par exemple, si vous utilisez un nom de rôle personnalisé coordonné).
+
+    <Note>
+      Le module était auparavant distribué sous forme de tarball à l’adresse `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. Cette URL reste disponible, mais est obsolète — utilisez le module GitHub ci-dessus.
+    </Note>
+
+    #### ID externe AWS
+
+    Sur AWS, le rôle IAM créé lors de la configuration fait confiance à ClickHouse Cloud via un [ID externe](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) afin de se protéger contre les attaques de délégation confuse. La console ClickHouse Cloud génère un ID externe pour votre compte AWS lorsque vous démarrez l’onboarding et le préremplit dans le lien CloudFormation ; si vous utilisez Terraform, transmettez cette même valeur dans `external_id`. Toutes les infrastructures BYOC d’un même compte AWS partagent le même ID externe.
+
+    <Note>
+      Les infrastructures BYOC intégrées avant l’introduction des ID externes utilisent la valeur d’espace réservé `emptyid` pour assurer la compatibilité ascendante. La console affiche cette valeur lorsque vous ajoutez une infrastructure à un compte AWS disposant déjà d’un déploiement legacy, afin que toutes les infrastructures du compte conservent une configuration de confiance cohérente. Si vous souhaitez passer à un ID externe unique, contactez ClickHouse Support.
+    </Note>
   </Step>
 
-  <Step title="Configurer l'infrastructure BYOC" id="setup-byoc-infrastructure">
-    Vous serez invité à configurer l&#39;infrastructure, y compris les buckets de stockage objet, le VPC/VNet et le cluster Kubernetes, depuis la console ClickHouse Cloud. Certaines configurations doivent être définies à ce stade, car elles ne pourront pas être modifiées par la suite. Plus précisément :
+  <Step title="Configurez l’infrastructure BYOC" id="setup-byoc-infrastructure">
+    Vous serez invité à configurer l’infrastructure, notamment les buckets de stockage d’objets, le VPC/VNet et le cluster Kubernetes, depuis la console ClickHouse Cloud. Certains paramètres doivent être définis à ce stade, car ils ne pourront pas être modifiés ultérieurement. Plus précisément :
 
-    * **Région** : toutes les **régions publiques** répertoriées dans notre documentation [régions prises en charge](/fr/products/cloud/reference/supported-regions) sont disponibles pour les déploiements BYOC. Les régions privées ne sont pas prises en charge actuellement.
+    * **Région** : toutes les **régions publiques** répertoriées dans notre documentation sur les [régions prises en charge](/fr/products/cloud/reference/supported-regions) sont disponibles pour les déploiements BYOC. Les régions privées ne sont actuellement pas prises en charge.
 
-    * **Plage CIDR du VPC/VNet** : par défaut, nous utilisons `10.0.0.0/16` pour la plage CIDR du VPC BYOC (AWS/GCP) ou du VNet (Azure). Si vous prévoyez d&#39;utiliser le VPC/VNet peering avec un autre compte, assurez-vous que les plages CIDR ne se chevauchent pas. Allouez à BYOC une plage CIDR appropriée, d&#39;une taille minimale de `/23`, afin d&#39;accueillir les workloads nécessaires.
+    * **Plage CIDR du VPC/VNet** : par défaut, nous utilisons `10.0.0.0/16` pour la plage CIDR du VPC BYOC (AWS/GCP) ou du VNet (Azure). Si vous prévoyez d’utiliser le peering VPC/VNet avec un autre compte, assurez-vous que les plages CIDR ne se chevauchent pas. La taille minimale varie selon le cloud :
 
-    * **Zones de disponibilité** : si vous prévoyez d&#39;utiliser le VPC peering, aligner les zones de disponibilité entre les comptes source et BYOC peut aider à réduire les coûts du trafic inter-AZ. Par exemple, dans AWS, les suffixes de zone de disponibilité (`a`, `b`, `c`) peuvent correspondre à des identifiants de zone physique différents selon les comptes. Consultez le [guide AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) pour plus de détails.
+      * **AWS** : `/23`
+      * **Azure** : `/23`
+      * **GCP** : `/20`
 
-    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC configurer l’infrastructure" background="black" />
+      Ces valeurs sont des minimums, et non des recommandations : chaque réplique consomme des adresses IP, les déploiements plus importants nécessitent donc une plage plus large.
+
+    * **Zones de disponibilité** : si vous prévoyez d’utiliser le peering VPC, l’alignement des zones de disponibilité entre les comptes source et BYOC peut contribuer à réduire les coûts de trafic inter-AZ. Par exemple, dans AWS, les suffixes de zone de disponibilité (`a`, `b`, `c`) peuvent correspondre à différents ID de zones physiques selon les comptes. Consultez le [guide AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) pour plus de détails.
+
+    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="Configurez l’infrastructure BYOC" background="black" />
+
+    #### Validation préalable
+
+    Lorsque vous cliquez sur **Set up Infrastructure**, ClickHouse Cloud exécute une série de contrôles préalables en **lecture seule** sur votre compte avant de créer la moindre ressource. Si tout est validé, le provisionnement se poursuit. Si un contrôle échoue, la configuration est interrompue et la console indique précisément le problème, afin que vous puissiez le corriger avant que des ressources ne soient créées.
+
+    Les checks confirment que :
+
+    * **Autorisations** — l’identité de gestion (rôle IAM / compte de service / principal de service) dispose des autorisations dont ClickHouse Cloud a besoin pour provisionner et exploiter votre déploiement.
+    * **Services activés** *(GCP)* — les API Google Cloud requises (Compute Engine, Kubernetes Engine, Cloud Storage, Network Connectivity, IAM) sont activées pour votre projet.
+    * **Réseau** *(AWS avec votre propre VPC)* — votre VPC et vos sous-réseaux répondent aux [exigences réseau](/fr/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc) : tailles des sous-réseaux, tags requis, répartition entre les zones de disponibilité, connectivité sortante et adresses IP disponibles.
+    * **Quotas et garde-fous** *(AWS)* — votre compte dispose de quotas de service suffisants (VPC, passerelles NAT, Elastic IP, clusters EKS, vCPU) et aucune stratégie d’organisation (SCP) ne bloque une action requise.
+
+    Lorsque des checks échouent, chacun est répertorié avec l’action à laquelle il correspond et la raison de l’échec (par exemple, `iam:CreateRole · explicitDeny`). Développez **Show passed checks** pour passer en revue tout ce qui a réussi.
+
+    <Image img="/images/cloud/reference/byoc-onboarding-preflight-failed.png" size="lg" alt="Signalement des vérifications de configuration Cloud ayant échoué lors de la validation préalable de BYOC" background="black" />
+
+    Pour corriger ces échecs, réexécutez la dernière pile CloudFormation ou Terraform de ClickHouse — ou accordez les actions signalées à l’identité de gestion (rôle IAM / compte de service / principal de service) — puis choisissez l’une des options suivantes :
+
+    * **Revérifier** — relance les vérifications préalables. Utilisez cette option après avoir corrigé les problèmes signalés afin de confirmer que votre configuration est prête avant le provisionnement.
+    * **Continuer quand même** — poursuit le provisionnement malgré les vérifications ayant échoué. Utilisez cette option uniquement si vous êtes certain qu’un échec signalé est un faux positif ; sinon, le provisionnement risque d’échouer en cours de route.
+
+    Utilisez le tableau ci-dessous pour résoudre les échecs courants.
+
+    | Erreur de validation                                                                                                                                                                                                    | Cause probable                                                                                                                                        | Comment résoudre le problème                                                                                                                                                            |
+    | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | **Impossible d’assumer le rôle de gestion** *(AWS)*                                                                                                                                                                     | La pile d’onboarding n’a pas été appliquée correctement, ou le rôle ou l’ID externe ne correspondent pas                                              | Réexécutez la pile d’onboarding la plus récente et vérifiez que l’[ID externe](#aws-external-id) affiché dans la console correspond à celui figurant dans votre stratégie d’approbation |
+    | **Impossible d’usurper le compte de service de gestion** *(GCP)*                                                                                                                                                        | Le Terraform d’onboarding n’a pas été finalisé, ou le compte de service `clickhouse-management` est absent ou n’autorise pas ClickHouse à l’emprunter | Réexécutez le dernier Terraform d’onboarding et vérifiez que le compte de service `clickhouse-management` existe et autorise ClickHouse à l’emprunter                                   |
+    | **Autorisation manquante** (p. ex. créer un VPC, créer un rôle IAM, créer un cluster Kubernetes)                                                                                                                        | L’identité de gestion ne dispose pas d’une autorisation requise — souvent en raison d’une pile personnalisée ou obsolète                              | Réexécutez la pile d’onboarding la plus récente, qui accorde l’ensemble complet des autorisations ; si vous restreignez intentionnellement les autorisations, ajoutez celle signalée    |
+    | **API requise non activée** *(GCP)*                                                                                                                                                                                     | Une API de service Google Cloud requise est désactivée pour le projet                                                                                 | Activez-la, par exemple avec `gcloud services enable compute.googleapis.com --project <your-project>`                                                                                   |
+    | **Problème de configuration du sous-réseau ou du VPC** *(AWS bring-your-own-VPC)* — plage CIDR trop petite, tag manquant, trop peu de zones de disponibilité, absence d’egress sortant ou trop peu d’adresses IP libres | Le VPC fourni ne satisfait pas aux exigences réseau de BYOC                                                                                           | Ajustez le VPC afin de respecter les [exigences réseau](/fr/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc)                                             |
+    | **QUOTA de service insuffisant** *(AWS)*                                                                                                                                                                                | Le quota de votre compte pour une ressource requise est trop faible                                                                                   | Demandez une augmentation de quota à votre fournisseur de services cloud ; consultez les [limites de service AWS](/fr/products/bring-your-own-cloud/reference/aws-service-limits)          |
+    | **Bloqué par une politique d’organisation / SCP** *(AWS)*                                                                                                                                                               | Une règle de protection de l’organisation interdit une action requise pour le compte                                                                  | Collaborez avec votre administrateur cloud pour autoriser cette action pour le compte BYOC                                                                                              |
   </Step>
 </Steps>
 

@@ -44,17 +44,17 @@ TEST(ApplyPatches, TypeMismatchCastsPatch)
     patch_block.insert({patch_value_col->getPtr(), std::make_shared<DataTypeUInt64>(), "value"});
     patch_block.insert({patch_version_col->getPtr(), std::make_shared<DataTypeUInt64>(), PartDataVersionColumn::name});
 
-    /// ---------- build PatchToApply ----------
-    auto patch = std::make_shared<PatchToApply>();
+    /// ---------- build PatchIndices ----------
+    auto patch = std::make_shared<PatchIndices>();
     patch->patch_blocks.push_back(std::move(patch_block));
     patch->result_row_indices.push_back(1);  /// update row 1
     patch->patch_row_indices.push_back(0);   /// from patch row 0
 
-    PatchesToApply patches{std::move(patch)};
+    PatchesIndices patches{std::move(patch)};
     Block versions_block;
 
     /// ---------- apply ----------
-    applyPatchesToBlock(result_block, versions_block, patches, {"value"}, /*source_data_version=*/ 1);
+    applyPatchesIndices(result_block, versions_block, patches, getUpdatedHeader(patches), /*source_data_version=*/ 1);
 
     /// ---------- verify ----------
     /// The patch has UInt64 type while the result has String type.
@@ -93,15 +93,15 @@ TEST(ApplyPatches, SameTypeAppliesPatch)
     patch_block.insert({patch_value_col->getPtr(), std::make_shared<DataTypeUInt64>(), "value"});
     patch_block.insert({patch_version_col->getPtr(), std::make_shared<DataTypeUInt64>(), PartDataVersionColumn::name});
 
-    auto patch = std::make_shared<PatchToApply>();
+    auto patch = std::make_shared<PatchIndices>();
     patch->patch_blocks.push_back(std::move(patch_block));
     patch->result_row_indices.push_back(1);
     patch->patch_row_indices.push_back(0);
 
-    PatchesToApply patches{std::move(patch)};
+    PatchesIndices patches{std::move(patch)};
     Block versions_block;
 
-    applyPatchesToBlock(result_block, versions_block, patches, {"value"}, /*source_data_version=*/ 1);
+    applyPatchesIndices(result_block, versions_block, patches, getUpdatedHeader(patches), /*source_data_version=*/ 1);
 
     const auto & col = result_block.getByName("value").column;
     ASSERT_EQ(col->size(), 3u);
@@ -141,7 +141,7 @@ TEST(ApplyPatches, MixedTypeSourcesCastsAll)
     p1_block.insert({p1_value->getPtr(), std::make_shared<DataTypeUInt64>(), "value"});
     p1_block.insert({p1_version->getPtr(), std::make_shared<DataTypeUInt64>(), PartDataVersionColumn::name});
 
-    auto patch1 = std::make_shared<PatchToApply>();
+    auto patch1 = std::make_shared<PatchIndices>();
     patch1->patch_blocks.push_back(std::move(p1_block));
     patch1->result_row_indices.push_back(1);
     patch1->patch_row_indices.push_back(0);
@@ -156,15 +156,15 @@ TEST(ApplyPatches, MixedTypeSourcesCastsAll)
     p2_block.insert({p2_value->getPtr(), std::make_shared<DataTypeString>(), "value"});
     p2_block.insert({p2_version->getPtr(), std::make_shared<DataTypeUInt64>(), PartDataVersionColumn::name});
 
-    auto patch2 = std::make_shared<PatchToApply>();
+    auto patch2 = std::make_shared<PatchIndices>();
     patch2->patch_blocks.push_back(std::move(p2_block));
     patch2->result_row_indices.push_back(2);
     patch2->patch_row_indices.push_back(0);
 
-    PatchesToApply patches{std::move(patch1), std::move(patch2)};
+    PatchesIndices patches{std::move(patch1), std::move(patch2)};
     Block versions_block;
 
-    applyPatchesToBlock(result_block, versions_block, patches, {"value"}, /*source_data_version=*/ 1);
+    applyPatchesIndices(result_block, versions_block, patches, getUpdatedHeader(patches), /*source_data_version=*/ 1);
 
     const auto & col = result_block.getByName("value").column;
     ASSERT_EQ(col->size(), 4u);

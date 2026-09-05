@@ -86,6 +86,19 @@ public:
         bool use_query_condition_cache = true) const;
 
     static MarkRanges markRangesFromPKRange(
+        const MergeTreeData::DataPartPtr & part,
+        const MarkRanges & part_ranges,
+        size_t part_starting_offset_in_query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const KeyCondition & key_condition,
+        const KeyCondition * part_offset_condition,
+        const KeyCondition * total_offset_condition,
+        MarkRanges * exact_ranges,
+        const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
+        const Settings & settings,
+        LoggerPtr log);
+
+    static MarkRanges markRangesFromPKRange(
         const RangesInDataPart & part_with_ranges,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
@@ -100,7 +113,7 @@ public:
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
         const std::optional<KeyCondition> & key_condition_rpn_template,
-        MergeTreeData::DataPartPtr part,
+        const MergeTreeDataPartInfoForReaderPtr & part_info,
         const MarkRanges & ranges,
         const RangesInDataPartReadHints & in_read_hints,
         const MergeTreeReaderSettings & reader_settings,
@@ -112,7 +125,7 @@ public:
         LoggerPtr log);
 
     static MergeTreeIndexBulkGranulesMinMaxPtr getMinMaxIndexGranules(
-        MergeTreeData::DataPartPtr part,
+        const MergeTreeDataPartInfoForReaderPtr & part_info,
         MergeTreeIndexPtr skip_index_minmax,
         const MarkRanges & ranges,
         int direction,
@@ -240,6 +253,7 @@ public:
         bool find_exact_ranges;
         bool is_parallel_reading_from_replicas;
         bool has_projections;
+        bool check_row_limits;
         ReadFromMergeTree::AnalysisResult & result;
     };
 
@@ -293,7 +307,7 @@ public:
     static RowLimits getRowLimits(const Settings & settings, const SelectQueryInfo & query_info);
 
     static MarkRanges mergePartialResultsForDisjunctions(
-        MergeTreeData::DataPartPtr part,
+        const IMergeTreeDataPartInfoForReader & part_info,
         const MarkRanges & ranges,
         const KeyCondition & rpn_template_for_eval_result,
         const PartialDisjunctionResult & partial_eval_results,

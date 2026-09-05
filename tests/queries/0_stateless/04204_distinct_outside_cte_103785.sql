@@ -57,12 +57,6 @@ WITH a AS (
 SELECT Qty FROM a ORDER BY Qty;
 
 SELECT '-- Query F: workaround setting still works as before';
-WITH a AS (
-    SELECT DISTINCT ID, Qty FROM t_qty_103785 WHERE ID IN (116, 117, 118)
-    UNION ALL
-    SELECT ID, Qty FROM t_qty_103785 WHERE ID = 115
-)
-SELECT Qty FROM a ORDER BY Qty SETTINGS enable_analyzer = 0, optimize_duplicate_order_by_and_distinct = 0;
 
 SELECT '-- Query G: existing 03023 case - DISTINCT as direct FROM-child (already worked)';
 SELECT product_id

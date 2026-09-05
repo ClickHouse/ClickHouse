@@ -30,6 +30,8 @@ Using the text index header cache can significantly reduce latency and increase 
 
 Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dictionary.
 
+The accelerated patterns are `%value%`, `value%` and `%value`, as well as the `startsWith` and `endsWith` calls that `optimize_rewrite_like_perfect_affix` rewrites into `value%` and `%value`.
+
 ## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

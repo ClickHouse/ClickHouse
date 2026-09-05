@@ -258,7 +258,7 @@ fmt.Printf("row: col1=%v, col2=%v, col3=%v\n", col1, col2, col3)
   ### Nested
 </div>
 
-Поле Nested эквивалентно Array из именованных Tuple. Использование зависит от того, установил ли пользователь для [flatten&#95;nested](/ru/reference/settings/session-settings#flatten_nested) значение 1 или 0.
+Поле Nested эквивалентно Array из именованных Tuple. Использование зависит от того, установил ли пользователь для [flatten&#95;nested](/ru/reference/settings/session-settings/other#flatten_nested) значение 1 или 0.
 
 Если установить flatten&#95;nested в 0, столбцы Nested останутся единым массивом Tuple. Это позволяет использовать срезы map для вставки и извлечения, а также произвольные уровни вложенности. Ключ map должен совпадать с именем столбца, как показано в примере ниже.
 
@@ -357,7 +357,7 @@ for rows.Next() {
     }
     fmt.Printf("row: col1=%v, col2=%v\n", col1, col2)
 }
-// ПРИМЕЧАНИЕ: Не пропускайте проверку rows.Err()
+// NOTE: Do not skip rows.Err() check
 if err := rows.Err(); err != nil {
     return err
 }

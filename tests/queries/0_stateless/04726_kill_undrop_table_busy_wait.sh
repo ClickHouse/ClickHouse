@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-ordinary-database, no-replicated-database
+# Tag no-ordinary-database, no-replicated-database: `UNDROP TABLE` is not supported by these database engines.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

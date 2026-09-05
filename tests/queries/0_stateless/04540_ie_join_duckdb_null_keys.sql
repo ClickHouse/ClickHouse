@@ -19,14 +19,14 @@ SELECT * FROM tt t1 JOIN tt t2 ON t1.x < t2.x AND t1.y < t2.y ORDER BY t1.z, t2.
 CREATE TABLE tt2 (x Int32) ENGINE = MergeTree ORDER BY x;
 INSERT INTO tt2 SELECT number FROM numbers(10);
 
-SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT count() FROM (SELECT if(x < 100, NULL, 99) AS x, if(x < 100, 99, 99) AS y FROM tt2) t1 JOIN tt2 t2 ON t1.x < t2.x AND t1.y < t2.x) WHERE explain LIKE '%IEJoin%';
-SELECT count() FROM (SELECT if(x < 100, NULL, 99) AS x, if(x < 100, 99, 99) AS y FROM tt2) t1 JOIN tt2 t2 ON t1.x < t2.x AND t1.y < t2.x;
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT count() FROM (SELECT materialize(if(x < 100, NULL, 99)) AS x, materialize(if(x < 100, 99, 99)) AS y FROM tt2) t1 JOIN tt2 t2 ON t1.x < t2.x AND t1.y < t2.x) WHERE explain LIKE '%IEJoin%';
+SELECT count() FROM (SELECT materialize(if(x < 100, NULL, 99)) AS x, materialize(if(x < 100, 99, 99)) AS y FROM tt2) t1 JOIN tt2 t2 ON t1.x < t2.x AND t1.y < t2.x;
 
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT * FROM tt t1 LEFT JOIN tt t2 ON t1.x < t2.x AND t1.y < t2.y SETTINGS join_use_nulls = 1) WHERE explain LIKE '%IEJoin%';
 SELECT * FROM tt t1 LEFT JOIN tt t2 ON t1.x < t2.x AND t1.y < t2.y ORDER BY t1.x NULLS FIRST, t1.y NULLS FIRST, t1.z, t2.x, t2.y, t2.z SETTINGS join_use_nulls = 1;
 
 -- The all-NULL first key with a LEFT join: every left row is unmatched and padded
-SELECT t1.x, t1.y FROM (SELECT if(x < 100, NULL, 99) AS x, if(x < 100, 99, 99) AS y FROM tt2) t1 LEFT JOIN tt2 t2 ON t1.x < t2.x AND t1.y < t2.x ORDER BY t1.x NULLS FIRST, t1.y NULLS FIRST SETTINGS join_use_nulls = 1;
+SELECT t1.x, t1.y FROM (SELECT materialize(if(x < 100, NULL, 99)) AS x, materialize(if(x < 100, 99, 99)) AS y FROM tt2) t1 LEFT JOIN tt2 t2 ON t1.x < t2.x AND t1.y < t2.x ORDER BY t1.x NULLS FIRST, t1.y NULLS FIRST SETTINGS join_use_nulls = 1;
 
 DROP TABLE tt;
 DROP TABLE tt2;

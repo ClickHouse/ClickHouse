@@ -12,6 +12,7 @@
 
 #include <map>
 
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -156,6 +157,9 @@ struct Settings
     Field get(std::string_view name) const;
 
     void set(std::string_view name, const Field & value);
+    /// Forcibly store `name` as a custom (string-valued) field, even when it collides with a
+    /// built-in setting. Used to transport query parameters (whose names may match a setting name).
+    void setCustom(std::string_view name, const Field & value);
     void setDefaultValue(std::string_view name);
 
     /// Whether any setting currently holds a value that was set by the `compatibility` setting.
@@ -201,6 +205,7 @@ struct Settings
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
     static bool hasBuiltin(std::string_view name);
+    static std::optional<SettingsTierType> tryGetTierOfBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 

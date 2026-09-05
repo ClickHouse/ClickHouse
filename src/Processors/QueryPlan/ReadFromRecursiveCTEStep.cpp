@@ -23,7 +23,7 @@ void ReadFromRecursiveCTEStep::initializePipeline(QueryPipelineBuilder & pipelin
     /// expression evaluation) to one thread, even on a many-core server, which is the dominant cost for
     /// queries that aggregate a large recursive CTE result. Fan the single output stream out to
     /// `max_threads` so downstream steps can process the (potentially large) output in parallel. As a side
-    /// effect this also enables the sharded `GROUP BY` optimization (`enable_sharding_aggregator`), which
+    /// effect this also enables the adaptive `GROUP BY` aggregation (`enable_adaptive_aggregator`), which
     /// requires more than one input stream.
     if (settings.max_threads > 1)
         pipeline.resize(settings.max_threads);

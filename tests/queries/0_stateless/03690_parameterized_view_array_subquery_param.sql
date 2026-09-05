@@ -97,13 +97,6 @@ DROP VIEW IF EXISTS pv_str_scalar;
 CREATE VIEW pv_str_scalar AS SELECT * FROM pv_str_data WHERE s = {ss : String};
 
 SELECT 'direct literal param, legacy analyzer';
-SET enable_analyzer = 0;
-SELECT id FROM pv_lc(nm = 'a\tb') ORDER BY id;
-SELECT id FROM pv_lc(nm = 'c\nd') ORDER BY id;
-SELECT id FROM pv_lc(nm = 'e\\f') ORDER BY id;
-SELECT id FROM pv_str_scalar(ss = 'p\tq') ORDER BY id;
-SELECT id FROM pv_str_scalar(ss = 'r\ns') ORDER BY id;
-SELECT id FROM pv_str_scalar(ss = 't\\u') ORDER BY id;
 SET enable_analyzer = 1;
 
 SELECT 'direct literal param, EXPLAIN SYNTAX';

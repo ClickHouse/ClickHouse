@@ -28,9 +28,17 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Incorrect number of arguments for aggregate function with {} suffix", getName());
 
+        /** The last argument is the condition, and saying only that its type is illegal helps nobody: the
+          * most common way to get here is forgetting the condition altogether - `sumIf(x)` - where the
+          * argument being blamed is a perfectly good argument of `sum`. Name what the argument is for and
+          * what it has to be.
+          */
         if (!isUInt8(arguments.back()) && !arguments.back()->onlyNull())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of last argument for "
-                            "aggregate function with {} suffix", arguments.back()->getName(), getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of the last argument of an aggregate function with the {} "
+                            "suffix: the last argument is the condition and must be UInt8. If the condition "
+                            "is missing, it goes after the arguments of the aggregate function",
+                            arguments.back()->getName(), getName());
 
         return DataTypes(arguments.begin(), std::prev(arguments.end()));
     }
@@ -111,13 +119,6 @@ public:
 
         filter_is_nullable = arguments[num_arguments - 1]->isNullable();
         filter_is_only_null = arguments[num_arguments - 1]->onlyNull();
-    }
-
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        auto arguments = Base::getArgumentsThatCanBeOnlyNull();
-        arguments.insert(num_arguments - 1);
-        return arguments;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -285,13 +286,6 @@ public:
             is_nullable[i] = arguments[i]->isNullable();
 
         filter_is_only_null = arguments.back()->onlyNull();
-    }
-
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        auto arguments = Base::getArgumentsThatCanBeOnlyNull();
-        arguments.insert(number_of_arguments - 1);
-        return arguments;
     }
 
     static bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments)

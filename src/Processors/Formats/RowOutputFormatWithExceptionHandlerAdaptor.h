@@ -69,6 +69,18 @@ public:
         Base::flushImpl();
     }
 
+    /// The peekable buffer writes directly into the memory of the buffer it wraps and remembers its
+    /// own write position there. Under a framing format that wrapped buffer is the framing payload
+    /// buffer, which the framing finalizes and restarts at every packet boundary, so the position
+    /// this buffer holds is stale afterwards and the next row would be written past the end of the
+    /// payload buffer. Re-attach it to the restarted buffer.
+    void reattachBuffers() override
+    {
+        if (peekable_out)
+            peekable_out->reattachToSubBuffer();
+        Base::reattachBuffers();
+    }
+
     void finalizeBuffers() override
     {
         if (peekable_out && !peekable_out->isCanceled())

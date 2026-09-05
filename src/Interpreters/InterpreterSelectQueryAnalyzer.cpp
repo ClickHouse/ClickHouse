@@ -58,6 +58,7 @@ namespace Setting
 {
 extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 extern const SettingsUInt64 automatic_parallel_replicas_mode;
+extern const SettingsBool inject_random_order_for_select_without_order_by;
 extern const SettingsParallelReplicasMode parallel_replicas_mode;
 extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
@@ -155,6 +156,18 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
         }
     }
+
+    /// Injecting `ORDER BY rand()` (the setting `inject_random_order_for_select_without_order_by`) is only valid
+    /// for a query processed up to the stage `Complete`: the injection wraps the query into
+    /// `SELECT * FROM (...) ORDER BY rand()`, and if the query is planned only up to an intermediate stage
+    /// (e.g. a child plan of a `Merge` table processed to `WithMergeableState` because a sibling child is
+    /// `Distributed`), the plan would be cut at the level of the wrapper. Then such a child would return
+    /// fully aggregated blocks without `AggregatedChunkInfo` where partially aggregated blocks are expected,
+    /// failing with a logical error in `MergingAggregatedTransform`.
+    if (settings[Setting::inject_random_order_for_select_without_order_by]
+        && select_query_options.to_stage != QueryProcessingStage::Complete)
+        result_context->setSetting("inject_random_order_for_select_without_order_by", false);
+
     return result_context;
 }
 
@@ -206,10 +219,9 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     optimization_settings.optimize_projection = false;
     optimization_settings.force_use_projection = false;
     optimization_settings.force_projection_name.clear();
-    /// Adopt the sets the single-node plan already filled. Optimizing this plan runs index analysis
-    /// over its reads, and a `col IN (subquery)` condition makes that analysis build the set on the
-    /// spot (`KeyCondition::tryPrepareSetIndexForIn`). Without this the same subqueries are executed
-    /// a second time just to plan a candidate that is usually thrown away.
+    /// Adopt the sets the single-node plan already filled.
+    /// Without this the same subqueries are executed a second time
+    /// just to plan a candidate that might be thrown away.
     reuseBuiltSets(plan, built_sets);
     plan.optimize(optimization_settings);
     return std::make_unique<QueryPlan>(std::move(plan));

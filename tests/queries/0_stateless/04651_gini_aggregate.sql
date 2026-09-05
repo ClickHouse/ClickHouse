@@ -62,31 +62,37 @@ SELECT gini(x) FROM (SELECT [1, nan, 3] :: Array(BFloat16) AS arr) ARRAY JOIN ar
 SELECT gini(x) FROM (SELECT [inf, inf] :: Array(BFloat16) AS arr) ARRAY JOIN arr AS x; -- { serverError BAD_ARGUMENTS }
 SELECT abs(gini(x) - 1.0 / 514) < 1e-15 FROM (SELECT [1, 1.0078125] :: Array(BFloat16) AS arr) ARRAY JOIN arr AS x;
 
--- Nullable input.
-SELECT gini(x) FROM (SELECT [1, NULL, 3] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
+-- Over a Nullable column the result is Nullable, NULLs are skipped, and a single
+-- remaining value still gives NaN. The plain form and the wrapped forms agree, as they do for sum.
+SELECT toTypeName(gini(x)), gini(x) FROM (SELECT [1, NULL, 3] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
+SELECT toTypeName(gini(x)), gini(x) FROM (SELECT [1, NULL] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
+SELECT toTypeName(giniIf(x, x > 1)), giniIf(x, x > 1) FROM (SELECT [1, NULL, 3] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
+SELECT toTypeName(giniDistinct(x)), giniDistinct(x) FROM (SELECT [1, NULL, 3] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
 
--- An all-NULL nullable input is treated as no values.
-SELECT gini(x) FROM (SELECT [NULL, NULL] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
+-- With no non-NULL value the result is NULL, for the plain form as well as the wrapped ones.
+SELECT toTypeName(gini(x)), isNull(gini(x)) FROM (SELECT [NULL, NULL] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
+SELECT toTypeName(giniIf(x, x > 100)), isNull(giniIf(x, x > 100)) FROM (SELECT [1, NULL, 3] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
 
--- A bare NULL preserves gini's Float64 result type and empty-input semantics.
-SELECT toTypeName(gini(NULL)), isNaN(gini(NULL));
+-- A literal NULL argument folds to Nullable(Nothing), as it does for sum.
+SELECT toTypeName(gini(NULL)), isNull(gini(NULL));
 
--- Compile-time NULL preserves the same semantics through combinators.
-SELECT toTypeName(giniIf(NULL, 1)), isNaN(giniIf(NULL, 1));
-SELECT toTypeName(result), isNaN(result) FROM (
-    SELECT giniMerge(state) AS result FROM (SELECT giniState(NULL) AS state)
-);
-SELECT toTypeName(result), isNaN(result) FROM (
-    SELECT giniIfMerge(state) AS result FROM (SELECT giniIfState(NULL, NULL) AS state)
-);
-SELECT toTypeName(giniDistinct(NULL)), isNaN(giniDistinct(NULL));
-SELECT toTypeName(giniArgMin(NULL, 1)), isNaN(giniArgMin(NULL, 1));
-SELECT toTypeName(giniArgMax(NULL, 1)), isNaN(giniArgMax(NULL, 1));
-SELECT toTypeName(giniArgMin(1, NULL)), isNaN(giniArgMin(1, NULL));
-SELECT toTypeName(giniOrDefault(NULL)), giniOrDefault(NULL) = 0;
+-- Combinators that keep the argument shape see the fold; Array, ForEach and Map reject it first, as for sum.
+SELECT toTypeName(giniIf(NULL, 1)), isNull(giniIf(NULL, 1));
+SELECT giniMerge(state) FROM (SELECT giniState(NULL) AS state); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT giniIfMerge(state) FROM (SELECT giniIfState(NULL, NULL) AS state); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(giniDistinct(NULL)), isNull(giniDistinct(NULL));
+SELECT toTypeName(giniArgMin(NULL, 1)), isNull(giniArgMin(NULL, 1));
+SELECT toTypeName(giniArgMax(NULL, 1)), isNull(giniArgMax(NULL, 1));
+SELECT toTypeName(giniArgMin(1, NULL)), isNull(giniArgMin(1, NULL));
+SELECT toTypeName(giniOrDefault(NULL)), isNull(giniOrDefault(NULL));
 SELECT toTypeName(giniOrNull(NULL)), isNull(giniOrNull(NULL));
 WITH giniResample(0, 2, 1)(NULL, 0) AS result
-SELECT toTypeName(result), arrayAll(x -> isNaN(x), result);
+SELECT toTypeName(result), isNull(result);
+
+-- Under aggregate_functions_null_for_empty the -OrNull rewrite applies on empty input, as it does for sum.
+SELECT toTypeName(gini(number)), isNull(gini(number)) FROM numbers(0) SETTINGS aggregate_functions_null_for_empty = 1;
+SELECT toTypeName(giniIf(number, number > 100)), isNull(giniIf(number, number > 100)) FROM numbers(10) SETTINGS aggregate_functions_null_for_empty = 1;
+SELECT toTypeName(giniMerge(state)), isNull(giniMerge(state)) FROM (SELECT giniState(number) AS state FROM numbers(0)) SETTINGS aggregate_functions_null_for_empty = 1;
 
 -- -State / -Merge round trip: split values into two states and merge.
 SELECT giniMerge(state) FROM (

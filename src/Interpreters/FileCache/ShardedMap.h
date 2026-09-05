@@ -33,7 +33,7 @@ public:
     auto withShard(const Key & key, F && f) const
     {
         Shard & shard = shards[std::hash<Key>{}(key) % num_shards];
-        DB::ProfiledMutexLock lock(shard.mutex, lock_wait_event);
+        DB::ProfiledExclusiveLock lock(shard.mutex, lock_wait_event);
         const size_t size_before = shard.map.size();
         SCOPE_EXIT(accountSizeDelta(size_before, shard.map.size()));
         return f(shard.map);
@@ -45,7 +45,7 @@ public:
     {
         for (Shard & shard : shards)
         {
-            DB::ProfiledMutexLock lock(shard.mutex, lock_wait_event);
+            DB::ProfiledExclusiveLock lock(shard.mutex, lock_wait_event);
             const size_t size_before = shard.map.size();
             SCOPE_EXIT(accountSizeDelta(size_before, shard.map.size()));
             f(shard.map);

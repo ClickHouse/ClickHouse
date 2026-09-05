@@ -92,6 +92,23 @@ def has_changes():
     return bool(Shell.get_output(f"git status --porcelain -- {SILK_PATH}").strip())
 
 
+def is_published():
+    """True when the bot branch already pins the commit this run checked out.
+
+    Publishing force-pushes a freshly created commit, so re-publishing an unchanged
+    bump still rewrites the head: it re-parents onto a newer `master` and restamps the
+    commit date. A new head restarts every check, and a full CI run takes longer than
+    the six-hour period of this workflow, so the pull request would never hold a
+    complete run to merge on."""
+    return_code, published, _ = Shell.get_res_stdout_stderr(
+        f"gh api 'repos/{REPOSITORY}/contents/{SILK_PATH}?ref={BOT_BRANCH}' --jq '.sha'"
+    )
+    if return_code != 0:
+        return False
+
+    return published == Shell.get_output(f"git -C {SILK_PATH} rev-parse HEAD").strip()
+
+
 def pr_body():
     old = pinned_commit()
     new = Shell.get_output(f"git -C {SILK_PATH} rev-parse HEAD").strip()
@@ -187,7 +204,7 @@ if __name__ == "__main__":
         results.append(Result.from_commands_run(name="Bump submodule", command=bump))
 
     if results[-1].is_ok():
-        if has_changes():
+        if has_changes() and not is_published():
             results.append(
                 Result.from_commands_run(
                     name="Master is still current", command=on_current_base_branch
@@ -208,7 +225,7 @@ if __name__ == "__main__":
                 )
             )
             results[-1].set_info(
-                f"No changes; {SILK_PATH} already at the {SILK_BRANCH} tip"
+                f"Nothing new to publish; the {SILK_BRANCH} tip is already pinned"
             )
 
     Result.create_from(results=results).complete_job()
