@@ -4,8 +4,10 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
 #include <Interpreters/SetKeys.h>
+#include <Core/PlainRanges.h>
 #include <Storages/MergeTree/BoolMask.h>
 
+#include <Common/callOnce.h>
 #include <Common/SharedMutex.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
@@ -87,6 +89,13 @@ public:
     bool hasSetElements() const { return !set_elements.empty(); }
     Columns getSetElements() const;
 
+    /// The elements of a single-column set viewed as sorted, non-overlapping ranges, built once and
+    /// shared afterwards. Deriving them costs one `Field` per element plus an O(N log N) sort, which is
+    /// substantial for a large set, and every consumer of the same set derives exactly the same value —
+    /// notably the two plan builds that automatic parallel replicas performs for one query.
+    /// Returns null for a multi-column (tuple) set, which has no single-column range representation.
+    std::shared_ptr<const PlainRanges> getPlainRanges() const;
+
     void checkColumnsNumber(size_t num_key_columns) const;
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
     void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
@@ -151,6 +160,9 @@ private:
     /// Collected elements of `Set`.
     /// It is necessary for the index to work on the primary key in the IN statement.
     MutableColumns set_elements;
+
+    mutable std::shared_ptr<const PlainRanges> plain_ranges;
+    mutable OnceFlag plain_ranges_once;
 
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,

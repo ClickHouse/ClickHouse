@@ -274,12 +274,24 @@ private:
     UInt64 getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
     UInt64 getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
-    /// Returns the maximum level of all outdated parts in a range (left; right), or 0 in case if empty range.
-    /// Merges have to be aware of the outdated part's levels inside designated merge range.
+    /// A merge writes its result with the column names of the current metadata, so it materializes
+    /// every pending metadata mutation (`RENAME COLUMN`, `DROP COLUMN`) by itself. Returns the
+    /// mutation version the result part has to carry so that those mutations are not applied to it a
+    /// second time, or `nullopt` when the merge must not run at all. `partition_id` is the partition
+    /// of the result part: a pending command scoped to another partition is never applied to it and
+    /// so does not stand in the way. See #111001.
+    std::optional<Int64> getMutationVersionForMergedPart(
+        Int64 sources_data_version,
+        const String & partition_id,
+        std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
+
+    /// Returns the maximum level and the maximum mutation version of the outdated parts in a range
+    /// (left; right) whose creation was not rolled back, or zeros in case if empty range.
+    /// Merges have to be aware of the outdated part's levels and mutation versions inside designated merge range.
     /// When two parts all_1_1_0, all_3_3_0 are merged into all_1_3_1, the gap between those parts have to be verified.
-    /// There should not be an unactive part all_1_1_1. Otherwise it is impossible to load parts after restart, they intersects.
-    /// Therefore this function is used in merge predicate in order to prevent merges over the gaps with high level outdated parts.
-    UInt32 getMaxLevelInBetween(const PartProperties & left, const PartProperties & right) const;
+    /// There should not be an unactive part all_1_1_1 or all_1_1_0_9. Otherwise it is impossible to load parts after restart, they intersects.
+    /// Therefore this function is used in merge predicate in order to prevent merges over such gaps.
+    std::pair<UInt32, Int64> getMaxLevelMutationInBetween(const PartProperties & left, const PartProperties & right) const;
 
     /// Marks leading non-transactional mutations that have no parts left to process as done and
     /// returns their count. Mutations with version >= `first_just_completed_version` were completed

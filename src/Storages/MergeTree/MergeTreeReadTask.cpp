@@ -1,3 +1,4 @@
+#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -22,6 +23,41 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// Resolves the codec to use for estimating the compressed size of a whole column.
+///
+/// The writer applies a column's `CODEC` per substream: it resolves the codec description against the
+/// substream's type and, for structural substreams (`Array` offsets, null map, ...), keeps only the
+/// generic codecs and ignores the type entirely. The estimation this codec feeds serializes the whole
+/// column into a single buffer, so a type-specific codec can only be used when the column consists of a
+/// single stream carrying the column type itself, i.e. a plain numeric or date column. For every other
+/// column keep only the generic codecs - they dominate the ratio anyway - exactly as the writer does for
+/// structural substreams. Resolving a type-specific codec against a composite type is not just imprecise,
+/// it throws: `T64` on a `Tuple` or `GCD` on a `Nullable` is rejected by the factory.
+CompressionCodecPtr resolveCodecForWholeColumn(const ColumnDescription & description, const CompressionCodecPtr & default_codec)
+{
+    size_t num_streams = 0;
+    bool stream_is_column_itself = false;
+    description.type->getDefaultSerialization()->enumerateStreams(
+        [&](const auto & substream_path)
+        {
+            ++num_streams;
+            const auto & substream_type = substream_path.back().data.type;
+            stream_is_column_itself = ISerialization::isSpecialCompressionAllowed(substream_path) && substream_type
+                && substream_type->equals(*description.type);
+        },
+        description.type);
+
+    auto & factory = CompressionCodecFactory::instance();
+    if (num_streams == 1 && stream_is_column_itself)
+        return factory.get(description.codec, description.type.get(), default_codec);
+    return factory.get(description.codec, nullptr, default_codec, /*only_generic=*/true);
+}
+
 }
 
 String MergeTreeReadTaskColumns::dump() const
@@ -98,10 +134,26 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
     if (updater)
     {
-        dataflow_cache_update_cb = [&](const ColumnsWithTypeAndName & columns,
-                                       const NameSet & partially_read_columns,
-                                       size_t read_bytes,
-                                       std::optional<bool> & should_continue_sampling) -> void
+        /// Resolved once rather than per block, and taken from the table metadata because a part does
+        /// not record the codecs of its columns: `default_codec` is only the part-wide default, and a
+        /// part's `ColumnsDescription` is built from a `NamesAndTypesList`, which carries no codec.
+        /// A borrowed part carries no part-level codec; the server default stands in for it, which is the
+        /// same substitution `CompressionCodecFactory::get` makes for a null current default.
+        const auto part_codec = info->data_part_info->getDefaultCompressionCodec();
+        const auto default_codec = part_codec ? part_codec : CompressionCodecFactory::instance().getDefaultCodec();
+        const auto & metadata_columns = readers.main->getStorageSnapshot()->metadata->getColumns();
+        ColumnCodecByName resolved_codecs;
+        for (const auto & name : info->task_columns.getAllColumnNames())
+        {
+            const auto * description = metadata_columns.tryGet(name);
+            if (description && description->codec)
+                resolved_codecs.emplace(name, resolveCodecForWholeColumn(*description, default_codec));
+        }
+
+        dataflow_cache_update_cb = [this, default_codec, column_codecs = std::move(resolved_codecs)](const ColumnsWithTypeAndName & columns,
+                                                           const NameSet & partially_read_columns,
+                                                           size_t read_bytes,
+                                                           std::optional<bool> & should_continue_sampling) -> void
         {
             chassert(updater);
             const auto & part_columns = info->data_part_info->getColumns();
@@ -113,6 +165,8 @@ MergeTreeReadTask::MergeTreeReadTask(
                 partially_read_columns,
                 part_columns,
                 column_sizes ? *column_sizes : no_column_sizes,
+                column_codecs,
+                default_codec,
                 read_bytes,
                 should_continue_sampling);
         };

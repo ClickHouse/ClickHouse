@@ -1,7 +1,10 @@
 #include <filesystem>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
+#include <Databases/DataLake/ICatalog.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Common/Exception.h>
+#include <Common/FullyQualifiedObjectPath.h>
 
 namespace DB::ErrorCodes
 {
@@ -19,6 +22,15 @@ std::string_view trimTrailingSlashes(std::string_view str)
         str.remove_suffix(1);
     return str;
 }
+}
+
+BlobStorageDescription BlobStorageDescription::fromConfiguration(const DB::StorageObjectStorageConfiguration & configuration)
+{
+    return {
+        .type_name = configuration.getTypeName(),
+        .namespace_name = configuration.getNamespace(),
+        .allow_foreign_namespaces = configuration.supportsFullyQualifiedPaths(),
+    };
 }
 
 IcebergPathResolver::TableRootDerivation IcebergPathResolver::deriveTableRoot(
@@ -69,6 +81,30 @@ IcebergPathResolver::TableRootDerivation IcebergPathResolver::deriveTableRoot(
     return {String(candidate), RootRelation::AdoptedDescendant};
 }
 
+String IcebergPathResolver::parseNamespace(std::string_view path)
+{
+    if (auto qualified = trySplitFullyQualifiedObjectPath(path))
+        return String(qualified->object_namespace);
+    return {};
+}
+
+bool IcebergPathResolver::isInForeignNamespace(const String & raw_path) const
+{
+    if (!blob_storage.allow_foreign_namespaces || blob_storage.namespace_name.empty())
+        return false;
+
+    auto qualified = trySplitFullyQualifiedObjectPath(raw_path);
+    if (!qualified)
+        return false;
+
+    auto path_storage_type = DataLake::tryParseStorageTypeFromString(String(qualified->scheme));
+    if (!path_storage_type || path_storage_type != DataLake::tryParseStorageTypeFromString(blob_storage.type_name))
+        return false;
+
+    const String path_namespace(qualified->object_namespace);
+    return path_namespace != blob_storage.namespace_name && path_namespace != table_location_namespace;
+}
+
 // This function is used to get the file path inside the directory which corresponds to Iceberg table from the full blob path which is written in manifest and metadata files.
 // For example, if the full blob path is s3://bucket/table_name/data/00000-1-1234567890.avro, the function will return table_name/data/00000-1-1234567890.avro
 // Common path should end with "<table_name>" or "<table_name>/".
@@ -91,6 +127,9 @@ String IcebergPathResolver::resolve(const IcebergPathFromMetadata & metadata_pat
         auto result = std::filesystem::path{table_root} / trim_forward_slash(raw_path.substr(table_location.size()));
         return result;
     }
+
+    if (isInForeignNamespace(raw_path))
+        return raw_path;
 
     if (table_root.empty())
     {

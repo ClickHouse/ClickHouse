@@ -14,6 +14,8 @@ namespace DB
 
 struct QueryPlanResourceHolder;
 
+class ReadFromMergeTree;
+
 struct RowPolicyFilter;
 using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
 
@@ -206,6 +208,19 @@ public:
     /// plans are returned as `nullptr` so that callers can pair tables with their plans.
     std::vector<QueryPlan *> getAllChildPlans();
 
+    /// For parallel replicas only: the tables this `Merge` read would be expanded into, empty when it
+    /// cannot be expanded (a child which is not a plain `MergeTree` read, a `FINAL` read, nothing to read,
+    /// or a read which `can_ship_read` - the caller's own rule for a read it would distribute - rejects).
+    /// Answering this without touching the plan lets the caller decide whether the query is distributed at
+    /// all before anything is rewritten. The answer is computed once and lives as long as this step.
+    const std::vector<StorageID> & getExpandableReads(const std::function<bool(const ReadFromMergeTree &)> & can_ship_read);
+
+    /// Replace this opaque `Merge` read with a plan-level `UnionStep` over the per-table child plans, so
+    /// that the parallel-replicas plan transformation can coordinate the underlying `MergeTree` reads and
+    /// distribute the steps above them. Only call it when `getExpandableReads` returned a value; the child
+    /// plans are moved out of this step, which the caller then replaces.
+    QueryPlan expandForParallelReplicas();
+
     void addFilter(FilterDAGInfo filter);
 
 private:
@@ -276,6 +291,12 @@ private:
         QueryPlan plan;
         QueryProcessingStage::Enum stage;
     };
+
+    /// Answer of `getExpandableReads`, unset until it is asked for. The parallel-replicas pass asks first
+    /// whether the query would be distributed and then again when it expands, and the child plans it
+    /// inspects do not change in between. Assumes the same predicate on every call, which the single
+    /// caller satisfies.
+    std::optional<std::vector<StorageID>> expandable_reads;
 
     /// Store read plan for each child table.
     /// It's needed to guarantee lifetime for child steps to be the same as for this step (mainly for EXPLAIN PIPELINE).

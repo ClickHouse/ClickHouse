@@ -1496,21 +1496,45 @@ StorageFileSource::FilesIterator::FilesIterator(
     const Strings & files_,
     std::optional<StorageFile::ArchiveInfo> archive_info_,
     const ActionsDAG::Node * predicate,
-    const NamesAndTypesList & virtual_columns,
-    const NamesAndTypesList & hive_columns,
+    const NamesAndTypesList & virtual_columns_,
+    const NamesAndTypesList & hive_columns_,
     const ContextPtr & context_,
-    bool distributed_processing_)
-    : WithContext(context_), files(files_), archive_info(std::move(archive_info_)), distributed_processing(distributed_processing_)
+    bool distributed_processing_,
+    String archive_member_path_)
+    : WithContext(context_)
+    , files(files_)
+    , archive_info(std::move(archive_info_))
+    , distributed_processing(distributed_processing_)
+    , virtual_columns(virtual_columns_)
+    , hive_columns(hive_columns_)
+    , archive_member_path(std::move(archive_member_path_))
 {
     std::optional<ActionsDAG> filter_dag;
-    if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context_, hive_columns);
+    auto & filter_sources = archive_info ? archive_info->paths_to_archives : files;
+    if (!distributed_processing && (!archive_info || !archive_member_path.empty()) && !filter_sources.empty())
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns_, context_, hive_columns_);
 
     if (filter_dag)
     {
-        VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
-        auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-        VirtualColumnUtils::filterByPathOrFile(files, files, actions, virtual_columns, hive_columns, context_);
+        if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_))
+        {
+            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            Strings filter_paths = filter_sources;
+            if (!archive_member_path.empty())
+            {
+                for (auto & path : filter_paths)
+                    path += fmt::format("::{}", archive_member_path);
+            }
+            std::vector<String> archive_member_names;
+            if (!archive_member_path.empty())
+                archive_member_names.assign(filter_sources.size(), archive_member_path);
+            VirtualColumnUtils::filterByPathOrFile(
+                filter_sources, filter_paths, actions, virtual_columns_, hive_columns_, context_,
+                /*format_settings=*/std::nullopt,
+                archive_member_path.empty() ? nullptr : &archive_member_names);
+        }
+        else
+            deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
     }
 }
 
@@ -1530,11 +1554,32 @@ String StorageFileSource::FilesIterator::next()
 
     const auto & fs = isReadFromArchive() ? archive_info->paths_to_archives : files;
 
-    auto current_index = index.fetch_add(1, std::memory_order_relaxed);
-    if (current_index >= fs.size())
-        return {};
+    while (true)
+    {
+        auto current_index = index.fetch_add(1, std::memory_order_relaxed);
+        if (current_index >= fs.size())
+            return {};
 
-    return fs[current_index];
+        auto path = fs[current_index];
+        if (deferred_filter_actions)
+        {
+            std::vector<String> filtered_files({path});
+            std::vector<String> filter_paths({path});
+            if (!archive_member_path.empty())
+                filter_paths.front() += fmt::format("::{}", archive_member_path);
+            std::vector<String> archive_member_names;
+            if (!archive_member_path.empty())
+                archive_member_names.push_back(archive_member_path);
+            VirtualColumnUtils::filterByPathOrFile(
+                filtered_files, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext(),
+                /*format_settings=*/std::nullopt,
+                archive_member_path.empty() ? nullptr : &archive_member_names);
+            if (filtered_files.empty())
+                continue;
+        }
+
+        return path;
+    }
 }
 
 const String & StorageFileSource::FilesIterator::getFileNameInArchive()
@@ -1681,6 +1726,14 @@ Chunk StorageFileSource::generate()
                         if (archive.empty())
                             return {};
 
+                        if (!fs::exists(archive))
+                        {
+                            if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
+                                continue;
+
+                            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", archive);
+                        }
+
                         auto file_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
                         if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                             continue;
@@ -1719,6 +1772,14 @@ Chunk StorageFileSource::generate()
                                 auto archive = files_iterator->next();
                                 if (archive.empty())
                                     return {};
+
+                                if (!fs::exists(archive))
+                                {
+                                    if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
+                                        continue;
+
+                                    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", archive);
+                                }
 
                                 current_archive_stat = getFileStat(archive, storage->use_table_fd, storage->table_fd, storage->getName());
                                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && current_archive_stat.st_size == 0)
@@ -1773,6 +1834,14 @@ Chunk StorageFileSource::generate()
                     current_path = files_iterator->next();
                     if (current_path.empty())
                         return {};
+
+                    if (!fs::exists(current_path))
+                    {
+                        if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
+                            continue;
+
+                        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", current_path);
+                    }
                 }
 
                 /// Special case for distributed format. Defaults are not needed here.
@@ -2333,28 +2402,7 @@ void StorageFile::read(
             context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
 
     if (use_table_fd)
-    {
         paths = {""};   /// when use fd, paths are empty
-    }
-    else
-    {
-        const std::vector<std::string> * p = nullptr;
-
-        if (archive_info.has_value())
-            p = &archive_info->paths_to_archives;
-        else
-            p = &paths;
-
-        if (p->size() == 1 && !fs::exists(p->at(0)))
-        {
-            if (!context->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", p->at(0));
-
-            auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-            InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
-            return;
-        }
-    }
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
@@ -2400,10 +2448,11 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         info.hive_partition_columns_to_read_from_file_path,
         context,
-        storage->distributed_processing);
+        storage->distributed_processing,
+        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{});
 }
 
-void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     createIterator(nullptr);
 
@@ -2460,8 +2509,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     auto pipe = Pipe::unitePipes(std::move(pipes));
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = ctx->getSettingsRef()[Setting::parallelize_output_from_storages];
-    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < max_num_streams)
-        pipe.resize(max_num_streams);
+    /// `max_num_streams` is a read-parallelism request, not a thread budget.
+    const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
+    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < resize_to)
+        pipe.resize(resize_to);
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));

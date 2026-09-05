@@ -1,0 +1,187 @@
+-- canary: variant A (partial pushdown) fires for case 1\'s query
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      Aggregating
+        JoinLogical (Local HashJoin  swapped)
+          BuildRuntimeFilter (Build runtime join filter on __table2.k)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_corr_right_multi)
+          GatherExchange
+            Aggregating
+              Expression
+                ReadFromMergeTree (ParallelRead default.t_corr_left)
+-- canary: variant B (full pushdown) fires for case 13\'s query (single Aggregating, below the join)
+Expression (Project names)
+  Expression ((Before ORDER BY + Projection))
+    Sorting
+      JoinLogical (Local HashJoin  swapped)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_corr_right_multi)
+        MergingAggregated
+          GatherExchange
+            Aggregating
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (ParallelRead default.t_corr_left)
+-- 11. empty left table
+-- 12. empty right table with LEFT JOIN
+0	10	450
+1	10	460
+2	10	470
+3	10	480
+4	10	490
+5	10	500
+6	10	510
+7	10	520
+8	10	530
+9	10	540
+0	10	450
+1	10	460
+2	10	470
+3	10	480
+4	10	490
+5	10	500
+6	10	510
+7	10	520
+8	10	530
+9	10	540
+-- 13. LEFT ANY, variant B (join keys subset of GROUP BY keys)
+0	10	450
+1	10	460
+2	10	470
+3	10	480
+4	10	490
+5	10	500
+6	10	510
+7	10	520
+8	10	530
+9	10	540
+0	10	450
+1	10	460
+2	10	470
+3	10	480
+4	10	490
+5	10	500
+6	10	510
+7	10	520
+8	10	530
+9	10	540
+-- 14. INNER ANY is never pushed (at most one row per key, not per pushed row)
+0	1
+1	1
+2	1
+3	1
+4	1
+5	1
+6	1
+7	1
+0	1
+1	1
+2	1
+3	1
+4	1
+5	1
+6	1
+7	1
+-- 15. LEFT SEMI, variant B
+0	10	450
+1	10	460
+2	10	470
+3	10	480
+4	10	490
+5	10	500
+0	10	450
+1	10	460
+2	10	470
+3	10	480
+4	10	490
+5	10	500
+-- 16. LEFT ANTI, variant B
+6	10	510
+7	10	520
+8	10	530
+9	10	540
+6	10	510
+7	10	520
+8	10	530
+9	10	540
+-- 17. RIGHT ALL with fan-out (variant A, push-right)
+0	10	450
+1	20	920
+2	30	1410
+3	10	480
+4	10	490
+5	10	500
+6	10	510
+7	10	520
+8	10	530
+9	10	540
+0	10	450
+1	20	920
+2	30	1410
+3	10	480
+4	10	490
+5	10	500
+6	10	510
+7	10	520
+8	10	530
+9	10	540
+-- 18. RIGHT ANY, variant B (per-key-unique left side)
+0	10	450
+1	10	460
+2	10	470
+3	10	480
+4	10	490
+5	10	500
+6	10	510
+7	10	520
+8	10	530
+9	10	540
+0	10	450
+1	10	460
+2	10	470
+3	10	480
+4	10	490
+5	10	500
+6	10	510
+7	10	520
+8	10	530
+9	10	540
+-- 19. RIGHT ANTI, variant B
+6	10
+7	10
+8	10
+9	10
+6	10
+7	10
+8	10
+9	10
+-- 20. RIGHT SEMI, variant B, push-right (last enabled matrix cell without an executed scenario)
+0	10	450
+1	10	460
+2	10	470
+3	10	480
+4	10	490
+5	10	500
+0	10	450
+1	10	460
+2	10	470
+3	10	480
+4	10	490
+5	10	500
+-- 21. global aggregation over a join on an empty left table keeps the single-row result
+0
+0
+-- 22. keys-only GROUP BY, empty aggregate list (variant A, push-left)
+0
+1
+2
+3
+4
+5
+0
+1
+2
+3
+4
+5

@@ -890,7 +890,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     };
 
     /// Emit dependency-ordered recomputation stages.
-    auto emit_materialized_recompute_stages = [&](const NameSet & affected_materialized)
+    auto emit_materialized_recompute_stages = [&](const NameSet & affected_materialized, std::optional<UInt64> mutation_version)
     {
         if (affected_materialized.empty())
             return;
@@ -916,7 +916,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         for (size_t current_level = 0; current_level <= max_level; ++current_level)
         {
-            stages.emplace_back(context);
+            stages.emplace_back(context).mutation_version = mutation_version;
             for (const auto & column : columns_desc)
             {
                 /// Membership and level first: both sets are already built, while `findNode`
@@ -1193,7 +1193,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 stages.back().column_to_updated.emplace(column_name, updated_column);
             }
 
-            emit_materialized_recompute_stages(affected_materialized);
+            emit_materialized_recompute_stages(affected_materialized, command.mutation_version);
 
             /// If the part is compact and adaptive index granularity is enabled, modify data in one column via ALTER UPDATE can change
             /// the part granularity, so we need to rebuild indexes
@@ -1579,7 +1579,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// does not itself carry (old-shape patches). The patched values were just materialized by
     /// the read_columns stage above, so emitting these stages afterwards lets each level read
     /// the freshly written value of the column it depends on.
-    emit_materialized_recompute_stages(patch_affected_materialized);
+    emit_materialized_recompute_stages(patch_affected_materialized, std::nullopt);
 
     /// We care about affected indices and projections because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
@@ -1663,7 +1663,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// The cleared column entered the readonly stage above with its current DEFAULT value, so these
     /// level-ordered stages evaluate each hop against the freshly written value of the previous one.
     if (need_recalculate_materialized_for_clear)
-        emit_materialized_recompute_stages(clear_affected_materialized);
+        emit_materialized_recompute_stages(clear_affected_materialized, std::nullopt);
 
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {

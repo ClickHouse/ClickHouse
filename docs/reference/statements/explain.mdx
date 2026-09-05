@@ -944,6 +944,8 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 Estimates the benefit a hypothetical skip index would have on a `SELECT` query, *without* materializing the index on disk. Define one or more candidates with [`CREATE HYPOTHETICAL INDEX`](/reference/statements/hypothetical-index#create-hypothetical-index), then run `EXPLAIN WHATIF SELECT ...` to see, for each candidate: applicability, estimated marks read, estimated bytes, and skip ratio.
 
+Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are listed as candidates too, but their benefit is not estimated yet: each is reported with `status: not_applicable`. A projection whose definition no longer applies to the table — a dropped column, or a setting change that disables the features it needs — is reported with that reason instead.
+
 **Syntax**
 
 ```sql
@@ -988,7 +990,7 @@ Estimation:
 
 The setting is written inline between `WHATIF` and the `SELECT` — there is no `SETTINGS` keyword (this matches how other `EXPLAIN` variants accept their options).
 
-If no hypothetical indexes are defined for the table, `EXPLAIN WHATIF` reports `status: not_applicable` with a hint to create one.
+If neither hypothetical indexes nor hypothetical projections are defined for the table, `EXPLAIN WHATIF` reports `status: not_applicable` with a hint to create one.
 
 **Combined row (multiple candidates)**
 

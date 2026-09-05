@@ -185,7 +185,14 @@ struct AlterCommand
 
     /// share_nested_offsets mirrors prepare()/validate(): when true, `n` and `n.*` are treated as
     /// the same logical column for IF NOT EXISTS existence checks; when false they are independent.
-    void apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
+    /// `columns_before_alter` are the columns of the table before the whole ALTER (of which this command
+    /// is a part) is applied; they let `MODIFY ORDER BY` suggest only the columns added by the ALTER for
+    /// a typo, because an expression added to the sorting key may use nothing else.
+    void apply(
+        StorageInMemoryMetadata & metadata,
+        ContextPtr context,
+        bool share_nested_offsets = true,
+        const ColumnsDescription * columns_before_alter = nullptr) const;
 
     /// Determines whether this command requires a mutation and identifies every setting
     /// that enables a matching lazy metadata conversion.

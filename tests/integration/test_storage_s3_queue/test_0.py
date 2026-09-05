@@ -95,6 +95,40 @@ def started_cluster():
         cluster.shutdown()
 
 
+def wait_for_queue_log_rows(node, engine_name, table_name, keeper_path, expected, timeout=60):
+    """Wait until the queue log and the metadata cache report `expected` processed rows, and return the counts.
+
+    `ObjectStorageQueueSource::appendLogElement` is called from `finalizeCommit`, that is, only after the
+    rows have already been committed to the materialized view target. So a row count that has reached its
+    final value in the destination table does not imply that the log entries exist yet, and a `SYSTEM FLUSH
+    LOGS` issued right after it can flush an empty queue: the caller must poll rather than assert once.
+    """
+    if engine_name == "S3Queue":
+        system_tables = ["s3queue_log", "s3queue_metadata_cache"]
+    else:
+        system_tables = ["azure_queue_log", "azure_queue_metadata_cache"]
+
+    def counts():
+        node.query("SYSTEM FLUSH LOGS")
+        result = {}
+        for table in system_tables:
+            if table.endswith("_log"):
+                condition = f"table = '{table_name}'"
+            else:
+                condition = f"zookeeper_path = '{keeper_path}'"
+            result[table] = int(
+                node.query(f"SELECT sum(rows_processed) FROM system.{table} WHERE {condition}")
+            )
+        return result
+
+    deadline = time.monotonic() + timeout
+    current = counts()
+    while any(count != expected for count in current.values()) and time.monotonic() < deadline:
+        time.sleep(0.5)
+        current = counts()
+    return current
+
+
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 def test_delete_after_processing(started_cluster, mode, engine_name):
@@ -145,32 +179,13 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
         ).splitlines()
     ] == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
 
-    node.query("system flush logs")
-
-    if engine_name == "S3Queue":
-        system_tables = ["s3queue_log", "s3queue_metadata_cache"]
-    else:
-        system_tables = ["azure_queue_log", "azure_queue_metadata_cache"]
-
-    for table in system_tables:
-        if table.endswith("_log"):
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE table = '{table_name}'"
-                    )
-                )
-                == files_num * row_num
-            )
-        else:
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE zookeeper_path = '{keeper_path}'"
-                    )
-                )
-                == files_num * row_num
-            )
+    counts = wait_for_queue_log_rows(
+        node, engine_name, table_name, keeper_path, files_num * row_num
+    )
+    for table, count in counts.items():
+        assert count == files_num * row_num, (
+            f"rows_processed mismatch in system.{table}: {count} != {files_num * row_num}"
+        )
 
     if engine_name == "S3Queue":
         object_count = count_minio_objects(started_cluster, started_cluster.minio_bucket, files_path)
@@ -307,32 +322,13 @@ def test_tag_after_processing(started_cluster, engine_name):
         ).splitlines()
     ] == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
 
-    node.query("system flush logs")
-
-    if engine_name == "S3Queue":
-        system_tables = ["s3queue_log", "s3queue_metadata_cache"]
-    else:
-        system_tables = ["azure_queue_log", "azure_queue_metadata_cache"]
-
-    for table in system_tables:
-        if table.endswith("_log"):
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE table = '{table_name}'"
-                    )
-                )
-                == files_num * row_num
-            )
-        else:
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE zookeeper_path = '{keeper_path}'"
-                    )
-                )
-                == files_num * row_num
-            )
+    counts = wait_for_queue_log_rows(
+        node, engine_name, table_name, keeper_path, files_num * row_num
+    )
+    for table, count in counts.items():
+        assert count == files_num * row_num, (
+            f"rows_processed mismatch in system.{table}: {count} != {files_num * row_num}"
+        )
 
     if engine_name == "S3Queue":
         minio = started_cluster.minio_client
@@ -446,32 +442,13 @@ def test_move_after_processing(started_cluster, engine_name, move_to):
         ).splitlines()
     ] == sorted(total_values, key=lambda x: (x[0], x[1], x[2]))
 
-    node.query("system flush logs")
-
-    if engine_name == "S3Queue":
-        system_tables = ["s3queue_log", "s3queue_metadata_cache"]
-    else:
-        system_tables = ["azure_queue_log", "azure_queue_metadata_cache"]
-
-    for table in system_tables:
-        if table.endswith("_log"):
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE table = '{table_name}'"
-                    )
-                )
-                == files_num * row_num
-            )
-        else:
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE zookeeper_path = '{keeper_path}'"
-                    )
-                )
-                == files_num * row_num
-            )
+    counts = wait_for_queue_log_rows(
+        node, engine_name, table_name, keeper_path, files_num * row_num
+    )
+    for table, count in counts.items():
+        assert count == files_num * row_num, (
+            f"rows_processed mismatch in system.{table}: {count} != {files_num * row_num}"
+        )
 
     if engine_name == "S3Queue":
         src_bucket = started_cluster.minio_bucket

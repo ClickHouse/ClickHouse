@@ -930,6 +930,7 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_AdaptiveAggregationDrainedRecords` ([UInt64](/reference/data-types/int-uint)) — How many delayed records the adaptive aggregation drained into the shared table at merge time.
 - `ProfileEvent_AdaptiveAggregationPressureSweeps` ([UInt64](/reference/data-types/int-uint)) — How many times the adaptive aggregation drained staged records early because of memory pressure.
 - `ProfileEvent_AdaptiveAggregationPressureDrainedRecords` ([UInt64](/reference/data-types/int-uint)) — How many staged records the adaptive aggregation drained early under memory pressure.
+- `ProfileEvent_AdaptiveAggregationResidueReleases` ([UInt64](/reference/data-types/int-uint)) — How many times the adaptive aggregation wrote its shared drain table out because a thread back on the baseline algorithm was about to spill on account of it.
 - `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/reference/data-types/int-uint)) — Number of two-level buckets whose working memory (arena slot, staged-chunk references) was retired right after their merge-and-convert completed, ahead of the whole merge finishing.
 - `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/reference/data-types/int-uint)) — Number of two-level buckets converted through the bucket-local Top-K selection (the aggregationBucketTopK plan optimization).
 - `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/reference/data-types/int-uint)) — How many hash tables were inited as two-level for aggregation.
@@ -1515,6 +1516,7 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_AsyncLoggingTextLogDroppedMessages` ([UInt64](/reference/data-types/int-uint)) — How many messages have been dropped from text_log due to the async log queue being full
 - `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/reference/data-types/int-uint)) — Total number of times tracking of jemalloc allocation sample failed
 - `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/reference/data-types/int-uint)) — Total number of times tracking of jemalloc deallocation sample failed
+- `ProfileEvent_SetsBuiltFromSubquery` ([UInt64](/reference/data-types/int-uint)) — Number of `IN`/`JOIN` sets filled by running their subquery. A set taken from the prepared sets cache, or already built and reused, is not counted.
 - `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time of loading statistics from parts
 - `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/reference/data-types/int-uint)) — Number of `IN` conditions the selectivity estimator could not analyse because the set was not built yet, and it must not run the subquery to fill it
 - `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/reference/data-types/int-uint)) — Number of `IN` conditions whose selectivity was estimated from the size and bounds of the set instead of its exact ranges, because the set exceeds `statistics_max_set_size_for_exact_selectivity_estimation`

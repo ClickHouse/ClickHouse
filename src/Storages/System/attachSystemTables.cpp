@@ -13,6 +13,7 @@
 #include <Storages/System/StorageSystemBackups.h>
 #include <Storages/System/StorageSystemBuildOptions.h>
 #include <Storages/System/StorageSystemHypotheticalIndexes.h>
+#include <Storages/System/StorageSystemHypotheticalProjections.h>
 #include <Storages/System/StorageSystemInstrumentation.h>
 #include <Storages/System/StorageSystemCollations.h>
 #include <Storages/System/StorageSystemClusters.h>
@@ -230,6 +231,7 @@ void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_da
     attach<SystemMergeTreeSettings<true>>(context, system_database, "replicated_merge_tree_settings", "Contains a list of all ReplicatedMergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query. ");
     attach<StorageSystemBuildOptions>(context, system_database, "build_options", "Contains a list of all build flags, compiler options and commit hash for used build.");
     attach<StorageSystemHypotheticalIndexes>(context, system_database, "hypothetical_indexes", "Shows session-scoped hypothetical indexes created with CREATE HYPOTHETICAL INDEX for use with EXPLAIN WHATIF.");
+    attach<StorageSystemHypotheticalProjections>(context, system_database, "hypothetical_projections", "Shows session-scoped hypothetical projections created with CREATE HYPOTHETICAL PROJECTION for use with EXPLAIN WHATIF.");
 #if USE_XRAY
     attach<StorageSystemInstrumentation>(context, system_database, "instrumentation", "Contains a list of all functions instrumented with XRay with their IDs and handlers.");
 #endif

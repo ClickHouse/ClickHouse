@@ -93,7 +93,7 @@ public:
     /// conservative and never claim to preserve the left stream order. See issue #110662.
     bool preservesLeftBlockOrder() const override { return false; }
 
-    void onBuildPhaseFinish() override { join->onBuildPhaseFinish(); }
+    void onBuildPhaseFinish() override;
 
     void onProbePhaseFinish(size_t matched_right_rows) override { join->onProbePhaseFinish(matched_right_rows); }
 

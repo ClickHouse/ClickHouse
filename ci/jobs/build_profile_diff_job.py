@@ -73,6 +73,7 @@ from ci.jobs.scripts.log_cluster import LogCluster
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
+from ci.praktika.utils import Utils
 
 CHECK_NAME = "arm_release"
 # The master sccache-warmup build: compiled with the PR build's exact cmake
@@ -240,6 +241,17 @@ def in_list(values) -> str:
     return ", ".join(quote(v) for v in values)
 
 
+def repo_condition(repo: str) -> str:
+    """Rows of one repository, still admitting rows uploaded before `repo` existed.
+
+    `repo` was added to the profile tables by `ALTER TABLE ... ADD COLUMN`, so
+    every historical row carries the type default `''`. Without the empty
+    branch the whole pre-migration history, master baselines included, becomes
+    invisible. Drop it once those rows are backfilled.
+    """
+    return f"(repo = {quote(repo)} OR repo = '')"
+
+
 def recent_days(days: int) -> str:
     """A `date` condition covering the last `days` days up to today."""
     return f"date >= today() - {days}"
@@ -288,8 +300,7 @@ def walk_cutoff(event_time: str, days: int) -> str:
     now = datetime.datetime.now(datetime.timezone.utc)
     anchor = now
     if event_time:
-        parsed = datetime.datetime.fromisoformat(event_time.replace("Z", "+00:00"))
-        anchor = min(parsed, now)
+        anchor = min(Utils.gh_str_to_datetime(event_time), now)
     start = anchor.date() - datetime.timedelta(days=days + UPLOAD_DELAY_DAYS)
     return f"{start.isoformat()}T00:00:00Z"
 
@@ -313,6 +324,7 @@ class Side:
     sha: str
     check_start_time: str
     instance_id: str
+    repo: str
     check_name: str = CHECK_NAME
 
 
@@ -321,6 +333,7 @@ def resolve_run(
     date_condition: str,
     pr_number: int,
     sha: str,
+    repo: str,
     table: str = "binary_sizes",
     check_name: str = CHECK_NAME,
 ) -> Optional[Side]:
@@ -334,6 +347,7 @@ def resolve_run(
         f"""SELECT check_start_time, instance_id
         FROM {table}
         WHERE {date_condition}
+            AND {repo_condition(repo)}
             AND pull_request_number = {pr_number}
             AND commit_sha = {quote(sha)}
             AND check_name = {quote(check_name)}
@@ -342,13 +356,14 @@ def resolve_run(
     )
     if not rows:
         return None
-    return Side(date_condition, pr_number, sha, rows[0]["check_start_time"], rows[0]["instance_id"], check_name)
+    return Side(date_condition, pr_number, sha, rows[0]["check_start_time"], rows[0]["instance_id"], repo, check_name)
 
 
 def side_conditions(side: Side, extra_where: str = "") -> str:
     """The WHERE conditions selecting one side's rows, pinned to its build run."""
     where = f"\n            AND {extra_where}" if extra_where else ""
     return f"""{side.date_condition}
+            AND {repo_condition(side.repo)}
             AND pull_request_number = {side.pr_number}
             AND commit_sha = {quote(side.sha)}
             AND check_name = {quote(side.check_name)}
@@ -639,7 +654,7 @@ def seed_master_shas(anchor_sha: str, list_page=_list_commits_page) -> List[str]
     return chain
 
 
-def find_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: str) -> Optional[str]:
+def find_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: str, repo: str) -> Optional[str]:
     """The most recent master commit with uploaded arm_release profile data.
 
     The PR-side commit is excluded so that a re-run on an already-merged
@@ -659,6 +674,7 @@ def find_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: s
         f"""SELECT DISTINCT commit_sha
         FROM binary_sizes
         WHERE {date_condition}
+            AND {repo_condition(repo)}
             AND pull_request_number = 0
             AND check_name = {quote(CHECK_NAME)}
             AND file = {quote(MAIN_BINARY)}
@@ -671,7 +687,7 @@ def find_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: s
     return None
 
 
-def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: str) -> Optional[str]:
+def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: str, repo: str) -> Optional[str]:
     """The most recent master commit with uploaded warmup-build profile data.
 
     The warmup build compiles with the PR flags but does not link, so its
@@ -689,6 +705,7 @@ def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condi
         f"""SELECT DISTINCT commit_sha
         FROM binary_sizes
         WHERE {date_condition}
+            AND {repo_condition(repo)}
             AND pull_request_number = 0
             AND check_name = {quote(WARMUP_CHECK_NAME)}
             AND commit_sha IN ({in_list(candidates)})"""
@@ -700,11 +717,12 @@ def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condi
     return None
 
 
-def has_pr_data(db: Db, pr_number: int, pr_sha: str) -> bool:
+def has_pr_data(db: Db, pr_number: int, pr_sha: str, repo: str) -> bool:
     rows = db.query(
         f"""SELECT count() AS c
         FROM binary_sizes
         WHERE {recent_days(PR_DAYS)}
+            AND {repo_condition(repo)}
             AND pull_request_number = {pr_number}
             AND commit_sha = {quote(pr_sha)}
             AND check_name = {quote(CHECK_NAME)}
@@ -1142,6 +1160,7 @@ def compare_compile_times(db: Db, pr_side, master_shas, date_condition: str) -> 
             argMax(instance_id, time) AS instance_id
         FROM build_time_trace
         WHERE {date_condition}
+            AND {repo_condition(pr_side.repo)}
             AND pull_request_number = 0
             AND check_name = {quote(WARMUP_CHECK_NAME)}
             AND name = 'ExecuteCompiler'
@@ -1178,6 +1197,7 @@ def compare_compile_times(db: Db, pr_side, master_shas, date_condition: str) -> 
             f"""SELECT count() AS c
             FROM build_time_trace
             WHERE {date_condition}
+                AND {repo_condition(pr_side.repo)}
                 AND pull_request_number = 0
                 AND check_name = {quote(WARMUP_CHECK_NAME)}
                 AND name = 'ExecuteCompiler'
@@ -1211,7 +1231,7 @@ def compare_compile_times(db: Db, pr_side, master_shas, date_condition: str) -> 
         if tu not in base_durs:
             continue
         base_dur, base_tu_sha, base_cst, base_iid = base_durs[tu]
-        base_tu_side = Side(date_condition, 0, base_tu_sha, base_cst, base_iid, WARMUP_CHECK_NAME)
+        base_tu_side = Side(date_condition, 0, base_tu_sha, base_cst, base_iid, pr_side.repo, WARMUP_CHECK_NAME)
         adjusted_base = base_dur * skew
         delta_s = (pr_dur - adjusted_base) / 1e6
         ratio = max(pr_dur, adjusted_base) / max(min(pr_dur, adjusted_base), 1)
@@ -1499,24 +1519,25 @@ def run_comparison(db, info, args, pr_number: int, pr_sha: str):
     # that look for its profile rows are measured from the same event rather
     # than from the wall clock (see master_windows).
     windows = master_windows(info.event_time, {"base": BASE_DAYS, "tu": TU_BASE_DAYS})
-    base_sha = args.base_sha or find_baseline(db, master_shas, pr_sha, windows["base"])
+    repo = info.repo_name
+    base_sha = args.base_sha or find_baseline(db, master_shas, pr_sha, windows["base"], repo)
     if not base_sha:
         # Fail-close: no baseline means no comparison, not a comparison against
         # an arbitrary commit.
         raise RuntimeError("No master baseline with build profile data found - cannot compare")
-    warmup_sha = find_warmup_baseline(db, master_shas, pr_sha, windows["base"])
+    warmup_sha = find_warmup_baseline(db, master_shas, pr_sha, windows["base"], repo)
     print(f"Comparing PR {pr_number} sha {pr_sha} against master {base_sha} (warmup baseline: {warmup_sha})")
 
     # Pin each side to one concrete build run once, and reuse it for every
     # table (see Side / resolve_run): the whole comparison then reflects a
     # single build instead of a per-table mix of reruns.
-    pr_side = resolve_run(db, recent_days(PR_DAYS), pr_number, pr_sha)
-    base_side = resolve_run(db, windows["base"], 0, base_sha)
+    pr_side = resolve_run(db, recent_days(PR_DAYS), pr_number, pr_sha, repo)
+    base_side = resolve_run(db, windows["base"], 0, base_sha, repo)
     if pr_side is None or base_side is None:
         raise RuntimeError("Could not resolve a concrete build run for one of the sides")
     # The warmup baseline may lag while master catches up with profiling the
     # warmup build; the sections that depend on it degrade to a catch-up note.
-    warmup_side = resolve_run(db, windows["base"], 0, warmup_sha, check_name=WARMUP_CHECK_NAME) if warmup_sha else None
+    warmup_side = resolve_run(db, windows["base"], 0, warmup_sha, repo, check_name=WARMUP_CHECK_NAME) if warmup_sha else None
     # The per-TU compile baseline looks back TU_BASE_DAYS - far past the ~100
     # commits of the anchored chain - so its candidate set is extended with
     # older ancestors (see extend_master_shas).
@@ -1550,7 +1571,7 @@ def main():
 
     db = Db()
 
-    if not has_pr_data(db, pr_number, pr_sha):
+    if not has_pr_data(db, pr_number, pr_sha, info.repo_name):
         info_text = f"No {CHECK_NAME} build profile data for commit {pr_sha} - the build was skipped, reused from cache, or predates profile upload"
         print(info_text)
         if args.local:

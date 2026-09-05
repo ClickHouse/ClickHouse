@@ -889,10 +889,12 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
 
         pipeline.setProgressCallback(progress_callback ? progress_callback : context->getProgressCallback());
 
-        CompletedPipelineExecutor executor(pipeline);
-        if (is_cancelled)
-            executor.setCancelCallback(is_cancelled, 100);
-        executor.execute();
+        {
+            CompletedPipelineExecutor executor(pipeline);
+            if (is_cancelled)
+                executor.setCancelCallback(is_cancelled, 100);
+            executor.execute();
+        }
 
         logQueryFinish(query_log_elem, context, no_ast, std::move(pipeline), false,
             query_span, QueryResultCacheUsage::None, false, /*log_as_internal*/ false);

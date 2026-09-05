@@ -11,7 +11,6 @@
 #include <base/EnumReflection.h>
 #include <Core/UUID.h>
 
-#include <algorithm>
 #include <unordered_set>
 
 
@@ -227,15 +226,7 @@ void ASTViewTargets::removeTarget(ViewTarget::Kind kind)
             /// Detach the target's ASTs from `children` before erasing the target.
             reset(it->inner_engine);
             reset(it->inner_columns);
-            /// TODO: `table_ast` is registered in `children` only on some paths (JSON deserialization, clone),
-            /// so it can't be `reset` here; make `setTableASTWithQueryParams` register it always.
-            if (it->table_ast)
-            {
-                auto child = std::find_if(children.begin(), children.end(),
-                    [&](const ASTPtr & child_) { return child_.get() == it->table_ast.get(); });
-                if (child != children.end())
-                    children.erase(child);
-            }
+            reset(it->table_ast);
             targets.erase(it);
             return;
         }
@@ -252,9 +243,6 @@ ASTPtr ASTViewTargets::clone() const
             res->set(target.inner_engine, target.inner_engine->clone());
         if (target.inner_columns)
             res->set(target.inner_columns, target.inner_columns->clone());
-        /// `table_ast` (a parameterized `TO {dst:Identifier}` target produced by JSON deserialization)
-        /// is also a registered child, so it must be cloned too; otherwise the clone's `table_ast`
-        /// dangles into the original's children.
         if (target.table_ast)
             res->set(target.table_ast, target.table_ast->clone());
     }
@@ -333,18 +321,27 @@ void ASTViewTargets::forEachPointerToChild(std::function<void(IAST **, boost::in
     }
 }
 
-void ASTViewTargets::setTableASTWithQueryParams(ViewTarget::Kind kind, const ASTPtr & table_)
+void ASTViewTargets::setTableASTWithQueryParams(ViewTarget::Kind kind, ASTPtr new_table_ast)
 {
     for (auto & target : targets)
     {
         if (target.kind == kind)
         {
-            target.table_ast = table_;
+            if (target.table_ast == new_table_ast)
+                return;
+            if (new_table_ast)
+                setOrReplace(target.table_ast, std::move(new_table_ast));
+            else
+                reset(target.table_ast);
             return;
         }
     }
-    if (table_)
-        targets.emplace_back(kind).table_ast = table_;
+
+    if (new_table_ast)
+    {
+        auto & new_target = targets.emplace_back(kind);
+        set(new_target.table_ast, std::move(new_table_ast));
+    }
 }
 
 bool ASTViewTargets::hasTableASTWithQueryParams(ViewTarget::Kind kind) const
@@ -361,13 +358,6 @@ ASTPtr ASTViewTargets::getTableASTWithQueryParams(ViewTarget::Kind kind)
         if (target.kind == kind)
             return target.table_ast;
     return nullptr;
-}
-
-void ASTViewTargets::resetTableASTWithQueryParams(ViewTarget::Kind kind)
-{
-    for (auto & target : targets)
-        if (target.kind == kind)
-            target.table_ast.reset();
 }
 
 void ASTViewTargets::readJSON(const Poco::JSON::Object & json)

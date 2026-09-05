@@ -262,9 +262,11 @@ def filter_selected_tests_by_flavor(tests, keep_sequential):
 def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_check):
     """Whether this job may run more test workers than the runner has cores.
 
-    A plain (non-sanitizer) binary job runs the whole suite, where every worker
-    picks a different test and most tests are light, so oversubscribing the
-    runner shortens the job without making any single test noticeably slower.
+    A plain (non-sanitizer) binary or release job runs the whole suite, where every
+    worker picks a different test and most tests are light, so oversubscribing the
+    runner shortens the job without making any single test noticeably slower. The
+    `release` full suite may be batched (`amd_release, parallel, 1/2`), which adds a
+    third `N/M` option, so allow up to three options for these lanes.
 
     A flaky/targeted check is the opposite case: every worker runs the *same*
     changed test, so `--jobs N` multiplies that one test's resource use by `N`.
@@ -277,7 +279,7 @@ def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_ch
     """
     if is_flaky_check or is_targeted_check:
         return False
-    return "binary" in options and len(test_options) < 3
+    return ("binary" in options or "release" in options) and len(test_options) <= 3
 
 
 def invert_bugfix_validation_status(test_result: Result) -> bool:
@@ -657,7 +659,10 @@ def main():
         # %c enables continuous mode: counters are memory-mapped into the file,
         # so the profile is valid at every instant instead of being written only
         # by an interruptible exit-time dump (see integration_test_job.py).
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%c%2m.profraw"
+        # It also releases the static counter section to the OS, and per-test coverage reads
+        # that section in the server process, so the two modes are mutually exclusive.
+        profile_pattern = "%2m" if is_per_test_coverage else "%c%2m"
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-{profile_pattern}.profraw"
         if is_per_test_coverage:
             runner_options += " --collect-per-test-coverage"
         else:
@@ -911,6 +916,7 @@ def main():
         is_db_replicated=is_database_replicated,
         is_shared_catalog=is_shared_catalog,
         is_per_test_coverage=is_per_test_coverage,
+        is_llvm_coverage=is_llvm_coverage,
     )
     # `run_tests` runs `clickhouse-test` without changing directory, so clients
     # it spawns inherit the repository root and dump their cores there.
@@ -1502,7 +1508,10 @@ def main():
     # The collect-logs gate must see the run's real outcome, or a bugfix
     # validation job that reproduced a crash would attach neither its cores nor
     # its full logs.
-    test_run_failed = bool(test_result) and not test_result.is_ok()
+    # A setup failure never reaches the test stage, so `test_result` stays None
+    # and a predicate reading it alone sees "nothing failed".
+    setup_failed = test_result is None and not res
+    test_run_failed = (bool(test_result) and not test_result.is_ok()) or setup_failed
 
     # invert result status for bugfix validation
     bugfix_validation_no_repro = False
