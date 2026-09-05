@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Access/Common/AccessType.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -48,6 +49,10 @@ public:
     StoragePtr tryGetTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
     StorageID getTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
     StorageID tryGetTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
+
+    /// The identity a target is configured with, resolved to a database and a name but not looked up in the
+    /// catalog. Empty for an inner target, which has no name of its own, and for an absent optional target.
+    StorageID tryGetConfiguredExternalTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
 
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
@@ -147,5 +152,20 @@ private:
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);
 std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr storage);
+
+/// Checks that the current user is allowed to reach a TimeSeries table through a table function.
+/// A row policy on a TimeSeries table is not enforceable on the rows such a function returns, so in the
+/// read direction this fails closed instead of silently returning rows the policy hides.
+void checkAccessToTimeSeriesTable(const StorageID & time_series_storage_id, const ContextPtr & context, AccessType access_type);
+
+/// Checks that the current user is allowed to reach a target table of a TimeSeries table through a table
+/// function. An `Alias` target exposes the data and metadata of another table, which a grant on the alias
+/// itself does not cover.
+void checkAccessToTimeSeriesTargetTable(const StoragePtr & target_table, const ContextPtr & context, AccessType access_type);
+
+/// Checks a target's configured identity before the catalog is consulted, so that whether that target exists
+/// is itself covered by the grant on it. Grant-only: the `Alias` leg needs the resolved storage and stays in
+/// checkAccessToTimeSeriesTargetTable, which authorizes the identity the name resolved to.
+void checkAccessToTimeSeriesTargetTableID(const StorageID & target_table_id, const ContextPtr & context, AccessType access_type);
 
 }

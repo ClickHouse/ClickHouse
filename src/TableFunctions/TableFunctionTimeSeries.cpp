@@ -69,15 +69,30 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Couldn't get a table name from the arguments of the {} table function", name);
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
-    target_table_type_name = getTargetTable(context)->getName();
+
+    /// The engine of the TimeSeries table, the name of its target and that target's own engine are read
+    /// below, so reaching them requires what describing those two tables requires. The target's engine
+    /// also selects the source privilege this table function is checked against.
+    checkAccessToTimeSeriesTable(time_series_storage_id, context, AccessType::SHOW_COLUMNS);
+    auto target_table = getAuthorizedTargetTable(context, AccessType::SHOW_COLUMNS);
+    target_table_type_name = target_table->getName();
 }
 
 
 template <ViewTarget::Kind target_kind>
-StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const ContextPtr & context) const
+StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getAuthorizedTargetTable(const ContextPtr & context, AccessType access_type) const
 {
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    return time_series_storage->getTargetTable(target_kind, context);
+
+    /// Before the lookup, because looking a name up reports whether it exists, and that is the target's
+    /// metadata rather than the TimeSeries table's.
+    if (auto configured_target_table_id = time_series_storage->tryGetConfiguredExternalTargetTableID(target_kind, context);
+        !configured_target_table_id.empty())
+        checkAccessToTimeSeriesTargetTableID(configured_target_table_id, context, access_type);
+
+    auto target_table = time_series_storage->getTargetTable(target_kind, context);
+    checkAccessToTimeSeriesTargetTable(target_table, context, access_type);
+    return target_table;
 }
 
 
@@ -87,15 +102,22 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         ContextPtr context,
         const String & /* table_name */,
         ColumnsDescription /* cached_columns */,
-        bool /* is_insert_query */) const
+        bool is_insert_query) const
 {
-    return getTargetTable(context);
+    /// Both tables, because the equivalent direct operation on the TimeSeries table authorizes both:
+    /// the TimeSeries table the user named, and the target table its rows actually come from.
+    const auto access_type = is_insert_query ? AccessType::INSERT : AccessType::SELECT;
+    checkAccessToTimeSeriesTable(time_series_storage_id, context, access_type);
+    return getAuthorizedTargetTable(context, access_type);
 }
 
 template <ViewTarget::Kind target_kind>
 ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
-    auto metadata_snapshot = getTargetTable(context)->getInMemoryMetadataPtr(context, false);
+    /// Resolving a table structure is a read operation whatever the direction of the enclosing query.
+    checkAccessToTimeSeriesTable(time_series_storage_id, context, AccessType::SHOW_COLUMNS);
+    auto target_table = getAuthorizedTargetTable(context, AccessType::SHOW_COLUMNS);
+    auto metadata_snapshot = target_table->getInMemoryMetadataPtr(context, false);
     return metadata_snapshot->columns;
 }
 

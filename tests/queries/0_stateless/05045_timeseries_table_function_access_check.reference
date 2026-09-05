@@ -1,0 +1,19 @@
+describe with SHOW COLUMNS on both tables
+id	UInt64					
+timestamp	DateTime64(3)					
+value	Float64					
+File target: denial names the target
+File target: no source privilege named
+select with SELECT on both tables
+1	42
+selector, prometheusQuery and the persistent tables over them
+0
+3
+0
+3
+select again after the row policy is dropped
+1	42
+rows after the insert
+2
+the target table still exists under its own name
+1
