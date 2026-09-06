@@ -28,6 +28,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/PredicateRewriteVisitor.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -43,7 +44,11 @@
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/makeASTForLogicalFunction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
@@ -65,6 +70,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 parallel_replicas_mark_segment_size;
     extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
+    extern const SettingsBool enable_optimize_predicate_expression;
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
     extern const SettingsBool allow_experimental_analyzer;
@@ -237,6 +243,93 @@ static ASTSelectQuery & getSelectQuery(ASTPtr ast)
         ast = explain->getExplainedQuery();
 
     return ast->as<ASTSelectQuery &>();
+}
+
+/// Classify a HAVING conjunct so we know where it can live.
+enum class HavingConjunctKind
+{
+    GroupingKey, /// references only grouping keys, can move to WHERE (pre-aggregation)
+    Aggregate,   /// contains an aggregate function, must stay in HAVING
+    Unmovable,   /// window or stateful function, do not touch the query at all
+};
+
+static HavingConjunctKind classifyHavingConjunct(const ASTPtr & node, ContextPtr context)
+{
+    HavingConjunctKind kind = HavingConjunctKind::GroupingKey;
+
+    /// Walk the whole conjunct, but do not descend into subqueries (their functions
+    /// belong to the inner scope and say nothing about this predicate).
+    std::function<void(const ASTPtr &)> visit = [&](const ASTPtr & ast)
+    {
+        if (kind == HavingConjunctKind::Unmovable || ast->as<ASTSubquery>())
+            return;
+
+        if (const auto * function = ast->as<ASTFunction>())
+        {
+            if (function->isWindowFunction())
+            {
+                kind = HavingConjunctKind::Unmovable;
+                return;
+            }
+            if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->name))
+            {
+                kind = HavingConjunctKind::Aggregate;
+            }
+            else if (auto resolver = FunctionFactory::instance().tryGet(function->name, context); resolver && resolver->isStateful())
+            {
+                /// Stateful functions (e.g. runningDifference) are position-dependent, moving them changes results.
+                kind = HavingConjunctKind::Unmovable;
+                return;
+            }
+        }
+
+        for (const auto & child : ast->children)
+            visit(child);
+    };
+
+    visit(node);
+    return kind;
+}
+
+/// rewriteSubquery pushes the pushed-down predicate into the shard subquery as HAVING (see
+/// PredicateRewriteVisitor), relying on a later pass to move grouping-key predicates back to WHERE.
+/// Under the old analyzer that move is done by PredicateExpressionsOptimizer; the new analyzer never
+/// runs it. An aggregating shard subquery stops at WithMergeableState (the initiator merges), so the
+/// deferred HAVING never executes on the shard and cannot prune partitions/indexes (issue #108284).
+/// Do the move here, using only generic AST utilities, so the shard receives a pre-aggregation WHERE.
+/// Conjuncts that contain an aggregate function stay in HAVING; a window or stateful function makes the
+/// whole predicate unmovable and we leave the query untouched.
+static void moveGroupingKeyPredicatesFromHavingToWhere(ASTSelectQuery & select_query, ContextPtr context)
+{
+    ASTs where_predicates;
+    ASTs having_predicates;
+
+    for (const auto & conjunct : splitConjunctionsAst(select_query.having()))
+    {
+        switch (classifyHavingConjunct(conjunct, context))
+        {
+            case HavingConjunctKind::Unmovable:
+                return;
+            case HavingConjunctKind::Aggregate:
+                having_predicates.emplace_back(conjunct);
+                break;
+            case HavingConjunctKind::GroupingKey:
+                where_predicates.emplace_back(conjunct);
+                break;
+        }
+    }
+
+    if (where_predicates.empty())
+        return;
+
+    if (having_predicates.empty())
+        select_query.setExpression(ASTSelectQuery::Expression::HAVING, {});
+    else
+        select_query.setExpression(ASTSelectQuery::Expression::HAVING, makeASTForLogicalAnd(std::move(having_predicates)));
+
+    if (select_query.where())
+        where_predicates.insert(where_predicates.begin(), select_query.where());
+    select_query.setExpression(ASTSelectQuery::Expression::WHERE, makeASTForLogicalAnd(std::move(where_predicates)));
 }
 
 /// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
@@ -467,7 +560,8 @@ static void addFilters(
     const ASTPtr & query_ast,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
-    const ActionsDAG & pushed_down_filters)
+    const ActionsDAG & pushed_down_filters,
+    QueryProcessingStage::Enum stage)
 {
     if (!query_tree || !planner_context)
         return;
@@ -556,7 +650,25 @@ static void addFilters(
     ASTs predicates{predicate};
     PredicateRewriteVisitor::Data data(context, predicates, table_with_columns, optimize_final, optimize_with);
 
-    data.rewriteSubquery(getSelectQuery(query_ast), table_with_columns.columns.getNames());
+    auto & shard_select_query = getSelectQuery(query_ast);
+    data.rewriteSubquery(shard_select_query, table_with_columns.columns.getNames());
+
+    /// Only a partial-aggregation shard (WithMergeableState) needs the move. There the shard computes
+    /// intermediate aggregate states and the initiator finalizes them, so a shard HAVING is deferred to
+    /// the initiator and never prunes on the shard (issue #108284). At Complete stage the shard runs the
+    /// whole subquery and its HAVING executes normally, so moving a conjunct to a pre-aggregation WHERE
+    /// is both unnecessary and unsafe: an outer filter on an aggregate alias (for example a complete-stage
+    /// remote() over `SELECT ... sum(x) AS s ... GROUP BY ... HAVING s > 0`) would become `WHERE s > 0`
+    /// before aggregation and fail with ILLEGAL_AGGREGATION.
+    /// Skip WITH CUBE/ROLLUP/TOTALS/GROUPING SETS, where a grouping key can be NULL in super-aggregate rows.
+    /// Gate on enable_optimize_predicate_expression so the setting can still keep the predicate in
+    /// HAVING (no shard pruning), matching the old analyzer where this move only runs when it is on.
+    const bool has_incompatible_constructs = shard_select_query.group_by_with_cube
+        || shard_select_query.group_by_with_rollup || shard_select_query.group_by_with_totals
+        || shard_select_query.group_by_with_grouping_sets;
+    if (stage == QueryProcessingStage::WithMergeableState && settings[Setting::enable_optimize_predicate_expression]
+        && shard_select_query.groupBy() && shard_select_query.having() && !has_incompatible_constructs)
+        moveGroupingKeyPredicatesFromHavingToWhere(shard_select_query, context);
 }
 
 void ReadFromRemote::addLazyPipe(
@@ -719,7 +831,7 @@ void ReadFromRemote::addLazyPipe(
         /// and the temporary table which we are about to send would be empty.
         /// So that GLOBAL IN would work as local IN in the pushed-down predicate.
         if (pushed_down_filters)
-            addFilters(nullptr, my_context, query, query_tree, planner_context, *pushed_down_filters);
+            addFilters(nullptr, my_context, query, query_tree, planner_context, *pushed_down_filters, my_stage);
         bool enable_analyzer = current_settings[Setting::allow_experimental_analyzer];
         String query_string = formattedAST(query, enable_analyzer);
         auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
@@ -841,7 +953,7 @@ void ReadFromRemote::addPipe(
     else
     {
         if (filter_actions_dag)
-            addFilters(&external_tables, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+            addFilters(&external_tables, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag, stage);
 
         const String query_string = formattedAST(shard.query, enable_analyzer);
         auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
@@ -1094,7 +1206,7 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     if (context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown] && filter_actions_dag)
-        addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag);
+        addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag, stage);
 
     Pipes pipes = addPipes(query_ast, output_header);
 
