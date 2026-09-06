@@ -2937,16 +2937,32 @@ static void advanceValueIdxUntilRow(size_t end_row_idx, Reader::PageState & page
     }
     else
     {
+        const UInt8 * rep = page.rep.data();
+        size_t remaining_rows = end_row_idx - page.next_row_idx;
+
+        /// Take a 64-byte block of repetition levels wholesale only while all of its row starts fit
+        /// in the remaining budget, so the row we have to stop at can't be inside a taken block.
+        while (new_value_idx + 64 <= page.num_values)
+        {
+            size_t row_starts = static_cast<size_t>(std::popcount(~bytes64MaskToBits64Mask(rep + new_value_idx)));
+            if (row_starts > remaining_rows)
+                break;
+            remaining_rows -= row_starts;
+            new_value_idx += 64;
+        }
+
         while (new_value_idx < page.num_values)
         {
-            if (page.rep[new_value_idx] == 0)
+            if (rep[new_value_idx] == 0)
             {
-                if (page.next_row_idx == end_row_idx)
+                if (remaining_rows == 0)
                     break;
-                page.next_row_idx += 1;
+                remaining_rows -= 1;
             }
             new_value_idx += 1;
         }
+
+        page.next_row_idx = end_row_idx - remaining_rows;
     }
     page.value_idx = new_value_idx;
 }
@@ -3053,62 +3069,138 @@ static void processDefLevelsForInnermostColumn(
     size_t num_values, const UInt8 * def, UInt8 max_def, UInt8 max_array_def, size_t & out_num_encoded_values, ColumnUInt8::Container * out_null_map)
 {
     size_t num_encoded_values = 0;
-    for (size_t i = 0; i < num_values; ++i)
+    if constexpr (has_nulls)
     {
-        if constexpr (has_arrays)
-            if (def[i] < max_array_def)
-                continue; // empty array
+        /// The null map is grown to an upper bound and trimmed at the end: a value of an empty or
+        /// null ancestor array gets no element, so we write unconditionally and advance only for the
+        /// values we keep, and the next kept value overwrites the skipped write.
+        size_t prev_size = out_null_map->size();
+        out_null_map->resize(prev_size + num_values);
+        UInt8 * out = out_null_map->data() + prev_size;
 
-        bool is_null = false;
-        if constexpr (has_nulls)
+        for (size_t i = 0; i < num_values; ++i)
         {
-            is_null = def[i] != max_def;
-            out_null_map->push_back(is_null);
+            bool is_null = def[i] != max_def;
+            *out = is_null;
+            if constexpr (has_arrays)
+                out += def[i] >= max_array_def;
+            else
+                out += 1;
+            /// A skipped value has def[i] < max_array_def <= max_def, so it is never counted here.
+            num_encoded_values += !is_null;
         }
 
-        num_encoded_values += !is_null;
+        out_null_map->resize(out - out_null_map->data());
     }
+    else if constexpr (has_arrays)
+    {
+        for (size_t i = 0; i < num_values; ++i)
+            num_encoded_values += def[i] >= max_array_def;
+    }
+    else
+        num_encoded_values = num_values;
+
     out_num_encoded_values = num_encoded_values;
 }
 
 /// Produces array offsets at a given level of nested arrays.
-/// TODO [parquet]: Try simdifying.
+/// `num_new_instances` is how many array instances start in this span, which the caller knows
+/// exactly, so the output grows once. Returns how many elements this level produced, which is how
+/// many array instances the next deeper level starts.
+/// TODO [parquet]: Try simdifying. The loop below is branch-free, but its store address depends on a
+/// running sum of predicates, which auto-vectorization can't express.
 ///
 /// Instead of calling this for array_rep = 1..max_rep, we could probably process all array levels
 /// in one loop over rep/def levels (doing something like arrays_offsets[rep[i]].push_back(...)).
 /// But I expect it would be slower because (a) simd would be less effective (especially after we
 /// simdify this implementation), (b) usually there's only one level of arrays.
-static void processRepDefLevelsForArray(
+static UInt64 processRepDefLevelsForArray(
     size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
-    UInt8 parent_array_def, PaddedPODArray<UInt64> & out_offsets)
+    UInt8 parent_array_def, size_t num_new_instances, PaddedPODArray<UInt64> & out_offsets)
 {
-    UInt64 offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
+    size_t prev_size = out_offsets.size();
+    out_offsets.resize(prev_size + num_new_instances);
+
+    /// May point at the -1-st element, PaddedPODArray allows that. Normally that element is only
+    /// ever set to 0; if invalid rep levels make us set it to nonzero, the caller notices and throws.
+    UInt64 * out = out_offsets.data() + prev_size - 1;
+    UInt64 first_offset = *out;
+    UInt64 offset = first_offset;
+
+    /// A value with def[i] < parent_array_def has a null or empty ancestor array and starts no new
+    /// array instance. In particular:
+    ///  * `def[i] == array_def - 1` means this array is empty,
+    ///  * `parent_array_def <= def[i] < array_def - 1` means this array is null,
+    ///    which we convert to empty array because clickhouse doesn't support nullable arrays.
+    ///    TODO [parquet]: Should we throw an error in this case if !options.format.null_as_default?
+    /// `def` equals the level's index in `levels`, so array levels have strictly increasing def and
+    /// `def[i] >= array_def` implies `def[i] >= parent_array_def`; the element count below therefore
+    /// needs no separate check against parent_array_def.
     for (size_t i = 0; i < num_values; ++i)
     {
-        if (def[i] < parent_array_def)
-            /// Some ancestor is null or empty array.
-            /// In particular:
-            ///  * `def[i] == array_def - 1` means this array is empty,
-            ///  * `parent_array_def <= def[i] < array_def - 1` means this array is null,
-            ///    which we convert to empty array because clickhouse doesn't support nullable arrays.
-            ///    TODO [parquet]: Should we throw an error in this case if !options.format.null_as_default?
-            continue;
-
-        if (rep[i] < array_rep)
-        {
-            /// Previous array instance ended and a new array instance started.
-
-            /// May assign -1-st element, but normally only sets it to 0; if we set it to nonzero
-            /// because of invalid rep levels, the caller will notice and throw.
-            out_offsets.back() = offset;
-            out_offsets.resize(out_offsets.size() + 1);
-        }
-
+        /// Finalizes the previous array instance if a new one starts here, is overwritten otherwise.
+        *out = offset;
+        out += rep[i] < array_rep && def[i] >= parent_array_def;
         offset += rep[i] <= array_rep && def[i] >= array_def;
     }
     /// Note that the array may continue in the next page. In that case the next call to this
     /// function will read this offset back, add to it, and assign it again.
-    out_offsets.back() = offset;
+    *out = offset;
+
+    chassert(out == out_offsets.data() + prev_size - 1 + num_new_instances);
+    return offset - first_offset;
+}
+
+/// Fused version of processRepDefLevelsForArray + processDefLevelsForInnermostColumn for the common
+/// case of exactly one array level. Then array_rep is 1, so `rep[i] <= array_rep` always holds, a new
+/// instance starts exactly at `rep[i] == 0`, and `array_def == max_array_def`; one pass over the
+/// levels can produce the offsets, the null map and the encoded value count. Nested arrays keep the
+/// general path.
+template <bool has_nulls>
+static void processRepDefLevelsForSingleArray(
+    size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 max_def, UInt8 max_array_def,
+    size_t num_new_instances, PaddedPODArray<UInt64> & out_offsets,
+    size_t & out_num_encoded_values, ColumnUInt8::Container * out_null_map)
+{
+    size_t prev_size = out_offsets.size();
+    out_offsets.resize(prev_size + num_new_instances);
+    UInt64 * out_offset = out_offsets.data() + prev_size - 1;
+    UInt64 offset = *out_offset;
+
+    UInt8 * out_null = nullptr;
+    if constexpr (has_nulls)
+    {
+        size_t null_prev_size = out_null_map->size();
+        out_null_map->resize(null_prev_size + num_values);
+        out_null = out_null_map->data() + null_prev_size;
+    }
+
+    size_t num_encoded_values = 0;
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        /// False for a value of an empty or null array, which produces no element at any output.
+        bool in_array = def[i] >= max_array_def;
+
+        *out_offset = offset;
+        out_offset += rep[i] == 0;
+        offset += in_array;
+
+        if constexpr (has_nulls)
+        {
+            bool is_null = def[i] != max_def;
+            *out_null = is_null;
+            out_null += in_array;
+            num_encoded_values += !is_null;
+        }
+        else
+            num_encoded_values += in_array;
+    }
+    *out_offset = offset;
+    if constexpr (has_nulls)
+        out_null_map->resize(out_null - out_null_map->data());
+
+    chassert(out_offset == out_offsets.data() + prev_size - 1 + num_new_instances);
+    out_num_encoded_values = num_encoded_values;
 }
 
 void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup)
@@ -3133,9 +3225,14 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     advanceValueIdxUntilRow(end_row_idx, page);
 
     /// Produce array offsets.
-    if (!page.rep.empty())
+    const bool single_array_level = !page.rep.empty() && column_info.levels.back().rep == 1;
+    if (!page.rep.empty() && !single_array_level)
     {
         UInt8 parent_array_def = 0;
+        /// The outermost array level has array_rep == 1, so it starts an instance exactly at each
+        /// row start, and advanceValueIdxUntilRow counted those. Each deeper level starts an instance
+        /// per element of the level above, which is what processRepDefLevelsForArray returns.
+        size_t num_new_instances = page.next_row_idx - first_row_idx;
         for (size_t level_idx = 1; level_idx < column_info.levels.size(); ++level_idx)
         {
             const LevelInfo & level = column_info.levels[level_idx];
@@ -3143,9 +3240,10 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
                 continue;
 
             auto & offsets = assert_cast<ColumnArray::ColumnOffsets &>(*subchunk.arrays_offsets.at(level.rep - 1)).getData();
-            processRepDefLevelsForArray(
+            num_new_instances = processRepDefLevelsForArray(
                 page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
-                page.rep.data() + prev_value_idx, level.rep, level.def, parent_array_def, offsets);
+                page.rep.data() + prev_value_idx, level.rep, level.def, parent_array_def,
+                num_new_instances, offsets);
 
             parent_array_def = level.def;
         }
@@ -3153,7 +3251,23 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
 
     /// Populate null map and find how many encoded values to read.
     size_t encoded_values_to_read = 0;
-    if (page.def.empty())
+    if (single_array_level)
+    {
+        auto & offsets = assert_cast<ColumnArray::ColumnOffsets &>(*subchunk.arrays_offsets.at(0)).getData();
+        size_t num_new_instances = page.next_row_idx - first_row_idx;
+        if (subchunk.null_map)
+            processRepDefLevelsForSingleArray<true>(
+                page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
+                page.rep.data() + prev_value_idx, column_info.levels.back().def, column_info.max_array_def,
+                num_new_instances, offsets, encoded_values_to_read,
+                &assert_cast<ColumnUInt8 &>(*subchunk.null_map).getData());
+        else
+            processRepDefLevelsForSingleArray<false>(
+                page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
+                page.rep.data() + prev_value_idx, column_info.levels.back().def, column_info.max_array_def,
+                num_new_instances, offsets, encoded_values_to_read, nullptr);
+    }
+    else if (page.def.empty())
     {
         /// No nulls or arrays in this page.
         encoded_values_to_read = page.value_idx - prev_value_idx;
