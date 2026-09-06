@@ -37,9 +37,7 @@ Nous recommandons d’utiliser le workflow piloté par SQL. Les deux méthodes d
 
 Pour voir tous les utilisateurs, rôles, profils, etc., ainsi que tous leurs privilèges, utilisez l’instruction [`SHOW ACCESS`](/fr/reference/statements/show#show-access).
 
-<div id="access-control-usage">
-  ## Vue d’ensemble
-</div>
+## Vue d’ensemble {#access-control-usage}
 
 Par défaut, le serveur ClickHouse fournit le compte utilisateur `default`, qui n&#39;est pas autorisé à utiliser le contrôle d’accès et la gestion des comptes pilotés par SQL, mais qui dispose de tous les droits et de toutes les autorisations. Le compte utilisateur `default` est utilisé chaque fois que le nom d’utilisateur n’est pas défini, par exemple lors de la connexion depuis un client ou dans les requêtes distribuées. Dans le traitement distribué des requêtes, le compte utilisateur `default` est utilisé si la configuration du serveur ou du cluster ne spécifie pas les propriétés [user and password](/fr/reference/engines/table-engines/special/distributed).
 
@@ -49,17 +47,13 @@ Si vous commencez tout juste à utiliser ClickHouse, envisagez le scénario suiv
 2. Connectez-vous au compte utilisateur `default` et créez tous les utilisateurs nécessaires. N’oubliez pas de créer un compte administrateur (`GRANT ALL ON *.* TO admin_user_account WITH GRANT OPTION`).
 3. [Restreignez les autorisations](/fr/concepts/features/configuration/settings/permissions-for-queries) de l’utilisateur `default` et désactivez pour celui-ci le contrôle d’accès et la gestion des comptes pilotés par SQL.
 
-<div id="access-control-properties">
-  ### Propriétés de la solution actuelle
-</div>
+### Propriétés de la solution actuelle {#access-control-properties}
 
 * Vous pouvez accorder des permissions sur des bases de données et des tables, même si elles n&#39;existent pas.
 * Si une table est supprimée, tous les privilèges correspondants ne sont pas révoqués. Cela signifie que, même si vous créez ensuite une nouvelle table portant le même nom, tous les privilèges restent valides. Pour révoquer les privilèges associés à la table supprimée, vous devez exécuter, par exemple, la query `REVOKE ALL PRIVILEGES ON db.table FROM ALL`.
 * Il n&#39;existe pas de paramètres de durée de vie pour les privilèges.
 
-<div id="user-account-management">
-  ### Compte utilisateur
-</div>
+### Compte utilisateur {#user-account-management}
 
 Un compte utilisateur est une entité d&#39;accès qui sert à autoriser un utilisateur dans ClickHouse. Un compte utilisateur contient :
 
@@ -80,9 +74,7 @@ Requêtes de gestion :
 * [SHOW CREATE USER](/fr/reference/statements/show#show-create-user)
 * [SHOW USERS](/fr/reference/statements/show#show-users)
 
-<div id="access-control-settings-applying">
-  ### Application des paramètres
-</div>
+### Application des paramètres {#access-control-settings-applying}
 
 Les paramètres peuvent être configurés à différents niveaux : pour un compte utilisateur, dans les rôles qui lui sont accordés et dans les profils de paramètres. Lors de la connexion d’un utilisateur, si un paramètre est configuré pour différentes entités d’accès, la valeur et les contraintes de ce paramètre sont appliquées comme suit (de la priorité la plus élevée à la plus faible) :
 
@@ -91,9 +83,7 @@ Les paramètres peuvent être configurés à différents niveaux : pour un comp
 3. Les paramètres issus des profils de paramètres attribués à un utilisateur ou à ses rôles par défaut. Si un paramètre est configuré dans plusieurs profils, l’ordre d’application du paramètre n’est pas défini.
 4. Paramètres appliqués par défaut à l’ensemble du serveur ou à partir du [profil par défaut](/fr/reference/settings/server-settings/settings/default#default_profile).
 
-<div id="role-management">
-  ### Rôle
-</div>
+### Rôle {#role-management}
 
 Un rôle est un conteneur d&#39;entités de contrôle d&#39;accès qui peuvent être attribuées à un compte utilisateur.
 
@@ -115,9 +105,7 @@ Requêtes de gestion :
 
 Des privilèges peuvent être attribués à un rôle au moyen de la requête [GRANT](/fr/reference/statements/grant). Pour révoquer les privilèges d&#39;un rôle, ClickHouse fournit la requête [REVOKE](/fr/reference/statements/revoke).
 
-<div id="row-policy-management">
-  #### politique de ligne
-</div>
+#### politique de ligne {#row-policy-management}
 
 Une politique de ligne est un filtre qui définit quelles lignes sont accessibles à un utilisateur ou à un rôle. Une politique de ligne contient des filtres pour une table donnée, ainsi qu&#39;une liste de rôles et/ou d&#39;utilisateurs auxquels cette politique de ligne s&#39;applique.
 
@@ -135,9 +123,7 @@ Requêtes de gestion :
 * [SHOW CREATE ROW POLICY](/fr/reference/statements/show#show-create-row-policy)
 * [SHOW POLICIES](/fr/reference/statements/show#show-policies)
 
-<div id="settings-profiles-management">
-  ### Profil de paramètres
-</div>
+### Profil de paramètres {#settings-profiles-management}
 
 Un profil de paramètres est un ensemble de [paramètres](/fr/reference/settings/index). Un profil de paramètres contient des paramètres et des contraintes, ainsi qu&#39;une liste de rôles et/ou d&#39;utilisateurs auxquels ce profil s&#39;applique.
 
@@ -149,9 +135,7 @@ Requêtes de gestion :
 * [SHOW CREATE SETTINGS PROFILE](/fr/reference/statements/show#show-create-settings-profile)
 * [SHOW PROFILES](/fr/reference/statements/show#show-profiles)
 
-<div id="quotas-management">
-  ### Quota
-</div>
+### Quota {#quotas-management}
 
 Un quota limite l’utilisation des ressources. Voir [Quotas](/fr/concepts/features/configuration/server-config/quotas).
 
@@ -166,9 +150,7 @@ Requêtes de gestion :
 * [SHOW QUOTA](/fr/reference/statements/show#show-quota)
 * [SHOW QUOTAS](/fr/reference/statements/show#show-quotas)
 
-<div id="enabling-access-control">
-  ### Activation du contrôle d’accès et de la gestion des comptes pilotés par SQL
-</div>
+### Activation du contrôle d’accès et de la gestion des comptes pilotés par SQL {#enabling-access-control}
 
 * Configurez un répertoire pour stocker la configuration.
 
@@ -176,11 +158,18 @@ Requêtes de gestion :
 
 * Activez le contrôle d’accès et la gestion des comptes pilotés par SQL pour au moins un compte utilisateur.
 
-  Par défaut, le contrôle d’accès et la gestion des comptes pilotés par SQL sont désactivés pour tous les utilisateurs. Vous devez configurer au moins un utilisateur dans le fichier de configuration `users.xml` et définir à 1 les valeurs des paramètres [`access_management`](/fr/concepts/features/configuration/settings/settings-users#access_management-user-setting), `named_collection_control`, `show_named_collections` et `show_named_collections_secrets`.
+  Le fichier de configuration `users.xml` fourni avec ClickHouse active le contrôle d’accès et la gestion des comptes pilotés par SQL pour l’utilisateur `default` en définissant [`access_management`](/fr/concepts/features/configuration/settings/settings-users#access_management-user-setting) et [`named_collection_control`](/fr/concepts/features/configuration/settings/settings-users#named_collection_control-user-setting) à 1. Pour tous les autres utilisateurs, ces deux paramètres valent 0 par défaut : vous devez donc les définir explicitement.
 
-<div id="defining-sql-users-and-roles">
-  ## Définir les utilisateurs et les rôles SQL
-</div>
+  [`show_named_collections_secrets`](/fr/concepts/features/configuration/settings/settings-users#show_named_collections_secrets-user-setting) vaut 0 par défaut, même pour l’utilisateur `default`, car pouvoir gérer les collections nommées ne signifie pas pouvoir relire les informations d’identification qui y sont déjà stockées. Un utilisateur ne peut accorder que les privilèges qu’il possède lui-même : tant que ce paramètre est à 0, l’utilisateur ne dispose pas de l’ensemble complet des privilèges et une requête telle que `GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION` est rejetée :
+
+  ```text
+  Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+  (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+  ```
+
+  Définissez ces trois paramètres à 1 pour faire de l’utilisateur un administrateur complet.
+
+## Définir les utilisateurs et les rôles SQL {#defining-sql-users-and-roles}
 
 <Tip>
   Si vous utilisez ClickHouse Cloud, veuillez consulter [Cloud access management](/fr/products/cloud/reference/security/console-roles).
@@ -188,17 +177,19 @@ Requêtes de gestion :
 
 Cet article présente les principes de base de la définition des utilisateurs et des rôles SQL, ainsi que de l’attribution de ces privilèges et autorisations aux bases de données, tables, lignes et colonnes.
 
-<div id="enabling-sql-user-mode">
-  ### Activation du mode utilisateur SQL
-</div>
+### Activation du mode utilisateur SQL {#enabling-sql-user-mode}
 
-1. Activez le mode utilisateur SQL dans le fichier `users.xml`, sous l’utilisateur `<default>` :
+1. Activez le mode utilisateur SQL dans le fichier `users.xml`, sous l’utilisateur `<default>` :
+
    ```xml
    <access_management>1</access_management>
    <named_collection_control>1</named_collection_control>
-   <show_named_collections>1</show_named_collections>
+   <!-- Nécessaire pour faire de l’utilisateur un administrateur complet ;
+        sans cela, le `GRANT ALL ... WITH GRANT OPTION` ci-dessous est rejeté. -->
    <show_named_collections_secrets>1</show_named_collections_secrets>
    ```
+
+   Les deux premiers paramètres sont déjà activés pour l’utilisateur `default` dans le fichier `users.xml` livré avec ClickHouse ; `show_named_collections_secrets` y est commenté et doit être décommenté.
 
 <Note>
   L’utilisateur `default` est le seul créé lors d’une nouvelle installation. C’est aussi, par défaut, le compte utilisé pour les communications inter-nœuds.
@@ -208,14 +199,12 @@ Cet article présente les principes de base de la définition des utilisateurs e
 
 2. Redémarrez les nœuds pour appliquer les modifications.
 
-3. Démarrez le client ClickHouse :
+3. Démarrez le client ClickHouse :
    ```sql
    clickhouse-client --user default --password <password>
    ```
 
-<div id="defining-users">
-  ### Définir les utilisateurs
-</div>
+### Définir les utilisateurs {#defining-users}
 
 1. Créez un compte administrateur SQL :
    ```sql
@@ -226,9 +215,7 @@ Cet article présente les principes de base de la définition des utilisateurs e
    GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION;
    ```
 
-<div id="alter-permissions">
-  ## Permissions pour ALTER
-</div>
+## Permissions pour ALTER {#alter-permissions}
 
 Cet article a pour but de vous aider à mieux comprendre comment définir les permissions et comment elles fonctionnent lors de l’utilisation d’instructions `ALTER` pour les utilisateurs privilégiés.
 

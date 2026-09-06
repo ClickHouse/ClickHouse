@@ -54,6 +54,8 @@ doc_type: 'reference'
         </auth_methods>
 
         <access_management>0|1</access_management>
+        <named_collection_control>0|1</named_collection_control>
+        <show_named_collections_secrets>0|1</show_named_collections_secrets>
 
         <networks incl="networks" replace="replace">
         </networks>
@@ -78,9 +80,7 @@ doc_type: 'reference'
 </users>
 ```
 
-<div id="user-namepassword">
-  ### user_name/password
-</div>
+### user_name/password {#user-namepassword}
 
 パスワードは、平文または SHA256 (16進形式) で指定できます。
 
@@ -116,9 +116,7 @@ doc_type: 'reference'
 
   結果の 1 行目がパスワードで、2 行目が対応するダブル SHA1 ハッシュです。
 
-<div id="totp-authentication-configuration">
-  ### TOTP 認証の設定
-</div>
+### TOTP 認証の設定 {#totp-authentication-configuration}
 
 Time-Based One-Time Password (TOTP) は、一定時間だけ有効な一時的なアクセスコードを生成することで、ClickHouse ユーザーの認証に使用できます。
 この TOTP 認証方式は [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238) に準拠しており、Google Authenticator や 1Password などの一般的な TOTP アプリと互換性があります。
@@ -299,6 +297,46 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj
 * 1 — 有効。
 
 デフォルト値: 0。
+
+### named_collection_control
+
+この設定は、ユーザーによる[named collections](/ja/concepts/features/configuration/server-config/named-collections)の管理を有効または無効にします。
+`NAMED COLLECTION ADMIN` 権限に対応しますが、`SHOW NAMED COLLECTIONS SECRETS` は例外で、[`show_named_collections_secrets`](#show_named_collections_secrets-user-setting) によって個別に制御されます。
+
+`named_collection_admin` は、この設定の同義語として使用できます。
+
+設定可能な値:
+
+* 0 — 無効。
+* 1 — 有効。
+
+デフォルト値: 0。
+
+### show_named_collections_secrets
+
+この設定は、ユーザーに対する `SHOW NAMED COLLECTIONS SECRETS` 権限を有効または無効にします。この権限を持つユーザーは、[named collections](/ja/concepts/features/configuration/server-config/named-collections) に格納された値を、たとえば [`system.named_collections`](/ja/reference/system-tables/named_collections) テーブルで参照できます。
+
+デフォルトでは無効です。named collections を管理できることは、そこにすでに格納されている認証情報を読み取れることを意味しません。
+
+この設定は `named_collection_control` と併用した場合にのみ効果があります。`named_collection_control` が無効の場合、`SHOW NAMED COLLECTIONS SECRETS` を含む named collection のすべての権限は、いずれにせよ取り消されるためです。
+
+設定可能な値:
+
+* 0 — 無効。
+* 1 — 有効。
+
+デフォルト値: 0。
+
+<Note>
+  ユーザーは自身が保有する権限しか付与できません。そのため、`access_management`、`named_collection_control`、`show_named_collections_secrets` のいずれかが無効になっているユーザーは、権限一式を完全には保有しておらず、それを他者に付与することもできません。たとえば、`access_management` と `named_collection_control` のみが有効なユーザーの場合、`GRANT ALL ON *.* TO another_user WITH GRANT OPTION` は拒否されます:
+
+  ```text
+  Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+  (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+  ```
+
+  ユーザーを完全な管理者にするには、3 つの設定すべてを有効にしてください。
+</Note>
 
 ### grants
 

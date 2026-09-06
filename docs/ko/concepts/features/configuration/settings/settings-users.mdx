@@ -54,6 +54,8 @@ doc_type: 'reference'
         </auth_methods>
 
         <access_management>0|1</access_management>
+        <named_collection_control>0|1</named_collection_control>
+        <show_named_collections_secrets>0|1</show_named_collections_secrets>
 
         <networks incl="networks" replace="replace">
         </networks>
@@ -78,9 +80,7 @@ doc_type: 'reference'
 </users>
 ```
 
-<div id="user-namepassword">
-  ### user_name/password
-</div>
+### user_name/password {#user-namepassword}
 
 비밀번호는 평문(plaintext) 또는 SHA256(16진수 포맷)으로 지정할 수 있습니다.
 
@@ -116,9 +116,7 @@ doc_type: 'reference'
 
   결과의 첫 번째 줄은 비밀번호이고, 두 번째 줄은 해당 double SHA1 해시입니다.
 
-<div id="totp-authentication-configuration">
-  ### TOTP 인증 구성
-</div>
+### TOTP 인증 구성 {#totp-authentication-configuration}
 
 시간 기반 일회용 비밀번호(Time-Based One-Time Password, TOTP)는 제한된 시간 동안만 유효한 임시 액세스 코드를 생성해 ClickHouse 사용자를 인증하는 데 사용할 수 있습니다.
 이 TOTP 인증 방식은 [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238) 표준을 준수하므로 Google Authenticator, 1Password 같은 널리 사용되는 TOTP 애플리케이션과 호환됩니다.
@@ -299,6 +297,46 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj
 * 1 — 활성화됨.
 
 기본값: 0.
+
+### named_collection_control
+
+이 설정은 해당 사용자에 대해 [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections) 관리를 활성화하거나 비활성화합니다.
+`NAMED COLLECTION ADMIN` 권한에 해당하지만, `SHOW NAMED COLLECTIONS SECRETS`는 예외로 [`show_named_collections_secrets`](#show_named_collections_secrets-user-setting)에서 별도로 제어됩니다.
+
+`named_collection_admin`은 이 설정의 동의어로 사용할 수 있습니다.
+
+가능한 값:
+
+* 0 — 비활성화됨.
+* 1 — 활성화됨.
+
+기본값: 0.
+
+### show_named_collections_secrets
+
+이 설정은 사용자의 `SHOW NAMED COLLECTIONS SECRETS` 권한을 활성화하거나 비활성화합니다. 이 권한이 있으면 사용자는 [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)에 저장된 값을 예를 들어 [`system.named_collections`](/ko/reference/system-tables/named_collections) 테이블에서 확인할 수 있습니다.
+
+기본적으로 비활성화되어 있습니다. 명명된 컬렉션을 관리할 수 있다고 해서 그 안에 이미 저장된 자격 증명을 다시 읽을 수 있는 것은 아니기 때문입니다.
+
+이 설정은 `named_collection_control`과 함께 사용할 때만 효과가 있습니다. `named_collection_control`이 비활성화되어 있으면 `SHOW NAMED COLLECTIONS SECRETS`를 포함한 모든 명명된 컬렉션 권한이 어차피 취소되기 때문입니다.
+
+가능한 값:
+
+* 0 — 비활성화.
+* 1 — 활성화.
+
+기본값: 0.
+
+<Note>
+  사용자는 자신이 보유한 권한만 부여할 수 있으므로, `access_management`, `named_collection_control`, `show_named_collections_secrets` 중 하나라도 비활성화된 사용자는 전체 권한 집합을 갖지 못하며 이를 다른 사용자에게 넘겨줄 수도 없습니다. 예를 들어 `access_management`와 `named_collection_control`만 활성화된 사용자가 실행한 `GRANT ALL ON *.* TO another_user WITH GRANT OPTION`은 거부됩니다.
+
+  ```text
+  Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+  (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+  ```
+
+  사용자에게 완전한 관리자 권한을 부여하려면 세 가지 설정을 모두 활성화하십시오.
+</Note>
 
 ### 권한 부여
 

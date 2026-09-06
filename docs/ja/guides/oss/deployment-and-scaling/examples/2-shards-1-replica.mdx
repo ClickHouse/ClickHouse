@@ -30,7 +30,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 <DedicatedKeeperServers />
 
 <div id="pre-requisites">
-  ## 前提条件
+  ## 前提条件 {#pre-requisites}
 </div>
 
 * 事前に[ローカルのClickHouseサーバー](/ja/get-started/setup/install)をセットアップしていること
@@ -161,7 +161,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
   </Step>
 
   <Step title="ClickHouseノードの設定" id="configure-clickhouse-servers">
-    ### サーバーのセットアップ
+    ### サーバーのセットアップ {#server-setup}
 
     次に、`fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d` にある空の設定ファイル `config.xml` をそれぞれ編集します。以下でハイライトされている行は、各ノードに固有の値に変更する必要があります。
 
@@ -233,7 +233,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
     上記の設定ファイルの各セクションについて、以下で詳しく説明します。
 
-    #### ネットワークとログ
+    #### ネットワークとログ {#networking}
 
     <ListenHost />
 
@@ -251,7 +251,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
     ロギング設定の詳細については、デフォルトの ClickHouse [設定ファイル](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)に含まれるコメントを参照してください。
 
-    #### クラスターの設定
+    #### クラスターの設定 {#cluster-configuration}
 
     クラスターの設定は `<remote_servers>` ブロックで行います。
     ここでクラスター名 `cluster_2S_1R` を定義します。
@@ -281,7 +281,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
     <ServerParameterTable />
 
-    #### Keeper の設定
+    #### Keeper の設定 {#keeper-config-explanation}
 
     `<ZooKeeper>` セクションでは、ClickHouse Keeper (または ZooKeeper) の実行場所を ClickHouse に指定します。
     ClickHouse Keeper クラスターを使用する場合、クラスター内の各 `<node>` に対して、`<host>` タグおよび `<port>` タグでそれぞれホスト名とポート番号を指定する必要があります。
@@ -310,7 +310,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
       本番環境では、ClickHouse Keeper は専用ホストで実行することを強く推奨します。
     </Note>
 
-    #### マクロの設定
+    #### マクロの設定 {#macros-config-explanation}
 
     また、`<macros>` セクションはレプリケートテーブル向けのパラメータ置換を定義するために使用されます。これらは `system.macros` に一覧表示され、クエリ内で `{shard}` や `{replica}` などの置換を利用できます。
 
@@ -325,7 +325,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
       これらは、クラスターの構成に応じてそれぞれ定義されます。
     </Note>
 
-    ### ユーザー設定
+    ### ユーザー設定 {#user-config}
 
     次に、`fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` にある空の設定ファイル `users.xml` をそれぞれ以下の内容に変更します。
 
@@ -342,7 +342,6 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
         </profiles>
         <users>
             <default>
-                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -350,7 +349,6 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
-                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -383,7 +381,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
   </Step>
 
   <Step title="ClickHouse Keeper を設定する" id="configure-clickhouse-keeper-nodes">
-    ### Keeperのセットアップ
+    ### Keeperのセットアップ {#configuration-explanation}
 
     <KeeperConfig />
 
@@ -668,7 +666,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
   </Step>
 
   <Step title="分散テーブルへのデータの挿入" id="inserting-data-into-distributed-table">
-    いずれかのホストに接続し、データを挿入します。
+    いずれかのホストに接続し、データを挿入します:
 
     ```sql
     INSERT INTO uk.uk_price_paid_distributed
@@ -783,7 +781,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 </Steps>
 
 <div id="conclusion">
-  ## 結論
+  ## 結論 {#conclusion}
 </div>
 
 このクラスター構成の利点は、データが複数のホストに分散されるため、各ノードで必要なストレージ容量を半分に抑えられることです。さらに重要なのは、クエリが両方の分片にまたがって処理されるため、メモリ使用効率が向上し、各ホストの I/O も削減されることです。

@@ -54,6 +54,8 @@ doc_type: 'reference'
         </auth_methods>
 
         <access_management>0|1</access_management>
+        <named_collection_control>0|1</named_collection_control>
+        <show_named_collections_secrets>0|1</show_named_collections_secrets>
 
         <networks incl="networks" replace="replace">
         </networks>
@@ -78,9 +80,7 @@ doc_type: 'reference'
 </users>
 ```
 
-<div id="user-namepassword">
-  ### user_name/password
-</div>
+### user_name/password {#user-namepassword}
 
 密码可以指定为明文或 SHA256 (十六进制格式) 。
 
@@ -116,9 +116,7 @@ doc_type: 'reference'
 
   结果的第一行是密码，第二行是对应的 double SHA1 哈希值。
 
-<div id="totp-authentication-configuration">
-  ### TOTP 身份验证配置
-</div>
+### TOTP 身份验证配置 {#totp-authentication-configuration}
 
 基于时间的一次性密码 (TOTP) 可通过生成在有限时间内有效的临时访问码，用于对 ClickHouse 用户进行身份验证。
 这种 TOTP 身份验证方法符合 [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238) 标准，因此兼容 Google Authenticator、1Password 等常见 TOTP 应用及类似工具。
@@ -299,6 +297,46 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj
 * 1 — 启用。
 
 默认值：0。
+
+### named_collection_control
+
+该设置用于为用户启用或禁用对[命名集合 (named collections) ](/zh/concepts/features/configuration/server-config/named-collections)的管理。
+它对应 `NAMED COLLECTION ADMIN` 特权，但 `SHOW NAMED COLLECTIONS SECRETS` 除外，后者由 [`show_named_collections_secrets`](#show_named_collections_secrets-user-setting) 单独控制。
+
+`named_collection_admin` 可作为该设置的同义名称。
+
+可能的值：
+
+* 0 — 禁用。
+* 1 — 启用。
+
+默认值：0。
+
+### show_named_collections_secrets
+
+此设置用于为用户启用或禁用 `SHOW NAMED COLLECTIONS SECRETS` 特权，该特权允许用户查看存储在 [命名集合](/zh/concepts/features/configuration/server-config/named-collections) 中的值，例如通过 [`system.named_collections`](/zh/reference/system-tables/named_collections) 表查看。
+
+该设置默认禁用：能够管理命名集合并不意味着可以读取其中已存储的 credentials。
+
+此设置只有与 `named_collection_control` 配合使用才会生效，因为一旦禁用 `named_collection_control`，所有命名集合特权 (包括 `SHOW NAMED COLLECTIONS SECRETS`) 都会被撤销。
+
+可能的值：
+
+* 0 — 禁用。
+* 1 — 启用。
+
+默认值：0。
+
+<Note>
+  用户只能授予自己已拥有的特权，因此若 `access_management`、`named_collection_control` 和 `show_named_collections_secrets` 中有任意一项被禁用，该用户就不具备完整的特权集合，也无法将其授予他人。例如，对于仅启用了 `access_management` 和 `named_collection_control` 的用户，执行 `GRANT ALL ON *.* TO another_user WITH GRANT OPTION` 会被拒绝：
+
+  ```text
+  Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+  (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+  ```
+
+  同时启用这三项设置，才能让该用户成为完整的管理员。
+</Note>
 
 ### 授权
 

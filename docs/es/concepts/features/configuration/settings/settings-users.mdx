@@ -54,6 +54,8 @@ Estructura de la sección `users`:
         </auth_methods>
 
         <access_management>0|1</access_management>
+        <named_collection_control>0|1</named_collection_control>
+        <show_named_collections_secrets>0|1</show_named_collections_secrets>
 
         <networks incl="networks" replace="replace">
         </networks>
@@ -78,9 +80,7 @@ Estructura de la sección `users`:
 </users>
 ```
 
-<div id="user-namepassword">
-  ### user_name/password
-</div>
+### user_name/password {#user-namepassword}
 
 La contraseña se puede especificar en texto plano o en SHA256 (formato hex).
 
@@ -116,9 +116,7 @@ La contraseña se puede especificar en texto plano o en SHA256 (formato hex).
 
   La primera línea del resultado es la contraseña. La segunda línea es el hash double SHA1 correspondiente.
 
-<div id="totp-authentication-configuration">
-  ### Configuración de autenticación TOTP
-</div>
+### Configuración de autenticación TOTP {#totp-authentication-configuration}
 
 La contraseña de un solo uso basada en el tiempo (TOTP) puede utilizarse para autenticar a los usuarios de ClickHouse mediante la generación de códigos de acceso temporales válidos durante un tiempo limitado.
 Este método de autenticación TOTP cumple con los estándares de [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238), lo que lo hace compatible con aplicaciones TOTP populares como Google Authenticator, 1Password y herramientas similares.
@@ -299,6 +297,46 @@ Valores posibles:
 * 1 — Habilitado.
 
 Valor predeterminado: 0.
+
+### named_collection_control
+
+Esta configuración habilita o deshabilita la administración de [colecciones con nombre](/es/concepts/features/configuration/server-config/named-collections) para el usuario.
+Corresponde al privilegio `NAMED COLLECTION ADMIN`, excepto `SHOW NAMED COLLECTIONS SECRETS`, que se controla por separado mediante [`show_named_collections_secrets`](#show_named_collections_secrets-user-setting).
+
+`named_collection_admin` se acepta como sinónimo de esta configuración.
+
+Valores posibles:
+
+* 0 — Deshabilitado.
+* 1 — Habilitado.
+
+Valor predeterminado: 0.
+
+### show_named_collections_secrets
+
+Este ajuste habilita o deshabilita el privilegio `SHOW NAMED COLLECTIONS SECRETS` para el usuario, que le permite ver los valores almacenados en las [colecciones con nombre](/es/concepts/features/configuration/server-config/named-collections), por ejemplo en la tabla [`system.named_collections`](/es/reference/system-tables/named_collections).
+
+Está deshabilitado de forma predeterminada: poder administrar colecciones con nombre no implica poder leer las credenciales que ya están almacenadas en ellas.
+
+Este ajuste solo surte efecto junto con `named_collection_control`, ya que, si `named_collection_control` está deshabilitado, todos los privilegios sobre colecciones con nombre, incluido `SHOW NAMED COLLECTIONS SECRETS`, se revocan de todos modos.
+
+Valores posibles:
+
+* 0 — Deshabilitado.
+* 1 — Habilitado.
+
+Valor predeterminado: 0.
+
+<Note>
+  Un usuario solo puede otorgar los privilegios que él mismo posee, de modo que un usuario que tenga deshabilitado alguno de los ajustes `access_management`, `named_collection_control` o `show_named_collections_secrets` no dispone del conjunto completo de privilegios y no puede transmitirlo a otra persona. Por ejemplo, `GRANT ALL ON *.* TO another_user WITH GRANT OPTION` se rechaza para un usuario que solo tenga habilitados `access_management` y `named_collection_control`:
+
+  ```text
+  Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+  (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+  ```
+
+  Habilite los tres ajustes para convertir al usuario en un administrador completo.
+</Note>
 
 ### grants
 

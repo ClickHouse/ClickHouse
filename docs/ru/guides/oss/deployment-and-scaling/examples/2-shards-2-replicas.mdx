@@ -30,7 +30,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 <DedicatedKeeperServers />
 
 <div id="prerequisites">
-  ## Предварительные требования
+  ## Предварительные требования {#prerequisites}
 </div>
 
 * Вы уже настраивали [локальный сервер ClickHouse](/ru/get-started/setup/install)
@@ -171,7 +171,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
   </Step>
 
   <Step title="Настройка узлов ClickHouse" id="configure-clickhouse-servers">
-    ### Настройка сервера
+    ### Настройка сервера {#server-setup}
 
     Теперь измените каждый пустой файл конфигурации `config.xml`, расположенный по пути
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. Выделенные ниже строки
@@ -257,7 +257,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
     Каждый раздел приведённого выше конфигурационного файла подробно описан ниже.
 
-    #### Сеть и логирование
+    #### Сеть и логирование {#networking}
 
     <ListenHost />
 
@@ -276,15 +276,15 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
     Дополнительные сведения о конфигурации логирования см. в комментариях в стандартном [файле конфигурации](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) ClickHouse.
 
-    #### Конфигурация кластера
+    #### Конфигурация кластера {#cluster-config}
 
     Конфигурация кластера задаётся в блоке `<remote_servers>`.
     Здесь определяется имя кластера `cluster_2S_2R`.
 
     Блок `<cluster_2S_2R></cluster_2S_2R>` определяет структуру кластера
     с помощью настроек `<shard></shard>` и `<replica></replica>` и служит
-    шаблоном для запросов distributed DDL — запросов, выполняемых по всему
-    кластеру с использованием предложения `ON CLUSTER`. По умолчанию запросы distributed DDL
+    шаблоном для распределённых DDL-запросов — запросов, выполняемых по всему
+    кластеру с использованием предложения `ON CLUSTER`. По умолчанию распределённые DDL-запросы
     разрешены, однако их можно отключить с помощью настройки `allow_distributed_ddl_queries`.
 
     `internal_replication` установлен в true, чтобы данные записывались только в одну из реплик.
@@ -325,7 +325,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     и служит шаблоном для распределённых DDL-запросов — запросов, выполняемых
     по всему кластеру с помощью предложения `ON CLUSTER`.
 
-    #### Конфигурация Keeper
+    #### Конфигурация Keeper {#keeper-config-explanation}
 
     Раздел `<ZooKeeper>` сообщает ClickHouse, где запущен ClickHouse Keeper (или ZooKeeper).
     Поскольку мы используем кластер ClickHouse Keeper, необходимо указать каждый узел `<node>` кластера,
@@ -355,7 +355,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
       для производственных сред мы настоятельно рекомендуем запускать ClickHouse Keeper на выделенных узлах.
     </Note>
 
-    #### Настройка макросов
+    #### Настройка макросов {#macros-config-explanation}
 
     Кроме того, раздел `<macros>` используется для определения подстановок параметров для
     реплицированных таблиц. Они перечислены в `system.macros` и позволяют использовать подстановки
@@ -368,7 +368,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     </macros>
     ```
 
-    ### Конфигурация пользователя
+    ### Конфигурация пользователя {#cluster-configuration}
 
     Теперь внесите следующие изменения в каждый пустой файл конфигурации `users.xml`, расположенный по пути
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d`:
@@ -386,7 +386,6 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
         </profiles>
         <users>
             <default>
-                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -394,7 +393,6 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
-                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -424,7 +422,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
   <Step title="Настройка ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     Далее вы настроите ClickHouse Keeper, который используется для координации работы.
 
-    ### Настройка Keeper
+    ### Настройка Keeper {#configuration-explanation}
 
     <KeeperConfig />
 
@@ -743,9 +741,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
   </Step>
 </Steps>
 
-<div id="conclusion">
-  ## Заключение
-</div>
+## Заключение {#conclusion}
 
 Преимущество этой топологии кластера с 2 сегментами и 2 репликами в том, что она обеспечивает и масштабируемость, и отказоустойчивость.
 Данные распределяются по отдельным хостам, что снижает требования к хранилищу и I/O для каждого узла, а запросы обрабатываются параллельно в обоих сегментах, повышая производительность и эффективность использования памяти.
