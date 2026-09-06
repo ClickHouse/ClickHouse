@@ -3,11 +3,10 @@
 #include <base/types.h>
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <libdivide-config.h>
 #include <libdivide.h>
-
-#include <vector>
 
 
 namespace DB
@@ -35,7 +34,7 @@ class BloomFilter
 
 public:
     using UnderType = UInt64;
-    using Container = std::vector<UnderType>;
+    using Container = VectorWithMemoryTracking<UnderType>;
 
     explicit BloomFilter(const BloomFilterParameters & params);
     /// size -- size of filter in bytes.

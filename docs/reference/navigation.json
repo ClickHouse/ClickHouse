@@ -569,6 +569,7 @@
                 "reference/functions/aggregate-functions/groupArraySample",
                 "reference/functions/aggregate-functions/groupArraySorted",
                 "reference/functions/aggregate-functions/groupBitAnd",
+                "reference/functions/aggregate-functions/groupBloomFilter",
                 "reference/functions/aggregate-functions/groupBitmap",
                 "reference/functions/aggregate-functions/groupBitmapAnd",
                 "reference/functions/aggregate-functions/groupBitmapOr",
