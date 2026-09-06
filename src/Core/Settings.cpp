@@ -5084,6 +5084,13 @@ Possible values:
 - `alter_update` - run `ALTER UPDATE` query that creates a heavyweight mutation.
 - `lightweight_update` - run lightweight update if possible, run `ALTER UPDATE` otherwise.
 - `lightweight_update_force` - run lightweight update if possible, throw otherwise.
+
+For `DELETE FROM ... ON CLUSTER`, each executing host derives the mode from its own settings, so
+hosts whose profiles set different defaults can run the delete in different modes. A replicated
+shard executes on one replica, so there it is that replica's settings that decide. Setting it in
+the session of the initiating query overrides this, because the distributed DDL entry carries
+session changes at `distributed_ddl_entry_format_version` 2 and above, which the default satisfies.
+A host that constrains the setting clamps the value back.
 )", 0) \
     DECLARE(UInt64, lightweight_deletes_sync, 2, R"(
 The same as [`mutations_sync`](#mutations_sync), but controls only execution of lightweight deletes.
@@ -5617,7 +5624,37 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
 )", 0) \
     DECLARE(Bool, allow_non_metadata_alters, true, R"(
-Allow to execute alters which affects not only tables metadata, but also data on disk
+Allows `ALTER` statements that modify data on disk, not only table metadata.
+
+When disabled, an `ALTER` DDL statement on a `MergeTree`-family table is rejected with
+`ALTER_OF_COLUMN_IS_FORBIDDEN` if it would rewrite data on disk, either directly or by
+scheduling a mutation (see `system.mutations`). This covers:
+
+- `ALTER TABLE ... MODIFY COLUMN` with a type change that rewrites the column,
+  `ALTER TABLE ... DROP COLUMN` or `... CLEAR COLUMN` of a physical column,
+  `ALTER TABLE ... RENAME COLUMN` of any column including an `ALIAS`,
+  `ALTER TABLE ... DROP INDEX`, `... CLEAR INDEX`, `... DROP PROJECTION`,
+  `... CLEAR PROJECTION`, `... DROP STATISTICS`, `... CLEAR STATISTICS`, and
+  `ALTER TABLE ... MODIFY TTL` when `materialize_ttl_after_modify` is enabled.
+- `ALTER TABLE ... UPDATE` whenever it runs as a heavyweight mutation, which is the default
+  `alter_update_mode = 'heavy'` and every case the other modes fall back to,
+  `ALTER TABLE ... DELETE WHERE`, `ALTER TABLE ... MATERIALIZE INDEX`,
+  `... MATERIALIZE PROJECTION`, `... MATERIALIZE STATISTICS`, `... MATERIALIZE COLUMN`,
+  `... MATERIALIZE TTL` (unconditionally, unlike `MODIFY TTL` above),
+  `... APPLY DELETED MASK`, `... APPLY PATCHES` and `... REWRITE PARTS`.
+
+Other `ALTER` statements are allowed, including `ADD COLUMN`, `COMMENT COLUMN`,
+`MODIFY SETTING`, an `Enum` extension, and `DROP COLUMN` of an `ALIAS` column.
+
+The dedicated `DELETE FROM ...` and `UPDATE ... SET ...` statements are a different thing from
+the `ALTER TABLE ... DELETE WHERE` and `ALTER TABLE ... UPDATE` commands above, and this setting
+never refuses them, in any mode they support. It governs `ALTER` DDL only. Use `GRANT` and
+`REVOKE` of `ALTER DELETE` and `ALTER UPDATE` to restrict data modification as a whole; note that
+those privileges cover the dedicated statements and the `ALTER` commands together, so they cannot
+separate the two forms.
+
+The check applies only to `MergeTree`-family tables. Other engines, such as `Memory`,
+`Log`, `StripeLog`, `KeeperMap` and `EmbeddedRocksDB`, ignore this setting.
 )", 0) \
     DECLARE(Bool, enable_global_with_statement, true, R"(
 Propagate WITH statements to UNION queries and all subqueries
