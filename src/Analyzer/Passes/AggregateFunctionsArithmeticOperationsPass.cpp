@@ -12,6 +12,11 @@
 
 #include <Core/Settings.h>
 
+#include <Common/FieldAccurateComparison.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+
 namespace DB
 {
 namespace Setting
@@ -27,6 +32,37 @@ namespace ErrorCodes
 
 namespace
 {
+
+/** A `Decimal` operand makes the arithmetic compute in the decimal's own native signed width
+  * (`Int32` for every `Decimal32`, `Int64` for every `Decimal64`, and so on), into which the other
+  * operand is materialised by a `static_cast`. A constant outside that width participates as a
+  * different value: `Decimal32 * 9223372036854775807` multiplies by `-1`.
+  *
+  * The rewrite must not fire then: it decides the `min`/`max` swap from the literal (which has the
+  * opposite sign of the value the query actually multiplies by) and it moves the operation into the
+  * wider result type of the aggregate, where the constant survives and the result differs.
+  */
+bool constantTruncatesIntoDecimalWidth(const DataTypePtr & argument_type, const DataTypePtr & constant_type, const Field & constant)
+{
+    const auto argument_type_without_wrappers = removeNullable(removeLowCardinality(argument_type));
+    if (!isDecimal(argument_type_without_wrappers) || !isInteger(removeNullable(removeLowCardinality(constant_type))))
+        return false;
+
+    auto exceeds = [&constant]<typename T>(std::type_identity<T>)
+    {
+        return accurateLess(constant, Field(std::numeric_limits<T>::min()))
+            || accurateLess(Field(std::numeric_limits<T>::max()), constant);
+    };
+
+    switch (argument_type_without_wrappers->getSizeOfValueInMemory())
+    {
+        case sizeof(Int32): return exceeds(std::type_identity<Int32>{});
+        case sizeof(Int64): return exceeds(std::type_identity<Int64>{});
+        case sizeof(Int128): return exceeds(std::type_identity<Int128>{});
+        case sizeof(Int256): return exceeds(std::type_identity<Int256>{});
+        default: return true; /// unreachable for the four `Decimal` widths above; fails close if a new one appears
+    }
+}
 
 Field zeroField(const Field & value)
 {
@@ -132,6 +168,13 @@ public:
 
             /// Rewrite `aggregate_function(inner_function(constant, argument))` into `inner_function(constant, aggregate_function(argument))`
             const auto & left_argument_constant_value_literal = left_argument_constant_node->getValue();
+
+            if (constantTruncatesIntoDecimalWidth(
+                    arithmetic_function_arguments_nodes[1]->getResultType(),
+                    left_argument_constant_node->getResultType(),
+                    left_argument_constant_value_literal))
+                return;
+
             bool need_reverse = (arithmetic_function_name == "multiply" && left_argument_constant_value_literal < zeroField(left_argument_constant_value_literal))
                 || (arithmetic_function_name == "minus");
 
@@ -144,6 +187,13 @@ public:
         {
             /// Rewrite `aggregate_function(inner_function(argument, constant))` into `inner_function(aggregate_function(argument), constant)`
             const auto & right_argument_constant_value_literal = right_argument_constant_node->getValue();
+
+            if (constantTruncatesIntoDecimalWidth(
+                    arithmetic_function_arguments_nodes[0]->getResultType(),
+                    right_argument_constant_node->getResultType(),
+                    right_argument_constant_value_literal))
+                return;
+
             bool need_reverse = (arithmetic_function_name == "multiply" || arithmetic_function_name == "divide") && right_argument_constant_value_literal < zeroField(right_argument_constant_value_literal);
 
             if (need_reverse)
