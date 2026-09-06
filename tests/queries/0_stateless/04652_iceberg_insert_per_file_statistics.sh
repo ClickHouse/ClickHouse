@@ -153,11 +153,10 @@ ${CLICKHOUSE_CLIENT} --query "
 echo '--- per-entry pairing against the referenced Parquet file ---'
 for manifest in $(find "${PAIRED_PATH}/metadata" -maxdepth 1 -name '*.avro' -not -name 'snap-*.avro' -type f | sort); do
     # `lower_bounds`/`upper_bounds` hold raw little-endian bytes (`dumpValue` in `IcebergWrites.cpp`),
-    # so they are decoded with `reinterpretAsInt32`; both key columns are `Int32` here. An entry whose
-    # `score` is all-NULL legitimately has NO bounds at all: `canWriteStatistics` is all-or-nothing
-    # across the entry's columns and `ColumnNullable::getExtremes` yields NULL extremes for an
-    # all-NULL column, which `canDumpIcebergStats` rejects. That is pre-existing behaviour, so it is
-    # asserted here rather than fixed.
+    # so they are decoded with `reinterpretAsInt32`; both key columns are `Int32` here. Bounds are
+    # per-field: an entry keeps a bound for every column whose extreme is serializable and omits the
+    # rest. `ColumnNullable::getExtremes` yields NULL extremes for an all-NULL column, which
+    # `canDumpIcebergStats` rejects, so an all-NULL `score` contributes no bound while `id` still does.
     ${CLICKHOUSE_CLIENT} --query "
         WITH entries AS (
             SELECT
@@ -190,10 +189,9 @@ for manifest in $(find "${PAIRED_PATH}/metadata" -maxdepth 1 -name '*.avro' -not
     "
 done
 
-# The bounds above are present on one entry only, because the two all-NULL files legitimately carry no
-# bounds at all. This companion has no nullable column, so every entry carries bounds and the decoded
-# value of each is checked against the single row its own file holds. Without it the bounds half of
-# this change would be pinned on a single entry.
+# Only one entry above carries a `score` bound, because the other two files hold an all-NULL `score`.
+# This companion has no nullable column, so every entry carries a bound for both of its columns and the
+# decoded value of each is checked against the single row its own file holds.
 ${CLICKHOUSE_CLIENT} --query "
     ${ONE_ROW_PER_FILE}
     CREATE TABLE bounded (id Int32, v Int32)
