@@ -1163,6 +1163,14 @@ Create the user account `john` and allow him to grant his privileges to the user
 CREATE USER john GRANTEES jack;
 ```
 
+Create the user account `john` with a default database:
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` leaves the default database unset. To use a database named `NONE`, quote its name with backticks: ``DEFAULT DATABASE `NONE```.
+
 Use a query parameter to create the user account `john`:
 
 ```sql
@@ -1203,6 +1211,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [DROP ALL PROFILES]
     [DROP ALL SETTINGS]
@@ -1286,6 +1295,14 @@ Reset authentication methods and keep the most recent added one:
 ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 ```
 
+Change the default database for a user:
+
+```sql
+ALTER USER user1 DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` clears the user's default database. To use a database named `NONE`, quote its name with backticks: ``DEFAULT DATABASE `NONE```.
+
 ## VALID UNTIL Clause {#valid-until-clause}
 
 Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`. The accepted deadline range is `1900-01-01 00:00:00 UTC` through `9999-12-31 09:59:59 UTC` — the latest instant that stays within year 9999 in every time zone, so the stored instant is never clamped when it is rendered. A deadline in the past means the credentials are already expired. Deadlines before `1970-01-01 00:00:01 UTC` are accepted only as an "already expired" marker: they are canonicalized to the smallest expired instant, one second after the Unix epoch (`1970-01-01 00:00:01 UTC`), so `SHOW CREATE USER` reports that instant instead of the deadline you wrote. Deadlines from that instant onward are stored exactly.
@@ -1335,6 +1352,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [DROP ALL PROFILES]
     [DROP ALL SETTINGS]
