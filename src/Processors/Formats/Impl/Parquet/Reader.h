@@ -572,6 +572,10 @@ struct Reader
     /// TopN dynamic filtering: index in `primitive_columns` of the sort column, when eligible for
     /// row-group skipping by min/max statistics (see FormatFilterInfo::top_k_filter).
     std::optional<size_t> top_k_primitive_idx;
+    /// TopN dynamic filtering: whether this file physically stores the sort column. If it doesn't,
+    /// the reader only produces type defaults for it while the threshold comes from the values the
+    /// pipeline puts in their place, so the filter must not be applied at all.
+    bool top_k_column_is_read = false;
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 

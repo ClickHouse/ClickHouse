@@ -760,13 +760,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         }
     }
 
-    /// TopN dynamic filtering: locate the sort column among the primitive columns, for skipping
-    /// row groups by its min/max statistics against the running threshold (see topKShouldSkipRowGroup).
-    /// The row-group statistics shortcut is unsound for a collated `ORDER BY`: Parquet string
-    /// `min_value` / `max_value` are bytewise extrema, not extrema in the query's collation order,
-    /// so a row group could be skipped while still holding values that sort before the threshold
-    /// under the collator. The per-row `__topKFilter` (which does compare with the collator) stays.
-    if (format_filter_info->top_k_filter && !format_filter_info->top_k_filter->threshold_tracker->getCollator())
+    /// TopN dynamic filtering: decide whether this file may apply the threshold at all, and locate
+    /// the sort column among the primitive columns for skipping row groups by its min/max
+    /// statistics against the running threshold (see topKShouldSkipRowGroup).
+    if (format_filter_info->top_k_filter)
     {
         auto pos = extended_sample_block.findPositionByName(format_filter_info->top_k_filter->column_name);
         if (pos.has_value())
@@ -775,7 +772,24 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             if (output_idx.has_value())
             {
                 const OutputColumnInfo & output_info = output_columns[output_idx.value()];
-                if (output_info.is_primitive && primitive_columns[output_info.primitive_start].decoder.allow_stats)
+
+                /// A column this file does not store is filled with type defaults here, while the
+                /// threshold above is produced from whatever the pipeline puts in its place (e.g.
+                /// `AddingDefaultsTransform` evaluating the column's `DEFAULT` expression).
+                /// Comparing the placeholders against that threshold could drop rows of the
+                /// top-K. The reading step already refuses to arm the filter for a column with a
+                /// default expression, but "physically read" is only known here, per file.
+                top_k_column_is_read = !output_info.is_missing_column;
+
+                /// The row-group statistics shortcut is unsound for a collated `ORDER BY`: Parquet
+                /// string `min_value` / `max_value` are bytewise extrema, not extrema in the
+                /// query's collation order, so a row group could be skipped while still holding
+                /// values that sort before the threshold under the collator. The per-row
+                /// `__topKFilter` (which does compare with the collator) stays.
+                if (top_k_column_is_read
+                    && !format_filter_info->top_k_filter->threshold_tracker->getCollator()
+                    && output_info.is_primitive
+                    && primitive_columns[output_info.primitive_start].decoder.allow_stats)
                     top_k_primitive_idx = output_info.primitive_start;
             }
         }
@@ -1076,7 +1090,7 @@ void Reader::prepareBloomFilterCondition()
 void Reader::initializePrefetches()
 {
     bool use_offset_index = options.format.parquet.use_offset_index || format_filter_info->prewhere_info || format_filter_info->row_level_filter
-        || format_filter_info->rows_to_read || format_filter_info->top_k_filter
+        || format_filter_info->rows_to_read || (format_filter_info->top_k_filter && top_k_column_is_read)
         || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return !c.column_index_conditions.empty(); });
     bool need_to_find_bloom_filter_lengths_the_hard_way = false;
 
@@ -1397,9 +1411,10 @@ void Reader::preparePrewhere()
     if (format_filter_info->top_k_filter)
     {
         const auto & top_k = *format_filter_info->top_k_filter;
-        /// The sort column is one of the requested output columns (the sorting above consumes it);
-        /// if it is somehow missing, just skip the optimization - it only ever removes rows.
-        if (extended_sample_block.has(top_k.column_name))
+        /// The sort column is one of the requested output columns (the sorting above consumes it)
+        /// and this file must physically store it (`top_k_column_is_read`, see
+        /// prefilterAndInitRowGroups); if not, just skip the optimization - it only ever removes rows.
+        if (top_k_column_is_read && extended_sample_block.has(top_k.column_name))
         {
             const auto & col = extended_sample_block.getByName(top_k.column_name);
             ActionsDAG dag({NameAndTypePair(col.name, col.type)});
