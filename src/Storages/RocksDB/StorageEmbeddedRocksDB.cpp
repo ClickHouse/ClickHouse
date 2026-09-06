@@ -68,6 +68,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool optimize_trivial_approximate_count_query;
+extern const SettingsSeconds lock_acquire_timeout;
 }
 
 namespace RocksDBSetting
@@ -83,6 +84,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ROCKSDB_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int TABLE_IS_DROPPED;
+extern const int TIMEOUT_EXCEEDED;
 extern const int TYPE_MISMATCH;
 }
 
@@ -104,6 +106,39 @@ static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfigurati
 
     return options;
 }
+
+/// Keeps a full scan's handle alive for as long as its iterator, including the iterator's destructor.
+class RocksDBFullScanLease
+{
+public:
+    RocksDBFullScanLease(
+        const StorageEmbeddedRocksDB & storage_, std::shared_ptr<rocksdb::DB> db_, std::unique_ptr<rocksdb::Iterator> iterator_)
+        : storage(storage_), db(std::move(db_)), iterator(std::move(iterator_))
+    {
+        std::lock_guard lock(storage.full_scan_leases_mx);
+        ++storage.full_scan_leases;
+    }
+
+    ~RocksDBFullScanLease()
+    {
+        /// Both references must be gone before the notify, and the count must drop under the mutex
+        /// truncate() evaluates its predicate on, or the wakeup is lost.
+        iterator.reset();
+        {
+            std::lock_guard lock(storage.full_scan_leases_mx);
+            db.reset();
+            --storage.full_scan_leases;
+        }
+        storage.full_scan_leases_released.notify_all();
+    }
+
+    rocksdb::Iterator & getIterator() const { return *iterator; }
+
+private:
+    const StorageEmbeddedRocksDB & storage;
+    std::shared_ptr<rocksdb::DB> db;
+    std::unique_ptr<rocksdb::Iterator> iterator;
+};
 
 class EmbeddedRocksDBSource final : public ISource
 {
@@ -132,13 +167,13 @@ public:
         const StorageEmbeddedRocksDB & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         SharedHeader header,
-        std::unique_ptr<rocksdb::Iterator> iterator_,
+        std::unique_ptr<RocksDBFullScanLease> lease_,
         const size_t max_block_size_)
         : ISource(header)
         , storage(storage_)
         , storage_snapshot(storage_snapshot_)
         , physical_header(storage_snapshot_->metadata->getSampleBlock())
-        , iterator(std::move(iterator_))
+        , lease(std::move(lease_))
         , max_block_size(max_block_size_)
     {
     }
@@ -180,23 +215,24 @@ public:
 
     Block generateFullScan()
     {
-        if (!iterator->Valid())
+        auto & iterator = lease->getIterator();
+        if (!iterator.Valid())
             return {};
 
         MutableColumns columns = physical_header.cloneEmptyColumns();
-        for (size_t rows = 0; iterator->Valid() && rows < max_block_size; ++rows, iterator->Next())
+        for (size_t rows = 0; iterator.Valid() && rows < max_block_size; ++rows, iterator.Next())
         {
-            fillColumns(iterator->key(), storage.getPrimaryKeyPos(), physical_header, columns);
-            fillColumns(iterator->value(), storage.getValueColumnPos(), physical_header, columns);
+            fillColumns(iterator.key(), storage.getPrimaryKeyPos(), physical_header, columns);
+            fillColumns(iterator.value(), storage.getValueColumnPos(), physical_header, columns);
         }
 
-        if (!iterator->status().ok())
+        if (!iterator.status().ok())
         {
             throw Exception(
                 ErrorCodes::ROCKSDB_ERROR,
                 "Engine {} got error while seeking key value data: {}",
                 getName(),
-                iterator->status().ToString());
+                iterator.status().ToString());
         }
 
         return physical_header.cloneWithColumns(std::move(columns));
@@ -214,7 +250,7 @@ private:
     FieldVector::const_iterator it;
 
     /// For full scan
-    std::unique_ptr<rocksdb::Iterator> iterator = nullptr;
+    std::unique_ptr<RocksDBFullScanLease> lease = nullptr;
 
     const size_t max_block_size;
 };
@@ -295,20 +331,61 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
 
 StorageEmbeddedRocksDB::~StorageEmbeddedRocksDB() = default;
 
-void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
+void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &)
 {
-    std::lock_guard lock(rocksdb_ptr_mx);
-    /// rocksdb_ptr may already be null if a previous truncate() emptied the directory and
-    /// the following initDB() threw (e.g. a read_only table whose data was wiped).
-    if (rocksdb_ptr)
-    {
-        rocksdb_ptr->Close();
-        rocksdb_ptr = nullptr;
-    }
+    const auto timeout = std::chrono::milliseconds(query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
+    /// One budget for all the lease waits, so a lease arriving during a retry cannot extend it.
+    /// Acquiring rocksdb_ptr_mx below is not part of that budget and stays untimed.
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
 
-    (void)fs::remove_all(rocksdb_dir);
-    fs::create_directories(rocksdb_dir);
-    initDB();
+    while (true)
+    {
+        {
+            /// Exclusive for the whole close and reopen, so no null rocksdb_ptr is observable
+            /// outside and no lease can be taken between the count read and the close, which needs
+            /// this mutex shared. Never held across the wait below.
+            std::lock_guard lock(rocksdb_ptr_mx);
+            bool leased = false;
+            {
+                std::lock_guard leases_lock(full_scan_leases_mx);
+                leased = full_scan_leases != 0;
+            }
+            if (!leased)
+            {
+                /// Closing tears down the column families a live iterator still reads, and
+                /// reopening the same directory fails while an old handle holds its LOCK file.
+                /// rocksdb_ptr may already be null if a previous truncate() emptied the directory
+                /// and the following initDB() threw (e.g. a read_only table whose data was wiped).
+                if (rocksdb_ptr)
+                {
+                    rocksdb_ptr->Close();
+                    rocksdb_ptr = nullptr;
+                }
+
+                (void)fs::remove_all(rocksdb_dir);
+                fs::create_directories(rocksdb_dir);
+                initDB();
+                return;
+            }
+        }
+
+        std::unique_lock leases_lock(full_scan_leases_mx);
+        const auto no_lease_left = [this] { return TSA_SUPPRESS_WARNING_FOR_READ(full_scan_leases) == 0; };
+        /// Zero means no timeout, as it does for the table locks this wait stands in for.
+        if (timeout == std::chrono::milliseconds::zero())
+        {
+            full_scan_leases_released.wait(leases_lock, no_lease_left);
+        }
+        else if (!full_scan_leases_released.wait_until(leases_lock, deadline, no_lease_left))
+        {
+            /// Nothing has been closed or nulled, so a timed out TRUNCATE leaves the table as found.
+            throw Exception(
+                ErrorCodes::TIMEOUT_EXCEEDED,
+                "Cannot TRUNCATE table {}: a read of it is still in progress after {} ms",
+                getStorageID().getNameForLogs(),
+                timeout.count());
+        }
+    }
 }
 
 void StorageEmbeddedRocksDB::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -740,7 +817,7 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
     const auto & sample_block = getOutputHeader();
     if (all_scan)
     {
-        std::unique_ptr<rocksdb::Iterator> iterator;
+        std::unique_ptr<RocksDBFullScanLease> lease;
         {
             SharedLockGuard lock(storage.rocksdb_ptr_mx);
             if (!storage.rocksdb_ptr)
@@ -748,10 +825,12 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
                 pipeline.init(Pipe(std::make_shared<NullSource>(sample_block)));
                 return;
             }
-            iterator.reset(storage.rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
+            /// Iterator and handle reference are taken together, so nothing can close it between them.
+            std::unique_ptr<rocksdb::Iterator> iterator(storage.rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
+            lease = std::make_unique<RocksDBFullScanLease>(storage, storage.rocksdb_ptr, std::move(iterator));
         }
-        iterator->SeekToFirst();
-        auto source = std::make_shared<EmbeddedRocksDBSource>(storage, storage_snapshot, sample_block, std::move(iterator), max_block_size);
+        lease->getIterator().SeekToFirst();
+        auto source = std::make_shared<EmbeddedRocksDBSource>(storage, storage_snapshot, sample_block, std::move(lease), max_block_size);
         source->setStorageLimits(query_info.storage_limits);
         pipeline.init(Pipe(std::move(source)));
         return;
