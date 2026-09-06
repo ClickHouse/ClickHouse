@@ -1,5 +1,41 @@
 [
   {
+    "destination": "/get-started/setup/cloud",
+    "source": "/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/ar/get-started/setup/cloud",
+    "source": "/ar/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/es/get-started/setup/cloud",
+    "source": "/es/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/fr/get-started/setup/cloud",
+    "source": "/fr/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/ja/get-started/setup/cloud",
+    "source": "/ja/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/ko/get-started/setup/cloud",
+    "source": "/ko/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/pt-BR/get-started/setup/cloud",
+    "source": "/pt-BR/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/ru/get-started/setup/cloud",
+    "source": "/ru/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
+    "destination": "/zh/get-started/setup/cloud",
+    "source": "/zh/get-started/quickstarts/create-your-first-service-on-cloud"
+  },
+  {
     "destination": "/clickstack/ingesting-data/overview",
     "source": "/clickstack/ingesting-data"
   },
@@ -1660,7 +1696,7 @@
     "source": "/cloud/guides/security/manage-custom-roles"
   },
   {
-    "destination": "/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/cloud/guides/sql-console/config-sql-console-role-assignments"
   },
   {
@@ -1672,7 +1708,7 @@
     "source": "/cloud/guides/sql-console/gather-connection-details"
   },
   {
-    "destination": "/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/cloud/guides/sql-console/manage-sql-console-role-assignments"
   },
   {
@@ -3768,7 +3804,7 @@
     "source": "/guides"
   },
   {
-    "destination": "/reference/functions/regular-functions/other-functions",
+    "destination": "/reference/functions/regular-functions/machine-learning-functions",
     "source": "/guides/apply_catboost_model"
   },
   {
@@ -3784,7 +3820,7 @@
     "source": "/guides/developer/alternative-query-languages"
   },
   {
-    "destination": "/reference/functions/regular-functions/other-functions",
+    "destination": "/reference/functions/regular-functions/machine-learning-functions",
     "source": "/guides/developer/apply-catboost-model"
   },
   {
@@ -6568,7 +6604,7 @@
     "source": "/jp/cloud/guides/security/manage-custom-roles"
   },
   {
-    "destination": "/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/jp/cloud/guides/sql-console/config-sql-console-role-assignments"
   },
   {
@@ -6580,7 +6616,7 @@
     "source": "/jp/cloud/guides/sql-console/gather-connection-details"
   },
   {
-    "destination": "/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/jp/cloud/guides/sql-console/manage-sql-console-role-assignments"
   },
   {
@@ -17332,7 +17368,7 @@
     "source": "/ko/cloud/guides/security/manage-custom-roles"
   },
   {
-    "destination": "/ko/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/ko/cloud/guides/sql-console/config-sql-console-role-assignments"
   },
   {
@@ -17344,7 +17380,7 @@
     "source": "/ko/cloud/guides/sql-console/gather-connection-details"
   },
   {
-    "destination": "/ko/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/ko/cloud/guides/sql-console/manage-sql-console-role-assignments"
   },
   {
@@ -29448,7 +29484,7 @@
     "source": "/ru/cloud/guides/security/manage-custom-roles"
   },
   {
-    "destination": "/ru/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/ru/cloud/guides/sql-console/config-sql-console-role-assignments"
   },
   {
@@ -29460,7 +29496,7 @@
     "source": "/ru/cloud/guides/sql-console/gather-connection-details"
   },
   {
-    "destination": "/ru/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/ru/cloud/guides/sql-console/manage-sql-console-role-assignments"
   },
   {
@@ -43020,7 +43056,7 @@
     "source": "/zh/cloud/guides/security/manage-custom-roles"
   },
   {
-    "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/zh/cloud/guides/sql-console/config-sql-console-role-assignments"
   },
   {
@@ -43032,7 +43068,7 @@
     "source": "/zh/cloud/guides/sql-console/gather-connection-details"
   },
   {
-    "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/zh/cloud/guides/sql-console/manage-sql-console-role-assignments"
   },
   {
@@ -54990,5 +55026,41 @@
   {
     "destination": "/zh/reference/settings/session-settings",
     "source": "/zh/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/ar/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/es/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/es/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/fr/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/fr/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/ko/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/pt-BR/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/ru/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
   }
 ]

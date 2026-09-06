@@ -125,10 +125,11 @@ Configure one prefix-routed handler on the main ClickHouse HTTP port:
 | `/prometheus/api/v1/read` | Prometheus remote read |
 | `/prometheus/api/v1/query` | Instant PromQL queries |
 | `/prometheus/api/v1/query_range` | Range PromQL queries |
+| `/prometheus/api/v1/format_query` | PromQL expression formatting |
 | `/prometheus/api/v1/series` | Series metadata |
 | `/prometheus/api/v1/metadata` | Metric-family metadata |
 
-The example omits `database` and `table` from the handler. Each request must provide the `table` query parameter. It can also provide `database`, use a qualified table name such as `prometheus.metrics`, or omit the database to use `default`. This allows one handler to serve multiple `TimeSeries` tables.
+The example omits `database` and `table` from the handler. Each request must provide the `table` query parameter (except for `/format_query`, which only parses the given PromQL expression and doesn't need a table). It can also provide `database`, use a qualified table name such as `prometheus.metrics`, or omit the database to use `default`. This allows one handler to serve multiple `TimeSeries` tables.
 
 To use one fixed table for every request, configure it in the handler:
 
@@ -198,6 +199,16 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+Use the format-query endpoint to parse and format a PromQL expression without evaluating it:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/format_query" \
+  --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
+```
+
+The expression is returned serialized from the parsed query, with the whitespace normalized, the comments removed, the redundant parentheses dropped, and the durations converted to numbers of seconds: `sum by (job) (http_requests_total{code="200"}) / 2`. This endpoint doesn't evaluate the expression, so it doesn't need the `database` and `table` parameters.
+
 See the [supported PromQL features](/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) for the function and aggregation operator list used by the HTTP API, the `promql` dialect, and the table functions.
 
 #### Grafana {#grafana}
@@ -223,7 +234,7 @@ datasources:
 Grafana appends `/api/v1/query` or `/api/v1/query_range` to this base URL and adds `customQueryParameters` to each request.
 
 <Note>
-Only the query endpoints `/api/v1/query` and `/api/v1/query_range` and the metadata endpoints `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, and `/api/v1/metadata` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. `/api/v1/labels` accepts the same parameters, with `match[]` being optional, and returns the sorted label names of the matched series (or of all series when no selectors are given). `/api/v1/label/<name>/values` accepts the same parameters as `/api/v1/labels` and returns the sorted values of one label, with `<name>` optionally using the Prometheus `U__...` escaping of label names that contain characters outside `[a-zA-Z0-9_]`. These endpoints cover what a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete.
+Only the query endpoints `/api/v1/query`, `/api/v1/query_range`, and `/api/v1/format_query` and the metadata endpoints `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, and `/api/v1/metadata` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. `/api/v1/labels` accepts the same parameters, with `match[]` being optional, and returns the sorted label names of the matched series (or of all series when no selectors are given). `/api/v1/label/<name>/values` accepts the same parameters as `/api/v1/labels` and returns the sorted values of one label, with `<name>` optionally using the Prometheus `U__...` escaping of label names that contain characters outside `[a-zA-Z0-9_]`. These endpoints cover what a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete.
 </Note>
 
 #### SQL entry points {#sql-entry-points}
