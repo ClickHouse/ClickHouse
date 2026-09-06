@@ -3,6 +3,7 @@
 #include <base/scope_guard.h>
 
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -55,6 +56,8 @@ public:
 
     void visit(VisitQueryTreeNodeType & query_tree_node)
     {
+        checkStackSize();
+
         bool traverse_top_to_bottom = getDerived().shouldTraverseTopToBottom();
         if (!traverse_top_to_bottom)
             visitChildren(query_tree_node);
@@ -136,6 +139,8 @@ public:
 
     void visit(VisitQueryTreeNodeType & query_tree_node)
     {
+        checkStackSize();
+
         auto current_scope_context_ptr = current_context;
         SCOPE_EXIT(
             current_context = std::move(current_scope_context_ptr);
