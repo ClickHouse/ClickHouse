@@ -109,3 +109,53 @@ def test_host_regexp_multiple_ptr_v6(started_cluster):
     endpoint = build_endpoint_v6(ch_server.ipv6_address)
 
     assert "1\n" == client.exec_in_container(["bash", "-c", f"curl -6 {endpoint}"])
+
+
+def get_reverse_dns_events():
+    """Reverse DNS profile events of the server. They appear in `system.events` only after the
+    first increment, so a missing event is reported as zero."""
+    counters = {}
+    for name in [
+        "DNSReverseRequests",
+        "DNSReverseRequestMicroseconds",
+        "DNSReverseError",
+    ]:
+        counters[name] = int(
+            ch_server.query(
+                f"SELECT sum(value) FROM system.events WHERE event = '{name}'"
+            ).strip()
+        )
+    return counters
+
+
+def test_reverse_dns_profile_events(started_cluster):
+    server_ip = cluster.get_instance_ip("clickhouse-server")
+    client_ip = cluster.get_instance_ip("clickhouse-client")
+    dns_server_ip = cluster.get_instance_ip(cluster.coredns_host)
+
+    endpoint = build_endpoint_v4(server_ip)
+
+    # A successful reverse lookup: the client address has PTR records.
+    setup_dns_server(client_ip)
+    setup_ch_server(dns_server_ip)
+
+    before = get_reverse_dns_events()
+    assert "1\n" == client.exec_in_container(["bash", "-c", f"curl {endpoint}"])
+    after = get_reverse_dns_events()
+
+    assert after["DNSReverseRequests"] > before["DNSReverseRequests"]
+    assert (
+        after["DNSReverseRequestMicroseconds"] > before["DNSReverseRequestMicroseconds"]
+    )
+
+    # A failed reverse lookup: the PTR records point to a different address, so there is no answer
+    # for the client address and the resolver returns an empty result instead of raising an error.
+    setup_dns_server("9.9.9.9")
+    setup_ch_server(dns_server_ip)
+
+    before = get_reverse_dns_events()
+    assert "1\n" != client.exec_in_container(["bash", "-c", f"curl {endpoint}"])
+    after = get_reverse_dns_events()
+
+    assert after["DNSReverseRequests"] > before["DNSReverseRequests"]
+    assert after["DNSReverseError"] > before["DNSReverseError"]
