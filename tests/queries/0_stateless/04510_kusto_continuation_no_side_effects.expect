@@ -1,0 +1,69 @@
+#!/usr/bin/expect -f
+
+# Regression test: in single-line interactive mode the incomplete-query probe
+# `ClientBase::queryNeedsContinuation` must be free of side effects. The Kusto
+# parser is not: `ParserKQLStatement::parseImpl` records `let` bindings in a
+# thread-local map. If the probe left those bindings behind, a `let` in an
+# incomplete buffer that is then discarded (without ever being submitted) would
+# leak into later queries. This is observable in `clickhouse-local`, where
+# parsing and execution share the same process (and thread-local state).
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --allow_experimental_kusto_dialect 1 --dialect kusto --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# The buffer holds a complete `let x = 1` followed by an incomplete statement (an
+# unclosed parenthesis), so pressing <ENTER> continues on the next line instead of
+# submitting -- the query is never executed. Pressing <ENTER> here is what runs the
+# side-effect-prone continuation probe over `let x = 1`.
+send -- "let x = 1; print (\r"
+# Discard the whole (folded) buffer without submitting it. Erase it with
+# backspaces rather than Ctrl+C: in `clickhouse-local` Ctrl+C exits the client
+# instead of clearing the line, whereas a backspace at the start of a continued
+# line joins it with the previous one, so enough backspaces empty the buffer
+# while staying under the same prompt (nothing is submitted). 40 backspaces
+# comfortably clear the 19 characters (18 plus the folded newline) entered above.
+send -- [string repeat "\x7f" 40]
+
+# The buffer is now empty and still under the same prompt (nothing was submitted).
+# The discarded buffer must not have left `x` bound: `print x` reports an unknown
+# identifier. If the probe had leaked the `let` binding, `print x` would instead
+# substitute `x` -> 1 and print "1".
+send -- "print x\r"
+expect {
+    "Unknown expression identifier" {}
+    "│ 1 │" { exit 1 }
+}
+expect ":) "
+
+# A `let` binding that is actually submitted still works, so the probe's
+# snapshot/restore does not disable Kusto `let` for real queries.
+send -- "let y = 5; print y\r"
+expect {
+    "Unknown expression identifier" { exit 1 }
+    "│ 5 │" {}
+}
+expect ":) "
+
+send -- "\4"
+expect eof

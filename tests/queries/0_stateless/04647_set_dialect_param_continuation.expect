@@ -1,0 +1,61 @@
+#!/usr/bin/expect -f
+
+# Regression test: the single-line continuation probe
+# `ClientBase::queryNeedsContinuation` must resolve query parameters used as
+# setting values, like the multi-statement executor does with
+# `replaceQueryParametersInSettingsChanges`, and must remember the parameters a
+# `SET param_... = ...` statement declares for the statements that follow it.
+# Here `SET param_d = 'kusto'` defines `d` and `SET dialect = {d:String}`
+# switches the following statements to Kusto, so the trailing `print` is
+# incomplete and the buffer must continue on the next line. If the probe applied
+# the raw `ASTSetQuery::changes` without substituting `{d:String}`, it would stay
+# on the SQL parser (or fail to apply the change at all), judge the buffer
+# complete and submit it -- running the `SET`s and `let x = 1` even though the
+# final statement is still unfinished.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --allow_experimental_kusto_dialect 1 --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# The dialect is switched through a query parameter defined in the same buffer.
+# The trailing `print` is incomplete in Kusto, so the buffer must continue. Under
+# the default dialect it would instead be a complete statement (`clickhouse-local`
+# has `implicit_select` enabled, so it parses as `SELECT print`) and the buffer
+# would be submitted, reporting an error instead of waiting for the expression.
+send -- "SET param_d = 'kusto'; SET dialect = {d:String}; print\r"
+# Give the client time to react to the <ENTER> on its own: two lines sent back to
+# back arrive in a single read and are inserted as one pasted block, which would
+# fold the buffer regardless of what the continuation probe decides.
+sleep 1
+# Complete the query on the continuation line. The whole buffer now runs as one:
+# the `SET`s switch to Kusto and `print 1` prints 1.
+send -- "1\r"
+expect {
+    "Syntax error" { exit 1 }
+    "Unknown expression identifier" { exit 1 }
+    "│ 1 │" {}
+}
+expect ":) "
+
+send -- "\4"
+expect eof

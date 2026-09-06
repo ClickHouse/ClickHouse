@@ -65,6 +65,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/Kusto/KQLLexer.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
@@ -3731,6 +3732,486 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 }
 
 
+bool ClientBase::queryNeedsContinuation(const String & text) const
+{
+    /// Returns true if the buffer is an incomplete query, i.e. its last statement
+    /// fails to parse specifically because the parser reached the end of input and
+    /// expected more tokens. Used in single-line interactive mode to insert a
+    /// newline into the same edit buffer instead of submitting the query.
+    ///
+    /// This runs from the `replxx` <ENTER> key binding, which is outside the
+    /// `try`/`catch` around `processQueryText` in `runInteractive`. It must
+    /// therefore never throw (some parsers, e.g. `ParserPRQLQuery` or
+    /// `ParserPrometheusQuery`, throw on invalid input) and must have no side
+    /// effects -- on any error it returns false so the line is committed and the
+    /// regular query-processing path reports the error and returns to the prompt.
+    try
+    {
+        auto trimmed = trim(text, [](char c) { return isWhitespaceASCII(c); });
+        if (trimmed.empty())
+            return false;
+
+        /// A trailing `\G` vertical-output delimiter means "submit now" (it is not
+        /// a regular token, so it is matched on the raw text). The `;` terminator
+        /// is handled below, after tokenization, so it is still recognized when
+        /// followed by a comment.
+        if (trimmed.ends_with("\\G"))
+            return false;
+
+        const auto & settings = client_context->getSettingsRef();
+
+        const char * begin = text.data();
+        const char * end = begin + text.size();
+
+        /// The buffer can hold several statements, and one of them may be a `SET`
+        /// that changes a parser-shaping setting (most importantly the query
+        /// `dialect`) for the statements that follow it. `executeMultiQuery`
+        /// reparses each statement under the settings left by the previously
+        /// executed ones, so mirror that here: keep a local copy of the settings
+        /// and, after each successfully parsed `SET`, apply its changes to that
+        /// copy and rebuild the parser before probing the next statement. Nothing
+        /// is executed -- the changes are applied only to the local copy.
+        /// Only the parser is rebuilt on such a `SET`; the token iterator stays.
+        /// (KQL and `clickhouse_json` are lexically their own languages: their
+        /// statements are probed on the raw text below, and the shared tokens
+        /// only track the position across statements.)
+        Settings effective_settings = settings;
+
+        /// A setting value can be a query parameter, e.g. `SET dialect = {d:String}`,
+        /// and a `SET param_d = 'kusto'` earlier in the same buffer defines it. The
+        /// executor resolves the changes against the query parameters known so far
+        /// and then remembers the ones the statement declares, before parsing the
+        /// next statement. Mirror that with a local copy of the parameter map, so a
+        /// parameterized `SET dialect = ...` shapes the parser for the following
+        /// statements here exactly as it does during execution.
+        NameToNameMap effective_query_parameters = client_context->getQueryParameters();
+
+        /// The Kusto dialect has no entry here: KQL is lexically a different language and is
+        /// not parsed through an `IParser` (see `parseQuery` above) -- the probe loop below
+        /// hands it to `parseKQLQuery` directly instead of using this parser.
+        auto make_parser = [&]() -> std::unique_ptr<IParserBase>
+        {
+            const Dialect dialect = effective_settings[Setting::dialect];
+            if (dialect == Dialect::prql)
+                return std::make_unique<ParserPRQLQuery>(0, effective_settings[Setting::max_parser_depth], effective_settings[Setting::max_parser_backtracks]);
+            if (dialect == Dialect::promql)
+                return std::make_unique<ParserPrometheusQuery>(effective_settings[Setting::promql_database], effective_settings[Setting::promql_table], Field{effective_settings[Setting::promql_evaluation_time]});
+            if (dialect == Dialect::polyglot)
+                return std::make_unique<ParserPolyglotQuery>(0, effective_settings[Setting::max_parser_depth], effective_settings[Setting::max_parser_backtracks], effective_settings[Setting::polyglot_dialect], end, effective_settings[Setting::allow_experimental_polyglot_dialect]);
+            return std::make_unique<ParserQuery>(end, effective_settings[Setting::allow_settings_after_format_in_insert], effective_settings[Setting::implicit_select]);
+        };
+
+        std::unique_ptr<IParserBase> parser = make_parser();
+
+        /// True if the statement that failed to parse at `statement_begin` is still
+        /// being typed, judged by an opening bracket that is never closed. The parser
+        /// may well stop before the end of input on such a statement, so the
+        /// end-of-input test below cannot see it. Only opens trigger it; an excess
+        /// closing bracket is a real syntax error.
+        ///
+        /// A `;` anywhere in what remains of the buffer means the user has already
+        /// terminated the statement, so it is a syntax error to report, not an
+        /// unfinished one -- `SELECT (; SELECT 1` must be submitted rather than kept
+        /// open forever. (A `;` inside a string or a comment is not a token here, so
+        /// it does not count.) The scan runs to the end of the buffer because a failed
+        /// parse leaves no reliable statement end.
+        ///
+        /// Under the Kusto dialect the scan runs on the KQL lexer's tokens: the SQL lexer
+        /// stops making sense of KQL at the first KQL-only spelling (the negative operators
+        /// `!between`, `!in`, ..., or a timespan literal such as `5m`), which could hide both
+        /// a `;` and the very brackets to look at.
+        auto has_unclosed_opener = [&](const char * statement_begin)
+        {
+            if (effective_settings[Setting::dialect] == Dialect::kusto)
+            {
+                /// `KQLLexer` never throws; on a malformed literal it stops, and the scan
+                /// judges by the tokens before it (an unclosed opener in front of the error
+                /// still counts, like the SQL check's early stop below).
+                const std::vector<KQLToken> kql_tokens = KQLLexer(statement_begin, end).tokenize();
+                for (const auto & token : kql_tokens)
+                    if (token.type == KQLTokenType::Semicolon)
+                        return false;
+                std::vector<KQLTokenType> openers;
+                for (const auto & token : kql_tokens)
+                {
+                    if (token.type == KQLTokenType::OpeningRoundBracket || token.type == KQLTokenType::OpeningSquareBracket)
+                    {
+                        openers.push_back(token.type);
+                    }
+                    else if (token.type == KQLTokenType::ClosingRoundBracket || token.type == KQLTokenType::ClosingSquareBracket)
+                    {
+                        /// An excess closing bracket is a real syntax error to submit; a
+                        /// closer that does not match the innermost opener ends the scan
+                        /// (like the SQL check), so an opener before it still counts.
+                        if (openers.empty())
+                            return false;
+                        const KQLTokenType expected_opener = token.type == KQLTokenType::ClosingRoundBracket
+                            ? KQLTokenType::OpeningRoundBracket
+                            : KQLTokenType::OpeningSquareBracket;
+                        if (openers.back() != expected_opener)
+                            break;
+                        openers.pop_back();
+                    }
+                }
+                return !openers.empty();
+            }
+
+            {
+                Tokens terminator_tokens(statement_begin, end, 0, true);
+                for (TokenIterator it(terminator_tokens); !it->isEnd(); ++it)
+                    if (it->type == TokenType::Semicolon)
+                        return false;
+            }
+
+            Tokens statement_tokens(statement_begin, end, 0, true);
+            const UnmatchedParentheses unmatched = checkUnmatchedParentheses(TokenIterator(statement_tokens));
+            for (const auto & token : unmatched)
+                if (token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket)
+                    return true;
+            return false;
+        };
+
+        auto has_statement_terminator = [&](const char * statement_begin)
+        {
+            Tokens terminator_tokens(statement_begin, end, 0, true);
+            for (TokenIterator it(terminator_tokens); !it->isEnd(); ++it)
+                if (it->type == TokenType::Semicolon)
+                    return true;
+            return false;
+        };
+
+        unsigned max_parser_depth = static_cast<unsigned>(effective_settings[Setting::max_parser_depth]);
+        unsigned max_parser_backtracks = static_cast<unsigned>(effective_settings[Setting::max_parser_backtracks]);
+
+        Tokens tokens(begin, end, 0, true);
+        IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+
+        /// If there are no significant tokens, no continuation needed.
+        if (token_iterator->isEnd())
+            return false;
+
+        /// An explicit `;` terminator means "submit now", even if the statement is
+        /// otherwise incomplete (this is how the user forces an incomplete query to
+        /// be submitted to see its syntax error). The last significant token is
+        /// inspected, so the terminator is recognized even when followed by a
+        /// comment, and independently of the highlighter (with `--highlight 0`
+        /// `ReplxxLineReader` never sets its delimiter flag). Comments and
+        /// whitespace are skipped because the tokens are built with skip_insignificant.
+        {
+            /// Use a separate `Tokens` instance for this scan. Iterating to
+            /// `EndOfStream` advances `Tokens::max_pos`, and the parse loop below
+            /// relies on `token_iterator.max()` (which reads the same `max_pos`)
+            /// to tell whether a failed parse stopped at end of input. Scanning
+            /// the shared `tokens` here would poison that cursor to `EndOfStream`
+            /// and make every failed parse -- e.g. `exit` or a plain syntax error
+            /// -- look like an end-of-input failure, so Enter would keep inserting
+            /// newlines instead of submitting.
+            Tokens terminator_tokens(begin, end, 0, true);
+            TokenIterator terminator_it(terminator_tokens);
+            TokenType last_significant_type = TokenType::Whitespace;
+            while (terminator_it->type != TokenType::EndOfStream)
+            {
+                last_significant_type = terminator_it->type;
+                ++terminator_it;
+            }
+            if (last_significant_type == TokenType::Semicolon)
+                return false;
+        }
+
+        /// Parse statements one by one. The buffer needs continuation only if its
+        /// last statement is incomplete because the parser reached the end of
+        /// input. Earlier complete statements must not be committed (and executed,
+        /// possibly with side effects) just because a later one is unfinished.
+        while (true)
+        {
+            while (token_iterator->type == TokenType::Semicolon)
+                ++token_iterator;
+            if (token_iterator->isEnd())
+                return false;
+
+            const char * statement_begin = token_iterator->begin;
+
+            /// `clickhouse_json` statements are not parser-based: `parseQuery` above routes
+            /// them through `IAST::createFromJSON` after scanning the raw text for one
+            /// balanced top-level JSON object (a leading `SET` is still parsed as SQL as an
+            /// escape hatch back to the other dialects -- for it, fall through to the regular
+            /// parser probe below, which also keeps the `SET dialect = ...` mirroring alive).
+            /// Mirror that scan here: an object whose braces (or a string literal) are still
+            /// open at the end of input is being typed, so it needs continuation. Everything
+            /// else is submitted -- disabled support, a statement that does not start with
+            /// `{`, oversized input, malformed JSON and excessive trailing input are all
+            /// errors the executor reports on its own.
+            if (effective_settings[Setting::dialect] == Dialect::clickhouse_json
+                && !isClickHouseJSONSetEscape(statement_begin, end, effective_settings[Setting::max_query_size]))
+            {
+                if (!effective_settings[Setting::enable_json_ast_dialect])
+                    return false;
+
+                /// Bound the scan by `max_query_size` like the executor does; exceeding it
+                /// there is an error, so the buffer is submitted to report it.
+                const size_t scan_max_query_size = effective_settings[Setting::max_query_size];
+
+                const char * json_begin = statement_begin;
+                while (json_begin < end && isWhitespaceASCII(*json_begin))
+                {
+                    if (scan_max_query_size != 0 && static_cast<size_t>(json_begin - statement_begin) > scan_max_query_size)
+                        return false;
+                    ++json_begin;
+                }
+
+                if (json_begin == end || *json_begin != '{')
+                    return false;
+
+                size_t depth = 0;
+                bool in_string = false;
+                bool escaped = false;
+                const char * json_end = json_begin;
+                for (; json_end < end; ++json_end)
+                {
+                    if (scan_max_query_size != 0 && static_cast<size_t>(json_end - json_begin) > scan_max_query_size)
+                        return false;
+                    const char c = *json_end;
+                    if (in_string)
+                    {
+                        if (escaped)
+                            escaped = false;
+                        else if (c == '\\')
+                            escaped = true;
+                        else if (c == '"')
+                            in_string = false;
+                    }
+                    else if (c == '"')
+                    {
+                        in_string = true;
+                    }
+                    else if (c == '{')
+                    {
+                        ++depth;
+                    }
+                    else if (c == '}')
+                    {
+                        --depth;
+                        if (depth == 0)
+                        {
+                            ++json_end;
+                            break;
+                        }
+                    }
+                }
+
+                /// The object is still open at the end of input: the user is typing it.
+                if (depth != 0)
+                    return true;
+
+                /// A complete JSON object. The executor accepts only `;` or the end of input
+                /// after it (anything else is "excessive input" to report), so submit unless
+                /// a `;` introduces another statement to probe. A JSON statement cannot be a
+                /// `SET` escape (handled above), so the effective settings are unchanged.
+                Tokens after_json_tokens(json_end, end, 0, true);
+                TokenIterator after_json_iterator(after_json_tokens);
+                if (after_json_iterator->isEnd() || after_json_iterator->type != TokenType::Semicolon)
+                    return false;
+
+                /// Advance the shared parse position past the object, up to its terminator.
+                while (!token_iterator->isEnd() && token_iterator->begin < json_end)
+                    ++token_iterator;
+                continue;
+            }
+
+            ASTPtr ast;
+            Expected expected;
+            bool parsed = false;
+            /// Captured before the `SET` mirroring below can change the dialect: it says how
+            /// this statement is parsed, and the catch and the tail of the loop still need
+            /// that after a `SET dialect = ...` has been applied.
+            const bool kql_statement = effective_settings[Setting::dialect] == Dialect::kusto;
+            try
+            {
+                if (kql_statement)
+                {
+                    /// KQL is lexically a different language and is not parsed through an
+                    /// `IParser`: mirror `parseQuery` above and hand the raw text to
+                    /// `parseKQLQuery` (`max_query_size` is 0 like in the rest of the probe;
+                    /// exceeding it is an error for the executor to report). Its
+                    /// `SET name = ...` fast path returns an `ASTSetQuery`, so a dialect
+                    /// switch flows into the mirroring below like in any other dialect.
+                    const char * kql_pos = statement_begin;
+                    ast = parseKQLQuery(
+                        kql_pos,
+                        end,
+                        /*allow_multi_statements=*/ true,
+                        /*max_query_size=*/ 0,
+                        effective_settings[Setting::max_parser_depth],
+                        effective_settings[Setting::max_parser_backtracks]);
+                    parsed = true;
+                    /// Advance the shared position past the consumed statement
+                    /// (`parseKQLQuery` works on raw characters, not on these tokens).
+                    while (!token_iterator->isEnd() && token_iterator->begin < kql_pos)
+                        ++token_iterator;
+                }
+                else
+                {
+                    parsed = parser->parse(token_iterator, ast, expected);
+                }
+            }
+            catch (...)
+            {
+                /// Not every parser reports a syntax error by returning false: the KQL
+                /// parser reports every failure by throwing, so e.g.
+                /// `T | where x !between (` never reaches the checks below and, without
+                /// this, would be committed -- executing the statements that precede it
+                /// in the buffer while its last one is still being typed.
+                if (kql_statement)
+                {
+                    /// `KQLParser::failAt` ends the message with what it found at the point
+                    /// of failure -- "end of query" exactly when that is the end of input --
+                    /// which substitutes for the `token_iterator.max()` signal of the SQL
+                    /// parser (the PRQL probe below recognizes end of input by the
+                    /// compiler's message the same way). The terminator scan is not
+                    /// consulted first: a KQL statement contains `;` legitimately
+                    /// (`let x = 1; print (` is one statement still being typed), and a `;`
+                    /// the user really typed after the failing point makes the bracket scan
+                    /// below submit instead.
+                    try
+                    {
+                        throw;
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.message().ends_with("found end of query"))
+                            return true;
+                    }
+                    catch (...)
+                    {
+                        /// Judged by the bracket scan below, like a non-EOF failure.
+                    }
+                    return has_unclosed_opener(statement_begin);
+                }
+
+                /// An unclosed opener is still a reliable "needs continuation" signal
+                /// here, but `token_iterator.max()` is not: the parse was abandoned
+                /// at an arbitrary point, so anything else is committed and reported
+                /// by the regular query-processing path.
+                if (has_statement_terminator(statement_begin))
+                    return false;
+
+                /// Polyglot hands the foreign-dialect text to the transpiler as one opaque
+                /// string -- it is never tokenized by the ClickHouse lexer, so the bracket
+                /// heuristic below cannot be trusted on it, and the transpiler reports all
+                /// failures as free-form error text with no stable end-of-input marker to
+                /// probe. There is no reliable "still being typed" signal, so continuation
+                /// is disabled for it: submit, and the executor reports the syntax error,
+                /// exactly as it does for any thrown parse error.
+                if (effective_settings[Setting::dialect] == Dialect::polyglot)
+                    return false;
+
+                /// PromQL and PRQL validate their entire statement with external
+                /// parsers and communicate syntax errors by throwing. Unlike the
+                /// SQL parser's `Expected`, their error positions are available only
+                /// through dialect-specific probes. Preserve the general rule that
+                /// exceptions are submitted, except when those probes identify EOF
+                /// as the missing input.
+                const auto query = std::string_view{statement_begin, static_cast<size_t>(end - statement_begin)};
+                if (effective_settings[Setting::dialect] == Dialect::promql && ParserPrometheusQuery::isIncompleteAtEOF(query))
+                    return true;
+                if (effective_settings[Setting::dialect] == Dialect::prql && ParserPRQLQuery::isIncompleteAtEOF(query))
+                    return true;
+
+                return has_unclosed_opener(statement_begin);
+            }
+
+            if (!parsed)
+            {
+                /// The statement does not parse. Check for an unclosed opening
+                /// bracket. The check is done only here, after a failed parse, and
+                /// over the current statement's text, so it does not apply bracket
+                /// rules to the inline data of a successfully parsed INSERT.
+                if (has_unclosed_opener(statement_begin))
+                    return true;
+
+                /// Otherwise continuation only if the failure is at the end of input.
+                return token_iterator.max().type == TokenType::EndOfStream;
+            }
+
+            /// The statement parsed. If it is a `SET` that changes parser-shaping
+            /// settings, apply it to the local settings copy and rebuild the parser
+            /// so the following statements are probed under the new dialect/settings,
+            /// mirroring `executeMultiQuery` (which reparses each statement after
+            /// running the preceding `SET`). Without this, e.g.
+            /// `SET dialect = 'kusto'; let x = 1; print` typed from SQL mode would
+            /// keep using the SQL parser, fail on the `let`, and be committed --
+            /// running the prefix even though the final `print` is still incomplete.
+            if (const auto * set_query = ast->as<ASTSetQuery>())
+            {
+                /// Skip `profile` exactly like the real `SET` handling does
+                /// (see `processParsedSingleQuery` above): the client never
+                /// applies a settings profile to `client_context`, because a
+                /// profile is defined by the server's access control and its
+                /// contents are unknown to the client. Consequently the
+                /// executor's own reparse of the following statements is not
+                /// shaped by the profile either, so honoring it here would make
+                /// the probe disagree with the executor: a buffer like
+                /// `SET profile = '<sets dialect to kusto>'; let x = 1; print`
+                /// would be kept open forever as an unfinished Kusto statement,
+                /// while submitting it reports a SQL syntax error on `let`.
+                /// Mirroring the executor keeps the buffer submittable.
+                SettingsChanges changes;
+                for (const auto & change : set_query->changes)
+                    if (change.name != "profile")
+                        changes.push_back(change);
+                /// Resolve query parameters used as setting values against the
+                /// parameters known at this point in the buffer, as the executor
+                /// does. This works on the local copy of the changes, so the AST
+                /// is left untouched. An unknown parameter throws, which is caught
+                /// below and commits the buffer -- the executor throws there too.
+                replaceQueryParametersInSettingsChanges(changes, effective_query_parameters);
+                effective_settings.applyChanges(changes);
+                /// `SET name = DEFAULT` lands in `default_settings`, not `changes`;
+                /// the executor resets those via `resetSettingsToDefaultValue`.
+                /// Mirror it, so e.g. `SET dialect = 'kusto'; SET dialect = DEFAULT; ...`
+                /// probes the trailing statements with the session's parser again.
+                for (const auto & name : set_query->default_settings)
+                    effective_settings.setDefaultValue(name);
+                /// `SET param_x = ...` declares a query parameter for the following
+                /// statements; remember it for their `SET` resolution above.
+                for (const auto & [name, value] : set_query->query_parameters)
+                    effective_query_parameters.insert_or_assign(name, value);
+                parser = make_parser();
+
+                /// The `SET` may also have changed the parser limits, and the
+                /// current parse position still carries the old ones. Rebuild it
+                /// at the same token with the limits from the updated settings
+                /// (`Pos::operator=` keeps the accumulated backtrack count, so
+                /// a lowered `max_parser_backtracks` still applies to the whole
+                /// buffer, never less strictly than the executor's reparse).
+                max_parser_depth = static_cast<unsigned>(effective_settings[Setting::max_parser_depth]);
+                max_parser_backtracks = static_cast<unsigned>(effective_settings[Setting::max_parser_backtracks]);
+                token_iterator = IParser::Pos(token_iterator, max_parser_depth, max_parser_backtracks);
+            }
+
+            if (token_iterator->isEnd())
+                return false;
+            if (token_iterator->type == TokenType::Semicolon)
+                continue;
+            /// `parseKQLQuery` consumed the statement together with its `;` separator (its
+            /// `SET` fast path eats the whitespace after it too), so whatever it left is the
+            /// next statement to probe, not trailing junk -- exactly what the executor's own
+            /// loop resumes on.
+            if (kql_statement)
+                continue;
+            /// Tokens remain after a fully parsed statement that are not a new
+            /// statement (e.g. INSERT data, or a real syntax error). Submit and
+            /// let the normal query-processing path handle it.
+            return false;
+        }
+    }
+    catch (...) /// Ok: on any error the line is committed and processQueryText reports it.
+    {
+        return false;
+    }
+}
+
+
 bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
@@ -4894,6 +5375,10 @@ void ClientBase::runInteractive()
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
         .highlighter = highlight_callback,
+        /// In single-line mode, pressing Enter on an incomplete query inserts a
+        /// newline into the same edit buffer (like Alt+Enter) instead of
+        /// committing it. This keeps the whole query under one prompt.
+        .query_needs_continuation = [this](const String & text) { return queryNeedsContinuation(text); },
         .input_stream = input_stream,
         .output_stream = output_stream,
         .in_fd = stdin_fd,

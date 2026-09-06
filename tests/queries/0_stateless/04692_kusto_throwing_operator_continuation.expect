@@ -1,0 +1,53 @@
+#!/usr/bin/expect -f
+
+# Regression test: the single-line continuation probe
+# `ClientBase::queryNeedsContinuation` must not treat a parser exception as
+# "the buffer is complete, submit it". Not every parser reports a syntax error
+# by returning false -- `ParserKQLOperators` throws on an unfinished
+# parenthesized operator, e.g. `... !between (`. The probe catches the throw and
+# still recognizes the unclosed `(`, so the buffer keeps waiting for the rest of
+# the query. Without that, pressing <ENTER> would submit the buffer, run the
+# `SET dialect` that precedes the unfinished statement and report a syntax error
+# for a query the user has not finished typing yet.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --allow_experimental_kusto_dialect 1 --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# The final statement stops inside `!between (`, where the Kusto operator parser
+# throws instead of returning false. The buffer must fold and wait.
+send -- "SET dialect = 'kusto'; numbers(3) | where number !between (\r"
+# Give the client time to react to the <ENTER> on its own: two lines sent back to
+# back arrive in a single read and are inserted as one pasted block, which would
+# fold the buffer regardless of what the continuation probe decides.
+sleep 1
+# Complete the range on the continuation line. The whole buffer now runs as one.
+send -- "0 .. 1)\r"
+expect {
+    "Syntax error" { exit 1 }
+    -re {│ +2 │} {}
+}
+expect ":) "
+
+send -- "\4"
+expect eof
