@@ -339,6 +339,9 @@ const char * analyzeImpl(
 
     bool in_curly_braces = false;
     bool in_square_braces = false;
+    /// The first position of the body of the open character class, so that a `]` written there can be
+    /// recognized as a literal member of the class.
+    const char * square_braces_body_begin = nullptr;
 
     while (pos != end)
     {
@@ -447,8 +450,19 @@ const char * analyzeImpl(
                 break;
 
             case '[':
+                /// RE2 reads a `[` inside an already-open character class as a literal member of that
+                /// class, so it neither opens a class nor nests. Taking it as another class left the
+                /// tracker one level deep after the class had closed, and a top-level `|` after
+                /// `[[]` was then not seen as an alternative at all.
+                if (in_square_braces)
+                {
+                    ++pos;
+                    break;
+                }
+
                 in_square_braces = true;
                 ++depth;
+                square_braces_body_begin = pos + 1;
                 finish_non_trivial_char();
                 ++pos;
                 break;
@@ -456,6 +470,18 @@ const char * analyzeImpl(
             case ']':
                 if (!in_square_braces)
                     goto ordinary;
+
+                /// RE2 follows the convention that a `]` written first in a class - right after `[`
+                /// or after `[^` - is a literal member of it rather than its end: `[]a]` is the class
+                /// of `]` and `a`. Closing the class here instead left the rest of its body to be
+                /// analyzed as a top-level literal run, and the prefilter then required a substring
+                /// that the pattern does not.
+                if (pos == square_braces_body_begin
+                    || (pos == square_braces_body_begin + 1 && *square_braces_body_begin == '^'))
+                {
+                    ++pos;
+                    break;
+                }
 
                 --depth;
                 if (depth == 0)
