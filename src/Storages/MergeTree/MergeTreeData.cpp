@@ -56,6 +56,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ActionsDAG.h>
@@ -5498,6 +5499,73 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
+
+    /// Statistics of a column that is not physically stored can never be built: the column is absent
+    /// from every written block. Only the state after all commands can decide, because one command can
+    /// turn a column non-physical and another give it statistics.
+    /// A `Replicated` database re-executes the ALTER per replica here, so only the initial execution
+    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
+    {
+        const auto txn = local_context->getZooKeeperMetadataTransaction();
+        const bool is_ddl_replay = txn && !txn->isInitialQuery();
+
+        if (!is_ddl_replay)
+        {
+            /// Only effective commands count: an ignored one changes nothing (`ADD COLUMN IF NOT EXISTS`
+            /// for a column that already exists).
+            NameSet statistics_named_by_alter;
+            NameSet dropped_by_alter;
+            NameSet renamed_away;
+            std::unordered_map<String, String> renamed_from;
+            for (const auto & command : commands)
+            {
+                if (command.ignore)
+                    continue;
+                if (command.column_statistics_decl != nullptr)
+                    statistics_named_by_alter.insert(command.column_name);
+                /// A drop only ends the stored column's identity while that column still holds the
+                /// name: once a rename has moved it away, a drop of the freed name cannot reach it.
+                /// `CLEAR COLUMN` shares this type but only erases data, leaving the column in place.
+                if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !renamed_away.contains(command.column_name))
+                    dropped_by_alter.insert(command.column_name);
+                /// `command.ignore` is decided before any command ran, so a rename of an
+                /// already-dropped name is not marked ignored even though it moves nothing.
+                if (command.type == AlterCommand::RENAME_COLUMN && !dropped_by_alter.contains(command.column_name))
+                {
+                    renamed_from[command.rename_to] = command.column_name;
+                    renamed_away.insert(command.column_name);
+                }
+            }
+
+            for (const auto & column : new_metadata.columns)
+            {
+                if (new_metadata.columns.hasPhysical(column.name) || !column.statistics.hasExplicitStatistics())
+                    continue;
+
+                /// A table created before this check stays alterable: the state is only refused when
+                /// this ALTER produced it, not when it was inherited untouched. A rename carries the
+                /// whole column description across, so resolve the pre-ALTER name. One hop is the
+                /// whole relation: transitive renames in one statement are rejected earlier, so a
+                /// second hop can only reach a different column reusing a name freed here.
+                String old_name = column.name;
+                if (auto it = renamed_from.find(old_name); it != renamed_from.end())
+                    old_name = it->second;
+
+                /// Dropping the stored column ends its identity, so a later column of the same name is
+                /// a new one and the state it carries is this ALTER's, however it reached that name.
+                if (!statistics_named_by_alter.contains(column.name)
+                    && !dropped_by_alter.contains(old_name)
+                    && old_columns.has(old_name)
+                    && !old_columns.hasPhysical(old_name)
+                    && old_columns.get(old_name).statistics.hasExplicitStatistics())
+                    continue;
+
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS,
+                    "Cannot add statistics to column '{}': it is not physically stored",
+                    column.name);
+            }
+        }
+    }
 
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::enable_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
