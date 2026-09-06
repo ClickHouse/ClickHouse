@@ -26,6 +26,7 @@
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
+#include <optional>
 
 #include <Disks/IDisk.h>
 namespace fs = std::filesystem;
@@ -34,6 +35,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool fsync_metadata;
     extern const SettingsUInt64 glob_expansion_max_elements;
 }
 
@@ -299,7 +301,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
 }
 
 
-void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
+void DatabasePostgreSQL::attachTable(ContextPtr local_context, const String & table_name, const StoragePtr & storage, const String &)
 {
     auto db_disk = getDisk();
     std::lock_guard lock{mutex};
@@ -314,16 +316,47 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
                         "Cannot attach PostgreSQL table {} because it already exists (database: {})",
                         getTableNameForLogs(table_name), database_name);
 
+    /// Everything that can throw runs before the erase from `detached_or_dropped`, which is what
+    /// makes the table visible, so a failed `ATTACH TABLE` stays retryable.
+    std::optional<StoragePtr> cached_before;
     if (cache_tables)
+    {
+        if (auto it = cached_tables.find(table_name); it != cached_tables.end())
+            cached_before = it->second;
         cached_tables[table_name] = storage;
+    }
+
+    try
+    {
+        if (persistent)
+        {
+            fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+
+            /// fsync the parent directory so the `unlink` survives a power loss. Only when a
+            /// marker exists: a plain (non-permanent) `DETACH` writes none, so the `unlink` is a
+            /// no-op there and there is nothing to make durable.
+            SyncGuardPtr dir_sync_guard;
+            if (local_context->getSettingsRef()[Setting::fsync_metadata] && db_disk->existsFile(table_marked_as_removed))
+                dir_sync_guard = db_disk->getDirectorySyncGuard(getMetadataPath());
+
+            db_disk->removeFileIfExists(table_marked_as_removed);
+        }
+    }
+    catch (...)
+    {
+        /// `getCreateTableQueryImpl` reads the cache without consulting `detached_or_dropped`, so a
+        /// storage left behind by a failed attach would be served to later callers.
+        if (cache_tables)
+        {
+            if (cached_before)
+                cached_tables[table_name] = *cached_before;
+            else
+                cached_tables.erase(table_name);
+        }
+        throw;
+    }
 
     detached_or_dropped.erase(table_name);
-
-    if (!persistent)
-        return;
-
-    fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-    db_disk->removeFileIfExists(table_marked_as_removed);
 }
 
 
@@ -358,7 +391,7 @@ void DatabasePostgreSQL::createTable(ContextPtr local_context, const String & ta
 }
 
 
-void DatabasePostgreSQL::detachTablePermanently(ContextPtr, const String & table_name)
+void DatabasePostgreSQL::detachTablePermanently(ContextPtr local_context, const String & table_name)
 {
     if (!persistent)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE PERMANENTLY is not supported for non-persistent PostgreSQL database");
@@ -373,15 +406,32 @@ void DatabasePostgreSQL::detachTablePermanently(ContextPtr, const String & table
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped/detached", getTableNameForLogs(table_name));
 
     fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-    db_disk->createFile(mark_table_removed);
+
+    /// Insert before writing the marker and roll back on failure: inserting allocates, so doing it
+    /// afterwards could throw with the marker already durable and not retryable.
+    detached_or_dropped.emplace(table_name);
+
+    try
+    {
+        /// fsync the parent directory so the marker survives a power loss, else the table silently
+        /// re-appears on restart. The marker is an empty file, so only its directory entry matters.
+        SyncGuardPtr dir_sync_guard;
+        if (local_context->getSettingsRef()[Setting::fsync_metadata])
+            dir_sync_guard = db_disk->getDirectorySyncGuard(getMetadataPath());
+
+        db_disk->createFile(mark_table_removed);
+    }
+    catch (...)
+    {
+        detached_or_dropped.erase(table_name);
+        throw;
+    }
 
     if (cache_tables)
         cached_tables.erase(table_name);
-
-    detached_or_dropped.emplace(table_name);
 }
 
-void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /* sync */)
+void DatabasePostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool /* sync */)
 {
     if (!persistent)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP TABLE is not supported for non-persistent MySQL database");
@@ -396,12 +446,29 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped/detached", getTableNameForLogs(table_name));
 
     fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-    db_disk->createFile(mark_table_removed);
+
+    /// Insert before writing the marker and roll back on failure: inserting allocates, so doing it
+    /// afterwards could throw with the marker already durable and not retryable.
+    detached_or_dropped.emplace(table_name);
+
+    try
+    {
+        /// fsync the parent directory so the marker survives a power loss, else the table silently
+        /// re-appears on restart. The marker is an empty file, so only its directory entry matters.
+        SyncGuardPtr dir_sync_guard;
+        if (local_context->getSettingsRef()[Setting::fsync_metadata])
+            dir_sync_guard = db_disk->getDirectorySyncGuard(getMetadataPath());
+
+        db_disk->createFile(mark_table_removed);
+    }
+    catch (...)
+    {
+        detached_or_dropped.erase(table_name);
+        throw;
+    }
 
     if (cache_tables)
         cached_tables.erase(table_name);
-
-    detached_or_dropped.emplace(table_name);
 }
 
 
