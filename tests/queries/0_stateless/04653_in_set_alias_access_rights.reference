@@ -1,0 +1,49 @@
+Alias granted, target not granted
+  enable_analyzer = 1
+ACCESS_DENIED
+  enable_analyzer = 0
+ACCESS_DENIED
+  serialized plan
+ACCESS_DENIED
+Target granted, alias not granted
+  enable_analyzer = 1
+ACCESS_DENIED
+  enable_analyzer = 0
+ACCESS_DENIED
+  serialized plan
+ACCESS_DENIED
+Both granted
+  enable_analyzer = 1
+1
+  enable_analyzer = 0
+1
+  serialized plan
+2
+Target granted on some columns
+  enable_analyzer = 1
+ACCESS_DENIED
+  enable_analyzer = 0
+ACCESS_DENIED
+  serialized plan
+ACCESS_DENIED
+Target granted on all columns
+  enable_analyzer = 1
+1
+  enable_analyzer = 0
+1
+  serialized plan
+2
+Alias granted on all columns
+  enable_analyzer = 1
+1
+  enable_analyzer = 0
+1
+  serialized plan
+2
+Alias granted on some columns
+  enable_analyzer = 1
+ACCESS_DENIED
+  enable_analyzer = 0
+ACCESS_DENIED
+  serialized plan
+ACCESS_DENIED

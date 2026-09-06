@@ -2,6 +2,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/SetSettings.h>
 #include <Storages/StorageSet.h>
+#include <Storages/StorageAlias.h>
+#include <Access/Common/AccessFlags.h>
 #include <Storages/StorageFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
@@ -196,6 +198,53 @@ SetPtr StorageSet::getSet() const
 {
     std::lock_guard lock(mutex);
     return set;
+}
+
+
+std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage, const ContextPtr & context)
+{
+    /// Resolve first and only then check access: this is called for every table on the right of `IN`,
+    /// so a check while walking would apply set semantics to aliases whose target is not set-backed.
+    /// Keep the ids, not the storages: only the ids are needed below, and the walk does not keep
+    /// the wrappers themselves alive.
+    std::vector<StorageID> alias_ids;
+    StoragePtr current = storage;
+    std::shared_ptr<StorageSet> storage_set;
+
+    /// Bound the walk so a self-referential or cyclic alias chain cannot loop forever.
+    for (size_t depth = 0; current && depth < 64; ++depth)
+    {
+        /// Share ownership with the caller: through an alias the caller holds only the wrapper, so
+        /// returning a raw pointer would leave the target owned by nothing once this returns.
+        storage_set = std::dynamic_pointer_cast<StorageSet>(current);
+        if (storage_set)
+            break;
+
+        const auto * alias = dynamic_cast<const StorageAlias *>(current.get());
+        if (!alias)
+            return nullptr;
+
+        alias_ids.push_back(alias->getStorageID());
+        current = alias->tryGetTargetTable();
+    }
+
+    if (!storage_set)
+        return nullptr;
+
+    /// Same grants that reading the chain needs: `SELECT` on every alias and on the target, over all
+    /// of its columns because the whole set is consumed. A directly named set-backed table has never
+    /// required a grant, so the aliases alone add a check.
+    if (context && !alias_ids.empty())
+    {
+        const auto metadata = storage_set->getInMemoryMetadataPtr(context, false);
+        const Names column_names = metadata->getColumns().getNamesOfPhysical();
+
+        for (const auto & alias_id : alias_ids)
+            context->checkAccess(AccessType::SELECT, alias_id, column_names);
+        context->checkAccess(AccessType::SELECT, storage_set->getStorageID(), column_names);
+    }
+
+    return storage_set;
 }
 
 

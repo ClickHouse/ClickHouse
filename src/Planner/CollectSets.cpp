@@ -79,7 +79,11 @@ public:
 
         /// Tables and table functions are replaced with subquery at Analysis stage, except special Set table.
         auto * second_argument_table = in_second_argument->as<TableNode>();
-        StorageSet * storage_set = second_argument_table != nullptr ? dynamic_cast<StorageSet *>(second_argument_table->getStorage().get()) : nullptr;
+        /// Recognize a set-backed table through any `StorageAlias` wrapping, matching the guard in
+        /// the analyzer (`resolveFunction`). A set-backed table cannot be read, so it must be consumed
+        /// natively as a prepared set here, otherwise the fallback plan reads through it and hits
+        /// `Method read is not supported by storage Set`.
+        std::shared_ptr<StorageSet> storage_set = second_argument_table != nullptr ? getSetStorageFromTable(second_argument_table->getStorage(), planner_context.getQueryContext()) : nullptr;
 
         if (storage_set)
         {
@@ -123,7 +127,7 @@ public:
             auto ast = in_second_argument->toAST();
 #if CLICKHOUSE_CLOUD
             if (storage_set->getName() == "SharedSet")
-                sets.addFromStorage(set_key, std::move(ast), static_cast<StorageSharedSet *>(storage_set)->getSet(planner_context.getQueryContext()), second_argument_table->getStorageID());
+                sets.addFromStorage(set_key, std::move(ast), static_cast<StorageSharedSet *>(storage_set.get())->getSet(planner_context.getQueryContext()), second_argument_table->getStorageID());
             else
 #endif
             sets.addFromTuple(set_key, std::move(ast), std::move(set), settings);

@@ -42,6 +42,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Storages/StorageSet.h>
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
@@ -2392,11 +2393,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         {
             /// If table is already prepared set, we do not replace it with subquery.
             /// If table is not a StorageSet, we'll create plan to build set in the Planner.
+            /// `getSetStorageFromTable` also matches a derived set storage and one reached through a
+            /// `StorageAlias`, which the planner detects the same way. Such a table cannot be read,
+            /// so it must not be rewritten into a subquery; its `Array` elements are the set rows.
             ///
-            /// If its single column is an Array one dimension deeper than the left argument,
-            /// interpret it as the set of the array's elements, exactly like an array subquery,
-            /// an array literal, or an array-returning function on the right side of IN.
-            flattenArrayTableExpressionOnRightOfIn(in_second_argument, in_first_argument, table_node->getStorageSnapshot(), scope.context);
+            /// Any other table with a single `Array` column one dimension deeper than the left
+            /// argument is flattened to the set of that array's elements.
+            if (!getSetStorageFromTable(table_node->getStorage()))
+                flattenArrayTableExpressionOnRightOfIn(in_second_argument, in_first_argument, table_node->getStorageSnapshot(), scope.context);
         }
         else if (table_function_node)
         {
@@ -2443,7 +2447,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             /// If the wrapped subquery's single column is an Array one dimension deeper than the left
             /// argument, interpret it as the set of the array's elements, exactly like an array
-            /// subquery, an array literal, or an array-returning function on the right side of IN.
+            /// subquery, an array literal, or an array-returning function on the right side of `IN`.
             flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, scope.context);
         }
         else
