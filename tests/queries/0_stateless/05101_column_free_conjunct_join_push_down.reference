@@ -1,0 +1,37 @@
+
+
+
+val20
+val21
+val22
+val23
+val24
+val25
+val26
+materialize(1)
+
+
+
+val20
+val21
+val22
+val23
+val24
+val25
+val26
+toNullable(256)
+10
+CAST to LowCardinality(Nullable)
+10
+the conjunct still filters
+0
+a column predicate is still pushed down
+3
+an ordinary join keeps the same results
+10	45	100
+10	45	100
+10	45	100
+0
+0
+10	45	100
+10	45	100
