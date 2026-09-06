@@ -52,6 +52,15 @@ public:
         return IStorage::getInMemoryMetadataPtr(context_, bypass_metadata_cache);
     }
 
+    /// The underlying storage if it has already been materialized, and nullptr otherwise. Lets a caller
+    /// that recognizes an engine by downcasting see through this stand-in without loading a table that
+    /// has not been accessed yet.
+    StoragePtr tryGetNested() const
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
+    }
+
     StoragePtr getNested() const override
     {
         std::lock_guard lock{nested_mutex};
