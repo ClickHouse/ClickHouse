@@ -1591,9 +1591,31 @@ def test_nats_jet_stream_direct_select_resumes_after_skipped_broken_message(nats
         "the recovery acknowledged the skipped message before the query committed anything: "
         "{} deliveries for two messages".format(consumer_seq))
 
-    # The query did commit, so what it read - the row and the message it skipped along the way - is
-    # consumed by the time it returns, and the broker has nothing left outstanding.
-    _wait_for_ack_pending(0)
+    # The query did commit, so the row it returned is consumed by the time it returns, and so is the
+    # skipped message where its redelivery reached the query before that row did. It does not have
+    # to: a direct `SELECT` returns as soon as it has a row, and a graceful shutdown can lose the
+    # redelivery on the wire (the broker counts it as delivered, the client never sees it), leaving
+    # it outstanding until the ACK deadline with nothing left to pull it. What must hold is that the
+    # only thing the broker may still count as outstanding is that skipped message, never the row.
+    _wait_for_nothing_but_the_first_message_outstanding()
+
+
+def _wait_for_nothing_but_the_first_message_outstanding(consumer_name = "test_consumer", time_limit_sec = 60):
+    # With two messages in the stream, an acknowledgement floor of zero together with a single
+    # outstanding message means the first one is outstanding and the second acknowledged.
+    deadline = time.monotonic() + time_limit_sec
+    info = None
+    while time.monotonic() < deadline:
+        info = asyncio.run(get_consumer_info(cluster, "test_stream", consumer_name))
+        if info.num_ack_pending == 0:
+            return
+        if info.num_ack_pending == 1 and info.ack_floor.stream_seq == 0:
+            return
+        time.sleep(0.2)
+
+    raise AssertionError(
+        "consumer {} holds {} unacknowledged messages with acknowledgement floor {}".format(
+            consumer_name, info.num_ack_pending, info.ack_floor.stream_seq))
 
 
 def test_nats_jet_stream_direct_select_does_not_commit_a_skipped_message_when_cancelled(nats_cluster):
@@ -1935,6 +1957,96 @@ def test_nats_jet_stream_does_not_acknowledge_messages_discarded_by_a_view_dropp
     assert int(result) == total_expected, (
         "the cycle that had no view to stream to acknowledged the messages it discarded, "
         "view holds {} of {} keys".format(result, total_expected))
+
+
+def _wait_for_ack_floor(expected, consumer_name = "test_consumer", time_limit_sec = 60):
+    # Waits until the broker has every message up to stream sequence `expected` acknowledged, which
+    # is how a stream consumed and committed in full reads from outside.
+    deadline = time.monotonic() + time_limit_sec
+    ack_floor = 0
+    while time.monotonic() < deadline:
+        info = asyncio.run(get_consumer_info(cluster, "test_stream", consumer_name))
+        ack_floor = info.ack_floor.stream_seq
+        if ack_floor == expected:
+            return
+        time.sleep(0.2)
+
+    raise AssertionError(
+        "consumer {} has acknowledged messages up to stream sequence {}, expected {}".format(
+            consumer_name, ack_floor, expected))
+
+
+def test_nats_jet_stream_streams_to_a_materialized_view_with_a_null_target(nats_cluster):
+    # A materialized view whose target is `Null` is a legitimate way to consume a stream for its
+    # side effects (or to drop it on the floor on purpose): the insert pipeline it produces ends in
+    # the same discarding sink as the pipeline of a table whose last view was dropped mid-cycle. The
+    # cycle must tell the two apart by the dependency metadata and keep streaming - and, with
+    # JetStream, acknowledging - rather than treating the view as absent and never consuming.
+    total_expected = 10
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
+
+    instance.query(
+        """
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n';
+        CREATE MATERIALIZED VIEW test.consumer ENGINE = Null AS
+            SELECT * FROM test.consume;
+        """
+    )
+    nats_helpers.wait_for_streaming_started(instance, "test.consume")
+
+    messages = [json.dumps({"key": key, "value": key}) for key in range(total_expected)]
+    asyncio.run(publish_messages(cluster, "test_stream", "test_subject", messages))
+
+    # Consumed and committed: the broker has every message acknowledged. A table that mistook the
+    # `Null` target for a dropped view would never build a source, and the floor would stay at zero.
+    _wait_for_ack_floor(total_expected)
+
+
+def test_nats_jet_stream_streams_to_a_fan_out_with_a_null_target(nats_cluster):
+    # The same with a view that has somewhere to insert into next to the `Null` one: every row
+    # reaches the real target, and the discarding sink of the other branch does not stop the cycle.
+    total_expected = 10
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
+
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n';
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.consume;
+        CREATE MATERIALIZED VIEW test.discarding_consumer ENGINE = Null AS
+            SELECT * FROM test.consume;
+        """
+    )
+    nats_helpers.wait_for_streaming_started(instance, "test.consume")
+
+    messages = [json.dumps({"key": key, "value": key}) for key in range(total_expected)]
+    asyncio.run(publish_messages(cluster, "test_stream", "test_subject", messages))
+
+    result = instance.query_with_retry(
+        "SELECT count(DISTINCT key) FROM test.view",
+        retry_count = 60,
+        sleep_time = 1,
+        check_callback = lambda num_rows: int(num_rows) == total_expected)
+    assert int(result) == total_expected, "view holds {} of {} keys".format(result, total_expected)
+
+    _wait_for_ack_floor(total_expected)
 
 
 def test_nats_jet_stream_hands_back_the_backlog_of_a_consumer_a_direct_select_left_subscribed(nats_cluster):
