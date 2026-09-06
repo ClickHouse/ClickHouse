@@ -18,6 +18,7 @@ void registerStatementDrop(StatementFactory & factory);
 void registerStatementExists(StatementFactory & factory);
 void registerStatementExplain(StatementFactory & factory);
 void registerStatementHypotheticalIndex(StatementFactory & factory);
+void registerStatementHypotheticalProjection(StatementFactory & factory);
 void registerStatementIn(StatementFactory & factory);
 void registerStatementInsert(StatementFactory & factory);
 void registerStatementKillQuery(StatementFactory & factory);

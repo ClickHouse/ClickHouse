@@ -17,6 +17,9 @@ struct Settings;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+struct BuiltSetsByHash;
+using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
+
 class QueryPlan;
 
 struct QueryPlanOptimizationSettings
@@ -55,7 +58,10 @@ struct QueryPlanOptimizationSettings
     bool merge_expressions;
     bool merge_filters;
     bool filter_push_down;
+    bool propagate_predicate_across_join;
     bool fuse_filter_into_array_join;
+    bool lower_array_join_function;
+    bool enable_lazy_columns_replication;
     bool short_circuit_function_evaluation_disabled;
     bool push_down_volume_reducing_functions;
     bool convert_outer_join_to_inner_join;
@@ -118,6 +124,7 @@ struct QueryPlanOptimizationSettings
     bool query_plan_join_shard_by_pk_ranges;
 
     bool enable_cascades_optimizer = false;
+    bool cascades_aggregation_pushdown = true;
 
     bool make_distributed_plan = false;
     bool serialize_query_plan = false;
@@ -128,6 +135,7 @@ struct QueryPlanOptimizationSettings
     bool distributed_plan_optimize_exchanges = true; /// Removes unnecessary exchanges in distributed query plan
     String distributed_plan_force_exchange_kind; /// Force exchange kind for all exchanges in distributed query plan
     UInt64 distributed_plan_max_rows_to_broadcast = 20000; /// Max number of rows to broadcast in distributed query plan
+    bool distributed_plan_read_in_order = false; /// Allow read-in-order for ORDER BY in a distributed plan
     bool distributed_plan_force_shuffle_aggregation = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
     bool distributed_aggregation_memory_efficient = true; /// Is the memory-saving mode of distributed aggregation enabled
     bool distributed_plan_prefer_replicas_over_workers = false; /// Use ReadFromMergeTree with catalog access over ReadFromMergeTreeAtWorker
@@ -235,7 +243,9 @@ struct QueryPlanOptimizationSettings
 
     bool is_explain;
 
-    std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
+    /// Takes the sets the single-node plan already filled, so the probe plan can adopt them instead
+    /// of re-running the same subqueries.
+    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
 
     bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;

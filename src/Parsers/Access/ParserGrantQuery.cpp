@@ -466,6 +466,7 @@ The hierarchy of privileges in ClickHouse is shown below:
   - [`SOURCES`](#sources)
     - `AZURE`
     - `BIGQUERY`
+    - `DISK`
     - `FILE`
     - `HDFS`
     - `HIVE`
@@ -527,7 +528,6 @@ The hierarchy of privileges in ClickHouse is shown below:
         - `SYSTEM RELOAD DICTIONARY`
         - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
         - `SYSTEM RELOAD FUNCTION`
-        - `SYSTEM RELOAD MODEL`
         - `SYSTEM RELOAD USERS`
     - `SYSTEM SENDS`
       - `SYSTEM DISTRIBUTED SENDS`
@@ -839,6 +839,7 @@ Allows using [introspection](/concepts/features/performance/troubleshoot/samplin
 ### SOURCES {#sources}
 
 Allows using external data sources. Applies to [table engines](/reference/engines/table-engines/index) and [table functions](/reference/functions/table-functions/index).
+Also required for backup locations: `BACKUP`/`RESTORE` and `ENGINE = Backup` authorize their location against these grants.
 
 - `READ`. Level: `GLOBAL_WITH_PARAMETER`
 - `WRITE`. Level: `GLOBAL_WITH_PARAMETER`
@@ -846,6 +847,7 @@ Allows using external data sources. Applies to [table engines](/reference/engine
 Possible parameters:
 - `AZURE`
 - `BIGQUERY`
+- `DISK`
 - `FILE`
 - `HDFS`
 - `HIVE`

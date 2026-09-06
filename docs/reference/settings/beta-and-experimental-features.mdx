@@ -119,6 +119,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [query_plan_optimize_join_order_randomize](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_randomize) | `0` |
 | [ast_fuzzer_runs](/reference/settings/session-settings/ast-fuzzer#ast_fuzzer_runs) | `0` |
 | [ast_fuzzer_any_query](/reference/settings/session-settings/ast-fuzzer#ast_fuzzer_any_query) | `0` |
+| [ast_fuzzer_oracle](/reference/settings/session-settings/ast-fuzzer#ast_fuzzer_oracle) | `0` |
 | [allow_fuzz_query_functions](/reference/settings/session-settings/allow#allow_fuzz_query_functions) | `0` |
 | [reserve_memory](/reference/settings/session-settings/other#reserve_memory) | `0` |
 | [resumable_backup_from_snapshot](/reference/settings/session-settings/other#resumable_backup_from_snapshot) | `0` |
@@ -129,6 +130,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [automatic_parallel_replicas_mode](/reference/settings/session-settings/automatic-parallel#automatic_parallel_replicas_mode) | `0` |
 | [automatic_parallel_replicas_min_bytes_per_replica](/reference/settings/session-settings/automatic-parallel#automatic_parallel_replicas_min_bytes_per_replica) | `1048576` |
 | [parallel_replicas_plan_based](/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based) | `0` |
+| [parallel_replicas_allow_merge_tables](/reference/settings/session-settings/parallel-replicas#parallel_replicas_allow_merge_tables) | `0` |
 | [distributed_index_analysis](/reference/settings/session-settings/distributed-index-analysis#distributed_index_analysis) | `0` |
 | [allow_experimental_materialized_postgresql_table](/reference/settings/session-settings/allow-experimental#allow_experimental_materialized_postgresql_table) | `0` |
 | [allow_experimental_funnel_functions](/reference/settings/session-settings/allow-experimental#allow_experimental_funnel_functions) | `0` |
@@ -139,7 +141,6 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [unique_key_max_encoded_size](/reference/settings/session-settings/unique-key#unique_key_max_encoded_size) | `256` |
 | [unique_key_probe_implementation](/reference/settings/session-settings/unique-key#unique_key_probe_implementation) | `auto` |
 | [allow_experimental_unique_key](/reference/settings/session-settings/allow-experimental#allow_experimental_unique_key) | `0` |
-| [allow_experimental_codecs](/reference/settings/session-settings/allow-experimental#allow_experimental_codecs) | `0` |
 | [enable_quantized_codec](/reference/settings/session-settings/enable#enable_quantized_codec) | `0` |
 | [enable_sz3_codec](/reference/settings/session-settings/enable#enable_sz3_codec) | `0` |
 | [enable_zxc_codec](/reference/settings/session-settings/enable#enable_zxc_codec) | `0` |
@@ -178,6 +179,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [distributed_plan_workers_provisioning_timeout_ms](/reference/settings/session-settings/distributed-plan#distributed_plan_workers_provisioning_timeout_ms) | `10000` |
 | [distributed_plan_force_exchange_kind](/reference/settings/session-settings/distributed-plan#distributed_plan_force_exchange_kind) | `` |
 | [distributed_plan_max_rows_to_broadcast](/reference/settings/session-settings/distributed-plan#distributed_plan_max_rows_to_broadcast) | `20000` |
+| [distributed_plan_read_in_order](/reference/settings/session-settings/distributed-plan#distributed_plan_read_in_order) | `0` |
 | [distributed_plan_prefer_replicas_over_workers](/reference/settings/session-settings/distributed-plan#distributed_plan_prefer_replicas_over_workers) | `0` |
 | [allow_experimental_ytsaurus_table_engine](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_engine) | `0` |
 | [allow_experimental_ytsaurus_table_function](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_function) | `0` |

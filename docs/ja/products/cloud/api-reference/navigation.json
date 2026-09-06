@@ -1,9 +1,9 @@
 [
   {
-    "group": "組織",
+    "group": "Organization",
     "pages": [
       {
-        "group": "組織",
+        "group": "Organization",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -19,7 +19,7 @@
         ]
       },
       {
-        "group": "請求",
+        "group": "Billing",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
           "products/cloud/api-reference/billing/active-balances-get",
@@ -27,7 +27,7 @@
         ]
       },
       {
-        "group": "ユーザー管理",
+        "group": "User management",
         "pages": [
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
@@ -40,7 +40,7 @@
         ]
       },
       {
-        "group": "ロール管理",
+        "group": "Role Management",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -69,10 +69,10 @@
     ]
   },
   {
-    "group": "サービス",
+    "group": "Service",
     "pages": [
       {
-        "group": "サービス",
+        "group": "Service",
         "pages": [
           "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
@@ -118,7 +118,7 @@
     ]
   },
   {
-    "group": "OpenAPI",
+    "group": "API keys",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",
@@ -142,6 +142,7 @@
     "pages": [
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
       "POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+      "products/cloud/api-reference/clickpipes/click-pipes-service-context-get",
       "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
       "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
       "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
