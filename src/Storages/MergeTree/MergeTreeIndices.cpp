@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
+/// Registers the row-level scalar skip index used to build exact ANN filters.
+#include <Storages/MergeTree/MergeTreeIndexRowBitmap.h>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
@@ -603,6 +605,15 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
         .syntax = "INDEX name expr TYPE bloom_filter([false_positive_rate]) GRANULARITY g",
         .related = {"set", "tokenbf_v1"}});
     registerValidator("bloom_filter", bloomFilterIndexValidator);
+
+    /// row_bitmap is intentionally registered as a separate skip-index type instead of extending
+    /// minmax/set/bloom_filter: those indexes can only answer granule-level questions, while hybrid
+    /// vector search needs an exact row-position bitmap that exact filtered search can probe per row key.
+    registerCreator("row_bitmap", rowBitmapIndexCreator, Documentation{
+        .description = "Stores scalar index expression values for every row in each index granule, allowing exact row bitmaps to be produced for hybrid vector/scalar queries.",
+        .syntax = "INDEX name expr TYPE row_bitmap GRANULARITY g",
+        .related = {"vector_similarity", "set", "minmax"}});
+    registerValidator("row_bitmap", rowBitmapIndexValidator);
 
 #if USE_USEARCH
     registerCreator("vector_similarity", vectorSimilarityIndexCreator, Documentation{

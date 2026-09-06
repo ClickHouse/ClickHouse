@@ -405,7 +405,10 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"auto", VectorSearchFilterStrategy::AUTO},
      {"prefilter", VectorSearchFilterStrategy::PREFILTER},
-     {"postfilter", VectorSearchFilterStrategy::POSTFILTER}})
+     {"postfilter", VectorSearchFilterStrategy::POSTFILTER},
+     /// Explicit opt-in for hybrid vector/scalar queries that can use row-position filters
+     /// for exact vector-index search instead of relying only on post-filtering.
+     {"in_traversal", VectorSearchFilterStrategy::IN_TRAVERSAL}})
 
 IMPLEMENT_SETTING_ENUM(
     GeoToH3ArgumentOrder,

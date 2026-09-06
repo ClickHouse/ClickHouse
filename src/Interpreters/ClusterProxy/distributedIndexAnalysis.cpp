@@ -154,10 +154,11 @@ std::pair<Scalars, std::string> buildAnalyzeIndexQuery(const StorageID & storage
         query += fmt::format(", __getScalar('parts')");
     if (vector_search_parameters)
     {
-        query += fmt::format(", 'vector_search_index_analysis', array('{}', '{}', {}, {}, {}, {})",
+        query += fmt::format(", 'vector_search_index_analysis', array('{}', '{}', {}, {}, {}, {}, '{}')",
                         vector_search_parameters->column, vector_search_parameters->distance_function,
                         vector_search_parameters->limit, vector_search_parameters->reference_vector,
-                        vector_search_parameters->additional_filters_present, vector_search_parameters->return_distances);
+                        vector_search_parameters->additional_filters_present, vector_search_parameters->return_distances,
+                        SettingFieldVectorSearchFilterStrategyTraits::toString(vector_search_parameters->filter_strategy));
     }
     query += ")";
 

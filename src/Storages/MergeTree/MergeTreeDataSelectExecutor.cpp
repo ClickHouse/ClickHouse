@@ -1143,6 +1143,21 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 if (use_skip_indexes_for_disjunctions)
                     partial_eval_results.resize(ranges.data_part->index_granularity->getMarksCountWithoutFinal() * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
 
+                bool has_in_traversal_vector_consumer = false;
+                for (const auto index_idx : skip_indexes.per_part_index_orders[part_index])
+                {
+                    const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
+                    if (!index_and_condition.index->isVectorSimilarityIndex() || !can_use_index(index_and_condition.index))
+                        continue;
+
+                    auto condition = index_and_condition.condition_template->generateForPartition(ranges.data_part->partition);
+                    if (condition && condition->supportsInTraversalVectorFilter())
+                    {
+                        has_in_traversal_vector_consumer = true;
+                        break;
+                    }
+                }
+
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
                     if (ranges.ranges.empty())
@@ -1177,14 +1192,18 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             key_condition_rpn_template->generateForPart(ranges.data_part),
                             part_info_for_reader,
                             ranges.ranges,
-                            ranges.read_hints,
+                            std::move(ranges.read_hints),
                             reader_settings,
                             mark_cache.get(),
                             uncompressed_cache.get(),
                             vector_similarity_index_cache.get(),
+                            index_and_condition.index->isRowBitmapIndex() && has_in_traversal_vector_consumer,
                             use_skip_indexes_for_disjunctions,
                             partial_eval_results,
                             log);
+
+                        if (index_and_condition.index->isVectorSimilarityIndex())
+                            ranges.read_hints.vector_search_filters.clear();
                     }
 
                     stat.granules_dropped.fetch_add(total_granules - ranges.getMarksCount(), std::memory_order_relaxed);
@@ -2573,11 +2592,12 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     const std::optional<KeyCondition> & key_condition_rpn_template,
     const MergeTreeDataPartInfoForReaderPtr & part_info,
     const MarkRanges & ranges,
-    const RangesInDataPartReadHints & in_read_hints,
+    RangesInDataPartReadHints in_read_hints,
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
+    bool retain_vector_search_filter,
     bool use_skip_indexes_for_disjunctions,
     PartialDisjunctionResult & partial_disjunction_result,
     LoggerPtr log)
@@ -2585,8 +2605,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     if (!index_helper->getDeserializedFormat(*part_info, index_helper->getFileName()))
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
-            (fs::path(part_info->getDataPartStorage()->getFullPath()) / index_helper->getFileName()).string());
-        return {ranges, in_read_hints};
+            (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
+        return {ranges, std::move(in_read_hints)};
     }
 
     /// Whether we should use a more optimal filtering.
@@ -2603,12 +2623,19 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         index_granularity_info.fixed_index_granularity,
         index_granularity_info.index_granularity_bytes);
 
-    /// The vector similarity index can only be used if the PK did not prune some ranges within the part.
-    /// (the vector index is built on the entire part).
+    /// Historically the vector similarity index could only be used when PK/skip-index analysis kept
+    /// the whole part, because returned vector row offsets had to be readable downstream. With
+    /// in-traversal exact filtering, a vector condition can accept an explicit row-position predicate
+    /// and still search the full vector index granule while rejecting rows outside the surviving ranges.
     const bool all_match  = (marks_count == ranges.getNumberOfMarks());
-    if (index_helper->isVectorSimilarityIndex() && !all_match)
+    /// If the vector index cannot consume an exact row_bitmap filter for a partially-pruned part, keep
+    /// the old safety rule and skip vector index analysis. Mark/range-only filtering is deliberately
+    /// not used as an exact-filtered-search substitute because it is not the row-level bitmap feature.
+    if (index_helper->isVectorSimilarityIndex()
+        && !all_match
+        && (!condition->supportsInTraversalVectorFilter() || in_read_hints.vector_search_filters.empty()))
     {
-        return {ranges, in_read_hints};
+        return {ranges, std::move(in_read_hints)};
     }
 
     MarkRanges index_ranges;
@@ -2631,7 +2658,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
     MarkRanges res;
     size_t ranges_size = ranges.size();
-    RangesInDataPartReadHints read_hints = in_read_hints;
+    RangesInDataPartReadHints read_hints = std::move(in_read_hints);
     if (index_helper->isVectorSimilarityIndex())
         read_hints.vector_search_results.reset();
 
@@ -2794,6 +2821,160 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         /// this variable is stored to avoid reading the same granule twice.
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
+        /// Multiple surviving MarkRanges may point to the same vector index granule. Track processed
+        /// vector marks so we build one ANN result set per vector granule, with one combined filter.
+        std::unordered_set<size_t> processed_vector_index_marks;
+
+        auto mark_is_allowed_by_current_ranges = [&](size_t mark)
+        {
+            /// After ANN returns vector-local rows, convert them back to MergeTree marks and keep only
+            /// marks that survived earlier scalar index analysis.
+            return std::any_of(ranges.begin(), ranges.end(), [mark](const MarkRange & range)
+            {
+                return mark >= range.begin && mark < range.end;
+            });
+        };
+
+        auto build_vector_search_allowed_ranges = [&](size_t index_mark) -> std::optional<std::vector<VectorSearchFilter::RowRange>>
+        {
+            /// The vector index stores USearch keys as row offsets local to its skip-index granule.
+            /// Earlier scalar index analysis has already reduced `ranges` to the marks that may
+            /// still satisfy WHERE/PREWHERE. Convert the intersection of those marks into local row
+            /// ranges that can be AND-ed into an exact row_bitmap filter.
+            std::vector<VectorSearchFilter::RowRange> allowed_ranges;
+
+            const size_t vector_begin_mark = index_mark * skip_index_granularity;
+            const size_t vector_end_mark = std::min((index_mark + 1) * skip_index_granularity, marks_count);
+            const UInt64 vector_begin_row = part->index_granularity->getMarkStartingRow(vector_begin_mark);
+
+            for (const auto & source_range : ranges)
+            {
+                const size_t begin_mark = std::max(source_range.begin, vector_begin_mark);
+                const size_t end_mark = std::min(source_range.end, vector_end_mark);
+                if (begin_mark >= end_mark)
+                    continue;
+
+                const UInt64 begin_row = part->index_granularity->getMarkStartingRow(begin_mark) - vector_begin_row;
+                const UInt64 end_row = part->index_granularity->getMarkStartingRow(end_mark) - vector_begin_row;
+                if (begin_row < end_row)
+                {
+                    /// The source ranges arrive in mark order. Merge adjacent or overlapping ranges
+                    /// so bitmap intersection can process the smallest useful range list.
+                    if (!allowed_ranges.empty() && begin_row <= allowed_ranges.back().second)
+                        allowed_ranges.back().second = std::max(allowed_ranges.back().second, end_row);
+                    else
+                        allowed_ranges.emplace_back(begin_row, end_row);
+                }
+            }
+
+            if (allowed_ranges.empty())
+                return std::nullopt;
+
+            return allowed_ranges;
+        };
+
+        auto build_vector_search_filter_from_row_bitmaps = [&](size_t index_mark) -> std::optional<VectorSearchFilter>
+        {
+            if (read_hints.vector_search_filters.empty())
+                return std::nullopt;
+
+            /// Build a bitmap in the coordinate system expected by USearch: row offsets local to the
+            /// current vector index granule. row_bitmap filters are stored in their own source
+            /// granule coordinates, so every overlapping row is remapped through the part row offset.
+            const size_t vector_begin_mark = index_mark * skip_index_granularity;
+            const size_t vector_end_mark = std::min((index_mark + 1) * skip_index_granularity, marks_count);
+            /// These absolute part row offsets define the vector granule's row domain.
+            const UInt64 vector_begin_row = part->index_granularity->getMarkStartingRow(vector_begin_mark);
+            const UInt64 vector_end_row = part->index_granularity->getMarkStartingRow(vector_end_mark);
+            /// USearch keys inside this granule are zero-based offsets in [0, vector_rows).
+            const UInt64 vector_rows = vector_end_row - vector_begin_row;
+
+            /// The destination bitmap uses vector-local offsets because that is exactly what USearch
+            /// passes back to the filtered_search() predicate.
+            std::vector<UInt64> bitmap_words((vector_rows + 63) / 64, 0);
+            /// Maintain set_bits incrementally so all-allowed and no-allowed checks stay O(1).
+            UInt64 set_bits = 0;
+            /// Distinguish "no row_bitmap intersects this vector granule" from "the exact bitmap
+            /// intersects but rejects every row"; the latter should become an empty ANN result.
+            bool has_overlap = false;
+
+            for (const auto & source_filter : read_hints.vector_search_filters)
+            {
+                /// Intersect source row_bitmap marks with the current vector granule marks. Different
+                /// skip indexes may use different GRANULARITY values, so this overlap can be partial.
+                const size_t begin_mark = std::max(source_filter.begin_mark, vector_begin_mark);
+                const size_t end_mark = std::min(source_filter.end_mark, vector_end_mark);
+                if (begin_mark >= end_mark)
+                    continue;
+
+                has_overlap = true;
+
+                /// Convert the overlapping mark interval into absolute part row offsets first, then
+                /// derive source-local and vector-local coordinates from the same part row id.
+                const UInt64 source_begin_row = part->index_granularity->getMarkStartingRow(source_filter.begin_mark);
+                const UInt64 begin_row = part->index_granularity->getMarkStartingRow(begin_mark);
+                const UInt64 end_row = part->index_granularity->getMarkStartingRow(end_mark);
+
+                for (UInt64 part_row = begin_row; part_row < end_row; ++part_row)
+                {
+                    /// Probe the source bitmap using source-local row offset. Only rows allowed by
+                    /// the scalar WHERE bitmap are copied into the vector-local bitmap.
+                    if (!source_filter.filter.contains(part_row - source_begin_row))
+                        continue;
+
+                    const UInt64 local_vector_row = part_row - vector_begin_row;
+                    UInt64 & word = bitmap_words[local_vector_row / 64];
+                    const UInt64 mask = 1ULL << (local_vector_row % 64);
+                    if ((word & mask) == 0)
+                    {
+                        /// Avoid double-counting set_bits if overlapping source filters ever cover
+                        /// the same vector-local row.
+                        word |= mask;
+                        ++set_bits;
+                    }
+                }
+            }
+
+            if (!has_overlap)
+                return std::nullopt;
+
+            /// Wrap the vector-local bitmap into the generic ANN filter type. The current row_bitmap
+            /// path materializes only the positive WHERE predicate, so set bits mean allowed rows.
+            VectorSearchFilter filter;
+            filter.setDenseBitmap(
+                std::move(bitmap_words),
+                vector_rows,
+                set_bits);
+            return filter;
+        };
+
+        auto append_vector_search_read_hints = [&](NearestNeighbours local_results, UInt64 vector_begin_row)
+        {
+            /// USearch returns row offsets local to the vector index granule. MergeTreeRangeReader,
+            /// however, compares vector_search_results.rows with the virtual `_part_offset` column.
+            /// Convert offsets to part-local row offsets before storing them in read hints.
+            if (!local_results.distances.has_value())
+            {
+                read_hints = {};
+                return;
+            }
+
+            if (!read_hints.vector_search_results.has_value())
+            {
+                read_hints.vector_search_results = NearestNeighbours{};
+                read_hints.vector_search_results->distances = std::vector<float>();
+            }
+
+            auto & merged_results = read_hints.vector_search_results.value();
+            chassert(merged_results.distances.has_value());
+            chassert(local_results.rows.size() == local_results.distances.value().size());
+
+            for (size_t result_index = 0; result_index < local_results.rows.size(); ++result_index)
+            {
+                merged_results.rows.push_back(vector_begin_row + local_results.rows[result_index]);
+                merged_results.distances.value().push_back(local_results.distances.value()[result_index]);
+            }
+        };
 
         for (size_t i = 0; i < ranges_size; ++i)
         {
@@ -2808,10 +2989,52 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
                 if (index_helper->isVectorSimilarityIndex())
                 {
-                    auto vector_search_results = condition->calculateApproximateNearestNeighbors(granule);
+                    /// When in-traversal exact row_bitmap filtering is enabled and previous scalar indexes
+                    /// have pruned marks inside this part, process each vector index granule once with
+                    /// one remapped row bitmap. Without this guard, two disjoint MarkRanges mapping to
+                    /// the same vector index granule would run ANN search twice and overwrite hints.
+                    if (!all_match && !processed_vector_index_marks.insert(index_mark).second)
+                        continue;
+
+                    std::optional<VectorSearchFilter> vector_search_filter;
+                    /// Consume scalar row bitmaps only when the vector search condition explicitly
+                    /// opted into in-traversal exact filtering. This keeps postfilter as a real baseline:
+                    /// it may still use scalar skip indexes for granule pruning, but it must not pass
+                    /// exact row-level predicates into USearch exact filtered_search().
+                    if (condition->supportsInTraversalVectorFilter())
+                    {
+                        if (auto row_bitmap_filter = build_vector_search_filter_from_row_bitmaps(index_mark))
+                        {
+                            /// Use the exact row-level scalar bitmap as the only ANN filter source.
+                            /// This is the path that avoids ANN top-N underfill caused by post-filtering.
+                            vector_search_filter = std::move(row_bitmap_filter);
+                            if (!all_match)
+                            {
+                                /// If earlier index analysis also removed marks, intersect that
+                                /// coarse range predicate with the exact row bitmap before the
+                                /// vector index decides whether exact filtered search is cheap enough.
+                                auto allowed_ranges = build_vector_search_allowed_ranges(index_mark);
+                                if (!allowed_ranges)
+                                    continue;
+                                vector_search_filter->intersectAllowedRanges(*allowed_ranges);
+                            }
+                        }
+                    }
+
+                    if (vector_search_filter && vector_search_filter->noAllowedRows())
+                        continue;
+
+                    if (!all_match && !vector_search_filter)
+                        continue;
+
+                    /// Pass the optional row-position filter into the vector index. The vector index
+                    /// decides whether to call ordinary search() or filtered_search().
+                    NearestNeighbours local_vector_search_results = condition->calculateApproximateNearestNeighbors(
+                        granule,
+                        vector_search_filter ? &*vector_search_filter : nullptr);
 
                     /// We need to sort the result ranges ascendingly
-                    auto rows = vector_search_results.rows;
+                    auto rows = local_vector_search_results.rows;
                     std::sort(rows.begin(), rows.end());
 #ifndef NDEBUG
                     /// Duplicates should in theory not be possible but better be safe than sorry ...
@@ -2819,7 +3042,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     if (has_duplicates)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
 #endif
-                    if (!vector_search_results.distances.has_value())
+                    if (!(local_vector_search_results.distances.has_value()))
                     {
                         read_hints = {};
                     }
@@ -2851,9 +3074,11 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     {
                         size_t num_marks = index_granularity.countMarksForRows(index_mark * skip_index_granularity, row);
 
+                        /// Read only the single mark containing this ANN hit. Multiple hits in the
+                        /// same mark are coalesced below to avoid duplicate read ranges.
                         MarkRange data_range(
-                            std::max(ranges[i].begin, (index_mark * skip_index_granularity) + num_marks),
-                            std::min(ranges[i].end, (index_mark * skip_index_granularity) + num_marks + 1));
+                            mark,
+                            std::min(mark + 1, marks_count));
 
                         if (!res.empty() && data_range.end == res.back().end)
                             /// Vector search may return >1 hit within the same granule/mark. Don't add to the result twice.
@@ -2868,7 +3093,26 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 else
                 {
                     size_t range_begin = std::max(ranges[i].begin, index_mark * skip_index_granularity);
-                    bool may_be_true = condition->mayBeTrueOnGranule(granule, create_update_partial_disjunction_result_fn(range_begin));
+                    /// Row-level scalar indexes return an exact row bitmap here. Other index types
+                    /// return nullopt and continue using their regular mayBeTrueOnGranule() pruning.
+                    std::optional<VectorSearchFilter> vector_search_filter;
+                    if (retain_vector_search_filter)
+                        vector_search_filter = condition->calculateVectorSearchFilter(granule);
+                    if (vector_search_filter)
+                    {
+                        /// Keep the source mark range with the bitmap so a later vector index can
+                        /// remap it even when row_bitmap and vector_similarity granularities differ.
+                        read_hints.vector_search_filters.push_back(VectorSearchFilterWithMarkRange{
+                            .begin_mark = index_mark * skip_index_granularity,
+                            .end_mark = std::min((index_mark + 1) * skip_index_granularity, marks_count),
+                            .filter = *vector_search_filter});
+                    }
+
+                    bool may_be_true = vector_search_filter
+                        /// For row_bitmap, mayBeTrue is exactly "the bitmap has at least one allowed
+                        /// row"; for other indexes, preserve the existing granule-level condition.
+                        ? !vector_search_filter->noAllowedRows()
+                        : condition->mayBeTrueOnGranule(granule, create_update_partial_disjunction_result_fn(range_begin));
 
                     if (!may_be_true)
                         continue;

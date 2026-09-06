@@ -173,11 +173,34 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
     }
 
+    /// Vector similarity indexes normally require the whole part to survive earlier mark analysis,
+    /// because their search result is a set of row offsets and the downstream reader expects every
+    /// returned offset to be readable. A vector condition may override this when it can accept an
+    /// explicit row-position filter and use it for exact filtered vector search.
+    virtual bool supportsInTraversalVectorFilter() const { return false; }
+
+    /// Optional exact row predicate for vector-search hybrid filtering. Scalar indexes that store
+    /// row-position information can evaluate the current WHERE predicate on one index granule and
+    /// return a dense bitmap local to that granule. The vector index consumes this bitmap during
+    /// exact filtered search via VectorSearchFilter::contains().
+    virtual std::optional<VectorSearchFilter> calculateVectorSearchFilter(MergeTreeIndexGranulePtr /*granule*/) const
+    {
+        return std::nullopt;
+    }
+
     /// Special method for vector similarity indexes:
     /// Returns the N nearest neighbors of a reference vector in the index granule.
     /// The nearest neighbors are returned as row positions.
     /// If VectorSearchParameters::return_distances = true, then the distances are returned as well.
-    virtual NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
+    ///
+    /// `filter` is optional and is only meaningful for vector similarity indexes. When it is present,
+    /// implementations should treat row positions not accepted by the filter as ineligible ANN
+    /// results. This is intentionally a row-position predicate instead of a SQL expression evaluator:
+    /// ANN search runs during index analysis, before ordinary column reads and FilterStep execution.
+    /// The final query filter must still be kept in the pipeline as the semantic source of truth.
+    virtual NearestNeighbours calculateApproximateNearestNeighbors(
+        MergeTreeIndexGranulePtr /*granule*/,
+        const VectorSearchFilter * /*filter*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
@@ -345,6 +368,9 @@ struct IMergeTreeIndex
     }
 
     virtual bool isVectorSimilarityIndex() const { return false; }
+    /// Row-bitmap indexes override this so ReadFromMergeTree can order skip indexes such that exact
+    /// row filters are available before vector_similarity is evaluated.
+    virtual bool isRowBitmapIndex() const { return false; }
     virtual bool isTextIndex() const { return false; }
 
     /// An inert index holds no on-disk data and cannot be (re)computed. It exists only so old

@@ -489,6 +489,9 @@ enum class VectorSearchFilterStrategy : uint8_t
     AUTO,
     PREFILTER,
     POSTFILTER,
+    /// Apply scalar-derived row-position filters to exact vector-index search when the
+    /// MergeTree index analysis phase can build such a filter for the current part.
+    IN_TRAVERSAL,
 };
 
 DECLARE_SETTING_ENUM(VectorSearchFilterStrategy)

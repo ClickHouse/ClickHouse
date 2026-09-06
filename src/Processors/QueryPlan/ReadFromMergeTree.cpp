@@ -2969,17 +2969,30 @@ void ReadFromMergeTree::buildIndexes(
                 const bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l_index.get());
                 const bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r_index.get());
 
-                auto l_index_priority = l_is_minmax ? 1 : 2;
-                auto r_index_priority = r_is_minmax ? 1 : 2;
+                /// Keep minmax first because it is cheap and may quickly remove whole mark ranges
+                /// before more expensive row-level or vector skip indexes are evaluated.
+                auto l_index_priority = l_is_minmax ? 0 : 3;
+                auto r_index_priority = r_is_minmax ? 0 : 3;
+
+                /// row_bitmap must be evaluated before vector_similarity so its exact row bitmap can
+                /// be stored in read hints and consumed by the vector index in this same pass.
+                if (l_index->isRowBitmapIndex())
+                    l_index_priority = 1;
+                if (r_index->isRowBitmapIndex())
+                    r_index_priority = 1;
 
 #if USE_USEARCH
-                // A vector similarity index (if present) is the most selective, hence move it to front
+                /// A vector similarity index consumes row_bitmap filters, so run it after row_bitmap
+                /// indexes even though vector search is usually the most selective skip index.
                 bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
                 bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
                 if (l_is_vectorsimilarity)
-                    l_index_priority = 0;
+                    /// Priority 2 means vector search runs after row_bitmap but before generic skip
+                    /// indexes, preserving most of its original selectivity advantage.
+                    l_index_priority = 2;
                 if (r_is_vectorsimilarity)
-                    r_index_priority = 0;
+                    /// Use the same priority for the right-hand side of the stable sort comparison.
+                    r_index_priority = 2;
 #endif
                 // negated since we want to prioritize coarser indexes
                 const auto neg_l_granularity = -l_index->getGranularity();

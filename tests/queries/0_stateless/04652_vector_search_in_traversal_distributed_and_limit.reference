@@ -1,0 +1,9 @@
+exact in_traversal keeps SQL LIMIT with a fetch multiplier
+5
+distributed index analysis preserves in_traversal
+600
+500
+700
+400
+800
+1

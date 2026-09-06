@@ -23,7 +23,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
-
+#include <algorithm>
 #include <cmath>
 #include <ranges>
 #include <string_view>
@@ -32,12 +32,12 @@
 
 namespace ProfileEvents
 {
-    extern const Event USearchAddCount;
-    extern const Event USearchAddVisitedMembers;
-    extern const Event USearchAddComputedDistances;
-    extern const Event USearchSearchCount;
-    extern const Event USearchSearchVisitedMembers;
-    extern const Event USearchSearchComputedDistances;
+extern const Event USearchAddCount;
+extern const Event USearchAddVisitedMembers;
+extern const Event USearchAddComputedDistances;
+extern const Event USearchSearchCount;
+extern const Event USearchSearchVisitedMembers;
+extern const Event USearchSearchComputedDistances;
 }
 
 namespace DB
@@ -45,27 +45,27 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
-    extern const SettingsFloat vector_search_index_fetch_multiplier;
-    extern const SettingsUInt64 max_limit_for_vector_search_queries;
-    extern const SettingsBool vector_search_with_rescoring;
+extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
+extern const SettingsFloat vector_search_index_fetch_multiplier;
+extern const SettingsUInt64 max_limit_for_vector_search_queries;
+extern const SettingsBool vector_search_with_rescoring;
 }
 
 namespace ServerSetting
 {
-    extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
+extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
 }
 
 namespace ErrorCodes
 {
-    extern const int FORMAT_VERSION_TOO_OLD;
-    extern const int ILLEGAL_COLUMN;
-    extern const int INCORRECT_DATA;
-    extern const int INCORRECT_NUMBER_OF_COLUMNS;
-    extern const int INCORRECT_QUERY;
-    extern const int INVALID_SETTING_VALUE;
-    extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
+extern const int FORMAT_VERSION_TOO_OLD;
+extern const int ILLEGAL_COLUMN;
+extern const int INCORRECT_DATA;
+extern const int INCORRECT_NUMBER_OF_COLUMNS;
+extern const int INCORRECT_QUERY;
+extern const int INVALID_SETTING_VALUE;
+extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -184,17 +184,17 @@ USearchIndexWithSerialization::Statistics USearchIndexWithSerialization::getStat
     USearchIndex::stats_t global_stats = Base::stats();
 
     Statistics statistics = {
-        .max_level = max_level(),
-        .connectivity = connectivity(),
-        .size = size(),
-        .capacity = capacity(),
-        .memory_usage = memory_usage(),
-        .bytes_per_vector = bytes_per_vector(),
-        .scalar_words = scalar_words(),
-        .nodes = global_stats.nodes,
-        .edges = global_stats.edges,
-        .max_edges = global_stats.max_edges,
-        .level_stats = {}};
+           .max_level = max_level(),
+           .connectivity = connectivity(),
+           .size = size(),
+           .capacity = capacity(),
+           .memory_usage = memory_usage(),
+           .bytes_per_vector = bytes_per_vector(),
+           .scalar_words = scalar_words(),
+           .nodes = global_stats.nodes,
+           .edges = global_stats.edges,
+           .max_edges = global_stats.max_edges,
+           .level_stats = {}};
 
     for (size_t i = 0; i < statistics.max_level; ++i)
         statistics.level_stats.push_back(Base::stats(i));
@@ -268,8 +268,8 @@ void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr,
             ErrorCodes::FORMAT_VERSION_TOO_OLD,
             "Vector similarity index could not be loaded because its version is too old (current version: {}, persisted version: {}). Please drop the index and create it again.",
             FILE_FORMAT_VERSION, file_version);
-        /// More fancy error handling would be: Set a flag on the index that it failed to load. During usage return all granules, i.e.
-        /// behave as if the index does not exist. Since format changes are expected to happen only rarely and it is "only" an index, keep it simple for now.
+    /// More fancy error handling would be: Set a flag on the index that it failed to load. During usage return all granules, i.e.
+    /// behave as if the index does not exist. Since format changes are expected to happen only rarely and it is "only" an index, keep it simple for now.
 
     UInt64 dimensions = 0;
     readIntBinary(dimensions, istr);
@@ -507,15 +507,28 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
 
-    if (!std::isfinite(index_fetch_multiplier)
-        || index_fetch_multiplier < MIN_INDEX_FETCH_MULTIPLIER || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
+    if (!std::isfinite(index_fetch_multiplier) || index_fetch_multiplier < MIN_INDEX_FETCH_MULTIPLIER
+        || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
         || (parameters && !std::isfinite(static_cast<double>(index_fetch_multiplier) * static_cast<double>(parameters->limit))))
-            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater or equal to {} and less or equal to {}", MIN_INDEX_FETCH_MULTIPLIER, MAX_INDEX_FETCH_MULTIPLIER);
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting 'vector_search_index_fetch_multiplier' must be greater or equal to {} and less or equal to {}",
+            MIN_INDEX_FETCH_MULTIPLIER,
+            MAX_INDEX_FETCH_MULTIPLIER);
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr, const UpdatePartialDisjunctionResultFn & /*update_partial_disjunction_result_fn*/) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "mayBeTrueOnGranule is not supported for vector similarity indexes");
+}
+
+bool MergeTreeIndexConditionVectorSimilarity::supportsInTraversalVectorFilter() const
+{
+    /// The vector condition can apply a row-position filter inside exact USearch search,
+    /// but we only enable it for the explicit strategy. AUTO keeps the historic
+    /// postfilter behavior until the row-level scalar-index side is mature enough
+    /// to become a default optimization.
+    return parameters && parameters->filter_strategy == VectorSearchFilterStrategy::IN_TRAVERSAL;
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
@@ -538,7 +551,8 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
     return false;
 }
 
-NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
+NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(
+    MergeTreeIndexGranulePtr granule_, const VectorSearchFilter * filter) const
 {
     if (!parameters)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected vector_search_parameters to be set");
@@ -550,15 +564,25 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
     const USearchIndexWithSerializationPtr index = granule->index;
 
     if (parameters->reference_vector.size() != index->dimensions())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the reference vector in the query ({}) does not match the dimension in the index ({})",
-            parameters->reference_vector.size(), index->dimensions());
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "The dimension of the reference vector in the query ({}) does not match the dimension in the index ({})",
+            parameters->reference_vector.size(),
+            index->dimensions());
 
     checkVectorIsSane(
-        parameters->reference_vector.data(), parameters->reference_vector.size(),
-        granule->scalar_kind, ErrorCodes::INCORRECT_QUERY, "reference vector in the SELECT query");
+        parameters->reference_vector.data(),
+        parameters->reference_vector.size(),
+        granule->scalar_kind,
+        ErrorCodes::INCORRECT_QUERY,
+        "reference vector in the SELECT query");
 
+    /// A remapped row bitmap is an exact predicate for this vector granule. The fetch multiplier is
+    /// only needed when later postfiltering or rescoring can discard ANN candidates; exact
+    /// in-traversal search must keep the SQL LIMIT.
+    const bool has_exact_row_filter = filter != nullptr;
     size_t limit = parameters->limit;
-    if (parameters->additional_filters_present || is_rescoring)
+    if (!has_exact_row_filter && (parameters->additional_filters_present || is_rescoring))
         /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
         /// Similarly, if rescoring is on, fetch more neighbours from the index and pass them for the final re-ranking by ORDER BY ... LIMIT.
         limit = std::min(static_cast<size_t>(static_cast<double>(limit) * static_cast<double>(index_fetch_multiplier)), max_limit);
@@ -567,9 +591,48 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
     /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to
     /// synchronize index access, see https://github.com/unum-cloud/usearch/issues/500. As a workaround, we extended USearch' search method
     /// to accept a custom expansion_add setting. The config value is only used on the fly, i.e. not persisted in the index.
-    auto search_result = index->search(parameters->reference_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
+    ///
+    /// If the scalar side proved that no row in this vector granule satisfies the predicate, avoid
+    /// entering USearch entirely and return an empty ANN result with the expected distance shape.
+    if (filter && filter->noAllowedRows())
+    {
+        NearestNeighbours result;
+        if (parameters->return_distances)
+            result.distances = std::vector<float>();
+        return result;
+    }
+
+    /// Exact row-bitmaps are the only scalar filters consumed by the in-traversal strategy. Without a
+    /// row-exact bitmap, the vector index keeps the existing postfilter behavior so SQL semantics are
+    /// still enforced by the final FilterStep.
+    const bool has_selective_filter = filter && filter->needsFiltering();
+    /// Cache the accepted-row count once so the result limit matches the same row domain that the
+    /// predicate exposes to USearch.
+    const auto accepted_rows = has_selective_filter ? filter->allowedRows() : std::nullopt;
+    /// If a row_bitmap was remapped successfully, always use exact filtered search. This repository
+    /// patch deliberately keeps only the exact route and does not expose an HNSW-internal filtered
+    /// traversal variant.
+    const bool use_exact_filtered_search = has_selective_filter && accepted_rows.has_value();
+    /// Exact filtered search only needs to return rows that can survive the scalar predicate. The SQL
+    /// LIMIT is still enforced later by the query plan after reading and final sorting.
+    const size_t effective_result_limit = use_exact_filtered_search
+        ? std::min<size_t>(parameters->limit, static_cast<size_t>(*accepted_rows))
+        : limit;
+    /// `filtered_search(..., exact=true)` computes distances only for rows accepted by the remapped
+    /// row_bitmap predicate. This keeps the exact route semantically equivalent to prefilter while
+    /// reusing the vector index granule and avoiding the slower generic prefilter read path.
+    auto search_result = use_exact_filtered_search
+        ? index->filtered_search(
+              parameters->reference_vector.data(),
+              effective_result_limit,
+              [filter](USearchIndex::vector_key_t key) { return filter->contains(key); },
+              USearchIndex::any_thread(),
+              /*exact=*/ true,
+              expansion_search)
+        : index->search(parameters->reference_vector.data(), effective_result_limit, USearchIndex::any_thread(), false, expansion_search);
     if (!search_result)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
 
     NearestNeighbours result;
     result.rows.resize(search_result.size());

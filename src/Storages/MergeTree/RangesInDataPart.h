@@ -90,6 +90,16 @@ struct IMergeTreeIndexGranule;
 using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
 using IndexGranulesMap = std::unordered_map<String, MergeTreeIndexGranulePtr>;
 
+struct VectorSearchFilterWithMarkRange
+{
+    /// Source mark interval covered by `filter`. It may have a different granularity than the vector
+    /// index, so vector search remaps overlapping rows instead of assuming matching index marks.
+    size_t begin_mark = 0;
+    size_t end_mark = 0;
+    /// Row predicate local to [begin_mark, end_mark), produced by a row-level scalar index.
+    VectorSearchFilter filter;
+};
+
 /// A vehicle which transports additional information to optimize searches
 struct RangesInDataPartReadHints
 {
@@ -100,6 +110,10 @@ struct RangesInDataPartReadHints
     /// these offsets. If true, the reader also keeps only the candidate rows
     /// from these offsets inside the selected mark ranges.
     bool use_vector_search_result_filter = false;
+    /// Exact scalar row filters with their source mark ranges. Row-level scalar indexes fill this
+    /// vector before the vector_similarity index runs; vector search remaps overlapping filters into
+    /// the vector granule's local row offsets for exact filtered search.
+    std::vector<VectorSearchFilterWithMarkRange> vector_search_filters;
     /// Pre-computed index granules for indexes that are
     /// created for the whole part. For example, text indexes.
     IndexGranulesMap index_granules;

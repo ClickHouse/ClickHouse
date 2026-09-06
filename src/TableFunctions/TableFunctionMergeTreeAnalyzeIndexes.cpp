@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
@@ -207,24 +208,24 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const 
     {
         auto cast_node = args[start_index++]->children.at(0);
         auto vector_search_args = evaluateConstantExpressionAsLiteral(cast_node->children.at(0), context)->as<ASTLiteral &>().value.safeGet<Array>();
-        if (vector_search_args.size() != 6)
+        if (vector_search_args.size() != 6 && vector_search_args.size() != 7)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "vector_search_index_analysis requires 6 arguments");
+                "vector_search_index_analysis requires 6 or 7 arguments");
 
         Array field_array = vector_search_args[3].safeGet<Array>();
         VectorWithMemoryTracking<Float64> reference_vector;
         for (const auto & field_array_value : field_array)
-        {
-            Float64 float64 = field_array_value.safeGet<Float64>();
-            reference_vector.push_back(float64);
-        }
+            reference_vector.push_back(applyVisitor(FieldVisitorConvertToNumber<Float64>(), field_array_value));
 
         vector_search_parameters = VectorSearchParameters{vector_search_args[0].safeGet<String>(), /// column
             vector_search_args[1].safeGet<String>(), /// distance function
             vector_search_args[2].safeGet<UInt64>(), /// limit
             reference_vector, /// search vector
             static_cast<bool>(vector_search_args[4].safeGet<bool>()), /// additional filters
-            static_cast<bool>(vector_search_args[5].safeGet<bool>())}; /// return distances
+            static_cast<bool>(vector_search_args[5].safeGet<bool>()), /// return distances
+            vector_search_args.size() == 7
+                ? SettingFieldVectorSearchFilterStrategyTraits::fromString(vector_search_args[6].safeGet<String>())
+                : VectorSearchFilterStrategy::AUTO}; /// filter strategy
     }
     else
     {
