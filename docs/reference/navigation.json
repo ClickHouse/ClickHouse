@@ -877,6 +877,7 @@
         "reference/formats/ODBCDriver2",
         "reference/formats/ORC",
         "reference/formats/One",
+        "reference/formats/PCAP",
         {
           "expanded": false,
           "group": "Parquet",
