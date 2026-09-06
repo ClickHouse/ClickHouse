@@ -4491,7 +4491,7 @@ If the setting is set to `0`, the table function does not make Nullable columns 
     DECLARE(Bool, external_table_strict_query, false, R"(
 If it is set to true, a filter on the columns of an external table (`MySQL`, `PostgreSQL`, `SQLite`, `ODBC`, `JDBC`) that cannot be pushed down to the external database is rejected with an exception instead of being applied locally after the data is fetched.
 
-Only filters that reference the external table are checked: with the analyzer (the default), a predicate that references only other tables joined in the surrounding query is excluded from the check and keeps its usual ClickHouse evaluation point (`WHERE` after the join, `PREWHERE` before it), so it is not affected. With the old analyzer (`enable_analyzer = 0`) this scoping does not apply and every outer filter is checked, including a predicate on the joined side.
+The check covers the top-level `WHERE` and `PREWHERE` predicates and each conjunct of a top-level `AND`. With the analyzer (the default), a predicate that references other tables joined in the surrounding query is not pushed down and is excluded from the check, whether it references only the joined side (for example `WHERE r.flag`) or mixes it with the external table inside one non-`AND` expression (for example `WHERE l.id = 1 OR r.flag`); such a predicate keeps its usual ClickHouse evaluation point (`WHERE` after the join, `PREWHERE` before it) and is not rejected. With the old analyzer (`enable_analyzer = 0`) this scoping does not apply and every outer filter is checked, including a predicate on the joined side.
 )", 0) \
     \
     DECLARE(Bool, allow_hyperscan, true, R"(
