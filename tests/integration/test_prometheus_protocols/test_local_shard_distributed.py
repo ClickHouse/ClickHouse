@@ -2,6 +2,7 @@
 on the caller's context, where an undeclared database is the caller's own: the probe must check that table.
 """
 
+import concurrent.futures
 import json
 
 import pytest
@@ -32,6 +33,8 @@ node = cluster.add_instance(
 )
 
 START_TIME = 1724112000
+# Pauses a remote write between its shard-target check and its INSERT.
+BEFORE_INSERT = "prometheus_remote_write_before_insert"
 
 # The probe's own connection authenticates as `default`, whose current database is `default`;
 # this caller's is `metrics`, and that is where its writes and reads land.
@@ -240,3 +243,43 @@ def test_reads_keep_the_local_shard_in_process_whatever_the_caller_fans_out(
     # And the grants of that in-process read are still asked for first.
     denied = query_as("query", NO_SHARD_SELECT_USER, settings)
     assert_denied_without_leaking(denied, "SELECT ON default.ts_local")
+
+
+def test_remote_write_refuses_a_local_shard_target_swapped_after_the_check():
+    """The local shard is written in-process by name, and witnessed like any other: a same-schema
+    MergeTree table swapped in under the name meanwhile takes the batch, which is not acknowledged.
+    """
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    swapped = False
+    try:
+        node.query(f"SYSTEM ENABLE FAILPOINT {BEFORE_INSERT}")
+        pending = pool.submit(
+            get_response_to_remote_write,
+            node.ip_address,
+            9093,
+            f"/local/write{CALLER}",
+            one_sample("held_metric"),
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {BEFORE_INSERT} PAUSE", timeout=60)
+        node.query("EXCHANGE TABLES metrics.ts_local AND metrics.ts_swap")
+        swapped = True
+        node.query(f"SYSTEM NOTIFY FAILPOINT {BEFORE_INSERT}")
+        response = pending.result(timeout=60)
+        assert response.status_code >= 500, response.text
+        assert "UNKNOWN_STATUS_OF_INSERT" in response.text
+        assert "is not acknowledged" in response.text
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_INSERT}")
+        pool.shutdown(wait=True)
+        if swapped:
+            node.query("EXCHANGE TABLES metrics.ts_local AND metrics.ts_swap")
+        # The MergeTree table took the batch under the TimeSeries name; emptied so the pair is as created.
+        node.query("TRUNCATE TABLE metrics.ts_swap")
+
+    # Nothing reached the TimeSeries table, and the retry lands once the name is right again.
+    count = "SELECT count() FROM timeSeriesTags(metrics.ts_local) WHERE metric_name = 'held_metric'"
+    assert int(node.query(count)) == 0
+    send_protobuf_to_remote_write(
+        node.ip_address, 9093, f"/local/write{CALLER}", one_sample("held_metric")
+    )
+    assert_eq_with_retry(node, count, "1")

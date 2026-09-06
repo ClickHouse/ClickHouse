@@ -1,3 +1,5 @@
+import concurrent.futures
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -21,6 +23,8 @@ node = cluster.add_instance(
 )
 
 START_TIME = 1724112000
+# Pauses a remote write between its shard-target check and its INSERT.
+BEFORE_INSERT = "prometheus_remote_write_before_insert"
 # Eight fixed hosts: the sharding hash is stable, so the split across the two shards is the same
 # on every run, and with eight distinct keys both shards receive rows.
 HOSTS = [f"h{i}" for i in range(8)]
@@ -207,3 +211,35 @@ def test_remote_write_refuses_one_random_shard_on_a_keyless_wrapper():
         in response.text
     )
     assert count_on_the_shards("prom_dist_keyless", "random_metric") == 0
+
+
+def test_remote_write_refuses_a_shard_target_swapped_after_the_check():
+    """A same-schema MergeTree table swapped in under a shard-local name between the check and the
+    INSERT takes the batch unchecked: the write is not acknowledged, so Prometheus retries it.
+    """
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    swapped = False
+    try:
+        node.query(f"SYSTEM ENABLE FAILPOINT {BEFORE_INSERT}")
+        # `h3` hashes to shard_0: the whole batch goes to the shard whose target is swapped meanwhile.
+        pending = pool.submit(write, "/dist/write", "swapped_metric", ("h3",))
+        node.query(f"SYSTEM WAIT FAILPOINT {BEFORE_INSERT} PAUSE", timeout=60)
+        node.query("EXCHANGE TABLES shard_0.ts_local AND shard_0.mt_bad")
+        swapped = True
+        node.query(f"SYSTEM NOTIFY FAILPOINT {BEFORE_INSERT}")
+        response = pending.result(timeout=60)
+        assert response.status_code >= 500, response.text
+        assert "UNKNOWN_STATUS_OF_INSERT" in response.text
+        assert "is not acknowledged" in response.text
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_INSERT}")
+        pool.shutdown(wait=True)
+        if swapped:
+            node.query("EXCHANGE TABLES shard_0.ts_local AND shard_0.mt_bad")
+        # The decoy took the batch under the TimeSeries name; the module's other tests expect it empty.
+        node.query("TRUNCATE TABLE shard_0.mt_bad")
+
+    # Nothing reached a TimeSeries table, and the retry lands once the name is right again.
+    assert count_on_the_shards("prom_dist", "swapped_metric") == 0
+    assert write("/dist/write", "swapped_metric", ("h3",)).status_code == 204
+    assert count_on_the_shards("prom_dist", "swapped_metric") == 1

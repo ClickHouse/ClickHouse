@@ -47,6 +47,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(remote_query_executor_receive_packet_pause) \
     PAUSEABLE_ONCE(remote_query_executor_finish_drain_pause) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
+    PAUSEABLE_ONCE(prometheus_remote_write_before_insert) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \

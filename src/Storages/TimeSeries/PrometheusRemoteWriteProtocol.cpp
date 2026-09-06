@@ -8,6 +8,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 #include <Core/DecimalFunctions.h>
@@ -50,6 +51,11 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char prometheus_remote_write_before_insert[];
 }
 
 namespace
@@ -342,10 +348,14 @@ void PrometheusRemoteWriteProtocol::write(
 
     /// The sink would accept shard targets no prometheus read surface can answer from, and a caller's
     /// own shard choice; checked here, not on construction, with no request body read in between.
-    checkPrometheusQueryDistributedWrite(*time_series_storage, getContext());
+    const auto checked_targets = checkPrometheusQueryDistributedWrite(*time_series_storage, getContext());
 
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
+    FailPointInjection::pauseFailPoint(FailPoints::prometheus_remote_write_before_insert);
     insertBlock(makeBlock(time_series, metrics_metadata, *metadata), *time_series_storage, getContext());
+
+    /// The sink wrote by name: acknowledged only if every shard target is still the table checked above.
+    checkPrometheusQueryDistributedWriteDelivered(*time_series_storage, getContext(), checked_targets);
 
     LOG_TRACE(
         log,
