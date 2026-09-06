@@ -82,6 +82,7 @@
 #include <filesystem>
 #include <shared_mutex>
 #include <algorithm>
+#include <optional>
 #include <unordered_set>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -178,9 +179,47 @@ std::string collapseRedundantSeparators(const std::string & path)
     return result;
 }
 
-/* Recursive directory listing with matched paths as a result.
- * Have the same method in StorageHDFS.
- */
+/// True when the glob pattern contains a path component equal to exactly `**` (the recursive
+/// globstar that matches any number of directory levels). Finite components such as `a**` or
+/// `**.txt` must NOT count: those are ordinary single-level globs, not recursive descents.
+bool patternHasGlobstarSegment(const std::string & pattern)
+{
+    for (const auto & segment : fs::path(pattern))
+        if (segment == "**")
+            return true;
+    return false;
+}
+
+/// One entry of the traversal-pruning set: the lexical directory path that first claimed this
+/// (canonical directory, remaining pattern) frame, and how many matches that frame's subtree
+/// emitted. A later frame pruned against it would have emitted exactly the same ones, so both
+/// fields are needed to tell whether pruning hid a genuine second name for a file.
+struct VisitedFrame
+{
+    std::string lexical_dir;
+    size_t matches = 0;
+};
+
+/// State the traversal pruning carries across one expanded pattern.
+struct PruningState
+{
+    /// Frames the walk has entered, keyed by (canonical directory, remaining pattern).
+    std::unordered_map<std::string, VisitedFrame> visited_frames;
+    /// The frames currently on the walk's stack. A match belongs to all of them, because a frame
+    /// pruned against any one of them would have re-walked that whole subtree. Pointers into
+    /// `visited_frames` stay valid across its rehashing, which is what makes them safe to hold.
+    std::vector<VisitedFrame *> active_frames;
+    /// Frames pruned because another frame reached the same place under a different lexical path.
+    /// Whether that hid a real second name depends on how many matches the claiming frame ends up
+    /// with, so the answer is deferred until the walk is over and every count is final. Deciding
+    /// at the collision instead would read a count that is not yet final whenever the collision
+    /// comes from inside the claiming frame's own subtree, which is what an ancestor loop is: the
+    /// loop can re-enter the root before the root has matched anything.
+    std::vector<const VisitedFrame *> pending_collisions;
+};
+
+/// Recursive directory listing with matched paths as a result.
+/// Have the same method in StorageHDFS.
 void listFilesWithRegexpMatchingImpl(
     const std::string & path_for_ls,
     const std::string & for_match,
@@ -188,7 +227,10 @@ void listFilesWithRegexpMatchingImpl(
     std::vector<std::string> & result,
     std::unordered_set<std::string> & matched_paths,
     bool recursive,
-    size_t depth)
+    size_t depth,
+    PruningState & pruning,
+    bool deduplicate_by_canonical_path,
+    bool & collapsed_a_match)
 {
     if (depth > MAX_LIST_FILES_RECURSION_DEPTH)
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
@@ -200,6 +242,13 @@ void listFilesWithRegexpMatchingImpl(
     if (depth % 16 == 0)
         checkStackSize();
 
+    /// Set when this invocation claimed a frame, so the stack is popped on every exit from here.
+    bool frame_pushed = false;
+    SCOPE_EXIT({
+        if (frame_pushed)
+            pruning.active_frames.pop_back();
+    });
+
     /// Appends a matched path to the result and counts its bytes, deduplicating by its
     /// normalized form. Adjacent globstars (e.g. `**/**/*.tsv`) can reach the same filesystem
     /// entry through both the zero-level branch and the recursive descent, so without this
@@ -207,12 +256,48 @@ void listFilesWithRegexpMatchingImpl(
     /// The returned path is collapsed so that one file is named by one path whichever branch
     /// matched it: the prefixes below can end up with a doubled separator, and
     /// `fs::directory_iterator` preserves the spelling it is handed.
-    auto add_matched_path = [&](const std::string & path, size_t bytes)
+    /// `parent_canonical_hint` lets a caller that has already resolved this path's parent pass the
+    /// result in, so the same directory is not resolved twice for one match.
+    auto add_matched_path = [&](const std::string & path, size_t bytes, const fs::path * parent_canonical_hint = nullptr)
     {
-        if (matched_paths.emplace(fs::path(path).lexically_normal().string()).second)
+        /// Resolve the PARENT but keep the final component as written: an ancestor-aliasing
+        /// symlink gives one file several lexical paths, while a symlink TO a file is a distinct
+        /// name the pattern selected and must stay its own row. Lexical form if it cannot resolve.
+        std::string dedup_key;
+        if (!deduplicate_by_canonical_path)
+        {
+            dedup_key = fs::path(path).lexically_normal().string();
+        }
+        else
+        {
+            const fs::path as_path(path);
+            if (parent_canonical_hint)
+            {
+                dedup_key = (*parent_canonical_hint / as_path.filename()).string();
+            }
+            else
+            {
+                std::error_code canon_ec;
+                const auto parent_canonical = fs::canonical(as_path.parent_path(), canon_ec);
+                if (canon_ec)
+                    dedup_key = as_path.lexically_normal().string();
+                else
+                    dedup_key = (parent_canonical / as_path.filename()).string();
+            }
+        }
+        if (matched_paths.emplace(std::move(dedup_key)).second)
         {
             total_bytes_to_read += bytes;
             result.push_back(collapseRedundantSeparators(path));
+            for (auto * frame : pruning.active_frames)
+                ++frame->matches;
+        }
+        else
+        {
+            /// Two matching paths named one file. The caller has to know, because the
+            /// number of returned paths then no longer says how many paths the pattern
+            /// selected, and the read-only guard on writes reads that number.
+            collapsed_a_match = true;
         }
     };
 
@@ -225,6 +310,11 @@ void listFilesWithRegexpMatchingImpl(
             /// We use fs::canonical to resolve the canonical path and check if the file does exists
             /// but the result path will be fs::absolute.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
+            /// The throwing overload on purpose: it is the existence check the `catch` below relies
+            /// on to skip a suffix that does not resolve. The WHOLE candidate is resolved rather
+            /// than only its parent: a `..` behind a symlink can make the raw path resolve while
+            /// the normalized path below names a missing lexical sibling, and that sibling must
+            /// still be returned so the reader reports it as absent instead of silently skipping.
             (void)fs::canonical(path_for_ls + for_match);
             /// `checkCreationIsAllowed` normalizes its own copy of this path, so a `..` must not
             /// survive here: the check and the reader would name different files.
@@ -266,8 +356,77 @@ void listFilesWithRegexpMatchingImpl(
 
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
 
-    if (!fs::exists(prefix_without_globs))
+    /// Use the `std::error_code` overload: a path that fails to resolve (`ELOOP`,
+    /// dangling symlink, permission denied) is silently skipped instead of surfacing
+    /// the raw `filesystem_error` exception. This matches the existing skip semantics
+    /// of `it.increment(ec)` below for individual entries.
+    std::error_code prefix_exists_ec;
+    if (!fs::exists(prefix_without_globs, prefix_exists_ec) || prefix_exists_ec)
         return;
+
+    /// The frame key below and every entry the loop emits name this same directory, so one
+    /// resolution serves them all. Null means it does not resolve: a skip for the frame key,
+    /// the lexical fallback for a match.
+    std::optional<fs::path> dir_canonical;
+    bool dir_canonical_attempted = false;
+    auto dir_canonical_hint = [&]() -> const fs::path *
+    {
+        if (!dir_canonical_attempted)
+        {
+            dir_canonical_attempted = true;
+            std::error_code canon_ec;
+            auto canonical_path = fs::canonical(prefix_without_globs, canon_ec);
+            if (!canon_ec)
+                dir_canonical = std::move(canonical_path);
+        }
+        return dir_canonical ? &*dir_canonical : nullptr;
+    };
+
+    /// A frame is (canonical directory, remaining pattern), which is the whole state of the walk,
+    /// so a repeated pair can only redo what its claimant already does. The directory alone is NOT
+    /// a sufficient key: `**` also matches zero levels, so re-entering with a SHORTER suffix is new
+    /// work that can reach files no other path reaches.
+    ///
+    /// Only frames whose remaining pattern still holds a whole-segment `**` are tracked, since a
+    /// bounded finite tail cannot recurse without end and may legitimately reach a file through an
+    /// ancestor symlink.
+    ///
+    /// This prunes TRAVERSAL, which is separate from the output deduplication in
+    /// `add_matched_path`: that filters rows, this stops the repeated visit happening at all.
+    if (patternHasGlobstarSegment(suffix_with_globs))
+    {
+        const fs::path * prefix_canonical_ptr = dir_canonical_hint();
+        if (!prefix_canonical_ptr)
+            return; /// Dangling/inaccessible: mirror the pre-existing `it.increment(ec)` skip semantics.
+        const fs::path & prefix_canonical = *prefix_canonical_ptr;
+        /// Key on `suffix_with_globs` rather than `for_match`: `for_match` still carries the
+        /// literal prefix that `prefix_without_globs` has already consumed, so the same walk
+        /// state would get different keys depending on how much literal text the caller passed
+        /// down (the outer frame sees `/root/**/*.txt` where a re-entry sees `/**/*.txt`) and the
+        /// ancestor subtree would be rescanned once per loop instead of being pruned.
+        /// `\0` cannot occur in a path or a pattern, so it is an unambiguous separator.
+        const std::string frame_key = prefix_canonical.string() + '\0' + suffix_with_globs;
+        const std::string lexical_dir = fs::path(prefix_without_globs).lexically_normal().string();
+        const auto [claimed, is_new] = pruning.visited_frames.emplace(frame_key, VisitedFrame{lexical_dir, 0});
+        if (!is_new)
+        {
+            /// Pruning happens before any match is emitted, so a pruned frame can never reach
+            /// `add_matched_path` to report that two paths named one file. Record it here instead,
+            /// but only when it arrived by a DIFFERENT lexical directory path than the one that
+            /// claimed the frame: that is a second name for the same place, whereas re-entering
+            /// under the SAME path is a globstar re-applying at one directory and is not a second
+            /// name. Whether the pruned frame would have matched anything is decided after the
+            /// walk, because the claiming frame may still be finding matches right now.
+            if (claimed->second.lexical_dir != lexical_dir)
+                pruning.pending_collisions.push_back(&claimed->second);
+            return; /// This directory has already been walked with this remaining pattern.
+        }
+        /// This frame owns everything its subtree matches, so keep it on the stack until the
+        /// subtree is done. Ancestors stay on the stack too: a frame pruned against an ancestor
+        /// would have re-walked this subtree as well.
+        pruning.active_frames.push_back(&claimed->second);
+        frame_pushed = true;
+    }
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
 
@@ -278,7 +437,8 @@ void listFilesWithRegexpMatchingImpl(
     /// (`recursive` is `false`) to avoid producing the same results twice.
     if (current_glob == "/**" && looking_for_directory)
         listFilesWithRegexpMatchingImpl(prefix_without_globs + "/", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                        total_bytes_to_read, result, matched_paths, false, depth + 1);
+                                        total_bytes_to_read, result, matched_paths, false, depth + 1,
+                                        pruning, deduplicate_by_canonical_path, collapsed_a_match);
 
     const fs::directory_iterator end;
     std::error_code ec;
@@ -293,8 +453,19 @@ void listFilesWithRegexpMatchingImpl(
         const size_t last_slash = full_path.rfind('/');
         const String file_name = full_path.substr(last_slash);
 
+        /// Use the `std::error_code` overload of `is_directory`: a directory entry that
+        /// fails to resolve (`ELOOP` on a mutual symlink cycle `a -> b, b -> a`, dangling
+        /// symlink, permission denied) is silently skipped instead of surfacing the raw
+        /// `filesystem_error` exception. The throwing overload would otherwise abort the
+        /// entire glob expansion before the canonical-stack guard above could prune
+        /// the entry.
+        std::error_code is_dir_ec;
+        const bool is_directory = it->is_directory(is_dir_ec);
+        if (is_dir_ec)
+            continue;
+
         /// Condition is_directory means what kind of path is it in current iteration of ls
-        if (!it->is_directory() && !looking_for_directory)
+        if (!is_directory && !looking_for_directory)
         {
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
@@ -305,40 +476,37 @@ void listFilesWithRegexpMatchingImpl(
                     continue;
                 }
 
-                add_matched_path(it->path().string(), file_size);
+                add_matched_path(it->path().string(), file_size,
+                                 deduplicate_by_canonical_path ? dir_canonical_hint() : nullptr);
             }
         }
-        else if (it->is_directory())
+        else if (is_directory)
         {
             if (recursive)
             {
-                /// When the current segment is the globstar `**` followed by a suffix (e.g.
-                /// `**/file.txt`), descend into subdirectories keeping the whole `**/...` pattern,
-                /// so the globstar keeps matching at every deeper level (any number of
-                /// directories). The zero-level branch above applies the post-`**` suffix at the
-                /// current level, so the combination matches zero, one, or more directory
-                /// components. Without this, a literal suffix (e.g. `pick.tsv`) would short-circuit
-                /// the recursion at the no-glob exact-match branch after a single level, and only a
-                /// glob suffix (e.g. `*.tsv`) would keep descending. For a trailing `**` (no
-                /// suffix), keep re-applying `current_glob` (`/**`) to list all files recursively,
-                /// as before.
+                /// A `**` with a suffix descends carrying the WHOLE `**/...` pattern, so the
+                /// globstar keeps matching at every depth; the zero-level branch above covers the
+                /// current level. A trailing `**` keeps re-applying `current_glob`.
                 const std::string descent_pattern = (current_glob == "/**" && looking_for_directory)
                     ? suffix_with_globs
                     : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
                                                 descent_pattern,
-                                                total_bytes_to_read, result, matched_paths, recursive, depth + 1);
+                                                total_bytes_to_read, result, matched_paths, recursive, depth + 1, pruning,
+                                                deduplicate_by_canonical_path, collapsed_a_match);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, matched_paths, false, depth + 1);
+                                                total_bytes_to_read, result, matched_paths, false, depth + 1, pruning,
+                                                deduplicate_by_canonical_path, collapsed_a_match);
         }
     }
 }
 
 std::vector<std::string> listFilesWithRegexpMatching(
     const std::string & for_match,
-    size_t & total_bytes_to_read)
+    size_t & total_bytes_to_read,
+    bool & collapsed_a_match)
 {
     std::vector<std::string> result;
 
@@ -352,7 +520,39 @@ std::vector<std::string> listFilesWithRegexpMatching(
         /// (e.g. `{top,top}.tsv` or `{a*,*}`) keep their pre-existing behavior of reading the
         /// same concrete file once per alternative, rather than being silently collapsed.
         std::unordered_set<std::string> matched_paths;
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0);
+
+        /// Records the (canonical directory, remaining pattern) frames the walk has already
+        /// entered, so a symlink cycle or an aliased directory is not walked twice. Scoped per
+        /// expanded pattern for the same reason as `matched_paths`, which also keeps sibling
+        /// brace-expansion alternatives independent. Only frames whose remaining pattern still has
+        /// a whole-segment `**` are recorded, i.e. those that can still recurse without bound (see
+        /// `patternHasGlobstarSegment` inside `listFilesWithRegexpMatchingImpl`).
+        PruningState pruning;
+
+        /// Deduplicate by canonical path only for a `**` expansion, where the recursive descent
+        /// can re-enter one directory under many aliases and would otherwise report a file once
+        /// per alias. A finite glob can also reach one file through two symlinked directories
+        /// (`root/a*/back/*.txt` with two `back` links to the same place), but there it reports
+        /// both paths today and must keep doing so: the lexical key is what a finite pattern
+        /// selected, and collapsing it would drop a `_file` value a user asked for, exactly as it
+        /// would for a plain `*` matching a symlink beside its target.
+        const bool deduplicate_by_canonical_path = patternHasGlobstarSegment(for_match_expanded);
+
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0,
+                                        pruning, deduplicate_by_canonical_path, collapsed_a_match);
+
+        /// Now that every frame's match count is final, decide whether pruning hid a real second
+        /// name for a file: a pruned frame would have emitted exactly what its claiming frame did,
+        /// so it collapsed something only if that frame matched something. Deciding here rather
+        /// than at the collision keeps the answer independent of the order the walk took.
+        for (const auto * claimed : pruning.pending_collisions)
+        {
+            if (claimed->matches > 0)
+            {
+                collapsed_a_match = true;
+                break;
+            }
+        }
     }
 
     return result;
@@ -457,7 +657,7 @@ std::pair<String, String> splitToArchivePathAndPathInArchive(const String & sour
 }
 
 /// Finds files matching a specified pattern with globs.
-Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
+Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read, bool & collapsed_a_match)
 {
     fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
     fs::path fs_pattern(path_with_globs);
@@ -491,14 +691,14 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
         else
         {
             /// We list non-directory files under that directory.
-            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read);
+            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read, collapsed_a_match);
             can_be_directory = false;
         }
     }
     else
     {
         /// We list only non-directory files.
-        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read);
+        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read, collapsed_a_match);
         can_be_directory = false;
     }
 
@@ -538,7 +738,8 @@ StorageFile::ArchiveInfo getArchiveInfo(
         };
     }
 
-    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read);
+    bool archive_collapsed_a_match = false;
+    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read, archive_collapsed_a_match);
 
     return archive_info;
 }
@@ -1163,12 +1364,20 @@ StorageFile::FileSource StorageFile::FileSource::parse(const String & source, co
     FileSource res;
     String user_files_path = context->getUserFilesPath();
 
+    /// Set when deduplication collapsed two matching paths into one, see below.
+    bool collapsed_a_match = false;
+
     if (!path_to_archive.empty())
         res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_path, context, res.total_bytes_to_read);
     else
-        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read);
+        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read, collapsed_a_match);
 
-    res.with_globs = res.paths.size() > 1;
+    /// A single returned path usually does mean the source named a single file, which is why a
+    /// finite glob matching exactly one file stays writable. The exception is deduplication by
+    /// canonical path: it can collapse several matching paths into one, and the read-only guard on
+    /// writes must not be unlocked by that, because the source still selected files by pattern.
+    /// So ask whether a collapse actually happened rather than whether the source looks globbed.
+    res.with_globs = res.paths.size() > 1 || collapsed_a_match;
 
     if (res.archive_info)
     {
