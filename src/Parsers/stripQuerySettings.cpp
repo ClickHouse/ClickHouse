@@ -106,6 +106,22 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                         if (isEmptySetQuery(*set_query))
                             insert_query->reset(insert_query->settings_ast);
                     }
+
+                if (insert_query->source_select_settings_ast)
+                    if (auto * set_query = insert_query->source_select_settings_ast->as<ASTSetQuery>())
+                    {
+                        stripNamesFromSetQuery(*set_query, is_stripped);
+                        if (isEmptySetQuery(*set_query))
+                            insert_query->reset(insert_query->source_select_settings_ast);
+                    }
+
+                if (insert_query->source_select_pre_returning_settings_ast)
+                    if (auto * set_query = insert_query->source_select_pre_returning_settings_ast->as<ASTSetQuery>())
+                    {
+                        stripNamesFromSetQuery(*set_query, is_stripped);
+                        if (isEmptySetQuery(*set_query))
+                            insert_query->reset(insert_query->source_select_pre_returning_settings_ast);
+                    }
                 return;
             }
 

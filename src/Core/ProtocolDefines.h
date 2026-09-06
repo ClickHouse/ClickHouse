@@ -238,6 +238,10 @@ static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS = 
 /// Push the initiator's current roles to other nodes for consistent role-scoped access.
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES = 54488;
 
+/// Native push `INSERT ... RETURNING` sends a post-terminator result stream (`Data`/`Totals`/`Extremes`),
+/// so old clients that do not switch from insert-drain to query-result mode must be rejected.
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INSERT_RETURNING_RESULTS = 54493;
+
 static constexpr auto DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO = 54490;
 
 /// Serialize the skip degree of a `quantileDeterministic` state, so that merging states thinned out
@@ -255,5 +259,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATI
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54492;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54493;
 }

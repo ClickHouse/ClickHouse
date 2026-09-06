@@ -28,6 +28,7 @@
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -68,6 +69,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool async_insert;
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
@@ -124,6 +126,43 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+bool isParallelDistributedInsertSelectExplicitlyEnabled(const ASTPtr & settings_ast)
+{
+    if (!settings_ast)
+        return false;
+
+    const auto & set_query = settings_ast->as<ASTSetQuery &>();
+
+    for (const auto & change : set_query.changes)
+    {
+        if (change.name != "parallel_distributed_insert_select")
+            continue;
+
+        const auto type = change.value.getType();
+        if (type == Field::Types::UInt64)
+            return change.value.safeGet<UInt64>() != 0;
+        if (type == Field::Types::Int64)
+            return change.value.safeGet<Int64>() > 0;
+        if (type == Field::Types::Bool)
+            return change.value.safeGet<bool>();
+
+        /// Fail-close for unexpected representations of this numeric setting.
+        return true;
+    }
+
+    /// `name = DEFAULT` still explicitly requests this setting and may resolve to an enabled value.
+    for (const auto & default_setting : set_query.default_settings)
+        if (default_setting == "parallel_distributed_insert_select")
+            return true;
+
+    return false;
+}
+
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -1306,9 +1345,34 @@ BlockIO InterpreterInsertQuery::execute()
     }
 
     BlockIO res;
+    if (query.returning_select)
+    {
+        if (async_insert || settings[Setting::async_insert])
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "INSERT ... RETURNING is not supported with async_insert=1");
+        }
+
+        if (query.select
+            && settings[Setting::parallel_distributed_insert_select]
+            && (isParallelDistributedInsertSelectExplicitlyEnabled(query.settings_ast)
+                || isParallelDistributedInsertSelectExplicitlyEnabled(query.source_select_settings_runtime_ast)))
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "INSERT ... RETURNING is not supported with explicitly enabled parallel_distributed_insert_select");
+        }
+    }
+
     if (query.select)
     {
-        if (settings[Setting::parallel_distributed_insert_select])
+        /// The distributed insert-select optimizations serialize this AST to build the remote INSERT sent to each
+        /// shard. With `returning_select` present that remote query would become `INSERT ... SELECT ... RETURNING (...)`,
+        /// so every shard would run the user RETURNING `SELECT` and stream a result the initiator cannot consume. The
+        /// contract is that RETURNING runs once on the initiator after the insert phase completes, so fall back to the
+        /// local insert-select pipeline (RETURNING is wrapped on the initiator in `executeQueryImpl`) when it is present.
+        if (settings[Setting::parallel_distributed_insert_select] && !query.returning_select)
         {
             /// distributed write paths may mutate the SELECT AST (CTE expansion), so keep a backup
             auto saved_select = query.select->clone();
@@ -1339,6 +1403,10 @@ BlockIO InterpreterInsertQuery::execute()
     {
         res.pipeline = buildInsertPipeline(query, table);
     }
+
+    /// For INSERT ... RETURNING the RETURNING `SELECT` is wrapped later, in `executeQueryImpl`, after the query
+    /// start has been logged. This keeps a failure while planning the RETURNING subquery (which runs after the
+    /// INSERT has persisted rows) from being logged as EXCEPTION_BEFORE_START.
 
     res.pipeline.addStorageHolder(table);
 

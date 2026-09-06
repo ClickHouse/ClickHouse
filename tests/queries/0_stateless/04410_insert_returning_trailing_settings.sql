@@ -1,0 +1,284 @@
+-- A trailing query-level SETTINGS clause after the RETURNING subquery of an INSERT ... SELECT must be
+-- accepted. Previously the source SELECT parser stopped at RETURNING and the trailing SETTINGS was never
+-- consumed, producing a SYNTAX_ERROR.
+
+SET async_insert = 0;
+
+DROP TABLE IF EXISTS t_ret_settings;
+DROP TABLE IF EXISTS t_ret_settings_src;
+
+CREATE TABLE t_ret_settings (id UInt64) ENGINE = Memory;
+CREATE TABLE t_ret_settings_src (id UInt64) ENGINE = Memory;
+INSERT INTO t_ret_settings_src VALUES (1), (2), (3);
+
+-- INSERT ... SELECT ... RETURNING (...) SETTINGS ...
+SELECT 'select returning trailing settings';
+INSERT INTO t_ret_settings SELECT id FROM t_ret_settings_src
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS max_threads = 1;
+
+SELECT 'rows after insert';
+SELECT id FROM t_ret_settings ORDER BY id;
+
+-- The trailing SETTINGS is pushed into the source SELECT, just like for a plain INSERT ... SELECT ... SETTINGS.
+SELECT 'select returning trailing settings pushed down';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT number FROM numbers(5)
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS max_threads = 1;
+
+SELECT count() FROM t_ret_settings;
+
+-- Trailing SETTINGS still apply to the source SELECT / INSERT phase.
+SELECT 'trailing settings still apply to source select';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT number FROM numbers(10)
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS max_result_rows = 1, result_overflow_mode = 'break';
+
+SELECT count() FROM t_ret_settings;
+
+-- Trailing settings must also affect source-query planning/execution.
+SELECT 'trailing settings affect source planning';
+TRUNCATE TABLE t_ret_settings;
+SET union_default_mode = 'ALL';
+INSERT INTO t_ret_settings SELECT 1 UNION SELECT 1
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS union_default_mode = 'DISTINCT';
+SET union_default_mode = '';
+
+SELECT count() FROM t_ret_settings;
+
+-- Source SELECT settings placed before RETURNING must also stay source-only.
+SELECT 'source settings before returning do not cap returning';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT number FROM numbers(10)
+SETTINGS max_result_rows = 1, result_overflow_mode = 'break'
+RETURNING (SELECT number FROM numbers(10) ORDER BY number);
+
+SELECT count() FROM t_ret_settings;
+
+-- Per-query INSERT settings must be restored for RETURNING even when source-only settings use same names.
+SELECT 'query settings preserved for returning';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings
+SETTINGS max_result_rows = 5, result_overflow_mode = 'break'
+SELECT number FROM numbers(10)
+SETTINGS max_result_rows = 1, result_overflow_mode = 'break'
+RETURNING (SELECT number FROM numbers(10) ORDER BY number);
+
+SELECT count() FROM t_ret_settings;
+
+-- Source-only `database` setting must be restored before delayed RETURNING planning/execution.
+SELECT 'source database setting does not leak into returning';
+DROP TABLE IF EXISTS default.t_ret_db;
+DROP TABLE IF EXISTS default.t_ret_probe;
+CREATE TABLE default.t_ret_db (id UInt64) ENGINE = Memory;
+CREATE TABLE default.t_ret_probe (id UInt64) ENGINE = Memory;
+INSERT INTO default.t_ret_probe VALUES (1);
+INSERT INTO default.t_ret_db SELECT 1
+SETTINGS database = 'system'
+RETURNING (SELECT count() FROM default.t_ret_probe);
+DROP TABLE default.t_ret_db;
+DROP TABLE default.t_ret_probe;
+
+-- RETURNING-subquery construction settings are currently rejected fail-close.
+SELECT 'returning construction settings are rejected';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT 1
+RETURNING (SELECT number FROM numbers(5) SETTINGS limit = 2); -- { serverError NOT_IMPLEMENTED }
+
+SELECT count() FROM t_ret_settings;
+
+-- RETURNING-subquery database setting is currently rejected fail-close.
+SELECT 'returning database setting is rejected';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT 1
+RETURNING (SELECT count() FROM t_ret_settings SETTINGS database = 'default'); -- { serverError NOT_IMPLEMENTED }
+
+SELECT count() FROM t_ret_settings;
+
+-- Source trailing construction settings are currently rejected fail-close.
+SELECT 'source trailing construction settings are rejected';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT number FROM numbers(5)
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS limit = 2; -- { serverError NOT_IMPLEMENTED }
+
+SELECT count() FROM t_ret_settings;
+
+-- Inherited/session construction settings are currently rejected fail-close for delayed RETURNING.
+SELECT 'session construction settings are rejected in returning';
+TRUNCATE TABLE t_ret_settings;
+SET limit = 2;
+INSERT INTO t_ret_settings SELECT 1
+RETURNING (SELECT number FROM numbers(5) ORDER BY number); -- { serverError NOT_IMPLEMENTED }
+SET limit = DEFAULT;
+
+SELECT count() FROM t_ret_settings;
+
+-- Explicit reset to neutral construction values must stay accepted.
+SELECT 'session construction settings reset to default is accepted';
+TRUNCATE TABLE t_ret_settings;
+SET limit = 2;
+SET limit = 0;
+INSERT INTO t_ret_settings SELECT 1
+RETURNING (SELECT count() FROM t_ret_settings);
+SET limit = DEFAULT;
+
+SELECT count() FROM t_ret_settings;
+
+-- Source-only custom settings must not leak into RETURNING settings context.
+SELECT 'source custom setting does not leak into returning';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT number FROM numbers(1)
+SETTINGS custom_insert_source = 'x'
+RETURNING (SELECT getSettingOrDefault('custom_insert_source', 'unset'));
+
+SELECT count() FROM t_ret_settings;
+
+-- Nested source SELECT settings must also be collected/restored.
+SELECT 'nested source custom setting does not leak into returning';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings
+SELECT * FROM (SELECT number FROM numbers(1) SETTINGS custom_insert_source = 'x')
+RETURNING (SELECT getSettingOrDefault('custom_insert_source', 'unset'));
+
+SELECT count() FROM t_ret_settings;
+
+-- Nested source settings must stay local to nested source subqueries and not leak to outer source expressions.
+SELECT 'nested source settings do not affect outer source expressions';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings
+SELECT toUInt64(getSettingOrDefault('custom_insert_source', 'unset') = 'x')
+FROM (SELECT 1 SETTINGS custom_insert_source = 'x')
+RETURNING (SELECT count() FROM t_ret_settings);
+
+SELECT id FROM t_ret_settings ORDER BY id;
+
+-- Plain INSERT ... SELECT must keep nested source settings local too (no RETURNING path).
+SELECT 'plain insert nested source settings do not affect outer source expressions';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings
+SELECT toUInt64(getSettingOrDefault('custom_insert_source', 'unset') = 'x')
+FROM (SELECT 1 SETTINGS custom_insert_source = 'x');
+
+SELECT id FROM t_ret_settings ORDER BY id;
+
+-- Branch-local settings in earlier set-op arms must stay local and not be pre-applied globally.
+SELECT 'set-op branch-local source settings stay local';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings
+SELECT toUInt64(getSettingOrDefault('custom_insert_source', 'unset') = 'x')
+FROM
+(
+    SELECT 1 SETTINGS custom_insert_source = 'x'
+    UNION ALL
+    SELECT 2
+)
+RETURNING (SELECT count() FROM t_ret_settings);
+
+SELECT id FROM t_ret_settings ORDER BY id;
+
+-- For top-level set-ops, source settings precedence must match standalone SELECT:
+-- union-level SETTINGS apply first, then the last first-order branch settings override duplicates.
+SELECT 'set-op source settings keep last-branch precedence';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings
+SELECT toUInt64(getSettingOrDefault('custom_insert_source', 'unset') = 'x')
+UNION ALL
+(SELECT toUInt64(getSettingOrDefault('custom_insert_source', 'unset') = 'x') SETTINGS custom_insert_source = 'x')
+SETTINGS custom_insert_source = 'y'
+RETURNING (SELECT sum(id) FROM t_ret_settings);
+
+SELECT sum(id) FROM t_ret_settings;
+
+-- Source DEFAULT settings parsed before RETURNING must survive merge with trailing source settings.
+SELECT 'source default settings merged with trailing settings';
+TRUNCATE TABLE t_ret_settings;
+SET max_result_rows = 1, result_overflow_mode = 'break';
+INSERT INTO t_ret_settings SELECT number FROM numbers(3)
+SETTINGS max_result_rows = DEFAULT
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS max_threads = 1;
+SET max_result_rows = 0, result_overflow_mode = 'throw';
+
+SELECT count() FROM t_ret_settings;
+
+-- When the same source setting appears both before and after RETURNING, trailing SETTINGS win consistently.
+SELECT 'source duplicate settings keep trailing precedence';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT number FROM numbers(10)
+SETTINGS max_result_rows = 1, result_overflow_mode = 'break'
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS max_result_rows = DEFAULT;
+
+SELECT count() FROM t_ret_settings;
+
+-- Source-only query-global settings that bind at query registration are rejected.
+SELECT 'source query global settings are rejected';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT 1
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS max_execution_time = 1; -- { serverError NOT_IMPLEMENTED }
+
+SELECT count() FROM t_ret_settings;
+
+-- Source-side query-cache settings are also rejected (otherwise they are silently ignored on INSERT).
+SELECT 'source query cache settings are rejected';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT 1
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS use_query_cache = 1; -- { serverError NOT_IMPLEMENTED }
+
+SELECT count() FROM t_ret_settings;
+
+-- Source-side distributed-insert-select optimization setting is rejected with RETURNING
+-- instead of being accepted and silently ignored.
+SELECT 'source parallel distributed insert-select setting is rejected';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT 1
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS parallel_distributed_insert_select = 1; -- { serverError NOT_IMPLEMENTED }
+
+SELECT count() FROM t_ret_settings;
+
+-- Unsupported source settings must also be rejected when nested in source subqueries.
+SELECT 'nested source query global settings are rejected';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings
+SELECT * FROM (SELECT 1 SETTINGS max_execution_time = 1)
+RETURNING (SELECT count() FROM t_ret_settings); -- { serverError NOT_IMPLEMENTED }
+
+SELECT count() FROM t_ret_settings;
+
+-- Trailing source SETTINGS must not affect RETURNING SELECT normalization/planning.
+-- Session UNION mode is ALL; trailing source settings set DISTINCT only for source phase.
+SELECT 'trailing settings do not affect returning planning';
+TRUNCATE TABLE t_ret_settings;
+SET union_default_mode = 'ALL';
+INSERT INTO t_ret_settings SELECT 1
+RETURNING (SELECT 1 UNION SELECT 1)
+SETTINGS union_default_mode = 'DISTINCT';
+SET union_default_mode = '';
+
+SELECT count() FROM t_ret_settings;
+
+-- Trailing SETTINGS after RETURNING apply to the source SELECT only, not to the RETURNING subquery.
+SELECT 'trailing settings do not cap returning';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT number FROM numbers(10)
+RETURNING (SELECT number FROM numbers(10) ORDER BY number)
+SETTINGS max_result_rows = 1, result_overflow_mode = 'break';
+
+SELECT count() FROM t_ret_settings;
+
+-- INSERT VALUES + RETURNING with a query-level SETTINGS before the data clause still works.
+SELECT 'values returning with settings';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SETTINGS max_threads = 1 RETURNING (SELECT count() FROM t_ret_settings) VALUES (10);
+
+SELECT id FROM t_ret_settings ORDER BY id;
+
+DROP TABLE t_ret_settings_src;
+DROP TABLE t_ret_settings;

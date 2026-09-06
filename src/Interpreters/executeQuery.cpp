@@ -34,6 +34,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -68,6 +69,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/buildInsertReturningPipeline.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -98,6 +100,7 @@
 #if CLICKHOUSE_CLOUD
 #include <Common/Licensing/LicenseChecker.h>
 #endif
+#include <unordered_set>
 #include <Core/BaseSettings.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -127,6 +130,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/SocketAddress.h>
 
+#include <algorithm>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -318,6 +322,87 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
         ast.checkDepth(settings[Setting::max_ast_depth]);
     if (settings[Setting::max_ast_elements])
         ast.checkSize(settings[Setting::max_ast_elements]);
+}
+
+static void rejectUnsupportedSourceInsertReturningSettings(const ASTPtr & source_select_settings_ast)
+{
+    const auto & source_settings = source_select_settings_ast->as<ASTSetQuery &>();
+
+    static const std::unordered_set<std::string_view> unsupported_settings = {
+        "max_memory_usage",
+        "max_memory_usage_for_user",
+        "memory_overcommit_ratio_denominator",
+        "memory_overcommit_ratio_denominator_for_user",
+        "memory_usage_overcommit_max_wait_microseconds",
+        "max_execution_time",
+        "timeout_overflow_mode",
+        "max_temporary_data_on_disk_size_for_query",
+        "max_temporary_data_on_disk_size_for_user",
+        "max_network_bandwidth_for_user",
+        "max_network_bandwidth_for_all_users",
+        "max_remote_read_network_bandwidth",
+        "max_remote_write_network_bandwidth",
+        "max_local_read_bandwidth",
+        "max_local_write_bandwidth",
+        "max_concurrent_queries_for_user",
+        "max_concurrent_queries_for_all_users",
+        "queue_max_wait_ms",
+        "replace_running_query",
+        "replace_running_query_max_wait_ms",
+        "priority",
+        "low_priority_query_wait_time_ms",
+        "workload",
+        "reserve_memory",
+        "temporary_files_codec",
+        "temporary_files_buffer_size",
+        /// Query-construction settings for the source `SELECT` are not materialized from
+        /// `source_select_settings_*` in delayed `INSERT ... RETURNING`; reject them in source
+        /// `SETTINGS` instead of silently accepting and ignoring.
+        "select",
+        "filter",
+        "order",
+        "sort",
+        "limit",
+        "offset",
+        "page",
+        "use_query_cache",
+        "enable_reads_from_query_cache",
+        "enable_writes_to_query_cache",
+        "query_cache_nondeterministic_function_handling",
+        "query_cache_system_table_handling",
+        "profile",
+    };
+
+    for (const auto & change : source_settings.changes)
+    {
+        if (unsupported_settings.contains(change.name))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting '{}' is not supported in source SETTINGS of INSERT ... RETURNING because it affects query-global state",
+                change.name);
+    }
+
+    for (const auto & default_setting : source_settings.default_settings)
+    {
+        if (unsupported_settings.contains(default_setting))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting '{}' is not supported in source SETTINGS of INSERT ... RETURNING because it affects query-global state",
+                default_setting);
+    }
+}
+
+static void collectSourceSettingsNames(const ASTPtr & source_select_settings_ast, std::unordered_set<String> & out_names)
+{
+    if (!source_select_settings_ast)
+        return;
+
+    const auto & source_settings = source_select_settings_ast->as<ASTSetQuery &>();
+    out_names.reserve(out_names.size() + source_settings.changes.size() + source_settings.default_settings.size());
+    for (const auto & change : source_settings.changes)
+        out_names.insert(change.name);
+    for (const auto & default_setting : source_settings.default_settings)
+        out_names.insert(default_setting);
 }
 
 
@@ -1133,12 +1218,29 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
             }
         }
 
+        /// The RETURNING subquery of an `INSERT ... RETURNING` is planned only after the INSERT completes, so its
+        /// settings (including `allow_experimental_analyzer`) must not be validated here — doing so would throw
+        /// before the INSERT runs and leave no inserted rows, breaking the "RETURNING failures happen after a
+        /// successful INSERT" ordering. It is validated later, on the delayed RETURNING planning path.
+        const auto * insert = node->as<ASTInsertQuery>();
         for (auto child : node->children)
         {
-            if (child)
-                nodes_to_process.push_back(std::move(child));
+            if (!child)
+                continue;
+            if (insert && child.get() == insert->returning_select.get())
+                continue;
+            nodes_to_process.push_back(std::move(child));
         }
     }
+}
+
+/// `validateAnalyzerSettings` has internal linkage in this translation unit. The INSERT ... RETURNING subquery is
+/// planned in a separate translation unit (`buildReturningSelectPipeline`) but must run the same analyzer-setting
+/// validation as any standalone `SELECT`. Expose it through this thin wrapper instead of changing the linkage of the
+/// original function.
+void validateAnalyzerSettingsForReturning(ASTPtr ast, bool context_value)
+{
+    validateAnalyzerSettings(ast, context_value);
 }
 
 /// Remove the resource-limit settings that executeASTFuzzerQueries pins on the fuzz context from the
@@ -2590,10 +2692,14 @@ static BlockIO executeQueryImpl(
 
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
-    QueryMetadataCachePtr query_metadata_cache;
     BlockIO res;
     String query_database;
     String query_table;
+
+    /// Set once the query start has been recorded in the query log. After that point a failure must be logged as
+    /// EXCEPTION_WHILE_PROCESSING (using `query_log_elem`), not EXCEPTION_BEFORE_START.
+    bool query_log_started = false;
+    QueryLogElement query_log_elem;
 
     try
     {
@@ -2648,7 +2754,39 @@ static BlockIO executeQueryImpl(
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+            if (auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->source_select_settings_runtime_ast)
+            {
+                rejectUnsupportedSourceInsertReturningSettings(insert_query->source_select_settings_runtime_ast);
+                Settings settings_before_source = context->getSettingsRef();
+                if (insert_query->source_select_settings_global_ast)
+                {
+                    InterpreterSetQuery(insert_query->source_select_settings_global_ast, context)
+                        .executeForCurrentContext(/* ignore_setting_constraints= */ false);
+                }
 
+                auto restore_ast = make_intrusive<ASTSetQuery>();
+                restore_ast->is_standalone = false;
+
+                std::unordered_set<String> all_setting_names;
+                collectSourceSettingsNames(insert_query->source_select_settings_runtime_ast, all_setting_names);
+
+                for (const auto & setting_name : all_setting_names)
+                {
+                    Field value_before;
+                    const bool has_before = settings_before_source.tryGet(setting_name, value_before);
+
+                    /// `tryGet` is true for every registered setting, including unchanged defaults.
+                    /// Preserve the pre-source changed/default state so compatibility in RETURNING
+                    /// can still re-derive defaults for settings that were not user-changed before source phase.
+                    if (settings_before_source.isChanged(setting_name) && has_before)
+                        restore_ast->changes.emplace_back(setting_name, std::move(value_before));
+                    else
+                        restore_ast->default_settings.emplace_back(setting_name);
+                }
+
+                insert_query->source_select_settings_restore_ast
+                    = (restore_ast->changes.empty() && restore_ast->default_settings.empty()) ? ASTPtr{} : restore_ast;
+            }
             /// The `database` setting is documented as equivalent to `USE`. To behave that way it must
             /// change the database that unqualified names resolve to, not just be stored as a string.
             /// Apply it here — after all SETTINGS have been resolved — so every protocol (native TCP,
@@ -2757,6 +2895,24 @@ static BlockIO executeQueryImpl(
 
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 
+            /// The RETURNING subquery is an independent `SELECT` that must be validated and normalized with its own
+            /// `SETTINGS`, which are applied only after the INSERT runs (see `buildReturningSelectPipeline`). Detach it
+            /// before the pre-execution checks and global AST visitors below, so they do not process it with the outer
+            /// INSERT settings (for example the strict-identifier format check below, resolving its `UNION` with the
+            /// outer `union_default_mode` instead of the subquery's own, or rejecting it with the outer
+            /// `max_ast_elements` / `max_ast_depth` in `checkASTSizeLimits`). The same checks are re-run for the
+            /// subquery with its own settings in `buildReturningSelectPipeline`. It must be removed both from `children`
+            /// (walked by the AST visitors and size/depth limits) and from the `returning_select` field (formatted
+            /// directly by `ASTInsertQuery::formatImpl`, which the strict-identifier check goes through).
+            ASTPtr detached_returning_select;
+            if (auto * insert_with_returning = out_ast->as<ASTInsertQuery>(); insert_with_returning && insert_with_returning->returning_select)
+            {
+                detached_returning_select = insert_with_returning->returning_select;
+                auto & children = insert_with_returning->children;
+                children.erase(std::remove(children.begin(), children.end(), detached_returning_select), children.end());
+                insert_with_returning->returning_select = nullptr;
+            }
+
             if (settings[Setting::enforce_strict_identifier_format])
             {
                 WriteBufferFromOwnString buf;
@@ -2791,8 +2947,20 @@ static BlockIO executeQueryImpl(
                 NormalizeSelectWithUnionQueryVisitor{data}.visit(out_ast);
             }
 
-            /// Check the limits.
+            /// Check the limits. The RETURNING subquery is still detached, so an outer/session `max_ast_elements` or
+            /// `max_ast_depth` does not reject it before the INSERT runs — its own size/depth limits are checked later
+            /// with the subquery's settings in `buildReturningSelectPipeline`.
             checkASTSizeLimits(*out_ast, settings);
+
+            /// Reattach the RETURNING subquery now that every pre-execution step that must run with the outer INSERT
+            /// settings (strict-identifier check, global AST visitors, size/depth limits) is done. Restore both the
+            /// `returning_select` field and the `children` entry removed above.
+            if (detached_returning_select)
+            {
+                auto * insert_with_returning = out_ast->as<ASTInsertQuery>();
+                insert_with_returning->returning_select = detached_returning_select;
+                insert_with_returning->children.push_back(detached_returning_select);
+            }
         }
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
@@ -2828,6 +2996,13 @@ static BlockIO executeQueryImpl(
                 insert_table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context);
                 if (insert_table)
                     async_insert_enabled |= insert_table->areAsynchronousInsertsEnabled();
+            }
+
+            if (insert_query->returning_select && async_insert_enabled)
+            {
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "INSERT ... RETURNING is not supported with async_insert=1");
             }
         }
 
@@ -3054,8 +3229,8 @@ static BlockIO executeQueryImpl(
 
                 if (settings[Setting::enable_shared_storage_snapshot_in_query])
                 {
-                    query_metadata_cache = std::make_shared<QueryMetadataCache>();
-                    context->setQueryMetadataCache(query_metadata_cache);
+                    res.query_metadata_cache = std::make_shared<QueryMetadataCache>();
+                    context->setQueryMetadataCache(res.query_metadata_cache);
                 }
 
                 if (out_ast)
@@ -3116,7 +3291,14 @@ static BlockIO executeQueryImpl(
                 if (interpreter)
                 {
                     if (!interpreter->ignoreLimits())
+                    {
                         limits = StreamLocalLimits::forQueryResult(settings);
+
+                        /// For INSERT ... RETURNING, apply RETURNING subquery SETTINGS only after INSERT completes
+                        /// (when the pulling pipeline is set up), not here before interpreter->execute().
+                        if (insert_query && insert_query->returning_select)
+                            limits.size_limits = SizeLimits();
+                    }
 
                     if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
                     {
@@ -3133,6 +3315,7 @@ static BlockIO executeQueryImpl(
                     }
 
                     res = interpreter->execute();
+
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
                     if (checkCanWriteQueryResultCache(out_ast, context))
@@ -3229,7 +3412,12 @@ static BlockIO executeQueryImpl(
             pipeline.setProgressCallback(context->getProgressCallback());
             pipeline.setProcessListElement(context->getProcessListElement());
             if (stage == QueryProcessingStage::Complete && pipeline.pulling())
-                pipeline.setLimitsAndQuota(limits, quota);
+            {
+                if (insert_query && insert_query->returning_select)
+                    setupPullingQueryPipeline(pipeline, context, stage, insert_query->returning_select, insert_query->source_select_settings_restore_ast);
+                else
+                    pipeline.setLimitsAndQuota(limits, quota);
+            }
         }
         else if (pipeline.pushing())
         {
@@ -3238,7 +3426,7 @@ static BlockIO executeQueryImpl(
 
         /// Everything related to query log.
         {
-            QueryLogElement elem = logQueryStart(
+            query_log_elem = logQueryStart(
                 query_start_time,
                 context,
                 query_for_logging,
@@ -3251,30 +3439,38 @@ static BlockIO executeQueryImpl(
                 query_database,
                 query_table,
                 async_insert);
+            query_log_started = true;
+            auto & elem = query_log_elem;
 
             /// Also make possible for caller to log successful query finish and exception during execution.
 
+            res.finish_callback_state = std::make_shared<BlockIOFinishCallbackState>();
+            res.finish_callback_state->pulling_pipeline_at_setup = pipeline.pulling();
+            const auto finish_callback_state = res.finish_callback_state;
+
             /// The prepare callback flushes pipeline progress and resets the pipeline
             auto finish_callback_finalize_pipeline = [
-                                     query_result_cache_usage,
-                                     // Need to be cached, since will be changed after complete()
-                                     pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
+                                     finish_callback_state,
+                                     query_result_cache_usage](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
+                const bool pulling_pipeline = finish_callback_state->pulling_pipeline_at_setup
+                    || finish_callback_state->insert_returning_result_as_select;
                 return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
             };
 
             /// The finish callback logs the query result
             auto finish_callback = [elem,
+                                    finish_callback_state,
                                     context,
                                     out_ast,
                                     query_result_cache_usage,
                                     internal,
                                     log_as_internal,
                                     implicit_tcl_executor,
-                                    // Need to be cached, since will be changed after complete()
-                                    pulling_pipeline = pipeline.pulling(),
                                     query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
+                const bool pulling_pipeline = finish_callback_state->pulling_pipeline_at_setup
+                    || finish_callback_state->insert_returning_result_as_select;
                 logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, finish_time);
 
                 if (implicit_tcl_executor->transactionRunning())
@@ -3309,6 +3505,40 @@ static BlockIO executeQueryImpl(
             res.finish_callbacks.push_back(std::move(finish_callback));
             res.exception_callbacks.push_back(std::move(exception_callback));
         }
+
+        /// For INSERT ... RETURNING, run the INSERT and build the RETURNING `SELECT` pipeline only now — after the
+        /// query start has been logged and the finish/exception callbacks are installed. If planning the RETURNING
+        /// subquery throws (unknown identifier, rejected SETTINGS, ...) after the INSERT has already persisted rows,
+        /// the failure is then logged as EXCEPTION_WHILE_PROCESSING instead of EXCEPTION_BEFORE_START, so the query
+        /// log reflects that the statement started and had side effects. The native-protocol push path performs the
+        /// equivalent wrap in the protocol handler (`replacePipelineWithInsertReturningAfterPush`).
+        if (insert_query && insert_query->returning_select)
+        {
+            auto wrap_returning = [&]()
+            {
+                res.pipeline = buildInsertReturningPipeline(
+                    std::move(res.pipeline), insert_query->returning_select, context, res.query_metadata_cache, insert_query->source_select_settings_restore_ast);
+                if (res.finish_callback_state)
+                    res.finish_callback_state->insert_returning_result_as_select = true;
+                if (insert_table)
+                    res.pipeline.addStorageHolder(insert_table);
+                setupPullingQueryPipeline(res.pipeline, context, stage, insert_query->returning_select, insert_query->source_select_settings_restore_ast);
+            };
+
+            if (!res.pipeline.pushing())
+            {
+                /// INSERT ... SELECT ... RETURNING: the INSERT pipeline is already completed.
+                wrap_returning();
+            }
+            else if (insert_query->hasInlinedData())
+            {
+                /// INSERT VALUES/FORMAT <inlined data> ... RETURNING: attach the inlined source, then wrap.
+                auto pipe = getSourceFromASTInsertQuery(out_ast, true, res.pipeline.getHeader(), context, nullptr);
+                res.pipeline.complete(std::move(pipe));
+                wrap_returning();
+            }
+            /// else: native-protocol push insert; the RETURNING wrap happens in the protocol handler after the push.
+        }
     }
     catch (...)
     {
@@ -3321,7 +3551,17 @@ static BlockIO executeQueryImpl(
             txn->onException();
         }
 
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal);
+        if (query_log_started)
+        {
+            /// The query already logged its start (e.g. an INSERT ... RETURNING whose subquery failed to plan after
+            /// the INSERT persisted). Log it as a started query that failed, not as EXCEPTION_BEFORE_START.
+            if (!internal)
+                if (auto query_exception_quota = context->getQuota())
+                    query_exception_quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+            logQueryException(query_log_elem, context, start_watch, out_ast, query_span, internal, log_as_internal, /* log_error = */ true);
+        }
+        else
+            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal);
 
         throw;
     }
@@ -4364,7 +4604,8 @@ void executeQuery(
             pipeline.complete(std::move(pipe));
             setup_framing_for_no_result_query();
         }
-        else if (pipeline.pulling())
+
+        if (pipeline.pulling())
         {
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
             format_name = resolveOutputFormatName(context, ast_query_with_output);

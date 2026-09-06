@@ -2389,7 +2389,8 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         const auto & settings = client_context->getSettingsRef();
         if (settings[Setting::throw_if_no_data_to_insert])
             throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
-        return;
+        if (!parsed_insert_query.returning_select)
+            return;
     }
 
     if (isEmbeeddedClient() && parsed_insert_query.infile)
@@ -2424,6 +2425,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
             [&](const Progress & progress) { onProgress(progress); });
     });
 
+    bool returning_receive_started = false;
     try
     {
         if (send_external_tables)
@@ -2442,7 +2444,16 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
             setInsertionTable(parsed_insert_query);
 
             sendData(sample, columns_description, parsed_query);
-            receiveEndOfQueryForInsert();
+
+            if (parsed_insert_query.returning_select)
+            {
+                const Settings & settings = client_context->getSettingsRef();
+                const Int32 signals_before_stop = settings[Setting::partial_result_on_first_cancel] ? 2 : 1;
+                returning_receive_started = true;
+                receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
+            }
+            else
+                receiveEndOfQueryForInsert();
         }
     }
     catch (...)
@@ -2452,8 +2463,13 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         /// the original exception (e.g., a parsing error with row number).
         try
         {
-            if (sendCancel(std::current_exception()))
-                receiveEndOfQueryForInsert();
+            /// `receiveResult` already performs ordinary-query cleanup and drains packets to EndOfStream.
+            /// Re-running insert-style cleanup after that may wait for packets that are already consumed.
+            if (!(parsed_insert_query.returning_select && returning_receive_started))
+            {
+                if (sendCancel(std::current_exception()))
+                    receiveEndOfQueryForInsert();
+            }
         }
         catch (const std::exception &) // NOLINT(bugprone-empty-catch)
         {
@@ -2625,6 +2641,12 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     else if (!is_interactive)
     {
         sendDataFromStdin(sample, columns_description_for_query, parsed_query);
+    }
+    else if (parsed_insert_query->returning_select)
+    {
+        /// For `INSERT ... RETURNING` with no inline/INFILE/stdin data and `throw_if_no_data_to_insert = 0`,
+        /// still send the empty insert-data terminator so the server can run the RETURNING subquery.
+        connection->sendData({}, "", false);
     }
     else
         throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");

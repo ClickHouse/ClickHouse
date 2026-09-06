@@ -1,0 +1,103 @@
+select returning trailing settings
+3
+rows after insert
+1
+2
+3
+select returning trailing settings pushed down
+5
+5
+trailing settings still apply to source select
+10
+10
+trailing settings affect source planning
+1
+1
+source settings before returning do not cap returning
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+query settings preserved for returning
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+source database setting does not leak into returning
+1
+returning construction settings are rejected
+1
+returning database setting is rejected
+1
+source trailing construction settings are rejected
+0
+session construction settings are rejected in returning
+1
+session construction settings reset to default is accepted
+1
+1
+source custom setting does not leak into returning
+unset
+1
+nested source custom setting does not leak into returning
+unset
+1
+nested source settings do not affect outer source expressions
+1
+0
+plain insert nested source settings do not affect outer source expressions
+0
+set-op branch-local source settings stay local
+2
+0
+0
+set-op source settings keep last-branch precedence
+2
+2
+source default settings merged with trailing settings
+3
+3
+source duplicate settings keep trailing precedence
+10
+10
+source query global settings are rejected
+0
+source query cache settings are rejected
+0
+source parallel distributed insert-select setting is rejected
+0
+nested source query global settings are rejected
+0
+trailing settings do not affect returning planning
+1
+1
+1
+trailing settings do not cap returning
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+values returning with settings
+1
+10

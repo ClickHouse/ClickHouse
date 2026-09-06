@@ -32,6 +32,7 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/TablesStatus.h>
+#include <Interpreters/buildInsertReturningPipeline.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -952,9 +953,33 @@ void TCPHandler::runImpl()
 
             if (query_state->io.pipeline.pushing())
             {
+                if (const auto * insert_query = typeid_cast<const ASTInsertQuery *>(query_state->parsed_query.get());
+                    insert_query && insert_query->returning_select
+                    && client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_INSERT_RETURNING_RESULTS)
+                {
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "INSERT ... RETURNING over native TCP requires client protocol revision {} or newer; got {}",
+                        DBMS_MIN_PROTOCOL_VERSION_WITH_INSERT_RETURNING_RESULTS,
+                        client_tcp_protocol_version);
+                }
+
                 /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
                 query_state->need_receive_data_for_insert = true;
                 processInsertQuery(*query_state);
+
+                if (const auto * insert_query = typeid_cast<const ASTInsertQuery *>(query_state->parsed_query.get()))
+                {
+                    if (replacePipelineWithInsertReturningAfterPush(
+                            query_state->io, *insert_query, query_state->query_context, query_state->stage, query_state->io.query_metadata_cache))
+                    {
+                        /// We have finished receiving INSERT data and switched into the delayed RETURNING SELECT phase.
+                        /// Clear insert-data mode so interactive cancellation polls for `Cancel` packets while RETURNING runs.
+                        query_state->need_receive_data_for_insert = false;
+                        processOrdinaryQuery(*query_state);
+                    }
+                }
+
                 query_state->io.onFinish();
             }
             else if (query_state->io.pipeline.pulling())

@@ -1,9 +1,12 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -16,6 +19,10 @@
 #include <Parsers/StatementFactory.h>
 #include <Parsers/registerStatements.h>
 #include <Common/typeid_cast.h>
+
+#include <algorithm>
+#include <unordered_map>
+#include <string_view>
 
 
 namespace DB
@@ -59,6 +66,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_values(Keyword::VALUES);
     ParserKeyword s_format(Keyword::FORMAT);
     ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_returning(Keyword::RETURNING);
     ParserKeyword s_select(Keyword::SELECT);
     ParserKeyword s_from(Keyword::FROM);
     ParserKeyword s_partition_by(Keyword::PARTITION_BY);
@@ -81,6 +89,11 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr select;
     ASTPtr table_function;
     ASTPtr settings_ast;
+    ASTPtr source_select_settings_ast;
+    ASTPtr source_select_pre_returning_settings_ast;
+    ASTPtr source_select_settings_runtime_ast;
+    ASTPtr source_select_settings_global_ast;
+    ASTPtr returning_select;
     ASTPtr partition_by_expr;
     ASTPtr compression;
     ASTPtr with_expression_list;
@@ -188,8 +201,30 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
+    auto try_parse_returning_subquery = [&]() -> bool
+    {
+        if (!s_returning.ignore(pos, expected))
+            return false;
+
+        if (!s_lparen.ignore(pos, expected))
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected opening round bracket after RETURNING");
+
+        ParserSelectWithUnionQuery select_p;
+        if (!select_p.parse(pos, returning_select, expected))
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected SELECT query in RETURNING clause");
+
+        if (!s_rparen.ignore(pos, expected))
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected closing round bracket after RETURNING subquery");
+
+        return true;
+    };
+
     String format_str;
     Pos before_values = pos;
+
+    /// For INSERT VALUES and INSERT FORMAT, RETURNING must appear before the data clause.
+    if (!infile)
+        try_parse_returning_subquery();
 
     /// VALUES or FORMAT or SELECT or WITH.
     /// After FROM INFILE we expect FORMAT, SELECT, WITH or nothing.
@@ -217,33 +252,40 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// The query can also start with the FROM clause: INSERT INTO t2 FROM t1 |> WHERE x.
         /// Note that FROM INFILE was already parsed before, so FROM at this position starts a SELECT query.
         pos = before_values;
+        returning_select.reset();
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
-
-        if (with_expression_list && select)
-        {
-            const auto & children = select->as<ASTSelectWithUnionQuery>()->list_of_selects->children;
-            for (const auto & child : children)
-            {
-                auto * child_select = child->as<ASTSelectQuery>();
-                if (child_select)
-                {
-                    if (child_select->getExpression(ASTSelectQuery::Expression::WITH, false))
-                        throw Exception(ErrorCodes::SYNTAX_ERROR,
-                            "Only one WITH should be presented, either before INSERT or SELECT.");
-                    child_select->setExpression(ASTSelectQuery::Expression::WITH,
-                        ASTPtr(with_expression_list));
-                    /// WITH was appended after SELECT/TABLES; normalize back to canonical order.
-                    child_select->normalizeChildrenOrder();
-                }
-            }
-        }
 
         /// FORMAT section is expected if we have input() in SELECT part
         if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
             return false;
 
         tryGetIdentifierNameInto(format, format_str);
+
+        /// Some SELECT shapes (notably certain set-op trees) may leave a source-level
+        /// trailing SETTINGS right before RETURNING unconsumed by ParserSelectWithUnionQuery.
+        if (s_settings.ignore(pos, expected))
+        {
+            ParserSetQuery parser_settings(true);
+            if (!parser_settings.parse(pos, source_select_pre_returning_settings_ast, expected))
+                return false;
+        }
+
+        /// For INSERT SELECT, RETURNING appears after the source SELECT / source SETTINGS.
+        const bool has_returning = try_parse_returning_subquery();
+
+        /// A query-level SETTINGS clause normally trails the source SELECT and is absorbed by
+        /// `ParserSelectWithUnionQuery` as the SELECT's own settings. When RETURNING is present the
+        /// SELECT parser stops at RETURNING, so the trailing `SETTINGS` (e.g. `parallel_distributed_insert_select`)
+        /// would never be consumed. Parse it here and keep it separately from INSERT-level `settings_ast`:
+        /// these settings still apply to the INSERT/source SELECT phase, but must not leak into RETURNING
+        /// limits/context.
+        if (has_returning && s_settings.ignore(pos, expected))
+        {
+            ParserSetQuery parser_settings(true);
+            if (!parser_settings.parse(pos, source_select_settings_ast, expected))
+                return false;
+        }
     }
     else if (!infile)
     {
@@ -274,11 +316,243 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             data = pos->begin;
     }
 
+    auto propagate_with_clause = [&](ASTPtr & target_select, std::string_view target_name)
+    {
+        if (!with_expression_list || !target_select)
+            return;
+
+        auto propagate_impl = [&](auto && self, ASTPtr & current) -> void
+        {
+            if (!current)
+                return;
+
+            if (auto * select_with_union = current->as<ASTSelectWithUnionQuery>())
+            {
+                if (!select_with_union->list_of_selects)
+                    return;
+                for (auto & child : select_with_union->list_of_selects->children)
+                    self(self, child);
+                return;
+            }
+
+            if (auto * intersect_except = current->as<ASTSelectIntersectExceptQuery>())
+            {
+                auto children = intersect_except->getListOfSelects();
+                for (auto & child : children)
+                    self(self, child);
+                return;
+            }
+
+            auto * child_select = current->as<ASTSelectQuery>();
+            if (!child_select)
+                return;
+
+            if (child_select->getExpression(ASTSelectQuery::Expression::WITH, false))
+                throw Exception(
+                    ErrorCodes::SYNTAX_ERROR,
+                    "Only one WITH should be presented, either before INSERT or {}.",
+                    target_name);
+
+            child_select->setExpression(ASTSelectQuery::Expression::WITH, with_expression_list->clone());
+            /// WITH was appended after SELECT/TABLES; normalize back to canonical order.
+            child_select->normalizeChildrenOrder();
+        };
+
+        propagate_impl(propagate_impl, target_select);
+    };
+
+    propagate_with_clause(select, "SELECT");
+    propagate_with_clause(returning_select, "RETURNING subquery");
+
     if (select)
     {
-        /// Copy SETTINGS from the INSERT ... SELECT ... SETTINGS
-        InsertQuerySettingsPushDownVisitor::Data visitor_data{settings_ast};
-        InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
+        auto merge_settings_ast = [](ASTPtr & target_settings_ast, const ASTPtr & source_settings_ast)
+        {
+            if (!source_settings_ast)
+                return;
+
+            if (!target_settings_ast)
+            {
+                target_settings_ast = source_settings_ast->clone();
+                return;
+            }
+
+            auto & source_settings = source_settings_ast->as<ASTSetQuery &>();
+            auto & target_settings = target_settings_ast->as<ASTSetQuery &>();
+            std::unordered_set<String> target_setting_names;
+            target_setting_names.reserve(target_settings.changes.size() + target_settings.default_settings.size());
+
+            for (const auto & change : target_settings.changes)
+                target_setting_names.insert(change.name);
+            for (const auto & default_setting : target_settings.default_settings)
+                target_setting_names.insert(default_setting);
+
+            for (const auto & change : source_settings.changes)
+            {
+                if (!target_setting_names.contains(change.name))
+                {
+                    target_settings.changes.push_back(change);
+                    target_setting_names.insert(change.name);
+                }
+            }
+
+            for (const auto & default_setting : source_settings.default_settings)
+            {
+                if (!target_setting_names.contains(default_setting))
+                {
+                    target_settings.default_settings.push_back(default_setting);
+                    target_setting_names.insert(default_setting);
+                }
+            }
+        };
+
+        auto merge_settings_ast_with_override = [](ASTPtr & target_ast, const ASTPtr & source_ast)
+        {
+            if (!source_ast)
+                return;
+
+            if (!target_ast)
+            {
+                target_ast = source_ast->clone();
+                return;
+            }
+
+            auto & source_settings = source_ast->as<ASTSetQuery &>();
+            auto & target_settings = target_ast->as<ASTSetQuery &>();
+
+            std::unordered_map<String, size_t> target_change_positions;
+            target_change_positions.reserve(target_settings.changes.size());
+            for (size_t i = 0; i < target_settings.changes.size(); ++i)
+                target_change_positions[target_settings.changes[i].name] = i;
+
+            std::unordered_map<String, size_t> target_default_positions;
+            target_default_positions.reserve(target_settings.default_settings.size());
+            for (size_t i = 0; i < target_settings.default_settings.size(); ++i)
+                target_default_positions[target_settings.default_settings[i]] = i;
+
+            auto erase_default = [&](const String & name)
+            {
+                auto it = target_default_positions.find(name);
+                if (it == target_default_positions.end())
+                    return;
+
+                target_settings.default_settings.erase(target_settings.default_settings.begin() + it->second);
+                target_default_positions.clear();
+                for (size_t i = 0; i < target_settings.default_settings.size(); ++i)
+                    target_default_positions[target_settings.default_settings[i]] = i;
+            };
+
+            auto erase_change = [&](const String & name)
+            {
+                auto it = target_change_positions.find(name);
+                if (it == target_change_positions.end())
+                    return;
+
+                target_settings.changes.erase(target_settings.changes.begin() + it->second);
+                target_change_positions.clear();
+                for (size_t i = 0; i < target_settings.changes.size(); ++i)
+                    target_change_positions[target_settings.changes[i].name] = i;
+            };
+
+            for (const auto & change : source_settings.changes)
+            {
+                erase_default(change.name);
+                if (auto it = target_change_positions.find(change.name); it != target_change_positions.end())
+                    target_settings.changes[it->second] = change;
+                else
+                {
+                    target_settings.changes.push_back(change);
+                    target_change_positions[change.name] = target_settings.changes.size() - 1;
+                }
+            }
+
+            for (const auto & default_setting : source_settings.default_settings)
+            {
+                erase_change(default_setting);
+                if (target_default_positions.contains(default_setting))
+                    continue;
+
+                target_settings.default_settings.push_back(default_setting);
+                target_default_positions[default_setting] = target_settings.default_settings.size() - 1;
+            }
+        };
+
+        auto collect_top_level_source_settings = [&](ASTPtr & target_settings_ast)
+        {
+
+            auto collect_top_level_impl = [&](auto && self, const ASTPtr & current, bool allow_subquery_unwrap) -> void
+            {
+                if (!current)
+                    return;
+
+                if (const auto * select_with_union = current->as<ASTSelectWithUnionQuery>())
+                {
+                    if (!select_with_union->list_of_selects)
+                        return;
+
+                    /// Match standalone SELECT precedence:
+                    /// set-op level SETTINGS are applied first, then the last first-order arm overrides duplicates.
+                    merge_settings_ast_with_override(target_settings_ast, select_with_union->settings_ast);
+                    const auto & children = select_with_union->list_of_selects->children;
+                    if (!children.empty())
+                        self(self, children.back(), true);
+                    return;
+                }
+
+                if (const auto * intersect_except = current->as<ASTSelectIntersectExceptQuery>())
+                {
+                    merge_settings_ast_with_override(target_settings_ast, intersect_except->settings());
+                    auto children = intersect_except->getListOfSelects();
+                    if (!children.empty())
+                        self(self, children.back(), true);
+                    return;
+                }
+
+                /// Keep `(SELECT ...)` equivalent to top-level SELECT while still avoiding traversal into
+                /// arbitrary nested subqueries below the source root.
+                if (allow_subquery_unwrap)
+                {
+                    if (const auto * subquery = current->as<ASTSubquery>())
+                        self(self, subquery->children.empty() ? ASTPtr{} : subquery->children.front(), false);
+                }
+
+                if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(current.get()))
+                    merge_settings_ast_with_override(target_settings_ast, query_with_output->settings_ast);
+
+                if (const auto * select_query = current->as<ASTSelectQuery>())
+                    merge_settings_ast_with_override(target_settings_ast, select_query->settings());
+            };
+
+            collect_top_level_impl(collect_top_level_impl, select, true);
+        };
+
+        if (returning_select)
+        {
+            if (source_select_pre_returning_settings_ast)
+                source_select_settings_runtime_ast = source_select_pre_returning_settings_ast->clone();
+            merge_settings_ast_with_override(source_select_settings_runtime_ast, source_select_settings_ast);
+
+            /// For INSERT ... RETURNING we need recursive collection of source settings to reject unsupported
+            /// query-global settings and to restore query settings before RETURNING planning.
+            InsertQuerySettingsPushDownVisitor::Data visitor_data{source_select_settings_runtime_ast};
+            InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
+
+            ASTPtr source_top_level_settings_ast = source_select_pre_returning_settings_ast ? source_select_pre_returning_settings_ast->clone() : ASTPtr{};
+            collect_top_level_source_settings(source_top_level_settings_ast);
+
+            /// Trailing source SETTINGS after RETURNING must keep precedence over source SELECT settings.
+            merge_settings_ast_with_override(source_top_level_settings_ast, source_select_settings_ast);
+            source_select_settings_global_ast = source_top_level_settings_ast;
+        }
+        else
+        {
+            /// For plain INSERT ... SELECT keep historical top-level-only pushdown semantics:
+            /// nested source subquery SETTINGS stay local and must not leak into outer planning/execution.
+            ASTPtr source_top_level_settings_ast = source_select_pre_returning_settings_ast ? source_select_pre_returning_settings_ast->clone() : ASTPtr{};
+            collect_top_level_source_settings(source_top_level_settings_ast);
+            merge_settings_ast(settings_ast, source_top_level_settings_ast);
+        }
+
     }
 
     /// In case of defined format, data follows it -- but only for inline-data INSERTs.
@@ -353,7 +627,12 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->columns = columns;
     query->format = std::move(format_str);
     query->select = select;
+    query->returning_select = returning_select;
     query->settings_ast = settings_ast;
+    query->source_select_pre_returning_settings_ast = source_select_pre_returning_settings_ast;
+    query->source_select_settings_ast = source_select_settings_ast;
+    query->source_select_settings_runtime_ast = source_select_settings_runtime_ast;
+    query->source_select_settings_global_ast = source_select_settings_global_ast;
     query->data = data != end ? data : nullptr;
     query->end = data ? end : nullptr;
 
@@ -361,8 +640,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->children.push_back(columns);
     if (select)
         query->children.push_back(select);
+    if (source_select_pre_returning_settings_ast)
+        query->children.push_back(source_select_pre_returning_settings_ast);
+    if (returning_select)
+        query->children.push_back(returning_select);
     if (settings_ast)
         query->children.push_back(settings_ast);
+    if (source_select_settings_ast)
+        query->children.push_back(source_select_settings_ast);
 
     return true;
 }

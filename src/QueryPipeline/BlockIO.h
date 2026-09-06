@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <Common/QueryScope.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/ProcessorsProfileLogInfo.h>
@@ -12,12 +13,21 @@ namespace DB
 {
 
 class ProcessListEntry;
+class QueryMetadataCache;
+using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 
 struct QueryPipelineFinalizedInfo
 {
     std::optional<ResultProgress> result_progress;
     VectorWithMemoryTracking<ProcessorsProfileLogInfo> processors_profile_infos;
     String pipeline_dump;
+};
+
+/// Shared by BlockIO finish callbacks; must outlive executeQueryImpl stack frame.
+struct BlockIOFinishCallbackState
+{
+    bool pulling_pipeline_at_setup = false;
+    bool insert_returning_result_as_select = false;
 };
 
 struct BlockIO
@@ -38,6 +48,11 @@ struct BlockIO
     VectorWithMemoryTracking<std::shared_ptr<ProcessListEntry>> process_list_entries;
 
     QueryPipeline pipeline;
+    /// Strong owner for query-scoped metadata cache (e.g. shared storage snapshots).
+    /// Needed for delayed `INSERT ... RETURNING` pipelines where query context stores only a weak pointer.
+    QueryMetadataCachePtr query_metadata_cache;
+
+    std::shared_ptr<BlockIOFinishCallbackState> finish_callback_state;
 
     /// The finalize_query_pipeline function is called once to flush the pipeline progress and reset it.
     /// Then all finish callbacks are called with the resulting QueryPipelineFinalizedInfo.
