@@ -1947,6 +1947,31 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     is_special_function_in = false;
                     is_special_function_exists = true;
                 }
+
+                /// `exists` returns a plain UInt8 and its WHERE uses `equals`, so the lowered form cannot
+                /// return the NULL that IN requires for a NULL left argument. Wrap it in
+                /// `if(isNull(x), NULL, ...)`, outside the `not`, so NULL propagates instead of negating.
+                auto in_first_argument_type = getExpressionNodeResultTypeOrNull(in_first_argument);
+                if (!scope.context->getSettingsRef()[Setting::transform_null_in]
+                    && in_first_argument->as<ColumnNode>()
+                    && in_first_argument_type && canContainNull(*in_first_argument_type))
+                {
+                    auto is_null_function_node = std::make_shared<FunctionNode>("isNull");
+                    is_null_function_node->getArguments().getNodes() = {in_first_argument};
+
+                    auto null_constant_node = std::make_shared<ConstantNode>(
+                        Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
+
+                    auto if_function_node = std::make_shared<FunctionNode>("if");
+                    if_function_node->getArguments().getNodes()
+                        = {std::move(is_null_function_node), std::move(null_constant_node), node};
+
+                    function_node_ptr = if_function_node;
+                    node = function_node_ptr;
+                    function_name = "if";
+                    is_special_function_in = false;
+                    is_special_function_exists = false;
+                }
             }
         }
     }
