@@ -12,6 +12,9 @@ SET optimize_read_in_order = 1;
 SET read_in_order_use_buffering = 1;
 SET use_skip_indexes_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 0;
+-- Per-block virtual rows are an alternative to chunk buffering for read-in-order; with them enabled
+-- the pipeline drops BufferChunks. Pin to the default so a randomized run doesn't change the counts.
+SET read_in_order_use_virtual_row_per_block = 0;
 
 SELECT count() FROM
 (

@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-replicated-database, no-random-settings, no-random-merge-tree-settings
 # no-replicated-database: hypothetical indexes are session-scoped and not replicated
+# no-random-settings, no-random-merge-tree-settings: the empirical WHATIF estimator
+#   measures skip ratio over an exact PK/partition-pruned baseline. Settings that shift
+#   part/mark selection (e.g. materialize_statistics_on_insert + use_statistics_for_part_pruning,
+#   which can prune the baseline part entirely so tryEstimateEmpirical sees 0 granules and
+#   falls back to source=applicability_only) change the reported skip_ratio and source.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

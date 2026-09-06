@@ -2,6 +2,12 @@
 SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 SET query_plan_push_limit_by_into_sort = 1;
+-- This is the feature under test: it lets `LIMIT BY key` use the in-order
+-- LimitBySortedStreamTransform when the input is already sorted by the LIMIT BY
+-- key (e.g. the `ORDER BY key` table below queried without an explicit ORDER BY).
+-- Settings randomization may inject optimize_limit_by_in_order=0, which drops that
+-- case back to a plain LimitByTransform and breaks the "Sorted w/o ORDER BY" assertion.
+SET optimize_limit_by_in_order = 1;
 
 DROP TABLE IF EXISTS 03701_unsorted, 03701_sorted;
 

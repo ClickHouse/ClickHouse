@@ -10,6 +10,7 @@ SET enable_join_transitive_predicates = 1;
 SET materialize_statistics_on_insert = 1;
 SET collect_hash_table_stats_during_joins = 0;
 
+SET query_plan_optimize_join_order_max_searched_plans = 100000; -- pin (randomized in CI): a small search budget starves DP-only algorithms
 DROP TABLE IF EXISTS e1;
 DROP TABLE IF EXISTS e2;
 DROP TABLE IF EXISTS e3;

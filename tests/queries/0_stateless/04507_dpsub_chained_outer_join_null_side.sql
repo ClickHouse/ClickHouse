@@ -29,7 +29,7 @@ FROM t1
 LEFT JOIN t2 ON t1.id = t2.id AND t1.value = 'Join_1_Value_0' AND t2.value = 'Join_2_Value_0'
 LEFT JOIN t3 ON t2.id = t3.id AND t2.value = 'Join_2_Value_0' AND t3.value = 'Join_3_Value_0'
 ORDER BY ALL
-SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub';
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_max_searched_plans = 100000;
 
 SELECT 'unshared predicate: default';
 SELECT t1.id, t3.value
@@ -44,7 +44,10 @@ FROM t1
 LEFT JOIN t2 ON t1.id = t2.id AND t1.value = 'Join_1_Value_0'
 LEFT JOIN t3 ON t2.id = t3.id AND t2.value = 'Join_2_Value_0' AND t3.value = 'Join_3_Value_0'
 ORDER BY ALL
-SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub';
+-- Pin the search budget to the default: with only 'dpsub' enabled (no 'greedy' fallback), a
+-- randomized small query_plan_optimize_join_order_max_searched_plans makes dpsub exceed the
+-- budget, find no plan and throw EXPERIMENTAL_FEATURE_ERROR before the result sets are compared.
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_max_searched_plans = 100000;
 
 DROP TABLE t1;
 DROP TABLE t2;

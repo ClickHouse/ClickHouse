@@ -3,6 +3,11 @@
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 
 SET explain_query_plan_default = 'legacy';
+-- The EXPLAIN below shows the coalesce/ifNull key-condition rewrite, so pin it on.
+SET allow_key_condition_coalesce_rewrite = 1;
+-- Pin folding off: with it on, the folded filter lets count() use the implicit
+-- count projection, adding a _exact_count_projection source to the plan.
+SET use_constant_folding_in_index_analysis = 0;
 
 -- { echoOn }
 

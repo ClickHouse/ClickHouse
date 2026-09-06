@@ -15,6 +15,9 @@
 
 SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
+-- Keep uniq auto-stats un-materialized on insert so dphyp's join order stays
+-- deterministic under settings randomization (materialize_statistics_on_insert).
+SET materialize_statistics_on_insert = 0;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_limit = 10;
@@ -23,6 +26,7 @@ SET explain_query_plan_default = 'legacy';
 -- The EXPLAIN below pins one of several equal-cost plans, so the choice must not be randomized.
 SET query_plan_optimize_join_order_randomize = 0;
 
+SET query_plan_optimize_join_order_max_searched_plans = 100000; -- pin (randomized in CI): a small search budget starves DP-only algorithms
 CREATE TABLE tri_hub  (id UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';
 CREATE TABLE tri_arm1 (id UInt32, hub_id UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';
 CREATE TABLE tri_arm2 (id UInt32, hub_id UInt32, a1_id UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';

@@ -24,3 +24,4 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryF
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_lwd_index;
+
