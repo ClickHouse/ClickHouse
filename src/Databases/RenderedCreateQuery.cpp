@@ -59,6 +59,8 @@ RenderedCreateQueryPtr renderCreateQuery(const ASTPtr & ast, const RenderOptions
 
     auto * ast_create = ast->as<ASTCreateQuery>();
 
+    rendered->is_dictionary = ast_create && ast_create->is_dictionary;
+
     if (ast_create && !options.show_uuid)
     {
         ast_create->uuid = UUIDHelpers::Nil;

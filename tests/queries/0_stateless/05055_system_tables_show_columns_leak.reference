@@ -1,0 +1,44 @@
+--- column-scoped SELECT only: row visible, schema hidden ---
+secret
+0	0	0	0	0	0	0
+0
+0
+ACCESS_DENIED
+ACCESS_DENIED
+--- SHOW COLUMNS granted: schema visible ---
+1	1	1	1	1	1	1
+1
+1
+--- table-level SELECT implies SHOW COLUMNS: schema visible ---
+1	1	1	1	1	1	1
+1
+1
+--- SHOW TABLES only: schema hidden, and the gate reaches information_schema ---
+0	0	0	0	0	0	0
+0
+0
+1
+--- a dictionary's CREATE query follows SHOW CREATE DICTIONARY, not SHOW COLUMNS ---
+0	0	0
+0
+1	0	0
+0
+CREATE DICTIONARY
+ACCESS_DENIED
+--- another database's table names are filtered out of the dependency arrays ---
+1	1
+1	1
+1
+1
+1	1
+1	1
+0	1
+0	1
+0
+1
+0	0
+1	1
+--- each dependency pair stays index-aligned ---
+1	1	1
+1	1	1
+1	1	1

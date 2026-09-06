@@ -35,6 +35,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageDictionary.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
@@ -566,6 +567,15 @@ protected:
 
         const auto access = context->getAccess();
         const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
+        const bool need_to_check_access_for_columns = !access->isGranted(AccessType::SHOW_COLUMNS);
+
+        /// The name of another table is `SHOW TABLES`-grade information about that table, so it is
+        /// checked against that table, not against the row being emitted.
+        auto is_dependency_visible = [&](const StorageID & dependency_id)
+        {
+            return !need_to_check_access_for_databases
+                || access->isGranted(AccessType::SHOW_TABLES, dependency_id.database_name, dependency_id.table_name);
+        };
 
         size_t rows_count = 0;
         while (rows_count < max_block_size)
@@ -582,6 +592,8 @@ protected:
                         const auto * alias = table.second->as<StorageAlias>();
                         const bool can_expose_metadata
                             = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {});
+                        const bool can_show_columns_temp
+                            = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {});
                         size_t src_index = 0;
                         size_t res_index = 0;
 
@@ -634,7 +646,7 @@ protected:
                         if (columns_mask[src_index++])
                         {
                             auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
-                            ASTPtr ast = can_expose_metadata && temp_db
+                            ASTPtr ast = can_expose_metadata && can_show_columns_temp && temp_db
                                 ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context)
                                 : nullptr;
                             res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
@@ -650,13 +662,15 @@ protected:
                             if (src_index == 14 && columns_mask[src_index])
                             {
                                 // parameterized view parameters
-                                fillParametralizedViewData(res_columns, can_expose_metadata ? table.second : nullptr, res_index);
+                                fillParametralizedViewData(
+                                    res_columns, can_expose_metadata && can_show_columns_temp ? table.second : nullptr, res_index);
                             }
                             // skipping_indices_types
                             else if (src_index == 20 && columns_mask[src_index])
                             {
-                                const auto metadata_snapshot
-                                    = can_expose_metadata ? table.second->getInMemoryMetadataPtr(context, false) : nullptr;
+                                const auto metadata_snapshot = can_expose_metadata && can_show_columns_temp
+                                    ? table.second->getInMemoryMetadataPtr(context, false)
+                                    : nullptr;
                                 fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
                             }
                             else if (src_index == 22 && columns_mask[src_index])
@@ -758,6 +772,21 @@ protected:
                 const bool can_expose_metadata
                     = table && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}));
 
+                /// A table's schema -- its columns, their types, and any expression, index or view
+                /// parameter defined over them -- is `SHOW COLUMNS`-grade information, which is the
+                /// privilege `DESCRIBE` and `SHOW CREATE TABLE` require for the same object.
+                const bool can_show_columns = !need_to_check_access_for_columns
+                    || (access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name)
+                        && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {})));
+
+                /// `SHOW CREATE DICTIONARY` is authorized by `SHOW DICTIONARIES`, which `SHOW COLUMNS` does not
+                /// imply, so that privilege alone makes a dictionary's CREATE query readable. A non-null
+                /// configuration holds exactly for a `CREATE DICTIONARY` object.
+                const auto * storage_dictionary = table ? table->as<StorageDictionary>() : nullptr;
+                const bool can_show_create_query = can_show_columns
+                    || (storage_dictionary && storage_dictionary->getConfiguration()
+                        && access->isGranted(AccessType::SHOW_DICTIONARIES, database_name, table_name));
+
                 TableLockHolder lock;
 
                 /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
@@ -844,6 +873,8 @@ protected:
                         views_database_name_array.reserve(view_ids.size());
                         for (const auto & view_id : view_ids)
                         {
+                            if (!is_dependency_visible(view_id))
+                                continue;
                             views_table_name_array.push_back(view_id.table_name);
                             views_database_name_array.push_back(view_id.database_name);
                         }
@@ -867,9 +898,15 @@ protected:
                         .engine_full = columns_mask[src_index + 1] != 0,
                         .as_select = columns_mask[src_index + 2] != 0};
 
-                    auto rendered = can_expose_metadata
+                    auto rendered = can_expose_metadata && can_show_create_query
                         ? database->getRenderedCreateTableQuery(table_name, context, fields)
                         : renderCreateQuery(nullptr, RenderOptions{}, fields);
+
+                    /// The dictionary disjunct is decided on the object the iterator captured, while
+                    /// the rendering resolves the name again. Emit it only when that one rendering is
+                    /// itself a dictionary, as `SHOW CREATE DICTIONARY` requires.
+                    if (!can_show_columns && !rendered->is_dictionary)
+                        rendered = renderCreateQuery(nullptr, RenderOptions{}, fields);
 
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(rendered->create_table_query);
@@ -885,12 +922,12 @@ protected:
 
                 // parameterized view parameters
                 if (columns_mask[src_index++])
-                    fillParametralizedViewData(res_columns, can_expose_metadata ? table : nullptr, res_index);
+                    fillParametralizedViewData(res_columns, can_expose_metadata && can_show_columns ? table : nullptr, res_index);
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
+                    if (can_show_columns && metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -898,7 +935,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
+                    if (can_show_columns && metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -906,7 +943,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
+                    if (can_show_columns && metadata_snapshot && (expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -914,7 +951,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSamplingKeyAST()))
+                    if (can_show_columns && metadata_snapshot && (expression_ptr = metadata_snapshot->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -922,14 +959,15 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getUniqueKeyAST()))
+                    if (can_show_columns && metadata_snapshot && (expression_ptr = metadata_snapshot->getUniqueKeyAST()))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
                 }
 
                 if (columns_mask[src_index++])
-                    fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
+                    fillSkippingIndicesTypes(
+                        res_columns, can_show_columns ? StorageMetadataPtr(metadata_snapshot) : nullptr, res_index);
 
                 if (columns_mask[src_index++])
                 {
@@ -1100,6 +1138,8 @@ protected:
                     dependencies_tables.reserve(dependencies.size());
                     for (const auto & dependency : dependencies)
                     {
+                        if (!is_dependency_visible(dependency))
+                            continue;
                         dependencies_databases.push_back(dependency.database_name);
                         dependencies_tables.push_back(dependency.table_name);
                     }
@@ -1110,6 +1150,8 @@ protected:
                     dependents_tables.reserve(dependents.size());
                     for (const auto & dependent : dependents)
                     {
+                        if (!is_dependency_visible(dependent))
+                            continue;
                         dependents_databases.push_back(dependent.database_name);
                         dependents_tables.push_back(dependent.table_name);
                     }
@@ -1136,8 +1178,11 @@ protected:
                     if (auto * mv = table ? dynamic_cast<StorageMaterializedView *>(table.get()) : nullptr)
                     {
                         const auto target_id = mv->getTargetTableId();
-                        target_database = target_id.database_name;
-                        target_table = target_id.table_name;
+                        if (is_dependency_visible(target_id))
+                        {
+                            target_database = target_id.database_name;
+                            target_table = target_id.table_name;
+                        }
                     }
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(target_database);
