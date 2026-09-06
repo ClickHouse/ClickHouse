@@ -121,7 +121,7 @@ SELECT count() AS `count()`\nFROM\n(\n    SELECT divide(__table2.number, 2.) AS 
 2
 2
 sole_survivor_uint32
-SELECT count() AS `count()`\nFROM\n(\n    SELECT\n        toUInt32(multiply(__table2.number, 256)) AS x,\n        toInt8(__table2.number) AS i\n    FROM numbers(3) AS __table2\n) AS __table1\nWHERE notEquals(__table1.x, 0)\nSETTINGS optimize_redundant_comparisons = 1
+SELECT count() AS `count()`\nFROM\n(\n    SELECT\n        toUInt32(multiply(__table2.number, 256)) AS x,\n        toInt8(__table2.number) AS i\n    FROM numbers(3) AS __table2\n) AS __table1\nWHERE and(__table1.x, 1)\nSETTINGS optimize_redundant_comparisons = 1
 2
 2
 sole_survivor_projection
