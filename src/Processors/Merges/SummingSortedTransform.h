@@ -15,6 +15,30 @@ namespace DB
 class SummingSortedTransform final : public IMergingTransform<SummingSortedAlgorithm>
 {
 public:
+    static constexpr auto sum_function_name = "sumWithOverflow";
+    static constexpr auto sum_function_map_name = "sumMapWithOverflow";
+    static constexpr bool remove_default_values = true;
+    static constexpr bool aggregate_all_columns = false;
+
+    /// See `SummingSortedAlgorithm::getAggregatedColumnNames`.
+    static NameSet getAggregatedColumnNames(
+        const Block & sample_header,
+        const SortDescription & sort_description,
+        const Names & column_names_to_sum,
+        const Names & partition_and_sorting_required_columns,
+        bool allow_tuple_element_aggregation)
+    {
+        return SummingSortedAlgorithm::getAggregatedColumnNames(
+            sample_header,
+            sort_description,
+            column_names_to_sum,
+            partition_and_sorting_required_columns,
+            sum_function_name,
+            sum_function_map_name,
+            remove_default_values,
+            aggregate_all_columns,
+            allow_tuple_element_aggregation);
+    }
 
     SummingSortedTransform(
         SharedHeader header, size_t num_inputs,
@@ -37,10 +61,10 @@ public:
             max_block_size_rows,
             max_block_size_bytes,
             max_dynamic_subcolumns_,
-            "sumWithOverflow",
-            "sumMapWithOverflow",
-            true,
-            false,
+            sum_function_name,
+            sum_function_map_name,
+            remove_default_values,
+            aggregate_all_columns,
             allow_tuple_element_aggregation)
     {
     }

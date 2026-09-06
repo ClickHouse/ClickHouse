@@ -37,6 +37,7 @@
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -2171,12 +2172,39 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-/// Returns the list of column names required for the transforms in addMergingFinal
-static NameSet getColumnsRequiredForMergingFinal(
-    const SortDescription & sort_description, const StorageMetadataPtr & metadata_snapshot, MergeTreeData::MergingParams merging_params)
+/// Names of the columns that a merge of a Summing table aggregates.
+/// The merge removes a row when the values in all of these columns are zero after summation,
+/// so a FINAL read has to fetch every one of them even when the query itself needs only
+/// a subset. Otherwise `SummingSortedTransform` would decide the removal by the visible
+/// subset alone and drop rows that a real merge keeps (because some column that the query
+/// does not read sums to a non-zero value).
+///
+/// The set is computed by the merge algorithm itself, so that the read set stays exactly aligned
+/// with what a real merge aggregates. In particular, a `...Map` group that the algorithm rejects
+/// (a single column, a non-integer key or a non-summable value) is only copied by the merge and
+/// is not read here.
+static NameSet getColumnsAggregatedForSummingFinal(
+    const StorageMetadataPtr & metadata_snapshot, const MergeTreeData::MergingParams & merging_params)
 {
-    NameSet required_columns = sort_description | std::views::transform([](const SortColumnDescription & desc) { return desc.column_name; })
-        | std::ranges::to<NameSet>();
+    SortDescription sort_description;
+    for (const auto & column_name : metadata_snapshot->getSortingKeyColumns())
+        sort_description.emplace_back(column_name);
+
+    auto partition_and_sorting_required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
+    partition_and_sorting_required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
+
+    return SummingSortedTransform::getAggregatedColumnNames(
+        metadata_snapshot->getSampleBlock(),
+        sort_description,
+        merging_params.columns_to_sum,
+        partition_and_sorting_required_columns,
+        merging_params.allow_tuple_element_aggregation);
+}
+
+NameSet getColumnsRequiredForMergingFinal(
+    const StorageMetadataPtr & metadata_snapshot, const MergeTreeData::MergingParams & merging_params)
+{
+    NameSet required_columns;
     /// The merge always orders by the physical sorting key, so those columns must be read even when
     /// they are not in the query output (e.g. a sorting-key column moved to PREWHERE and pruned from
     /// the output header would otherwise be dropped, leaving the merge without its key column).
@@ -2189,9 +2217,11 @@ static NameSet getColumnsRequiredForMergingFinal(
         case MergeTreeData::MergingParams::Aggregating:
             [[fallthrough]];
         case MergeTreeData::MergingParams::Coalescing:
-            [[fallthrough]];
-        case MergeTreeData::MergingParams::Summing:
             break;
+        case MergeTreeData::MergingParams::Summing: {
+            required_columns.merge(getColumnsAggregatedForSummingFinal(metadata_snapshot, merging_params));
+            break;
+        }
         case MergeTreeData::MergingParams::VersionedCollapsing:
             [[fallthrough]];
         case MergeTreeData::MergingParams::Collapsing: {
@@ -2211,6 +2241,15 @@ static NameSet getColumnsRequiredForMergingFinal(
             break;
     }
     required_columns.erase(""); // remove empty column names
+    return required_columns;
+}
+
+/// Returns the list of column names required for the transforms in addMergingFinal.
+static NameSet getColumnsRequiredForMergingFinal(
+    const SortDescription & sort_description, const StorageMetadataPtr & metadata_snapshot, const MergeTreeData::MergingParams & merging_params)
+{
+    NameSet required_columns = getColumnsRequiredForMergingFinal(metadata_snapshot, merging_params);
+    required_columns.insert_range(sort_description | std::views::transform([](const SortColumnDescription & desc) { return desc.column_name; }));
     return required_columns;
 }
 
@@ -2276,6 +2315,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     size_t num_streams,
     const Names & origin_column_names,
     const Names & column_names,
+    const NameSet & extra_columns_required_by_the_merge,
     std::optional<ActionsDAG> & out_projection)
 {
     const size_t total_marks_to_read = parts_with_ranges.getMarksCountAllParts();
@@ -2346,6 +2386,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             columns_to_restore.insert(data.merging_params.sign_column);
         if (!data.merging_params.is_deleted_column.empty())
             columns_to_restore.insert(data.merging_params.is_deleted_column);
+        columns_to_restore.insert(extra_columns_required_by_the_merge.begin(), extra_columns_required_by_the_merge.end());
         restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), columns_to_restore);
     }
 
@@ -4248,12 +4289,92 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         if (!data.merging_params.version_column.empty() && names.emplace(data.merging_params.version_column).second)
             column_names_to_read.push_back(data.merging_params.version_column);
 
+        /// A Summing merge decides whether to remove a row by looking at all aggregated columns,
+        /// so the read has to fetch all of them even when the query needs only a subset of them.
+        NameSet columns_required_by_the_summing_merge;
+        /// The subset of the above that is read as a column of its own (not through a tuple ancestor).
+        NameSet aggregated_columns_in_the_read_set;
+        if (data.merging_params.mode == MergeTreeData::MergingParams::Summing)
+        {
+            const auto aggregated_columns = getColumnsAggregatedForSummingFinal(storage_snapshot->metadata, data.merging_params);
+            /// Preserve merge-header order. It matters for `Nested ...Map`: `sumMap` receives
+            /// its key and value arrays as a group, and tuple leaves are in flattening order.
+            auto header = storage_snapshot->metadata->getSampleBlock();
+            /// The tuple paths every flattened leaf descends from: the root column and every
+            /// intermediate tuple. A leaf whose ancestor the query already reads is covered by
+            /// that ancestor, and the merge flattens the ancestor again on its own, so requesting
+            /// the leaf in addition would read the same data twice.
+            std::vector<Strings> flattened_ancestors;
+            if (data.merging_params.allow_tuple_element_aggregation)
+                header = Nested::flattenTupleRecursive(header, &flattened_ancestors);
+            /// The column that carries a flattened leaf into the merge: the outermost tuple ancestor
+            /// the read set already contains. `flattened_ancestors` lists ancestors from the root
+            /// column inwards, so the first match is the outermost one - and picking the outermost
+            /// keeps a single carrier per leaf when several ancestors of the same leaf are read.
+            auto covering_ancestor = [&](size_t position) -> const String *
+            {
+                if (position >= flattened_ancestors.size())
+                    return nullptr;
+                for (const auto & ancestor : flattened_ancestors[position])
+                    if (names.contains(ancestor))
+                        return &ancestor;
+                return nullptr;
+            };
+            for (size_t position = 0; const auto & column : header)
+            {
+                if (aggregated_columns.contains(column.name))
+                {
+                    /// Whichever column carries the leaf has to reach the merge, so remember it:
+                    /// a `PREWHERE` consumes its inputs, and a carrier that is only a `PREWHERE`
+                    /// input (a tuple ancestor such as `tup.inner`) is not in the query output and
+                    /// would be dropped from the block after filtering, leaving the merge to decide
+                    /// row removal without the leaves that ancestor covers.
+                    if (const auto * ancestor = covering_ancestor(position))
+                    {
+                        columns_required_by_the_summing_merge.insert(*ancestor);
+                    }
+                    else
+                    {
+                        columns_required_by_the_summing_merge.insert(column.name);
+                        aggregated_columns_in_the_read_set.insert(column.name);
+                        if (names.emplace(column.name).second)
+                            column_names_to_read.push_back(column.name);
+                    }
+                }
+                ++position;
+            }
+
+            /// Appending in merge-header order is not enough: a column the query selects itself keeps
+            /// the position the query gave it, which can be ahead of the columns appended here.
+            /// `SummingSortedAlgorithm::defineColumns` reads a `...Map` group positionally - the first
+            /// array of the group is a key column - so `SELECT GoodMap.V FROM t FINAL` would hand the
+            /// merge `GoodMap.V` before `GoodMap.ID` and turn a valid one-key map into the
+            /// composite-key `mergeMap` path. Normalize the whole aggregated read set to the merge
+            /// header order, leaving the other columns where they are.
+            std::vector<size_t> aggregated_positions;
+            for (size_t position = 0; position < column_names_to_read.size(); ++position)
+                if (aggregated_columns_in_the_read_set.contains(column_names_to_read[position]))
+                    aggregated_positions.push_back(position);
+
+            size_t slot = 0;
+            for (const auto & column : header)
+            {
+                if (!aggregated_columns_in_the_read_set.contains(column.name))
+                    continue;
+                chassert(slot < aggregated_positions.size());
+                column_names_to_read[aggregated_positions[slot]] = column.name;
+                ++slot;
+            }
+            chassert(slot == aggregated_positions.size());
+        }
+
         return spreadMarkRangesAmongStreamsFinal(
             std::move(parts_with_ranges),
             index_build_context,
             num_streams,
             original_column_names,
             column_names_to_read,
+            columns_required_by_the_summing_merge,
             result_projection);
     }
 

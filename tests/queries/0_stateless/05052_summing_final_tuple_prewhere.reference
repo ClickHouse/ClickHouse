@@ -1,0 +1,22 @@
+--- an intermediate tuple subcolumn in PREWHERE
+1
+1
+1
+1
+--- the whole tuple in PREWHERE
+1
+1
+--- WHERE with optimize_move_to_prewhere_if_final
+1	0
+1	0
+1
+1
+--- the tuple is also in the output
+1	(0,(10,0))
+1	(0,(10,0))
+--- a summed column in PREWHERE
+1
+1
+--- the state after a real merge
+1
+1	0	(0,(10,0))

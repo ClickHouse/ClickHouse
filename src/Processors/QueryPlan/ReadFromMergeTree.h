@@ -25,6 +25,11 @@ using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadRespon
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
+/// Returns the physical columns required by a MergeTree FINAL merge even when they are
+/// not part of the query result.
+NameSet getColumnsRequiredForMergingFinal(
+    const StorageMetadataPtr & metadata_snapshot, const MergeTreeData::MergingParams & merging_params);
+
 class LazilyReadFromMergeTree;
 struct QueryIdHolder;
 
@@ -669,6 +674,7 @@ private:
         size_t num_streams,
         const Names & origin_column_names,
         const Names & column_names,
+        const NameSet & extra_columns_required_by_the_merge,
         std::optional<ActionsDAG> & out_projection);
 
     /// Reads non-intersecting primary-key ranges (each owned by a single deduplicated part) without a

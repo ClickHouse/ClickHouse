@@ -952,6 +952,13 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
         {
             auto columns_required_for_final = storage_snapshot->metadata->getColumnsRequiredForFinal();
             required_columns.insert(columns_required_for_final.begin(), columns_required_for_final.end());
+
+            if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
+            {
+                auto columns_required_for_merging_final
+                    = getColumnsRequiredForMergingFinal(storage_snapshot->metadata, merge_tree->merging_params);
+                required_columns.insert(columns_required_for_merging_final.begin(), columns_required_for_merging_final.end());
+            }
         }
     }
 
