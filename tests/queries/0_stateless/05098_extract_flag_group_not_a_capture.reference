@@ -1,0 +1,19 @@
+a pure flag group
+Bcd	Bcd
+bcd	bcd
+Bcd
+a scoped flag group
+Bcd	Bcd
+Bcd
+a real capture group still allows the rewrite
+b	b
+b	b
+and the pattern without the tail is unchanged
+B	b
+the same over a table
+aBcd	Bcd
+abcd	bcd
+zz	
+aBcd	Bcd
+abcd	bcd
+zz	
