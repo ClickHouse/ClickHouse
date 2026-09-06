@@ -71,6 +71,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
+extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 const KeyCondition::AtomMap KeyCondition::atom_map
@@ -4146,7 +4147,18 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                                 return false;
                         }
 
-                        const_value = convertFieldToType(const_value, *key_expr_type_not_null);
+                        try
+                        {
+                            const_value = convertFieldToType(const_value, *key_expr_type_not_null);
+                        }
+                        catch (const Exception & e)
+                        {
+                            if (e.code() != ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
+                                throw;
+                            /// A string naming no element of the Enum key is not a point in the key
+                            /// domain, so this atom cannot be analyzed.
+                            return false;
+                        }
                         if (const_value.isNull())
                             return false;
                         /// No need to set condition_is_relaxed because we're doing exact conversion

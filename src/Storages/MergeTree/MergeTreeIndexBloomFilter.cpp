@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_)
@@ -773,6 +774,23 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 }
 
 
+/// Like convertFieldToType, but a string naming no element of an Enum index type yields a null
+/// Field instead of throwing: every caller already treats null as "the index cannot be used".
+static Field convertFieldToIndexType(
+    const Field & value_field, const IDataType & actual_type, const IDataType * value_type_hint = nullptr)
+{
+    try
+    {
+        return convertFieldToType(value_field, actual_type, value_type_hint);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
+            throw;
+        return {};
+    }
+}
+
 /// The array-search functions coerce the constant with CAST before comparing it to the elements:
 /// `hasAny`/`hasAll`, and `has`/`indexOf` over a `FixedString` element, cast both sides to the least
 /// supertype (hasAllAny.h, arrayIndex.h `executeGeneric`), and `has`/`indexOf` over a `LowCardinality`
@@ -835,7 +853,7 @@ static Field convertConstantForArrayIndexFunction(
     const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & nested_type, const DataTypePtr & actual_type)
 {
     if (WhichDataType(removeNullable(nested_type)).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
-        return convertFieldToType(value_field, *actual_type, value_type.get());
+        return convertFieldToIndexType(value_field, *actual_type, value_type.get());
 
     return coerceStringFieldLikeSearchFunction(value_field, value_type, actual_type, /*cast_to_supertype=*/ !nested_type->lowCardinality());
 }
@@ -873,7 +891,7 @@ static ColumnPtr createColumnFromConstantArray(
 
         Field converted = coerce
             ? coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true)
-            : convertFieldToType(f, *actual_type);
+            : convertFieldToIndexType(f, *actual_type);
         if (converted.isNull())
             return nullptr;
 
@@ -1081,7 +1099,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     return false;
             }
 
-            auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+            auto converted_field = convertFieldToIndexType(value_field, *actual_type, value_type.get());
             if (converted_field.isNull())
                 return false;
 
@@ -1154,7 +1172,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
         Field converted_field = element_type
             ? convertConstantForArrayIndexFunction(value_field, value_type, element_type, actual_type)
-            : convertFieldToType(value_field, *actual_type, value_type.get());
+            : convertFieldToIndexType(value_field, *actual_type, value_type.get());
         if (converted_field.isNull())
             return false;
 
