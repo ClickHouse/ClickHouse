@@ -1,0 +1,7 @@
+<test>
+    <!-- The bucket-local Top-K conversion visits every group of every bucket, so a high group
+         count over a small scan makes the conversion, not the scan, the measured cost. -->
+
+    <query>SELECT URL, count() AS c FROM hits_10m_single GROUP BY URL ORDER BY c DESC LIMIT 10 SETTINGS query_plan_aggregation_bucket_top_k = 1 FORMAT Null</query>
+    <query>SELECT UserID, SearchPhrase, count() AS c FROM hits_10m_single GROUP BY UserID, SearchPhrase ORDER BY c DESC LIMIT 10 SETTINGS query_plan_aggregation_bucket_top_k = 1 FORMAT Null</query>
+</test>
