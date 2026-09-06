@@ -4811,6 +4811,51 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             distributed_read_task_buckets.push_back(std::move(bucket));
         }
 
+        /// The coordinator's marks are authoritative here: they overwrite this read's own ranges below and
+        /// in `spreadMarkRangesAmongStreamsFinal`, so a coordinator-selected part the local analysis pruned
+        /// is still readable. Only a part absent from the storage snapshot means the replica diverged.
+        {
+            /// Drained as each coordinator-selected part is accounted for; what is left is unavailable here.
+            NameSet coordinator_parts;
+            for (const auto & bucket : distributed_read_task_buckets)
+                for (const auto & part_desc : bucket.marks)
+                    coordinator_parts.insert(part_desc.info.getPartNameV1());
+            for (const auto & part : result.parts_with_ranges)
+                coordinator_parts.erase(part.data_part->info.getPartNameV1());
+
+            if (!coordinator_parts.empty())
+            {
+                RangesInDataParts restored;
+                if (prepared_parts)
+                {
+                    for (const auto & part : *prepared_parts)
+                    {
+                        if (coordinator_parts.erase(part.data_part->info.getPartNameV1()))
+                            restored.push_back(part);
+                    }
+                }
+
+                if (!coordinator_parts.empty())
+                    throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
+                        "Distributed read: part {} selected by the coordinator is not available on this replica "
+                        "(diverged by merge or replication lag); retry the query", *coordinator_parts.begin());
+
+                result.parts_with_ranges.insert(result.parts_with_ranges.end(), restored.begin(), restored.end());
+
+                /// `part_index_in_query` keys the per-part maps of `MergeTreeIndexBuildContext`.
+                chassert(
+                    [&]
+                    {
+                        std::unordered_set<size_t> part_indices;
+                        for (const auto & part : result.parts_with_ranges)
+                            if (!part_indices.insert(part.part_index_in_query).second)
+                                return false;
+                        return true;
+                    }(),
+                    "Duplicate part_index_in_query after restoring coordinator-selected parts");
+            }
+        }
+
         /// A FINAL worker keeps all local parts and resolves each lane's marks against them in
         /// `spreadMarkRangesAmongStreamsFinal`. A non-FINAL read has one bucket: pin its marks here so the
         /// plain read path reads exactly them.
