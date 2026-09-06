@@ -21,6 +21,17 @@
 namespace DB::QueryPlanOptimizations
 {
 
+/// True if a value of this type can contain a floating-point number anywhere inside it - directly,
+/// or nested in a `Nullable`, `Array`, `Tuple`, `Map`, ... (`forEachChild` recurses on its own).
+static bool typeCanContainFloat(const DataTypePtr & type)
+{
+    if (isFloat(type))
+        return true;
+    bool found = false;
+    type->forEachChild([&](const IDataType & child) { found = found || isFloat(child); });
+    return found;
+}
+
 /// TopN dynamic filtering for sources that read data formats (e.g. Parquet files). There are no
 /// marks or skip indexes here, so only the dynamic-filtering path applies, and it is delivered
 /// through `FormatTopKFilterInfo` rather than an injected PREWHERE: the format appends the
@@ -51,6 +62,17 @@ static size_t tryTopKForFormatSource(
     const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
     if (isDynamic(sort_column.type) || isVariant(sort_column.type)
         || (sort_column_is_variable_length && !settings.use_top_k_dynamic_filtering_for_variable_length_types))
+        return 0;
+
+    /// `ORDER BY` sorts `nan` together with `NULL` (see `SortColumnDescription::nulls_direction`),
+    /// but the comparison functions behind `__topKFilter` do not: a `nan` can become the published
+    /// threshold and then reject every finite value, or be dropped under `NULLS FIRST`. That is a
+    /// pre-existing defect of the `MergeTree` path, tracked in
+    /// https://github.com/ClickHouse/ClickHouse/issues/116705. Formats add a second, independent
+    /// hazard: `nan` values are legally absent from Parquet min/max statistics, so a finite range
+    /// cannot prove that a row group holds no `nan` row that must sort first. Keep floating-point
+    /// sort keys off this path until both are `nan`-aware.
+    if (typeCanContainFloat(sort_column.type))
         return 0;
 
     /// The resolved sort column must be one of the source's outputs with an unchanged type: the
