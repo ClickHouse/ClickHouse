@@ -23,7 +23,7 @@ This page covers the ClickHouse sink: connecting to ClickHouse Cloud and self-ho
 ## Prerequisites {#prerequisites}
 
 - sqlflow **v1.0.5** or later. Earlier v1.0.x releases have data-fidelity problems in this path — see the version matrix — so upgrade rather than work around them.
-- ClickHouse Cloud, or self-hosted ClickHouse. Tested against 24.8 and 26.8; no minimum below that has been established.
+- ClickHouse Cloud, or self-hosted ClickHouse. The recommended sqlflow 1.0.5 was exercised against Cloud 26.2 and self-hosted 26.8. Self-hosted 24.8 was exercised with 1.0.4 only, so the version matrix records it on that row. No minimum below these has been established.
 - A Kafka broker the pipeline can reach, for the Kafka source used in the example. The WebSocket and webhook sources need no broker.
 - Python 3 with the `confluent-kafka` package (`pip install confluent-kafka`), only for the script in the example that publishes the sample data to Kafka. sqlflow itself needs no Python.
 - Docker is the simplest install — `turbolytics/sql-flow` is published multi-arch for `linux/amd64` and `linux/arm64`. sqlflow can also be built from source; it needs Go, a C toolchain, and `libduckdb` present at runtime.
