@@ -597,6 +597,19 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
     if (optimization_settings.distributed_plan_force_shuffle_aggregation && !aggregation_keys.empty())
         strategy = Shuffle;
 
+    /// Shuffle moves the aggregation step unchanged, so each of the `bucket_count` instances keeps the
+    /// promise of bucket order while ordering only its own share, and the gather cannot restore a global
+    /// order: it merges by a sort description, and the bucket number is chunk metadata, not a column.
+    /// Shuffle is therefore impossible here, so `distributed_plan_force_shuffle_aggregation` cannot
+    /// apply either, as with `GROUPING SETS` below.
+    if (aggregating_step->shouldProduceResultsInBucketOrder())
+    {
+        if (!can_use_partial_aggregation)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan does not support aggregation in order which must produce results in bucket order");
+        strategy = PartialAggregation;
+    }
+
     /// Shuffle scatters by the full key set, so GROUPING SETS subtotals (over key subsets) would be
     /// produced in several buckets and duplicated. Partial aggregation has no such problem: every
     /// worker produces partial states for every grouping set over its share of the data, tagged with
