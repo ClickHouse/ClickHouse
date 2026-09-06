@@ -16,6 +16,7 @@ struct CreateQueryDependencies
     TableNamesSet dependencies;
     std::optional<StorageID> mv_to_dependency;
     std::optional<StorageID> mv_from_dependency;
+    TableNamesSet plain_view_dependencies;
 };
 
 

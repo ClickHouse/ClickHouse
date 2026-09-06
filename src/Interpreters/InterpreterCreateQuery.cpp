@@ -1725,6 +1725,13 @@ void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_pt
     auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
     DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
+
+    /// Temporary views are session-local and must not leak into the global plain-view
+    /// dependency graph, which is exposed via `system.tables.dependencies_*` for all sessions.
+    /// `TemporaryTableHolder` re-keys such a view under `_temporary_and_external_tables._tmp_<uuid>`,
+    /// so registering it would make a permanent source table report a hidden session-local dependent.
+    if (!create.isTemporary() && !ref_dependencies.plain_view_dependencies.empty())
+        DatabaseCatalog::instance().addPlainViewDependencies(qualified_name, ref_dependencies.plain_view_dependencies);
 }
 
 void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)

@@ -1,0 +1,6 @@
+source is stored qualified	1
+before rename	['db1.rename_db_view']
+after rename	['db2.rename_db_view']
+view reads	42
+after alter	['db2.rename_db_view']
+after drop	[]
