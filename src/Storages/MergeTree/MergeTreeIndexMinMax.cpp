@@ -277,9 +277,11 @@ MergeTreeIndexSubstreams MergeTreeIndexMinMax::getAllSubstreamsInPart(
     /// minmax format changed `.idx` (v1) -> `.idx2` (v2); a part may carry both. Return every
     /// extension present, not just the preferred one, so cleanup does not miss the stale file.
     MergeTreeIndexSubstreams substreams;
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
+    if (indexFileExistsInChecksums(
+            checksums, relative_path_prefix, ".idx2", storage, IndexFilePresence::OrDanglingOnDisk))
         substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx2"});
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
+    if (indexFileExistsInChecksums(
+            checksums, relative_path_prefix, ".idx", storage, IndexFilePresence::OrDanglingOnDisk))
         substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx"});
     return substreams;
 }
