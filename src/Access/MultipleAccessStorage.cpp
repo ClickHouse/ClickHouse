@@ -137,6 +137,23 @@ std::optional<UUID> MultipleAccessStorage::findImpl(AccessEntityType type, const
 }
 
 
+std::optional<UUID> MultipleAccessStorage::findImpl(AccessEntityType type, const String & name, bool force_external_lookup) const
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        auto id = storage->find(type, name, force_external_lookup);
+        if (id)
+        {
+            std::lock_guard lock{mutex};
+            ids_cache.set(*id, storage);
+            return id;
+        }
+    }
+    return {};
+}
+
+
 std::vector<UUID> MultipleAccessStorage::findAllImpl(AccessEntityType type) const
 {
     std::vector<UUID> all_ids;

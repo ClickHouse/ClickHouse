@@ -1,0 +1,28 @@
+<clickhouse>
+    <ldap_servers>
+        <openldap>
+            <host>openldap</host>
+            <port>1389</port>
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <!-- Target-specific via `base_dn` only: `{user_name}` is substituted into the
+                 base DN (`cn={user_name},...`) while the filter is static. The directory
+                 returns `LDAP_NO_SUCH_OBJECT` from the search itself when the substituted
+                 base DN does not exist (i.e. for an impersonation target that is not in
+                 LDAP). The service-bind path treats that as "user not found" so
+                 `EXECUTE AS` surfaces `UNKNOWN_USER` instead of a low-level LDAP error. -->
+            <lookup_bind_dn>cn=admin,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>clickhouse</lookup_password>
+            <user_dn_detection>
+                <base_dn>cn={user_name},ou=users,dc=example,dc=org</base_dn>
+                <scope>base</scope>
+                <search_filter>(objectClass=person)</search_filter>
+            </user_dn_detection>
+        </openldap>
+    </ldap_servers>
+    <user_directories>
+        <ldap>
+            <server>openldap</server>
+        </ldap>
+    </user_directories>
+</clickhouse>
