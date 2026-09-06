@@ -47,9 +47,11 @@ SELECT count() > 0 FROM (
 SELECT 'RIGHT ANTI JOIN USING, equi-key WHERE: correctness preserved';
 SELECT k FROM mt AS l RIGHT ANTI JOIN (SELECT toUInt64(0) AS k UNION ALL SELECT toUInt64(1000000000) AS k) AS r USING (k) WHERE k = 1000000000 ORDER BY k;
 
--- A substitution has to carry the type the replaced name has in the `JOIN` output, and the only type
--- reachable by casting the opposite key is the least supertype of the two. `join_use_nulls` widens the
--- output past that supertype, so nothing is substituted and the predicate stays above the `JOIN`.
+-- A substitution has to carry the type the replaced name has in the `JOIN` output, and for a cross-type
+-- equi-key the only type reachable by casting the opposite key is the least supertype of the two.
+-- `join_use_nulls` widens the output past that supertype, so that name gets no substitution and a
+-- predicate over it stays above the `JOIN`. An equal-type key widened by `join_use_nulls` is substituted
+-- by the opposite key cast to the widened type instead.
 SET join_use_nulls = 1;
 
 SELECT 'RIGHT JOIN USING, equi-key WHERE, join_use_nulls: left MergeTree prunes granules';

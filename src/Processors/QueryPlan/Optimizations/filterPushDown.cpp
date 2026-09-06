@@ -8,6 +8,7 @@
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -653,6 +654,72 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     Names equivalent_columns_to_push_down;
 
+    /// A name substituted into a pushed-down filter must carry the type that name has in the JOIN
+    /// output and evaluate to that column's value, so a key the JOIN converts is substituted by that
+    /// key cast the way the JOIN casts it. The cast is built only once a filter reaches that side.
+    struct CrossTypeReplacement
+    {
+        JoinActionRef source;
+        DataTypePtr target_type;
+        String name;
+    };
+    std::vector<CrossTypeReplacement> cross_type_replacements_for_left_stream;
+    std::vector<CrossTypeReplacement> cross_type_replacements_for_right_stream;
+
+    auto create_cast_name = [&](const String & replaced_name)
+    {
+        String name = fmt::format("__filterpushdown_cast{}", replaced_name);
+        int counter = 0;
+        for (; left_stream_input_header->has(name) || right_stream_input_header->has(name); ++counter)
+            name = fmt::format("__filterpushdown_cast_{}{}", counter, replaced_name);
+        return name;
+    };
+
+    /// Makes `replaced_name` substitutable by the opposite side's key on a type-changing side: only the
+    /// key's type differs there and the two keys are equal on a matched row, so the cast of one equals
+    /// that output column. The conversion is per key: only `Nullable`-capable keys are widened.
+    auto add_converted_key_substitution = [&](
+        std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_columns,
+        std::vector<CrossTypeReplacement> & replacements,
+        const String & replaced_name,
+        const JoinActionRef & source,
+        const ColumnWithTypeAndName & replacement,
+        bool replaced_side_push_down_available)
+    {
+        /// Every member of an equivalence class holds the same value on a matched row, so a second
+        /// substitution for one name would be as valid, and registering it would leave the first unused.
+        if (equivalent_columns.contains(replaced_name))
+            return;
+
+        /// A name keyed substitution has nothing to apply to unless the name is in the JOIN output, which
+        /// a key pruned out of it is not, and an expression key never is.
+        const auto * replaced = join_header->findByName(replaced_name);
+        if (!replaced)
+            return;
+
+        /// A JOIN that still emits not matched rows on this side does not let a predicate over it be
+        /// pushed down, and therefore does not let one be inferred from it either.
+        if (!replaced_side_push_down_available)
+            return;
+
+        /// This key is not converted, some other key of the same condition is, so the replacement already
+        /// carries the type the name has in the JOIN output.
+        if (replaced->type->equals(*source.getType()))
+        {
+            equivalent_columns[replaced_name] = replacement;
+            return;
+        }
+
+        /// Accept only the widening `join_use_nulls` itself adds. `Safe` leaves a type that cannot be
+        /// inside `Nullable` unchanged, which the branch above has already returned on.
+        if (!replaced->type->equals(*makeNullableOrLowCardinalityNullableSafe(source.getType())))
+            return;
+
+        auto name = create_cast_name(replaced_name);
+        equivalent_columns[replaced_name] = ColumnWithTypeAndName(nullptr, replaced->type, name);
+        replacements.push_back({source, replaced->type, std::move(name)});
+    };
+
     std::unordered_map<JoinActionRef, String> equivalent_expressions_alias;
     for (auto & [lhs, rhs] : equivalent_expressions)
     {
@@ -706,52 +773,38 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             equivalent_expressions_alias[rhs] = alias;
         }
 
+        /// The map keyed by a name of one side is applied to the filter pushed to the other side, while the
+        /// flag that admits its keys is the one of the side the name belongs to.
         if (!changes_left_type)
             equivalent_left_stream_column_to_right_stream_column[lhs_original_name] = rhs_column;
+        else
+            add_converted_key_substitution(
+                equivalent_left_stream_column_to_right_stream_column,
+                cross_type_replacements_for_right_stream,
+                lhs_original_name, rhs, rhs_column,
+                left_stream_filter_push_down_input_columns_available);
+
         if (!changes_right_type)
             equivalent_right_stream_column_to_left_stream_column[rhs_original_name] = lhs_column;
+        else
+            add_converted_key_substitution(
+                equivalent_right_stream_column_to_left_stream_column,
+                cross_type_replacements_for_left_stream,
+                rhs_original_name, lhs, lhs_column,
+                right_stream_filter_push_down_input_columns_available);
     }
 
     /// Register the cross-type equi-key pairs that `buildEquialentSetsForJoinStepLogical` skips: its
     /// Union-Find needs the two input types to be equal, plain name substitution does not.
     ///
-    /// Substitution needs two other things. The replacement must carry the type the replaced name has
-    /// in the JOIN output, because that is what the filter's nodes were typed against, and it must
-    /// evaluate to the value that output column holds, because the filter's own semantics are defined
-    /// on that value.
-    ///
-    /// A cross-type equi-key gives both once the replacement is cast the way the JOIN casts that key:
-    /// the two sides are compared in their least supertype, so `CAST(<opposite side>, supertype)` is
-    /// exactly what is behind the JOIN output column. Demanding that the JOIN output type is that
-    /// supertype keeps the cast widening - a narrowing one would change what the predicate returns -
-    /// and rejects a column the JOIN altered for an unrelated reason, such as `join_use_nulls` widening
-    /// it to `Nullable`, where the replacement no longer matches the output.
-    ///
-    /// The cast node itself is only added once we know a filter really reaches that side, so the two
-    /// lists below carry what is needed to build it.
-    struct CrossTypeReplacement
-    {
-        JoinActionRef source;
-        DataTypePtr target_type;
-        String name;
-    };
-    std::vector<CrossTypeReplacement> cross_type_replacements_for_left_stream;
-    std::vector<CrossTypeReplacement> cross_type_replacements_for_right_stream;
-
+    /// A cross-type equi-key satisfies that invariant once the replacement is cast to the least
+    /// supertype the two sides are compared in. Demanding that the JOIN output type IS that supertype
+    /// keeps the cast widening and rejects a column the JOIN altered for an unrelated reason.
     if (logical_join
         && (!left_stream_filter_push_down_input_columns_available
             || !right_stream_filter_push_down_input_columns_available))
     {
         const auto & join_output_header = *join_header;
-
-        auto create_cast_name = [&](const String & replaced_name)
-        {
-            String name = fmt::format("__filterpushdown_cast{}", replaced_name);
-            int counter = 0;
-            for (; left_stream_input_header->has(name) || right_stream_input_header->has(name); ++counter)
-                name = fmt::format("__filterpushdown_cast_{}{}", counter, replaced_name);
-            return name;
-        };
 
         /// Makes `replaced_name` substitutable by the opposite side's key, cast to `supertype`.
         auto add_replacement = [&](
