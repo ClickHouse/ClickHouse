@@ -13,6 +13,7 @@
 
 
 #include "Poco/Net/Context.h"
+#include "Poco/Net/EmbeddedCertificates.h"
 #include "Poco/Net/SSLManager.h"
 #include "Poco/Net/SSLException.h"
 #include "Poco/Net/Utility.h"
@@ -24,6 +25,7 @@
 #include "Poco/Timestamp.h"
 #include <openssl/bio.h>
 #include <openssl/err.h>
+#include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 
@@ -222,11 +224,74 @@ static int poco_ssl_probe_and_set_default_ca_location(SSL_CTX *ctx, Context::CAP
 
 	if (dir != nullptr)
 	{
+		/// The directory exists but contains no certificates (checked by poco_dir_contains_certs above):
+		/// register it anyway, as certificates may appear there later, but report that nothing was found,
+		/// so that the caller can fall back to the certificates embedded into the binary. Without
+		/// hash-named files the directory lookup cannot return anything at verification time anyway.
 		caPaths.caDefaultDir = dir;
-		return SSL_CTX_load_verify_locations(ctx, NULL, dir);
+		SSL_CTX_load_verify_locations(ctx, NULL, dir);
 	}
 
 	return 0;
+}
+
+static int poco_load_embedded_certificates(SSL_CTX * ctx, Context::CAPaths & caPaths)
+{
+	std::string_view pem = embeddedCACertificates();
+	if (pem.empty())
+		return 0;
+
+	BIO * bio = BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size()));
+	if (bio == nullptr)
+		return 0;
+
+	X509_STORE * store = SSL_CTX_get_cert_store(ctx);
+	size_t added = 0;
+	while (X509 * cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr))
+	{
+		int ok = X509_STORE_add_cert(store, cert);
+		X509_free(cert);
+		if (ok != 1)
+		{
+			/// The store is not necessarily empty here: a custom `caConfig` may have been loaded before,
+			/// and it can overlap with the embedded bundle. A certificate that is already known is not an
+			/// error, and the rest of the bundle still has to be loaded.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+			int reason = ERR_GET_REASON(ERR_peek_last_error());
+#pragma clang diagnostic pop
+			if (reason != X509_R_CERT_ALREADY_IN_HASH_TABLE)
+			{
+				/// Any other failure to add a certificate must fail context creation: continuing would
+				/// silently leave a partial trust store, and only some remote peers would fail later,
+				/// depending on which root was skipped. The error is left on the queue for the caller.
+				BIO_free(bio);
+				return 0;
+			}
+
+			ERR_clear_error();
+		}
+		++added;
+	}
+
+	/// `PEM_read_bio_X509` returns null both at the normal end of the bundle (`PEM_R_NO_START_LINE`)
+	/// and on a parse failure in the middle of it. The bundle is embedded at build time, so a parse
+	/// failure means it is malformed or truncated: fail closed instead of using a partial trust store.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+	int end_reason = ERR_GET_REASON(ERR_peek_last_error());
+#pragma clang diagnostic pop
+	BIO_free(bio);
+	if (end_reason != PEM_R_NO_START_LINE)
+		return 0;
+
+	ERR_clear_error();
+
+	if (added == 0)
+		return 0;
+
+	caPaths.caEmbedded = true;
+	return 1;
 }
 
 
@@ -262,27 +327,40 @@ void Context::init(const Params& params)
 			if (!file)
 				file = X509_get_default_cert_file();
 
-			if (poco_file_cert(file))
-			{
-				_caPaths.caDefaultFile = file;
-				errCode = SSL_CTX_set_default_verify_paths(_pSSLContext);
-			}
-			else
-			{
-				if (poco_dir_cert(dir))
-				{
-					errCode = 0;
-					if (!poco_dir_contains_certs(dir))
-						errCode = poco_ssl_probe_and_set_default_ca_location(_pSSLContext, _caPaths);
+			errCode = 0;
 
-					if (errCode == 0)
-					{
-						errCode = SSL_CTX_set_default_verify_paths(_pSSLContext);
-						_caPaths.caDefaultDir = dir;
-					}
-				}
-				else
-					errCode = poco_ssl_probe_and_set_default_ca_location(_pSSLContext, _caPaths);
+			if (poco_file_cert(file) && SSL_CTX_load_verify_locations(_pSSLContext, file, 0))
+			{
+				/// `SSL_CTX_load_verify_locations` (unlike `SSL_CTX_set_default_verify_paths`) fails when
+				/// the file exists but yields no certificates, so an empty or malformed default CA file
+				/// falls through to the directory check and then to the probe / embedded fallback below,
+				/// instead of silently producing an empty trust store.
+				_caPaths.caDefaultFile = file;
+				errCode = 1;
+			}
+
+			if (poco_dir_cert(dir) && poco_dir_contains_certs(dir) && SSL_CTX_load_verify_locations(_pSSLContext, 0, dir))
+			{
+				/// The default file and the default directory are not alternatives:
+				/// `SSL_CTX_set_default_verify_paths` loads both, and a split trust store may keep some
+				/// roots only in the directory, so the directory is loaded even when the file succeeded.
+				_caPaths.caDefaultDir = dir;
+				errCode = 1;
+			}
+
+			if (errCode != 1)
+			{
+				/// The default locations are missing or contain no certificates (e.g. a container built
+				/// "from scratch"): probe the well-known locations, and then fall back to the certificates
+				/// embedded into the binary, if any.
+				///
+				/// `SSL_CTX_set_default_verify_paths` must not be used as a fallback here: it reports success
+				/// even when the default locations are an empty directory or a missing file, which would
+				/// silently produce an empty trust store and only fail later, at handshake time.
+				errCode = poco_ssl_probe_and_set_default_ca_location(_pSSLContext, _caPaths);
+
+				if (errCode != 1)
+					errCode = poco_load_embedded_certificates(_pSSLContext, _caPaths);
 			}
 
 			if (errCode != 1)

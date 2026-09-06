@@ -12,6 +12,7 @@
 #include <base/scope_guard.h>
 
 #if USE_SSL
+    #include <Poco/Net/EmbeddedCertificates.h>
     #include <Poco/Net/SSLManager.h>
     #include <Poco/Net/SSLException.h>
     #include <Common/Crypto/X509Certificate.h>
@@ -45,7 +46,7 @@ ColumnsDescription StorageSystemCertificates::getColumnsDescription()
         {"not_after",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The end of the time window when this certificate is valid."},
         {"subject",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Subject - identifies the owner of the public key."},
         {"pkey_algo",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Public Key Algorithm defines the algorithm the public key can be used with."},
-        {"path",            std::make_shared<DataTypeString>(), "Path to the file or directory containing this certificate."},
+        {"path",            std::make_shared<DataTypeString>(), "Path to the file or directory containing this certificate, or `(embedded)` for the certificates embedded into the binary."},
         {"default",         std::make_shared<DataTypeNumber<UInt8>>(), "Certificate is in the default certificate location."},
         {"protocol",        std::make_shared<DataTypeString>(), "Protocol name if certificate is from per-protocol TLS config, otherwise empty."}
     };
@@ -138,6 +139,14 @@ void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_c
                 for (const auto & cert : certs)
                     populateTable(cert, res_columns, ca_paths.caDefaultFile, true, protocol_name);
             }
+        }
+
+        if (ca_paths.caEmbedded)
+        {
+            /// No CA certificates were found on the filesystem, and the ones embedded into the binary are used instead.
+            auto certs = X509Certificate::fromBuffer(std::string(Poco::Net::embeddedCACertificates()));
+            for (const auto & cert : certs)
+                populateTable(cert, res_columns, "(embedded)", true, protocol_name);
         }
     };
 
