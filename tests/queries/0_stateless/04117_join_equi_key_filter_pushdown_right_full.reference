@@ -48,3 +48,43 @@ FULL JOIN USING, cross-type: neither MergeTree prunes granules
 1
 FULL JOIN USING, cross-type, join_use_nulls: neither MergeTree prunes granules
 1
+INNER JOIN ON, cross-type equi-key, predicate on the wider key: right MergeTree prunes granules
+1
+INNER JOIN ON, cross-type equi-key, wider key on the right: left MergeTree prunes granules
+1
+INNER JOIN ON, matched types: right MergeTree prunes granules
+1
+INNER JOIN ON, cross-type equi-key beside a predicate reading constness: right MergeTree prunes granules
+1
+INNER JOIN ON, cross-type equi-key with a deterministic lambda body: the key reaches the right input
+1
+INNER JOIN ON, cross-type equi-key whose lambda body is not stable within the query: the key does not
+1
+INNER JOIN ON, conjunct with a deterministic lambda body beside the equi-key: the conjunct is pushed
+1
+INNER JOIN ON, conjunct with an unstable lambda body beside the equi-key: the conjunct is not pushed
+1
+INNER JOIN ON, cross-type equi-key: result
+2020-06-01
+2020-06-02
+2020-06-03
+INNER JOIN ON, cross-type equi-key that is not stable within the query: result
+5
+6
+INNER JOIN ON, cross-type equi-key that changes the number of rows: result
+5
+5
+6
+6
+LEFT JOIN ON, cross-type float equi-key: result
+0	-0
+INNER JOIN ON, cross-type equi-key with a nested float: result
+[0]	[-0]
+INNER JOIN ON, cross-type equi-key with a float inside a Dynamic: result
+0	-0
+INNER JOIN ON, cross-type equi-key with a JSON path in shared data on one side: result
+{"x":1}	{"x":1}
+INNER JOIN ON, cross-type equi-key under a predicate reading constness: result
+0
+INNER JOIN ON, equi-key under a predicate reading constness inside a lambda body: result
+0

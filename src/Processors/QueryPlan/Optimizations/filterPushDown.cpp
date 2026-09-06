@@ -738,9 +738,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     std::vector<CrossTypeReplacement> cross_type_replacements_for_left_stream;
     std::vector<CrossTypeReplacement> cross_type_replacements_for_right_stream;
 
-    if (logical_join
-        && (!left_stream_filter_push_down_input_columns_available
-            || !right_stream_filter_push_down_input_columns_available))
+    /// The map keyed by a name of one side is applied to the filter pushed to the other side, while the
+    /// flag admitting its keys is the one of that name's own side, so a pair it rejects stays inert below.
+    if (logical_join)
     {
         const auto & join_output_header = *join_header;
 
@@ -767,6 +767,40 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             const auto * replaced = join_output_header.findByName(replaced_name);
             if (!replaced || !replaced->type->equals(*supertype))
                 return;
+
+            /// A float key can be join-equal while bit-different: `-0.0` and `+0.0` are equal to the comparison a merge-based
+            /// algorithm joins on, so a bit-sensitive predicate disagrees between the two sides. The supertype is what the JOIN
+            /// compares in, and a nested float is no different. A `Dynamic` or `JSON` supertype describes neither the runtime
+            /// contents nor the representation, and a predicate can read either, so both are declined outright.
+            bool supertype_is_unsafe = false;
+            auto check_type = [&](const IDataType & type)
+            { supertype_is_unsafe |= isFloat(type) || isDynamic(type) || isObject(type); };
+            check_type(*supertype);
+            supertype->forEachChild(check_type);
+            if (supertype_is_unsafe)
+                return;
+
+            /// The pushed-down filter computes this key and the JOIN computes it again, so the key must return
+            /// the same value twice within one query and must not change the number of rows. This pass already
+            /// requires both properties of the filters it pushes.
+            static constexpr auto changes_between_evaluations = [](const IFunctionBase & function)
+            { return function.isStateful() || !function.isDeterministicInScopeOfQuery(); };
+            const auto source_dag = JoinExpressionActions::getSubDAG(source);
+            for (const auto & node : source_dag.getNodes())
+            {
+                if (node.type == ActionsDAG::ActionType::FUNCTION)
+                {
+                    if (changes_between_evaluations(*node.function_base))
+                        return;
+                }
+                else if (node.type != ActionsDAG::ActionType::INPUT
+                    && node.type != ActionsDAG::ActionType::COLUMN
+                    && node.type != ActionsDAG::ActionType::ALIAS)
+                    return;
+
+                if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, changes_between_evaluations))
+                    return;
+            }
 
             /// The side that already has the supertype is not cast by the JOIN either.
             if (source.getType()->equals(*supertype))

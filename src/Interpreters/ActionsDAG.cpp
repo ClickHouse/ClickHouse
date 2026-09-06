@@ -2206,6 +2206,62 @@ bool ActionsDAG::hasNonDeterministic() const
     return false;
 }
 
+namespace
+{
+
+bool dagHasUnsafeFunction(const ActionsDAG & dag, bool (*is_unsafe)(const IFunctionBase &))
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && is_unsafe(*node.function_base))
+            return true;
+        if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, is_unsafe))
+            return true;
+    }
+
+    return false;
+}
+
+/// A lambda that captures only constants is itself folded to a constant, which holds the lambda object
+/// rather than a computed value: the body still runs, and its captures can hold further lambdas.
+bool foldedLambdaHasUnsafeFunction(const IColumn & column, bool (*is_unsafe)(const IFunctionBase &))
+{
+    const auto * column_function = typeid_cast<const ColumnFunction *>(&column);
+    if (!column_function)
+        return false;
+
+    const auto * expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get());
+    if (expression && dagHasUnsafeFunction(expression->getAcionsDAG(), is_unsafe))
+        return true;
+
+    for (const auto & captured : column_function->getCapturedColumns())
+        if (const auto * captured_constant = typeid_cast<const ColumnConst *>(captured.column.get()))
+            if (foldedLambdaHasUnsafeFunction(captured_constant->getDataColumn(), is_unsafe))
+                return true;
+
+    return false;
+}
+
+}
+
+bool ActionsDAG::hasUnsafeHiddenLambdaBody(const Node & node, bool (*is_unsafe)(const IFunctionBase &))
+{
+    const Node * lambda = &node;
+    while (lambda->type == ActionType::ALIAS)
+        lambda = lambda->children.front();
+
+    if (lambda->type == ActionType::FUNCTION)
+    {
+        const auto * function_capture = typeid_cast<const FunctionCapture *>(lambda->function_base.get());
+        return function_capture && dagHasUnsafeFunction(function_capture->getAcionsDAG(), is_unsafe);
+    }
+
+    if (lambda->type == ActionType::COLUMN && lambda->column)
+        return foldedLambdaHasUnsafeFunction(lambda->column->getDataColumn(), is_unsafe);
+
+    return false;
+}
+
 bool ActionsDAG::hasInputNameShadowedByComputedNode() const
 {
     std::unordered_set<std::string_view> input_names;
@@ -3541,6 +3597,73 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes, false);
     auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
     auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes, false);
+
+    /// A both-streams conjunct has its equivalent inputs replaced by the opposite side's column below, so it
+    /// must read no more than that column's value: a replacement can be constant where the input is not.
+    /// A lambda body reads the call's arguments too: the ones it does not capture arrive as formal parameters.
+    static constexpr auto is_representation_read = [](const IFunctionBase & function) { return !function.isDeterministic(); };
+    auto call_reads_representation = [](const Node * node)
+    {
+        if (hasUnsafeHiddenLambdaBody(*node, is_representation_read))
+            return true;
+        for (const auto * argument : node->children)
+            if (hasUnsafeHiddenLambdaBody(*argument, is_representation_read))
+                return true;
+        return false;
+    };
+    auto reads_replaced_input_representation = [&](const Node * conjunct)
+    {
+        std::vector<std::pair<const Node *, bool>> to_visit{{conjunct, false}};
+        std::unordered_set<const Node *> visited_reading_value;
+        std::unordered_set<const Node *> visited_reading_representation;
+        while (!to_visit.empty())
+        {
+            auto [node, reads_representation] = to_visit.back();
+            to_visit.pop_back();
+
+            reads_representation |= !node->isDeterministic() || call_reads_representation(node);
+            auto & visited = reads_representation ? visited_reading_representation : visited_reading_value;
+            if (!visited.insert(node).second)
+                continue;
+
+            if (reads_representation && node->type == ActionType::INPUT && both_streams_allowed_nodes.contains(node))
+                return true;
+
+            for (const auto * child : node->children)
+                to_visit.emplace_back(child, reads_representation);
+        }
+        return false;
+    };
+
+    /// `getConjunctionNodes` asserts stability within the query over the visible functions only.
+    static constexpr auto is_unstable_within_query = [](const IFunctionBase & function)
+    { return function.isStateful() || !function.isDeterministicInScopeOfQuery(); };
+    auto hides_unstable_lambda_body = [](const Node * conjunct)
+    {
+        std::vector<const Node *> to_visit{conjunct};
+        std::unordered_set<const Node *> visited;
+        while (!to_visit.empty())
+        {
+            const auto * node = to_visit.back();
+            to_visit.pop_back();
+            if (!visited.insert(node).second)
+                continue;
+            if (hasUnsafeHiddenLambdaBody(*node, is_unstable_within_query))
+                return true;
+            to_visit.insert(to_visit.end(), node->children.begin(), node->children.end());
+        }
+        return false;
+    };
+
+    NodeRawConstPtrs both_streams_value_only_conjunctions;
+    for (const auto * conjunct : both_streams_push_down_conjunctions.allowed)
+    {
+        if (reads_replaced_input_representation(conjunct) || hides_unstable_lambda_body(conjunct))
+            both_streams_push_down_conjunctions.rejected.push_back(conjunct);
+        else
+            both_streams_value_only_conjunctions.push_back(conjunct);
+    }
+    both_streams_push_down_conjunctions.allowed = std::move(both_streams_value_only_conjunctions);
 
     /// getConjunctionNodes() classifies a conjunct as pushable to a side when all of its inputs are
     /// allowed inputs of that side. A conjunct with no inputs (a pure constant such as a literal `1`
