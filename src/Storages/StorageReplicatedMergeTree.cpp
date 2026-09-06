@@ -101,6 +101,7 @@
 #include <Planner/Utils.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Expect404ResponseScope.h>
@@ -943,6 +944,46 @@ std::vector<String> getAncestors(const String & path)
         }
     }
 
+    return result;
+}
+
+/// The part files that say how its data is to be interpreted and are excluded from the checksums.
+/// Held as bytes: parsing normalizes away differences that change how the data reads, an
+/// AggregateFunction serialization version among them.
+struct PartMetadataFiles
+{
+    std::map<String, std::optional<String>> files;
+
+    bool operator==(const PartMetadataFiles &) const = default;
+};
+
+/// A projection's own total checksum is what the parent's checksums roll up, and it excludes these
+/// files just as the parent's does, so the projections are walked too.
+PartMetadataFiles readPartMetadataFiles(const IDataPartStorage & storage, const ReadSettings & read_settings)
+{
+    static const std::array names = {
+        "columns.txt",
+        IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME,
+        IMergeTreeDataPart::METADATA_VERSION_FILE_NAME,
+    };
+
+    PartMetadataFiles result;
+    auto read_into = [&](const IDataPartStorage & from, const String & prefix)
+    {
+        for (const auto & name : names)
+        {
+            auto & content = result.files[prefix + name];
+            if (auto buf = from.readFileIfExists(name, read_settings, std::nullopt))
+                readStringUntilEOF(content.emplace(), *buf);
+        }
+    };
+
+    read_into(storage, "");
+    for (auto it = storage.iterate(); it->isValid(); it->next())
+    {
+        if (it->name().ends_with(".proj") && storage.existsDirectory(it->name()))
+            read_into(*storage.getProjection(it->name()), it->name() + "/");
+    }
     return result;
 }
 
@@ -3557,8 +3598,6 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
 
     LOG_INFO(log, "Will clone part from shard {} and replica {}", entry.source_shard, replica);
 
-    MutableDataPartPtr part;
-
     {
         auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
         String source_replica_path = entry.source_shard + "/replicas/" + replica;
@@ -3583,10 +3622,72 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
             return fetched_part;
         };
 
-        part = get_part();
-        // The fetched part is valuable and should not be cleaned like a temp part.
+        /// Declared after the claim, so the staging directory is removed before its name is released.
+        MutableDataPartPtr part = get_part();
+
+        /// `ALTER TABLE ... DETACH` claims a detached name under `lockParts`, so holding it here
+        /// makes the two mutually exclusive. The scope is the probe, the occupant's checksum read
+        /// and the rename: no part download and no ZooKeeper access.
+        auto data_parts_lock = lockParts();
+
+        /// `rename` below only probes our own disk, while the detached namespace spans the whole
+        /// storage policy, so a directory on another disk has to be found explicitly.
+        if (auto occupied_disk = tryGetDiskForDetachedPart(entry.new_part_name))
+        {
+            /// `getDetachedParts` skips read-only and write-once disks, so `ATTACH_PART` would find
+            /// no occupant there: accepting one as our own publication would stall the move at
+            /// `DESTINATION_ATTACH` instead of refusing it here.
+            const bool occupant_is_attachable = !occupied_disk->isReadOnly() && !occupied_disk->isWriteOnce();
+
+            /// This entry is retried until it succeeds, so its own earlier publication has to be
+            /// accepted, and only its content identifies it: the log entry carries no checksum.
+            String occupant_checksum;
+            std::optional<PartMetadataFiles> occupant_metadata;
+            if (occupant_is_attachable)
+            {
+                try
+                {
+                    Expect404ResponseScope scope; /// 404 is not an error
+                    auto volume = std::make_shared<SingleDiskVolume>("volume_" + entry.new_part_name, occupied_disk);
+                    auto occupant = getDataPartBuilder(
+                        entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / entry.new_part_name,
+                        getReadSettings(), PartDirIntent::OpenExisting)
+                        .withPartFormatFromDisk()
+                        .build();
+                    /// `require` must stay true: the other branch writes checksums.txt into the occupant.
+                    occupant->loadChecksums(/*require=*/ true);
+                    occupant_metadata = readPartMetadataFiles(occupant->getDataPartStorage(), getReadSettings());
+                    /// Assigned last, so a partially read occupant stays unidentified.
+                    occupant_checksum = occupant->checksums.getTotalChecksumHex();
+                }
+                catch (...)
+                {
+                    /// An occupant that cannot be identified is foreign.
+                    tryLogCurrentException(log, fmt::format(
+                        "cannot read metadata of detached part {}, treating it as a foreign part", entry.new_part_name));
+                }
+            }
+
+            /// Two parts differing only in those files share a total checksum, so the checksum
+            /// alone does not identify this entry's own publication.
+            if (occupant_is_attachable && !part->checksums.empty() && !occupant_checksum.empty()
+                && occupant_checksum == part->checksums.getTotalChecksumHex()
+                && occupant_metadata == readPartMetadataFiles(part->getDataPartStorage(), getReadSettings()))
+            {
+                LOG_INFO(log, "Part {} is already in the detached directory with the same checksum "
+                    "and metadata, it was published by an earlier attempt of this entry", entry.new_part_name);
+                return;
+            }
+
+            throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
+                "Detached part directory {} already exists and holds a different part", entry.new_part_name);
+        }
+
+        part->renameTo(fs::path(DETACHED_DIR_NAME) / entry.new_part_name, /*remove_new_dir_if_exists=*/ false);
+
+        /// Cleared only once published: until then the destructor has to remove the staging
+        /// directory, since nothing sweeps leftovers inside `detached/`.
         part->is_temp = false;
-        part->renameTo(fs::path(DETACHED_DIR_NAME) / entry.new_part_name, true);
 
         LOG_INFO(log, "Cloned part {} to detached directory", part->name);
     }
@@ -9949,6 +10050,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 void StorageReplicatedMergeTree::movePartitionToShard(
     const ASTPtr & partition, bool move_part, const String & to, ContextPtr /*query_context*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::movePartitionToShard");
+
     /// This is a lightweight operation that only optimistically checks if it could succeed and queues tasks.
 
     if (!move_part)
