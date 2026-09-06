@@ -1282,7 +1282,14 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
-            if (!context->getSettingsRef()[Setting::allow_statistics])
+            /// `allow_statistics` gates the DDL: whether statistics may be declared on a table. Only
+            /// the submitting session's value is meaningful for that, and it is checked here, during
+            /// validation. Checking it again while the mutation runs asks the background context, which
+            /// reads the server-default profile rather than the session that submitted the statement,
+            /// so a mutation accepted with a session opt-in failed forever and wedged the table's
+            /// mutation queue. Background merges materialize the declared statistics regardless of the
+            /// setting anyway, so refusing the explicit verb at execution time protects nothing.
+            if (dry_run && !context->getSettingsRef()[Setting::allow_statistics])
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
 
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
@@ -1338,7 +1345,9 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_STATISTICS)
         {
-            if (!context->getSettingsRef()[Setting::allow_statistics])
+            /// See MATERIALIZE_STATISTICS above: validated with the submitting session's value, and not
+            /// re-checked under the background context that executes the mutation.
+            if (dry_run && !context->getSettingsRef()[Setting::allow_statistics])
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
 
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
