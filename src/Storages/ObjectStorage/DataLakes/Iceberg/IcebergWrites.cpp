@@ -1489,6 +1489,14 @@ bool IcebergStorageSink::initializeMetadata()
         /// Invalidate the cache so the next reader gets the latest version, which a concurrent catalog update may have changed.
         persistent_table_components.invalidateMetadataCache();
     }
+    catch (const Exception & e)
+    {
+        /// The staged files may already belong to the table's current snapshot, so deleting them
+        /// would destroy committed data. Leave them behind instead.
+        if (!Iceberg::isCommitStateUnknown(e))
+            cleanup(false);
+        throw;
+    }
     catch (...)
     {
         cleanup(false);

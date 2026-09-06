@@ -205,6 +205,16 @@ protected:
         const std::string & table_name,
         TableMetadata & result) const;
 
+    /// Snapshot id the table's `main` ref currently points at, or nullopt when it cannot be
+    /// determined. Reads only what the commit sets, so a caller can tell whether its own commit
+    /// took effect.
+    std::optional<Int64> readMainRefSnapshotId(const std::string & namespace_name, const std::string & table_name) const;
+
+    /// Returns normally when `new_snapshot_id` is confirmed to be the table's current snapshot;
+    /// otherwise throws UNKNOWN_STATUS_OF_TRANSACTION so callers keep the files staged for it.
+    void classifyAmbiguousCommit(
+        const String & namespace_name, const String & table_name, Int64 new_snapshot_id, const Poco::Exception & original) const;
+
     /// Load catalog config (special http handler) utilizing information from catalog_state and auth_headers.
     Config loadConfig(const CatalogState & catalog_state, const std::optional<DB::HTTPHeaderEntries> & auth_headers = std::nullopt);
     virtual DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const;
@@ -212,12 +222,18 @@ protected:
     void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
+    /// `read_settings` overrides the context's read settings for this one request. A caller that
+    /// must know how many times the request reached the server pins `http_settings.max_tries`.
+    /// `request_body_written`, when not null, is set once the body reaches the socket: the transport
+    /// connects and writes the headers after the request is counted, so only this proves dispatch.
     virtual void sendRequest(
         const CatalogState & catalog_state,
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
         const String & method,
-        bool ignore_result) const;
+        bool ignore_result,
+        const std::optional<DB::ReadSettings> & read_settings,
+        bool * request_body_written) const;
 
     std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 

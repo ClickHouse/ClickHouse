@@ -59,11 +59,18 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int FAULT_INJECTED;
+    extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
+    extern const char iceberg_catalog_commit_response_lost[];
+    extern const char iceberg_catalog_commit_reconcile_fail[];
+    extern const char iceberg_catalog_commit_reconcile_throw[];
+    extern const char iceberg_catalog_commit_rejected[];
+    extern const char iceberg_catalog_commit_update_throw[];
+    extern const char iceberg_catalog_commit_update_throw_post_dispatch[];
 }
 
 namespace DB::Setting
@@ -678,6 +685,50 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not create metadata in glue catalog: {}", response.GetError().GetMessage());
 }
 
+std::optional<String> GlueCatalog::readRawMetadataLocation(const String & namespace_name, const String & table_name) const
+{
+    fiu_do_on(DB::FailPoints::iceberg_catalog_commit_reconcile_fail,
+    {
+        return std::nullopt;
+    });
+
+    /// A read that cannot answer leaves the commit outcome unknown, so it must not surface as an
+    /// error: callers read any other error as a proven failure and delete the files staged for it.
+    try
+    {
+        fiu_do_on(DB::FailPoints::iceberg_catalog_commit_reconcile_throw,
+        {
+            throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injected read-back failure");
+        });
+
+        Aws::Glue::Model::GetTableRequest request;
+        request.SetDatabaseName(namespace_name);
+        request.SetName(table_name);
+
+        auto outcome = glue_client->GetTable(request);
+        if (!outcome.IsSuccess())
+        {
+            LOG_DEBUG(log, "Could not read back {}.{} from glue catalog: {}", namespace_name, table_name, outcome.GetError().GetMessage());
+            return std::nullopt;
+        }
+
+        const auto & parameters = outcome.GetResult().GetTable().GetParameters();
+        auto it = parameters.find("metadata_location");
+        if (it == parameters.end())
+            return std::nullopt;
+
+        return String(it->second);
+    }
+    catch (...)
+    {
+        LOG_DEBUG(
+            log,
+            "Could not read back {}.{} from glue catalog: {}",
+            namespace_name, table_name, DB::getCurrentExceptionMessage(false));
+        return std::nullopt;
+    }
+}
+
 bool GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*new_snapshot*/) const
 {
     Aws::Glue::Model::UpdateTableRequest request;
@@ -707,10 +758,88 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
 
     request.SetTableInput(table_input);
 
-    auto response = glue_client->UpdateTable(request);
+    bool rejected = false;
+    fiu_do_on(DB::FailPoints::iceberg_catalog_commit_rejected, { rejected = true; });
 
-    if (!response.IsSuccess())
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
+    Aws::Glue::Model::UpdateTableOutcome response;
+    std::optional<String> thrown_error_message;
+
+    if (rejected)
+    {
+        /// Models a request glue rejects outright, so the pointer never advances.
+        response = Aws::Glue::Model::UpdateTableOutcome(Aws::Client::AWSError<Aws::Glue::GlueErrors>(
+            Aws::Glue::GlueErrors::ACCESS_DENIED, "InjectedRejection", "Injected rejection", false));
+    }
+    else
+    {
+        /// An exception raised by the call says no more about whether the update applied than an
+        /// unsuccessful outcome does, so it is one more unknown outcome rather than a rejection.
+        try
+        {
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_update_throw,
+            {
+                throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injected update throw");
+            });
+
+            response = glue_client->UpdateTable(request);
+
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_update_throw_post_dispatch,
+            {
+                throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injected post-update throw");
+            });
+        }
+        catch (...)
+        {
+            thrown_error_message = DB::getCurrentExceptionMessage(false);
+        }
+    }
+
+    bool failed = thrown_error_message.has_value() || !response.IsSuccess();
+    String error_message;
+    String error_name;
+    if (thrown_error_message.has_value())
+    {
+        error_message = *thrown_error_message;
+        error_name = "Exception";
+    }
+    else if (failed)
+    {
+        error_message = String(response.GetError().GetMessage());
+        error_name = String(response.GetError().GetExceptionName());
+    }
+
+    fiu_do_on(DB::FailPoints::iceberg_catalog_commit_response_lost,
+    {
+        failed = true;
+        error_message = "Injected lost response";
+        error_name = "InjectedFault";
+    });
+
+    if (failed)
+    {
+        /// Every failed outcome is reconciled: the SDK retries UpdateTable, so the error describes
+        /// the last attempt and an earlier one may have applied the update.
+        const auto committed_metadata_location = readRawMetadataLocation(namespace_name, table_name);
+
+        if (committed_metadata_location == new_metadata_path)
+        {
+            LOG_INFO(
+                log,
+                "Update of {}.{} to {} took effect despite a failed response ({}), continuing",
+                namespace_name, table_name, new_metadata_path, error_message);
+            return true;
+        }
+
+        /// UpdateTable carries no precondition, so a pointer other than this one is equally
+        /// consistent with "never committed" and "committed, then superseded". Indistinguishable,
+        /// so the outcome is unknown, the files stay, and the original error is chained in.
+        throw DB::Exception(
+            DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
+            "Cannot tell whether {} was committed to {}.{}: glue catalog answered \"{}\" ({}) and the table's "
+            "metadata_location could not be confirmed to be it. Files staged for this commit are kept because deleting "
+            "them would destroy the snapshot if it did take effect",
+            new_metadata_path, namespace_name, table_name, error_message, error_name);
+    }
 
     return true;
 }
