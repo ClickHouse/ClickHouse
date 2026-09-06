@@ -134,6 +134,12 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         if (typeid_cast<DelayedCreatingSetsStep *>(node->step.get())
             || typeid_cast<DelayedMaterializingCTEsStep *>(node->step.get()))
         {
+            /// This step is dropped from the stream, so a barrier on it would be dropped with it.
+            if (node->step->isSecurityBarrier())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot serialize a query plan whose step {} is a security barrier", node->step->getName());
+
             frame.node = node->children.front();
             continue;
         }
@@ -154,6 +160,24 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
 
         writeStringBinary(node->step->getSerializationName(), out);
         writeStringBinary(node->step->getStepDescription(), out);
+
+        /// The security barrier must survive the round trip: the worker optimizes the deserialized
+        /// fragment again, and a barrier it does not know about is a barrier it will optimize
+        /// across. A peer that predates the flag cannot be told about it, so refuse to send such a
+        /// plan instead of sending one that silently loses its protection.
+        if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SECURITY_BARRIER)
+        {
+            writeIntBinary(static_cast<UInt8>(node->step->isSecurityBarrier()), out);
+        }
+        else if (node->step->isSecurityBarrier())
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot serialize a query plan reading a view with SQL SECURITY DEFINER or SQL SECURITY NONE "
+                "with query plan serialization version {}: the security barrier is supported since version {}",
+                flags.version,
+                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SECURITY_BARRIER);
+        }
 
         if (node->step->hasOutputHeader())
             serializeHeader(*node->step->getOutputHeader(), out);
@@ -258,6 +282,10 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         readStringBinary(step_name, in);
         readStringBinary(step_description, in);
 
+        UInt8 security_barrier = 0;
+        if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SECURITY_BARRIER)
+            readIntBinary(security_barrier, in);
+
         auto output_header  = std::make_shared<const Block>(deserializeHeader(in, max_type_complexity));
 
         QueryPlanSerializationSettings settings;
@@ -271,6 +299,10 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         IQueryPlanStep::Deserialization ctx{
             in, sets_registry, {}, context, input_headers, output_header, settings, max_type_complexity, flags.version, flags.skip_data};
         auto step = step_registry.createStep(step_name, ctx);
+
+        /// The worker optimizes this fragment again, so it has to know where it may not optimize.
+        if (security_barrier)
+            step->setSecurityBarrier();
 
         if (step->hasOutputHeader())
         {

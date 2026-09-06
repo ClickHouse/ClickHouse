@@ -198,6 +198,14 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (typeid_cast<ReadFromMerge *>(child_node->step.get()))
         return;
 
+    /// The reading step already carries the filtering of a `SQL SECURITY` view — either a PREWHERE
+    /// written in the view, or a condition moved here by an earlier call below. Conditions are
+    /// combined into the prewhere DAG with `and`, which gives no ordering guarantee, so a filter
+    /// from outside the view must stay a separate step above the source.
+    /// See IQueryPlanStep::isSecurityBarrier.
+    if (child_node->step->isSecurityBarrier())
+        return;
+
     const auto & storage_snapshot = source_step_with_filter->getStorageSnapshot();
     const auto & storage = storage_snapshot->storage;
     if (!storage.canMoveConditionsToPrewhere())
@@ -319,6 +327,13 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         prewhere_info->need_filter = existing_prewhere_info->need_filter || prewhere_info->need_filter;
     }
 
+    /// A view's own filtering is welcome in PREWHERE — it runs before anything the outer query can
+    /// add. But the source now decides which rows the view exposes, so it takes over the barrier,
+    /// and so does whatever is left of the filter above it.
+    const bool security_barrier = filter_step->isSecurityBarrier();
+    if (security_barrier)
+        source_step_with_filter->setSecurityBarrier();
+
     source_step_with_filter->updatePrewhereInfo(prewhere_info);
 
     QueryPlanStepPtr new_step;
@@ -339,6 +354,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     }
 
     new_step->setStepDescription(*filter_step);
+    if (security_barrier)
+        new_step->setSecurityBarrier();
     parent_node.step = std::move(new_step);
 
     if (!remove_unused_columns)

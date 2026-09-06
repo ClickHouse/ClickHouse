@@ -68,6 +68,31 @@ public:
 
     static ContextPtr getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot);
 
+    /// Whether the view's inner query runs as somebody other than the invoker, so that the rows it
+    /// filters out are rows the invoker has no right to observe. Such a view must not be inlined
+    /// into the invoker's query, and expressions from the invoker's query must not be evaluated
+    /// below its own filtering. See `IQueryPlanStep::isSecurityBarrier`.
+    static bool isSecurityBarrier(const StorageInMemoryMetadata & metadata, const ContextPtr & context);
+
+    /// Whether `additional_table_filters` has a predicate that applies to this view. Such a
+    /// predicate is evaluated in the view's output namespace and can hide rows just like a row
+    /// policy attached to the view.
+    static bool hasAdditionalTableFilter(const StorageID & storage_id, const String & alias, const ContextPtr & context);
+
+    /// Whether the view's inner query can drop or collapse rows at all. `false` is returned only
+    /// when the query provably preserves every row of a plainly readable source, so that a
+    /// projection-only view keeps the fully optimizable path even when `isSecurityBarrier` holds;
+    /// anything unproven counts as able to hide rows. The plan-level marking stays exact either
+    /// way — `readImpl` marks only the steps that actually drop rows.
+    /// `remote_source_is_read_identically` relaxes the fail-closed treatment of a remote source
+    /// table for the one caller whose alternative reads that same source in exactly the same way -
+    /// the trivial-view pushdown to `Distributed`. There, whatever the shards resolve the table to
+    /// (possibly a filtering view of their own) is read through the same `StorageDistributed::read`
+    /// with or without the rewrite, and a barrier below it is enforced by the shard's own planner,
+    /// so the remote source is not a reason to give up on the view itself. It is deliberately not
+    /// propagated into nested subqueries.
+    static bool canHideRows(const ASTPtr & inner_query, const ContextPtr & context, bool remote_source_is_read_identically = false);
+
 protected:
     bool is_parameterized_view;
 };

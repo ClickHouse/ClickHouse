@@ -862,11 +862,31 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
+
+        /// Except for a view whose inner query runs as somebody else. Inlining it lets the rewrite
+        /// below merge the outer `WHERE` into the view's own `WHERE`, so an expression written by
+        /// the invoker would decide about rows the view does not expose — the same leak that
+        /// `IQueryPlanStep::isSecurityBarrier` prevents in the plan built by the analyzer. Reading
+        /// the view through `StorageView::read` instead keeps the outer predicate outside of it.
+        ///
+        /// `only_analyze` needs no such protection and keeps inlining: the plan it builds reads
+        /// from `ReadNothingStep`, so no expression of the outer query is ever evaluated on a row.
+        /// This is what `EXPLAIN SYNTAX` is built with, and it is the form it has always printed.
+        /// A view that provably hides no rows and has no effective row policy also keeps inlining
+        /// — there is nothing below it for a merged predicate to observe.
+        auto view_context = view ? StorageView::getViewSubqueryContext(context, storage_snapshot) : nullptr;
+        const bool inline_view = view
+            && (options.only_analyze
+                || !StorageView::isSecurityBarrier(*metadata_snapshot, context)
+                || ((!row_policy_filter || row_policy_filter->isAlwaysTrue())
+                    && !query_info.additional_filter_ast
+                    && !StorageView::canHideRows(metadata_snapshot->getSelectQuery().inner_query, view_context)));
+
         if (view)
-        {
             query_info.is_parameterized_view = view->isParameterizedView();
+
+        if (inline_view)
             StorageView::replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
-        }
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
             query_ptr,
@@ -885,7 +905,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (view)
         {
             /// Restore original view name. Save rewritten subquery for future usage in StorageView.
-            query_info.view_query = StorageView::restoreViewName(getSelectQuery(), view_table);
+            if (inline_view)
+                query_info.view_query = StorageView::restoreViewName(getSelectQuery(), view_table);
             view = nullptr;
         }
 
@@ -2024,7 +2045,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             };
 
             if (additional_filter_info)
+            {
                 add_filter_step(additional_filter_info, "Additional filter");
+                if (typeid_cast<const StorageView *>(storage.get())
+                    && StorageView::isSecurityBarrier(*metadata_snapshot, context))
+                    query_plan.getRootNode()->step->setSecurityBarrier();
+            }
 
             if (parallel_replicas_custom_filter_info)
                 add_filter_step(parallel_replicas_custom_filter_info, "Parallel replica custom key filter");

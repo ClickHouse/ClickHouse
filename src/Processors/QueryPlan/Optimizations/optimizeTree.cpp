@@ -202,6 +202,24 @@ bool planHasInOrderAggregation(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
 void checkCascadesSupported(const QueryPlan::Node & root);
+
+/// Returns true if any step of the plan is a security barrier (see `IQueryPlanStep::isSecurityBarrier`).
+static bool planHasSecurityBarrier(const QueryPlan::Node & root)
+{
+    std::vector<const QueryPlan::Node *> stack = {&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (node->step->isSecurityBarrier())
+            return true;
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return false;
+}
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
@@ -424,7 +442,14 @@ void optimizeTreeSecondPass(
         validateDistributedPlanBucketCounts(optimization_settings);
     /// Cascades runs only when both settings are on (see below); `enable_cascades_optimizer`
     /// alone (with `make_distributed_plan = 0`) keeps the normal single-node optimizer.
-    const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer;
+    ///
+    /// It also stays off for a plan that carries a security barrier: Cascades rebuilds the plan from
+    /// its own memo, and its rules (join reordering, aggregation pushdown, exchange placement) neither
+    /// see nor preserve the per-step barrier flag of a `SQL SECURITY DEFINER` / `NONE` view, so the
+    /// rebuilt plan would let the invoker's expressions cross the view's filtering. Fail closed and
+    /// keep the rule-based distributed passes, which are fenced step by step.
+    const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer
+        && !planHasSecurityBarrier(root);
 
     applyParallelReplicas(query_plan, nodes, optimization_settings);
 
@@ -440,7 +465,7 @@ void optimizeTreeSecondPass(
         [&](auto & frame_node)
         {
             /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
-            if (make_distributed_plan && !optimization_settings.enable_cascades_optimizer)
+            if (make_distributed_plan && !cascades_active)
             {
                 tryMakeDistributedJoin(frame_node, nodes, optimization_settings);
                 tryMakeDistributedAggregation(frame_node, nodes, optimization_settings);
@@ -468,7 +493,7 @@ void optimizeTreeSecondPass(
     /// Only `convertToDistributed` can execute the exchange steps Cascades produces;
     /// without `make_distributed_plan` they would build as no-op pipeline steps (e.g.
     /// partial aggregation states reaching consumers unmerged).
-    if (make_distributed_plan && optimization_settings.enable_cascades_optimizer)
+    if (cascades_active)
     {
         checkCascadesSupported(root);
         CascadesOptimizer cascades_optimizer(query_plan, optimization_settings);

@@ -374,7 +374,17 @@ void optimizeJoinByShards(QueryPlan::Node & root)
             continue;
         }
 
-        if (auto * join_step = typeid_cast<JoinStep *>(frame.node->step.get()))
+        /// Never let this analysis cross the seal of a view with `SQL SECURITY DEFINER` or
+        /// `SQL SECURITY NONE` that can hide rows: the join keys of the invoker must not reach the
+        /// reading inside the view and retune which rows it reads and in which order. Fail closed by
+        /// producing no result for a barrier step, so nothing propagates above the seal. Results that
+        /// were collected strictly below it are still applied - that is the sharding of the view's own
+        /// joins, which the invoker does not control.
+        if (frame.node->step->isSecurityBarrier())
+        {
+            /// `result` stays empty.
+        }
+        else if (auto * join_step = typeid_cast<JoinStep *>(frame.node->step.get()))
         {
             const auto & join = join_step->getJoin();
 

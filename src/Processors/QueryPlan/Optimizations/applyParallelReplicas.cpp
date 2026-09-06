@@ -30,6 +30,7 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMerge.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 #include <unordered_set>
@@ -40,6 +41,11 @@ namespace Setting
 {
 extern const SettingsBool parallel_replicas_allow_merge_tables;
 extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+}
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
 }
 
 namespace QueryPlanOptimizations
@@ -204,6 +210,10 @@ public:
         if (!typeid_cast<UnionStep *>(node->step.get()) || node->children.empty())
             return;
 
+        /// A security barrier never becomes part of a fragment (see `collectReadsToDistribute`).
+        if (node->step->isSecurityBarrier())
+            return;
+
         for (const auto * child : node->children)
             if (!typeid_cast<const ParallelReplicasSplitStep *>(child->step.get()))
                 return;
@@ -225,6 +235,10 @@ public:
     {
         const auto coordinated_side = coordinatedJoinSide(node);
         if (coordinated_side == JoinSide::None)
+            return;
+
+        /// A security barrier never becomes part of a fragment (see `collectReadsToDistribute`).
+        if (node->step->isSecurityBarrier())
             return;
 
         auto * coordinated_child = node->children[static_cast<size_t>(coordinated_side)];
@@ -269,6 +283,13 @@ public:
         /// BuildRuntimeFilterStep sits above the join's build side, which for a RIGHT join is the coordinated
         /// side, so the split step has to pass it too. The step becomes part of the plan fragment, where it
         /// does nothing: a deserialized step cannot publish its filter, so every replica builds its own.
+        ///
+        /// A step which is a security barrier is never lifted through: no split marker is planted below
+        /// one (see `collectReadsToDistribute`), so a barrier parent here means the invariant was broken
+        /// upstream, and distributing the read anyway would ship the view's inner query to the replicas.
+        if (parent_step->isSecurityBarrier())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parallel replicas split marker reached a security barrier step {}", parent_step->getName());
+
         if (typeid_cast<const ExpressionStep *>(parent_step) || typeid_cast<const FilterStep *>(parent_step)
             || typeid_cast<const BuildRuntimeFilterStep *>(parent_step))
         {
@@ -489,6 +510,16 @@ static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * 
     if (!node)
         return {};
 
+    /// Nothing below a security barrier is distributed. The barrier steps are the subplan of a
+    /// `SQL SECURITY DEFINER` / `NONE` view which decides what rows the view exposes (see
+    /// `IQueryPlanStep::isSecurityBarrier`), and the view's root step is sealed, so stopping here
+    /// keeps the whole inner query on the initiator. A shipped fragment is deserialized and executed on
+    /// the other replicas under the connection's identity - the definer is neither the connecting nor
+    /// the initial user there - which is the same reason the task-based path switches parallel replicas
+    /// off for the inner query in `StorageView::readImpl`. Fail closed and read the view locally.
+    if (node->step->isSecurityBarrier())
+        return {};
+
     if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
     {
         if (!mergeTreeReadCanBeShipped(*read))
@@ -595,24 +626,31 @@ static bool planHasSubquerySet(const QueryPlan::Node * node)
 /// tables. Ineligible ones (a child which is not a plain `MergeTree` read, a `FINAL` read, nothing to read)
 /// are left as they are and read by a single replica. Call it only once the plan is known to distribute
 /// something - see the caller.
+static void collectMergeReadsToExpand(QueryPlan::Node * node, std::vector<QueryPlan::Node *> & merge_nodes)
+{
+    if (!node || node->step->isSecurityBarrier())
+        return;
+
+    const auto * merge = typeid_cast<const ReadFromMerge *>(node->step.get());
+    if (merge && merge->getContext()->getSettingsRef()[Setting::parallel_replicas_allow_merge_tables])
+        merge_nodes.push_back(node);
+
+    for (auto * child : node->children)
+        collectMergeReadsToExpand(child, merge_nodes);
+}
+
 static void expandMergeReadsForParallelReplicas(QueryPlan & query_plan)
 {
     auto * root = query_plan.getRootNode();
     if (!root)
         return;
 
-    /// Collect first: the expansion replaces the step of a visited node.
+    /// Collect first: the expansion replaces the step of a visited node. A `Merge` read below a security
+    /// barrier is left as it is: nothing below the barrier is distributed (see `collectReadsToDistribute`),
+    /// and rewriting the sealed subplan of a `SQL SECURITY` view would only replace a step which may carry
+    /// the barrier flag with steps that do not.
     std::vector<QueryPlan::Node *> merge_nodes;
-    Stack stack;
-    traverseQueryPlan(
-        stack,
-        *root,
-        [&](QueryPlan::Node & node)
-        {
-            const auto * merge = typeid_cast<const ReadFromMerge *>(node.step.get());
-            if (merge && merge->getContext()->getSettingsRef()[Setting::parallel_replicas_allow_merge_tables])
-                merge_nodes.push_back(&node);
-        });
+    collectMergeReadsToExpand(root, merge_nodes);
 
     for (auto * node : merge_nodes)
     {

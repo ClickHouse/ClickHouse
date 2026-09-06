@@ -122,6 +122,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsString additional_result_filter;
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
@@ -1515,6 +1516,17 @@ void pushOrderByIntoView(
         if (view_settings[Setting::limit] != 0 || view_settings[Setting::offset] != 0 || view_settings[Setting::prefer_column_name_to_alias])
             return;
 
+        /// `additional_result_filter` from the effective context grows a filter step on top of
+        /// the inner query's result, after the inner plan is built (the inner interpreter runs at
+        /// subquery depth 0). An injected inner `LIMIT` would truncate the rows before that filter
+        /// drops its share, so the view would return fewer rows than the filtered top-N — a wrong
+        /// result, not just a missed optimization. `additional_table_filters` are applied at the
+        /// reading step, but fail closed on them too rather than proving which tables they hit,
+        /// mirroring `StorageView::canHideRows`.
+        if (!view_settings[Setting::additional_result_filter].value.empty()
+            || !view_settings[Setting::additional_table_filters].value.empty())
+            return;
+
         inner_header = InterpreterSelectQueryAnalyzer::getSampleBlock(inner, view_context, SelectQueryOptions().analyze());
     }
     catch (const Exception &)
@@ -1903,6 +1915,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
                 std::vector<std::pair<FilterDAGInfo, DescriptionHolderPtr>> where_filters;
                 bool row_policy_filter_not_pushed = false;
+                const bool additional_filter_is_security_barrier = table_expression_query_info.additional_filter_ast
+                    && typeid_cast<const StorageView *>(storage.get())
+                    && StorageView::isSecurityBarrier(*storage_snapshot->metadata, query_context);
 
                 if (prewhere_actions && select_query_options.build_logical_plan)
                 {
@@ -2194,7 +2209,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         const bool outer_group_by_forbids_pushdown = inner_settings[Setting::max_rows_to_group_by] != 0
                             && table_expression_query_info.query_tree->as<QueryNode &>().hasGroupBy();
 
+                        /// A view-keyed `additional_table_filters` entry hides rows exactly like the
+                        /// view's own `WHERE` does, and the pushdown folds it into the shipped query
+                        /// (see below), where the invoker's predicate is free to merge with it on the
+                        /// shard. A barrier view must decline the rewrite for the same fail-closed
+                        /// reason it declines for a row policy, and read through
+                        /// `StorageView::readImpl`, which marks that filter step as a barrier.
+                        const bool additional_filter_needs_barrier = table_expression_query_info.additional_filter_ast
+                            && StorageView::isSecurityBarrier(*storage_snapshot->metadata, query_context);
+
                         if (has_row_policy
+                            || additional_filter_needs_barrier
                             || force_skip_unused_shards
                             || inner_settings_forbid_pushdown
                             || outer_group_by_forbids_pushdown
@@ -2746,6 +2771,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             filter_info.column_name,
                             filter_info.do_remove_column);
                         description->setStepDescription(*filter_step);
+                        if (additional_filter_is_security_barrier)
+                            filter_step->setSecurityBarrier();
                         query_plan.addStep(std::move(filter_step));
                     }
                 }

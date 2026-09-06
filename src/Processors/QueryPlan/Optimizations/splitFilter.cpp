@@ -86,6 +86,12 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
             std::move(split_filter_name),
             remove_filter);
 
+    /// The split moves the filtering itself into the new lower node, so that node inherits the
+    /// role of the step nothing may be pushed below. What stays on top only computes columns.
+    /// See IQueryPlanStep::isSecurityBarrier.
+    if (filter_step->isSecurityBarrier())
+        filter_node.step->setSecurityBarrier();
+
     auto expression_step = std::make_unique<ExpressionStep>(filter_node.step->getOutputHeader(), std::move(split.second));
 
     if (settings.max_step_description_length)

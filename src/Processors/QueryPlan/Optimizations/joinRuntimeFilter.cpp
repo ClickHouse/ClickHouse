@@ -604,6 +604,13 @@ void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const Query
     ReadFromMergeTree * read_step = nullptr;
     while (child)
     {
+        /// Fail closed on a `SQL SECURITY` barrier (see `IQueryPlanStep::isSecurityBarrier`):
+        /// registering index analysis on a read below the seal of a `SQL SECURITY DEFINER` /
+        /// `SQL SECURITY NONE` view would let build-side keys from outside the view prune the
+        /// view's granules, making `read_rows` / progress depend on rows the view hides. This
+        /// covers both a sealed pass-through step and the view's own marked reading step.
+        if (child->step->isSecurityBarrier())
+            return;
         if ((read_step = typeid_cast<ReadFromMergeTree *>(child->step.get())))
             break;
         const bool passthrough = child->children.size() == 1

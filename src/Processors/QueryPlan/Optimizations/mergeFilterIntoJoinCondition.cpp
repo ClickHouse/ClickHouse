@@ -401,6 +401,11 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     if (!filter_step || !join_step)
         return 0;
 
+    /// Moving the filter into a JOIN that belongs to a `SQL SECURITY` view would evaluate it on
+    /// rows the JOIN itself discards. See IQueryPlanStep::isSecurityBarrier.
+    if (child->isSecurityBarrier())
+        return 0;
+
     auto & join_operator = join_step->getJoinOperator();
 
     auto kind = join_operator.kind;

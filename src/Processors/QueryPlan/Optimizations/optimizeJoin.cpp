@@ -715,7 +715,13 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
 {
     auto * join_node = node;
     auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
-    if (expression_step && node->children.size() == 1  && !expression_step->getExpression().hasArrayJoin())
+    /// Never peel or merge the sealing step of a view with `SQL SECURITY DEFINER` or `SQL SECURITY NONE`
+    /// that can hide rows. The subplan below the seal decides which rows the invoker may observe, so the
+    /// invoker's joins must not be reordered into it. Fail closed: the whole subplan becomes one opaque
+    /// relation of the join graph instead.
+    if (node->step->isSecurityBarrier())
+        expression_step = nullptr;
+    else if (expression_step && node->children.size() == 1  && !expression_step->getExpression().hasArrayJoin())
     {
         if (isPassthroughActions(expression_step->getExpression()))
         {
@@ -733,7 +739,7 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
 
     {
         auto * child_join_step = typeid_cast<JoinStepLogical *>(join_node->step.get());
-        if (child_join_step && !child_join_step->isOptimized())
+        if (child_join_step && !join_node->step->isSecurityBarrier() && !child_join_step->isOptimized())
         {
             auto child_join_kind = child_join_step->getJoinOperator().kind;
             bool allow_child_join_kind = isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
@@ -769,13 +775,13 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
     /// those child Join to get proper statistics to use in the parent Join reordering.
     {
         auto * child_node = node;
-        while (child_node->children.size() == 1)
+        while (!child_node->step->isSecurityBarrier() && child_node->children.size() == 1)
         {
             child_node = child_node->children[0];
         }
 
         auto * child_join_step = typeid_cast<JoinStepLogical *>(child_node->step.get());
-        if (child_join_step && !child_join_step->isOptimized())
+        if (child_join_step && !child_node->step->isSecurityBarrier() && !child_join_step->isOptimized())
         {
             optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, graph.context->optimization_settings);
         }
@@ -831,7 +837,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         {
             NameSet names;
             auto * check = plan;
-            if (allow_flatten)
+            /// Mirrors the security-barrier fence in `addChildQueryGraph`: a sealed subplan is never flattened.
+            if (allow_flatten && !check->step->isSecurityBarrier())
             {
                 bool merge_expression_into_join = query_graph.context->optimization_settings.merge_expression_into_join;
                 auto * expr = typeid_cast<ExpressionStep *>(check->step.get());
@@ -1478,6 +1485,13 @@ static void collectJoinGraphRelationHeaders(
     bool merge_expression_into_join,
     std::vector<SharedHeader> & relation_headers)
 {
+    /// Mirrors the security-barrier fence in `addChildQueryGraph`: a sealed subplan is one opaque relation.
+    if (node->step->isSecurityBarrier())
+    {
+        relation_headers.push_back(node->step->getOutputHeader());
+        return;
+    }
+
     /// Peeling must match `addChildQueryGraph`: a passthrough expression is always peeled, a
     /// non-passthrough one only under `merge_expression_into_join`, which merges it into the join
     /// and flattens the child join underneath.
@@ -1491,7 +1505,7 @@ static void collectJoinGraphRelationHeaders(
     }
 
     if (const auto * child_join_step = typeid_cast<const JoinStepLogical *>(effective->step.get());
-        child_join_step && !child_join_step->isOptimized())
+        child_join_step && !effective->step->isSecurityBarrier() && !child_join_step->isOptimized())
     {
         const auto child_join_kind = child_join_step->getJoinOperator().kind;
         const bool allow_child_join_kind

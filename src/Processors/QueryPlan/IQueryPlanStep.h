@@ -187,6 +187,22 @@ public:
     virtual std::vector<size_t> getStepGroups() const { return {0}; }
     virtual String getStepGroupName(size_t) const { return {}; }
 
+    /// A security barrier marks a step that belongs to a view with `SQL SECURITY DEFINER` or
+    /// `SQL SECURITY NONE` and that can drop rows (a `WHERE`, a `JOIN`, an aggregation, ...).
+    /// Such a step decides which rows the invoker of the view is allowed to observe at all, so
+    /// expressions coming from outside the view must not be evaluated below it: the invoker
+    /// controls those expressions and they can leak the hidden rows through exceptions
+    /// (`throwIf`, a failing cast), through timing, or through resource consumption.
+    ///
+    /// Optimizations that move a step down the plan (merging a parent into its child, pushing a
+    /// filter below its child) must refuse to cross a step with this flag, and must propagate the
+    /// flag whenever they replace a barrier step with a new one.
+    ///
+    /// Views that cannot drop rows never get the flag, so a plain projection view keeps the full
+    /// benefit of predicate pushdown and PREWHERE.
+    bool isSecurityBarrier() const { return security_barrier; }
+    void setSecurityBarrier() { security_barrier = true; }
+
     virtual StepAnalysisReport getAnalysisReport(StepProcessors /*step_processors*/) const { return {}; }
 
 protected:
@@ -210,6 +226,9 @@ protected:
 
 private:
     size_t step_index = 0;
+
+    /// See isSecurityBarrier().
+    bool security_barrier = false;
 };
 
 }

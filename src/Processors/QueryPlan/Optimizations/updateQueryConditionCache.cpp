@@ -105,6 +105,13 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
 
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
+        /// The steps below this boundary decide which rows a `SQL SECURITY DEFINER` / `NONE`
+        /// view exposes. Do not attach the outer filter to the inner read: its cache entries would
+        /// otherwise let the invoker's predicate prune rows before the view's filter runs.
+        /// See IQueryPlanStep::isSecurityBarrier.
+        if (iter->node->step->isSecurityBarrier())
+            return;
+
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
             /// Only tag the storage WHERE filter, not one carrying e.g. `__applyFilter`.

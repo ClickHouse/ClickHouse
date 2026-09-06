@@ -58,6 +58,16 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     if (!sorting_step || !expression_step)
         return 0;
 
+    /// The rewrite destroys the expression step and replaces it with two new ones. When the
+    /// expression is the seal of a `SQL SECURITY` view (a barrier `ExpressionStep` is only ever
+    /// the top seal — the marking walk never marks expressions), the replacements would not carry
+    /// the flag and later passes (read-in-order, top-K, vector search) could descend through the
+    /// wrapper again. The seal computes only the view's output conversion, so it never contains
+    /// an `arrayJoin` whose lift the planner relies on for correctness — bailing out is safe.
+    /// See IQueryPlanStep::isSecurityBarrier.
+    if (expression_step->isSecurityBarrier())
+        return 0;
+
     // Filling step position should be preserved
     if (!child_node->children.empty())
         if (typeid_cast<FillingStep *>(child_node->children.front()->step.get()))

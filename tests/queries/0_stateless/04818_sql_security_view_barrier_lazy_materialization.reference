@@ -1,0 +1,4 @@
+invoker filtering view is lazily materialized:	1
+definer filtering view is lazily materialized:	0
+definer view results:	1
+invoker predicate never sees the hidden row:	3

@@ -111,6 +111,13 @@ bool optimizeVectorSearchWithQuantizedCodes(
     if (!expression_step || expression_node->children.size() != 1)
         return false;
 
+    /// Never restructure the steps that decide which rows a `SQL SECURITY DEFINER` / `NONE`
+    /// view exposes: the shortlist prunes the source to the top candidates of the invoker's
+    /// `ORDER BY`, so which rows are read - and with them `read_rows` / timing - would depend
+    /// on the rows the view hides. See IQueryPlanStep::isSecurityBarrier.
+    if (expression_step->isSecurityBarrier())
+        return false;
+
     /// Descend through the chain of Expression/Filter steps between the rescore expression and the read until we reach
     /// ReadFromMergeTree. The chain holds the WHERE predicate - either as a FilterStep, or (when moved to PREWHERE) as
     /// a rename ExpressionStep with the actual filter inside the reader. We collect the chain so we can splice the
@@ -126,11 +133,20 @@ bool optimizeVectorSearchWithQuantizedCodes(
             break;
         if (!typeid_cast<ExpressionStep *>(read_node->step.get()) && !typeid_cast<FilterStep *>(read_node->step.get()))
             return false;
+        /// See above: this can be a view's own filtering, and the shortlist would be
+        /// spliced below it.
+        if (read_node->step->isSecurityBarrier())
+            return false;
         if (read_node->children.size() != 1)
             return false;
         chain_nodes.push_back(read_node);
         read_node = read_node->children.front();
     }
+
+    /// The reading step itself carries the barrier when `optimizePrewhere` has absorbed the
+    /// view's own filter into PREWHERE.
+    if (read_step->isSecurityBarrier())
+        return false;
 
     /// Leave the vector-similarity-index path alone: if the first pass claimed this read for the index, or it is a
     /// distributed read, do not engage the codes optimization. (PREWHERE is fine - it prefilters inside the reader.)

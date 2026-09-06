@@ -1245,6 +1245,21 @@ Used to regulate how resources are utilized and shared between mutations and oth
 **See Also**
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
+    DECLARE(Bool, sql_security_views_are_optimization_barriers, true, R"(
+Treat a view declared with `SQL SECURITY DEFINER` or `SQL SECURITY NONE` as an optimization barrier, so that expressions from the query reading the view are never evaluated on rows that the view itself filters out.
+
+Without this, the outer `WHERE` and the view's own `WHERE` are merged into a single filter over the source table, and an expression under the invoker's control can observe the hidden rows through an exception (`throwIf`, a failing cast), through timing, or through resource consumption — which defeats the point of a `DEFINER` view used to restrict which rows a user may see.
+
+Only views that can actually drop rows become barriers. A view that is a plain projection over its source table keeps the full benefit of predicate pushdown and PREWHERE either way.
+
+This is a server setting rather than a user setting on purpose: a user setting could be turned off by the very query that is trying to read the hidden rows.
+
+**Example**
+
+```xml
+<sql_security_views_are_optimization_barriers>false</sql_security_views_are_optimization_barriers>
+```
+)", 0) \
     DECLARE(Bool, throw_on_unknown_workload, false, R"(
 Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
 

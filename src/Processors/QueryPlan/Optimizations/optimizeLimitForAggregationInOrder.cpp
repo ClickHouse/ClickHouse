@@ -18,6 +18,13 @@ namespace DB::QueryPlanOptimizations
 /// SortingStep → AggregatingStep leg — see expressionPreservesSortColumns.
 static bool isTransparentStep(IQueryPlanStep * step)
 {
+    /// A step of a `SQL SECURITY` view's subplan must not be crossed: a limit hint set
+    /// below it makes the source stop reading by the rows the view drops or collapses,
+    /// which reports their presence through `read_rows`, progress and timing.
+    /// See IQueryPlanStep::isSecurityBarrier.
+    if (step->isSecurityBarrier())
+        return false;
+
     /// ExpressionStep does not advertise preserves_sorting (it cannot prove it
     /// for arbitrary expressions). Row count must be checked: ARRAY JOIN changes it.
     if (auto * expression = typeid_cast<ExpressionStep *>(step))
@@ -104,7 +111,9 @@ void optimizeLimitForAggregationInOrder(QueryPlan::Node & root)
             if (sorting_step || !isTransparentStep(current->step.get()))
                 break;
         }
-        if (!sorting_step || current->children.size() != 1)
+        /// A barrier sorting step belongs to a `SQL SECURITY` view's subplan; the invoker's
+        /// limit must not reach below it. See IQueryPlanStep::isSecurityBarrier.
+        if (!sorting_step || sorting_step->isSecurityBarrier() || current->children.size() != 1)
             continue;
         current = current->children[0];
 
@@ -115,11 +124,15 @@ void optimizeLimitForAggregationInOrder(QueryPlan::Node & root)
             auto * aggregating_step = typeid_cast<AggregatingStep *>(current->step.get());
             if (aggregating_step)
             {
-                /// overflow_row is set by WITH TOTALS.
+                /// overflow_row is set by WITH TOTALS. A barrier aggregation is a
+                /// `SQL SECURITY` view's own: a limit hint on it stops reading by the raw
+                /// rows the view collapses into groups, which reports them through
+                /// `read_rows`, progress and timing. See IQueryPlanStep::isSecurityBarrier.
                 if (!aggregating_step->inOrder()
                     || !aggregating_step->getFinal()
                     || aggregating_step->getParams().overflow_row
-                    || aggregating_step->isGroupingSets())
+                    || aggregating_step->isGroupingSets()
+                    || aggregating_step->isSecurityBarrier())
                     break;
 
                 const auto & sort_desc = sorting_step->getSortDescription();

@@ -1,0 +1,4 @@
+invoker, no inlining:	[0,1,3,4]
+invoker, inlining:	[0,1,3,4]
+definer, inlining:	[0,1,3,4]
+unrelated key, inlining:	[0,1,2,4]

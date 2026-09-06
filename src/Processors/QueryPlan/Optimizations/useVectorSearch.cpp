@@ -88,6 +88,13 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     if (!expression_step)
         return no_layers_updated;
 
+    /// Never descend through a step that decides which rows a `SQL SECURITY DEFINER` / `NONE`
+    /// view exposes: the vector index would prune the source to the top-N candidates of the
+    /// invoker's `ORDER BY`, so which rows and granules are read - and with them `read_rows` /
+    /// timing - would depend on the rows the view hides. See IQueryPlanStep::isSecurityBarrier.
+    if (expression_step->isSecurityBarrier())
+        return no_layers_updated;
+
     if (node->children.size() != 1)
         return no_layers_updated;
     node = node->children.front();
@@ -99,6 +106,9 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
         filter_step = typeid_cast<FilterStep *>(node->step.get());
         if (!filter_step)
             return no_layers_updated;
+        /// See above: this can be a view's own filtering.
+        if (filter_step->isSecurityBarrier())
+            return no_layers_updated;
         if (node->children.size() != 1)
             return no_layers_updated;
         node = node->children.front();
@@ -107,6 +117,11 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
             return no_layers_updated;
         additional_filters_present = true;
     }
+
+    /// The reading step itself carries the barrier when `optimizePrewhere` has absorbed the
+    /// view's own filter into PREWHERE.
+    if (read_from_mergetree_step->isSecurityBarrier())
+        return no_layers_updated;
 
     if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
         additional_filters_present = true;

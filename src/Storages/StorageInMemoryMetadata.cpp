@@ -192,15 +192,30 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (context->hasClusterFunctionReadTaskCallback())
         new_context->setClusterFunctionReadTaskCallback(context->getClusterFunctionReadTaskCallback());
 
+    /// The caller's settings are replayed into the overridden context so that the view's inner
+    /// query honours the caller's profile (`max_threads`, limits, formats, ...). The two
+    /// expression-injection settings are not replayed: `additional_table_filters` and
+    /// `additional_result_filter` add expressions that the inner query would parse and evaluate
+    /// under the definer's identity (or with no access checks at all for `SQL SECURITY NONE`) over
+    /// tables and columns the caller may not be allowed to read, which is a privilege escalation
+    /// and a row-disclosure channel in one. They keep their default (empty) value from the global
+    /// context because they are dropped from the applied changes rather than reset, so the
+    /// definer profile's own filters, applied by `setUser` below, stay in force and can no longer
+    /// be overridden by the caller. The caller's filters still apply to the outer query, under the
+    /// caller's own identity; a filter on the view itself reaches the inner query only as the
+    /// already-validated `query_info.additional_filter_ast`.
+    auto changed_settings = context->getSettingsRef().changes();
+    changed_settings.removeSetting("additional_table_filters");
+    changed_settings.removeSetting("additional_result_filter");
+
     if (sql_security_type == SQLSecurityType::NONE)
     {
-        new_context->applySettingsChanges(context->getSettingsRef().changes());
+        new_context->applySettingsChanges(changed_settings);
         return new_context;
     }
 
     new_context->setUser(getDefinerID(context));
 
-    auto changed_settings = context->getSettingsRef().changes();
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
     new_context->setSetting("allow_ddl", 1);
