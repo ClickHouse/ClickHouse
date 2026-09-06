@@ -104,12 +104,12 @@ bool ExecutionThreadContext::executeTask()
         /// and are not attributed to any query plan step, so there is no clock for them.
         if (const auto * step = node->processor()->getQueryPlanStep())
         {
-            auto & cached_clock = node->cached_clock;
+            auto & cached_clock = node->processor()->query_plan_step_wall_clock_ptr;
             /// We will search in the registry only initially or when the group of the processor changed
-            if (!cached_clock.wall_clock_ptr || node->cached_clock.group != group)
-                cached_clock.wall_clock_ptr = step_to_wall_clock_registry->find(step, group);
+            if (!cached_clock)
+                cached_clock = step_to_wall_clock_registry->find(step, group);
 
-            clock = cached_clock.wall_clock_ptr;
+            clock = cached_clock;
             chassert(clock);
             if (clock)
                 clock->onEnter();
@@ -123,14 +123,16 @@ bool ExecutionThreadContext::executeTask()
         execution_time_watch.emplace();
 #endif
 
+    bool success = true;
     try
     {
         executeJob(node, read_progress_callback);
-        ++node->num_executed_jobs;
+        ++node->processor()->num_executed_jobs;
     }
     catch (...)
     {
-        node->exception = std::current_exception();
+        setException(std::current_exception());
+        success = false;
     }
 
     if (profile_processors || step_to_wall_clock_registry)
@@ -151,7 +153,18 @@ bool ExecutionThreadContext::executeTask()
     if (trace_processors)
         span->addAttribute("execution_time_ns", execution_time_watch->elapsed());
 #endif
-    return node->exception == nullptr;
+    return success;
+}
+
+void ExecutionThreadContext::setException(std::exception_ptr exception_)
+{
+    if (!exception)
+        exception = std::move(exception_);
+}
+
+std::exception_ptr ExecutionThreadContext::getException()
+{
+    return exception;
 }
 
 void ExecutionThreadContext::rethrowExceptionIfHas()

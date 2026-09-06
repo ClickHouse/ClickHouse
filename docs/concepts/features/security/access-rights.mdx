@@ -157,7 +157,16 @@ Management queries:
 
 - Enable SQL-driven access control and account management for at least one user account.
 
-    By default, SQL-driven access control and account management is disabled for all users. You need to configure at least one user in the `users.xml` configuration file and set the values of the [`access_management`](/concepts/features/configuration/settings/settings-users#access_management-user-setting), `named_collection_control`, `show_named_collections`, and `show_named_collections_secrets` settings to 1.
+    The `users.xml` configuration file that ships with ClickHouse enables SQL-driven access control and account management for the `default` user by setting [`access_management`](/concepts/features/configuration/settings/settings-users#access_management-user-setting) and [`named_collection_control`](/concepts/features/configuration/settings/settings-users#named_collection_control-user-setting) to 1. For every other user both settings default to 0, so you need to set them explicitly.
+
+    [`show_named_collections_secrets`](/concepts/features/configuration/settings/settings-users#show_named_collections_secrets-user-setting) defaults to 0 even for the `default` user, because being able to manage named collections does not mean being able to read back the credentials that are already stored in them. A user can only grant the privileges that they have themselves, so as long as this setting is 0, the user does not have the complete set of privileges and a query such as `GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION` is rejected:
+
+    ```text
+    Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+    (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+    ```
+
+    Set all three settings to 1 to make the user a complete administrator.
 
 ## Defining SQL users and roles {#defining-sql-users-and-roles}
 
@@ -173,9 +182,12 @@ This article shows the basics of defining SQL users and roles and applying those
     ```xml
     <access_management>1</access_management>
     <named_collection_control>1</named_collection_control>
-    <show_named_collections>1</show_named_collections>
+    <!-- Needed to make the user a complete administrator,
+         otherwise `GRANT ALL ... WITH GRANT OPTION` below is rejected. -->
     <show_named_collections_secrets>1</show_named_collections_secrets>
     ```
+
+    The first two settings are already enabled for the `default` user in the `users.xml` file that ships with ClickHouse; `show_named_collections_secrets` is commented out there and has to be uncommented.
 
 <Note>
     The `default` user is the only user that gets created with a fresh install, and is also the account used for internode communications, by default.

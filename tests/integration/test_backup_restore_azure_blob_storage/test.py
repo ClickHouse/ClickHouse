@@ -538,6 +538,137 @@ def test_backup_restore_on_merge_tree(cluster):
     azure_query(node, "DROP TABLE test_simple_merge_tree_restored")
 
 
+@pytest.mark.parametrize("max_single_part_upload_size", [32 * 1024 * 1024, 1])
+def test_incremental_backup_restore_on_log(cluster, max_single_part_upload_size):
+    # A `Log` table grows by appending, so an incremental backup writes only the tail of each data
+    # file, i.e. `base_size` is non-zero. The first parameter keeps the data files below
+    # `max_single_part_upload_size` so they take the single-part upload path, the second forces the
+    # multipart path.
+    node = cluster.instances["node"]
+    azure_query(node, "DROP TABLE IF EXISTS test_incremental_log")
+    azure_query(
+        node,
+        "CREATE TABLE test_incremental_log (key UInt64, data String) Engine = Log",
+    )
+    azure_query(
+        node,
+        "INSERT INTO test_incremental_log VALUES (1, 'aaa'), (2, 'bbb'), (3, 'ccc')",
+    )
+
+    base_backup_name = new_backup_name()
+    base_backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{base_backup_name}')"
+    azure_query(
+        node,
+        f"BACKUP TABLE test_incremental_log TO {base_backup_destination}",
+        settings={"azure_max_single_part_upload_size": max_single_part_upload_size},
+    )
+
+    azure_query(
+        node,
+        "INSERT INTO test_incremental_log VALUES (4, 'ddd'), (5, 'eee'), (6, 'fff')",
+    )
+
+    incremental_backup_name = new_backup_name()
+    incremental_backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{incremental_backup_name}')"
+    azure_query(
+        node,
+        f"BACKUP TABLE test_incremental_log TO {incremental_backup_destination} SETTINGS base_backup = {base_backup_destination}",
+        settings={"azure_max_single_part_upload_size": max_single_part_upload_size},
+    )
+
+    azure_query(node, "DROP TABLE IF EXISTS test_incremental_log_restored")
+    azure_query(
+        node,
+        f"RESTORE TABLE test_incremental_log AS test_incremental_log_restored FROM {incremental_backup_destination}",
+    )
+
+    assert azure_query(
+        node, "SELECT * FROM test_incremental_log_restored ORDER BY key"
+    ) == azure_query(node, "SELECT * FROM test_incremental_log ORDER BY key")
+
+    azure_query(node, "DROP TABLE test_incremental_log")
+    azure_query(node, "DROP TABLE test_incremental_log_restored")
+
+
+def test_incremental_backup_restore_on_log_with_native_copy(cluster):
+    # An incremental backup of an append-only file writes only its tail, i.e. `base_size` is non-zero
+    # and the writer uploads a range of the source file. On this node `allow_azure_native_copy` is on
+    # and the table lives on an Azure disk, so the range is read from Azure and written back to Azure:
+    # the restored table must be the same as from a local disk, and the setting must not make the
+    # writer store the whole blob where only the tail belongs.
+    #
+    # A `Log` table backs its data files with `BackupEntryFromAppendOnlyFile`, and `BackupImpl` hands
+    # only immutable-file entries to `copyFileFromDisk`, so this backup goes through `copyDataToFile`,
+    # i.e. the ranged buffered upload. The whole-object guard in
+    # `BackupWriterAzureBlobStorage::copyFileFromDisk` is not reached here: no backup entry that can
+    # have a partial range is dispatched to it today.
+    #
+    # `allow_checksums_from_remote_paths = 0` is what makes a non-zero `base_size` possible at all: an
+    # Azure disk hands out random blob paths, so by default the checksum of a file comes from its
+    # remote path and no prefix checksum can be computed, which leaves `base_size` at 0. The table is
+    # truncated and refilled by one `INSERT` that writes the same blocks: `max_block_size = 1` keeps
+    # every row in its own compressed block, so the first block stays byte-identical to the one the
+    # base backup holds and the prefix of the data file matches.
+    node = cluster.instances["node_native_copy"]
+    one_row_per_block = {
+        "max_block_size": 1,
+        "min_insert_block_size_rows": 0,
+        "min_insert_block_size_bytes": 0,
+    }
+    azure_query(node, "DROP TABLE IF EXISTS test_native_copy_incremental_log SYNC")
+    azure_query(
+        node,
+        "CREATE TABLE test_native_copy_incremental_log (key UInt64, data String) Engine = Log "
+        "SETTINGS storage_policy='blob_storage_policy_native_copy'",
+    )
+    azure_query(
+        node,
+        "INSERT INTO test_native_copy_incremental_log SELECT number, 'aaa' FROM numbers(1)",
+        settings=one_row_per_block,
+    )
+
+    base_backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}')"
+    azure_query(
+        node,
+        f"BACKUP TABLE test_native_copy_incremental_log TO {base_backup_destination} "
+        f"SETTINGS allow_checksums_from_remote_paths = 0",
+    )
+
+    azure_query(node, "TRUNCATE TABLE test_native_copy_incremental_log")
+    azure_query(
+        node,
+        "INSERT INTO test_native_copy_incremental_log SELECT number, 'aaa' FROM numbers(2)",
+        settings=one_row_per_block,
+    )
+
+    incremental_backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}')"
+    azure_query(
+        node,
+        f"BACKUP TABLE test_native_copy_incremental_log TO {incremental_backup_destination} "
+        f"SETTINGS base_backup = {base_backup_destination}, allow_checksums_from_remote_paths = 0",
+    )
+
+    azure_query(
+        node, "DROP TABLE IF EXISTS test_native_copy_incremental_log_restored SYNC"
+    )
+    azure_query(
+        node,
+        f"RESTORE TABLE test_native_copy_incremental_log AS test_native_copy_incremental_log_restored "
+        f"FROM {incremental_backup_destination}",
+    )
+
+    assert (
+        azure_query(
+            node,
+            "SELECT key, data FROM test_native_copy_incremental_log_restored ORDER BY key",
+        )
+        == "0\taaa\n1\taaa\n"
+    )
+
+    azure_query(node, "DROP TABLE test_native_copy_incremental_log")
+    azure_query(node, "DROP TABLE test_native_copy_incremental_log_restored")
+
+
 def test_backup_restore_keeper_map_reference_copy(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
@@ -608,10 +739,15 @@ def test_backup_restore_correct_block_ids(cluster):
         node,
         """
         DROP TABLE IF EXISTS test_simple_merge_tree;
+        -- Pin the default codec to `LZ4` for the whole part: the test splits `data.bin` into fixed-size
+        -- upload blocks and asserts a minimum block count, so the compressed part size must not depend on
+        -- the server default codec. This is a compact part, so `data.bin` is the combined stream of all
+        -- columns; pinning only a per-column `CODEC` would leave the `key` column on the server default
+        -- (`ZSTD(3)`), which compresses it smaller and drops the block count below the threshold.
         CREATE TABLE test_simple_merge_tree(key UInt64, data String)
         Engine = MergeTree()
         ORDER BY tuple()
-        SETTINGS storage_policy='blob_storage_policy', serialization_info_version = 'basic'""",
+        SETTINGS storage_policy='blob_storage_policy', serialization_info_version = 'basic', default_compression_codec = 'LZ4'""",
     )
     data_query = "SELECT number, repeat('a', 100) FROM numbers(1000)"
     azure_query(
