@@ -366,6 +366,11 @@ public:
 
     virtual void batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & /* memories */, const SerializationSettings * settings) const;
 
+    /// The same for a range of rows: `memories` is still indexed by the row number, and only the
+    /// entries in the range are read and advanced.
+    virtual void batchSerializeValueIntoMemory(
+        VectorWithMemoryTracking<char *> & /* memories */, size_t /* row_begin */, size_t /* row_end */, const SerializationSettings * settings) const;
+
     /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
     virtual std::string_view serializeValueIntoArenaWithNull(
         size_t /* n */,
@@ -377,6 +382,13 @@ public:
     virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
     virtual void batchSerializeValueIntoMemoryWithNull(VectorWithMemoryTracking<char *> & /* memories */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
+
+    virtual void batchSerializeValueIntoMemoryWithNull(
+        VectorWithMemoryTracking<char *> & /* memories */,
+        size_t /* row_begin */,
+        size_t /* row_end */,
+        const UInt8 * /* is_null */,
+        const SerializationSettings * settings) const;
 
     /// Calculate all the sizes of serialized data (as in the methods above) in the column and add to `sizes`.
     /// If `is_null` is not nullptr, also take null byte into account.
@@ -1120,9 +1132,17 @@ private:
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
     void batchSerializeValueIntoMemoryWithNull(VectorWithMemoryTracking<char *> & memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemoryWithNull(
+        VectorWithMemoryTracking<char *> & memories,
+        size_t row_begin,
+        size_t row_end,
+        const UInt8 * is_null,
+        const IColumn::SerializationSettings * settings) const override;
 
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     void batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemory(
+        VectorWithMemoryTracking<char *> & memories, size_t row_begin, size_t row_end, const IColumn::SerializationSettings * settings) const override;
 
     std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;

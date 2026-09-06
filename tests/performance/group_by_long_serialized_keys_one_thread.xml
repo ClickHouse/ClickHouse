@@ -1,0 +1,48 @@
+<test>
+    <!-- The narrow end of the widths walked by `group_by_long_serialized_keys` and
+         `group_by_long_serialized_keys_mapped`, with one thread: that is where the difference
+         between laying a block's keys out and serializing them a row at a time shows, because with
+         one thread per core the aggregation is bound elsewhere. -->
+
+    <query>
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 12, '0') AS k1, leftPad(toString(number % 13), 12, '0') AS k2, number AS v FROM numbers_mt(16000000))
+        GROUP BY k1, k2 SETTINGS max_threads = 1
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 12, '0') AS k1, leftPad(toString(number % 13), 12, '0') AS k2, number AS v FROM numbers_mt(16000000))
+        GROUP BY k1, k2 SETTINGS max_threads = 1
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 20, '0') AS k1, leftPad(toString(number % 13), 20, '0') AS k2, number AS v FROM numbers_mt(6000000))
+        GROUP BY k1, k2 SETTINGS max_threads = 1
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 20, '0') AS k1, leftPad(toString(number % 13), 20, '0') AS k2, number AS v FROM numbers_mt(6000000))
+        GROUP BY k1, k2 SETTINGS max_threads = 1
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT k1, k2
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 48, '0') AS k1, leftPad(toString(number % 13), 48, '0') AS k2, number AS v FROM numbers_mt(3000000))
+        GROUP BY k1, k2 SETTINGS max_threads = 1
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 48, '0') AS k1, leftPad(toString(number % 13), 48, '0') AS k2, number AS v FROM numbers_mt(3000000))
+        GROUP BY k1, k2 SETTINGS max_threads = 1
+        FORMAT Null
+    </query>
+</test>

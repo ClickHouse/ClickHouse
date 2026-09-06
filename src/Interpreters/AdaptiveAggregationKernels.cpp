@@ -283,15 +283,15 @@ namespace
     }
 
     /// Whether the string views the state's key holders hand out point into storage that
-    /// outlives the row loop (a batch-serialized buffer or the key column itself) rather than
-    /// into per-row scratch that dies with the holder. Only the serialized methods can go
-    /// either way, and they expose the choice as `use_batch_serialize`; the run tracking in
-    /// the count kernel may only remember a previous key's view when this holds.
+    /// outlives the row loop (the block laid out in one piece, the keys' home in the arena, or
+    /// the key column itself) rather than into scratch the next row or the next chunk writes
+    /// over. Only the serialized methods can go either way, and they answer for themselves; the
+    /// run tracking in the count kernel may only remember a previous key's view when this holds.
     template <typename State>
-    bool ALWAYS_INLINE adaptiveKeyViewsAreBlockStable(const State & state)
+    bool ALWAYS_INLINE adaptiveKeyViewsAreBlockStable(State & state)
     {
-        if constexpr (requires { state.use_batch_serialize; })
-            return state.use_batch_serialize;
+        if constexpr (requires { state.keyViewsAreBlockStable(); })
+            return state.keyViewsAreBlockStable();
         else
             return true;
     }

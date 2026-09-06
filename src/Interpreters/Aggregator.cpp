@@ -1369,6 +1369,10 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
     [[maybe_unused]] AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
 
+    /// The loops below go through the block's rows in order, which is all a method needs to prepare
+    /// their keys ahead of them.
+    state.enableKeyRegion(method.data.getBufferSizeInBytes());
+
     [[maybe_unused]] ColumnRawPtrs heap_key_cols;
     if constexpr (top_k)
         heap_key_cols.assign(key_columns.begin(), key_columns.begin() + params.top_k->key_columns);
@@ -1636,6 +1640,11 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
         else if (!no_more_keys)
         {
+            /// In order, like the general loop below, so a method may prepare the block's keys ahead
+            /// of it. The `no_more_keys` branch may not, for the same reason as there: it looks a
+            /// row up without taking a key holder first.
+            state.enableKeyRegion(method.data.getBufferSizeInBytes());
+
             [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
             if constexpr (top_k)
             {
@@ -1750,6 +1759,12 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// For all rows.
     if (!no_more_keys)
     {
+        /// The loop below goes through the block's rows in order, which is all a method needs to
+        /// prepare their keys ahead of it. The `no_more_keys` branch does not: it looks a row up
+        /// without taking a key holder first, so it would ask for a hash of a chunk nobody has
+        /// prepared.
+        state.enableKeyRegion(method.data.getBufferSizeInBytes());
+
         [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
         if constexpr (top_k)
         {
@@ -4731,6 +4746,8 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     if (!arena_for_keys)
         arena_for_keys = aggregates_pool;
 
+    state.enableKeyRegion(data.getBufferSizeInBytes());
+
     for (size_t i = row_begin; i < row_end; ++i)
         state.emplaceKey(data, i, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
 }
@@ -4768,6 +4785,11 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     }
     else
     {
+        /// This loop goes through the rows in order, like the one that aggregates them does, so a
+        /// method that prepares a block's keys ahead of it may do so here too. The `no_more_keys`
+        /// branch above may not: it looks a row up without taking a key holder first.
+        state.enableKeyRegion(data.getBufferSizeInBytes());
+
         for (size_t i = row_begin; i < row_end; i++)
         {
             /// clang-tidy complains wrongly about this one when running the analysis from an ARM host.
@@ -4875,6 +4897,9 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         }
         else
         {
+            /// In order, as above, so the keys of a block may be prepared ahead of the loop.
+            state.enableKeyRegion(data.getBufferSizeInBytes());
+
             for (size_t row = row_begin; row < row_end; row++)
             {
                 /// clang-tidy complains wrongly about this one when running the analysis from an ARM host.

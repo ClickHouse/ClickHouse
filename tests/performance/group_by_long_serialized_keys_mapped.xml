@@ -1,0 +1,53 @@
+<test>
+    <!-- `GROUP BY` over several string keys goes through the serialized method, which lays a block's
+         keys out either one key column at a time - a chunk at a time, so that what is written is
+         still in cache when it is probed - or one row at a time. Which of the two pays depends on
+         how wide a row is, so the shapes below walk that width from 40 to 1024 bytes.
+
+         Here the cells also hold an aggregate state, so the keys are laid out into a buffer reused
+         across the block and the hash table copies an inserted key out of it. The key-only widths
+         are in `group_by_long_serialized_keys`, the single-thread copies in
+         `group_by_long_serialized_keys_one_thread`. -->
+
+    <query>
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 12, '0') AS k1, leftPad(toString(number % 13), 12, '0') AS k2, number AS v FROM numbers_mt(32000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 20, '0') AS k1, leftPad(toString(number % 13), 20, '0') AS k2, number AS v FROM numbers_mt(24000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 48, '0') AS k1, leftPad(toString(number % 13), 48, '0') AS k2, number AS v FROM numbers_mt(24000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 88, '0') AS k1, leftPad(toString(number % 13), 88, '0') AS k2, number AS v FROM numbers_mt(16000000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 248, '0') AS k1, leftPad(toString(number % 13), 248, '0') AS k2, number AS v FROM numbers_mt(5600000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT k1, k2, sum(v)
+        FROM (SELECT leftPad(toString(cityHash64(number) % 100000), 504, '0') AS k1, leftPad(toString(number % 13), 504, '0') AS k2, number AS v FROM numbers_mt(2800000))
+        GROUP BY k1, k2
+        FORMAT Null
+    </query>
+</test>

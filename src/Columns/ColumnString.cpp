@@ -344,9 +344,15 @@ ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * mem
 
 void ColumnString::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
 {
+    batchSerializeValueIntoMemory(memories, 0, size(), settings);
+}
+
+void ColumnString::batchSerializeValueIntoMemory(
+    VectorWithMemoryTracking<char *> & memories, size_t row_begin, size_t row_end, const IColumn::SerializationSettings * settings) const
+{
     chassert(memories.size() == size());
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
-    for (size_t i = 0; i < memories.size(); ++i)
+    for (size_t i = row_begin; i < row_end; ++i)
     {
         size_t string_size = sizeAt(i) + serialize_string_with_zero_byte;
         size_t offset = offsetAt(i);
