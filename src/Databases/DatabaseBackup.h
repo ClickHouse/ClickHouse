@@ -28,16 +28,31 @@ public:
 
     DatabaseBackup(const String & name, const String & metadata_path, const Configuration & config, ContextPtr context);
 
+    /// Whether a locator arrived with the query being executed, or was read back from a definition
+    /// this server stored or an archive holds. Only a locator of the first kind reaches the server as
+    /// text no parser has accepted yet.
+    enum class LocatorSource
+    {
+        Query,
+        StoredDefinition,
+    };
+
     /// Authorizes reading this engine's backup destination against `context`'s SOURCES grants, in
     /// either spelling of the locator. An argument written in neither is left to creation, which
     /// rejects it. Performs no I/O, so it also serves as a preflight before an `ON CLUSTER` query is
     /// distributed or a definition found in a backup is created.
-    static void parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context);
+    static void parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context, LocatorSource locator_source);
 
     /// Older servers persisted the locator as a string literal, a form nothing can open. Returns the
     /// function form such an argument holds, and any other argument unchanged; a string that does not
     /// decode is rejected without quoting it, because it carries credentials.
+    /// Parses without limits: a stored definition must decode whatever was accepted when it was
+    /// written, and rejecting it here would leave a database that cannot be loaded or restored.
     static ASTPtr normalizeLegacyLocator(const ASTPtr & locator);
+
+    /// As above, for a locator that arrived with `query_context`'s query. That text has not been
+    /// parsed before, so it is held to the parser limits of the session that sent it.
+    static ASTPtr normalizeLegacyLocatorFromQuery(const ASTPtr & locator, const ContextPtr & query_context);
 
     String getEngineName() const override { return "Backup"; }
 
