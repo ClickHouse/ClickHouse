@@ -236,8 +236,9 @@ BACKUP TABLE nonexistent_04510 TO S3('url_bkp_mixed',
 
 -- The credential-free engines (Disk, File, Memory, Null) are credential-free only in the shape they
 -- read: File and Memory take one argument, Disk two, Null none. A surplus argument is rejected after
--- the statement is logged, so it reaches the log holding whatever was written in it, and an engine name
--- that is not registered at all has no known shape to trust; both must be hidden. The last statement is
+-- the statement is logged, so it reaches the log holding whatever was written in it, an argument that is
+-- no string is read by none of these engines and can carry a string of its own, and an engine name that
+-- is not registered at all has no known shape to trust; all three must be hidden. The last statement is
 -- the control: the shape Null does read carries nothing to hide, so it stays visible verbatim and gets
 -- as far as resolving the table.
 BACKUP TABLE nonexistent_04510 TO File('nonexistent_04510',
@@ -246,6 +247,7 @@ BACKUP TABLE nonexistent_04510 TO Disk('backups', 'nonexistent_04510',
                  'SEKRIT_TODISKOVER'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 BACKUP TABLE nonexistent_04510 TO Memory('nonexistent_04510',
                  'SEKRIT_TOMEMOVER'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+BACKUP TABLE nonexistent_04510 TO File(['SEKRIT_TOFILEARR']); -- { serverError BAD_GET }
 BACKUP TABLE nonexistent_04510 TO Null('SEKRIT_TONULLOVER'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 BACKUP TABLE nonexistent_04510 TO Foo('SEKRIT_TOUNKNOWN'); -- { serverError BACKUP_ENGINE_NOT_FOUND }
 BACKUP TABLE nonexistent_04510 TO Null(); -- { serverError UNKNOWN_TABLE }
@@ -332,7 +334,7 @@ BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://user:SEKRIT_AZ3USERIN
                  'cont', 'blob'); -- { serverError BAD_ARGUMENTS }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct#f', 'cont', 'blob',
                  'acct', 'SEKRIT_AZTO5KEY'); -- { serverError BAD_ARGUMENTS }
-BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(1234567890123456, 'cont', 'blob'); -- { serverError BAD_GET }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(['SEKRIT_AZ3ARR'], 'cont', 'blob'); -- { serverError BAD_GET }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/visible_04510_acct5',
                  'visible_04510_cont5', 'visible_04510_blob5', 'visible_04510_acctname5',
                  'SEKRIT_AZ5PLAINKEY'); -- { serverError STD_EXCEPTION }

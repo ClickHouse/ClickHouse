@@ -103,8 +103,16 @@ bool FunctionSecretArgumentsFinder::isCredentialFreeBackupLocator(const Abstract
     auto arity = credentialFreeBackupEngineArity(function.name());
     if (!arity)
         return false;
-    /// An engine reads its own arguments only, so a surplus one holds whatever the statement put there.
-    return (function.hasArguments() ? function.arguments->size() : 0) == *arity && hasOnlyLiteralArguments(function);
+    const size_t count = function.hasArguments() ? function.arguments->size() : 0;
+    if (count != *arity)
+        return false;
+    /// An engine reads its own arguments only, so a surplus one holds whatever the statement put there,
+    /// and each of these reads every argument of its own as a string: another shape, an array among
+    /// them, is read by none of them and can carry a string of its own.
+    for (size_t i = 0; i < count; ++i)
+        if (!tryGetStringFromArgument(*function.arguments->at(i), nullptr, /* allow_identifier= */ false))
+            return false;
+    return true;
 }
 
 void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argument_is_named)

@@ -531,13 +531,10 @@ ASTPtr DatabaseBackup::normalizeLegacyLocator(const ASTPtr & locator)
     {
         /// `BackupInfo::toAST` stamps the `BACKUP_NAME` kind, which renders a key-value argument as
         /// `equals(k, v)`, so a node built that way would not compare equal to a live definition.
+        /// Without limits, as the definition above: this text is what a server rendered from a locator
+        /// it had already parsed, so a limit here could only reject a database that was accepted once.
         ParserIdentifierWithOptionalParameters locator_parser;
-        ASTPtr parsed = parseQuery(
-            locator_parser,
-            locator->as<ASTLiteral>()->value.safeGet<String>(),
-            0,
-            DBMS_DEFAULT_MAX_PARSER_DEPTH,
-            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        ASTPtr parsed = parseQuery(locator_parser, locator->as<ASTLiteral>()->value.safeGet<String>(), 0, 0, 0);
         /// Only a function is a locator; an identifier or a scalar parses but opens nothing.
         BackupInfo::fromAST(*parsed);
         return parsed;
