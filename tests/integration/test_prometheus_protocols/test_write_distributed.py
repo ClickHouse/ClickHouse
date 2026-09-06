@@ -214,8 +214,8 @@ def test_remote_write_refuses_one_random_shard_on_a_keyless_wrapper():
 
 
 def test_remote_write_refuses_a_shard_target_swapped_after_the_check():
-    """A same-schema MergeTree table swapped in under a shard-local name between the check and the
-    INSERT takes the batch unchecked: the write is not acknowledged, so Prometheus retries it.
+    """A same-schema MergeTree table swapped in under a shard-local name after the check is refused
+    by the shard as it would write it: nothing lands, and the write is not acknowledged.
     """
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     swapped = False
@@ -229,17 +229,19 @@ def test_remote_write_refuses_a_shard_target_swapped_after_the_check():
         node.query(f"SYSTEM NOTIFY FAILPOINT {BEFORE_INSERT}")
         response = pending.result(timeout=60)
         assert response.status_code >= 500, response.text
-        assert "UNKNOWN_STATUS_OF_INSERT" in response.text
-        assert "is not acknowledged" in response.text
+        assert "UNEXPECTED_TABLE_ENGINE" in response.text
+        # The shard names the engine it found under the name and the one the INSERT expects.
+        assert "engine MergeTree" in response.text
+        assert "expects TimeSeries" in response.text
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_INSERT}")
         pool.shutdown(wait=True)
         if swapped:
             node.query("EXCHANGE TABLES shard_0.ts_local AND shard_0.mt_bad")
-        # The decoy took the batch under the TimeSeries name; the module's other tests expect it empty.
-        node.query("TRUNCATE TABLE shard_0.mt_bad")
 
-    # Nothing reached a TimeSeries table, and the retry lands once the name is right again.
+    # The decoy took nothing under the TimeSeries name, nothing reached a TimeSeries table, and the
+    # retry lands once the name is right again.
+    assert int(node.query("SELECT count() FROM shard_0.mt_bad")) == 0
     assert count_on_the_shards("prom_dist", "swapped_metric") == 0
     assert write("/dist/write", "swapped_metric", ("h3",)).status_code == 204
     assert count_on_the_shards("prom_dist", "swapped_metric") == 1

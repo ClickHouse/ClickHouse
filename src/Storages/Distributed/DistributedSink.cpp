@@ -868,9 +868,10 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 
     try
     {
+        /// Its own copy, as a foreground job takes: the interpreter consumes insert_expected_table_engine on it.
         InterpreterInsertQuery interp(
             query_ast,
-            context,
+            Context::createCopy(context),
             allow_materialized,
             /* no_squash= */ false,
             /* no_destination= */ false,

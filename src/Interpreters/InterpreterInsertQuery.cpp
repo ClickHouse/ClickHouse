@@ -90,6 +90,7 @@ namespace Setting
     extern const SettingsFloat shrink_over_allocated_columns_min_waste_ratio;
     extern const SettingsUInt64 shrink_over_allocated_columns_min_waste_bytes;
     extern const SettingsString insert_deduplication_token;
+    extern const SettingsString insert_expected_table_engine;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
@@ -122,6 +123,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int QUERY_IS_PROHIBITED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+    extern const int UNEXPECTED_TABLE_ENGINE;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int LOGICAL_ERROR;
 }
@@ -1297,6 +1299,21 @@ BlockIO InterpreterInsertQuery::execute()
     /// background flush for asynchronous inserts, so the check has to be repeated here.
     if (!query.table_function)
         table->checkInsertIsAllowed(context);
+
+    /// The table named is checked and the requirement consumed: the writes it makes on its own, into inner tables
+    /// or views, are its own. A Distributed table forwards it instead, for each shard's insert to check its table.
+    if (const String expected_engine = settings[Setting::insert_expected_table_engine].value;
+        !expected_engine.empty() && table->getName() != "Distributed")
+    {
+        if (table->getName() != expected_engine)
+            throw Exception(
+                ErrorCodes::UNEXPECTED_TABLE_ENGINE,
+                "Table {} has engine {} while the INSERT expects {} (insert_expected_table_engine)",
+                table->getStorageID().getNameForLogs(),
+                table->getName(),
+                expected_engine);
+        context->setSetting("insert_expected_table_engine", "");
+    }
 
     if (!allow_materialized)
     {

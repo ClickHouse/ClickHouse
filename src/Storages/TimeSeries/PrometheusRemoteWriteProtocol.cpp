@@ -325,6 +325,9 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
         context_->setSetting("skip_unavailable_shards", false);
         /// A shard that is this server itself is always written in-process, as the shard-target check assumes.
         context_->setSetting("prefer_localhost_replica", true);
+        /// Each shard's insert refuses the table it resolves unless it is still a TimeSeries table: the check in
+        /// write() runs first, on the initiator, so a table swapped in under the name after it is not taken.
+        context_->setSetting("insert_expected_table_engine", "TimeSeries");
     }
     else
         /// A shard-local table's version is checked by its own write on the shard.
@@ -348,14 +351,11 @@ void PrometheusRemoteWriteProtocol::write(
 
     /// The sink would accept shard targets no prometheus read surface can answer from, and a caller's
     /// own shard choice; checked here, not on construction, with no request body read in between.
-    const auto checked_targets = checkPrometheusQueryDistributedWrite(*time_series_storage, getContext());
+    checkPrometheusQueryDistributedWrite(*time_series_storage, getContext());
 
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     FailPointInjection::pauseFailPoint(FailPoints::prometheus_remote_write_before_insert);
     insertBlock(makeBlock(time_series, metrics_metadata, *metadata), *time_series_storage, getContext());
-
-    /// The sink wrote by name: acknowledged only if every shard target is still the table checked above.
-    checkPrometheusQueryDistributedWriteDelivered(*time_series_storage, getContext(), checked_targets);
 
     LOG_TRACE(
         log,
