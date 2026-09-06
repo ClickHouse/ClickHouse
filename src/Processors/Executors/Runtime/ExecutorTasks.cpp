@@ -1,4 +1,5 @@
 #include <Processors/Executors/Runtime/ExecutorTasks.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Processors/StepWallClockRegistry.h>
@@ -143,7 +144,16 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
         threads_queue.push(context.thread_number);
     }
 
-    context.wait(finished);
+    {
+        /// This worker has no task and is about to sleep. Park its CPU lease so the slot is
+        /// released while it is idle, then unpark on wake. Fixes CPU-slot over-provisioning
+        /// (issue #95727): a sleeping worker otherwise holds its slot indefinitely because it
+        /// never calls renew() to be downscaled, starving other queries (e.g. a query moving
+        /// from a parallel phase to a long sequential one). The wait is outside the tasks mutex,
+        /// so parking (which takes only the lease's own mutex) cannot deadlock against it.
+        CPULeaseParkGuard park_guard;
+        context.wait(finished);
+    }
 }
 
 size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context)

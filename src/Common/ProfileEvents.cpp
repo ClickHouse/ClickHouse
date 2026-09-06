@@ -1550,6 +1550,8 @@ The server successfully detected this situation and will download merged part fr
     M(ConcurrencyControlPreemptions, "Total number of CPU preemptions", ValueType::Number) \
     M(ConcurrencyControlUpscales, "Total number of CPU upscaling events", ValueType::Number) \
     M(ConcurrencyControlDownscales, "Total number of CPU downscaling events", ValueType::Number) \
+    M(ConcurrencyControlParks, "Total number of times a thread released (parked) its CPU slot for a non-CPU wait, such as blocking I/O or having no task to run.", ValueType::Number) \
+    M(ConcurrencyControlUnparks, "Total number of times a thread re-acquired its CPU slot after a non-CPU wait.", ValueType::Number) \
     \
     M(ConcurrentQuerySlotsAcquired, "Total number of query slots acquired", ValueType::Number) \
     M(ConcurrentQueryWaitMicroseconds, "Total time a query was waiting for a query slots", ValueType::Microseconds) \

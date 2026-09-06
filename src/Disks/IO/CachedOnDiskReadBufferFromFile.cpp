@@ -9,6 +9,7 @@
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromS3.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
@@ -1478,6 +1479,12 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             else
                 state->buf->set(nullptr, 0);
         });
+
+        /// Park the CPU lease across the blocking read — a local cache-file read (SSD) or a remote
+        /// fetch (S3 / distributed cache) — so the slot is released while this thread waits on I/O
+        /// and another thread can use the CPU. Covers local disk too (all read types); a
+        /// page-cache hit parks only briefly, cheap relative to the read it guards.
+        CPULeaseParkGuard cpu_park;
 
         size = readFromFileSegment(
             file_segment,

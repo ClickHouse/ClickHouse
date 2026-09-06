@@ -8,6 +8,7 @@
 #include <Common/ConcurrencyControl.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Stopwatch.h>
@@ -60,6 +61,14 @@ struct WorkloadResources
     MemoryReservation * reservation;
     MemoryTracker * tracker;
 
+    // CurrentCPULease publication: this thread's lease is published as the current CPU lease for
+    // the lifetime of this object, so blocking I/O deep in a processor's work() and the executor's
+    // idle wait can park it via CPULeaseParkGuard. `prev_cpu_lease` restores any outer publication
+    // (a nested pipeline executor on the same thread); `publishes_lease` marks the single instance
+    // that owns the publication (transferred by the move constructor so the moved-from is inert).
+    ISlotLease * prev_cpu_lease = nullptr;
+    bool publishes_lease = false;
+
     WorkloadResources(IAcquiredSlot * cpu_slot, const QueryStatusPtr & status)
         : lease(dynamic_cast<ISlotLease*>(cpu_slot))
         , reservation(status ? status->getMemoryReservation() : nullptr)
@@ -67,12 +76,51 @@ struct WorkloadResources
     {
         if (lease)
         {
+            // Runs on the worker thread that will execute the pipeline (same contract as
+            // startConsumption, which must be called from that thread).
             lease->startConsumption();
             last_renew_ns = clock_gettime_ns();
         }
+
+        // Manage the CurrentCPULease publication for this executor's region. A region drives
+        // parking only for its OWN lease: publish our lease when we have one and parking is
+        // enabled, so the park guards deep in work()/idle-wait find it. Otherwise -- no lease of
+        // our own, or parking disabled -- mask any lease published by an enclosing pipeline
+        // executor on this thread (a nested Pulling/PushingPipelineExecutor) with nullptr, so its
+        // guards do not park the outer lease; restore it on destruction. The masking cannot be
+        // gated on having a lease: a nested executor may have none (allocateCPU() can fall back to
+        // a non-lease allocation, e.g. after a cpu_slot_preemption reload) while an outer lease is
+        // still published. With nothing published and no lease to publish, the thread-local is
+        // left untouched so a server with the feature off pays nothing.
+        prev_cpu_lease = getCurrentCPULease();
+        if (lease && lease->isParkingEnabled())
+        {
+            setCurrentCPULease(lease);
+            publishes_lease = true;
+        }
+        else if (prev_cpu_lease)
+        {
+            setCurrentCPULease(nullptr);
+            publishes_lease = true;
+        }
     }
 
-    WorkloadResources(WorkloadResources && other) = default;
+    WorkloadResources(WorkloadResources && other) noexcept
+        : lease(other.lease)
+        , last_renew_ns(other.last_renew_ns)
+        , reservation(other.reservation)
+        , tracker(other.tracker)
+        , prev_cpu_lease(other.prev_cpu_lease)
+        , publishes_lease(other.publishes_lease)
+    {
+        other.publishes_lease = false; // the moved-to instance now owns the publication
+    }
+
+    ~WorkloadResources()
+    {
+        if (publishes_lease)
+            setCurrentCPULease(prev_cpu_lease);
+    }
 
     bool isCPULeaseRenewNeeded()
     {
@@ -584,6 +632,7 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
                             .on_resume = [this](size_t slot_id) { tasks.resume(slot_id); },
                             .workload = query_context->getSettingsRef()[Setting::workload],
                             .trace_cpu_scheduling = trace_cpu_scheduling,
+                            .parking_enabled = query_context->getCPUSlotParking(),
                         },
                         initial_max);
                 }

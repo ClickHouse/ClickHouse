@@ -407,6 +407,7 @@ namespace ServerSetting
     extern const ServerSettingsBool cpu_slot_preemption;
     extern const ServerSettingsUInt64 cpu_slot_quantum_ns;
     extern const ServerSettingsUInt64 cpu_slot_preemption_timeout_ms;
+    extern const ServerSettingsBool cpu_slot_parking;
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
@@ -2739,6 +2740,7 @@ try
                 new_server_settings[ServerSetting::cpu_slot_preemption],
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
+            global_context->setCPUSlotParking(new_server_settings[ServerSetting::cpu_slot_parking]);
 
             if (config().has("resources") || config().has("workload_classifiers"))
             {
