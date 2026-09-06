@@ -4116,11 +4116,7 @@ public:
     /// that is not owned by a `shared_ptr`.
     static bool isCompoundForMonotonicity(const IDataType & type)
     {
-        const IDataType * unwrapped = &type;
-        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(unwrapped))
-            unwrapped = low_cardinality->getDictionaryType().get();
-        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(unwrapped))
-            unwrapped = nullable->getNestedType().get();
+        const IDataType * unwrapped = removeLowCardinalityAndNullable(&type);
         return isArray(*unwrapped) || isTuple(*unwrapped) || isMap(*unwrapped);
     }
 
