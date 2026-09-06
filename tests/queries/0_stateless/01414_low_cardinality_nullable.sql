@@ -150,6 +150,7 @@ SELECT count() FROM lc_nullable WHERE has(i8,  -1);
 SELECT count() FROM lc_nullable WHERE has(i16, -1);
 SELECT count() FROM lc_nullable WHERE has(i32, -1);
 SELECT count() FROM lc_nullable WHERE has(i64, -1);
+-- The unsigned columns hold the wrapped value, so `x = -1` is false and all four must read 0.
 SELECT count() FROM lc_nullable WHERE has(u8,  -1);
 SELECT count() FROM lc_nullable WHERE has(u16, -1);
 SELECT count() FROM lc_nullable WHERE has(u32, -1);

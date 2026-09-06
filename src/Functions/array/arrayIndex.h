@@ -8,6 +8,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/LowCardinalityExecutionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -44,6 +45,20 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int CANNOT_PARSE_BOOL;
+    extern const int CANNOT_PARSE_DATE;
+    extern const int CANNOT_PARSE_DATETIME;
+    extern const int CANNOT_PARSE_IPV4;
+    extern const int CANNOT_PARSE_IPV6;
+    extern const int CANNOT_PARSE_NUMBER;
+    extern const int CANNOT_PARSE_TEXT;
+    extern const int CANNOT_PARSE_UUID;
+    extern const int DECIMAL_OVERFLOW;
+    extern const int NOT_IMPLEMENTED;
+    extern const int TOO_LARGE_STRING_SIZE;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 using NullMap = PaddedPODArray<UInt8>;
@@ -402,7 +417,17 @@ private:
     using ArrayOffset = ColumnArray::Offset;
     using ResultType = typename ConcreteAction::ResultType;
 
-    template <bool IsConst, bool HasNullMapData, bool HasNullMapItem>
+    /// Both operands live in PaddedPODArray, so the AllowOverflow15 primitives may over-read safely.
+    template <bool ZeroPadded>
+    static bool needleEquals(const UInt8 * needle, size_t needle_size, const UInt8 * elem, size_t elem_size)
+    {
+        if constexpr (ZeroPadded)
+            return memequalSmallLikeZeroPaddedAllowOverflow15(needle, needle_size, elem, elem_size);
+        else
+            return memequalSmallAllowOverflow15(needle, needle_size, elem, elem_size);
+    }
+
+    template <bool IsConst, bool HasNullMapData, bool HasNullMapItem, bool ZeroPadded>
     static void processImpl(
         const ColumnString::Chars & data,
         const ColumnArray::Offsets & offsets,
@@ -444,7 +469,7 @@ private:
                         if ((*data_map)[current_offset + j])
                             continue;
 
-                    if (!memequalSmallAllowOverflow15(item_values.data(), item_offsets, &data[string_pos], string_size))
+                    if (!needleEquals<ZeroPadded>(item_values.data(), item_offsets, &data[string_pos], string_size))
                         continue;
                 }
                 else if constexpr (HasNullMapData)
@@ -457,10 +482,10 @@ private:
                         if (!(*item_map)[i])
                             continue;
                     }
-                    else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
+                    else if (!needleEquals<ZeroPadded>(&item_values[value_pos], value_size, &data[string_pos], string_size))
                         continue;
                 }
-                else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
+                else if (!needleEquals<ZeroPadded>(&item_values[value_pos], value_size, &data[string_pos], string_size))
                     continue;
 
                 ConcreteAction::apply(current, j);
@@ -474,7 +499,7 @@ private:
         }
     }
 
-    template <bool IsConst>
+    template <bool IsConst, bool ZeroPadded>
     static void invokeCheckNullMaps(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets,
         const ColumnString::Offsets & str_offsets, const ColumnString::Chars & values,
@@ -482,23 +507,28 @@ private:
         PaddedPODArray<ResultType> & result, const NullMap * data_map, const NullMap * item_map)
     {
         if (data_map && item_map)
-            processImpl<IsConst, true, true>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+            processImpl<IsConst, true, true, ZeroPadded>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
         else if (data_map)
-            processImpl<IsConst, true, false>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+            processImpl<IsConst, true, false, ZeroPadded>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
         else if (item_map)
-            processImpl<IsConst, false, true>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+            processImpl<IsConst, false, true, ZeroPadded>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
         else
-            processImpl<IsConst, false, false>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
+            processImpl<IsConst, false, false, ZeroPadded>(data, offsets, str_offsets, values, item_offsets, result, data_map, item_map);
     }
 
 public:
+    /// [zero_padded] must be set only for a constant `FixedString` needle: its trailing NUL padding
+    /// is not part of the value, so equality has to ignore it to agree with `=`.
     static void process(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets,
         const ColumnString::Offsets & string_offsets, const ColumnString::Chars & item_values,
         Offset item_offsets, PaddedPODArray<ResultType> & result,
-        const NullMap * data_map, const NullMap * item_map)
+        const NullMap * data_map, const NullMap * item_map, bool zero_padded = false)
     {
-        invokeCheckNullMaps<true>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
+        if (zero_padded)
+            invokeCheckNullMaps<true, true>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
+        else
+            invokeCheckNullMaps<true, false>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
     }
 
     static void process(
@@ -507,7 +537,7 @@ public:
         const ColumnString::Offsets & item_offsets, PaddedPODArray<ResultType> & result,
         const NullMap * data_map, const NullMap * item_map)
     {
-        invokeCheckNullMaps<false>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
+        invokeCheckNullMaps<false, false>(data, offsets, string_offsets, item_values, item_offsets, result, data_map, item_map);
     }
 };
 }
@@ -659,6 +689,24 @@ private:
 
         const auto & arg_column = arguments[1].column;
         const ColumnNullable * arg_nullable = checkAndGetColumn<ColumnNullable>(&*arg_column);
+
+        /// Peel the `Nullable` off a `Const(Nullable(T))` needle so the handlers below see the `Const(T)`
+        /// they recognize and the `FixedString` layout survives. Only the string family may be peeled: a
+        /// peeled numeric needle would reach `executeIntegral`, whose comparison is by raw physical number.
+        if (!arg_nullable && !arg_column->onlyNull()
+            && WhichDataType(removeNullable(recursiveRemoveLowCardinality(arguments[1].type))).isStringOrFixedString())
+        {
+            if (const auto * arg_const = checkAndGetColumnConst<ColumnNullable>(&*arg_column))
+            {
+                auto unwrapped = arguments;
+                unwrapped[1].column = ColumnConst::create(
+                    assert_cast<const ColumnNullable &>(arg_const->getDataColumn()).getNestedColumnPtr(),
+                    arg_const->size());
+                unwrapped[1].type = removeNullable(arguments[1].type);
+
+                return executeArrayImpl(unwrapped, result_type);
+            }
+        }
 
         if (!nullable && !arg_nullable)
         {
@@ -849,6 +897,182 @@ private:
      *
      * Tips and tricks tried can be found at https://github.com/ClickHouse/ClickHouse/pull/12550 .
      */
+
+    /// Is [code] a way for the probe's own cast to DECLINE its input, rather than a fault of the probe?
+    /// ONLY these may be read as a decline; anything else (a memory limit, a logical error, a
+    /// cancellation) is a fault of the probe and MUST propagate instead of being read as one.
+    static bool isNeedleCastDecline(int code)
+    {
+        return code == ErrorCodes::CANNOT_CONVERT_TYPE
+            || code == ErrorCodes::CANNOT_PARSE_BOOL
+            || code == ErrorCodes::CANNOT_PARSE_DATE
+            || code == ErrorCodes::CANNOT_PARSE_DATETIME
+            || code == ErrorCodes::CANNOT_PARSE_IPV4
+            || code == ErrorCodes::CANNOT_PARSE_IPV6
+            || code == ErrorCodes::CANNOT_PARSE_NUMBER
+            || code == ErrorCodes::CANNOT_PARSE_TEXT
+            || code == ErrorCodes::CANNOT_PARSE_UUID
+            || code == ErrorCodes::DECIMAL_OVERFLOW
+            || code == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+            || code == ErrorCodes::NOT_IMPLEMENTED
+            || code == ErrorCodes::TOO_LARGE_STRING_SIZE
+            || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM
+            || code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    }
+
+    /// Does casting [needle_column] into [element_type] and back preserve its value exactly? A ROUND TRIP,
+    /// because one way cannot report loss: `DateTime -> Date` truncates the time of day and succeeds.
+    /// [declined] tells apart "came back changed" from "the cast refused to run" (only the latter is ambiguous).
+    static bool roundTripPreservesNeedleValue(
+        const ColumnPtr & needle_column,
+        const DataTypePtr & needle_type,
+        const DataTypePtr & element_type,
+        bool & declined)
+    {
+        declined = false;
+        try
+        {
+            /// The down-cast is the very one `dictionaryIndexForConstant` performs, so it must be the
+            /// same `castColumn`; the way back only has to report loss, so it may reject with a NULL.
+            const auto narrowed = castColumn({needle_column, needle_type, ""}, element_type);
+            if (narrowed->empty() || narrowed->isNullAt(0))
+            {
+                declined = true;
+                return false;
+            }
+
+            const auto restored
+                = castColumnAccurateOrNull({narrowed, element_type, ""}, makeNullable(needle_type));
+            if (restored->empty() || restored->isNullAt(0))
+            {
+                declined = true;
+                return false;
+            }
+
+            return accurateEquals((*restored)[0], (*needle_column)[0]);
+        }
+        catch (const Exception & e)
+        {
+            /// A declining cast still has to be told apart from a fault of the probe itself, which is
+            /// not an answer to anything and must reach the caller.
+            if (!isNeedleCastDecline(e.code()))
+                throw;
+
+            declined = true;
+            return false;
+        }
+    }
+
+    /// What the needle's round trip through the element type established. [ValueLost] is a fact about the
+    /// VALUE (the pair converts, this value does not survive, so no element equals the needle);
+    /// [NotConvertible] is a fact about the type PAIR and says nothing about the value.
+    enum class NeedleCastOutcome : uint8_t
+    {
+        Preserved,
+        ValueLost,
+        NotConvertible,
+    };
+
+    /// Ask the type question before the value one: re-run the trip on the needle type's own DEFAULT, which
+    /// separates the two facts. The probe must be structural rather than an error-code list because the
+    /// codes conflate them (`CANNOT_CONVERT_TYPE` covers an unsupported pair AND a real value refusal).
+    static NeedleCastOutcome classifyNeedleCast(
+        const ColumnPtr & needle_column, const DataTypePtr & needle_type, const DataTypePtr & element_type)
+    {
+        bool declined = false;
+        if (roundTripPreservesNeedleValue(needle_column, needle_type, element_type, declined))
+            return NeedleCastOutcome::Preserved;
+
+        /// The trip ran and came back with a different value: the pair converts, this value does not.
+        if (!declined)
+            return NeedleCastOutcome::ValueLost;
+
+        auto probe = needle_type->createColumn();
+        probe->insertDefault();
+
+        bool default_declined = false;
+        roundTripPreservesNeedleValue(std::move(probe), needle_type, element_type, default_declined);
+
+        /// A cast taking the default but not this value is answering about the value; refusing both refuses
+        /// the pair. Only the DECLINE of the default may be read, never its preservation, which a merely
+        /// lossy pair need not achieve.
+        return default_declined ? NeedleCastOutcome::NotConvertible : NeedleCastOutcome::ValueLost;
+    }
+
+    /// Why the dictionary shortcut may not be taken. NOT interchangeable: [Shape] says only "this lookup
+    /// cannot answer it", so the general path must compute the value, while [NoElementCanEqual] is a
+    /// positive result ABOUT the value, whose answer is a zero-filled column.
+    enum class DictionaryShortcut : uint8_t
+    {
+        Admit,
+        Shape,
+        NoElementCanEqual,
+    };
+
+    /// Sound only when the needle denotes ONE value AND the dictionary's BYTE identity coincides with the
+    /// type's equality. The string clauses are a TYPE allow-list because their width-sensitivity is invisible
+    /// to a value round trip; a float ELEMENT is refused (`+0.0 == -0.0` differ in bytes, `NaN != NaN` do not).
+    static DictionaryShortcut needleMapsToSingleDictionaryValue(
+        const DataTypePtr & element_type,
+        const DataTypePtr & needle_type,
+        std::optional<size_t> needle_constant_size,
+        const ColumnPtr & needle_column)
+    {
+        const auto element = removeNullable(recursiveRemoveLowCardinality(element_type));
+        const auto needle = removeNullable(recursiveRemoveLowCardinality(needle_type));
+
+        const WhichDataType which_element(element);
+        const WhichDataType which_needle(needle);
+
+        /// See the float paragraph above: the dictionary is looked up by bytes, so a float ELEMENT
+        /// cannot be matched by an equality-correct lookup at all. This says nothing about the value,
+        /// so the general path must still compute it.
+        if (which_element.isFloat())
+            return DictionaryShortcut::Shape;
+
+        /// A `FixedString` needle is zero-padded to the element width, so it stays one value only
+        /// while the element type is at least as wide; a `String` element can hold several members
+        /// of the needle's equivalence class, of which the dictionary would find at most one.
+        if (which_needle.isFixedString())
+            return which_element.isFixedString()
+                    && assert_cast<const DataTypeFixedString &>(*element).getN()
+                        >= assert_cast<const DataTypeFixedString &>(*needle).getN()
+                ? DictionaryShortcut::Admit
+                : DictionaryShortcut::Shape;
+
+        if (which_element.isFixedString())
+        {
+            /// A `String` needle padded up to the element width by the lookup's own cast is exact while it
+            /// FITS, so it still denotes one value; a longer one does not.
+            const size_t element_n = assert_cast<const DataTypeFixedString &>(*element).getN();
+            return needle_constant_size.has_value() && *needle_constant_size <= element_n
+                ? DictionaryShortcut::Admit
+                : DictionaryShortcut::Shape;
+        }
+
+        if (element->equals(*needle))
+            return DictionaryShortcut::Admit;
+
+        /// Mirror what the lookup does with the operands before casting: `recursiveRemoveLowCardinality`
+        /// on the column, then peel `Nullable`, so the column handed to the cast matches [needle].
+        ColumnPtr value = recursiveRemoveLowCardinality(needle_column);
+        if (const auto * value_nullable = checkAndGetColumn<ColumnNullable>(value.get()))
+            value = value_nullable->getNestedColumnPtr();
+
+        /// A trip that RUNS and loses the value proves no element equals the needle; a pair that cannot
+        /// convert AT ALL proves neither, so the value must still be computed. Reporting the first as a
+        /// shape decline reaches `executeIntegral`, matching a `Date` day number to an equal `DateTime` second.
+        switch (classifyNeedleCast(value, needle, element))
+        {
+            case NeedleCastOutcome::Preserved:
+                return DictionaryShortcut::Admit;
+            case NeedleCastOutcome::ValueLost:
+                return DictionaryShortcut::NoElementCanEqual;
+            case NeedleCastOutcome::NotConvertible:
+                return DictionaryShortcut::Shape;
+        }
+    }
+
     static ColumnPtr executeArrayLowCardinality(const ColumnsWithTypeAndName & arguments)
     {
         /// The LowCardinality optimization compares dictionary indices instead of actual values.
@@ -886,11 +1110,50 @@ private:
             && !right_const->isNullAt(0) && right_const->getDataColumnPtr()->getFloat64(0) == 0.0)
             return nullptr;
 
+        /// `dictionaryIndexForConstant` answers a NULL needle with index 0, which is the NULL slot ONLY for a
+        /// nullable dictionary; otherwise index 0 is the type's DEFAULT, which a NULL would then match in
+        /// every row holding it. Let such a needle fall through to `executeNothing`.
+        if (right_const->isNullAt(0) && !isNullableOrLowCardinalityNullable(array_type.getNestedType()))
+            return nullptr;
+
+        /// The needle's byte length MUST be read through the same wrappers the TYPE side peels in
+        /// [needleMapsToSingleDictionaryValue], or identical bytes are admitted as `String` and declined as
+        /// `LowCardinality(String)`. The `isNullAt` guard MUST come first: `ColumnNullable::getDataAt` throws.
+        std::optional<size_t> needle_constant_size;
+        if (!right_const->isNullAt(0))
+        {
+            /// `recursiveRemoveLowCardinality` resolves the single value through the dictionary and
+            /// preserves row order, so row 0 stays row 0. Peeling by hand via `getDictionary` would
+            /// NOT: dictionary position 0 is the type's default, not this constant's value.
+            ColumnPtr needle_holder = recursiveRemoveLowCardinality(right_const->getDataColumnPtr());
+            const IColumn * needle_data = needle_holder.get();
+            if (const auto * needle_nullable = checkAndGetColumn<ColumnNullable>(needle_data))
+                needle_data = &needle_nullable->getNestedColumn();
+
+            if (checkAndGetColumn<ColumnString>(needle_data) || checkAndGetColumn<ColumnFixedString>(needle_data))
+                needle_constant_size = needle_data->getDataAt(0).size();
+        }
+
+        auto shortcut = needleMapsToSingleDictionaryValue(
+            array_type.getNestedType(), arguments[1].type, needle_constant_size, right_const->getDataColumnPtr());
+
+        /// A NULL needle carries no value, so the guard's round trip inspected an arbitrary placeholder and
+        /// its verdict must never be read as "no element can equal it". Reaching here means the dictionary is
+        /// NULLABLE, where index 0 IS the NULL slot and the lookup is the right answer.
+        if (right_const->isNullAt(0) && shortcut == DictionaryShortcut::NoElementCanEqual)
+            shortcut = DictionaryShortcut::Admit;
+
+        if (shortcut == DictionaryShortcut::Shape)
+            return nullptr;
+
         UInt64 index = 0;
         UInt64 left_size = arguments[0].column->size();
         ResultColumnPtr col_result = ResultColumnType::create();
 
-        if (!LowCardinalityExecutionHelpers::dictionaryIndexForConstant(
+        /// A needle outside the image of the element type equals no element, and the dictionary miss
+        /// says the same thing, so both answer every row with the action's "not found" value.
+        if (shortcut == DictionaryShortcut::NoElementCanEqual
+            || !LowCardinalityExecutionHelpers::dictionaryIndexForConstant(
                 *left_lc, right_const->getDataColumnPtr(), arguments[1].type, target_type, index))
         {
             col_result->getData().resize_fill(col_array->size());
@@ -1186,7 +1449,8 @@ private:
                     item_const_fixedstring->getN(),
                     result->getData(),
                     null_map_data,
-                    null_map_item);
+                    null_map_item,
+                    /*zero_padded=*/ true);
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnConst contains not String nor FixedString column");
         }
@@ -1210,6 +1474,59 @@ private:
         return result;
     }
 
+    /// String-family equality is zero-padded exactly when one side is a `FixedString`
+    /// (`toFixedString('abc', 5) = 'abc'`).
+    static bool needsZeroPaddedComparison(const DataTypePtr & element_type, const DataTypePtr & needle_type)
+    {
+        const auto element = removeNullable(recursiveRemoveLowCardinality(element_type));
+        const auto needle = removeNullable(recursiveRemoveLowCardinality(needle_type));
+
+        const WhichDataType which_element(element);
+        const WhichDataType which_needle(needle);
+
+        return (which_element.isFixedString() && which_needle.isStringOrFixedString())
+            || (which_needle.isFixedString() && which_element.isStringOrFixedString());
+    }
+
+    /// Compares two string `Field`s as if the shorter one were padded with zero bytes.
+    /// Unlike the `AllowOverflow15` primitives, this may not over-read: a `Field` holds a
+    /// `std::string`, which carries no SIMD padding.
+    static bool zeroPaddedFieldEquals(const Field & lhs, const Field & rhs)
+    {
+        if (lhs.getType() != Field::Types::String || rhs.getType() != Field::Types::String)
+            return accurateEquals(lhs, rhs);
+
+        const auto & a = lhs.safeGet<String>();
+        const auto & b = rhs.safeGet<String>();
+
+        const size_t min_size = std::min(a.size(), b.size());
+        if (0 != memcmp(a.data(), b.data(), min_size))
+            return false;
+
+        const auto & longest = a.size() > b.size() ? a : b;
+        for (size_t i = min_size; i < longest.size(); ++i)
+            if (longest[i] != 0)
+                return false;
+
+        return true;
+    }
+
+    static ResultType linearSearchConstZeroPadded(const Array & arr, const Field & value)
+    {
+        ResultType current = 0;
+        for (size_t i = 0, size = arr.size(); i < size; ++i)
+        {
+            if (!zeroPaddedFieldEquals(arr[i], value))
+                continue;
+
+            ConcreteAction::apply(current, i);
+
+            if constexpr (!ConcreteAction::resume_execution)
+                break;
+        }
+        return current;
+    }
+
     static ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
     {
         const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get());
@@ -1220,11 +1537,20 @@ private:
         Array arr = col_array->getValue<Array>();
         const IColumn * item_arg = arguments[1].column.get();
 
+        /// `Field` has no `FixedString`, so a `FixedString` value arrives as a NUL-padded `String`
+        /// and exact `Field` equality compares that padding as data.
+        const bool zero_padded = needsZeroPaddedComparison(
+            assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType(), arguments[1].type);
+
         if (isColumnConst(*item_arg))
         {
             ResultType current = 0;
             const auto & value = (*item_arg)[0];
-            if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
+            /// Ordering under zero-padded comparison need not match the dictionary/insertion order
+            /// the binary search relies on, so use the linear scan, which is correct either way.
+            if (zero_padded)
+                current = linearSearchConstZeroPadded(arr, value);
+            else if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
             {
                 if (isColumnNullableOrLowCardinalityNullable(
                         assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData()))
@@ -1272,7 +1598,7 @@ private:
                 {
                     if (null_map && (*null_map)[row])
                         continue;
-                    if (!accurateEquals(arr[i], value))
+                    if (zero_padded ? !zeroPaddedFieldEquals(arr[i], value) : !accurateEquals(arr[i], value))
                         continue;
                 }
 
