@@ -12083,6 +12083,10 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     PartitionCommandsResultInfo result;
     std::mutex result_mutex;
 
+    /// Resolve once from the entry settings snapshot so every part of this FREEZE makes the same
+    /// durability decision even if a concurrent ALTER ... MODIFY SETTING swaps the table settings.
+    const bool fsync_freeze_snapshot = (*settings)[MergeTreeSetting::fsync_part_directory];
+
     ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_FREEZE_PART);
 
     for (const auto & part : data_parts)
@@ -12094,7 +12098,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
         /// Passing by reference here is fine. All variables outlive the runner.
         runner.enqueueAndKeepTrack(
-            [this, &part, &backup_path, &backup_name, &local_context, &result, &result_mutex]()
+            [this, &part, &backup_path, &backup_name, &local_context, &result, &result_mutex, fsync_freeze_snapshot]()
             {
                 LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
 
@@ -12113,7 +12117,8 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
                 IDataPartStorage::ClonePartParams params
                 {
-                    .make_source_readonly = true
+                    .make_source_readonly = true,
+                    .fsync_part_directory = fsync_freeze_snapshot,
                 };
 
                 auto new_storage = data_part_storage->freeze(
