@@ -36,13 +36,29 @@
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Common/config_version.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
 
+extern const char * GIT_HASH;
+
 namespace DB
 {
+
+namespace
+{
+void writePrometheusBuildInfo(WriteBuffer & out)
+{
+    const FormatSettings format_settings;
+    writeString(R"({"status":"success","data":{"version":)", out);
+    writeJSONString(VERSION_STRING, out, format_settings);
+    writeString(R"(,"revision":)", out);
+    writeJSONString(GIT_HASH, out, format_settings);
+    writeString(R"(,"branch":"","buildUser":"","buildDate":"","goVersion":""}})", out);
+}
+}
 
 namespace Setting
 {
@@ -423,8 +439,8 @@ public:
     }
 };
 
-/// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
+/// Handles the read-only query, metadata, and build information endpoints of the Prometheus HTTP API
+/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata, /api/v1/status/buildinfo).
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -483,6 +499,26 @@ public:
             /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
             /// percent-encoded label name in ".../label/<name>/values" is read correctly.
             const String uri_path = Poco::URI(uri).getPath();
+
+            /// The build information endpoint identifies the backend and does not need a TimeSeries table.
+            const size_t api_v1_path_start = uri_path.find("/api/v1");
+            const bool is_build_info_endpoint = api_v1_path_start != String::npos
+                && uri_path.find("/api/v1", api_v1_path_start + 1) == String::npos
+                && uri_path.substr(api_v1_path_start) == "/api/v1/status/buildinfo";
+            if (is_build_info_endpoint)
+            {
+                if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_GET
+                    && request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
+                {
+                    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED);
+                    response.set("Allow", "GET, HEAD");
+                    writeString(R"({"status":"error","errorType":"method_not_allowed","error":"Method not allowed"})", getOutputStream(response));
+                    return;
+                }
+
+                writePrometheusBuildInfo(getOutputStream(response));
+                return;
+            }
 
             if (uri_path.ends_with("/format_query"))
             {
@@ -731,7 +767,7 @@ private:
         if (path.ends_with("/read"))
             return read_impl;
 
-        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata)
+        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata, status/buildinfo)
         /// are served by the Query implementation, which itself returns 404 for unknown paths.
         return query_impl;
     }

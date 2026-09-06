@@ -8,6 +8,12 @@
             </handler>
         </rule>
         <rule>
+            <url_prefix>/prometheus_no_table/api/v1</url_prefix>
+            <handler>
+                <type>prometheus_api_v1</type>
+            </handler>
+        </rule>
+        <rule>
             <url>/api/v1/write</url>
             <handler>
                 <type>prometheus_write</type>

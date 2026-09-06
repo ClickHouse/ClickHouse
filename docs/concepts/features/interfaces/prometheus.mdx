@@ -82,7 +82,7 @@ curl http://127.0.0.1:9363/metrics
 
 ## Prometheus HTTP API and PromQL {#prometheus-http-api-and-promql}
 
-ClickHouse implements the Prometheus HTTP API over a [`TimeSeries`](/reference/engines/table-engines/integrations/time-series) table. One handler serves remote write, remote read, instant PromQL queries, and range PromQL queries.
+ClickHouse implements the Prometheus HTTP API over a [`TimeSeries`](/reference/engines/table-engines/integrations/time-series) table. One handler serves remote write, remote read, instant PromQL queries, range PromQL queries, and backend build information.
 
 ### Prerequisites {#prerequisites}
 
@@ -127,9 +127,11 @@ Configure one prefix-routed handler on the main ClickHouse HTTP port:
 | `/prometheus/api/v1/query_range` | Range PromQL queries |
 | `/prometheus/api/v1/format_query` | PromQL expression formatting |
 | `/prometheus/api/v1/series` | Series metadata |
+| `/prometheus/api/v1/labels` | Label names |
 | `/prometheus/api/v1/metadata` | Metric-family metadata |
+| `/prometheus/api/v1/status/buildinfo` | ClickHouse version and revision |
 
-The example omits `database` and `table` from the handler. Each request must provide the `table` query parameter (except for `/format_query`, which only parses the given PromQL expression and doesn't need a table). It can also provide `database`, use a qualified table name such as `prometheus.metrics`, or omit the database to use `default`. This allows one handler to serve multiple `TimeSeries` tables.
+The example omits `database` and `table` from the handler. All Prometheus API requests except `/api/v1/format_query` and `/api/v1/status/buildinfo` must provide the `table` query parameter. The `/api/v1/format_query` endpoint only parses the given PromQL expression, and the `/api/v1/status/buildinfo` endpoint returns backend identity information; neither needs a table. A request can also provide `database`, use a qualified table name such as `prometheus.metrics`, or omit the database to use `default`. This allows one handler to serve multiple `TimeSeries` tables.
 
 To use one fixed table for every request, configure it in the handler:
 
@@ -148,7 +150,7 @@ Routing and handler settings:
 | Name | Default | Description |
 |---|---|---|
 | `url_prefix` | none | Rule filter that matches every request path that starts with the configured prefix. |
-| `table` | none | The name of a `TimeSeries` table. When omitted, the request must provide the `table` query parameter. The configured name can include a database. |
+| `table` | none | The name of a `TimeSeries` table. When omitted, all Prometheus API requests except `/api/v1/status/buildinfo` must provide the `table` query parameter. The configured name can include a database. |
 | `database` | none | The database containing the table. A request can provide it as a query parameter. When omitted, ClickHouse uses a database from a qualified `table` value or falls back to `default`. |
 
 ### Ingest metrics with remote write {#remote-write}
@@ -234,7 +236,7 @@ datasources:
 Grafana appends `/api/v1/query` or `/api/v1/query_range` to this base URL and adds `customQueryParameters` to each request.
 
 <Note>
-Only the query endpoints `/api/v1/query`, `/api/v1/query_range`, and `/api/v1/format_query` and the metadata endpoints `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, and `/api/v1/metadata` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. `/api/v1/labels` accepts the same parameters, with `match[]` being optional, and returns the sorted label names of the matched series (or of all series when no selectors are given). `/api/v1/label/<name>/values` accepts the same parameters as `/api/v1/labels` and returns the sorted values of one label, with `<name>` optionally using the Prometheus `U__...` escaping of label names that contain characters outside `[a-zA-Z0-9_]`. These endpoints cover what a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete.
+The query endpoints `/api/v1/query`, `/api/v1/query_range`, and `/api/v1/format_query`, the metadata endpoints `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, and `/api/v1/metadata`, and the backend identity endpoint `/api/v1/status/buildinfo` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. `/api/v1/labels` accepts the same parameters, with `match[]` being optional, and returns the sorted label names of the matched series (or of all series when no selectors are given). `/api/v1/label/<name>/values` accepts the same parameters as `/api/v1/labels` and returns the sorted values of one label, with `<name>` optionally using the Prometheus `U__...` escaping of label names that contain characters outside `[a-zA-Z0-9_]`. These endpoints cover what a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete. The `/api/v1/status/buildinfo` endpoint returns the ClickHouse version and source revision, intentionally omits Mimir-specific `features`, and does not require a `TimeSeries` table. Write PromQL expressions in code mode instead of the query builder.
 </Note>
 
 #### SQL entry points {#sql-entry-points}
