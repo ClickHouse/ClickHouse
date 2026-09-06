@@ -1,0 +1,426 @@
+---
+sidebarTitle: 'sqlflow'
+keywords: ['clickhouse', 'sqlflow', 'duckdb', 'kafka', 'streaming', 'stream processing', 'sink', 'data ingestion', 'integrate', 'websocket']
+slug: /integrations/sqlflow
+description: 'Stream Kafka, WebSocket and webhook data into ClickHouse, transformed with DuckDB SQL, using sqlflow'
+title: 'sqlflow and ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://turbolytics.io'
+---
+
+import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
+import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge/>
+
+<a href="https://github.com/turbolytics/sql-flow" target="_blank">sqlflow</a> is an open-source (MIT) stream processing engine. It consumes a stream — Kafka, a WebSocket, or webhooks — runs DuckDB SQL over each micro-batch, and inserts the result into a ClickHouse table. A pipeline is a single YAML file, and sqlflow ships as one binary and one Docker image, so there is no cluster to run.
+
+This page covers the ClickHouse sink: connecting to ClickHouse Cloud and self-hosted ClickHouse, which types map, an end-to-end example on the NYC taxi sample dataset, and the limits that were measured rather than assumed.
+
+## Prerequisites {#prerequisites}
+
+- sqlflow **v1.0.5** or later. Earlier releases have data-fidelity defects in this path, so upgrade rather than work around them.
+- ClickHouse Cloud, or self-hosted ClickHouse. Everything on this page was run against Cloud 26.2 and self-hosted 26.8; no minimum below those has been established.
+- A Kafka broker the pipeline can reach, for the Kafka source used in the example. The WebSocket and webhook sources need no broker.
+- Python 3 with the `confluent-kafka` package (`pip install confluent-kafka`), only for the script in the example that publishes the sample data to Kafka. sqlflow itself needs no Python.
+- Docker is the simplest install — `turbolytics/sql-flow` is published multi-arch for `linux/amd64` and `linux/arm64`. sqlflow can also be built from source; it needs Go, a C toolchain, and `libduckdb` present at runtime.
+
+## Setup {#setup}
+
+sqlflow connects with a single DSN. The scheme selects the protocol and whether TLS is used; the port defaults from the scheme if omitted.
+
+| Scheme                          | Protocol | TLS | Default port | Use for |
+| ------------------------------- | -------- | --- | ------------ | ------- |
+| `clickhouses://`, `https://`    | HTTP     | yes | 8443         | ClickHouse Cloud, or any TLS-terminated HTTP endpoint |
+| `clickhouse://`, `http://`      | HTTP     | no  | 8123         | Self-hosted ClickHouse |
+| `natives://`                    | native   | yes | 9440         | ClickHouse Cloud over the native protocol |
+| `tcp://`, `native://`           | native   | no  | 9000         | Self-hosted, native protocol |
+
+The target table must already exist. sqlflow does not create tables and does not evolve schemas: it names the columns in its `INSERT` from the column names its SQL produces, so **the columns your handler SQL emits must match the table's column names**. Use aliases in the SQL to rename.
+
+### Connect to ClickHouse Cloud {#connect-to-clickhouse-cloud}
+
+<ConnectionDetails />
+
+With those details, the DSN is:
+
+```
+clickhouses://default:<password>@<host>.clickhouse.cloud:8443/<database>
+```
+
+Keep it out of the YAML by passing it as an environment variable; the config's `dsn` field is a template:
+
+```yaml
+sink:
+  type: clickhouse
+  clickhouse:
+    dsn: {{ SQLFLOW_CLICKHOUSE_DSN }}
+    table: trips_small
+```
+
+```bash
+export SQLFLOW_CLICKHOUSE_DSN='clickhouses://default:<password>@<host>.clickhouse.cloud:8443/nyc_taxi'
+```
+
+<Warning>
+Use `clickhouses://` (with the `s`) for Cloud. `clickhouse://` sends plain HTTP to port 8443, and the connection is reset before any request is made — see [Troubleshooting](#troubleshooting).
+</Warning>
+
+### Connect to self-hosted ClickHouse {#connect-to-self-hosted-clickhouse}
+
+Point the DSN at the HTTP interface, port 8123 by default:
+
+```bash
+export SQLFLOW_CLICKHOUSE_DSN='clickhouse://default:<password>@clickhouse.internal:8123/nyc_taxi'
+```
+
+If you have put TLS in front of the HTTP interface, use `clickhouses://` exactly as for Cloud. For the native protocol use `tcp://` (9000) or `natives://` (9440).
+
+When sqlflow runs in Docker, `localhost` inside the container is the container itself, not your machine. Put sqlflow and ClickHouse on the same Docker network and use the ClickHouse container's name as the host.
+
+## Authentication {#authentication}
+
+Username and password are carried in the DSN and, with `clickhouses://` or `natives://`, are sent over TLS. The server certificate is verified against the system trust store; there is no option to skip verification.
+
+- **Special characters in the password.** The DSN is parsed as a URL, so `/`, `#` and `?` must be percent-encoded (`%2F`, `%23`, `%3F`); left raw they produce a confusing `invalid port ":p" after host`. `@` and `:` are handled correctly either way.
+- **Cloud IP access lists.** If your service restricts source IPs, the address sqlflow connects from has to be on the list.
+- **Not supported:** mutual TLS / client certificates, and custom CA bundles. Use username and password.
+
+## Example: streaming the NYC taxi dataset from Kafka {#example-nyc-taxi}
+
+This walks the [NYC taxi sample dataset](/get-started/sample-datasets/nyc-taxi) through Kafka into ClickHouse, transformed by sqlflow on the way. It reproduces on Cloud or self-hosted; only the DSN changes.
+
+### 1. Create the target table {#example-create-table}
+
+The same table the sample-dataset page defines:
+
+```sql
+CREATE DATABASE IF NOT EXISTS nyc_taxi;
+
+CREATE TABLE IF NOT EXISTS nyc_taxi.trips_small (
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = MergeTree
+PRIMARY KEY (pickup_datetime, dropoff_datetime);
+```
+
+### 2. Publish the data to Kafka {#example-publish}
+
+The dataset is published as gzipped TSV. This step converts one file (about a million rows) to newline-delimited JSON and publishes it to a topic named `nyc-taxi-trips`.
+
+Install the publisher's dependency and download the file:
+
+```bash
+pip install confluent-kafka
+curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz
+```
+
+Create the topic. A stock Apache Kafka broker creates it on first publish, but managed and production clusters commonly set `auto.create.topics.enable=false`, where an uncreated topic fails the example before any row reaches ClickHouse:
+
+```bash
+kafka-topics.sh --bootstrap-server localhost:9092 \
+  --create --topic nyc-taxi-trips --partitions 1 --replication-factor 1
+```
+
+Confluent's images name that command `kafka-topics`, without the `.sh`.
+
+Save the publisher as `publish.py`. Change `bootstrap.servers` if the broker is not on `localhost:9092`:
+
+```python
+import gzip, json
+from confluent_kafka import Producer
+
+COLUMNS = ["trip_id", "pickup_datetime", "dropoff_datetime", "pickup_longitude",
+           "pickup_latitude", "dropoff_longitude", "dropoff_latitude", "passenger_count",
+           "trip_distance", "fare_amount", "extra", "tip_amount", "tolls_amount",
+           "total_amount", "payment_type", "pickup_ntaname", "dropoff_ntaname"]
+INTS = {"trip_id", "passenger_count"}
+FLOATS = {"pickup_longitude", "pickup_latitude", "dropoff_longitude", "dropoff_latitude",
+          "trip_distance", "fare_amount", "extra", "tip_amount", "tolls_amount", "total_amount"}
+
+producer = Producer({"bootstrap.servers": "localhost:9092"})
+
+def send(topic, value):
+    # The producer's queue holds 100,000 messages by default, and this file
+    # has a million rows; poll() drains it as it fills.
+    while True:
+        try:
+            producer.produce(topic, value)
+            return
+        except BufferError:
+            producer.poll(0.5)
+
+with gzip.open("trips_0.gz", "rb") as f:
+    header = f.readline().decode().rstrip("\n").split("\t")
+    index = {name: i for i, name in enumerate(header)}
+    for raw in f:
+        # Split on the raw bytes and decode only the columns being published.
+        # The file carries columns this example does not use that are not
+        # valid UTF-8, and decoding the whole line would have to corrupt them.
+        parts = raw.rstrip(b"\n").split(b"\t")
+        row = {}
+        for col in COLUMNS:
+            value = parts[index[col]].decode()
+            if value == "":
+                row[col] = None
+            elif col in INTS:
+                row[col] = int(float(value))
+            elif col in FLOATS:
+                row[col] = float(value)
+            else:
+                row[col] = value
+        send("nyc-taxi-trips", json.dumps(row))
+producer.flush()
+```
+
+Run it. Publishing the million rows takes a couple of minutes:
+
+```bash
+python publish.py
+```
+
+### 3. Write the pipeline {#example-pipeline}
+
+Save this as `taxi.yml`. The handler SQL runs in DuckDB over each batch of JSON messages; the casts produce Arrow types that map onto the table's ClickHouse types (see [Type mapping](#type-mapping)).
+
+```yaml
+pipeline:
+  name: nyc-taxi-clickhouse
+  batch_size: 20000
+
+  source:
+    type: kafka
+    kafka:
+      brokers: [{{ SQLFLOW_KAFKA_BROKERS|default('localhost:9092') }}]
+      group_id: nyc-taxi
+      auto_offset_reset: earliest
+      topics:
+        - nyc-taxi-trips
+
+  handler:
+    type: 'handlers.InferredMemBatch'
+    sql: |
+      SELECT
+        CAST(trip_id AS UINTEGER)            AS trip_id,
+        CAST(pickup_datetime AS TIMESTAMP)   AS pickup_datetime,
+        CAST(dropoff_datetime AS TIMESTAMP)  AS dropoff_datetime,
+        pickup_longitude,
+        pickup_latitude,
+        dropoff_longitude,
+        dropoff_latitude,
+        CAST(passenger_count AS UTINYINT)    AS passenger_count,
+        CAST(trip_distance AS FLOAT)         AS trip_distance,
+        CAST(fare_amount AS FLOAT)           AS fare_amount,
+        CAST(extra AS FLOAT)                 AS extra,
+        CAST(tip_amount AS FLOAT)            AS tip_amount,
+        CAST(tolls_amount AS FLOAT)          AS tolls_amount,
+        CAST(total_amount AS FLOAT)          AS total_amount,
+        payment_type,
+        pickup_ntaname,
+        dropoff_ntaname
+      FROM batch
+
+  sink:
+    type: clickhouse
+    clickhouse:
+      dsn: {{ SQLFLOW_CLICKHOUSE_DSN }}
+      table: trips_small
+```
+
+`batch_size` is the number of messages per DuckDB batch and per ClickHouse `INSERT`. See [Performance](#performance) for why 20,000.
+
+### 4. Run it {#example-run}
+
+```bash
+docker run --rm \
+  --network <the broker's docker network> \
+  -v "$(pwd)":/conf \
+  -e SQLFLOW_CLICKHOUSE_DSN \
+  -e SQLFLOW_KAFKA_BROKERS=<broker address as advertised inside that network> \
+  turbolytics/sql-flow:v1.0.5 \
+  run /conf/taxi.yml --max-msgs=1000000
+```
+
+<Warning>
+**The broker address must be one the container can reach.** A Kafka client is redirected to whatever the broker *advertises*, not the address you dial. A broker advertising `127.0.0.1:9092` for external clients sends the container to itself, and every fetch fails with `dial tcp 127.0.0.1:9092: connect: connection refused` — even though the same address works from your shell. Put the container on the broker's own network and use the address advertised there, or run the binary on the host instead:
+
+```bash
+sqlflow run taxi.yml --max-msgs=1000000
+```
+</Warning>
+
+`--max-msgs` stops after that many messages; leave it off to run continuously. Kafka offsets are committed only after each `INSERT` has been acknowledged by ClickHouse, and only up to the last message actually processed.
+
+### 5. Verify {#example-verify}
+
+```sql
+SELECT payment_type, count() AS trips, round(avg(total_amount), 2) AS avg_total
+FROM nyc_taxi.trips_small
+GROUP BY payment_type
+ORDER BY trips DESC;
+```
+
+```
+┌─payment_type─┬──trips─┬─avg_total─┐
+│ CSH          │ 617237 │     17.82 │
+│ CRE          │ 377897 │     13.91 │
+│ NOC          │   3573 │     13.89 │
+│ DIS          │   1293 │     12.09 │
+└──────────────┴────────┴───────────┘
+```
+
+The same query gives the same counts against Cloud and self-hosted, which is a reasonable check that nothing was dropped or coerced on either path.
+
+### A second example: WebSocket source, no Kafka {#example-websocket}
+
+The WebSocket source needs no broker, and this shows an `Array(String)` column being written and queried natively. It consumes the public Bluesky firehose.
+
+```sql
+CREATE TABLE bluesky_posts (
+    ts    DateTime,
+    did   String,
+    langs Array(String),
+    text  String
+) ENGINE = MergeTree ORDER BY ts;
+```
+
+```yaml
+pipeline:
+  batch_size: 200
+  source:
+    type: websocket
+    websocket:
+      uri: 'wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=app.bsky.feed.post'
+  handler:
+    type: 'handlers.InferredMemBatch'
+    sql: |
+      SELECT
+        to_timestamp(time_us / 1000000)          AS ts,
+        did,
+        COALESCE(commit.record.langs, [])       AS langs,
+        COALESCE(commit.record.text, '')        AS text
+      FROM batch
+  sink:
+    type: clickhouse
+    clickhouse:
+      dsn: {{ SQLFLOW_CLICKHOUSE_DSN }}
+      table: bluesky_posts
+```
+
+```sql
+SELECT lang, count() AS posts
+FROM (SELECT arrayJoin(langs) AS lang FROM bluesky_posts)
+GROUP BY lang ORDER BY posts DESC LIMIT 5;
+```
+
+## Type mapping {#type-mapping}
+
+sqlflow hands each batch to ClickHouse as rows built from the Arrow table DuckDB produces, so what matters is the Arrow type each SQL column ends up with. Cast in the handler SQL to control it.
+
+| DuckDB SQL type (cast to)              | ClickHouse column types that accept it |
+| -------------------------------------- | -------------------------------------- |
+| `BOOLEAN`                              | `Bool`, `UInt8` |
+| `TINYINT` … `BIGINT`, `UTINYINT` … `UBIGINT` | The matching `Int8`…`Int64` / `UInt8`…`UInt64` |
+| `FLOAT`, `DOUBLE`                      | `Float32`, `Float64` |
+| `VARCHAR`                              | `String`, `LowCardinality(String)`, `Enum` (by name), `FixedString` |
+| `TIMESTAMP`, `TIMESTAMPTZ`             | `DateTime`, `DateTime64(n)` |
+| `DATE`                                 | `Date`, `Date32` |
+| `BLOB`                                 | `String` |
+| `VARCHAR` holding the textual form     | `UUID`, `IPv4`, `Decimal(P, S)` — the driver parses the string |
+| `LIST` of any of the above, nested     | `Array(T)`, `Array(Array(T))` |
+| `NULL` in any column                   | `NULL` in a `Nullable(T)` column. In any other column, the type's zero value: `0`, `''`, `1970-01-01 00:00:00`, `false`. A `DEFAULT` expression on the column is **not** evaluated, because sqlflow names every column it produces in the `INSERT`; supply the default in the handler SQL with `coalesce()`, or make the column `Nullable`. A null list becomes `[]`. |
+
+Values are matched to columns **by name**, not by position.
+
+<Note>
+**Prefer `CAST(ts AS TIMESTAMP)` over passing timestamps as strings.** A `VARCHAR` such as `'2026-09-01 12:00:00'` is accepted by a `DateTime` column and read as UTC; a string carrying an explicit offset such as `'… +09:00'` is honoured as written. Casting in the handler SQL is unambiguous either way.
+
+If the field can be `NULL`, a `DateTime` column stores it as `1970-01-01 00:00:00`. Use `Nullable(DateTime)`, or `coalesce(CAST(ts AS TIMESTAMP), now()::TIMESTAMP)` in the handler SQL.
+</Note>
+
+<Note>
+`Decimal` columns accept the value as a **string**, not as a `DOUBLE`. `CAST(amount AS VARCHAR)` works; `CAST(amount AS DOUBLE)` fails the batch with `converting float64 to Decimal(10, 2) is unsupported`.
+</Note>
+
+## Known limits {#known-limits}
+
+- **Unsupported types:** `Map` and `Tuple`. A DuckDB `STRUCT` or `MAP` column fails the batch with `unsupported arrow type struct<…>`. Flatten it into scalar columns in the handler SQL, or serialise it with `to_json()` into a `String` column — both work. `Nested` and `JSON` columns were not tested.
+- **No table creation or schema evolution.** The table must exist, and a column the handler emits that the table lacks fails the batch (see [Troubleshooting](#troubleshooting)). Columns the handler omits take the table's `DEFAULT`.
+- **A `NULL` written to a non-`Nullable` column is stored as the type's zero value**, not as the column's `DEFAULT` expression, and no error is raised. See [Type mapping](#type-mapping) for the workaround.
+- **At-least-once delivery.** Kafka offsets are committed after the `INSERT` is acknowledged. A crash between the two replays the batch, so duplicates are possible. If that matters, use `ReplacingMergeTree` with a key that identifies the row, or an idempotent insert pattern.
+- **Transient failures are retried.** A refused, reset, or timed-out connection to ClickHouse is retried with exponential backoff under a deadline, configured by the sink's `retry` block (`max_attempts`, `initial_backoff_ms`, `max_backoff_ms`, `deadline_seconds`). A rejected `INSERT` is not retried, because it fails the same way every time. The sink also dials ClickHouse once at startup, so an unreachable host fails before any message is consumed.
+- **One connection, one `INSERT` per batch.** There is no parallel writer. Throughput is governed by `batch_size`; see below.
+- **Streaming aggregation** (tumbling windows) is supported: a managed table is polled on an interval and its closed windows are published to their own sink. What counts as "closed" is the SQL you write, which is evaluated against wall-clock time rather than an event-time watermark. Consult the sqlflow documentation before relying on it for late-arriving data.
+
+## Performance {#performance}
+
+Measured with the example above — one million 17-column rows, one sqlflow process, Kafka co-located with sqlflow:
+
+| Target                                     | Rows/second |
+| ------------------------------------------ | ----------- |
+| Self-hosted ClickHouse, sqlflow and Kafka on the same Docker network | ~65,000 |
+| Self-hosted ClickHouse, sqlflow on the host reaching Kafka through Docker's port forwarding | ~50,000 |
+| ClickHouse Cloud (us-east-2), from a laptop over the public internet | 14,000 – 31,000 across runs on different days |
+
+Two things those rows say. Docker Desktop's host-to-container port forwarding costs about 20%, so benchmark from inside the network. And the Cloud spread is the network between the laptop and the service, not sqlflow: measured back to back, `batch_size` 20,000 and 50,000 came within 6% of each other. Run sqlflow near the service — same region, ideally same VPC — for numbers closer to the self-hosted figure.
+
+`batch_size` is the lever on a nearby target:
+
+| `batch_size` | Rows/second (self-hosted, same host) |
+| ------------ | ------------------------------------ |
+| 5,000        | ~30,000 |
+| 20,000       | ~50,000 |
+| 50,000       | ~50,000 |
+| 100,000      | ~51,000 |
+
+Below about 20,000 rows per batch, per-`INSERT` overhead dominates; above it there is nothing further to gain, and memory per batch grows. 20,000 is a good default for rows of this width; verify against your own.
+
+## Troubleshooting {#troubleshooting}
+
+### `connection reset by peer` immediately, with `...:8443?...` in the message {#trouble-reset}
+
+The DSN uses `clickhouse://` (plain HTTP) against a TLS port. The full error looks like `failed to query server hello: … Post "http://…:8443?…": … connection reset by peer`. Change the scheme to `clickhouses://`.
+
+### `[HTTP 401] code: 194 … Authentication failed: password is incorrect, or there is no user with such name` {#trouble-auth}
+
+The credentials in the DSN are wrong, or a special character in the password was not URL-encoded. On Cloud, the `default` user's password is shown once at service creation and can be reset from the console. If the password is right, check the service's IP access list.
+
+### `column "<name>" is not present in the table <table>` {#trouble-column}
+
+The handler SQL produced a column the target table does not have. sqlflow inserts by column name, so either alias the column in the SQL to match the table, drop it from the `SELECT`, or add it to the table.
+
+### `clickhouse sink: column "<name>": unsupported arrow type <type>` {#trouble-type}
+
+The column's Arrow type has no ClickHouse mapping — a struct or a map value. Cast or flatten in the handler SQL; see [Type mapping](#type-mapping).
+
+### `converting float64 to Decimal(10, 2) is unsupported` {#trouble-decimal}
+
+A `DOUBLE` was sent to a `Decimal` column. Cast to a string instead: `CAST(amount AS VARCHAR) AS amount`. The driver parses the decimal text exactly, with no floating-point rounding.
+
+### The pipeline runs but rows never appear {#trouble-no-rows}
+
+Check the batching. A batch is executed and inserted when `batch_size` messages have arrived, or when `flush_interval_seconds` elapses with a partial batch waiting — whichever comes first. `flush_interval_seconds` defaults to `30`, which is also the smallest value the config schema accepts, so a partial batch on a low-volume topic waits up to 30 seconds and a lower setting fails validation at startup. For faster inserts on a quiet topic, lower `batch_size` instead. With `--max-msgs`, the final partial batch is inserted on exit.
+
+## Further reading {#further-reading}
+
+- <a href="https://github.com/turbolytics/sql-flow" target="_blank">sqlflow on GitHub</a> — configuration reference, all sources and sinks, error policies, windowing.
+- <a href="https://turbolytics.io/docs/sqlflow" target="_blank">sqlflow documentation</a> — tutorials, including a <a href="https://turbolytics.io/docs/sqlflow/tutorials/clickhouse-sink" target="_blank">longer ClickHouse walkthrough</a>.

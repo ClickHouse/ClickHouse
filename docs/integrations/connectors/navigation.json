@@ -173,6 +173,7 @@
           "pages": [
             "integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "integrations/connectors/data-ingestion/community-integrations/erathos",
+            "integrations/connectors/data-ingestion/community-integrations/sqlflow",
             {
               "group": "Estuary",
               "pages": [
