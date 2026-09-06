@@ -1,0 +1,6 @@
+-- the fake marker in the file name does not extend the sampled range (no false positive)
+insert failed as expected
+explanation missing
+-- a genuine mismatch is still explained with the fake marker in the file name
+insert failed as expected
+explanation present

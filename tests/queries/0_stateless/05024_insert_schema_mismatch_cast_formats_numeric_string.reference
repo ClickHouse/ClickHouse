@@ -1,0 +1,4 @@
+-- Native, a numeric string for a numeric column is valid (no false positive)
+explanation missing
+-- Native, genuinely non-numeric text for a numeric column is a mismatch
+explanation present

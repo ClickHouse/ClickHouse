@@ -1,0 +1,9 @@
+-- import_nested_json = 1, valid nested object plus an unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- import_nested_json = 1, mismatch inside the nested data (diagnostic conservatively skipped)
+insert failed as expected
+explanation missing
+-- import_nested_json = 0, the nested carrier field is genuinely unknown (explanation present)
+insert failed as expected
+explanation present

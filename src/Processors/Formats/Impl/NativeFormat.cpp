@@ -110,6 +110,19 @@ public:
         return block.getNamesAndTypesList();
     }
 
+    /// The data carries named columns that the parser maps onto the destination by (exact) name,
+    /// see `NativeReader::read`.
+    bool mapsColumnsByName() const override { return true; }
+
+    /// With `input_format_native_allow_types_conversion` enabled (the default) `NativeReader`
+    /// `castColumn`s a source column of a different type to the destination type, and a numeric
+    /// column casts cleanly into the `UInt32`-backed `IPv4`. With the conversion disabled any type
+    /// difference is rejected with `TYPE_MISMATCH` (not a parse error) before any value is parsed,
+    /// so a numeric column really is a mismatch for an `IPv4` destination then.
+    bool readsNumericValueIntoIPv4Column() const override { return settings.native.allow_types_conversion; }
+
+    bool castsStringSourceColumns() const override { return settings.native.allow_types_conversion; }
+
 private:
     const FormatSettings settings;
 };

@@ -1,0 +1,18 @@
+-- JSONEachRow, object is invalid for Map when arrays of tuples are enabled
+explanation present
+-- JSONEachRow, malformed array is invalid for Map when arrays of tuples are enabled
+explanation present
+-- JSONEachRow, homogeneous array with the wrong arity is invalid for Tuple
+explanation present
+-- JSONEachRow, object is invalid for a named Tuple when object reading is disabled
+explanation present
+-- JSONEachRow, scalar is invalid for JSON
+explanation present
+-- JSONCompactColumns, an extra positional column is a mismatch
+explanation present
+-- Parquet, case-insensitive source name still attributes a type mismatch
+explanation present
+-- Arrow, case-insensitive source name still attributes a type mismatch
+explanation present
+-- ORC, case-insensitive source name still attributes a type mismatch
+explanation present

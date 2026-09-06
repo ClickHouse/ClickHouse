@@ -86,6 +86,10 @@ public:
     explicit ParquetMetadataSchemaReader(ReadBuffer & in_);
 
     NamesAndTypesList readSchema() override;
+
+    /// The format produces a fixed set of named columns and the parser fills any subset of them
+    /// requested by name.
+    bool mapsColumnsByName() const override { return true; }
 };
 
 }

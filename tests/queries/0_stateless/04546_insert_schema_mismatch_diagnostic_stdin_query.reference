@@ -1,0 +1,4 @@
+-- clickhouse-client, --query with data from a separate stdin stream, type mismatch
+explanation present
+-- clickhouse-client, --query with data from a separate stdin stream, matching data (no false positive)
+explanation missing

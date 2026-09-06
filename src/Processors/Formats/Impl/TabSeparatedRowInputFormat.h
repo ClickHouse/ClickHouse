@@ -99,6 +99,8 @@ public:
 
 private:
     bool allowVariableNumberOfColumns() const override { return format_settings.tsv.allow_variable_number_of_columns; }
+    bool readsNumericValueIntoBoolColumn() const override { return false; }
+    BoolValueIntoNumericColumn readsBoolValueIntoNumericColumn() const override { return BoolValueIntoNumericColumn::None; }
 
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
     std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;

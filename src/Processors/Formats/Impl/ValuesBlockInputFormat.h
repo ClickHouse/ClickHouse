@@ -43,6 +43,15 @@ public:
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
+    /// `total_rows` counts the rows that were parsed completely. While a row is being read, the parser
+    /// has reached the row after them (the same number the "at row N" message part is derived from).
+    /// A failure while evaluating the deduced expression templates happens after the whole block has
+    /// already been read, so in that case no further row was reached.
+    std::optional<size_t> getRowsReachedOnParseError() const override
+    {
+        return reading_row ? total_rows + 1 : total_rows;
+    }
+
     static bool skipToNextRow(ReadBuffer * buf, size_t min_chunk_bytes, int balance);
 
 private:
@@ -88,6 +97,8 @@ private:
 
     const size_t num_columns;
     size_t total_rows = 0;
+    /// Whether the parser is currently inside the row-reading loop of `read` (see getRowsReachedOnParseError).
+    bool reading_row = false;
 
     std::vector<ParserType> parser_type_for_column;
     std::vector<size_t> attempts_to_deduce_template;
@@ -113,6 +124,14 @@ public:
 private:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+
+    /// A value that the strict `deserializeTextQuoted` path of `ValuesBlockInputFormat::tryReadValue`
+    /// rejects is retried as an expression, and a bare numeric literal is then converted to the
+    /// destination type like `CAST` does — which accepts it for the `UInt32`-backed `IPv4`. Note that
+    /// this does not depend on `input_format_values_interpret_expressions`: the retry first goes
+    /// through `ConstantExpressionTemplate`, which parses and converts a literal on its own and is
+    /// used regardless of that setting (only a genuine expression needs the interpreter).
+    bool readsNumericValueIntoIPv4Column() const override { return true; }
 
     PeekableReadBuffer buf;
     ParserExpression parser;

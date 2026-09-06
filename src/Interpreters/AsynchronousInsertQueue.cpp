@@ -26,6 +26,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InsertDeduplication.h>
@@ -1438,14 +1439,34 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     InsertData::EntryPtr current_entry;
     String current_exception;
 
-    auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
+    /// The settings captured when the entry was enqueued do not necessarily carry the `INSERT`'s own
+    /// `SETTINGS` clause, and `InterpreterInsertQuery` can adjust the query context while preparing
+    /// the pipeline. Resolve the format against a private copy of the context with that clause
+    /// applied: mutating `insert_context` itself would leak the settings of the query being flushed
+    /// into the insert pipeline, changing, for example, the settings of the `INSERT` queries issued
+    /// by materialized views.
+    auto format_context = Context::createCopy(insert_context);
+    InterpreterSetQuery::applySettingsFromQuery(key.query, format_context);
+
+    auto format = getInputFormatFromASTInsertQuery(key.query, false, header, format_context, nullptr);
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
 
-    if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())
+    /// For diagnostics only: if parsing an entry fails, explain a possible structure mismatch between
+    /// the data being inserted and the destination. The data is fed per entry below, so the provider
+    /// looks at the entry currently being parsed.
+    const String insert_format = getInputFormatNameFromASTInsertQuery(key.query, format_context);
+    std::string_view current_entry_data;
+    format->setParseErrorDiagnosticProvider(
+        [&current_entry_data, insert_format, &header, format_context](std::optional<size_t> rows_reached_by_parser) -> String
+        {
+            return getInsertDataSchemaMismatchDescription(current_entry_data, insert_format, header, format_context, rows_reached_by_parser);
+        });
+
+    if (format_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && format_context->hasInsertionTableColumnsDescription())
     {
-        const auto & columns = *insert_context->getInsertionTableColumnsDescription();
+        const auto & columns = *format_context->getInsertionTableColumnsDescription();
         if (columns.hasDefaults())
-            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
+            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, format_context);
     }
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
@@ -1483,6 +1504,8 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
         auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
         executor.setQueryParameters(entry->query_parameters);
+
+        current_entry_data = *bytes;
 
         size_t num_bytes = bytes->size();
         size_t num_rows = executor.execute(*buffer, num_bytes);

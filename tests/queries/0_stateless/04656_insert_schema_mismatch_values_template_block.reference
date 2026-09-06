@@ -1,0 +1,6 @@
+-- the first unread row of the next block is not sampled, so the mismatch is still explained
+insert failed as expected
+explanation present
+-- a value error where the structure matches is not explained as a structure mismatch
+insert failed as expected
+explanation missing
