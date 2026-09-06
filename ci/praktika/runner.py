@@ -1073,7 +1073,7 @@ class Runner:
         # always in the end
         if workflow.enable_cache:
             print("Run CI cache hook")
-            if result.is_ok():
+            if result.is_ok() and not result.do_not_cache():
                 CacheRunnerHooks.post_run(workflow, job)
 
         if workflow.enable_open_issues_check:
