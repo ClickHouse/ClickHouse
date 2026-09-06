@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CLICKHOUSE_BINARY_CH=${CLICKHOUSE_BINARY/clickhouse/ch}
+CLICKHOUSE_BINARY_CH=${CLICKHOUSE_BINARY/%clickhouse/ch}
 
 # Invocation with unknown tool name prints help:
 ${CLICKHOUSE_BINARY} test 2>&1 | grep -F 'Use one of the following commands'
