@@ -236,6 +236,44 @@ static SortDescription deduplicateSortDescription(const SortDescription & sort_d
     return result;
 }
 
+/// A `NULL` is unordered for the `Field` comparison `FillingRow` uses, but under `NULLS FIRST` it sorts
+/// before every real value, so a range's `NULL` rows are a prefix that no generated row precedes and that
+/// does not anchor the range. Decidable for one fill key (with more, a row holding a `NULL` in some keys
+/// and a value in others sorts in between), when the fill key decides a generated row's position, and
+/// without `STALENESS`, whose border comes from a row a `NULL` cannot supply.
+static bool isNullPrefixSkippable(
+    const SortDescription & sort_description,
+    const SortDescription & fill_description,
+    bool use_with_fill_by_sorting_prefix,
+    bool running_with_staleness)
+{
+    if (fill_description.size() != 1 || fill_description[0].nulls_direction == fill_description[0].direction)
+        return false;
+
+    if (running_with_staleness)
+        return false;
+
+    return use_with_fill_by_sorting_prefix || sort_description.empty()
+        || sort_description[0].column_name == fill_description[0].column_name;
+}
+
+/// Under `NULLS FIRST` a `NaN` sorts next to the `NULL`s, before every other value, so it belongs to the
+/// same prefix; `Field` comparison instead places it above every value. `Field::isNaN` is type-guarded on
+/// `Float64`, so for any other fill key type this is exactly `isNull`.
+static bool isNullPrefixField(const Field & field)
+{
+    return field.isNull() || field.isNaN();
+}
+
+static bool isNullPrefixRow(const FillingRow & row)
+{
+    for (size_t i = 0, size = row.size(); i < size; ++i)
+        if (!isNullPrefixField(row[i]))
+            return false;
+
+    return true;
+}
+
 FillingTransform::FillingTransform(
     SharedHeader header_,
     const SortDescription & sort_description_,
@@ -296,6 +334,10 @@ FillingTransform::FillingTransform(
                 "WITH FILL bound values cannot be negative for unsigned type {}", type->getName());
         }
     }
+
+    null_prefix_skippable
+        = isNullPrefixSkippable(sort_description_, fill_description, use_with_fill_by_sorting_prefix, running_with_staleness);
+
     logDebug("fill description", dumpSortDescription(fill_description));
 
     std::unordered_set<size_t> ordinary_sort_positions;
@@ -587,7 +629,10 @@ bool FillingTransform::generateSuffixIfNeeded(
     logDebug("generateSuffixIfNeeded next_row", next_row);
 
     /// Determines if we should insert filling row before start generating next rows
-    bool should_insert_first = (next_row < filling_row && !filling_row_inserted) || (next_row.isNull() && !filling_row.isNull());
+    bool should_insert_first = (next_row < filling_row && !filling_row_inserted) || (next_row.isNull() && !filling_row.isNull())
+        /// The prefix rows the range ended on sort before the filling row, which the comparisons above
+        /// cannot express, so the pending row is still unplaced.
+        || (null_prefix_skippable && isNullPrefixRow(next_row) && !isNullPrefixRow(filling_row) && !filling_row_inserted);
     logDebug("should_insert_first", should_insert_first);
 
     for (size_t i = 0, size = filling_row.size(); i < size; ++i)
@@ -775,7 +820,10 @@ void FillingTransform::transformRange(
         logDebug("filling_row", filling_row);
         logDebug("next_row", next_row);
 
-        bool should_insert_first = next_row < filling_row;
+        bool should_insert_first = next_row < filling_row
+            /// A prefix previous row sorts before the filling row, which the comparison above cannot
+            /// express, so the pending row is still unplaced.
+            || (null_prefix_skippable && isNullPrefixRow(next_row) && !isNullPrefixRow(filling_row) && !filling_row_inserted);
         logDebug("should_insert_first", should_insert_first);
 
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
@@ -783,10 +831,19 @@ void FillingTransform::transformRange(
 
         logDebug("next_row updated", next_row);
 
+        /// The prefix does not anchor the range, so the first row with an ordinary value does, exactly as
+        /// the preamble anchors a range that starts with one.
+        if (null_prefix_skippable && isNullPrefixRow(filling_row) && !isNullPrefixRow(next_row))
+            for (size_t i = 0, size = filling_row.size(); i < size; ++i)
+                filling_row[i] = next_row[i];
+
+        /// No generated row may precede a row that sorts before all of them.
+        const bool null_prefix_row = null_prefix_skippable && isNullPrefixRow(next_row);
+
         /// The condition is true when filling row is initialized by value(s) in FILL FROM,
         /// and there are row(s) in current range with value(s) < then in the filling row.
         /// It can happen only once for a range.
-        if (should_insert_first && filling_row < next_row && filling_row.isConstraintsSatisfied())
+        if (should_insert_first && !null_prefix_row && filling_row < next_row && filling_row.isConstraintsSatisfied())
         {
             interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
@@ -797,7 +854,7 @@ void FillingTransform::transformRange(
         size_t rows_since_last_cancel_check = 0;
         while (true)
         {
-            if (!filling_row.next(next_row, filling_row_changed))
+            if (null_prefix_row || !filling_row.next(next_row, filling_row_changed))
                 break;
 
             if (++rows_since_last_cancel_check == DEFAULT_BLOCK_SIZE)
