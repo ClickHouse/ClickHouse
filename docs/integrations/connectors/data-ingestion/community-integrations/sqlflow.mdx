@@ -25,7 +25,7 @@ This page covers the ClickHouse sink: connecting to ClickHouse Cloud and self-ho
 
 | sqlflow       | ClickHouse Cloud | ClickHouse open source | Notes |
 | ------------- | ---------------- | ---------------------- | ----- |
-| 1.0.5+        | ✅               | ✅ tested on 26.8      | Recommended |
+| 1.0.5+        | ✅ tested on 26.2 | ✅ tested on 26.8      | Recommended |
 | 1.0.4         | ✅ tested on 26.2 | ✅ tested on 24.8 and 26.8 | An explicit JSON `null` in a string field is stored as the text `null` rather than `NULL`; a `handlers.StructuredBatch` pipeline whose SQL has a `WHERE` inserts nothing |
 | 1.0.3         | ✅               | ✅                     | The above, plus: Kafka offsets could be committed ahead of what was inserted, so a crash lost those rows silently; a timestamp passed as a *string* is shifted by the host's UTC offset |
 | 1.0.2         | ✅               | ✅                     | The above, plus no `Array(T)` support in the sink |
