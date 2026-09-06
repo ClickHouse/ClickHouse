@@ -4919,7 +4919,13 @@ def run_tests_array(
     # %c enables continuous mode so a client killed mid-write (query timeouts
     # SIGKILL the whole process group) leaves a valid profile instead of a
     # truncated one.
-    os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-proc{process_index}-%c%2m.profraw"
+    # Per-test coverage discards client profiles, and under %c concurrently running
+    # clients store their counters into a shared file-backed mapping of one pool file,
+    # so that lane would pay for a profile nobody reads.
+    profile_pattern = "%2m" if args.collect_per_test_coverage else "%c%2m"
+    os.environ["LLVM_PROFILE_FILE"] = (
+        f"clickhouse-client-proc{process_index}-{profile_pattern}.profraw"
+    )
 
     OP_SQUARE_BRACKET = colored("[", args, attrs=["bold"])
     CL_SQUARE_BRACKET = colored("]", args, attrs=["bold"])
