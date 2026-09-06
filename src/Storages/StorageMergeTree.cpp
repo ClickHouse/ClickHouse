@@ -417,7 +417,11 @@ CursorPromotersMap StorageMergeTree::buildPromoters()
 
 std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
 {
-    return getTotalActiveSizeInRows();
+    UInt64 res = 0;
+    auto lock = readLockParts();
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
+        res += part->rows_count;
+    return res;
 }
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
@@ -428,14 +432,18 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Acti
 
 std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const
 {
-    return getTotalActiveSizeInBytes();
+    UInt64 res = 0;
+    auto lock = readLockParts();
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
+        res += part->getBytesOnDisk();
+    return res;
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytesUncompressed(const Settings &) const
 {
     UInt64 res = 0;
-    auto parts = getDataPartsForInternalUsage();
-    for (const auto & part : parts)
+    auto lock = readLockParts();
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
         res += part->getBytesUncompressedOnDisk();
     return res;
 }
