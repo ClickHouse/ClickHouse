@@ -922,9 +922,11 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
             futures_to_wait.size(), total_entries, total_bytes, total_queries, fmt::join(affected_set, ", "));
 
     }
-    /// Wait until all jobs are finished. That includes only jobs
-    /// that were scheduled for this 'flush' call.
-    /// Other pending inserts are not blocked and can be processed concurrently.
+    /// Wait only for batches collected and scheduled by this `flush` call.
+    /// Batches already removed by producers or deadline workers are not included,
+    /// even if they are still waiting for pool admission. Unlike `flushAll`, this
+    /// does not wait on `in_flight_flushes`, which also counts unrelated tables.
+    /// Other pending inserts can continue concurrently.
     for (auto & future : futures_to_wait)
         future.wait();
 
