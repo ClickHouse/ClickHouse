@@ -16,6 +16,7 @@
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
@@ -34,12 +35,18 @@ namespace Setting
     extern const SettingsBool check_table_dependencies;
 }
 
+namespace FailPoints
+{
+    extern const char database_atomic_fail_after_committing_metadata_transaction[];
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int CANNOT_ASSIGN_ALTER;
+    extern const int CANNOT_OPEN_FILE;
     extern const int DATABASE_NOT_EMPTY;
     extern const int NOT_IMPLEMENTED;
     extern const int FILE_ALREADY_EXISTS;
@@ -433,6 +440,13 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         auto txn = query_context->getZooKeeperMetadataTransaction();
         if (txn && !query_context->isInternalSubquery())
             txn->commit();     /// Commit point (a sort of) for Replicated database
+
+        /// Emulates a failure of the metadata move below, after the transaction above made the entry
+        /// visible to the other replicas.
+        fiu_do_on(FailPoints::database_atomic_fail_after_committing_metadata_transaction,
+        {
+            throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Fault injected (after committing metadata transaction)");
+        });
 
         /// NOTE: replica will be lost if server crashes before the following renameNoReplace(...)
         /// TODO better detection and recovery
