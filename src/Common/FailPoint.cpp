@@ -305,6 +305,7 @@ static struct InitFiu
     ONCE(prepared_sets_build_ordered_set_inplace_fail) \
     REGULAR(parallel_replicas_force_local_replica_inactive) \
     REGULAR(parallel_replicas_skip_aggregate_projection_on_follower) \
+    REGULAR(normal_projection_skip_output_header_conversions) \
     ONCE(parallel_replicas_insert_select_drop_active_replica) \
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \

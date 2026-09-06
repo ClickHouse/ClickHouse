@@ -1,0 +1,76 @@
+-- { echo ON }
+-- Correlated subqueries require the analyzer.
+SET enable_analyzer = 1;
+SET allow_experimental_correlated_subqueries = 1;
+SET allow_suspicious_low_cardinality_types = 1;
+-- Pin the optimizations the test exercises: the runner may randomly disable them, which would stop the
+-- query from taking the projection / header-narrowing path and silently defeat the regression check.
+SET optimize_use_projections = 1;
+SET query_plan_remove_unused_columns = 1;
+
+DROP TABLE IF EXISTS t_proj_corr;
+
+-- Normal projection that materializes the `_part_offset` virtual column; disable merges to keep 5 parts.
+CREATE TABLE t_proj_corr (i LowCardinality(Int32), j LowCardinality(Int32), PROJECTION p (SELECT *, _part_offset ORDER BY j) WITH SETTINGS (index_granularity = 64)) ENGINE = MergeTree ORDER BY i SETTINGS index_granularity = 1, max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_proj_corr SELECT number, 10 - number FROM numbers(5);
+INSERT INTO t_proj_corr SELECT number, 10 - number FROM numbers(5);
+INSERT INTO t_proj_corr SELECT number, 10 - number FROM numbers(5);
+INSERT INTO t_proj_corr SELECT number, 10 - number FROM numbers(5);
+INSERT INTO t_proj_corr SELECT number, 10 - number FROM numbers(5);
+
+-- A correlated scalar subquery decorrelates into a `CROSS JOIN` whose input reads via the normal
+-- projection (forced by `PREWHERE` on `_part_offset`). The all-parts-from-projection rewrite used to
+-- leak the unused `i`/`j` columns past the join's declared header, raising the
+-- `Invalid number of columns in chunk pushed to OutputPort` logical error (an exception in release
+-- builds). Must run cleanly.
+SELECT count() FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) >= 0 SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left';
+SELECT i, j FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) = 8 ORDER BY ALL SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left';
+
+-- The statements above also pass whenever the projection is not used at all, so pin the plan they must
+-- take: both reads served by the projection, no read declined at the structure check, and no base-table
+-- read arm left. A read whose surplus pass-throughs cannot be narrowed away is declined instead, which
+-- makes the second conjunct fail; declining also drops a `ReadFromMergeTree (p)`, which makes the first
+-- fail. The third conjunct is what separates the all-parts replacement from a mixed `UnionStep` plan:
+-- a mixed plan keeps both projection reads and adds a base-table arm beside each.
+SELECT countIf(explain ILIKE '%ReadFromMergeTree (p)%') = 2 AND countIf(explain ILIKE '%does not match the structure it replaces%') = 0 AND countIf(explain ILIKE '%ReadFromMergeTree%' AND explain NOT ILIKE '%(p)%') = 0 FROM (EXPLAIN projections = 1 SELECT i, j FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) = 8 ORDER BY ALL SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left');
+
+-- Narrowing the stream must not change the rows: assert projection-on equals projection-off. The
+-- equality alone also holds when the projection is declined, so pin the plan for this statement too:
+-- it differs from the one above (aggregation over an unrestrictive predicate, 4 parts instead of 1).
+-- Settings match the statement below.
+SELECT countIf(explain ILIKE '%ReadFromMergeTree (p)%') = 2 AND countIf(explain ILIKE '%does not match the structure it replaces%') = 0 AND countIf(explain ILIKE '%ReadFromMergeTree%' AND explain NOT ILIKE '%(p)%') = 0 FROM (EXPLAIN projections = 1 SELECT sum(i), sum(j), count() FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) >= 0 SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left', optimize_use_projections = 1);
+SELECT sum(i), sum(j), count() FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) >= 0 SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left', optimize_use_projections = 1;
+SELECT sum(i), sum(j), count() FROM t_proj_corr PREWHERE _part_offset < (_part_offset + _part_starting_offset) WHERE ((SELECT _part_starting_offset) + _part_offset) >= 0 SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0, correlated_subqueries_default_join_kind = 'left', optimize_use_projections = 0;
+
+DROP TABLE t_proj_corr;
+
+-- The same leak with a real (non-virtual) column set, where the consumer is the decorrelation join's
+-- one-column right side. The two statements below trip the two asserts it can reach: `ConstantJoin`'s
+-- right-side structure check, and `JoiningTransform`'s output port check.
+-- `query_plan_remove_unused_columns = 0` is pinned because that optimization re-narrows the stream and
+-- would make these checks vacuous. `id` must stay sparse-serialized: leaked columns are not
+-- normalized by the join, so that is part of the shape being pinned.
+DROP TABLE IF EXISTS t_proj_corr_events;
+
+CREATE TABLE t_proj_corr_events (organisation_id UUID, session_id UUID, id UUID, timestamp UInt64, payload String, PROJECTION p_by_session (SELECT * ORDER BY session_id, timestamp)) ENGINE = MergeTree ORDER BY (organisation_id, session_id, timestamp) SETTINGS index_granularity = 3, ratio_of_defaults_for_sparse_serialization = 0.9, max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_proj_corr_events SELECT reinterpretAsUUID(number % 2), reinterpretAsUUID(1 - (number % 2)), reinterpretAsUUID(0), 1643760000, '0' FROM numbers(6);
+INSERT INTO t_proj_corr_events SELECT reinterpretAsUUID(number % 2), reinterpretAsUUID(1 - (number % 2)), reinterpretAsUUID(0), 1643760000, '0' FROM numbers(6);
+
+SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_proj_corr_events' AND active AND column = 'id' AND serialization_kind = 'Sparse';
+
+SELECT payload, id, (SELECT timestamp) FROM t_proj_corr_events WHERE (organisation_id = reinterpretAsUUID(1)) AND (session_id = reinterpretAsUUID(0)) ORDER BY id, payload, timestamp SETTINGS read_in_order_two_level_merge_threshold = 1, query_plan_remove_unused_columns = 0, correlated_subqueries_use_in_memory_buffer = 0;
+SELECT payload, id, (SELECT timestamp) FROM t_proj_corr_events WHERE (organisation_id = reinterpretAsUUID(1)) AND (session_id = reinterpretAsUUID(0)) ORDER BY id, payload, timestamp SETTINGS read_in_order_two_level_merge_threshold = 1, query_plan_remove_unused_columns = 0, correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_default_join_kind = 'left';
+
+-- The two statements above pass whenever the projection is not used, including if it is declined at the
+-- structure check. Pin the plan they must take instead: both reads served by the projection, no read
+-- declined, and no base-table read arm left. Counting, not an existence test: one plan can hold several
+-- reads with opposite verdicts.
+SELECT countIf(explain ILIKE '%ReadFromMergeTree (p_by_session)%') = 2 AND countIf(explain ILIKE '%does not match the structure it replaces%') = 0 AND countIf(explain ILIKE '%ReadFromMergeTree%' AND explain NOT ILIKE '%(p_by_session)%') = 0 FROM (EXPLAIN projections = 1 SELECT payload, id, (SELECT timestamp) FROM t_proj_corr_events WHERE (organisation_id = reinterpretAsUUID(1)) AND (session_id = reinterpretAsUUID(0)) ORDER BY id, payload, timestamp SETTINGS read_in_order_two_level_merge_threshold = 1, query_plan_remove_unused_columns = 0, correlated_subqueries_use_in_memory_buffer = 0);
+SELECT countIf(explain ILIKE '%ReadFromMergeTree (p_by_session)%') = 2 AND countIf(explain ILIKE '%does not match the structure it replaces%') = 0 AND countIf(explain ILIKE '%ReadFromMergeTree%' AND explain NOT ILIKE '%(p_by_session)%') = 0 FROM (EXPLAIN projections = 1 SELECT payload, id, (SELECT timestamp) FROM t_proj_corr_events WHERE (organisation_id = reinterpretAsUUID(1)) AND (session_id = reinterpretAsUUID(0)) ORDER BY id, payload, timestamp SETTINGS read_in_order_two_level_merge_threshold = 1, query_plan_remove_unused_columns = 0, correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_default_join_kind = 'left');
+
+-- Narrowing the stream must not change the answer: assert projection-on equals projection-off.
+SELECT payload, id, (SELECT timestamp) FROM t_proj_corr_events WHERE (organisation_id = reinterpretAsUUID(1)) AND (session_id = reinterpretAsUUID(0)) ORDER BY id, payload, timestamp SETTINGS read_in_order_two_level_merge_threshold = 1, query_plan_remove_unused_columns = 0, correlated_subqueries_use_in_memory_buffer = 0, optimize_use_projections = 0;
+
+DROP TABLE t_proj_corr_events;

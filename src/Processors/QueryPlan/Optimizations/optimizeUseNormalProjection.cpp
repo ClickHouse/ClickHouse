@@ -42,6 +42,7 @@ namespace Setting
 namespace FailPoints
 {
     extern const char parallel_replicas_skip_aggregate_projection_on_follower[];
+    extern const char normal_projection_skip_output_header_conversions[];
 }
 
 }
@@ -294,6 +295,60 @@ static bool doesQueryFilterImplyProjectionWhere(
 struct NormalProjectionCandidate : public ProjectionCandidate
 {
 };
+
+/// Emit `main_header`'s columns by name out of `proj_header`, narrowing away surplus pass-throughs.
+/// nullopt when the names already match in order, either header has duplicate names, or `proj_header` cannot supply a column.
+static std::optional<ActionsDAG> makeNarrowingDAG(const Block & proj_header, const Block & main_header)
+{
+    auto has_duplicate_names = [](const Block & header)
+    {
+        std::unordered_set<std::string_view> names;
+        for (const auto & column : header)
+        {
+            if (!names.emplace(column.name).second)
+                return true;
+        }
+        return false;
+    };
+
+    /// A name-only mapping cannot preserve the provenance of duplicated columns. Reject this
+    /// optimization rather than silently selecting the wrong occurrence.
+    if (has_duplicate_names(proj_header) || has_duplicate_names(main_header))
+        return {};
+
+    ActionsDAG dag;
+    std::unordered_map<std::string_view, std::list<const ActionsDAG::Node *>> inputs_by_name;
+    for (const auto & col : proj_header.getColumnsWithTypeAndName())
+    {
+        const auto * input = &dag.addInput(col);
+        inputs_by_name[input->result_name].push_back(input);
+    }
+
+    bool narrowed = proj_header.columns() != main_header.columns();
+    ActionsDAG::NodeRawConstPtrs outputs;
+    outputs.reserve(main_header.columns());
+
+    for (const auto & col_main : main_header.getColumnsWithTypeAndName())
+    {
+        auto it = inputs_by_name.find(col_main.name);
+        if (it == inputs_by_name.end() || it->second.empty())
+            return {};
+
+        const auto * node = it->second.front();
+        it->second.pop_front();
+
+        if (!narrowed && node != dag.getInputs()[outputs.size()])
+            narrowed = true;
+
+        outputs.push_back(node);
+    }
+
+    if (!narrowed)
+        return {};
+
+    dag.getOutputs() = std::move(outputs);
+    return dag;
+}
 
 static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header, const Block & main_header)
 {
@@ -719,11 +774,12 @@ std::optional<String> optimizeUseNormalProjections(
         if (auto * projection_reading_step = typeid_cast<ReadFromMergeTree *>(projection_reading.get()))
             projection_reading_step->copyTopKFilterInfoAndQueryConditionCacheGate(*reading);
 
-    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
-    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
-
-    /// Only the initiator should read the projection to avoid potential data duplication.
-    bool has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
+    /// Read-only: `parent_reading_select_result` is shared with the regular read and must stay intact
+    /// until the structure check below has decided, because `filterPartsByProjection` mutates it in place.
+    bool has_parent_parts = std::any_of(
+        parent_reading_select_result->parts_with_ranges.begin(),
+        parent_reading_select_result->parts_with_ranges.end(),
+        [&](const auto & part) { return best_candidate->parent_parts.contains(part.data_part.get()); });
     bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !optimization_settings.is_parallel_replicas_initiator_with_projection_support
         && has_parent_parts;
     /// True when the projection read is replaced by a prepared source that does not announce the
@@ -752,20 +808,6 @@ std::optional<String> optimizeUseNormalProjections(
     if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
         fallbackToLocalProjectionReading(projection_reading);
 
-    /// `reading` is detached below without running initializePipeline(), so announce its empty read
-    /// set here instead (same guard as optimizeUseAggregateProjections; issue #110518).
-    if (projection_replaced_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
-        reading->announceEmptyReadRangesToCoordinatorIfInitiator();
-
-    if (!query_info.is_internal && context->hasQueryContext())
-    {
-        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
-        {
-            .storage_id = reading->getMergeTreeData().getStorageID(),
-            .projection_name = best_candidate->projection->name,
-        });
-    }
-
     projection_reading->setStepDescription(best_candidate->projection->name, optimization_settings.max_step_description_length);
 
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
@@ -779,15 +821,30 @@ std::optional<String> optimizeUseNormalProjections(
         next_node = &expr_or_filter_node;
     }
 
-    if (parent_reading_select_result->parts_with_ranges.empty())
+    /// The projection stream must carry the same structure as the subplan it replaces. Columns
+    /// `query.dag` does not consume survive as pass-throughs (`ActionsDAG::updateHeader` appends every
+    /// un-consumed input), so narrow them away and materialize constants before requiring equal structure.
+    const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
+    const auto * proj_stream = &next_node->step->getOutputHeader();
+
+    /// Test hook: pretend both header conversions are unavailable, so a rewrite that needs one of them
+    /// reaches the structure check below with a mismatch. This is the only way to reach the fail-close
+    /// path from SQL: the conversions themselves refuse only on headers the analyzer never builds for a
+    /// `MergeTree` read (duplicate column names), so the branch has no natural carrier.
+    bool skip_header_conversions = false;
+    fiu_do_on(FailPoints::normal_projection_skip_output_header_conversions, { skip_header_conversions = true; });
+
+    if (!skip_header_conversions)
     {
-        /// All parts are taken from projection
-        iter->node->children[iter->next_child - 1] = next_node;
-    }
-    else
-    {
-        const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
-        const auto * proj_stream = &next_node->step->getOutputHeader();
+        if (auto narrowing = makeNarrowingDAG(**proj_stream, *main_stream))
+        {
+            auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*narrowing));
+            proj_stream = &converting->getOutputHeader();
+            auto & expr_node = nodes.emplace_back();
+            expr_node.step = std::move(converting);
+            expr_node.children.push_back(next_node);
+            next_node = &expr_node;
+        }
 
         if (auto materializing = makeMaterializingDAG(**proj_stream, *main_stream))
         {
@@ -798,13 +855,45 @@ std::optional<String> optimizeUseNormalProjections(
             expr_node.children.push_back(next_node);
             next_node = &expr_node;
         }
+    }
 
-        /// Verify headers are compatible before creating the Union.
-        /// If they differ (e.g., different columns due to different query DAGs being applied),
-        /// skip this optimization to avoid "Block structure mismatch" errors.
-        if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
-            return {};
+    /// Nothing below this point has run yet, so a skip leaves the regular read with every part and
+    /// records no projection access. The stat description is rewritten so `EXPLAIN projections = 1`
+    /// shows the rejection rather than the earlier `selected`.
+    if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
+    {
+        if (best_candidate->stat)
+            best_candidate->stat->description = fmt::format(
+                "Projection {} is usable but its rewritten output does not match the structure it replaces, so it is not used",
+                best_candidate->projection->name);
+        return {};
+    }
 
+    /// `reading` is detached below without running `initializePipeline`, so announce its empty read set
+    /// here. Must stay below the structure check: the coordinator rejects a second announcement for the
+    /// same replica and stream, and after a skip the surviving regular read announces its own ranges.
+    if (projection_replaced_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
+        reading->announceEmptyReadRangesToCoordinatorIfInitiator();
+
+    if (!query_info.is_internal && context->hasQueryContext())
+    {
+        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
+        {
+            .storage_id = reading->getMergeTreeData().getStorageID(),
+            .projection_name = best_candidate->projection->name,
+        });
+    }
+
+    /// Filter out parts served by the projection; the remaining parts stay with the regular read.
+    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+
+    if (parent_reading_select_result->parts_with_ranges.empty())
+    {
+        /// All parts are taken from projection
+        iter->node->children[iter->next_child - 1] = next_node;
+    }
+    else
+    {
         auto & union_node = nodes.emplace_back();
         SharedHeaders input_headers = {main_stream, *proj_stream};
         union_node.step = std::make_unique<UnionStep>(std::move(input_headers));
