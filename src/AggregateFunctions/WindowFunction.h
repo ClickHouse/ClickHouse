@@ -33,6 +33,10 @@ public:
 
     /// Is the frame type supported by this function.
     virtual bool checkWindowFrameType(const WindowTransform * /*transform*/) const { return true; }
+
+    /// Whether the function reads the ORDER BY peer group, which the transform only tracks
+    /// when some function asks for it.
+    virtual bool needsOrderByPeerGroup() const { return false; }
 };
 
 // Runtime data for computing one window function.
