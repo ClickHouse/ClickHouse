@@ -1,0 +1,21 @@
+{
+  "version" : 3,
+  "id" : 0,
+  "fields" : [ {
+    "id" : 0,
+    "name" : "id",
+    "type" : "INT NOT NULL"
+  }, {
+    "id" : 1,
+    "name" : "val",
+    "type" : "STRING"
+  } ],
+  "highestFieldId" : 1,
+  "partitionKeys" : [ ],
+  "primaryKeys" : [ "id" ],
+  "options" : {
+    "bucket" : "1",
+    "file.format" : "parquet"
+  },
+  "timeMillis" : 1785919597709
+}

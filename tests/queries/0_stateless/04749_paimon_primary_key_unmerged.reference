@@ -1,0 +1,11 @@
+SELECT THROWS
+COUNT THROWS
+1	new
+1	old
+2	two
+1	new
+1	old
+2	two
+id	Int32					
+val	Nullable(String)					
+10

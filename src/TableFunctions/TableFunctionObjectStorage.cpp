@@ -2258,6 +2258,13 @@ For `paimonS3`, an optional `extra_credentials` parameter can be used to pass a 
 
 A table with the specified structure for reading data in the specified Paimon table.
 
+## Limitations {#limitations}
+
+Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
+snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
+declares `primary-key` therefore throws. Set `paimon_allow_unmerged_primary_key_reads = 1` to read the data files
+unmerged and accept those incorrect results.
+
 ## Defining a named collection {#defining-a-named-collection}
 
 Here is an example of configuring a named collection for storing the URL and credentials:

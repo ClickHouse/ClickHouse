@@ -9229,6 +9229,11 @@ Maximum number of Paimon snapshots to consume per incremental read. 0 means no l
     DECLARE(Bool, use_paimon_partition_pruning, false, R"(
 Use Paimon partition pruning for Paimon table functions
 )", EXPERIMENTAL) \
+    DECLARE(Bool, paimon_allow_unmerged_primary_key_reads, false, R"(
+Allow reading Apache Paimon primary-key tables even though ClickHouse does not implement merge-on-read.
+When enabled, a query returns the raw union of the table's data files, so rows superseded by later
+upserts are also returned. Disabled by default: such a read returns incorrect results.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_object_storage_queue_hive_partitioning, false, R"(
 Allow to use hive partitioning with S3Queue/AzureQueue engines
 )", EXPERIMENTAL) \
