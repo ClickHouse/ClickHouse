@@ -2117,6 +2117,47 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 }
 
 
+/// `Field::isNaN` recognizes a scalar `Float64` only, so a NaN nested in a container is invisible to it.
+/// Iterative because Fields nest inside Fields and a recursive walk overflows the native stack.
+static bool fieldContainsNaNAnywhere(const Field & field)
+{
+    absl::InlinedVector<const Field *, 16> pending{&field};
+
+    while (!pending.empty())
+    {
+        const Field * current = pending.back();
+        pending.pop_back();
+
+        if (isNaNField(*current))
+            return true;
+
+        switch (current->getType())
+        {
+            case Field::Types::Array:
+                for (const Field & element : current->safeGet<Array>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Tuple:
+                for (const Field & element : current->safeGet<Tuple>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Map:
+                for (const Field & element : current->safeGet<Map>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Object:
+                for (const auto & [_, element] : current->safeGet<Object>())
+                    pending.push_back(&element);
+                break;
+            default:
+                break;
+        }
+    }
+
+    return false;
+}
+
+
 /// Applies a deterministic key-transform DAG to `in_column` and writes the transformed column/type to
 /// `out_column`/`out_type`.
 /// Intended for transforming constants (or IN-set elements) into "key space", so that the transformed
@@ -2141,14 +2182,21 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 /// - DAG `p -> CAST(p, 'UInt8')`:
 ///   input:  `['123']`  type `String`
 ///   output: `[123]`  type `UInt8`
+///
+/// `out_transform_input_has_nan`, when given, is always written and reports whether the value handed to
+/// the transform DAG held a NaN. The direct-CAST fast path runs no DAG, so it reports false.
 static bool applyDeterministicDagToColumn(
     const ColumnPtr & in_column,
     const DataTypePtr & in_type,
     const String & input_name,
     const DeterministicKeyTransformDag & dag,
     ColumnPtr & out_column,
-    DataTypePtr & out_type)
+    DataTypePtr & out_type,
+    bool * out_transform_input_has_nan = nullptr)
 {
+    if (out_transform_input_has_nan)
+        *out_transform_input_has_nan = false;
+
     ColumnPtr input_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     DataTypePtr input_type = removeLowCardinality(in_type);
 
@@ -2283,6 +2331,12 @@ static bool applyDeterministicDagToColumn(
             return false;
     }
 
+    if (out_transform_input_has_nan)
+    {
+        for (size_t i = 0, size = input_column->size(); i < size && !*out_transform_input_has_nan; ++i)
+            *out_transform_input_has_nan = fieldContainsNaNAnywhere((*input_column)[i]);
+    }
+
     Block block;
     block.insert({input_column, input_type, input_name});
 
@@ -2402,9 +2456,9 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     DataTypePtr & out_key_column_type,
     Field & out_value,
     DataTypePtr & out_type,
-    bool & out_is_injective)
+    bool & out_atom_is_exact)
 {
-    out_is_injective = false;
+    out_atom_is_exact = false;
 
     String expr_name = node.getColumnName();
 
@@ -2436,22 +2490,28 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     if (!extractDeterministicFunctionsDagFromKey(expr_name, info, out_key_column_num, out_key_column_type, dag))
         return false;
 
-    out_is_injective = isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name);
-
     ColumnPtr const_column = out_type->createColumnConst(1, out_value);
 
     ColumnPtr transformed_const_column;
     DataTypePtr transformed_const_type;
+    bool transform_input_has_nan = false;
     bool constant_transformed = applyDeterministicDagToColumn(
         const_column,
         out_type,
         expr_name,
         dag,
         transformed_const_column,
-        transformed_const_type);
+        transformed_const_type,
+        &transform_input_has_nan);
 
     if (!constant_transformed)
         return false;
+
+    /// The comparison reads the constant in the domain of the column the key expression consumes, where a
+    /// NaN equals no value, not even itself. The transform maps it to an ordinary key value that the index
+    /// compares as equal, so the atom is stricter than the predicate and its `can_be_false` is not usable.
+    out_atom_is_exact = isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name)
+        && !transform_input_has_nan;
 
     Field transformed_value = (*transformed_const_column)[0];
 
@@ -4048,12 +4108,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             }
             else if (func_name == "equals" || func_name == "notEquals" || func_name == "isNotDistinctFrom")
             {
-                bool is_injective = false;
+                bool atom_is_exact = false;
                 if (!canConstantBeWrappedByDeterministicFunctions(
-                        key_arg, info, key_column_num, key_expr_type, const_value, const_type, is_injective))
+                        key_arg, info, key_column_num, key_expr_type, const_value, const_type, atom_is_exact))
                     return false;
 
-                condition_is_relaxed = !is_injective;
+                condition_is_relaxed = !atom_is_exact;
             }
             else
                 return false;
