@@ -101,13 +101,9 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
     /// Reserve
     if (queue.isValid())
     {
-        size_t size_to_reserve = 0;
-        for (auto & chunk : chunks)
-            size_to_reserve += chunk.getNumRows();
-
-        /// The size of output block will not be larger than the `max_merged_block_size`.
-        /// If redundant memory space is reserved, `MemoryTracker` will count more memory usage than actual usage.
-        size_to_reserve = std::min(size_to_reserve, max_merged_block_size);
+        /// chunks[0] is one input chunk, so this never exceeds the rows the merge
+        /// emits, and it stays O(1) per output block (no walk over chunks).
+        size_t size_to_reserve = std::min(static_cast<size_t>(chunks[0].getNumRows()), max_merged_block_size);
         for (auto & column : merged_columns)
             column->reserve(size_to_reserve);
     }
