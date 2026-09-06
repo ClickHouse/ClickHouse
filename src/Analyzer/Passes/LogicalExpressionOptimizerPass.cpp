@@ -920,6 +920,17 @@ static AddComparisonFilterResult addComparisonFilter(
 
     auto & filters = filter_map[expression];
 
+    /// `equals` compares the string family zero-padded, while the converted constant is compared
+    /// bytewise: `s = toFixedString('a', 2)` holds for the `String` value `'a'`, but converts to
+    /// `'a\0'`. Pruning the other conjuncts of the same expression against such a key would drop
+    /// conditions that are not implied by it (`s != 'a'` above), so keep the filter out of the
+    /// analysis and let it be emitted as-is.
+    if (stringFamilyPairIsNotEqualityEquivalent(expr_type, new_filter.constant_node->getResultType()))
+    {
+        filters.opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
     auto is_nan_field = [](const Field & f)
     { return f.getType() == Field::Types::Float64 && isNaN(f.safeGet<Float64>()); };
 
@@ -1096,6 +1107,12 @@ static void convertNotEqualsChainToNotIn(
             /// The set converts each element to the expression's type, while the comparison it
             /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
             if (!tryConvertToColumnType(literal, expr_type))
+                all_constants_convert_losslessly = false;
+
+            /// `notEquals` compares the string family zero-padded, set membership does not:
+            /// `'a' != toFixedString('a', 2)` is false while `'a' NOT IN (toFixedString('a', 2))` is
+            /// true, so the rewritten chain would contradict its own conjunct.
+            if (stringFamilyPairIsNotEqualityEquivalent(expr_type, literal->getResultType()))
                 all_constants_convert_losslessly = false;
         }
 
@@ -2627,6 +2644,12 @@ private:
                 /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
                 /// A NULL constant is excluded above, so it never reaches this check.
                 if (!tryConvertToColumnType(literal, expr_type))
+                    all_constants_convert_losslessly = false;
+
+                /// `equals` compares the string family zero-padded, set membership does not:
+                /// `'a' = toFixedString('a', 2)` is true while `'a' IN (toFixedString('a', 2))` is
+                /// false, so the rewritten chain would contradict its own operand.
+                if (stringFamilyPairIsNotEqualityEquivalent(expr_type, literal->getResultType()))
                     all_constants_convert_losslessly = false;
             }
 
