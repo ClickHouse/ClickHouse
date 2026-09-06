@@ -5,6 +5,7 @@
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 #include <Interpreters/Context.h>
 #include <Poco/JSON/Parser.h>
 #include <numeric>
@@ -214,13 +215,15 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     const std::string & processor_info_,
     const std::atomic<size_t> & persistent_processing_node_ttl_seconds_,
     LoggerPtr log_,
-    const std::string & zookeeper_name_)
+    const std::string & zookeeper_name_,
+    ObjectStorageQueueLocalActiveNodesPtr local_active_nodes_)
     : bucket_info(std::make_shared<BucketInfo>(BucketInfo{
         .bucket = bucket_,
         .bucket_lock_path = bucket_lock_path_,
         .processor_info = processor_info_,
         .zookeeper_name = zookeeper_name_ }))
     , persistent_processing_node_ttl_seconds(persistent_processing_node_ttl_seconds_)
+    , local_active_nodes(std::move(local_active_nodes_))
     , log(log_)
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -299,6 +302,9 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
         /// acquired by another server (`persistent_processing_node_ttl_seconds` too small, or a
         /// bug), which can cause duplicates. released is set to not remove someone else's lock.
         released = true;
+        /// `release` will return early from now on, so unregister here: the lock node is not
+        /// ours anymore and the cleanup must be able to reap it.
+        unregisterLocalActiveNode();
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueBucketLockLostOwnership);
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -311,12 +317,25 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
     age_watch.restart();
 }
 
+void ObjectStorageQueueOrderedFileMetadata::BucketHolder::unregisterLocalActiveNode()
+{
+    if (!local_active_nodes || local_active_node_unregistered)
+        return;
+
+    local_active_node_unregistered = true;
+    local_active_nodes->remove(bucket_info->bucket_lock_path);
+}
+
 void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
 {
     if (released)
         return;
 
     released = true;
+
+    /// Unregister even when the removal below fails: the holder is gone,
+    /// so the TTL cleanup must be able to reap the lock node.
+    SCOPE_EXIT({ unregisterLocalActiveNode(); });
 
     LOG_TEST(log, "Releasing bucket {}", bucket_info->bucket);
 
@@ -397,6 +416,9 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::~BucketHolder()
     try
     {
         release();
+        /// A last resort for the paths that mark the holder released without unregistering
+        /// (the lost-ownership branch of `refresh` does it itself, but it must never leak).
+        unregisterLocalActiveNode();
     }
     catch (...)
     {
@@ -665,7 +687,8 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     bool /*use_persistent_processing_nodes_*/,
     const std::atomic<size_t> & persistent_processing_node_ttl_seconds_,
     const std::string & zookeeper_name_,
-    LoggerPtr log_)
+    LoggerPtr log_,
+    ObjectStorageQueueLocalActiveNodesPtr local_active_nodes_)
 {
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log_);
     const auto bucket_path = zk_path / "buckets" / toString(bucket);
@@ -713,7 +736,8 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
             processor_info,
             persistent_processing_node_ttl_seconds_,
             log_,
-            zookeeper_name_);
+            zookeeper_name_,
+            std::move(local_active_nodes_));
     }
 
     if (code == Coordination::Error::ZNODEEXISTS)

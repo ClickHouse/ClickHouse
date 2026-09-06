@@ -3,6 +3,10 @@
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
+#include <mutex>
+#include <unordered_map>
+#include <unordered_set>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -12,6 +16,40 @@ namespace ErrorCodes
 }
 
 class ZooKeeperWithFaultInjection;
+
+/// Keeper paths of processing nodes and bucket locks owned (or about to be owned)
+/// by executions running in this process. The TTL-based cleanup thread must not
+/// delete these: losing a live execution's node fails its commit ("Transaction
+/// failed: No node"), and losing a live bucket lock lets another server acquire
+/// the same bucket.
+///
+/// Fencing protocol (closes the revalidate/remove vs create race completely for
+/// local owners): a creator registers the path with `tryAdd` BEFORE issuing the
+/// Keeper create and backs off when it fails; the cleanup wraps its revalidate +
+/// remove window in `tryLockForRemoval`/`unlockRemoval`, which fails while the
+/// path is registered. Both sides only try — nobody blocks.
+class ObjectStorageQueueLocalActiveNodes
+{
+public:
+    /// Register intent to own `path`. Returns false while the cleanup holds a
+    /// removal lock on it — the caller must not create the node and retry later.
+    bool tryAdd(const std::string & path);
+    void remove(const std::string & path);
+    bool contains(const std::string & path) const;
+
+    /// Exclusive lock for the cleanup's revalidate+remove window.
+    /// Fails while `path` is registered to a live local owner.
+    bool tryLockForRemoval(const std::string & path);
+    void unlockRemoval(const std::string & path);
+
+private:
+    mutable std::mutex mutex;
+    /// Reference-counted: separate owners (e.g. an uncertain-commit straggler and
+    /// a retry, or sibling tables on the same keeper path) can overlap.
+    std::unordered_map<std::string, size_t> path_counts;
+    std::unordered_set<std::string> removal_locks;
+};
+using ObjectStorageQueueLocalActiveNodesPtr = std::shared_ptr<ObjectStorageQueueLocalActiveNodes>;
 
 /// A base class to work with single file metadata in keeper.
 /// Metadata can have type Ordered or Unordered.
@@ -194,6 +232,11 @@ public:
 
     void setUncertainCommit() { uncertain_commit = true; }
 
+    /// Set the registry of node paths owned by live local executions
+    /// (kept in sync with `created_processing_node`). May stay unset when
+    /// processing nodes are never created through this object.
+    void setLocalActiveNodes(ObjectStorageQueueLocalActiveNodesPtr nodes) { local_active_nodes = std::move(nodes); }
+
     /// A struct, representing information stored in keeper for a single file.
     struct NodeMetadata
     {
@@ -237,6 +280,18 @@ protected:
     NodeMetadata node_metadata;
     LoggerPtr log;
 
+    /// Flip `created_processing_node` and keep `local_active_nodes` in sync.
+    void setProcessingNodeCreated();
+    void clearProcessingNodeCreated();
+
+    /// Register in `local_active_nodes` BEFORE the processing node is created in
+    /// Keeper (see the fencing protocol above). False = cleanup is inspecting the
+    /// path right now, back off. Both are idempotent per object.
+    bool tryRegisterInLocalActiveNodes();
+    void unregisterFromLocalActiveNodes();
+
+    ObjectStorageQueueLocalActiveNodesPtr local_active_nodes;
+    bool registered_in_local_active_nodes = false;
     /// Whether processing node was created by us.
     bool created_processing_node = false;
     /// Set when a commit failed after a ZooKeeper retry (possible "failed after operation"):
