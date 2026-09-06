@@ -6348,6 +6348,15 @@ Result:
 └────────┘
 ```
 )", 0) \
+    DECLARE(String, insert_expected_table_engine, "", R"(
+If not empty, an `INSERT` is refused unless the table it names has this engine, checked on the table the `INSERT` resolves when it is executed (for an asynchronous insert, when the queue flushes it). Once the table passes, the requirement is consumed: the writes that table makes on its own, into its inner tables or through materialized views, are not checked. A `Distributed` table is not checked itself but forwards the setting to its shards, as any query setting, where each shard's insert checks the table it resolves.
+
+Remote write over a `Distributed` table sets it to `TimeSeries`, so that a shard-local table swapped for one of another engine after the initiator's check refuses the batch where the insert resolves it, instead of taking it.
+
+Possible values:
+
+- An empty string (no check) or a table engine name, for example `TimeSeries`.
+)", 0) \
     \
     DECLARE(Bool, collect_hash_table_stats_during_aggregation, true, R"(
 Enable collecting hash table statistics to optimize memory allocation

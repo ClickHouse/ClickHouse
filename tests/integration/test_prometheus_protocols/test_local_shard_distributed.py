@@ -246,8 +246,8 @@ def test_reads_keep_the_local_shard_in_process_whatever_the_caller_fans_out(
 
 
 def test_remote_write_refuses_a_local_shard_target_swapped_after_the_check():
-    """The local shard is written in-process by name, and witnessed like any other: a same-schema
-    MergeTree table swapped in under the name meanwhile takes the batch, which is not acknowledged.
+    """Written in-process by name, the local shard still refuses a same-schema MergeTree table swapped
+    in under the name as it would write it: nothing lands, and the write is not acknowledged.
     """
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     swapped = False
@@ -266,17 +266,19 @@ def test_remote_write_refuses_a_local_shard_target_swapped_after_the_check():
         node.query(f"SYSTEM NOTIFY FAILPOINT {BEFORE_INSERT}")
         response = pending.result(timeout=60)
         assert response.status_code >= 500, response.text
-        assert "UNKNOWN_STATUS_OF_INSERT" in response.text
-        assert "is not acknowledged" in response.text
+        assert "UNEXPECTED_TABLE_ENGINE" in response.text
+        # The shard names the engine it found under the name and the one the INSERT expects.
+        assert "engine MergeTree" in response.text
+        assert "expects TimeSeries" in response.text
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_INSERT}")
         pool.shutdown(wait=True)
         if swapped:
             node.query("EXCHANGE TABLES metrics.ts_local AND metrics.ts_swap")
-        # The MergeTree table took the batch under the TimeSeries name; emptied so the pair is as created.
-        node.query("TRUNCATE TABLE metrics.ts_swap")
 
-    # Nothing reached the TimeSeries table, and the retry lands once the name is right again.
+    # The MergeTree table took nothing under the TimeSeries name, nothing reached the TimeSeries
+    # table, and the retry lands once the name is right again.
+    assert int(node.query("SELECT count() FROM metrics.ts_swap")) == 0
     count = "SELECT count() FROM timeSeriesTags(metrics.ts_local) WHERE metric_name = 'held_metric'"
     assert int(node.query(count)) == 0
     send_protobuf_to_remote_write(
