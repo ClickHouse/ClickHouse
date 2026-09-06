@@ -2,6 +2,8 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
+#include <Databases/DatabaseOnDisk.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -168,8 +170,23 @@ void TablesLoader::buildDependencyGraph()
 {
     for (const auto & [table_name, table_metadata] : metadata.parsed_tables)
     {
-        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase(), /*can_throw*/ false, /*validate_current_database*/ false);
-        auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast);
+        /// Metadata written before the table names were qualified at CREATE time can contain
+        /// unqualified names, which are repaired against the owning database when the definition is
+        /// attached. Both graphs have to describe the names the attached storage will actually use,
+        /// so repair a copy of the definition the same way here — otherwise a legacy bare
+        /// `dictGet('dict', ...)` or `x IN source` would be registered as `default.dict` /
+        /// `default.source`, leaving `check_table_dependencies` and
+        /// `check_referential_table_dependencies` guarding the wrong object and the loading edge
+        /// that the repair itself relies on missing.
+        ASTPtr ast = table_metadata.ast;
+        if (!ast->as<const ASTCreateQuery &>().is_dictionary)
+        {
+            ast = ast->clone();
+            qualifyNamesFromLegacyMetadata(ast->as<ASTCreateQuery &>(), table_name.database, global_context);
+        }
+
+        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, ast, global_context->getCurrentDatabase(), /*can_throw*/ false, /*validate_current_database*/ false);
+        auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, ast, table_name.database);
 
         if (!new_ref_dependencies.dependencies.empty())
             referential_dependencies.addDependencies(table_name, new_ref_dependencies.dependencies);

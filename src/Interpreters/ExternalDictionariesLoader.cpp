@@ -210,6 +210,11 @@ void ExternalDictionariesLoader::assertDictionaryStructureExists(const std::stri
 
 QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr query_context) const
 {
+    return qualifyDictionaryNameWithDatabase(dictionary_name, query_context->getCurrentDatabase());
+}
+
+QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, const std::string & current_database_name) const
+{
     auto qualified_name = QualifiedTableName::tryParseFromString(dictionary_name);
     if (!qualified_name)
     {
@@ -221,12 +226,11 @@ QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase
     /// If dictionary was not qualified with database name, try to resolve dictionary as xml dictionary.
     if (qualified_name->database.empty() && !has(qualified_name->table))
     {
-        std::string current_database_name = query_context->getCurrentDatabase();
         std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
 
         /// If after qualify dictionary_name with default_database_name we find it, add default_database to qualified name.
         if (has(resolved_name))
-            qualified_name->database = std::move(current_database_name);
+            qualified_name->database = current_database_name;
     }
 
     return *qualified_name;
