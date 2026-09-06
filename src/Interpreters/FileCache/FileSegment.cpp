@@ -197,6 +197,26 @@ size_t FileSegment::getReservedSize() const
     return reserved_size.load();
 }
 
+size_t FileSegment::getDiskAccountedSize() const
+{
+    const auto km = tryGetKeyMetadata();
+    const size_t raw = reserved_size.load();
+    if (km && km->useRealDiskSize())
+        return km->alignFileSize(raw);
+    return raw;
+}
+
+size_t FileSegment::computeDiskAccountedDelta(size_t raw_delta) const
+{
+    const auto km = tryGetKeyMetadata();
+    if (km && km->useRealDiskSize())
+    {
+        const size_t prev_raw = reserved_size.load();
+        return km->alignFileSize(prev_raw + raw_delta) - km->alignFileSize(prev_raw);
+    }
+    return raw_delta;
+}
+
 FileSegment::Priority::IteratorPtr FileSegment::getQueueIterator() const
 {
     auto lk = lock();
@@ -953,7 +973,12 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     chassert(reserved_size >= downloaded_size);
     if (reserved_size > downloaded_size)
     {
-        queue_iterator->decrementSize(reserved_size - downloaded_size);
+        const auto km = tryGetKeyMetadata();
+        const size_t aligned_delta = (km && km->useRealDiskSize())
+            ? km->alignFileSize(reserved_size) - km->alignFileSize(downloaded_size)
+            : reserved_size - downloaded_size;
+        if (aligned_delta)
+            queue_iterator->decrementSize(aligned_delta);
         reserved_size = downloaded_size.load();
     }
 
@@ -1261,10 +1286,14 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             entry = it->getEntry();
             entry_size = entry->size;
         }
-        if (download_state != State::DOWNLOADING && entry_size != reserved_size)
+        const auto km = tryGetKeyMetadata();
+        const size_t expected_entry_size = (km && km->useRealDiskSize())
+            ? km->alignFileSize(reserved_size)
+            : reserved_size.load();
+        if (download_state != State::DOWNLOADING && entry_size != expected_entry_size)
             throw_logical(
                 fmt::format("Expected entry.size == reserved_size ({} == {}, entry: {})",
-                            entry_size, reserved_size.load(), entry->toString()));
+                            entry_size, expected_entry_size, entry->toString()));
 
         chassert(entry->key == key());
         chassert(entry->offset == offset());

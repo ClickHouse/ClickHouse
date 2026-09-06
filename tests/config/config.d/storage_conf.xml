@@ -44,6 +44,7 @@
                 <keep_free_space_eviction_threads>4</keep_free_space_eviction_threads>
                 <background_download_queue_size_limit>50</background_download_queue_size_limit>
                 <load_metadata_asynchronously>0</load_metadata_asynchronously>
+                <use_real_disk_size>1</use_real_disk_size>
             </s3_cache>
             <s3_cache_02933>
                 <type>cache</type>
