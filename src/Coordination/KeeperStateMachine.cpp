@@ -287,12 +287,23 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
         /// KeeperStorage & /* storage */, ...)` in KeeperStorageImpl.cpp). Treating its path as touched
         /// would make a harmless tail entry such as `Sync("/")` conflict with every removed subtree and
         /// block recovery for no reason.
+        ///
+        /// `AddWatch`, `CheckWatch` and `RemoveWatch` carry a path too, but their handlers only add,
+        /// look up or drop entries in the watch maps (`KeeperStorage::addPersistentWatch`,
+        /// `containsWatch`, `removePersistentWatch`); they never consult the node tree or its stats,
+        /// and no watch map is restored from a snapshot. Replaying them after orphan cleanup therefore
+        /// produces exactly the state an unrepaired replica ends up with, even when the path lies in a
+        /// pruned subtree. These read requests land in the log only under `quorum_reads`, and treating
+        /// them as touched paths would turn a safe recovery tail into a false `CORRUPTED_DATA`.
         case OpNum::Heartbeat:
         case OpNum::Auth:
         case OpNum::Close:
         case OpNum::SessionID:
         case OpNum::Error:
         case OpNum::Sync:
+        case OpNum::AddWatch:
+        case OpNum::CheckWatch:
+        case OpNum::RemoveWatch:
             return true;
         /// `SetWatches`/`SetWatches2` carry lists of paths rather than a single one (`getPath()` must not
         /// be called on them: it dereferences `data_watches[0]` without checking that the list is
@@ -345,9 +356,6 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
         case OpNum::Check:
         case OpNum::CheckNotExists:
         case OpNum::CheckStat:
-        case OpNum::AddWatch:
-        case OpNum::CheckWatch:
-        case OpNum::RemoveWatch:
         {
             const auto path = request.getPath();
             f(path, RequestPathKind::Target);
