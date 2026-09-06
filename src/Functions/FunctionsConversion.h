@@ -1788,6 +1788,51 @@ static void NO_SANITIZE_UNDEFINED convertFromUInt64ToIPv4(ColVecToData & vec_to,
         vec_to[i] = static_cast<ToFieldType>(static_cast<IPv4::UnderlyingType>(vec_from[i]));
 }
 
+/// Accurate counterpart of convertFromUInt64ToIPv4: the range check runs against IPv4::UnderlyingType,
+/// because accurate::convertNumeric cannot be instantiated for a StrongTypedef target.
+template <typename Additions, typename FromFieldType, typename ToFieldType, typename ColVecToData, typename ColVecFromData>
+static ColumnPtr NO_SANITIZE_UNDEFINED convertToIPv4Accurate(
+    typename ColumnVector<ToFieldType>::MutablePtr && col_to,
+    ColVecToData & vec_to,
+    ColVecFromData & vec_from,
+    size_t input_rows_count,
+    const ColumnWithTypeAndName & named_from,
+    const DataTypePtr & result_type)
+{
+    ColumnUInt8::MutablePtr col_null_map_to;
+    ColumnUInt8::Container * vec_null_map_to = nullptr;
+
+    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+    {
+        col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+        vec_null_map_to = &col_null_map_to->getData();
+    }
+
+    for (size_t i = 0; i < input_rows_count; ++i)
+    {
+        IPv4::UnderlyingType value = 0;
+        if (accurate::convertNumeric<FromFieldType, IPv4::UnderlyingType>(vec_from[i], value))
+        {
+            vec_to[i] = static_cast<ToFieldType>(value);
+            continue;
+        }
+
+        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+        {
+            vec_to[i] = ToFieldType{};
+            (*vec_null_map_to)[i] = true;
+        }
+        else
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be safely converted into type {}",
+                named_from.column->getName(), result_type->getName());
+    }
+
+    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+        return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+    else
+        return std::move(col_to);
+}
+
 template <typename ToFieldType, typename ColVecToData, typename ColVecFromData>
 static void NO_SANITIZE_UNDEFINED convertToUnixTimestampFromDate(ColVecToData & vec_to, ColVecFromData & vec_from, size_t input_rows_count)
 {
@@ -2866,6 +2911,16 @@ struct ConvertImpl
             {
                 convertFromIPv4ToIPv6(vec_to, vec_from, input_rows_count);
                 RETURN_NULLABLE_IF_NEEDED(col_to);
+            }
+
+            /// Accurate unsigned integer -> IPv4 conversion. Must precede the arms below, which truncate.
+            else if constexpr (std::is_same_v<ToDataType, DataTypeIPv4>
+                && is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64>
+                && (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
+                    || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>))
+            {
+                return convertToIPv4Accurate<Additions, FromFieldType, ToFieldType>(
+                    std::move(col_to), vec_to, vec_from, input_rows_count, named_from, result_type);
             }
 
             /// UInt64 -> IPv4 conversion
