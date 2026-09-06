@@ -469,9 +469,23 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 #if USE_LIBPQXX
         if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
         {
-            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext(),
-                                        assert_cast<const DatabaseMaterializedPostgreSQL *>(db_and_table.first.get())->getPostgreSQLDatabaseName(),
-                                        db_and_table.second->getStorageID().table_name);
+            const auto * mat_pg_database = assert_cast<const DatabaseMaterializedPostgreSQL *>(db_and_table.first.get());
+            /// Function-argument evaluation order is unspecified, so the table name must be read
+            /// before `db_and_table.second` is moved into the wrapper's constructor.
+            auto nested_table_name = db_and_table.second->getStorageID().table_name;
+            auto wrapper = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext(),
+                                        mat_pg_database->getPostgreSQLDatabaseName(),
+                                        nested_table_name);
+            /// Carry the coordinated flag onto this per-query wrapper so `checkTableCanBeDetached` refuses
+            /// DETACH before `InterpreterDropQuery` shuts the table (and its replication) down.
+            wrapper->setCoordinated(mat_pg_database->isCoordinated());
+            /// Carry the replication-readiness state as well: this per-query wrapper - not the one cached
+            /// in the database - is the object `InterpreterDropQuery` resolves and calls
+            /// `checkTableCanBeDetachedPermanently` on, so without it the supported
+            /// `DETACH TABLE ... PERMANENTLY` would always fail with the transient startup-window error.
+            if (mat_pg_database->isReplicationReady())
+                wrapper->setDatabaseReplicationReady();
+            db_and_table.second = std::move(wrapper);
         }
 #endif
 

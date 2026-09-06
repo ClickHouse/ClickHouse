@@ -86,6 +86,19 @@ public:
 
     void shutdown(bool is_drop) override;
 
+    /// In a coordinated MaterializedPostgreSQL database, dynamically adding/removing a table mutates the
+    /// shared publication (see `DatabaseMaterializedPostgreSQL::attachTable` / `detachTablePermanently`).
+    /// Refuse DETACH here, before `InterpreterDropQuery` calls `flushAndShutdown` on the table, so a
+    /// rejected DETACH stays a true no-op and does not stop replication of the nested table.
+    void checkTableCanBeDetached() const override;
+    void checkTableCanBeDetachedPermanently() const override;
+
+    /// Same reasoning for DROP TABLE (and TRUNCATE) of an individual table: dropping the local nested
+    /// `ReplicatedReplacingMergeTree` on one replica does not update the shared publication or the
+    /// configured tables list, so the other replicas keep consuming a publication that still contains
+    /// the table. Refuse here, before `InterpreterDropQuery` calls `flushAndShutdown`.
+    void checkTableCanBeDropped(ContextPtr query_context) const override;
+
     /// Used only for single MaterializedPostgreSQL storage.
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
@@ -136,9 +149,9 @@ public:
     /// only once - when nested table is successfully created and is never changed afterwards.
     bool hasNested() { return has_nested.load(); }
 
-    void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
+    void createNestedIfNeeded(const NestedTableEngineSpec & engine_spec, PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
 
-    ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
+    ASTPtr getCreateNestedTableQuery(const NestedTableEngineSpec & engine_spec, PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
 
     boost::intrusive_ptr<ASTExpressionList> getColumnsExpressionList(
         const NamesAndTypesList & columns, std::unordered_map<std::string, ASTPtr> defaults = {}) const;
@@ -157,6 +170,20 @@ public:
     StorageID getNestedStorageID() const;
 
     void set(StoragePtr nested_storage);
+
+    /// Forget the cached nested table, so the next `ensureNestedTablesExist` recreates it. Used to recover a
+    /// nested table left shut down (permanently read-only) by a refused coordinated drop: the dead local copy
+    /// is dropped and recreated, and `set` re-populates the wrapper from the fresh nested table.
+    void resetNested() { has_nested.store(false); }
+
+    /// Mark this wrapper as belonging to a coordinated (Keeper-managed) MaterializedPostgreSQL database,
+    /// so that `checkTableCanBeDetached` / `checkTableCanBeDropped` refuse DETACH/DROP of individual tables.
+    void setCoordinated(bool value) { is_coordinated = value; }
+
+    /// A database-engine wrapper has no replication handler of its own. The database publishes this only
+    /// after its shared handler has been built, so a permanent DETACH can refuse in the startup window
+    /// before `InterpreterDropQuery` shuts the nested table down.
+    void setDatabaseReplicationReady() { database_replication_ready = true; }
 
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
 
@@ -184,6 +211,16 @@ private:
     /// Distinguish between single MaterilizePostgreSQL table engine and MaterializedPostgreSQL database engine,
     /// because table with engine MaterilizePostgreSQL acts differently in each case.
     bool is_materialized_postgresql_database = false;
+
+    /// Set for wrappers that belong to a coordinated (Keeper-managed) MaterializedPostgreSQL database.
+    bool is_coordinated = false;
+
+    std::atomic<bool> database_replication_ready = false;
+
+    /// Single-table engine only: the coordinated pre-data teardown has already run successfully for the
+    /// in-flight DROP - normally in `shutdown(/* is_drop */ true)`, before the handler and the nested table
+    /// were stopped - so `dropInnerTableIfAny` must not run it again.
+    bool coordinated_teardown_done = false;
 
     /// Will be set to `true` only once - when nested table was loaded by replication thread.
     /// After that, it will never be changed. Needed for MaterializedPostgreSQL database engine

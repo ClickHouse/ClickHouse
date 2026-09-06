@@ -3,8 +3,17 @@
 
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/UUID.h>
+#include <Core/ServerUUID.h>
 #include <Common/SipHash.h>
+#include <Common/Macros.h>
+#include <Common/escapeForFileName.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
+#include <IO/ReadHelpers.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -19,7 +28,14 @@
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Interpreters/getTableOverride.h>
+#include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
@@ -50,6 +66,9 @@ namespace MaterializedPostgreSQLSetting
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_tables_list_with_schema;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_unique_replication_consumer_identifier;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_extended_date_and_time_types;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_table_engine;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_keeper_path;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_replica_name;
 }
 
 namespace Setting
@@ -61,8 +80,164 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
     extern const int QUERY_NOT_ALLOWED;
+    extern const int FAULT_INJECTED;
+}
+
+namespace
+{
+
+/// Retries the release of a `/leader` ephemeral node whose removal could not be confirmed while a
+/// replication handler was shutting down, until the ambiguity is resolved for good.
+///
+/// The node lives under the server's shared Keeper session, which outlives the handler, so an unconfirmed
+/// removal is not self-healing: as long as that session stays alive the node stays too, every peer of the
+/// setup keeps seeing a leader and stays on standby, and the shared replication slot is not consumed by
+/// anyone. The handler itself cannot resolve this - after `shutdown` it never re-enters the election, and a
+/// removal that fails right now cannot be distinguished from a transient disconnect that heals long before
+/// the session expires - so the pending release is handed over here, to a task that outlives the handler and
+/// keeps retrying against the same shared session.
+///
+/// An entry is resolved when the node is gone, when it no longer belongs to the recorded replica name and
+/// Keeper session (a peer has won a fresh election in the meantime, or Keeper removed the node together with
+/// the session that owned it), or when the owner- and version-checked removal succeeds.
+class LeakedLeaderNodeReleaser
+{
+public:
+    static LeakedLeaderNodeReleaser & instance()
+    {
+        /// Intentionally never destroyed: it owns a task of the global background schedule pool, which the
+        /// server destroys long before static destructors run.
+        static LeakedLeaderNodeReleaser * releaser = new LeakedLeaderNodeReleaser;
+        return *releaser;
+    }
+
+    void add(const ContextPtr & context, const String & leader_path, const String & replica_name, Int64 session_id)
+    {
+        std::lock_guard lock(mutex);
+        pending.push_back({leader_path, replica_name, session_id});
+
+        if (!task)
+        {
+            /// The global context outlives every database, and only a weak reference is kept, so a server
+            /// that is shutting down is not held alive by a pending release.
+            global_context = context;
+            task = context->getSchedulePool()->createTask(
+                StorageID::createEmpty(), "PostgreSQLReplicaLeaderRelease", []{ instance().run(); });
+        }
+        task->activateAndSchedule();
+    }
+
+private:
+    struct Entry
+    {
+        String path;
+        String replica_name;
+        Int64 session_id;
+    };
+
+    static constexpr UInt64 retry_ms = 5000;
+
+    std::mutex mutex;
+    std::vector<Entry> pending TSA_GUARDED_BY(mutex);
+    std::weak_ptr<const Context> global_context TSA_GUARDED_BY(mutex);
+    BackgroundSchedulePoolTaskHolder task TSA_GUARDED_BY(mutex);
+    LoggerPtr log = getLogger("PostgreSQLReplicaLeaderRelease");
+
+    void run()
+    {
+        auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::releaseLeakedLeaderNodes");
+
+        std::vector<Entry> entries;
+        ContextPtr context;
+        {
+            std::lock_guard lock(mutex);
+            /// Taken out of the list, so a release added while this iteration runs is not lost when the
+            /// unresolved ones are put back below.
+            entries.swap(pending);
+            context = global_context.lock();
+        }
+
+        if (entries.empty())
+            return;
+
+        std::vector<Entry> unresolved;
+        if (!context)
+        {
+            /// The server is going away, and with it the Keeper session the nodes live under.
+            LOG_INFO(log, "Not releasing {} replication leader node(s): the server is shutting down", entries.size());
+        }
+        else
+        {
+            for (const auto & entry : entries)
+            {
+                try
+                {
+                    if (!release(context, entry))
+                        unresolved.push_back(entry);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Could not release the replication leader node " + entry.path);
+                    unresolved.push_back(entry);
+                }
+            }
+        }
+
+        std::lock_guard lock(mutex);
+        pending.insert(pending.end(), unresolved.begin(), unresolved.end());
+        if (!pending.empty())
+            task->scheduleAfter(retry_ms);
+    }
+
+    /// Returns true when the node is no longer this replica's to release.
+    bool release(const ContextPtr & context, const Entry & entry)
+    {
+        auto zookeeper = context->getZooKeeper();
+
+        if (zookeeper->getClientID() != entry.session_id)
+        {
+            LOG_INFO(log, "The Keeper session that owned the replication leader node {} has ended, so Keeper "
+                          "removed the node with it", entry.path);
+            return true;
+        }
+
+        Coordination::Stat stat;
+        String leader_name;
+        if (!zookeeper->tryGet(entry.path, leader_name, &stat))
+            return true;
+
+        /// Exactly the conditions of `PostgreSQLReplicationHandler::removeLeakedOwnLeaderNode`: only a node
+        /// that still carries this replica's name and belongs to the recorded session may be removed - any
+        /// other node is held by a peer that legitimately owns the leadership now.
+        if (leader_name != entry.replica_name || stat.ephemeralOwner != entry.session_id)
+            return true;
+
+        const auto code = zookeeper->tryRemove(entry.path, stat.version);
+        if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
+        {
+            LOG_INFO(log, "Released the replication leader node {} that a shutdown could not release", entry.path);
+            return true;
+        }
+
+        return false;
+    }
+};
+
+}
+
+namespace FailPoints
+{
+    extern const char materialized_postgresql_fail_teardown_after_shutdown[];
+    extern const char materialized_postgresql_fail_leader_release_at_shutdown[];
+    extern const char materialized_postgresql_fail_load_from_snapshot[];
+    extern const char materialized_postgresql_fail_add_table_to_replication[];
+    extern const char materialized_postgresql_pause_before_register_replica[];
+    extern const char materialized_postgresql_pause_in_non_last_teardown[];
+    extern const char materialized_postgresql_pause_before_marking_snapshot_completed[];
+    extern const char materialized_postgresql_pause_before_redo_snapshot_truncate[];
 }
 
 class TemporaryReplicationSlot
@@ -245,7 +420,353 @@ namespace
         }
         return slot_name;
     }
+
+    /// The canonical form of the identity through which a coordinated replica derives the ClickHouse names
+    /// of the shared nested tables (and the names of the shared PostgreSQL slot and publication) from the
+    /// shared publication. Stored at <keeper_path>/naming by the first replica and checked by every joining
+    /// one (see `ensureCoordinatedNamingCompatible`): replicas that disagree on any of these would build
+    /// disjoint replicated nested trees - or even separate slots/publications - on the same keeper path.
+    /// The nested table engine is included because mixing Replicated and Shared nested engines on one
+    /// shared tree is equally incoherent.
+    ///
+    /// Besides the ClickHouse-side settings, the fingerprint carries the remote source identity that
+    /// getPublicationName()/getReplicationSlotName() derive the shared PostgreSQL objects from: the source
+    /// database name and the source table name (empty for the database engine, so this also separates a
+    /// single-table engine from a database engine). Without it, a coordinated single-table engine on
+    /// `db.table` and a coordinated database engine with `materialized_postgresql_tables_list = 'table'`
+    /// would pass the ClickHouse-side checks and the /table_set fence on one keeper path, yet still work
+    /// against DIFFERENT PostgreSQL slots/publications (`db_table_*` vs `db_*`) - sharing /leader and
+    /// /replicas bookkeeping without sharing the replicated object, so a drop of one setup would tear down
+    /// or leak the other's PostgreSQL objects. The connection endpoint (host:port) is deliberately NOT
+    /// part of the identity: replicas of one setup may legitimately reach the same PostgreSQL server
+    /// through different addresses.
+    String coordinatedNamingFingerprint(
+        const MaterializedPostgreSQLSettings & settings, const String & postgres_database, const String & postgres_table)
+    {
+        const String schema = settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema];
+        const String schema_list = settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list];
+        const bool schema_as_a_part_of_table_name
+            = !schema_list.empty() || settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list_with_schema];
+        return fmt::format(
+            "table_engine: {}\nschema: {}\nschema_list: {}\nschema_as_a_part_of_table_name: {}\nuse_extended_date_and_time_types: {}\n"
+            "postgres_database: {}\npostgres_table: {}\n",
+            settings[MaterializedPostgreSQLSetting::materialized_postgresql_table_engine].value,
+            schema,
+            schema_list,
+            schema_as_a_part_of_table_name,
+            settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_extended_date_and_time_types].value,
+            postgres_database,
+            postgres_table);
+    }
+
+    /// The identity stored in this replica's <keeper_path>/replicas/<name> registration node. The registration
+    /// is ownership-checked: `materialized_postgresql_replica_name` is documented to resolve to a distinct value
+    /// on every replica, and without enforcement two replicas that resolve it to the same value would collapse
+    /// onto one /replicas node - then one replica's unregistration (a failed join rollback, or a DROP) removes
+    /// the other live replica's registration, and a later last-replica teardown removes the shared
+    /// slot/publication/snapshot_completed marker around a replica that still holds data. The database (or
+    /// single-table) UUID alone is not distinct enough - inside a Replicated database every replica of a
+    /// single-table engine carries the same table UUID - and the server UUID alone would conflate two databases
+    /// on one server, so use both. Both parts are stable across server restarts and DETACH/ATTACH.
+    String coordinationReplicaOwnerId(const String & clickhouse_uuid)
+    {
+        return toString(ServerUUID::get()) + "|" + clickhouse_uuid;
+    }
+
+    /// The expanded `materialized_postgresql_replica_name` is used as a SINGLE Keeper node name under
+    /// <keeper_path>/replicas (and as the replica name of the nested Replicated/SharedReplacingMergeTree
+    /// tables), so it must be a valid single path component - the same requirement `DatabaseReplicated`
+    /// enforces on its replica name.
+    ///
+    /// A value containing `/` (for example `'{shard}/{replica}'`) would silently turn the registration into a
+    /// nested path `<keeper_path>/replicas/<shard>/<replica>`. `unregisterReplicaAndCheckLast` removes only the
+    /// leaf node and wins the last-replica fence by removing the then-empty `/replicas` parent, so with an
+    /// intermediate level in between, `/replicas` would never become empty and the fence could never fire: the
+    /// shared replication slot, publication and `snapshot_completed` marker would leak forever, even after the
+    /// last replica is dropped. An empty name would make the registration collide with the `/replicas` node
+    /// itself. Reject both before any Keeper path is formed.
+    void assertValidCoordinationReplicaName(const String & expanded_replica_name)
+    {
+        if (expanded_replica_name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "materialized_postgresql_replica_name must not be empty in coordinated mode: it names this "
+                "replica's registration node under <keeper_path>/replicas");
+
+        if (expanded_replica_name.contains('/'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Invalid materialized_postgresql_replica_name '{}': '/' is not allowed. The replica name is a "
+                "single Keeper node name under <keeper_path>/replicas (and the replica name of the nested "
+                "replicated tables), so a nested path would break the last-replica bookkeeping that decides "
+                "when the shared replication slot and publication are removed",
+                expanded_replica_name);
+    }
+
+    /// The keeper path is the root below which every coordinated replica creates its
+    /// leader-election, registration and nested-table nodes. An empty expansion would
+    /// make all of those paths relative to the Keeper root.
+    void assertValidCoordinationKeeperPath(const String & expanded_keeper_path)
+    {
+        if (expanded_keeper_path.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "materialized_postgresql_keeper_path must not expand to an empty path in coordinated mode");
+    }
 }
+
+void validateMaterializedPostgreSQLCoordinationSettings(
+    const MaterializedPostgreSQLSettings & settings,
+    ContextPtr context,
+    const String & clickhouse_database_name,
+    const UUID & clickhouse_uuid,
+    const String & postgres_database,
+    const String & postgres_table,
+    bool allow_uuid_macro)
+{
+    const String engine = settings[MaterializedPostgreSQLSetting::materialized_postgresql_table_engine];
+    const bool is_plain = engine == "ReplacingMergeTree";
+    const bool is_replicated = engine == "ReplicatedReplacingMergeTree" || engine == "SharedReplacingMergeTree";
+
+    if (!is_plain && !is_replicated)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unsupported value '{}' for setting materialized_postgresql_table_engine. Allowed values: "
+            "ReplacingMergeTree, ReplicatedReplacingMergeTree, SharedReplacingMergeTree", engine);
+
+    /// The nested tables are created with this engine, so it must actually be available in this build.
+    /// `SharedReplacingMergeTree`, in particular, is a ClickHouse Cloud engine that is not registered in
+    /// the open-source build: accepting it here would let `CREATE DATABASE` succeed and only fail much
+    /// later, when `ensureNestedTablesExist` reaches `InterpreterCreateQuery`, leaving the database stuck
+    /// in a background retry loop instead of rejecting the unsupported mode up front.
+    if (!StorageFactory::instance().getAllStorages().contains(engine))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_table_engine = '{}' is not available in this build. The nested tables "
+            "are created with this engine, so it must be a registered table engine; otherwise the database "
+            "would fail to create its nested tables and keep retrying forever instead of failing at CREATE time",
+            engine);
+
+    const bool coordination_enabled = !settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value.empty();
+
+    if (is_replicated && !coordination_enabled)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_table_engine = '{}' requires materialized_postgresql_keeper_path to be set. "
+            "It enables single-active-worker coordination of the PostgreSQL replication slot across ClickHouse "
+            "replicas, which is what makes a replicated/shared nested table engine safe to use", engine);
+
+    if (coordination_enabled && !is_replicated)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_keeper_path requires materialized_postgresql_table_engine to be "
+            "ReplicatedReplacingMergeTree or SharedReplacingMergeTree. With a plain ReplacingMergeTree the standby "
+            "replicas would hold no data (they receive it through ClickHouse replication of the nested tables), "
+            "so a takeover would permanently lose every row replicated before the failover");
+
+    /// Coordination needs Keeper/ZooKeeper for both the coordination nodes (leader election, replica
+    /// registration, the snapshot-completion marker) and the nested Replicated/SharedReplacingMergeTree
+    /// tables. The handler only reaches `getContext()->getZooKeeper()` in the background startup task, so
+    /// without this up-front check a coordinated `CREATE` on a server with no Keeper configured would
+    /// succeed and then sit in a permanent retry loop instead of failing synchronously. Reject it here.
+    if (coordination_enabled && !context->hasZooKeeper())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_keeper_path (replica coordination) requires Keeper/ZooKeeper to be "
+            "configured on this server, but it is not. Coordination stores its leader-election, replica and "
+            "snapshot-completion nodes in Keeper, and the nested tables are Replicated/SharedReplacingMergeTree, "
+            "which also need it. Configure <zookeeper> (or <keeper_server>) or remove "
+            "materialized_postgresql_keeper_path");
+
+    /// The keeper path is both the coordination namespace (leader election, replica registration, snapshot
+    /// marker) AND the root of the shared nested Replicated/SharedReplacingMergeTree tables. Every coordinated
+    /// replica must therefore resolve it to the SAME path. A per-replica/per-server macro (such as {replica} or
+    /// {server_uuid}) resolves to a different value on each replica/server, so they would end up in disjoint
+    /// Keeper subtrees - each electing its own leader and creating its own nested tables - while still
+    /// contending for the same shared PostgreSQL slot and publication. The advertised HA setup would then
+    /// silently not share data, even though the loser never receives any. Reject such a path up front; the
+    /// per-replica identity belongs in materialized_postgresql_replica_name, not in the shared path.
+    ///
+    /// Checking only the literal `{replica}` token is not enough: the path can reach a per-replica value through
+    /// a config macro (e.g. `{coord_path}` where `<coord_path>` is `.../{replica}`), or use `{server_uuid}`. To
+    /// catch every such case, expand the path twice with different injected values for the `replica`/`server_uuid`
+    /// macros and reject if the two expansions differ. The injected map entries take precedence over both any
+    /// config definition of those macros and the built-in special handling, and they propagate through any config
+    /// macro that expands to them. The shared macros ({shard}, {database} and any other config macro that
+    /// is identical on every replica) are held constant across both expansions, so they never trigger a false
+    /// rejection.
+    ///
+    /// {uuid} is a separate case. It expands to the UUID of the database (or single table) being created, which
+    /// every server generates independently unless the DDL carries the UUID with it - an ON CLUSTER / Replicated
+    /// database query, or an explicit `UUID '...'` clause (`allow_uuid_macro`). Without that guarantee it behaves
+    /// exactly like a per-server macro, so it gets the same probe and the same rejection. This matters even though
+    /// such replicas never share /leader or the nested tree: the shared replication slot and publication names are
+    /// derived from the PostgreSQL source, not from the keeper path, so the disjoint groups would still contend
+    /// for the same slot, each believing it has its own active worker, and WAL could be lost.
+    const String raw_keeper_path = settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path];
+    String expanded_keeper_path;
+    String expanded_replica_name;
+    if (coordination_enabled)
+    {
+        const auto macros = context->getMacros();
+
+        /// First expand both coordination settings strictly, exactly as the replication handler's constructor
+        /// will (same macros, same database name and UUID, no table name): a misspelled or unsupported macro
+        /// throws here, at CREATE time. Without this pass an invalid macro would only be caught later, in the
+        /// background startup task that constructs the handler, leaving a mounted database stuck retrying
+        /// instead of failing synchronously - exactly what this validator exists to prevent.
+        {
+            Macros::MacroExpansionInfo info;
+            info.table_id.database_name = clickhouse_database_name;
+            info.table_id.uuid = clickhouse_uuid;
+            expanded_keeper_path = macros->expand(raw_keeper_path, info);
+        }
+        assertValidCoordinationKeeperPath(expanded_keeper_path);
+        {
+            const String raw_replica_name = settings[MaterializedPostgreSQLSetting::materialized_postgresql_replica_name];
+            Macros::MacroExpansionInfo info;
+            info.table_id.database_name = clickhouse_database_name;
+            info.table_id.uuid = clickhouse_uuid;
+            expanded_replica_name = macros->expand(raw_replica_name, info);
+        }
+
+        /// The expanded replica name must be a single Keeper path component before it is used to form
+        /// <keeper_path>/replicas/<name> anywhere (see `assertValidCoordinationReplicaName`).
+        assertValidCoordinationReplicaName(expanded_replica_name);
+
+        auto expand_probe = [&](const String & per_replica_value, bool vary_uuid) -> String
+        {
+            Macros::MacroMap macro_map = macros->getMacroMap();
+            macro_map["replica"] = per_replica_value;
+            macro_map["server_uuid"] = per_replica_value;
+            if (vary_uuid)
+                macro_map["uuid"] = per_replica_value;
+            Macros probing_macros(macro_map);
+
+            /// The strict pass above has already rejected unknown macros, so ignoring them here only
+            /// keeps the probe itself from ever throwing.
+            Macros::MacroExpansionInfo info;
+            info.ignore_unknown = true;
+            info.table_id.database_name = clickhouse_database_name;
+            info.table_id.uuid = clickhouse_uuid;
+            return probing_macros.expand(raw_keeper_path, info);
+        };
+
+        if (expand_probe("__mpg_probe_a__", /* vary_uuid */ false) != expand_probe("__mpg_probe_b__", /* vary_uuid */ false))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "materialized_postgresql_keeper_path must resolve to the same path on every coordinated replica, "
+                "so it cannot depend on a per-replica or per-server macro such as {{replica}} or {{server_uuid}} "
+                "(directly, or through a config macro that expands to one): it would place each replica on a "
+                "disjoint Keeper subtree, breaking data sharing (the loser never receives data through ClickHouse "
+                "replication) while the replicas still contend for the same PostgreSQL slot and publication. Put "
+                "the per-replica part in materialized_postgresql_replica_name instead");
+
+        if (!allow_uuid_macro
+            && expand_probe("__mpg_probe_a__", /* vary_uuid */ true) != expand_probe("__mpg_probe_b__", /* vary_uuid */ true))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "materialized_postgresql_keeper_path must resolve to the same path on every coordinated replica, "
+                "so it cannot depend on the {{uuid}} macro here: this CREATE generates its own UUID, and every "
+                "other replica would generate a different one, placing each of them on a disjoint Keeper subtree "
+                "while they still contend for the same PostgreSQL replication slot and publication (their names "
+                "are derived from the PostgreSQL source, not from the keeper path), so each replica would believe "
+                "it is the only active worker and WAL could be lost. {{uuid}} is only accepted when the UUID is "
+                "guaranteed to be identical on every replica: an ON CLUSTER query, a table inside a Replicated "
+                "database, or an explicit UUID '...' clause in the CREATE query");
+    }
+
+    if (coordination_enabled && settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_keeper_path (replica coordination) cannot be combined with "
+            "materialized_postgresql_use_unique_replication_consumer_identifier: coordination requires a single "
+            "shared replication slot, but the unique consumer identifier gives every replica its own slot");
+
+    if (coordination_enabled && !settings[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_keeper_path (replica coordination) cannot be combined with a user-managed "
+            "materialized_postgresql_replication_slot. Coordination owns the shared slot: if the active worker "
+            "dies before the initial snapshot completes, the next leader must drop and recreate the slot to obtain "
+            "a fresh exported snapshot, which is impossible for a slot it does not manage. Leave the slot unset so "
+            "coordination can create and own it");
+
+    if (coordination_enabled && !settings[MaterializedPostgreSQLSetting::materialized_postgresql_snapshot].value.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_keeper_path (replica coordination) cannot be combined with a user-provided "
+            "materialized_postgresql_snapshot. Coordination re-exports a fresh snapshot when it (re)creates the "
+            "shared slot, so a fixed snapshot token would become stale and a mid-snapshot takeover could never "
+            "recover. Leave the snapshot unset so coordination can manage it");
+
+    /// In coordinated mode the shared publication's table set is authoritative and is adopted by every replica,
+    /// but the per-table column projection (`table(col1, col2)`) is still taken from this replica's local
+    /// `materialized_postgresql_tables_list`. All coordinated replicas share one set of nested
+    /// Replicated/SharedReplacingMergeTree tables on the same Keeper path, so they must agree on the exact
+    /// column set. If two replicas were created with different column filters (or one with a filter and one
+    /// without) they would try to create diverging schemas on the same shared path, breaking the shared-state
+    /// contract. Reject column-filtered lists so every replica builds the identical shared schema; a column
+    /// projection is denoted by a `(` after a table name in the setting value (the same syntax parsed by
+    /// `getTableAllowedColumns`).
+    const String coordinated_tables_list = settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list];
+    if (coordination_enabled && coordinated_tables_list.contains('('))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_keeper_path (replica coordination) cannot be combined with a column-filtered "
+            "materialized_postgresql_tables_list (e.g. `table(col1, col2)`). Coordinated replicas share one set of "
+            "nested tables on the same Keeper path, so they must agree on the exact column projection, but the "
+            "per-table column list is taken from each replica's local setting rather than from the shared "
+            "publication. List the tables without column filters so every replica builds the identical shared schema");
+
+    /// If the coordinated setup already exists in Keeper, check this replica's naming-affecting settings
+    /// against the ones it published (see `ensureCoordinatedNamingCompatible` for the startup-time
+    /// enforcement and the reasoning), so a replica that would derive different ClickHouse table names
+    /// from the shared publication is rejected synchronously at CREATE time rather than from the
+    /// background startup task. Keeper errors propagate and fail the CREATE: coordination cannot work
+    /// without Keeper anyway, and joining an existing setup on an unverified guess must not happen.
+    if (coordination_enabled)
+    {
+        const String local_fingerprint = coordinatedNamingFingerprint(settings, postgres_database, postgres_table);
+        String published_fingerprint;
+        if (context->getZooKeeper()->tryGet(expanded_keeper_path + "/naming", published_fingerprint)
+            && published_fingerprint != local_fingerprint)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "A coordinated MaterializedPostgreSQL setup already exists at Keeper path '{}', and its "
+                "naming-affecting settings or source identity differ from the ones of this CREATE query. All "
+                "replicas of one coordinated setup must agree on materialized_postgresql_table_engine, "
+                "materialized_postgresql_schema, materialized_postgresql_schema_list and "
+                "materialized_postgresql_tables_list_with_schema, and must replicate the same PostgreSQL "
+                "source (the same source database and, for the single-table engine, the same source table): "
+                "these determine how the ClickHouse names of the shared nested tables (and the names of the "
+                "shared replication slot and publication) are derived, so a disagreeing replica would share "
+                "the coordination bookkeeping without sharing the replicated data. Existing setup:\n{}\nThis "
+                "query:\n{}\n(If the existing setup was dropped incompletely, remove the leftover Keeper "
+                "path manually.)",
+                expanded_keeper_path, published_fingerprint, local_fingerprint);
+
+        /// Likewise reject a replica name that is already registered by another replica synchronously at
+        /// CREATE time. The authoritative, ownership-checked enforcement lives in `registerReplicaInKeeper`
+        /// (the registration node stores the owning replica's identity), but that runs in the background
+        /// startup task, which would leave a mounted database stuck retrying; failing the CREATE up front is
+        /// the better place for a misconfiguration that the user must fix anyway.
+        String registered_owner;
+        if (context->getZooKeeper()->tryGet(expanded_keeper_path + "/replicas/" + expanded_replica_name, registered_owner)
+            && registered_owner != coordinationReplicaOwnerId(toString(clickhouse_uuid)))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "A replica named '{}' is already registered in the coordinated MaterializedPostgreSQL setup at "
+                "Keeper path '{}'. materialized_postgresql_replica_name must resolve to a distinct value on "
+                "every replica: replicas are tracked under <keeper_path>/replicas/<name>, so two replicas "
+                "sharing one name would corrupt the shared bookkeeping that decides when the last replica "
+                "removes the shared replication slot and publication. Use a distinct value (for example the "
+                "{{replica}} macro). If this registration is a leftover of an incompletely dropped setup, "
+                "remove the Keeper node manually",
+                expanded_replica_name, expanded_keeper_path);
+
+        /// Reject a CREATE while a last-replica drop is still tearing the setup on this keeper path down (its
+        /// <keeper_path>/teardown ownership token is still in place): the pending teardown drops the shared
+        /// PostgreSQL slot/publication by name, so a fresh setup built in that window would have its objects
+        /// deleted from under it. The startup-time fence in `ensureCoordinatedNamingCompatible` enforces this
+        /// authoritatively (and keeps retrying); failing the CREATE synchronously is the better UX for the
+        /// common case, where the teardown finishes within moments and a retried CREATE succeeds.
+        String teardown_owner;
+        if (context->getZooKeeper()->tryGet(expanded_keeper_path + "/teardown", teardown_owner)
+            && teardown_owner != coordinationReplicaOwnerId(toString(clickhouse_uuid)))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The coordinated MaterializedPostgreSQL setup at Keeper path '{}' is still being torn down by "
+                "the drop of its last replica. Retry the CREATE once the teardown has finished. If the "
+                "tearing-down server died before completing it, remove the leftover node '{}/teardown' "
+                "manually after dropping the leftover replication slot and publication in PostgreSQL",
+                expanded_keeper_path, expanded_keeper_path);
+    }
+}
+
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const String & postgres_database_,
@@ -293,9 +814,86 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 
     LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, doubleQuoteString(publication_name));
 
+    nested_engine_name = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_table_engine];
+    coordination_enabled = !replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value.empty();
+
+    if (coordination_enabled)
+    {
+        if (!getContext()->hasZooKeeper())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "materialized_postgresql_keeper_path is set, but no ZooKeeper/Keeper is configured for this server");
+
+        /// Resolve the {uuid}/{shard}/{replica} macros in the coordination path and replica name once.
+        /// {uuid} resolves to the ClickHouse database (or single-table) UUID passed to the handler.
+        StorageID macro_table_id = StorageID::createEmpty();
+        macro_table_id.database_name = current_database_name;
+        macro_table_id.uuid = parse<UUID>(clickhouse_uuid_);
+
+        const String raw_keeper_path = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path];
+        const String raw_replica_name = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_replica_name];
+        const auto macros = getContext()->getMacros();
+        /// A macro these settings expand through can disappear from the server configuration after the engine
+        /// was created. Do not throw from the constructor in that case: `beforeDropDatabase` builds a handler
+        /// purely to run the coordinated teardown, so a throwing constructor would make a misconfigured setup
+        /// undroppable. Record the failure instead - the startup paths refuse to proceed with an unresolved
+        /// identity, and the teardown recovers the real identity from the nested-table metadata.
+        try
+        {
+            {
+                Macros::MacroExpansionInfo info;
+                info.table_id = macro_table_id;
+                coordination_keeper_path = macros->expand(raw_keeper_path, info);
+                assertValidCoordinationKeeperPath(coordination_keeper_path);
+            }
+            {
+                Macros::MacroExpansionInfo info;
+                info.table_id = macro_table_id;
+                coordination_replica_name = macros->expand(raw_replica_name, info);
+            }
+        }
+        catch (...)
+        {
+            coordination_identity_error = getCurrentExceptionMessage(/* with_stacktrace */ false);
+            coordination_keeper_path.clear();
+            coordination_replica_name.clear();
+            LOG_ERROR(log, "Cannot resolve the coordination identity from the current configuration: {}",
+                      coordination_identity_error);
+        }
+
+        coordination_naming_fingerprint = coordinatedNamingFingerprint(replication_settings, postgres_database_, postgres_table_);
+        coordination_replica_owner = coordinationReplicaOwnerId(clickhouse_uuid_);
+
+        LOG_INFO(log, "Replica coordination enabled: keeper path '{}', replica name '{}', nested table engine '{}'",
+                 coordination_keeper_path, coordination_replica_name, nested_engine_name);
+    }
+
     startup_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
     consumer_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
     cleanup_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
+    if (coordination_enabled)
+        coordination_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLReplicaCoordination", [this]{ coordinationFunc(); });
+}
+
+
+PostgreSQLReplicationHandler::~PostgreSQLReplicationHandler()
+{
+    /// Stop the background tasks before the members they use are destroyed. The task holders are declared
+    /// before those members, so their own destructors (which deactivate the tasks) would run too late: a task
+    /// still executing at that point would read, for example, an already-destroyed `materialized_storages`.
+    /// `deactivate` waits for an in-flight execution to finish and is idempotent, so this is safe for a handler
+    /// that was already shut down.
+    try
+    {
+        startup_task->deactivate();
+        consumer_task->deactivate();
+        cleanup_task->deactivate();
+        if (coordination_task)
+            coordination_task->deactivate();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
 }
 
 
@@ -307,6 +905,23 @@ void PostgreSQLReplicationHandler::addStorage(const std::string & table_name, St
 
 void PostgreSQLReplicationHandler::startup(bool delayed)
 {
+    if (coordination_enabled)
+    {
+        /// Every replica creates the nested tables (as replicas of the shared replicated tree) so reads
+        /// work everywhere and a standby can take over without reloading. Only the elected active worker
+        /// consumes the slot and loads the initial snapshot; that is driven by `coordination_task`.
+        if (delayed)
+        {
+            startup_task->activateAndSchedule();
+        }
+        else
+        {
+            registerReplicaThenEnsureNestedTables();
+            coordination_task->activateAndSchedule();
+        }
+        return;
+    }
+
     if (delayed)
     {
         startup_task->activateAndSchedule();
@@ -353,13 +968,22 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
     {
         postgres::Connection connection(connection_info);
         connection.connect(); /// Will throw pqxx::broken_connection if no connection at the moment
-        startSynchronization(is_attach);
+        if (coordination_enabled)
+        {
+            /// This path retries on error (see below), and every step is idempotent.
+            registerReplicaThenEnsureNestedTables();
+            coordination_task->activateAndSchedule();
+        }
+        else
+        {
+            startSynchronization(is_attach);
+        }
     }
     catch (const pqxx::broken_connection & pqxx_error)
     {
         tryLogCurrentException(log);
 
-        if (!is_attach)
+        if (!is_attach && !retry_startup_on_error)
             throw;
 
         LOG_ERROR(log, "Unable to set up connection. Reconnection attempt will continue. Error message: {}", pqxx_error.what());
@@ -369,7 +993,7 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
     {
         tryLogCurrentException(log);
 
-        if (!is_attach)
+        if (!is_attach && !retry_startup_on_error)
             throw;
 
         /// On attach the startup task must keep retrying on any error so replication starts on its own once
@@ -392,7 +1016,7 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
     {
         tryLogCurrentException(log);
 
-        if (!is_attach)
+        if (!is_attach && !retry_startup_on_error)
             throw;
 
         /// A non-Exception failure on attach (e.g. a pqxx::sql_error such as "replication slot is active for
@@ -406,10 +1030,20 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
 
 void PostgreSQLReplicationHandler::shutdown()
 {
+    /// Releasing `leader_node` below issues a Keeper remove request from this thread.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::shutdown");
+
     stop_synchronization.store(true);
 
     LOG_TRACE(log, "Deactivating startup task");
     startup_task->deactivate();
+
+    /// Deactivate coordination before touching the leader node, so `coordinationFunc` is not mid-mutation.
+    if (coordination_task)
+    {
+        LOG_TRACE(log, "Deactivating coordination task");
+        coordination_task->deactivate();
+    }
 
     LOG_TRACE(log, "Deactivating consumer task");
     consumer_task->deactivate();
@@ -418,7 +1052,98 @@ void PostgreSQLReplicationHandler::shutdown()
     cleanup_task->deactivate();
 
     LOG_TRACE(log, "Resetting consumer");
-    consumer.reset(); /// Clear shared pointers to inner storages.
+    {
+        std::lock_guard lock(consumer_ptr_mutex);
+        consumer.reset(); /// Clear shared pointers to inner storages.
+    }
+
+    /// Release the ephemeral leader node so a peer can take over promptly (rather than waiting for the
+    /// Keeper session to expire). The release is confirmed, not best-effort: the node lives under the
+    /// server's shared Keeper session, which survives this handler (except at server shutdown), and after
+    /// `shutdown` this replica never re-enters the election, so an unconfirmed removal could leave a stale
+    /// /leader behind that keeps every peer on standby indefinitely. Reset the node before its backing
+    /// session.
+    is_active_worker.store(false);
+    releaseLeadershipAtShutdown();
+    leader_node.reset();
+    coordination_zookeeper.reset();
+}
+
+
+void PostgreSQLReplicationHandler::releaseLeadershipAtShutdown()
+{
+    if (!leader_node || !coordination_zookeeper)
+        return;
+
+    const String leader_path = coordination_keeper_path + "/leader";
+    /// The session the ephemeral node belongs to. Recorded before anything can fail, so that a release that
+    /// has to be finished in the background can tell the node apart from one a peer creates later.
+    const Int64 leadership_session_id = coordination_zookeeper->getClientID();
+
+    try
+    {
+        fiu_do_on(FailPoints::materialized_postgresql_fail_leader_release_at_shutdown,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                            "Injected failure of the replication leader-node removal at shutdown");
+        });
+
+        /// Remove the node through the leadership session, so the removal is fenced on the very session the
+        /// node lives under.
+        coordination_zookeeper->remove(leader_path);
+        leader_node->setAlreadyRemoved();
+        return;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log,
+            "Could not confirm the removal of the replication leader node at shutdown, re-checking");
+    }
+
+    /// The failed removal is ambiguous: Keeper may have applied it and only the response was lost. The
+    /// failed-startup path can leave that ambiguity to the next election (`removeLeakedOwnLeaderNode`), but
+    /// after `shutdown` there is no next election on this replica, and the node lives under the server's
+    /// shared Keeper session, which does not end with this handler - a surviving node would keep every peer
+    /// on standby for as long as that session lives, with nobody left to remove it. So resolve the ambiguity
+    /// now, with owner- and version-checked operations. The holder destructor's unconditional best-effort
+    /// `tryRemove` is suppressed first: by the time these re-checks finish, a peer may already have created
+    /// its own /leader, and a blind removal could delete the peer's node.
+    leader_node->setAlreadyRemoved();
+
+    static constexpr size_t max_attempts = 3;
+    for (size_t attempt = 0; attempt < max_attempts; ++attempt)
+    {
+        try
+        {
+            /// A fresh handle: after a session expiry this returns the server's new shared session, under
+            /// which `removeLeakedOwnLeaderNode` correctly refuses to touch the old session's node (Keeper
+            /// removes it itself when that session ends).
+            auto zookeeper = getContext()->getZooKeeper();
+            if (removeLeakedOwnLeaderNode(zookeeper, leader_path))
+                LOG_INFO(log, "Confirmed the release of the replication leader node at shutdown");
+            else
+                LOG_INFO(log, "The replication leader node is no longer owned by this replica's live Keeper "
+                              "session, nothing to release");
+            return;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to re-check the replication leader node at shutdown");
+        }
+    }
+
+    /// Every immediate re-check failed. That is not proof that the ephemeral node is gone: Keeper being
+    /// unreachable for the few milliseconds these attempts take can just as well be a transient disconnect
+    /// that heals long before the shared session expires - and then the node stays, with nobody left to
+    /// remove it, because this handler never re-enters the election after `shutdown`. Hand the release over
+    /// to a task that outlives this handler and keeps retrying against the same shared Keeper session, so
+    /// takeover cannot stay wedged.
+    LOG_WARNING(log,
+        "Could not confirm the release of the replication leader node {} at shutdown, retrying it in the "
+        "background until it is resolved", leader_path);
+
+    LeakedLeaderNodeReleaser::instance().add(
+        getContext(), leader_path, coordination_replica_name, leadership_session_id);
 }
 
 
@@ -552,6 +1277,10 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
 
 void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 {
+    /// In coordinated mode this function reads and writes the snapshot-completion marker in Keeper, and
+    /// loading the snapshot inserts into Replicated tables, which also issues Keeper requests.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::startSynchronization");
+
     postgres::Connection replication_connection(connection_info, /* replication */true);
     pqxx::nontransaction tx(replication_connection.getRef());
     adoptLegacyReplicationIdentityIfNeeded(tx);
@@ -588,11 +1317,20 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         }
         else
         {
+            /// The slot is shared state: a deposed worker recreating it here would race the successor
+            /// that may already have created its own replacement slot (see the redo-the-snapshot branch
+            /// below, which drops the slot under the same fence).
+            assertReplicationLeadershipIsLive();
             createReplicationSlot(tx, start_lsn, snapshot_name);
         }
 
         for (const auto & [table_name, storage] : materialized_storages)
         {
+            /// Abort as soon as leadership is lost: once the Keeper session backing /leader expires,
+            /// another replica may already have won the election, truncated the shared nested tables and
+            /// started a replacement snapshot, and this worker's inserts would interleave with it.
+            assertReplicationLeadershipIsLive();
+
             try
             {
                 nested_storages.emplace(table_name, loadFromSnapshot(*tmp_connection, snapshot_name, table_name, storage->as<StorageMaterializedPostgreSQL>()));
@@ -602,11 +1340,42 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 e.addMessage("while loading table `{}`.`{}`", postgres_database, table_name);
                 tryLogCurrentException(log);
 
-                /// Throw in case of single MaterializedPostgreSQL storage, because initial setup is done immediately
-                /// (unlike database engine where it is done in a separate thread).
-                if (throw_on_error && !is_materialized_postgresql_database)
+                /// Without coordination the database engine tolerates a per-table failure: the remaining
+                /// tables still get a consumer and the failed one can be repaired later with `ATTACH TABLE`.
+                /// The single-table engine has exactly one table, so when its snapshot failed there is
+                /// nothing useful a consumer could do, and `throw_on_error` decides between failing the
+                /// query and the startup-task retry.
+                ///
+                /// In coordinated mode any snapshot failure must abort the whole attempt for both engines:
+                /// proceeding would construct a consumer that marks the missing tables as skipped while
+                /// still advancing the shared slot's `confirmed_flush_lsn` on every commit, silently
+                /// discarding their WAL - and `ATTACH TABLE`, the usual repair path, is rejected in
+                /// coordinated mode, so nothing could heal the subset short of an unrelated failover. The
+                /// abort lets `coordinationFunc` (which drives the retry, with `throw_on_error` false)
+                /// release the leadership, so a healthy peer can redo the full snapshot before any WAL is
+                /// advanced past unapplied rows.
+                if (coordination_enabled || (throw_on_error && !is_materialized_postgresql_database))
                     throw;
             }
+        }
+
+        /// Only after every table's snapshot data is durably inserted may a future active worker resume
+        /// from the slot's confirmed LSN instead of redoing the snapshot (see isInitialSnapshotCompleted).
+        if (coordination_enabled)
+        {
+            /// Holds the worker between loading the snapshot and publishing the marker, so a test can
+            /// expire its Keeper session here and verify that a worker that lost its leadership
+            /// mid-snapshot cannot publish a stale marker over a successor's replacement snapshot.
+            fiu_do_on(FailPoints::materialized_postgresql_pause_before_marking_snapshot_completed,
+            {
+                LOG_INFO(log, "Pausing before marking the initial snapshot as completed until failpoint "
+                         "materialized_postgresql_pause_before_marking_snapshot_completed is disabled");
+                FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_marking_snapshot_completed);
+            });
+
+            /// Reaching this point means every table's snapshot loaded: in coordinated mode any per-table
+            /// failure above aborts the whole attempt.
+            markInitialSnapshotCompleted(start_lsn);
         }
     };
 
@@ -618,11 +1387,106 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         if (user_managed_slot)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Having replication slot `{}` from settings, but it does not exist", replication_slot);
 
+        /// A missing shared slot after a completed snapshot is not a first startup. The old slot
+        /// may have acknowledged mutations which are absent from the current PostgreSQL snapshot;
+        /// loading that snapshot on top of the replicated nested tables would preserve deleted rows.
+        /// Start from empty, exactly as the interrupted-snapshot recovery below does.
+        if (coordination_enabled && isInitialSnapshotCompleted())
+        {
+            LOG_WARNING(log,
+                "Replication slot {} disappeared after the initial snapshot completed. Clearing the nested tables "
+                "and reloading all of them from a new snapshot",
+                replication_slot);
+
+            /// The completion marker describes the lost slot, not the replacement snapshot. Remove it
+            /// before changing the shared tables or creating the replacement slot: if this worker dies
+            /// while reloading, the next leader must enter the interrupted-snapshot recovery path instead
+            /// of resuming from the replacement slot's confirmed LSN into a partial snapshot.
+            assertReplicationLeadershipIsLive();
+            const String marker_path = coordination_keeper_path + "/snapshot_completed";
+            const auto code = coordination_zookeeper->tryRemove(marker_path);
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                throw zkutil::KeeperException::fromPath(code, marker_path);
+
+            /// The marker deletion used the same session that owns /leader. Do not proceed if that
+            /// session expired while deleting it, because another worker may already be rebuilding.
+            assertReplicationLeadershipIsLive();
+            truncateNestedTables();
+            assertReplicationLeadershipIsLive();
+        }
+
         initial_sync();
     }
     /// Always drop replication slot if it is CREATE query and not ATTACH.
-    else if (!is_attach)
+    /// When coordination is enabled the slot is shared across replicas and an existing slot means another
+    /// replica (or this one before a restart/handover) already created it; a new active worker must resume
+    /// from `confirmed_flush_lsn` instead of dropping the slot and reloading - but only when the durable
+    /// snapshot-completion marker confirms the initial snapshot actually finished (see below).
+    else if (!is_attach && !coordination_enabled)
     {
+        /// A create-style startup reloads the snapshot into the nested tables, and they are not
+        /// necessarily empty here: a refused plain `DROP DATABASE` can already have removed some of the
+        /// nested tables before a later removal threw, and `recoverAfterRefusedDrop` deliberately
+        /// switches such a database to a create-style startup so the missing tables are recreated.
+        /// Appending the fresh snapshot on top of a table that survived that partial drop would
+        /// resurrect the rows PostgreSQL deleted in the meantime: `ReplacingMergeTree` collapses
+        /// duplicate keys by `_version`, but a row that is absent from the new snapshot has nothing to
+        /// override the stale copy, and the deletion happened while replication was down, so no
+        /// `_sign = -1` tombstone is ever consumed for it. Clear the nested tables first, exactly like
+        /// the two coordinated recovery branches above and below do, so the reloaded snapshot is the
+        /// exact current PostgreSQL state. On a genuine first startup no nested table exists yet, which
+        /// makes this a no-op.
+        truncateNestedTables();
+
+        if (!user_managed_slot)
+            dropReplicationSlot(tx);
+
+        initial_sync();
+        LOG_DEBUG(log, "Loaded {} tables", nested_storages.size());
+    }
+    /// The slot exists, but no active worker ever finished the initial snapshot: the previous one died
+    /// mid-snapshot. WAL replay from the slot only covers changes after the slot-creation LSN, so resuming
+    /// would permanently lose the rows that were never copied. Redo the snapshot from scratch.
+    ///
+    /// The nested tables must be cleared first. Rows the dead worker already copied are still there, and
+    /// re-inserting the fresh snapshot on top does not repair every case: a row that the dead worker copied
+    /// and that PostgreSQL has since DELETEd has no counterpart in the new snapshot, so nothing overrides the
+    /// stale copy (a ReplacingMergeTree collapses duplicate keys by `_version` but never turns a now-absent
+    /// row into a tombstone). Truncating makes the redo start from an empty table so the reloaded snapshot is
+    /// the exact current PostgreSQL state. The nested tables are Replicated/SharedReplacingMergeTree, so the
+    /// truncate propagates to every replica.
+    else if (coordination_enabled && !isInitialSnapshotCompleted())
+    {
+        LOG_WARNING(log,
+            "Replication slot {} exists, but the initial snapshot is not marked as completed. "
+            "Assuming the previous active worker died before finishing it; clearing the nested tables and "
+            "reloading all of them from a new snapshot",
+            replication_slot);
+
+        /// Holds the worker between entering the mid-snapshot recovery branch and mutating any shared
+        /// state, so a test can expire its Keeper session here and verify that a deposed worker aborts
+        /// at the leadership fence below instead of truncating the tables its successor is reloading
+        /// and dropping the slot the successor just created.
+        fiu_do_on(FailPoints::materialized_postgresql_pause_before_redo_snapshot_truncate,
+        {
+            LOG_INFO(log, "Pausing before redoing the initial snapshot until failpoint "
+                     "materialized_postgresql_pause_before_redo_snapshot_truncate is disabled");
+            FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_redo_snapshot_truncate);
+        });
+
+        /// This whole recovery branch mutates shared state - the replicated nested tables and the shared
+        /// slot - so it is fenced on the live leadership session exactly like the snapshot load and the
+        /// marker write. If this worker's Keeper session expired after it entered this branch, a successor
+        /// may already have won /leader and be running the replacement snapshot: truncating now would wipe
+        /// the tables the successor has already reloaded, and dropping the slot would discard the slot it
+        /// just created. `truncateNestedTables` re-checks the fence per table, and it is re-checked here
+        /// once more before the slot is touched (the truncate can take a while on large tables).
+        assertReplicationLeadershipIsLive();
+
+        truncateNestedTables();
+
+        assertReplicationLeadershipIsLive();
+
         if (!user_managed_slot)
             dropReplicationSlot(tx);
 
@@ -658,20 +1522,30 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 
     tx.commit();
 
+    /// A worker that lost its leadership session while setting up - most importantly while loading the
+    /// initial snapshot - must not start a consumer: the new active worker owns the shared slot now, and a
+    /// stale consumer could grab it first and starve the legitimate one. PostgreSQL's single-active-session
+    /// rule on the slot is only a backstop against concurrent consumption, not against the wrong consumer.
+    assertReplicationLeadershipIsLive();
+
     /// Pass current connection to consumer. It is not std::moved implicitly, but a shared_ptr is passed.
     /// Consumer and replication handler are always executed one after another (not concurrently) and share the same connection.
     /// (Apart from the case, when shutdownFinal is called).
     /// Handler uses it only for loadFromSnapshot and shutdown methods.
-    consumer = std::make_shared<MaterializedPostgreSQLConsumer>(
-            getContext(),
-            std::move(tmp_connection),
-            replication_slot,
-            publication_name,
-            start_lsn,
-            max_block_size,
-            schema_as_a_part_of_table_name,
-            nested_storages,
-            (is_materialized_postgresql_database ? postgres_database : postgres_database + '.' + tables_list));
+    {
+        std::lock_guard lock(consumer_ptr_mutex);
+        consumer = std::make_shared<MaterializedPostgreSQLConsumer>(
+                getContext(),
+                std::move(tmp_connection),
+                replication_slot,
+                publication_name,
+                start_lsn,
+                max_block_size,
+                schema_as_a_part_of_table_name,
+                coordination_enabled,
+                nested_storages,
+                (is_materialized_postgresql_database ? postgres_database : postgres_database + '.' + tables_list));
+    }
 
     replication_handler_initialized = true;
 
@@ -679,7 +1553,10 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     cleanup_task->activateAndSchedule();
 
     /// Do not rely anymore on saved storage pointers.
-    materialized_storages.clear();
+    /// Exception: when coordination is enabled this handler may be re-elected as the active worker after a
+    /// handover and has to rebuild the consumer from these pointers, so keep them.
+    if (!coordination_enabled)
+        materialized_storages.clear();
 }
 
 
@@ -690,13 +1567,19 @@ ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializ
 
     auto table_structure = fetchTableStructure(tx, table_name);
     auto table_override = tryGetTableOverride(current_database_name, table_name);
-    return storage->getCreateNestedTableQuery(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
+    return storage->getCreateNestedTableQuery(makeNestedEngineSpec(table_name), std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
 }
 
 
 StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection & connection, String & snapshot_name, const String & table_name,
                                                           StorageMaterializedPostgreSQL * materialized_storage)
 {
+    fiu_do_on(FailPoints::materialized_postgresql_fail_load_from_snapshot,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED,
+            "Injected failure while loading table `{}` from the initial snapshot", table_name);
+    });
+
     auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection.getRef());
 
     std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
@@ -736,13 +1619,21 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     LOG_DEBUG(log, "Loading PostgreSQL table {}.{}", postgres_database, quoted_name);
 
     auto table_override = tryGetTableOverride(current_database_name, table_name);
-    materialized_storage->createNestedIfNeeded(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
+    materialized_storage->createNestedIfNeeded(makeNestedEngineSpec(table_name), std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
     auto nested_storage = materialized_storage->getNested();
 
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = nested_storage->getStorageID();
 
-    auto insert_context = materialized_storage->getNestedTableContext();
+    auto insert_context = Context::createCopy(materialized_storage->getNestedTableContext());
+    /// The snapshot is a bulk reload, not a user INSERT: it must never be silently thrown away by the
+    /// Replicated insert deduplication. The nested replicated table may carry block-deduplication hashes
+    /// from a previous load of the same data - a previous incarnation of the shared table whose Keeper tree
+    /// is still being removed by a background drop, or the pre-truncate parts of the mid-snapshot failover
+    /// recovery (TRUNCATE removes the parts, but the block hashes in Keeper are cleaned up lazily). With
+    /// deduplication on, re-inserting identical blocks would be ignored, leaving the nested table silently
+    /// empty (or partial) while the snapshot is marked as completed.
+    insert_context->setSetting("insert_deduplicate", false);
 
     InterpreterInsertQuery interpreter(
         insert,
@@ -806,7 +1697,20 @@ PostgreSQLReplicationHandler::ConsumerPtr PostgreSQLReplicationHandler::getConsu
 
 void PostgreSQLReplicationHandler::consumerFunc()
 {
+    /// In coordinated mode consuming inserts into Replicated nested tables, which issues Keeper requests.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::consumerFunc");
+
     assertInitialized();
+
+    /// When coordination is enabled, only the active worker may consume (peek/advance) the shared slot.
+    /// If we are no longer the active worker, go dormant without rescheduling; `coordination_task` owns
+    /// tearing down the consumer and will re-arm this task if we become the active worker again. This
+    /// must happen before consume() so a demoted worker never advances the slot's confirmed LSN.
+    if (coordination_enabled && !isLeader())
+    {
+        LOG_DEBUG(log, "Not the active worker anymore, pausing consumption");
+        return;
+    }
 
     bool schedule_now = true;
     try
@@ -842,6 +1746,1376 @@ void PostgreSQLReplicationHandler::consumerFunc()
 }
 
 
+bool PostgreSQLReplicationHandler::isLeader() const
+{
+    return is_active_worker.load();
+}
+
+
+NestedTableEngineSpec PostgreSQLReplicationHandler::makeNestedEngineSpec(const String & table_name) const
+{
+    NestedTableEngineSpec spec;
+    if (!coordination_enabled)
+        return spec; /// default: plain ReplacingMergeTree
+
+    spec.engine_name = nested_engine_name;
+    spec.replicated = nested_engine_name != "ReplacingMergeTree";
+    spec.replica_name = coordination_replica_name;
+    /// A deterministic, node-identical per-table path, so each replica's nested table joins the same
+    /// replicated tree. Table names may contain a schema-qualifying dot, so escape them for the path.
+    spec.zookeeper_path = coordination_keeper_path + "/tables/" + escapeForFileName(table_name);
+    return spec;
+}
+
+
+void PostgreSQLReplicationHandler::ensureNestedTablesExist()
+{
+    /// Create the nested tables on this replica without loading a snapshot. When coordination is enabled
+    /// they are replicas of a shared replicated tree, so the data (including the initial snapshot that the
+    /// active worker loads) propagates to this replica through ClickHouse replication.
+    /// Creating a Replicated table issues Keeper requests.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::ensureNestedTablesExist");
+
+    postgres::Connection connection(connection_info);
+    pqxx::nontransaction tx(connection.getRef());
+
+    for (const auto & [table_name, materialized_storage] : materialized_storages)
+    {
+        /// A refused coordinated DROP leaves this replica's local nested table shut down but still in the
+        /// catalog: `InterpreterDropQuery` shuts the nested (Replicated/Shared)ReplacingMergeTree down before
+        /// it removes it, so if the removal is then refused (e.g. the last-replica teardown already ran and the
+        /// nested-table drop itself failed) the shut-down replica survives. A shut-down ReplicatedMergeTree
+        /// cannot be restarted in place - it stays permanently read-only - so the retrying startup that recovers
+        /// such a drop must drop the dead local copy and recreate it below, or it would loop forever (e.g.
+        /// `truncateNestedTables` during a redo-snapshot fails with TABLE_IS_READ_ONLY). The data on disk and
+        /// the shared Keeper tree are preserved; recreating rejoins the shared tree. This is gated on
+        /// `isShutdownCalled` (not merely read-only) so a nested table that is only transiently read-only while
+        /// starting up is never dropped. If Keeper is unreachable the drop throws and the startup task retries.
+        bool nested_is_shut_down = false;
+        {
+            /// The StoragePtr must not outlive this scope: the synchronous drop below waits until the dropped
+            /// table is not referenced anywhere, so holding the reference across the drop would deadlock it.
+            auto nested = materialized_storage->tryGetNested();
+            const auto * replicated = nested ? nested->as<StorageReplicatedMergeTree>() : nullptr;
+            nested_is_shut_down = replicated && replicated->isShutdownCalled();
+        }
+
+        if (nested_is_shut_down)
+        {
+            LOG_WARNING(log,
+                "The local nested table for `{}`.`{}` was shut down (most likely by a refused coordinated "
+                "drop) and cannot be restarted in place; dropping and recreating it so this replica rejoins "
+                "the shared replicated tree",
+                postgres_database, table_name);
+
+            /// Use the wrapper's internal nested-table context: for the database engine the nested table
+            /// lives inside the coordinated DatabaseMaterializedPostgreSQL, whose `dropTable` refuses a
+            /// non-internal (user) DROP; an internal context bypasses that guard exactly as the DROP DATABASE
+            /// nested-drop loop does (`executeDropQuery` propagates the internal-query flag).
+            InterpreterDropQuery::executeDropQuery(
+                ASTDropQuery::Kind::Drop, getContext(), materialized_storage->getNestedTableContext(),
+                materialized_storage->getNestedStorageID(), /* sync */ true, /* ignore_sync_setting */ true);
+            materialized_storage->resetNested();
+        }
+
+        if (!materialized_storage->tryGetNested())
+        {
+            /// The single-table engine derives the nested structure from its own declared metadata, so it
+            /// does not need the PostgreSQL structure here; the database engine does.
+            PostgreSQLTableStructurePtr table_structure;
+            if (is_materialized_postgresql_database)
+                table_structure = fetchTableStructure(tx, table_name);
+
+            auto table_override = tryGetTableOverride(current_database_name, table_name);
+            const auto engine_spec = makeNestedEngineSpec(table_name);
+
+            /// In coordinated mode all replicas share one set of nested Replicated/SharedReplacingMergeTree
+            /// tables on the same Keeper path. The schema of that shared tree is established by whichever
+            /// replica created it first and is authoritative: ReplicatedMergeTree compares any joining
+            /// replica's declared structure against the metadata already stored in Keeper and refuses the join
+            /// on a mismatch. This replica derives its structure from the *current* PostgreSQL schema, so if
+            /// the PostgreSQL table was altered or renamed after the shared tree was created (MaterializedPostgreSQL
+            /// continues by column position and does not track PostgreSQL DDL), the locally derived structure
+            /// would differ and the join would fail. Detect up front that this is a join into an already
+            /// existing shared tree, so the failure can be reported as an actionable schema-drift error instead
+            /// of a cryptic metadata mismatch that the startup task then retries indefinitely.
+            /// Not applicable when this replica has just dropped its own shut-down copy above: the shared
+            /// tree's Keeper path may then still exist only because its removal (triggered by dropping the
+            /// last replica) is in progress, and the create fails with a transient "dropped right now"
+            /// (ALL_REPLICAS_LOST) error that the startup task resolves by retrying - reporting it as schema
+            /// drift would be wrong and misleading.
+            bool joining_existing_shared_tree = false;
+            if (coordination_enabled && engine_spec.replicated && !nested_is_shut_down)
+            {
+                try
+                {
+                    joining_existing_shared_tree = getContext()->getZooKeeper()->exists(engine_spec.zookeeper_path);
+                }
+                catch (...)
+                {
+                    /// A transient Keeper error here just means we fall back to the plain create path (which
+                    /// needs Keeper too and will surface the real error and retry on its own).
+                    LOG_TRACE(log, "Could not check whether the shared nested tree already exists: {}",
+                              getCurrentExceptionMessage(false));
+                }
+            }
+
+            try
+            {
+                materialized_storage->createNestedIfNeeded(
+                    engine_spec,
+                    std::move(table_structure),
+                    table_override ? table_override->as<ASTTableOverride>() : nullptr);
+            }
+            catch (Exception & e)
+            {
+                if (joining_existing_shared_tree)
+                    e.addMessage(
+                        "This coordinated MaterializedPostgreSQL replica could not join the shared nested table '{}' on "
+                        "Keeper path '{}'. The shared nested-table schema is authoritative, but this replica's structure, "
+                        "derived from the current PostgreSQL table, does not match it - the PostgreSQL table was most "
+                        "likely altered or renamed after the coordinated database was first created (MaterializedPostgreSQL "
+                        "continues by column position and does not track PostgreSQL DDL). Reconcile the PostgreSQL schema "
+                        "with the shared one, or drop and recreate the coordinated database on a fresh keeper path",
+                        table_name, engine_spec.zookeeper_path);
+                throw;
+            }
+        }
+
+        /// Mark the nested table as available so the wrapper becomes queryable on this replica (the
+        /// database engine only exposes a table once its nested table exists). Data arrives through
+        /// ClickHouse replication of the shared replicated tree, even on replicas that never consume.
+        if (auto nested = materialized_storage->tryGetNested(); nested && !materialized_storage->hasNested())
+            materialized_storage->set(nested);
+    }
+}
+
+
+void PostgreSQLReplicationHandler::truncateNestedTables()
+{
+    /// Reached from the recovery branches of `startSynchronization` that reload the whole snapshot: the two
+    /// coordinated ones (a slot that disappeared after the initial snapshot completed, and a snapshot that a
+    /// previous active worker never finished) and the plain create-style one, which a refused partial
+    /// `DROP DATABASE` also routes here.
+    /// In coordinated mode the nested tables were created by `ensureNestedTablesExist` and are
+    /// Replicated/SharedReplacingMergeTree, so truncating them here clears the shared tree on every replica,
+    /// and only the single active worker may run this, which the per-table fence below enforces (the fence is
+    /// a no-op without coordination). A table whose nested table does not exist yet is skipped.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::truncateNestedTables");
+
+    for (const auto & [table_name, materialized_storage] : materialized_storages)
+    {
+        /// Abort as soon as leadership is lost, mirroring the per-table fence of the snapshot load: a
+        /// deposed worker must not keep truncating tables its successor may already be reloading.
+        assertReplicationLeadershipIsLive();
+
+        auto nested = materialized_storage->tryGetNested();
+        if (!nested)
+            continue;
+
+        /// A dedicated internal query context, exactly like the snapshot INSERT and the consumer use for
+        /// operations against the nested tables.
+        auto truncate_context = Context::createCopy(getContext());
+        truncate_context->makeQueryContext();
+        truncate_context->setInternalQuery(true);
+
+        /// Empty lock: the nested tables are (Replicated/Shared)ReplacingMergeTree, i.e. MergeTreeData, which
+        /// InterpreterDropQuery also truncates without an exclusive table lock.
+        TableExclusiveLockHolder table_lock;
+        auto metadata_snapshot = nested->getInMemoryMetadataPtr(truncate_context, false);
+        nested->truncate(nullptr, metadata_snapshot, truncate_context, table_lock);
+
+        LOG_DEBUG(log, "Truncated nested table for `{}`.`{}` before redoing the initial snapshot",
+                  postgres_database, table_name);
+    }
+}
+
+
+void PostgreSQLReplicationHandler::coordinationFunc()
+{
+    /// This task talks to Keeper directly (leader election, session management).
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::coordinationFunc");
+
+    if (stop_synchronization)
+        return;
+
+    static constexpr UInt64 healthy_poll_ms = 10000;
+    static constexpr UInt64 retry_poll_ms = 5000;
+    UInt64 reschedule_ms = healthy_poll_ms;
+
+    try
+    {
+        /// If the Keeper session backing our leadership expired, we are no longer the active worker. Stop
+        /// consuming and drop the (dead) session before trying to re-acquire leadership. The consumer must
+        /// be stopped so its PostgreSQL replication connection is closed, letting the new active worker
+        /// connect to the shared slot.
+        if (coordination_zookeeper && coordination_zookeeper->expired())
+        {
+            LOG_WARNING(log, "Keeper session expired, releasing replication leadership");
+            is_active_worker.store(false);
+            consumer_task->deactivate(); /// blocks until the in-flight consume() iteration finishes
+            {
+                std::lock_guard lock(consumer_ptr_mutex);
+                consumer.reset();
+            }
+            leader_node.reset();
+            coordination_zookeeper.reset();
+        }
+
+        if (leader_node)
+        {
+            /// Still the active worker. Make sure the consumer is running (retry if a previous
+            /// startSynchronization attempt failed).
+            if (!consumer)
+                startSynchronization(/* throw_on_error */ false);
+        }
+        else
+        {
+            /// Try to become the active worker by creating the ephemeral leader node. Only its holder
+            /// consumes the shared slot; peers stay on standby and take over when it disappears.
+            auto zookeeper = getContext()->getZooKeeper();
+            const String leader_path = coordination_keeper_path + "/leader";
+            zookeeper->createAncestors(leader_path);
+            leader_node = zkutil::EphemeralNodeHolder::tryCreate(leader_path, *zookeeper, coordination_replica_name);
+
+            /// The node may be a leftover of this replica's own, unconfirmed leadership release (see
+            /// `releaseLeadershipAfterFailedStartup`). Nobody tracks it any more, and it lives under this
+            /// server's still-live Keeper session, so it would block every replica of the setup - including
+            /// this one - until that session expires. Remove it and enter the election again right away.
+            if (!leader_node && removeLeakedOwnLeaderNode(zookeeper, leader_path))
+                leader_node = zkutil::EphemeralNodeHolder::tryCreate(leader_path, *zookeeper, coordination_replica_name);
+
+            if (leader_node)
+            {
+                /// Keep the session that the ephemeral node references alive for as long as the node.
+                coordination_zookeeper = zookeeper;
+                is_active_worker.store(true);
+                LOG_INFO(log, "Acquired replication leadership as '{}' at {}", coordination_replica_name, leader_path);
+                startSynchronization(/* throw_on_error */ false);
+            }
+            else
+            {
+                LOG_TRACE(log, "Another replica is the active worker, staying on standby");
+                reschedule_ms = retry_poll_ms;
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+        releaseLeadershipAfterFailedStartup();
+        reschedule_ms = retry_poll_ms;
+    }
+
+    if (!stop_synchronization)
+        coordination_task->scheduleAfter(reschedule_ms);
+}
+
+
+void PostgreSQLReplicationHandler::releaseLeadershipAfterFailedStartup()
+{
+    /// A leader whose startup failed before a consumer got running must not camp on the leadership: the
+    /// failure may be local to this replica (for example, only its snapshot load keeps failing), and while
+    /// it holds /leader every healthy peer stays on standby. Release the leadership so the peers can
+    /// compete; this replica re-enters the election on its next iteration and may win again once its
+    /// problem clears. A consumer that is already running is left alone: post-startup failures are handled
+    /// by the consumer/session-expiry paths.
+    if (!leader_node || !coordination_zookeeper || consumer)
+        return;
+
+    try
+    {
+        /// Remove the node through the leadership session, so the removal is fenced on the very session the
+        /// node lives under.
+        coordination_zookeeper->remove(coordination_keeper_path + "/leader");
+        leader_node->setAlreadyRemoved();
+    }
+    catch (...)
+    {
+        /// A failed removal is NOT proof that this replica still holds /leader: Keeper may well have applied
+        /// it and only the response was lost (or the session may be gone entirely), in which case a peer can
+        /// win a fresh election immediately. Keeping the leadership state would let this replica re-enter
+        /// `startSynchronization` and mutate the shared replication slot and snapshot state while another
+        /// replica is the active worker, breaking the single-active-worker contract that the whole
+        /// coordination rests on. So the leadership claim is dropped in either case, and the ambiguity is
+        /// resolved through Keeper on the next election instead: if the node really did survive, this
+        /// replica's own leftover is recognized and removed by `removeLeakedOwnLeaderNode` (matched on the
+        /// stored replica name and on the owning Keeper session), and the destructor of `leader_node` below
+        /// makes one more best-effort removal attempt anyway.
+        tryLogCurrentException(log,
+            "Could not confirm the removal of the replication leader node after a failed startup attempt, "
+            "dropping the leadership claim anyway");
+    }
+
+    is_active_worker.store(false);
+    leader_node.reset();
+    coordination_zookeeper.reset();
+    LOG_WARNING(log, "Released replication leadership after a failed startup attempt");
+}
+
+
+bool PostgreSQLReplicationHandler::removeLeakedOwnLeaderNode(const zkutil::ZooKeeperPtr & zookeeper, const String & leader_path)
+{
+    /// Removes a /leader node that this replica itself created and then lost track of, which can only happen
+    /// through an unconfirmed release in `releaseLeadershipAfterFailedStartup`. Returns true when the path is
+    /// free afterwards (removed, or already gone), so the caller can retry the election immediately.
+    ///
+    /// Two conditions must hold, and together they are exact: the node's data is this replica's coordination
+    /// name (it is written there when the node is created, and the name is enforced to be distinct per
+    /// replica), and the node is owned by the Keeper session this server is using right now - an ephemeral
+    /// node of any older session is either already gone or about to be removed by Keeper itself, and must not
+    /// be touched, because until then its creator legitimately holds the leadership. A node held by a live
+    /// peer therefore never matches.
+    Coordination::Stat stat;
+    String leader_name;
+    if (!zookeeper->tryGet(leader_path, leader_name, &stat))
+        return true;
+
+    if (leader_name != coordination_replica_name || stat.ephemeralOwner != zookeeper->getClientID())
+        return false;
+
+    LOG_WARNING(log,
+        "The replication leader node {} was created by this replica under the current Keeper session but is no "
+        "longer tracked (an earlier leadership release could not be confirmed). Removing it before re-entering "
+        "the election.", leader_path);
+
+    /// Version-checked, so a node that changed in between (it can only have been removed and recreated by a
+    /// peer) is left alone.
+    const auto code = zookeeper->tryRemove(leader_path, stat.version);
+    return code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE;
+}
+
+
+void PostgreSQLReplicationHandler::registerReplicaThenEnsureNestedTables()
+{
+    /// Order matters and must be register-first: the nested tables are replicas of a shared
+    /// Replicated/SharedReplacingMergeTree tree, so once `ensureNestedTablesExist` returns this replica holds
+    /// a durable, replicated copy of the shared data. `shutdownFinal` decides "last replica" purely from
+    /// <keeper_path>/replicas, so the /replicas/<name> node has to exist *before* this replica owns any nested
+    /// data - otherwise a Keeper blip between the two steps could leave a data-bearing but unregistered
+    /// replica, and a last-replica drop on a peer would then remove the shared slot/publication/marker while
+    /// this copy still exists (a later resnapshot would resume into it without truncation, duplicating rows or
+    /// preserving stale deletes).
+    ///
+    /// The flip side of registering first is a ghost participant if nested-table creation fails outright before
+    /// this replica owns any shared data (the database engine is never created, so no shutdownFinal runs). Undo
+    /// the registration in that case to close that hole. Both steps are idempotent, so the startup task can
+    /// safely retry.
+    ///
+    /// But `ensureNestedTablesExist` is not all-or-nothing: it creates the nested tables one by one, and as soon
+    /// as one is created it is a live replica of the shared Replicated/SharedReplacingMergeTree tree and starts
+    /// receiving replicated data. If a later table in the loop then throws, this replica already owns a copy of
+    /// the shared data - so the registration must NOT be undone, or a peer's last-replica teardown (which decides
+    /// solely from <keeper_path>/replicas) could delete the shared slot/publication/marker while this partial
+    /// copy still exists. In that case keep the replica registered and let the idempotent startup-task retry
+    /// finish creating the remaining tables (it skips the ones that already exist).
+    /// Re-check the expanded replica name here as well, not only in the CREATE-time validator: the macros it
+    /// expands through live in the server configuration and can change after the database was created, and a
+    /// name that is not a single Keeper path component would leak the shared PostgreSQL objects (see
+    /// `assertValidCoordinationReplicaName`). This runs before any Keeper path is formed from it - both the
+    /// registration node and the nested replicated tables come later - and refusing here (rather than in the
+    /// handler's constructor) keeps `DROP DATABASE` of a misconfigured setup possible.
+    assertCoordinationIdentityResolved();
+    assertValidCoordinationReplicaName(coordination_replica_name);
+
+    /// For the same reason, refuse to proceed when the expanded coordination identity no longer matches the
+    /// one persisted in the nested tables this replica already owns. Runs before any Keeper node is created
+    /// under the (possibly new) path.
+    assertCoordinationIdentityMatchesNestedTables();
+
+    ensureCoordinatedNamingCompatible();
+    ensureCoordinatedTableSetCompatible();
+
+    /// Holds the startup inside the window between the advisory teardown-token check (in
+    /// ensureCoordinatedNamingCompatible above) and the registration, so a test can win the teardown fence
+    /// on a peer in between and verify that the registration's own atomic token probe refuses to join.
+    fiu_do_on(FailPoints::materialized_postgresql_pause_before_register_replica,
+    {
+        LOG_INFO(log, "Pausing before registering the replica until failpoint "
+                 "materialized_postgresql_pause_before_register_replica is disabled");
+        FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_register_replica);
+    });
+
+    /// A registration this replica published under an earlier expansion of its coordination name (a
+    /// configuration-only macro change made in the window between the registration and the creation of the
+    /// first nested table, where the check above has no nested-table metadata to catch it with) would keep
+    /// <keeper_path>/replicas non-empty forever and block every future last-replica teardown of this setup.
+    /// Clean it up, identified by the owner identity stored in it.
+    purgeOwnStaleReplicaRegistrations();
+
+    registerReplicaInKeeper();
+    try
+    {
+        ensureNestedTablesExist();
+    }
+    catch (...)
+    {
+        if (hasAnyNestedTable())
+        {
+            LOG_WARNING(log,
+                "Nested-table creation failed partway, but this replica already owns a copy of the shared "
+                "nested data; keeping its registration at {}/replicas/{} so a peer cannot decide it is the last "
+                "replica and tear down the shared slot/publication. Retrying.",
+                coordination_keeper_path, coordination_replica_name);
+        }
+        else
+        {
+            try
+            {
+                unregisterReplica();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to unregister replica after nested-table creation failed");
+            }
+        }
+        throw;
+    }
+}
+
+
+void PostgreSQLReplicationHandler::assertCoordinationIdentityResolved() const
+{
+    /// The constructor tolerates an unexpandable coordination path / replica name so that a misconfigured
+    /// setup stays droppable (see there). Everything that forms a Keeper path from the identity must refuse
+    /// to run with an unresolved one - the retrying startup task recovers by itself once the configuration
+    /// is restored.
+    if (!coordination_identity_error.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot resolve materialized_postgresql_keeper_path / materialized_postgresql_replica_name from the "
+            "current server configuration: {}", coordination_identity_error);
+}
+
+
+void PostgreSQLReplicationHandler::assertCoordinationIdentityMatchesNestedTables() const
+{
+    /// `coordination_keeper_path` and `coordination_replica_name` are expanded from the *current* server
+    /// configuration every time the handler is constructed, but the nested Replicated/SharedReplacingMergeTree
+    /// tables of this replica were created with the expansion that was in effect back then, and they keep it
+    /// verbatim in their persisted engine arguments (the shared tree's Keeper path and this replica's name in
+    /// it). The <keeper_path>/replicas/<name> registration is persistent as well. So a configuration-only
+    /// change of a macro these settings go through (or of an intermediate config macro they expand through)
+    /// would make this handler elect a leader, register and tear down under one identity while the shared
+    /// data it already owns lives under another: the old /replicas subtree could never drain (leaking the
+    /// shared replication slot, publication and snapshot marker forever), and leader election could even be
+    /// split from the shared nested-table path.
+    ///
+    /// The expanded identity is therefore treated as immutable for a setup that already exists, and the
+    /// nested-table metadata is its authoritative record. Recovering the old identity from it and silently
+    /// continuing under it is deliberately NOT done: the settings are what the user asked for, and quietly
+    /// ignoring them would hide the misconfiguration. Refuse fail-close instead, so the setup keeps working
+    /// as soon as the configuration is restored. Expanding the settings at CREATE time and persisting the
+    /// literals is not an option either: `materialized_postgresql_replica_name` must stay per-replica, and a
+    /// coordinated single-table engine may be created through a `Replicated` database, which replicates the
+    /// CREATE query verbatim to every replica.
+    for (const auto & [table_name, persisted] : readPersistedNestedIdentities())
+    {
+        const String & persisted_zookeeper_path = persisted.zookeeper_path;
+        const String & persisted_replica_name = persisted.replica_name;
+
+        const auto expected_spec = makeNestedEngineSpec(table_name);
+        if (persisted_zookeeper_path == expected_spec.zookeeper_path && persisted_replica_name == expected_spec.replica_name)
+            continue;
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The coordination identity of this MaterializedPostgreSQL replica changed after it was created: "
+            "materialized_postgresql_keeper_path and materialized_postgresql_replica_name now expand to '{}' "
+            "and '{}', while the existing nested table for `{}` was created as a replica named '{}' of the "
+            "shared replicated tree at '{}'. The expanded coordination identity must stay the same for the "
+            "lifetime of a coordinated setup - the registration under <keeper_path>/replicas and the shared "
+            "nested tables are persistent, so continuing would leak the shared replication slot, publication "
+            "and snapshot marker, and could split leader election from the shared data. Restore the "
+            "configuration (most likely the macros these settings expand through) to the values this replica "
+            "was created with, or drop this replica's coordinated MaterializedPostgreSQL engine and recreate "
+            "it on the new coordination path",
+            coordination_keeper_path, coordination_replica_name, table_name,
+            persisted_replica_name, persisted_zookeeper_path);
+    }
+}
+
+
+std::map<String, PostgreSQLReplicationHandler::PersistedNestedIdentity> PostgreSQLReplicationHandler::readPersistedNestedIdentities() const
+{
+    /// Collect the (table name -> nested table) pairs whose persisted metadata can hold a coordination
+    /// identity. The storages this handler knows about are the authoritative source, but a handler that
+    /// `DatabaseMaterializedPostgreSQL::beforeDropDatabase` built purely to run the teardown (the attach /
+    /// restart window, in which the background startup task has not built the real handler yet) has none
+    /// attached - the nested tables of the database engine then live in that database under the PostgreSQL
+    /// table names, so read them from the database directly.
+    std::map<String, StorageID> nested_tables;
+    for (const auto & [table_name, materialized_storage] : materialized_storages)
+        nested_tables.emplace(table_name, materialized_storage->getNestedStorageID());
+
+    if (nested_tables.empty() && is_materialized_postgresql_database)
+    {
+        if (auto database = DatabaseCatalog::instance().tryGetDatabase(current_database_name))
+        {
+            for (auto it = database->getTablesIterator(getContext()->getGlobalContext()); it->isValid(); it->next())
+                nested_tables.emplace(it->name(), StorageID(current_database_name, it->name()));
+        }
+    }
+
+    std::map<String, PersistedNestedIdentity> result;
+    for (const auto & [table_name, nested_id] : nested_tables)
+    {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(nested_id.database_name);
+        if (!database)
+            continue;
+
+        /// The persisted definition is what matters here, so ask for it with a context that has no query
+        /// context: `DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl` otherwise regenerates the
+        /// definition from the live settings, which is exactly the value that must not be trusted here.
+        ASTPtr create_ast = database->tryGetCreateTableQuery(nested_id.table_name, getContext()->getGlobalContext());
+        const auto * create_query = create_ast ? create_ast->as<ASTCreateQuery>() : nullptr;
+        if (!create_query || !create_query->storage || !create_query->storage->engine)
+            continue;
+
+        /// Both replicated nested engines take the fully expanded Keeper path and replica name as their first
+        /// two arguments (see `getCreateNestedTableQuery`). Anything else is not a coordinated nested table.
+        const auto & engine = *create_query->storage->engine;
+        if (!engine.arguments || engine.arguments->children.size() < 2)
+            continue;
+
+        const auto * path_literal = engine.arguments->children[0]->as<ASTLiteral>();
+        const auto * replica_name_literal = engine.arguments->children[1]->as<ASTLiteral>();
+        if (!path_literal || !replica_name_literal
+            || path_literal->value.getType() != Field::Types::String
+            || replica_name_literal->value.getType() != Field::Types::String)
+            continue;
+
+        PersistedNestedIdentity identity;
+        identity.zookeeper_path = path_literal->value.safeGet<String>();
+        identity.replica_name = replica_name_literal->value.safeGet<String>();
+        result.emplace(table_name, std::move(identity));
+    }
+
+    return result;
+}
+
+
+void PostgreSQLReplicationHandler::adoptPersistedCoordinationIdentityForTeardown()
+{
+    /// The teardown of a coordinated setup - unregistering this replica, the race-free last-replica decision
+    /// and, for the last replica, the removal of the shared coordination nodes - must operate on the identity
+    /// the shared data this replica owns actually lives under, NOT on whatever the current server
+    /// configuration happens to expand the coordination settings to. Otherwise a DROP after a
+    /// configuration-only macro change (which the startup refuses, see
+    /// `assertCoordinationIdentityMatchesNestedTables`, but which leaves the database mounted and droppable)
+    /// would unregister and do last-replica accounting under the new identity, orphaning the original
+    /// /replicas subtree together with the shared replication slot, publication and snapshot marker.
+    ///
+    /// Unlike the startup, adopting the persisted identity here is the right thing to do: this path only
+    /// deletes state, it never resumes replication under it, and the persisted nested-table metadata is the
+    /// authoritative record of the identity the shared data was created with.
+    const auto persisted_identities = readPersistedNestedIdentities();
+    for (const auto & [table_name, persisted] : persisted_identities)
+    {
+        /// Derive the coordination path from the nested table's Keeper path, which `makeNestedEngineSpec`
+        /// formed as <keeper_path>/tables/<escaped table name>.
+        const String suffix = "/tables/" + escapeForFileName(table_name);
+        if (!persisted.zookeeper_path.ends_with(suffix))
+            continue;
+
+        const String persisted_keeper_path = persisted.zookeeper_path.substr(0, persisted.zookeeper_path.size() - suffix.size());
+        if (persisted_keeper_path == coordination_keeper_path && persisted.replica_name == coordination_replica_name)
+            return;
+
+        LOG_WARNING(log,
+            "The coordination settings of this MaterializedPostgreSQL replica now expand to keeper path '{}' and "
+            "replica name '{}', while the nested tables it owns were created under keeper path '{}' and replica "
+            "name '{}'. Tearing down the setup that actually exists, so the shared coordination state cannot be "
+            "orphaned; the configuration this replica was created with should be restored if it is still in use "
+            "by other replicas.",
+            coordination_keeper_path, coordination_replica_name, persisted_keeper_path, persisted.replica_name);
+
+        coordination_keeper_path = persisted_keeper_path;
+        coordination_replica_name = persisted.replica_name;
+        return;
+    }
+
+    /// No nested table to learn the identity from. If the settings could not be expanded at all (a macro they
+    /// go through was removed from the configuration), there is nothing to tear down under, so refuse instead
+    /// of touching an arbitrary Keeper path.
+    ///
+    /// Note that "no nested table" does not mean "nothing was ever registered": the registration under
+    /// <keeper_path>/replicas (as well as /naming and /table_set) is published BEFORE the first nested table
+    /// exists. A replica whose coordination name changed while it was in that window therefore has a stale
+    /// registration to clean up, and `purgeOwnStaleReplicaRegistrations` (called by the teardown right after
+    /// this) finds it by its stored owner identity rather than by name.
+    if (!coordination_identity_error.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot resolve the coordination identity of this MaterializedPostgreSQL replica, and it owns no "
+            "nested table to recover it from: {}", coordination_identity_error);
+}
+
+
+void PostgreSQLReplicationHandler::purgeOwnStaleReplicaRegistrations()
+{
+    /// A registration node under <keeper_path>/replicas whose data is this replica's own owner identity, but
+    /// whose name is not the coordination name in effect now, is a leftover of an earlier expansion of
+    /// `materialized_postgresql_replica_name` (a configuration-only change of a macro it goes through). Remove
+    /// it, because a stale child keeps <keeper_path>/replicas non-empty forever: the last-replica fence in
+    /// `unregisterReplicaAndCheckLast` wins only by removing the empty parent, so no later drop of any replica
+    /// of this setup could ever become the last one, and the shared replication slot, publication and
+    /// snapshot_completed marker would leak indefinitely.
+    ///
+    /// The identity stored in the node (`coordinationReplicaOwnerId`: this server's UUID plus the UUID of this
+    /// database / table) is expanded from nothing configurable, so it is stable across the macro change that
+    /// created the stale node - and it can never match a node that belongs to a peer, or to another database on
+    /// this server, so no live registration is ever removed here.
+    ///
+    /// This runs on both the startup path (before this replica registers itself) and the drop path (before the
+    /// last-replica fence), and it is what recovers the window in which the registration already exists while
+    /// no nested table does yet - there the nested-table metadata that `assertCoordinationIdentityMatchesNestedTables`
+    /// and `adoptPersistedCoordinationIdentityForTeardown` rely on does not exist yet.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::purgeOwnStaleReplicaRegistrations");
+
+    const String replicas_path = coordination_keeper_path + "/replicas";
+
+    Strings registered_names;
+    const auto list_code = getContext()->getZooKeeper()->tryGetChildren(replicas_path, registered_names);
+    if (list_code == Coordination::Error::ZNONODE)
+        return;
+    if (list_code != Coordination::Error::ZOK)
+        throw zkutil::KeeperException::fromPath(list_code, replicas_path);
+
+    for (const auto & registered_name : registered_names)
+    {
+        if (registered_name == coordination_replica_name)
+            continue;
+
+        const String registered_path = replicas_path + "/" + registered_name;
+
+        /// Re-read through a fresh handle each time: the removal below must be fenced on the data that was
+        /// read, and Keeper errors here are surfaced (the drop path is fail-close, the startup path retries).
+        String registered_owner;
+        Coordination::Stat stat;
+        if (!getContext()->getZooKeeper()->tryGet(registered_path, registered_owner, &stat))
+            continue;
+        if (registered_owner != coordination_replica_owner)
+            continue;
+
+        LOG_WARNING(log,
+            "Removing the stale registration node {} of this MaterializedPostgreSQL replica: it was registered "
+            "under the coordination name '{}', which the current server configuration expands to '{}'. A "
+            "registration left behind under the old name would keep {} non-empty and prevent any later drop "
+            "from ever becoming the last-replica drop, leaking the shared replication slot and publication.",
+            registered_path, registered_name, coordination_replica_name, replicas_path);
+
+        /// Version-checked, so a node that was rewritten in between is left alone.
+        const auto code = getContext()->getZooKeeper()->tryRemove(registered_path, stat.version);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException::fromPath(code, registered_path);
+    }
+}
+
+
+void PostgreSQLReplicationHandler::ensureCoordinatedNamingCompatible()
+{
+    /// The first replica of a coordinated setup publishes its naming-affecting settings at
+    /// <keeper_path>/naming; every replica that joins later must carry the identical settings, because the
+    /// ClickHouse names of the shared nested tables (which feed the shared Keeper paths of their replicated
+    /// trees), as well as the names of the shared PostgreSQL slot and publication, are derived from them.
+    /// A replica that disagrees would adopt the same publication yet build a disjoint replicated tree: it
+    /// would never receive the other replicas' data through ClickHouse replication, but on failover it
+    /// would still resume the shared slot from confirmed_flush_lsn, silently losing all pre-failover rows.
+    /// Runs BEFORE this replica registers itself, so the check cannot be satisfied by its own state.
+    ///
+    /// This is enforced fail-close: on a mismatch the replica refuses to join (the same check also runs
+    /// synchronously at CREATE time in validateMaterializedPostgreSQLCoordinationSettings when the setup
+    /// already exists). A leftover /naming node from an incompletely dropped setup keeps rejecting
+    /// replicas with different settings; overwriting it automatically would race a concurrent fresh
+    /// CREATE on the same path, so it deliberately requires manual removal instead.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::ensureCoordinatedNamingCompatible");
+
+    auto zookeeper = getContext()->getZooKeeper();
+
+    /// While a last-replica drop is tearing this setup down, its <keeper_path>/teardown ownership token is
+    /// still in place: the dropper has removed the coordination nodes but has not yet dropped the shared
+    /// PostgreSQL slot/publication (that happens after its local data is gone). A fresh setup must not be
+    /// built in that window - the pending teardown would delete the new setup's slot/publication by name.
+    /// Refuse and let the startup task retry until the teardown finishes and removes the token. The token of
+    /// this replica's own earlier refused drop (the teardown ran, but the later local nested-table drop
+    /// failed) is reclaimed instead: this replica still owns the path, and the retrying startup is exactly
+    /// the recovery of that refused drop.
+    const String teardown_path = coordination_keeper_path + "/teardown";
+    String teardown_owner;
+    if (zookeeper->tryGet(teardown_path, teardown_owner))
+    {
+        if (teardown_owner == coordination_replica_owner)
+        {
+            LOG_INFO(log, "Reclaiming the teardown token of this replica's own earlier refused drop at {}", teardown_path);
+            zookeeper->tryRemove(teardown_path);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "The coordinated MaterializedPostgreSQL setup at Keeper path '{}' is still being torn down by "
+                "the drop of its last replica (teardown token owner: {}). Will retry once the teardown has "
+                "finished. If the tearing-down server died before completing it, remove the leftover node '{}' "
+                "manually after dropping the leftover replication slot and publication in PostgreSQL",
+                coordination_keeper_path, teardown_owner, teardown_path);
+        }
+    }
+
+    const String naming_path = coordination_keeper_path + "/naming";
+    zookeeper->createAncestors(naming_path);
+    auto code = zookeeper->tryCreate(naming_path, coordination_naming_fingerprint, zkutil::CreateMode::Persistent);
+    if (code == Coordination::Error::ZOK)
+        return;
+    if (code != Coordination::Error::ZNODEEXISTS)
+        throw zkutil::KeeperException::fromPath(code, naming_path);
+
+    const String published_fingerprint = zookeeper->get(naming_path);
+    if (published_fingerprint != coordination_naming_fingerprint)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The coordinated MaterializedPostgreSQL setup at Keeper path '{}' was created with "
+            "naming-affecting settings or a source identity that differ from this replica's. All replicas "
+            "of one coordinated setup must agree on materialized_postgresql_table_engine, "
+            "materialized_postgresql_schema, materialized_postgresql_schema_list and "
+            "materialized_postgresql_tables_list_with_schema, and must replicate the same PostgreSQL source "
+            "(the same source database and, for the single-table engine, the same source table): these "
+            "determine how the ClickHouse names of the shared nested tables (and the names of the shared "
+            "replication slot and publication) are derived, so a disagreeing replica would share the "
+            "coordination bookkeeping without sharing the replicated data. "
+            "Existing setup:\n{}\nThis replica:\n{}\n(If the existing setup was dropped incompletely, "
+            "remove the leftover Keeper path manually.)",
+            coordination_keeper_path, published_fingerprint, coordination_naming_fingerprint);
+}
+
+
+void PostgreSQLReplicationHandler::ensureCoordinatedTableSetCompatible()
+{
+    /// The authoritative shared table set must be fenced BEFORE this replica builds any nested table.
+    /// `fetchRequiredTables` derives the set locally (from materialized_postgresql_tables_list, from the
+    /// shared publication once it exists, or from the source schema), but the shared publication is only
+    /// created later, by the elected active worker - so two fresh replicas starting concurrently could both
+    /// pass that derivation with different sets and silently build diverging nested tables on one keeper
+    /// path: whichever set the publication is then created from, the other replica keeps extra
+    /// never-replicated (forever empty) tables or misses published ones, breaking failover for them.
+    ///
+    /// The first replica therefore publishes its derived set at <keeper_path>/table_set, and every replica
+    /// must match it before it may register or create nested tables. This is enforced fail-close (mismatch
+    /// refuses the join and the startup task retries), and it converges on its own: once the shared
+    /// publication exists, a joining replica derives its set from the publication (which the fenced set
+    /// created), and a mismatching explicit materialized_postgresql_tables_list is overridden by the
+    /// publication's set with a warning (see fetchRequiredTables). Only a genuine divergence - e.g. the
+    /// publication was altered externally, or a pre-publication CREATE raced with a different table set -
+    /// keeps being refused and requires the operator to reconcile the table lists.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::ensureCoordinatedTableSetCompatible");
+
+    std::vector<String> table_names;
+    table_names.reserve(materialized_storages.size());
+    for (const auto & [table_name, _] : materialized_storages)
+        table_names.push_back(table_name);
+    ::sort(table_names.begin(), table_names.end());
+    const String local_table_set = fmt::format("{}\n", fmt::join(table_names, "\n"));
+
+    auto zookeeper = getContext()->getZooKeeper();
+    const String table_set_path = coordination_keeper_path + "/table_set";
+    zookeeper->createAncestors(table_set_path);
+    auto code = zookeeper->tryCreate(table_set_path, local_table_set, zkutil::CreateMode::Persistent);
+    if (code == Coordination::Error::ZOK)
+        return;
+    if (code != Coordination::Error::ZNODEEXISTS)
+        throw zkutil::KeeperException::fromPath(code, table_set_path);
+
+    const String published_table_set = zookeeper->get(table_set_path);
+    if (published_table_set != local_table_set)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The table set this replica derived differs from the table set of the coordinated "
+            "MaterializedPostgreSQL setup at Keeper path '{}'. All replicas of one coordinated setup replicate "
+            "the same shared set of tables through one shared publication; a replica that disagrees would "
+            "build nested tables the publication never feeds, or miss tables it does feed. Make "
+            "materialized_postgresql_tables_list match the existing setup (or recreate the setup with the new "
+            "list). Existing setup:\n{}This replica:\n{}(If the existing setup was dropped incompletely, "
+            "remove the leftover Keeper path manually.)",
+            coordination_keeper_path, published_table_set, local_table_set);
+}
+
+
+std::optional<std::set<String>> PostgreSQLReplicationHandler::readCoordinatedTableSetFromKeeper()
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::readCoordinatedTableSetFromKeeper");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    String published_table_set;
+    if (!zookeeper->tryGet(coordination_keeper_path + "/table_set", published_table_set))
+        return {};
+
+    std::set<String> table_names;
+    Strings lines;
+    splitInto<'\n'>(lines, published_table_set);
+    for (const auto & line : lines)
+    {
+        if (!line.empty())
+            table_names.insert(line);
+    }
+    return table_names;
+}
+
+
+void PostgreSQLReplicationHandler::registerReplicaInKeeper()
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::registerReplicaInKeeper");
+
+    /// The registration node stores this replica's identity, and an existing node owned by another replica
+    /// rejects the registration: `materialized_postgresql_replica_name` must resolve to a distinct value on
+    /// every replica, because the /replicas children are the shared bookkeeping behind the last-replica
+    /// decision. With a blind createIfNotExists two same-named replicas would collapse onto one node - then a
+    /// failed join rollback (or a DROP) on one of them removes the other live replica's registration, and a
+    /// later last-replica teardown removes the shared slot/publication/snapshot_completed marker around a
+    /// replica that still holds data. Re-registering an own node (server restart, ATTACH) stays idempotent
+    /// because the owner identity is stable.
+    ///
+    /// The registration is also where the <keeper_path>/teardown ownership token becomes an authoritative
+    /// fence. The token check in ensureCoordinatedNamingCompatible alone is only advisory: between that check
+    /// and this registration, the last replica of the previous setup can still win the teardown fence in
+    /// unregisterReplicaAndCheckLast (winning requires /replicas to be empty, and this replica has not
+    /// registered yet) - and would then still be entitled to drop the shared PostgreSQL slot/publication by
+    /// name while this replica goes on to create nested tables and, once elected, fresh shared objects for
+    /// the new setup. So the token's absence is asserted ATOMICALLY with the registration, in one Keeper
+    /// multi-request: a create+remove pair on the token path (which fails with ZNODEEXISTS exactly when the
+    /// token exists, and nets to nothing when it does not) together with the creation of the registration
+    /// node. Once the registration node exists the teardown fence can no longer be won (removing the
+    /// non-empty /replicas parent fails with ZNOTEMPTY), closing the race completely.
+    auto zookeeper = getContext()->getZooKeeper();
+    const String replica_path = coordination_keeper_path + "/replicas/" + coordination_replica_name;
+    const String teardown_path = coordination_keeper_path + "/teardown";
+
+    while (true)
+    {
+        zookeeper->createAncestors(replica_path);
+
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeCreateRequest(teardown_path, "", zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeRemoveRequest(teardown_path, -1));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path, coordination_replica_owner, zkutil::CreateMode::Persistent));
+        Coordination::Responses responses;
+        const auto code = zookeeper->tryMulti(ops, responses);
+
+        if (code == Coordination::Error::ZOK)
+        {
+            LOG_DEBUG(log, "Registered replica '{}' at {}", coordination_replica_name, replica_path);
+            return;
+        }
+
+        const size_t failed_op = zkutil::getFailedOpIndex(code, responses);
+
+        if (failed_op == 0 && code == Coordination::Error::ZNODEEXISTS)
+        {
+            /// A teardown token appeared after ensureCoordinatedNamingCompatible checked for it: the last
+            /// replica of the previous setup won the teardown fence concurrently. Refuse to join; the startup
+            /// task retries and re-enters through ensureCoordinatedNamingCompatible, which keeps refusing a
+            /// foreign token until the teardown finishes (and reclaims this replica's own token).
+            throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "The coordinated MaterializedPostgreSQL setup at Keeper path '{}' has concurrently begun being "
+                "torn down by the drop of its last replica. Will retry once the teardown has finished. If the "
+                "tearing-down server died before completing it, remove the leftover node '{}' manually after "
+                "dropping the leftover replication slot and publication in PostgreSQL",
+                coordination_keeper_path, teardown_path);
+        }
+
+        if (failed_op == 2 && code == Coordination::Error::ZNODEEXISTS)
+        {
+            const String registered_owner = zookeeper->get(replica_path);
+            if (registered_owner != coordination_replica_owner)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "A replica named '{}' is already registered in the coordinated MaterializedPostgreSQL setup at "
+                    "Keeper path '{}'. materialized_postgresql_replica_name must resolve to a distinct value on "
+                    "every replica; use a distinct value (for example the {{replica}} macro). If this registration "
+                    "is a leftover of an incompletely dropped setup, remove the Keeper node manually",
+                    coordination_replica_name, coordination_keeper_path);
+            /// This replica's own node already exists (server restart, ATTACH, startup retry) - it is
+            /// registered, and while its node exists the teardown fence cannot be won, so no token re-check
+            /// is needed.
+            LOG_DEBUG(log, "Replica '{}' is already registered at {}", coordination_replica_name, replica_path);
+            return;
+        }
+
+        if (failed_op == 2 && code == Coordination::Error::ZNONODE)
+        {
+            /// The /replicas parent vanished between createAncestors and the multi-request: a concurrent
+            /// last-replica teardown just won the fence and removed it. Retry - the next iteration fails on
+            /// the token probe above (or succeeds if the teardown has already finished).
+            continue;
+        }
+
+        throw zkutil::KeeperMultiException(code, ops, responses);
+    }
+}
+
+
+void PostgreSQLReplicationHandler::unregisterReplica()
+{
+    /// Best-effort removal of this replica's registration node, used to undo `registerReplicaInKeeper` when a
+    /// later startup step fails. Unlike `unregisterReplicaAndCheckLast` this makes no last-replica decision and
+    /// never removes any shared state, so it is safe to call from an error path.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::unregisterReplica");
+
+    tryRemoveOwnReplicaRegistration(getContext()->getZooKeeper());
+}
+
+
+bool PostgreSQLReplicationHandler::tryRemoveOwnReplicaRegistration(const zkutil::ZooKeeperPtr & zookeeper)
+{
+    /// Removes this replica's <keeper_path>/replicas/<name> node only if this replica owns it. When the name is
+    /// held by another replica (this replica's own registration was rejected for the duplicate name, but its
+    /// database still exists and is now being dropped or rolled back), removing the node would delete that live
+    /// peer's registration and let a later drop tear down the shared slot/publication around it. Returns false
+    /// in exactly that case; an already-absent node counts as removed. Keeper errors propagate (the callers on
+    /// the drop path are fail-close, and the rollback caller catches).
+    const String replica_path = coordination_keeper_path + "/replicas/" + coordination_replica_name;
+
+    String registered_owner;
+    if (!zookeeper->tryGet(replica_path, registered_owner))
+        return true;
+
+    if (registered_owner != coordination_replica_owner)
+    {
+        LOG_WARNING(log,
+            "Not removing the replica registration node {}: it belongs to another replica that resolved "
+            "materialized_postgresql_replica_name to the same value '{}'",
+            replica_path, coordination_replica_name);
+        return false;
+    }
+
+    if (auto code = zookeeper->tryRemove(replica_path);
+        code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+        throw zkutil::KeeperException::fromPath(code, replica_path);
+
+    return true;
+}
+
+
+bool PostgreSQLReplicationHandler::hasAnyNestedTable() const
+{
+    /// A nested table exists in the catalog once `createNestedIfNeeded` created it (regardless of whether the
+    /// wrapper has been marked queryable yet), which is exactly when this replica starts holding a copy of the
+    /// shared replicated data. Note this also sees nested tables created by an earlier startup attempt.
+    for (const auto & [table_name, materialized_storage] : materialized_storages)
+        if (materialized_storage->tryGetNested())
+            return true;
+    return false;
+}
+
+
+void PostgreSQLReplicationHandler::coordinatedTeardownBeforeDataDrop()
+{
+    /// Runs (in coordinated mode) from the DROP path BEFORE the caller deletes this replica's local nested
+    /// tables, so the last-replica decision - and, for the last replica, the removal of the shared
+    /// coordination state - happens while this replica still holds the data. This closes the data-loss window
+    /// that existed when the last-replica teardown ran only in shutdownFinal, AFTER the nested tables had
+    /// already been dropped: a Keeper outage in between could then delete the last copy of the data while the
+    /// shared slot, publication and snapshot_completed marker survived, and a later recreate on the same
+    /// keeper path would resume from confirmed_flush_lsn into empty tables.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::coordinatedTeardownBeforeDataDrop");
+
+    /// The retrying startup task must not run concurrently with the teardown. It could otherwise observe the
+    /// <keeper_path>/teardown ownership token that unregisterReplicaAndCheckLast creates below and misread it
+    /// as the leftover of this replica's own earlier refused drop - reclaiming (removing) the token and
+    /// re-registering the replica mid-drop (see ensureCoordinatedNamingCompatible), after which shutdownFinal
+    /// no longer owns the teardown and skips the shared slot/publication removal, leaking them. It would also
+    /// race the identity adoption below, which mutates the members the startup path reads. Deactivation waits
+    /// for an in-flight execution to finish; if the teardown is refused (throws) before the handler was
+    /// stopped, reactivate the task so a replica whose startup was still retrying keeps retrying.
+    startup_task->deactivate();
+    try
+    {
+        /// Tear down the identity the shared data actually lives under, not the one the current configuration
+        /// expands to (they differ after a configuration-only macro change, which the startup refuses but which
+        /// must not make the drop orphan the original coordination state). Everything below, including the
+        /// post-data teardown in `shutdownFinal`, then works on the adopted identity.
+        adoptPersistedCoordinationIdentityForTeardown();
+
+        /// Registrations this replica published under an earlier expansion of its coordination name must go as
+        /// well, and before the fence below: they are children of <keeper_path>/replicas, which the fence wins
+        /// only by removing once it is empty, so a leftover would make this drop (and every later one) decide
+        /// it is not the last replica and leave the shared slot, publication and snapshot marker behind.
+        purgeOwnStaleReplicaRegistrations();
+
+        /// Make the fail-close last-replica decision first: unregisterReplicaAndCheckLast throws if Keeper is
+        /// unreachable, which aborts the drop before any nested table is removed (and, importantly, before the
+        /// consumer below is stopped, so a transient Keeper outage does not disturb an otherwise-healthy replica).
+        const bool is_last = unregisterReplicaAndCheckLast(/* keep_registration_when_not_last */ true);
+
+        /// Record the decision so shutdownFinal (the post-data teardown) does not re-run the race-free check: if this
+        /// replica was the last one it has already removed the shared /replicas node here, and re-checking there
+        /// would read its absence as "another replica was last" and skip the shared PostgreSQL cleanup (a leak).
+        coordinated_teardown_was_last = is_last;
+
+        if (!is_last)
+        {
+            /// Not the last replica: the shared state must stay - and so must this replica's /replicas/<name>
+            /// registration, which unregisterReplicaAndCheckLast deliberately left untouched (removing it and
+            /// winning the last-replica fence is one atomic multi-request, so a non-last decision removes
+            /// nothing). The registration is the crash-persistent record that this replica still holds a copy
+            /// of the shared data: a server killed at any point of this teardown - or of the nested-table drop
+            /// that follows it - stays visible to every peer's last-replica check, so no peer can tear down the
+            /// shared slot, publication and Keeper subtrees around the surviving local data. The registration
+            /// is removed in shutdownFinal, AFTER the caller has actually dropped the nested tables. The
+            /// non-last path therefore performs no Keeper write at all before the shutdown() below, so a
+            /// refused (thrown) drop leaves the live replication handler untouched.
+            ///
+            /// Holds the teardown right after the non-last decision, so a test can hard-kill the server here
+            /// and verify that the still-registered replica keeps the shared state alive through a peer's drop
+            /// and resumes replicating after a restart.
+            fiu_do_on(FailPoints::materialized_postgresql_pause_in_non_last_teardown,
+            {
+                LOG_INFO(log, "Pausing the non-last coordinated teardown until failpoint "
+                         "materialized_postgresql_pause_in_non_last_teardown is disabled");
+                FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_in_non_last_teardown);
+            });
+        }
+
+        shutdown();
+
+        /// Simulates a Keeper failure in the only teardown step that runs after the handler has been stopped
+        /// (the last replica's removeCoordinationNodes below), to test the callers' recovery from a drop
+        /// refused after that point.
+        fiu_do_on(FailPoints::materialized_postgresql_fail_teardown_after_shutdown,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                "Injected failure in coordinated teardown after the replication handler was shut down");
+        });
+
+        if (is_last)
+        {
+            /// Last replica: remove the shared coordination nodes (including the snapshot_completed marker) now,
+            /// before the caller drops the last local copy. The shared PostgreSQL slot/publication are cleaned up
+            /// authoritatively in shutdownFinal (a leaked slot/publication is recoverable, and with the marker
+            /// already gone a recreate correctly redoes the snapshot rather than resuming into empty tables).
+            removeCoordinationNodes(/* remove_metadata */ false);
+        }
+    }
+    catch (...)
+    {
+        /// A teardown refused before shutdown() ran (a Keeper error in the steps above) leaves the handler
+        /// alive; the callers' recovery only re-arms a STOPPED handler, so undo the deactivation here.
+        /// The startup task matters exactly when replication has not started yet (it keeps retrying, e.g.
+        /// while the configured coordination identity mismatches the persisted one); once replication runs,
+        /// rescheduling it is a harmless idempotent no-op.
+        ///
+        /// Only restore it in the modes in which it is the retrying recovery path (`is_attach` /
+        /// `retry_startup_on_error`), i.e. in which `checkConnectionAndStart` catches every error and
+        /// reschedules itself. Arming it outside of them would let that function rethrow out of the
+        /// background task, which aborts the server ("Tasks in BackgroundSchedulePool cannot throw") - and
+        /// would leave a task running on a handler the caller is about to discard. The database engine, which
+        /// starts synchronously and never arms this task, recovers a refused drop through its own startup task
+        /// instead (DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop), and the single-table engine
+        /// through `restartCoordinatedReplicationAfterFailedTeardown`, which enables the retrying mode first.
+        if (!stop_synchronization && (is_attach || retry_startup_on_error))
+            startup_task->activateAndSchedule();
+        throw;
+    }
+}
+
+
+void PostgreSQLReplicationHandler::restartCoordinatedReplicationAfterFailedTeardown()
+{
+    chassert(coordination_enabled);
+
+    /// `shutdown` (run by the failed teardown) deactivated the background tasks and destroyed the consumer,
+    /// all of which the retrying startup path rebuilds. Re-registration and nested-table creation are
+    /// idempotent, and the shared snapshot_completed marker decides (as always) whether the elected worker
+    /// resumes from confirmed_flush_lsn or redoes the initial snapshot.
+    ///
+    /// The failed teardown had already made its last-replica decision, keeping this replica's registration in
+    /// place (or, for the last replica, removed the shared coordination nodes, which the rebuilt startup then
+    /// recreates). Clear that stale decision so a later drop re-runs the race-free last-replica check from
+    /// scratch instead of reusing
+    /// `coordinated_teardown_was_last` (which a retried drop that skips the teardown would otherwise trust).
+    coordinated_teardown_was_last = false;
+    stop_synchronization.store(false);
+    retry_startup_on_error.store(true);
+    startup_task->activateAndSchedule();
+}
+
+
+void PostgreSQLReplicationHandler::restartReplicationAfterFailedDrop()
+{
+    chassert(!coordination_enabled);
+
+    /// The plain engine's refused drop: `shutdown` (run by `flushAndShutdown` on the DROP path) deactivated
+    /// the background tasks and destroyed the consumer, but the nested table still holds the data and the
+    /// slot/publication still exist in PostgreSQL. Resume from the slot's confirmed_flush_lsn exactly like an
+    /// ATTACH does - without `is_attach`, `startSynchronization` would drop the existing slot and redo the
+    /// initial snapshot, needlessly reloading everything into the surviving nested table.
+    is_attach = true;
+    stop_synchronization.store(false);
+    retry_startup_on_error.store(true);
+    startup_task->activateAndSchedule();
+}
+
+
+bool PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast(bool keep_registration_when_not_last)
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    const String replicas_path = coordination_keeper_path + "/replicas";
+    const String replica_path = replicas_path + "/" + coordination_replica_name;
+    const String teardown_path = coordination_keeper_path + "/teardown";
+
+    /// The last-replica decision must be race-free across replicas dropping concurrently. A plain "remove my
+    /// node, then list the parent" lets two droppers both delete their node before either lists it, so both
+    /// observe an empty list and both conclude they are the last replica - and then both tear down the shared
+    /// slot/publication/snapshot_completed marker, potentially around a replica whose nested-table drop later
+    /// fails and still holds a copy of the data. Instead, fence the transition on the /replicas parent node:
+    /// removing this replica's node and the (then empty) parent is submitted as one atomic multi-request, and
+    /// removing the empty parent succeeds for exactly one caller - the last one out. Every other caller gets
+    /// ZNOTEMPTY (other replicas are still registered; nothing was removed, the multi-request is atomic) or
+    /// ZNONODE (the parent was already removed by the last replica), so at most one replica can ever observe
+    /// itself as the last one.
+    ///
+    /// The atomicity also makes the decision crash-persistent for the non-last replica: its registration is
+    /// removed only together with winning the fence, never separately, so a process death at any point leaves
+    /// either the registration in place (peers keep counting this replica as a live data holder) or a won
+    /// fence with the teardown token below. The registration of a replica that is NOT the last one is kept
+    /// while `keep_registration_when_not_last` is set (the pre-data teardown: the caller still holds the
+    /// data), and removed - followed by re-running the fence, since removing it may make this replica the
+    /// last one out after all - once the caller has actually dropped the local nested tables (shutdownFinal).
+    ///
+    /// This is also fail-close: the caller (DROP DATABASE / DROP TABLE) is about to remove this replica's local
+    /// nested tables, so any Keeper error other than the expected ZNONODE/ZNOTEMPTY codes propagates rather than
+    /// defaulting to "this was the last replica". Otherwise a Keeper blip during the drop could delete the last
+    /// copy of the data while leaving the shared slot/publication/marker behind.
+    ///
+    /// The removal is ownership-checked: when this replica's name is held by another replica (this replica's
+    /// own registration was rejected for the duplicate materialized_postgresql_replica_name), it is not
+    /// registered at all - it must not remove the peer's node and cannot be the last replica.
+    while (true)
+    {
+        Coordination::Stat replica_stat;
+        String registered_owner;
+        const bool registered = zookeeper->tryGet(replica_path, registered_owner, &replica_stat);
+
+        if (registered && registered_owner != coordination_replica_owner)
+        {
+            LOG_WARNING(log,
+                "Not removing the replica registration node {}: it belongs to another replica that resolved "
+                "materialized_postgresql_replica_name to the same value '{}'",
+                replica_path, coordination_replica_name);
+            return false;
+        }
+
+        /// Removing the parent succeeds only when this replica's node was its last child, which atomically
+        /// designates this caller - and only this caller - as the last replica. The <keeper_path>/teardown
+        /// ownership token is created in the same multi-request, so winning the last-replica fence and fencing
+        /// the keeper path against fresh CREATEs is one atomic step: from this moment until the token is removed
+        /// (after the shared PostgreSQL slot/publication have been dropped, see shutdownFinal), no fresh setup
+        /// can be built on this path, so the pending by-name drops can never delete a new setup's objects.
+        Coordination::Requests ops;
+        if (registered)
+            ops.emplace_back(zkutil::makeRemoveRequest(replica_path, replica_stat.version));
+        ops.emplace_back(zkutil::makeRemoveRequest(replicas_path, -1));
+        ops.emplace_back(zkutil::makeCreateRequest(teardown_path, coordination_replica_owner, zkutil::CreateMode::Persistent));
+        Coordination::Responses responses;
+        const auto multi_code = zookeeper->tryMulti(ops, responses);
+
+        if (multi_code == Coordination::Error::ZOK)
+        {
+            LOG_INFO(log, "Unregistered the last replica '{}'", coordination_replica_name);
+            return true;
+        }
+
+        const size_t failed_op = zkutil::getFailedOpIndex(multi_code, responses);
+        const size_t parent_op = registered ? 1 : 0;
+
+        /// This replica's registration node changed or disappeared between the read above and the
+        /// multi-request (for example a concurrent purge of a registration this replica published under an
+        /// earlier name, or a peer's recursive teardown of the whole /replicas subtree). Re-read and retry.
+        if (registered && failed_op == 0)
+            continue;
+
+        if (failed_op == parent_op && multi_code == Coordination::Error::ZNOTEMPTY)
+        {
+            if (registered && keep_registration_when_not_last)
+            {
+                /// Pre-data teardown: this replica still holds a copy of the shared data, and its
+                /// registration - untouched, the failed multi-request removed nothing - is the
+                /// crash-persistent record of that fact.
+                LOG_INFO(log,
+                    "Replica '{}' is not the last registered one; keeping its registration until its local "
+                    "nested tables have been dropped",
+                    coordination_replica_name);
+                return false;
+            }
+
+            if (registered)
+            {
+                /// Post-data teardown: the local nested tables are already gone, so the registration must go
+                /// too. Remove it and re-run the fence: a concurrent dropper may be doing the same, and
+                /// removing this node may leave the parent empty, making this replica the last one out.
+                if (const auto remove_code = zookeeper->tryRemove(replica_path, replica_stat.version);
+                    remove_code != Coordination::Error::ZOK && remove_code != Coordination::Error::ZNONODE
+                    && remove_code != Coordination::Error::ZBADVERSION)
+                    throw zkutil::KeeperException::fromPath(remove_code, replica_path);
+                continue;
+            }
+
+            LOG_INFO(log,
+                "Replica '{}' is not registered and other replica(s) still are; keeping the shared replication "
+                "slot and publication",
+                coordination_replica_name);
+            return false;
+        }
+
+        if (failed_op == parent_op && multi_code == Coordination::Error::ZNONODE)
+        {
+            /// The /replicas parent is already gone: either a concurrent dropper removed it as the last replica
+            /// (and is tearing down the shared state, so this replica must not repeat that teardown), or this
+            /// replica's OWN earlier refused drop did - its pre-data teardown won the fence and left its teardown
+            /// token behind, and this call is the retried drop resuming it. The token's owner distinguishes the
+            /// two; resuming matters, because reading "not last" here would skip the shared PostgreSQL cleanup and
+            /// leak the slot/publication while the token keeps rejecting recreates.
+            String teardown_owner;
+            if (zookeeper->tryGet(teardown_path, teardown_owner) && teardown_owner == coordination_replica_owner)
+            {
+                LOG_INFO(log,
+                    "Replica '{}' resumes the last-replica teardown of its own earlier refused drop",
+                    coordination_replica_name);
+                return true;
+            }
+
+            LOG_INFO(log,
+                "The shared /replicas node was already removed by a concurrent last-replica teardown; replica "
+                "'{}' is not the last one",
+                coordination_replica_name);
+            return false;
+        }
+
+        throw zkutil::KeeperMultiException(multi_code, ops, responses);
+    }
+}
+
+
+void PostgreSQLReplicationHandler::removeCoordinationNodes(bool remove_metadata)
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::removeCoordinationNodes");
+
+    auto zookeeper = getContext()->getZooKeeper();
+
+    /// Fail closed: `tryRemove` / `tryRemoveRecursive` return recoverable Keeper failures (connection
+    /// loss, operation timeout, ...) as codes instead of throwing, and silently ignoring them here would
+    /// break the invariant this teardown exists for. If the `snapshot_completed` marker survived this
+    /// step while the PostgreSQL cleanup later leaks the shared slot/publication, a recreate on the same
+    /// keeper path would see a live marker and resume from the slot's `confirmed_flush_lsn` into empty
+    /// tables instead of redoing the snapshot. Throwing aborts the teardown before any of that - and,
+    /// on the drop paths, before the local nested tables are deleted - so the caller retries.
+    auto remove_checked = [&](const String & path, bool recursive = false, bool tolerate_not_empty = false)
+    {
+        auto code = recursive ? zookeeper->tryRemoveRecursive(path) : zookeeper->tryRemove(path);
+        if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE
+            || (tolerate_not_empty && code == Coordination::Error::ZNOTEMPTY))
+            return;
+        throw zkutil::KeeperException::fromPath(code, path);
+    };
+
+    remove_checked(coordination_keeper_path + "/leader");
+    remove_checked(coordination_keeper_path + "/replicas", /* recursive */ true);
+    remove_checked(coordination_keeper_path + "/snapshot_completed");
+    /// The naming fingerprint and table set remain until the local nested tables are actually gone. A refused
+    /// DROP then restarts against their authoritative coordinated identity instead of treating the still-live
+    /// publication as a leak and deriving a different set from the current PostgreSQL schema.
+    if (remove_metadata)
+    {
+        remove_checked(coordination_keeper_path + "/naming");
+        remove_checked(coordination_keeper_path + "/table_set");
+    }
+    /// The nested Replicated tables remove their own trees under <keeper_path>/tables when they are
+    /// dropped; only clean up the (then empty) parents. For the single-table engine the nested table is
+    /// dropped after this handler shuts down, so this removal may legitimately fail as not-empty,
+    /// leaving empty nodes behind - correctness over tidiness.
+    remove_checked(coordination_keeper_path + "/tables", /* recursive */ false, /* tolerate_not_empty */ true);
+    /// The <keeper_path>/teardown ownership token (created atomically with winning the last-replica fence in
+    /// unregisterReplicaAndCheckLast) and the keeper path root itself are deliberately NOT removed here: the
+    /// token must survive until the shared PostgreSQL slot/publication have actually been dropped, fencing
+    /// the path against fresh CREATEs whose new objects those pending by-name drops would otherwise delete.
+    /// Both are removed at the very end of the teardown, in shutdownFinal.
+}
+
+
+bool PostgreSQLReplicationHandler::hasSurvivingCoordinationState(bool include_refused_drop_metadata)
+{
+    /// Whether any coordination state of this setup survives in Keeper: the `snapshot_completed` marker, a
+    /// registered replica, or - when `include_refused_drop_metadata` is set - the metadata fences held
+    /// across a refused last-replica drop. Used to distinguish a live shared publication (to adopt) from one
+    /// leaked by a failed final teardown (to drop). Keeper errors propagate: adopting or dropping a shared
+    /// publication on an unverified guess must not happen (fail-close), the caller retries.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::hasSurvivingCoordinationState");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    if (zookeeper->exists(coordination_keeper_path + "/snapshot_completed"))
+        return true;
+
+    if (include_refused_drop_metadata && zookeeper->exists(coordination_keeper_path + "/table_set"))
+        return true;
+
+    Strings replicas;
+    auto code = zookeeper->tryGetChildren(coordination_keeper_path + "/replicas", replicas);
+    if (code == Coordination::Error::ZNONODE)
+        return false;
+    if (code != Coordination::Error::ZOK)
+        throw zkutil::KeeperException::fromPath(code, coordination_keeper_path + "/replicas");
+    return !replicas.empty();
+}
+
+
+bool PostgreSQLReplicationHandler::isInitialSnapshotCompleted()
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::isInitialSnapshotCompleted");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    return zookeeper->exists(coordination_keeper_path + "/snapshot_completed");
+}
+
+
+void PostgreSQLReplicationHandler::assertReplicationLeadershipIsLive() const
+{
+    if (!coordination_enabled)
+        return;
+
+    /// Called only from the coordinated `startSynchronization` path, which runs inside `coordinationFunc`
+    /// after this worker won /leader, so `leader_node` and `coordination_zookeeper` are set by then and are
+    /// not mutated concurrently (`shutdown` deactivates the coordination task before touching them).
+    if (!leader_node || !coordination_zookeeper || coordination_zookeeper->expired())
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "The Keeper session backing this replica's replication leadership is no longer alive, "
+            "so another replica may already have taken over as the active worker. Aborting this attempt; "
+            "coordination retries and re-elects a leader");
+}
+
+
+void PostgreSQLReplicationHandler::markInitialSnapshotCompleted(const String & lsn)
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::markInitialSnapshotCompleted");
+
+    /// The marker must be published only by a worker that still holds the live leadership. A worker whose
+    /// Keeper session expired mid-snapshot has already been replaced: the new leader saw no marker,
+    /// truncated the shared nested tables and started a replacement snapshot, and a marker published now
+    /// would describe a snapshot that no longer exists in the tables - a later failover would then skip
+    /// `initial_sync` and permanently lose the rows the replacement snapshot never finished copying.
+    assertReplicationLeadershipIsLive();
+
+    const String marker_path = coordination_keeper_path + "/snapshot_completed";
+
+    /// A stale marker can be left when the shared slot disappeared without a full teardown (it is exactly
+    /// what put us on the redo-the-snapshot path); replace it so the recorded LSN matches the new slot.
+    /// Both requests go through the session that backs /leader, never through a fresh one: an expired
+    /// session fails them, which is the authoritative fence - only a live leader can publish the marker.
+    coordination_zookeeper->tryRemove(marker_path);
+
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeCheckRequest(coordination_keeper_path + "/leader", -1));
+    ops.emplace_back(zkutil::makeCreateRequest(marker_path, lsn, zkutil::CreateMode::Persistent));
+    coordination_zookeeper->multi(ops);
+
+    LOG_INFO(log, "Marked the initial snapshot as completed (lsn: {})", lsn);
+}
+
+
 bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::nontransaction & tx)
 {
     std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
@@ -855,7 +3129,10 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
 {
     auto publication_exists = isPublicationExist(tx);
 
-    if (!is_attach && publication_exists)
+    /// When coordination is enabled the publication is shared state, exactly like the replication slot: it
+    /// was created by another replica of the same coordinated setup (or by this one before a handover), and
+    /// dropping it here would break the replica that is consuming through it. Adopt it instead.
+    if (!is_attach && publication_exists && !coordination_enabled)
     {
         /// This is a case for single Materialized storage. In case of database engine this check is done in advance.
         LOG_WARNING(log,
@@ -865,8 +3142,14 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
         dropPublication(tx);
     }
 
-    if (!is_attach || !publication_exists)
+    if ((!is_attach && !coordination_enabled) || !publication_exists)
     {
+        /// This branch is re-entered on the same handler whenever the publication has to be recreated (for
+        /// example after it was dropped externally, or after retrying a failure before it existed), so the
+        /// SQL-quoted table list is built in a local variable: `tables_list` keeps the raw form the retries
+        /// and re-elections started from, and is never turned into an already-quoted value that a second
+        /// pass would quote again.
+        String publication_tables_list = tables_list;
         if (tables_list.empty())
         {
             if (materialized_storages.empty())
@@ -878,8 +3161,8 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
                 buf << doubleQuoteWithSchema(storage_data.first);
                 buf << ",";
             }
-            tables_list = buf.str();
-            tables_list.resize(tables_list.size() - 1);
+            publication_tables_list = buf.str();
+            publication_tables_list.resize(publication_tables_list.size() - 1);
         }
         else if (!is_materialized_postgresql_database)
         {
@@ -888,18 +3171,18 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
             /// quoting pass that `fetchRequiredTables` applies for the database engine. Quote it here,
             /// otherwise `CREATE PUBLICATION ... FOR TABLE ONLY <name>` folds an upper-case table name
             /// to lower case and fails with `relation "..." does not exist`.
-            tables_list = doubleQuoteWithSchema(tables_list);
+            publication_tables_list = doubleQuoteWithSchema(tables_list);
         }
 
-        if (tables_list.empty())
+        if (publication_tables_list.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No table found to be replicated");
 
         /// 'ONLY' means just a table, without descendants.
-        std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", doubleQuoteString(publication_name), tables_list);
+        std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", doubleQuoteString(publication_name), publication_tables_list);
         try
         {
             tx.exec(query_str);
-            LOG_DEBUG(log, "Created publication {} with tables list: {}", doubleQuoteString(publication_name), tables_list);
+            LOG_DEBUG(log, "Created publication {} with tables list: {}", doubleQuoteString(publication_name), publication_tables_list);
         }
         catch (Exception & e)
         {
@@ -1029,16 +3312,51 @@ void PostgreSQLReplicationHandler::removeTableFromPublication(pqxx::nontransacti
         LOG_WARNING(log, "Did not remove table {} from publication, because table does not exist in PostgreSQL (publication: {})",
                     doubleQuoteWithSchema(table_name), publication_name);
     }
+    catch (const pqxx::sql_error & e)
+    {
+        /// Same reason: removing a table from replication must also succeed when the table is not part of
+        /// the publication - PostgreSQL rejects `ALTER PUBLICATION ... DROP TABLE` for such a table. That is
+        /// a reachable state: an `ATTACH TABLE` that failed before its publication ALTER leaves the table
+        /// attached (see `DatabaseMaterializedPostgreSQL::attachTable`, which keeps a failed attach visible
+        /// when the nested table could not be dropped), and `DETACH TABLE ... PERMANENTLY` is how such a
+        /// table is removed. The publication can also have been altered externally.
+        if (!std::string_view(e.what()).contains("is not part of the publication"))
+            throw;
+
+        LOG_WARNING(log, "Did not remove table {} from publication, because it is not part of it (publication: {})",
+                    doubleQuoteWithSchema(table_name), publication_name);
+    }
 }
 
 
 void PostgreSQLReplicationHandler::setSetting(const SettingChange & setting)
 {
-    assertInitialized();
+    /// The consumer may not exist: a coordinated standby builds the handler at startup but creates the
+    /// consumer only after winning the leader election - and a former leader that lost the election has had
+    /// its consumer destroyed again by coordinationFunc - while a plain database keeps an uninitialized
+    /// handler while the background startup task is retrying. Store the new value in the handler first, so
+    /// the consumer created later (e.g. on the next takeover) starts with it instead of the value captured
+    /// at construction time.
+    if (setting.name == "materialized_postgresql_max_block_size")
+        max_block_size = setting.value.safeGet<UInt64>();
 
+    /// Push the change into the live consumer only if one exists right now. `replication_handler_initialized`
+    /// is not a sufficient proxy for that: it stays set when a demoted leader's consumer is destroyed on
+    /// leader loss, so gating on it alone would throw from getConsumer on every former-leader standby.
+    /// Deactivating the consumer task first serializes with an in-flight consume() iteration; the task is
+    /// re-armed only when a consumer exists (on a standby it belongs to the active worker and must stay
+    /// dormant until the coordination task re-arms it on election).
     consumer_task->deactivate();
-    getConsumer()->setSetting(setting);
-    consumer_task->activateAndSchedule();
+    ConsumerPtr current_consumer;
+    {
+        std::lock_guard lock(consumer_ptr_mutex);
+        current_consumer = consumer;
+    }
+    if (current_consumer)
+    {
+        current_consumer->setSetting(setting);
+        consumer_task->activateAndSchedule();
+    }
 }
 
 
@@ -1080,15 +3398,82 @@ Strings PostgreSQLReplicationHandler::getTableAllowedColumns(const std::string &
 
 void PostgreSQLReplicationHandler::shutdownFinal()
 {
-    try
+    /// In coordinated mode the race-free, fail-close last-replica decision was already made in
+    /// coordinatedTeardownBeforeDataDrop, BEFORE the caller removed this replica's local nested tables (that is
+    /// what closes the data-loss window: a Keeper outage while the last copy is being deleted can never leave the
+    /// shared slot/publication/snapshot_completed marker behind). shutdownFinal is the authoritative post-data
+    /// step that finalizes the teardown once the nested tables are gone.
+    if (coordination_enabled)
     {
         shutdown();
+
+        if (coordinated_teardown_was_last)
+        {
+            /// This replica already claimed the last-replica role (race-free) in the pre-data teardown and
+            /// removed the shared /replicas node itself, so it must not re-run the check here: the parent's
+            /// absence would be read as "another replica was last" and wrongly skip the shared PostgreSQL
+            /// cleanup below. Remove the coordination nodes again (idempotent) and fall through to drop the
+            /// shared slot/publication.
+            removeCoordinationNodes(/* remove_metadata */ true);
+        }
+        else
+        {
+            /// This replica kept its /replicas/<name> registration through the pre-data teardown (it was not
+            /// the last one then, and the registration is the crash-persistent record that it still held a
+            /// copy of the shared data) and has since dropped its local nested tables. Remove the registration
+            /// now and re-run the race-free check: a peer that dropped concurrently may have left this the
+            /// actual last replica. If it is still not the last one, another replica holds the shared data, so
+            /// keep the shared slot/publication and coordination nodes for the peers and let the caller drop
+            /// only this replica's local nested tables.
+            if (!unregisterReplicaAndCheckLast(/* keep_registration_when_not_last */ false))
+                return;
+
+            /// Now the last replica: remove the coordination nodes (including the snapshot_completed marker)
+            /// before dropping the shared PostgreSQL slot/publication below, so that even if that cleanup fails a
+            /// later recreate on the same keeper path finds no marker and correctly redoes the initial snapshot
+            /// instead of resuming into empty tables. A leaked PostgreSQL slot/publication is recoverable manually.
+            removeCoordinationNodes(/* remove_metadata */ true);
+        }
+
+        /// The shared PostgreSQL slot/publication below are dropped by NAME, so the drop must still own the
+        /// setup incarnation it decided to tear down: if the <keeper_path>/teardown ownership token (created
+        /// atomically with winning the last-replica fence) is gone or owned by someone else, a fresh setup may
+        /// already live on this path - or the cleanup already ran - and dropping by name would delete objects
+        /// that are not this teardown's to remove. While this replica DOES own the token, no fresh setup can be
+        /// built (every CREATE and every joining startup refuses while the token exists), which is exactly what
+        /// makes the by-name drops safe.
+        auto zookeeper = getContext()->getZooKeeper();
+        const String teardown_path = coordination_keeper_path + "/teardown";
+        String teardown_owner;
+        if (!zookeeper->tryGet(teardown_path, teardown_owner) || teardown_owner != coordination_replica_owner)
+        {
+            LOG_INFO(log,
+                "Skipping the removal of the shared replication slot and publication: this replica no longer "
+                "owns the teardown of the coordinated setup at {} (the cleanup has already run, or the path "
+                "has been reused)",
+                coordination_keeper_path);
+            return;
+        }
+    }
+
+    try
+    {
+        if (!coordination_enabled)
+            shutdown();
 
         /// Do not use fault injection during cleanup: leaked replication slots
         /// can exhaust PostgreSQL's max_replication_slots and break subsequent
         /// MaterializedPostgreSQL databases.
         postgres::Connection connection(connection_info);
-        connection.execWithRetry([&](pqxx::nontransaction & tx){ dropPublication(tx); });
+        connection.execWithRetry([&](pqxx::nontransaction & tx)
+        {
+            /// `shutdownFinal` can be called before the database startup task has built a handler.
+            /// Adopt the persisted deployment's legacy identity here as well, so this cleanup path
+            /// drops the slot and publication that actually belong to an attached pre-schema-aware
+            /// MaterializedPostgreSQL database.
+            adoptLegacyReplicationIdentityIfNeeded(tx);
+            dropPublication(tx);
+        });
         String last_committed_lsn;
 
         connection.execWithRetry([&](pqxx::nontransaction & tx)
@@ -1097,18 +3482,53 @@ void PostgreSQLReplicationHandler::shutdownFinal()
                 dropReplicationSlot(tx, /* temporary */true);
         });
 
-        if (user_managed_slot)
-            return;
-
-        connection.execWithRetry([&](pqxx::nontransaction & tx)
+        if (!user_managed_slot)
         {
-            if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
-                dropReplicationSlot(tx, /* temporary */false);
-        });
+            connection.execWithRetry([&](pqxx::nontransaction & tx)
+            {
+                if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
+                    dropReplicationSlot(tx, /* temporary */false);
+            });
+        }
     }
     catch (...)
     {
         LOG_ERROR(log, "Failed to drop replication slot: {}. It must be dropped manually. Error: {}", replication_slot, getCurrentExceptionMessage(true));
+    }
+
+    if (coordination_enabled)
+    {
+        /// The teardown is complete (the shared PostgreSQL objects were dropped, or their failure was reported
+        /// as requiring manual cleanup - which a fresh setup also recovers from by itself: a leaked publication
+        /// or slot without coordination state is dropped and recreated). Release the keeper path for reuse by
+        /// removing the teardown ownership token, and clean up the (now empty) root. This is the point of no
+        /// return, so a Keeper failure here is only reported: the leftover token keeps rejecting recreates on
+        /// this path until it is removed manually (the safe direction).
+        try
+        {
+            auto zookeeper = getContext()->getZooKeeper();
+            /// `tryRemove` reports recoverable Keeper failures (connection loss, operation timeout)
+            /// through its return code, so it must be checked explicitly: a silently leftover token
+            /// would keep rejecting recreates on this keeper path.
+            auto code = zookeeper->tryRemove(coordination_keeper_path + "/teardown");
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                throw zkutil::KeeperException::fromPath(code, coordination_keeper_path + "/teardown");
+
+            /// Removing the root is pure tidiness: a leftover empty node does not block a recreate.
+            /// The nested tables remove their own Keeper subtrees asynchronously, so the root may
+            /// legitimately still be non-empty here.
+            code = zookeeper->tryRemove(coordination_keeper_path);
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE && code != Coordination::Error::ZNOTEMPTY)
+                LOG_WARNING(log, "Failed to remove the coordination keeper path {}: {}. It is harmless and can be removed manually.",
+                    coordination_keeper_path, code);
+        }
+        catch (...)
+        {
+            LOG_ERROR(log,
+                "Failed to remove the teardown ownership token at {}/teardown; recreating a coordinated setup "
+                "on this keeper path will be rejected until it is removed manually. Error: {}",
+                coordination_keeper_path, getCurrentExceptionMessage(true));
+        }
     }
 }
 
@@ -1116,6 +3536,11 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 /// Used by MaterializedPostgreSQL database engine.
 std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
 {
+    /// Runs before `startup` on the database-engine path and consults the coordination state below, so it
+    /// needs a resolved coordination identity just as much (the startup task retries once it is resolvable).
+    if (coordination_enabled)
+        assertCoordinationIdentityResolved();
+
     postgres::Connection connection(connection_info);
     std::set<String> result_tables;
     bool publication_exists_before_startup = false;
@@ -1131,6 +3556,30 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
     }
 
     LOG_DEBUG(log, "Publication exists: {}, is attach: {}", publication_exists_before_startup, is_attach);
+
+    /// A publication that outlived its coordinated setup must not be adopted as live shared state. The
+    /// last-replica teardown removes the Keeper coordination nodes first and only then drops the shared
+    /// slot/publication in PostgreSQL, so if that final step failed the publication leaks - with the table
+    /// set of the OLD setup. A fresh coordinated CREATE on the same keeper path would otherwise silently
+    /// adopt that stale table set instead of the requested `materialized_postgresql_tables_list` / current
+    /// schema. A live publication always has surviving coordination state (a replica registers itself
+    /// before it creates the publication, and the `snapshot_completed` marker persists after that), so if
+    /// neither the marker nor any registered replica exists, nothing can be consuming through the
+    /// publication anymore: drop it and start fresh. Keeper errors propagate (fail-close) - the background
+    /// startup task retries. On ATTACH the local nested tables mirror the publication's old table set, so
+    /// it is kept and the slot-without-marker recovery redoes the snapshot as needed.
+    if (publication_exists_before_startup && coordination_enabled && !is_attach
+        && !hasSurvivingCoordinationState(/* include_refused_drop_metadata */ true))
+    {
+        LOG_WARNING(log,
+                    "Publication {} exists, but there is no coordination state under {} (no snapshot marker and no "
+                    "registered replicas): it was left behind by an incompletely dropped coordinated setup and its "
+                    "table set is stale. Dropping it; it will be recreated",
+                    doubleQuoteString(publication_name), coordination_keeper_path);
+
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
+        publication_exists_before_startup = false;
+    }
 
     Strings expected_tables;
     if (!tables_list.empty())
@@ -1162,7 +3611,10 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
     /// If there is a tables list -- check that lists are consistent and if not -- remove publication, it will be recreated.
     if (publication_exists_before_startup)
     {
-        if (!is_attach)
+        /// When coordination is enabled the publication is shared with the other replicas of the same
+        /// coordinated setup: a second CREATE must adopt it (like an ATTACH does), not drop it from under
+        /// the replica that is consuming through it.
+        if (!is_attach && !coordination_enabled)
         {
             LOG_WARNING(log,
                         "Publication {} already exists, but it is a CREATE query, not ATTACH. Publication will be dropped",
@@ -1174,13 +3626,33 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
         {
             if (tables_list.empty())
             {
-                LOG_WARNING(log,
-                            "Publication {} already exists and tables list is empty. Assuming publication is correct.",
-                            doubleQuoteString(publication_name));
-
+                if (coordination_enabled)
                 {
-                    pqxx::nontransaction tx(connection.getRef());
-                    result_tables = fetchPostgreSQLTablesList(tx, schema_list.empty() ? postgres_schema : schema_list);
+                    /// A coordinated CREATE adopts the shared publication rather than dropping it. Its table
+                    /// set is authoritative, so derive the tables from the publication itself instead of
+                    /// re-scanning the live PostgreSQL schema. The schema may have drifted (tables added or
+                    /// dropped) since the first replica created the publication; scanning it here would make
+                    /// this replica build a different set of nested tables than the leader replicates through
+                    /// the publication, so the extra tables would stay empty forever after a failover.
+                    LOG_WARNING(log,
+                                "Coordinated setup: deriving tables from the existing shared publication {}.",
+                                doubleQuoteString(publication_name));
+
+                    pqxx::work tx(connection.getRef());
+                    result_tables = fetchTablesFromPublication(tx);
+                }
+                else
+                {
+                    LOG_WARNING(log,
+                                "Publication {} already exists and tables list is empty. Assuming publication is correct.",
+                                doubleQuoteString(publication_name));
+
+                    /// The existing publication is authoritative on ATTACH/restart even without
+                    /// coordination. Scanning the live schema here can add wrappers for tables which were
+                    /// created after the publication and therefore have no nested table or replication
+                    /// stream, making the already-synchronized path retry forever.
+                    pqxx::work tx(connection.getRef());
+                    result_tables = fetchTablesFromPublication(tx);
                 }
             }
             /// Check tables list from publication is the same as expected tables list.
@@ -1221,17 +3693,102 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                         listed_tables += table_name;
                     }
 
-                    LOG_ERROR(log,
-                              "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}. "
-                              "Will use tables list from setting. "
-                              "To avoid redundant work, you can try ALTER PUBLICATION query to remove redundant tables. "
-                              "Or you can you ALTER SETTING. "
-                              "\nPublication tables: {}.\nTables list: {}",
-                              doubleQuoteString(publication_name), diff_tables, publication_tables, listed_tables);
+                    /// In coordinated mode the shared publication is authoritative and is adopted (not
+                    /// recreated), so the table set must be derived from the publication. Honoring a
+                    /// mismatching explicit `materialized_postgresql_tables_list` here would make this
+                    /// replica build nested tables that PostgreSQL never publishes into (or skip tables
+                    /// the publication does publish), so replicas would silently diverge on which tables
+                    /// actually replicate. Use the publication's table set (already in `result_tables`)
+                    /// and warn that the setting is overridden. To honor an explicit list, the user must
+                    /// make it match the publication (e.g. via ALTER PUBLICATION) or recreate the setup.
+                    if (coordination_enabled)
+                    {
+                        LOG_WARNING(log,
+                            "Coordinated setup: the specified `materialized_postgresql_tables_list` ({}) does not match "
+                            "the shared publication {} ({}); differing tables: {}. The publication is authoritative in "
+                            "coordinated mode, so its table set is used instead of the setting.",
+                            listed_tables, doubleQuoteString(publication_name), publication_tables, diff_tables);
 
-                    return std::set(expected_tables.begin(), expected_tables.end());
+                        /// The adopted set must also drive a later publication recreation. When the publication
+                        /// goes missing, `createPublicationIfNeeded` rebuilds `CREATE PUBLICATION` from
+                        /// `tables_list` whenever it is not empty; keeping the stale local setting there would
+                        /// make this replica recreate the shared publication with the extra (or without the
+                        /// missing) tables of its own list, silently changing the authoritative table set under
+                        /// the other replicas. Rewrite it to the adopted set - the quoting pass below then
+                        /// treats it exactly like a matching user-provided list. (Coordinated mode rejects
+                        /// column-filtered lists at construction, so no `table(col1, col2)` entry can be lost.)
+                        tables_list = fmt::format("{}", fmt::join(result_tables, ", "));
+                    }
+                    else
+                    {
+                        LOG_ERROR(log,
+                                  "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}. "
+                                  "Recreating the publication from the tables list setting. "
+                                  "To avoid redundant work, you can try ALTER PUBLICATION query to remove redundant tables. "
+                                  "Or you can you ALTER SETTING. "
+                                  "\nPublication tables: {}.\nTables list: {}",
+                                  doubleQuoteString(publication_name), diff_tables, publication_tables, listed_tables);
+
+                        /// Unlike coordinated setups, a plain MaterializedPostgreSQL database owns its
+                        /// publication. Returning the setting without removing a mismatching publication
+                        /// only rebuilds the local wrappers: createPublicationIfNeeded later adopts the
+                        /// old publication on ATTACH, leaving the restored table silently non-replicating
+                        /// after a failed DETACH TABLE ... PERMANENTLY recovery and restart. Drop it here
+                        /// so startSynchronization recreates it from `tables_list` before the consumer
+                        /// starts.
+                        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
+                        /// Do not return yet: the normalization pass below SQL-quotes `tables_list` before
+                        /// `createPublicationIfNeeded` uses it to recreate the publication. In particular,
+                        /// an unquoted keyword or mixed-case table identifier must not be emitted verbatim.
+                        result_tables = std::set(expected_tables.begin(), expected_tables.end());
+                    }
                 }
             }
+        }
+    }
+
+    /// The shared publication is absent, but this is not a fresh setup: coordination state survives in
+    /// Keeper, so this replica is rejoining an existing coordinated setup whose publication has to be
+    /// recreated (it was dropped externally, or the active worker died between the teardown of a previous
+    /// generation and the recreation). The authoritative table set of that setup is the one fenced at
+    /// <keeper_path>/table_set, not this replica's local `materialized_postgresql_tables_list`: a replica
+    /// that once adopted a smaller publication set over a mismatching explicit setting is rebuilt from the
+    /// persisted (stale) setting after a restart, so honoring the setting here would recreate the shared
+    /// publication with a different table set - and `ensureCoordinatedTableSetCompatible` would refuse the
+    /// startup against the already fenced set, wedging the replica instead of repairing the publication.
+    /// Only an ESTABLISHED setup is trusted here - one with the snapshot marker or a registered replica -
+    /// for the same reason the publication-leak check above requires surviving state: a leftover /table_set
+    /// node of an incompletely dropped setup must not become authoritative for a fresh CREATE. The fence
+    /// node alone is explicitly not enough: every replica publishes it BEFORE it registers, so a replica
+    /// racing another one in that pre-publication window would silently adopt the peer's differing table
+    /// set instead of being refused by `ensureCoordinatedTableSetCompatible`. Keeper errors propagate
+    /// (fail-close), the startup task retries.
+    if (coordination_enabled && !publication_exists_before_startup && result_tables.empty()
+        && hasSurvivingCoordinationState(/* include_refused_drop_metadata */ false))
+    {
+        if (auto fenced_tables = readCoordinatedTableSetFromKeeper(); fenced_tables && !fenced_tables->empty())
+        {
+            const std::set<String> local_tables(expected_tables.begin(), expected_tables.end());
+            if (!tables_list.empty() && local_tables != *fenced_tables)
+            {
+                LOG_WARNING(log,
+                    "Coordinated setup: the shared publication {} does not exist and the specified "
+                    "`materialized_postgresql_tables_list` ({}) does not match the table set fenced at {}/table_set "
+                    "({}). The fenced set is authoritative in coordinated mode, so it is used instead of the setting "
+                    "and the publication is recreated from it.",
+                    doubleQuoteString(publication_name), fmt::join(local_tables, ", "), coordination_keeper_path,
+                    fmt::join(*fenced_tables, ", "));
+            }
+            else
+            {
+                LOG_DEBUG(log, "Coordinated setup: the shared publication {} does not exist, deriving tables from {}/table_set ({})",
+                    doubleQuoteString(publication_name), coordination_keeper_path, fmt::join(*fenced_tables, ", "));
+            }
+
+            result_tables = *fenced_tables;
+            /// `createPublicationIfNeeded` rebuilds the publication from `tables_list` whenever it is not
+            /// empty, so it must carry the adopted set too (see the mismatch branch above).
+            tables_list = fmt::format("{}", fmt::join(result_tables, ", "));
         }
     }
 
@@ -1401,6 +3958,17 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
 
 void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPostgreSQL * materialized_storage, const String & postgres_table_name)
 {
+    /// Adding a table mutates the shared publication and reloads data through a temporary slot, and it
+    /// only takes effect on the replica executing it: the other replicas would neither create the nested
+    /// table nor learn the updated tables list, and after a failover the new active worker would consume a
+    /// publication that no longer matches its configuration. Until these operations are routed through the
+    /// coordination (and applied on every replica), refuse them instead of corrupting the shared state.
+    if (coordination_enabled)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "ATTACH TABLE is not supported for a coordinated MaterializedPostgreSQL setup "
+            "(materialized_postgresql_keeper_path is set). "
+            "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
     assertInitialized();
 
     /// Note: we have to ensure that replication consumer task is stopped when we reload table, because otherwise
@@ -1409,6 +3977,13 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
     try
     {
         LOG_TRACE(log, "Adding table `{}` to replication", postgres_table_name);
+
+        fiu_do_on(FailPoints::materialized_postgresql_fail_add_table_to_replication,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                "Injected failure while adding table `{}` to replication", postgres_table_name);
+        });
+
         postgres::Connection replication_connection(connection_info, /* replication */true);
         String snapshot_name;
         String start_lsn;
@@ -1456,6 +4031,13 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
 
 void PostgreSQLReplicationHandler::removeTableFromReplication(const String & postgres_table_name)
 {
+    /// See the explanation in addTableToReplication.
+    if (coordination_enabled)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "DETACH TABLE PERMANENTLY is not supported for a coordinated MaterializedPostgreSQL setup "
+            "(materialized_postgresql_keeper_path is set). "
+            "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
     assertInitialized();
 
     consumer_task->deactivate();

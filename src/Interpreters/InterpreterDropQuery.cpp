@@ -15,6 +15,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -282,10 +283,28 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             {
                 /// If DROP DICTIONARY query is not used, check if Dictionary can be dropped with DROP TABLE query
                 if (!query.is_dictionary)
-                    table->checkTableCanBeDetached();
+                {
+                    if (query.permanently)
+                    {
+                        table->checkTableCanBeDetachedPermanently();
+                    }
+                    else
+                    {
+                        table->checkTableCanBeDetached();
+                    }
+                }
             }
             else
-                table->checkTableCanBeDetached();
+            {
+                if (query.permanently)
+                {
+                    table->checkTableCanBeDetachedPermanently();
+                }
+                else
+                {
+                    table->checkTableCanBeDetached();
+                }
+            }
 
             bool check_ref_deps = false;
             bool check_loading_deps = false;
@@ -425,6 +444,21 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
     }
     catch (...)
     {
+        /// The drop failed. If it is a real DROP DATABASE, the engine may have committed teardown work in
+        /// `beforeDropDatabase` (before any table was removed) and then thrown while dropping the nested tables;
+        /// give it a chance to recover so a refused drop does not leave the database mounted but dead. Idempotent.
+        if (database && query.kind == ASTDropQuery::Kind::Drop)
+        {
+            try
+            {
+                database->onDropDatabaseFailed(getContext());
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__, "Failed to recover the database after a refused DROP");
+            }
+        }
+
         if (query.sync)
         {
             for (const auto & table_uuid : tables_to_wait)
@@ -489,6 +523,17 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     if (query.if_empty)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP IF EMPTY is not implemented for databases");
+
+    /// Let the engine veto the drop before any of its tables are removed (e.g. fail-close while a coordination
+    /// service it depends on is unreachable). Only for a real DROP: DETACH does not delete data here.
+    if (drop)
+        database->beforeDropDatabase(getContext());
+
+    /// A database-wide TRUNCATE removes data too (it walks the nested tables below and drops/truncates each one),
+    /// so let the engine veto it as well before any table is touched (e.g. a coordinated engine that has no
+    /// consistent cross-replica truncate path and must refuse it outright).
+    if (truncate)
+        database->beforeTruncateDatabase(getContext());
 
     if (!truncate && database->hasReplicationThread())
         database->stopReplication();
@@ -907,6 +952,14 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         if (ignore_sync_setting)
             drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
         drop_context->setDDLOrOnClusterInternal(true);
+        /// The copy of the global context above loses the internal-query flag of `current_context`, but the
+        /// interpreter below resolves the target table again through `DatabaseCatalog` with `drop_context`, and
+        /// that resolution can depend on the flag. For example, dropping a nested table of a coordinated
+        /// MaterializedPostgreSQL database with a non-internal context yields a wrapper whose
+        /// `checkTableCanBeDropped` refuses the drop; the internal contexts that engines pass here must keep
+        /// resolving the nested table directly.
+        if (current_context->isInternalQuery())
+            drop_context->setInternalQuery(true);
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// For Replicated database

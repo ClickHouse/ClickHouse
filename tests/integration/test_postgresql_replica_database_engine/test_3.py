@@ -1597,6 +1597,25 @@ def test_use_extended_date_and_time_types_setting_table_engine_rejected(started_
     ), error
 
 
+def test_attach_table_with_extended_date_and_time_types_setting_rejected(started_cluster):
+    # A full-definition ATTACH is fresh user input, just like CREATE. It must not
+    # persist a table-engine setting that would be silently ignored.
+    table = "test_date_types_table_engine_attach"
+    error = instance.query_and_get_error(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        ATTACH TABLE {table} UUID '00000000-0000-0000-0000-000000001234' (key Int32, d Date)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_use_extended_date_and_time_types = 0
+        """
+    )
+    assert (
+        "materialized_postgresql_use_extended_date_and_time_types" in error
+        and "table engine" in error
+    ), error
+
+
 def test_use_extended_date_and_time_types_setting_alter_database_rejected(started_cluster):
     # The setting only controls the column types chosen by type inference when the nested tables
     # are created. The already created nested tables keep their fixed column types, so changing it
@@ -3350,6 +3369,80 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
     )
     if cursor.fetchall():
         cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
+
+
+def test_plain_single_table_engine_refused_drop_recovers(started_cluster):
+    # The plain (non-coordinated) single-table engine drops its local nested table BEFORE the authoritative
+    # PostgreSQL teardown: if the nested-table drop is refused (throws), the outer DROP TABLE fails and the
+    # table stays mounted, so the replication slot/publication must survive and the handler must resume
+    # consuming from the existing slot instead of leaving the table dead until a server restart.
+    table = "plain_refused_drop"
+
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(100)"
+    )
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int64, value Int64)
+        ENGINE = MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        PRIMARY KEY key
+        """
+    )
+    try:
+        assert_eq_with_retry(
+            instance,
+            f"SELECT count() FROM {table}",
+            "100\n",
+            retry_count=120,
+            sleep_time=1,
+        )
+
+        try:
+            instance.query(
+                "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+            )
+            error = instance.query_and_get_error(f"DROP TABLE {table} SYNC")
+            assert "Injected failure while dropping the local nested table" in error
+            assert table in instance.query("SHOW TABLES").split()
+        finally:
+            instance.query(
+                "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+            )
+
+        # The slot and publication survived the refused drop, and replication resumes from the existing
+        # slot without a server restart: new PostgreSQL rows must arrive.
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(100, 100)"
+        )
+        assert_eq_with_retry(
+            instance,
+            f"SELECT count() FROM {table}",
+            "200\n",
+            retry_count=120,
+            sleep_time=1,
+        )
+
+        # A retried drop succeeds and removes the PostgreSQL objects.
+        instance.query(f"DROP TABLE {table} SYNC")
+    finally:
+        instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        database=True,
+    )
+    cursor = conn.cursor()
+    cursor.execute(
+        f"SELECT slot_name FROM pg_replication_slots WHERE slot_name LIKE '%{table}%'"
+    )
+    assert cursor.fetchall() == []
+    cursor.execute(
+        f"SELECT pubname FROM pg_publication WHERE pubname LIKE '%{table}%'"
+    )
+    assert cursor.fetchall() == []
 
 
 if __name__ == "__main__":

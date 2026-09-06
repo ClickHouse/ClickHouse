@@ -9,13 +9,14 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
 #include <Common/parseAddress.h>
+#include <Common/quoteString.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/AsyncLoader.h>
-#include <Common/FailPoint.h>
 #include <IO/WriteHelpers.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
@@ -37,17 +38,21 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Common/escapeForFileName.h>
+#include <Disks/IDisk.h>
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+    extern const SettingsBool allow_experimental_database_materialized_postgresql;
 }
 
 namespace MaterializedPostgreSQLSetting
 {
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_keeper_path;
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_replication_slot;
 }
 
 namespace FailPoints
@@ -63,7 +68,19 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int CANNOT_BACKUP_TABLE;
+    extern const int FAULT_INJECTED;
+    extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char materialized_postgresql_fail_nested_table_drop[];
+    extern const char materialized_postgresql_fail_nested_drop_on_detach[];
+    extern const char materialized_postgresql_fail_nested_drop_on_attach[];
+    extern const char materialized_postgresql_fail_database_startup[];
+    extern const char materialized_postgresql_pause_after_stop_replication[];
 }
 
 DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
@@ -104,13 +121,9 @@ void DatabaseMaterializedPostgreSQL::tryStartSynchronization()
     }
 }
 
-void DatabaseMaterializedPostgreSQL::startSynchronization()
+std::shared_ptr<PostgreSQLReplicationHandler> DatabaseMaterializedPostgreSQL::makeReplicationHandler()
 {
-    std::lock_guard lock(handler_mutex);
-    if (shutdown_called)
-        return;
-
-    replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
+    return std::make_shared<PostgreSQLReplicationHandler>(
             remote_database_name,
             /* table_name */"",
             TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
@@ -120,6 +133,52 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             is_attach,
             *settings,
             /* is_materialized_postgresql_database = */ true);
+}
+
+
+void DatabaseMaterializedPostgreSQL::startSynchronization()
+{
+    std::lock_guard lock(handler_mutex);
+    if (shutdown_called)
+        return;
+
+    /// The startup task can be rescheduled after synchronization has already started - e.g. by a refused
+    /// (fail-close) DROP DATABASE, which had deactivated it up front and must restore it on failure (see
+    /// `beforeDropDatabase`). Replacing a live handler here would leak its running consumer, so make the
+    /// task idempotent instead. Failed startups never set the flag: `tryStartSynchronization` keeps
+    /// retrying them as before.
+    if (synchronization_started)
+        return;
+
+    /// Simulates the background startup failing before the replication handler has been built, to make the
+    /// attach/restart window - in which `replication_handler` is still null while the database is already
+    /// mounted and accepts DDL - deterministically testable.
+    fiu_do_on(FailPoints::materialized_postgresql_fail_database_startup,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED,
+            "Injected failure of the MaterializedPostgreSQL database startup");
+    });
+
+    /// A partially applied `DROP DATABASE` is recorded next to the database metadata, because the
+    /// recovery this database object performs (see `recoverAfterRefusedDrop`) can be interrupted by a
+    /// server restart, which reconstructs the object from that metadata and loses the in-memory decision.
+    /// Re-apply it on every startup until one of them completes: for a ClickHouse-managed slot this
+    /// re-arms the create-style startup that reloads the removed tables, and for a user-managed slot it
+    /// fails closed again below.
+    if (getDisk()->existsFile(getPartialDropRecoveryMarkerPath()))
+        applyPartialDropRecoveryMode();
+
+    /// A refused DROP DATABASE removed some of the nested tables of a database with a user-managed
+    /// replication slot, which cannot be repaired automatically (see `recoverAfterRefusedDrop`). Refuse to
+    /// resume replication rather than replicate a silently truncated set of tables while the slot advances.
+    if (manual_repair_required)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Replication of database {} cannot be resumed: a refused DROP DATABASE has removed some of its nested "
+            "tables and they cannot be reloaded automatically, because the replication slot is user-managed. Drop "
+            "the database and recreate it with a freshly created replication slot and the snapshot exported with it",
+            backQuote(TSA_SUPPRESS_WARNING_FOR_READ(database_name)));
+
+    replication_handler = makeReplicationHandler();
 
     std::set<String> tables_to_replicate;
     try
@@ -158,6 +217,8 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
         }
 
+        storage->as<StorageMaterializedPostgreSQL>()->setCoordinated(isCoordinated());
+
         /// Cache MaterializedPostgreSQL wrapper over nested table.
         new_materialized_tables[table_name] = storage;
 
@@ -173,6 +234,16 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     }
 
     replication_handler->startup(/* delayed */false);
+    {
+        std::lock_guard tables_lock(tables_mutex);
+        for (const auto & [_, storage] : materialized_tables)
+            storage->as<StorageMaterializedPostgreSQL>()->setDatabaseReplicationReady();
+    }
+    synchronization_started = true;
+
+    /// Replication is running with the full set of tables again, so a partially applied `DROP DATABASE`
+    /// (if there was one) is repaired and must not force a create-style startup after the next restart.
+    removePartialDropRecoveryMarker();
 }
 
 
@@ -240,6 +311,15 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
                             "by type inference, and cannot be changed for an existing database: the already created "
                             "nested tables keep their fixed column types. Recreate the database to change it.", change.name);
         }
+        else if (change.name == "materialized_postgresql_table_engine"
+                 || change.name == "materialized_postgresql_keeper_path"
+                 || change.name == "materialized_postgresql_replica_name")
+        {
+            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+                            "Setting `{}` defines the engine of the nested tables and the coordination identity of this "
+                            "replica, and can only be set at CREATE time: the nested tables and the coordination state in "
+                            "Keeper are already built from it. Recreate the database to change it.", change.name);
+        }
         else if ((change.name != "materialized_postgresql_allow_automatic_update") && (change.name != "materialized_postgresql_max_block_size"))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting");
@@ -256,7 +336,15 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
         }
         else if ((change.name == "materialized_postgresql_allow_automatic_update") || (change.name == "materialized_postgresql_max_block_size"))
         {
-            replication_handler->setSetting(change);
+            /// The replication handler is built by the background startup task, so right after CREATE / ATTACH
+            /// or a server restart it may not exist yet (and it keeps not existing while the startup task is
+            /// retrying an unreachable PostgreSQL). The change is still applied to the in-memory `settings` and
+            /// persisted to the on-disk metadata below, and `makeReplicationHandler` reads `*settings`, so a
+            /// handler built later picks the new value up. A handler that exists but has no consumer yet (a
+            /// coordinated standby, or a failed startup being retried) stores the value and passes it to the
+            /// consumer it creates later.
+            if (replication_handler)
+                replication_handler->setSetting(change);
             need_update_on_disk = true;
         }
 
@@ -265,6 +353,12 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
 
     if (need_update_on_disk)
         DatabaseOnDisk::modifySettingsMetadata(settings_changes, query_context);
+}
+
+
+bool DatabaseMaterializedPostgreSQL::isCoordinated() const
+{
+    return !(*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value.empty();
 }
 
 
@@ -315,7 +409,19 @@ StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, Cont
             if (!nested)
                 return StoragePtr{};
 
-            return std::make_shared<StorageMaterializedPostgreSQL>(nested, getContext(), remote_database_name, name);
+            auto wrapper = std::make_shared<StorageMaterializedPostgreSQL>(nested, getContext(), remote_database_name, name);
+            /// Carry the coordinated flag exactly like the published wrappers do, so the storage-level
+            /// DDL guards (`checkTableCanBeDetached`, `checkTableCanBeDropped`) refuse a name-based
+            /// DETACH / DROP / TRUNCATE of an individual table before `InterpreterDropQuery` calls
+            /// `flushAndShutdown` even in this window. Otherwise a DETACH right after a restart would
+            /// shut the local nested replicated table down before the database-level method rejects
+            /// the statement, and the promised no-op rejection would be lost.
+            wrapper->setCoordinated(isCoordinated());
+            /// ... and the replication-readiness state too, for the same reason: this wrapper can be the
+            /// object a `DETACH TABLE ... PERMANENTLY` is checked against.
+            if (isReplicationReady())
+                wrapper->setDatabaseReplicationReady();
+            return wrapper;
         }
     }
 
@@ -361,6 +467,17 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
         table_uuid = existing_table->getStorageID().uuid;
 
     std::lock_guard lock(handler_mutex);
+
+    /// The replication handler is built by the background startup task and may not exist yet in the
+    /// attach/restart window (a null dereference below would not be caught by the try/catch).
+    if (!replication_handler)
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "Cannot get the definition of table `{}`: the database has not finished starting replication yet. "
+                "Retry once synchronization has started", table_name);
+        return nullptr;
+    }
 
     ASTPtr ast_storage;
     try
@@ -423,6 +540,26 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
                         "CREATE TABLE is not allowed for database engine {}. Use ATTACH TABLE instead", getEngineName());
 
+    /// Refuse before creating the nested table below (it would be left behind by a throw later in
+    /// attachTable): see PostgreSQLReplicationHandler::addTableToReplication for the reasoning.
+    /// Checked on the settings (not on the handler, which is only created by the background startup task).
+    if (!(*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "ATTACH TABLE is not supported for a coordinated MaterializedPostgreSQL setup "
+            "(materialized_postgresql_keeper_path is set). "
+            "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
+    /// `attachTable` needs a live handler to update the PostgreSQL publication. Check this before
+    /// `DatabaseAtomic::createTable`: otherwise a startup-window refusal leaves a physical nested
+    /// table and UUID mapping behind, and the retry collides with that orphan.
+    {
+        std::lock_guard lock(handler_mutex);
+        if (!replication_handler)
+            throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                "Cannot add table `{}` to replication: the database has not finished starting replication yet. "
+                "Retry once synchronization has started", table_name);
+    }
+
     /// Create ReplacingMergeTree table.
     auto query_copy = query->clone();
     auto * create_query = assert_cast<ASTCreateQuery *>(query_copy.get());
@@ -442,6 +579,27 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
     /// If there is no query context then we need to attach internal storage from atomic database.
     if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
     {
+        /// Refuse before mutating anything (the tables-list setting is altered below and would not be
+        /// rolled back): see PostgreSQLReplicationHandler::addTableToReplication for the reasoning.
+        /// Checked on the settings (not on the handler, which is only created by the background startup task).
+        if (!(*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "ATTACH TABLE is not supported for a coordinated MaterializedPostgreSQL setup "
+                "(materialized_postgresql_keeper_path is set). "
+                "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
+        /// The replication handler is built by the background startup task, so right after CREATE / ATTACH or a
+        /// server restart it may not exist yet (and it keeps not existing while the startup task is retrying an
+        /// unreachable PostgreSQL). Adding a table requires the live handler, so refuse cleanly - and do it
+        /// before mutating anything: the tables-list setting altered below would not be rolled back.
+        {
+            std::lock_guard lock(handler_mutex);
+            if (!replication_handler)
+                throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                    "Cannot add table `{}` to replication: the database has not finished starting replication yet. "
+                    "Retry once synchronization has started", table_name);
+        }
+
         auto current_context = Context::createCopy(getContext()->getGlobalContext());
         current_context->setInternalQuery(true);
 
@@ -449,9 +607,17 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
         auto nested_table = DatabaseAtomic::tryGetTable(table_name, current_context);
         chassert(nested_table != nullptr);
 
+        /// The attach becomes durable only once `addTableToReplication` succeeds: everything published
+        /// before that - the persisted tables-list setting and the wrapper in `materialized_tables` - is
+        /// rolled back on failure, or the database would keep claiming the table is attached (in
+        /// `SHOW TABLES` and after a restart) although it never joined the publication and the handler
+        /// state, so nothing would ever replicate into it.
+        const auto original_tables_list = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
+        bool tables_list_altered = false;
+        bool wrapper_published = false;
         try
         {
-            auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
+            auto tables_to_replicate = original_tables_list;
             if (tables_to_replicate.empty())
             {
                 std::lock_guard tables_lock(tables_mutex);
@@ -465,20 +631,96 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
             /// Executed without `tables_mutex`: the ALTER reaches `applySettingsChanges`, which takes
             /// `handler_mutex`, and the two mutexes must always be taken in that order.
             InterpreterAlterQuery(alter_query, current_context).execute();
+            tables_list_altered = true;
 
             auto storage = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
+            /// This code path runs only with a live replication handler (checked above), so the startup
+            /// window is over for this wrapper too. Without this, a table added by `ATTACH TABLE` would stay
+            /// on the startup-window guard of `checkTableCanBeDetachedPermanently` forever, and the
+            /// supported `DETACH TABLE ... PERMANENTLY` round-trip would be impossible for it.
+            storage->setDatabaseReplicationReady();
             {
                 std::lock_guard tables_lock(tables_mutex);
                 materialized_tables[table_name] = storage;
+                wrapper_published = true;
             }
 
             std::lock_guard lock(handler_mutex);
+            if (!replication_handler)
+                throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                    "Cannot add table `{}` to replication: the replication handler is gone. Retry later", table_name);
             replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
         }
         catch (...)
         {
-            /// This is a failed attach table. Remove already created nested table.
-            DatabaseAtomic::dropTable(current_context, table_name, true);
+            /// This is a failed attach table. The nested table created by `createTable` is dropped
+            /// FIRST, and the visible state (the wrapper and the persisted tables-list setting) is
+            /// rolled back only once that drop really succeeded - the same transactional boundary as
+            /// the failed-DETACH path. Rolling the visible state back while the physical nested table
+            /// survives (its drop can fail on a disk error, or with Keeper unavailable for a replicated
+            /// nested table) would make the failure unrecoverable: the retried ATTACH would collide
+            /// with the leftover table instead of starting clean.
+            bool nested_dropped = false;
+            try
+            {
+                /// Simulates that cleanup drop failing (a filesystem error, or Keeper disappearing while a
+                /// replicated nested table removes its own metadata). The failpoint of
+                /// `DatabaseMaterializedPostgreSQL::dropTable` does not fire here: this calls the base
+                /// implementation directly.
+                fiu_do_on(FailPoints::materialized_postgresql_fail_nested_drop_on_attach,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED,
+                        "Injected failure while dropping the nested table of a failed attach");
+                });
+
+                DatabaseAtomic::dropTable(current_context, table_name, true);
+                nested_dropped = true;
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format(
+                    "Failed to drop the nested table after a failed attach of table `{}`", table_name));
+            }
+
+            if (nested_dropped)
+            {
+                if (wrapper_published)
+                {
+                    std::lock_guard tables_lock(tables_mutex);
+                    materialized_tables.erase(table_name);
+                }
+                if (tables_list_altered)
+                {
+                    /// Best-effort: if this fails too, the original error still propagates, and the
+                    /// leftover list entry is repaired by the next successful ATTACH / DETACH
+                    /// PERMANENTLY of the same table.
+                    try
+                    {
+                        auto rollback_query = createAlterSettingsQuery(
+                            SettingChange("materialized_postgresql_tables_list", original_tables_list));
+                        InterpreterAlterQuery(rollback_query, current_context).execute();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, fmt::format(
+                            "Failed to restore materialized_postgresql_tables_list after a failed attach of table `{}`",
+                            table_name));
+                    }
+                }
+            }
+            else
+            {
+                /// The nested table is still there, so the attach stays visible: the wrapper, the persisted
+                /// tables-list entry and the nested table keep describing the same table. That state can
+                /// really be recovered from - `DETACH TABLE ... PERMANENTLY` removes the table (it tolerates
+                /// a table that never made it into the publication, see `removeTableFromPublication`), after
+                /// which the `ATTACH TABLE` can be retried from a clean state. Rolling the visible state back
+                /// instead would leave an invisible nested table that nothing can remove any more, and every
+                /// retry of the attach would collide with it.
+                LOG_WARNING(log, "Table `{}` could not be added to replication, and the nested table created for "
+                    "it could not be dropped either, so the table stays attached (but does not replicate). "
+                    "Remove it with DETACH TABLE ... PERMANENTLY and retry the ATTACH TABLE", table_name);
+            }
             throw;
         }
     }
@@ -488,8 +730,17 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
     }
 }
 
-StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr, const String &)
+StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr local_context, const String & table_name)
 {
+    /// The table walk of `DETACH DATABASE` (InterpreterDropQuery::executeToDatabaseImpl) runs with an internal
+    /// context and detaches every nested table before the database itself is detached; replication has already
+    /// been stopped by then, and nothing here must throw - otherwise the database is left mounted but no longer
+    /// replicating. Only a user-issued `DETACH TABLE` is rejected: it would remove the local nested table while
+    /// the publication, the consumer and the persisted tables list keep feeding it, unlike
+    /// `DETACH TABLE ... PERMANENTLY`, which removes the table from replication.
+    if (local_context->isInternalQuery())
+        return DatabaseAtomic::detachTable(local_context, table_name);
+
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE not allowed, use DETACH PERMANENTLY");
 }
 
@@ -499,6 +750,26 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
     /// If there is no query context then we need to detach internal storage from atomic database.
     if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
     {
+        /// Refuse before mutating anything (the tables-list setting is altered below and would not be
+        /// rolled back): see PostgreSQLReplicationHandler::removeTableFromReplication for the reasoning.
+        /// Checked on the settings (not on the handler, which is only created by the background startup task).
+        if (!(*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "DETACH TABLE PERMANENTLY is not supported for a coordinated MaterializedPostgreSQL setup "
+                "(materialized_postgresql_keeper_path is set). "
+                "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
+        /// Same startup-window handling as in `attachTable`: removing a table requires the live replication
+        /// handler, which the background startup task may not have built yet. Refuse cleanly before mutating
+        /// anything (the tables-list setting altered below would not be rolled back).
+        {
+            std::lock_guard lock(handler_mutex);
+            if (!replication_handler)
+                throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                    "Cannot remove table `{}` from replication: the database has not finished starting replication yet. "
+                    "Retry once synchronization has started", table_name);
+        }
+
         StoragePtr table_to_delete;
         String tables_to_replicate;
         {
@@ -515,7 +786,47 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             tables_to_replicate = getFormattedTablesList(table_name);
         }
 
-        /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
+        /// Refuse to detach the last replicated table: the empty tables list it would persist does not mean
+        /// "replicate no tables" - an empty `materialized_postgresql_tables_list` makes the table set be
+        /// re-derived from the current PostgreSQL schema on the next startup (or whenever the publication has
+        /// to be recreated), so the detach would not stick: every current source table would be re-imported,
+        /// or the startup would fail if the source schema is empty.
+        if (tables_to_replicate.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot detach table `{}`: it is the last replicated table, and an empty "
+                "materialized_postgresql_tables_list means the whole PostgreSQL database is replicated, "
+                "so the detach would not survive a restart. Drop the database instead", table_name);
+
+        auto * materialized_storage = table_to_delete->as<StorageMaterializedPostgreSQL>();
+        if (!materialized_storage->getNested())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inner table `{}` does not exist", table_name);
+
+        /// The detach becomes durable only once the local nested drop succeeds: everything committed
+        /// before that - the persisted tables-list setting and the publication / consumer removal - is
+        /// rolled back on failure, mirroring `attachTable`. Otherwise a throw from the nested drop left
+        /// a live nested table stranded outside the logical database while the setting and the publication
+        /// no longer knew it: the failed `DETACH` was silently half-applied, and neither retrying it
+        /// (the wrapper was gone) nor `ATTACH`-ing the table back (the leaked nested table collides with
+        /// the one the attach creates) could recover.
+        const auto original_tables_list = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
+        auto rollback_tables_list = [&]
+        {
+            try
+            {
+                auto rollback_context = Context::createCopy(getContext()->getGlobalContext());
+                rollback_context->setInternalQuery(true);
+                auto rollback_query = createAlterSettingsQuery(
+                    SettingChange("materialized_postgresql_tables_list", original_tables_list));
+                InterpreterAlterQuery(rollback_query, rollback_context).execute();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format(
+                    "Failed to restore materialized_postgresql_tables_list after a failed detach of table `{}`",
+                    table_name));
+            }
+        };
+
         SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate);
         auto alter_query = createAlterSettingsQuery(new_setting);
 
@@ -525,33 +836,78 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             InterpreterAlterQuery(alter_query, current_context).execute();
         }
 
-        auto nested = table_to_delete->as<StorageMaterializedPostgreSQL>()->getNested();
-        if (!nested)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inner table `{}` does not exist", table_name);
-
-        std::lock_guard lock(handler_mutex);
-        replication_handler->removeTableFromReplication(table_name);
+        try
+        {
+            /// Scoped tightly: the rollback ALTER below reaches `applySettingsChanges`, which takes
+            /// `handler_mutex`, so it must run only after the guard is destroyed during unwinding.
+            std::lock_guard lock(handler_mutex);
+            if (!replication_handler)
+                throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                    "Cannot remove table `{}` from replication: the replication handler is gone. Retry later", table_name);
+            replication_handler->removeTableFromReplication(table_name);
+        }
+        catch (...)
+        {
+            /// Nothing besides the tables-list setting is committed yet - restore it and propagate.
+            rollback_tables_list();
+            throw;
+        }
 
         try
         {
+            fiu_do_on(FailPoints::materialized_postgresql_fail_nested_drop_on_detach,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED,
+                    "Injected failure while dropping the nested table of detached table `{}`", table_name);
+            });
+
             auto current_context = Context::createCopy(getContext()->getGlobalContext());
             current_context->makeQueryContext();
             DatabaseAtomic::dropTable(current_context, table_name, true);
         }
         catch (Exception & e)
         {
-            /// We already removed this table from replication and adding it back will be an overkill..
-            /// TODO: this is bad, we leave a table lying somewhere not dropped, and if user will want
-            /// to move it back into replication, he will fail to do so because there is undropped nested with the same name.
-            /// This can also happen if we crash after removing table from replication and before dropping nested.
-            /// As a solution, we could drop a table if it already exists and add a fresh one instead for these two cases.
-            /// TODO: sounds good.
+            /// The table is already out of the publication and the consumer, and the WAL that PostgreSQL
+            /// sent past that point no longer carries its changes, so merely re-registering the consumer
+            /// state would lose data. Re-add through `addTableToReplication`: it reloads the surviving
+            /// nested table from a fresh snapshot (the `ReplacingMergeTree` collapses the re-inserted
+            /// rows) and restores the publication and the consumer state. On success the wrapper stays
+            /// published and the setting is restored, so the failed `DETACH` was a no-op and can be
+            /// retried.
+            bool table_readded = false;
+            try
             {
-                std::lock_guard tables_lock(tables_mutex);
-                materialized_tables.erase(table_name);
+                std::lock_guard lock(handler_mutex);
+                if (!replication_handler)
+                    throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                        "The replication handler is gone");
+                replication_handler->addTableToReplication(materialized_storage, table_name);
+                table_readded = true;
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format(
+                    "Failed to re-add table `{}` to replication after a failed detach", table_name));
             }
 
-            e.addMessage("while removing table `" + table_name + "` from replication");
+            if (!table_readded)
+            {
+                /// Keep the wrapper published. The nested table still exists, and removing its wrapper
+                /// would strand it: a subsequent `DETACH TABLE ... PERMANENTLY` could no longer find it,
+                /// while `ATTACH TABLE` would collide with its physical metadata. Restore the persisted
+                /// tables-list even though the publication currently lacks the table: after a restart,
+                /// `fetchRequiredTables` detects the mismatch, removes the stale publication, and
+                /// `startSynchronization` recreates it from the persisted list before it republishes the
+                /// wrapper. `removeTableFromReplication` is idempotent when the table is already absent
+                /// from that publication, so after the transient re-add failure is resolved the user can
+                /// retry this detach and remove the nested table cleanly.
+            }
+
+            /// This must be durable even if `addTableToReplication` failed: keeping the wrapper only
+            /// in memory makes the recovery path disappear after a server restart.
+            rollback_tables_list();
+
+            e.addMessage("while dropping the nested table of detached table `" + table_name + "`");
             throw;
         }
 
@@ -582,9 +938,12 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
     /// the task body locks the same mutex, and `deactivate` waits for a running execution.
     startup_task->deactivate();
 
-    std::lock_guard lock(handler_mutex);
-    if (replication_handler)
-        replication_handler->shutdown();
+    {
+        std::lock_guard lock(handler_mutex);
+        if (replication_handler)
+            replication_handler->shutdown();
+        synchronization_started = false;
+    }
 
     /// Clear wrappers over nested, all access is not done to nested tables directly.
     /// Take the map out under `tables_mutex` and destroy the wrappers only after releasing it: readers
@@ -599,23 +958,358 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
         replication_stopped = true;
         tables_to_destroy.swap(materialized_tables);
     }
+
+    /// Holds the drop path inside the window of DROP DATABASE between stopping replication and shutting the
+    /// database down (see `InterpreterDropQuery::executeToDatabaseImpl`), in which a still-armed background
+    /// startup retry could restart replication and recreate the PostgreSQL publication and slot while the drop
+    /// is in flight - `beforeDropDatabase` deactivates the startup task to make that impossible. Paused outside
+    /// `handler_mutex` so such a retry could actually run if it were still armed.
+    fiu_do_on(FailPoints::materialized_postgresql_pause_after_stop_replication,
+    {
+        LOG_INFO(log, "Pausing after stopping replication until failpoint "
+                 "materialized_postgresql_pause_after_stop_replication is disabled");
+        FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_after_stop_replication);
+    });
 }
 
 
 void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
+    /// Defense-in-depth for the guards in `StorageMaterializedPostgreSQL::checkTableCanBeDropped`:
+    /// a user-issued `DROP TABLE` of an individual table would remove the local nested table without
+    /// updating the persisted tables list, the PostgreSQL publication or the replication handler's state
+    /// (and, in coordinated mode, would silently diverge the replicas). The storage-level check already
+    /// rejects it before `flushAndShutdown`; reject here too in case the storage check is ever bypassed.
+    /// DROP DATABASE and internal cleanup (including the nested-table drop of DETACH TABLE PERMANENTLY,
+    /// which goes through `DatabaseAtomic::dropTable` directly) run with an internal context and must
+    /// still be able to drop the nested tables, so only a genuine (non-internal) user query is refused.
+    if (!local_context->isInternalQuery())
+    {
+        if (isCoordinated())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "DROP TABLE is not supported for a coordinated MaterializedPostgreSQL setup "
+                "(materialized_postgresql_keeper_path is set). "
+                "Recreate the database with an updated materialized_postgresql_tables_list instead");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "DROP TABLE is not supported for a MaterializedPostgreSQL database: it would remove only the "
+            "local nested table, while the table remains in materialized_postgresql_tables_list and in the "
+            "PostgreSQL publication, so its replication would silently stop. "
+            "Use DETACH TABLE ... PERMANENTLY to remove the table from replication");
+    }
+
+    /// Parks the drop of every table before it happens. It comes BEFORE the injected failure below, so a
+    /// test that holds the drop here can decide per table whether that failure fires: with the order
+    /// reversed, arming the failure while the drop is parked would come too late for the parked table.
     FailPointInjection::pauseFailPoint(FailPoints::database_materialized_postgresql_pause_before_table_drop);
 
+    /// Simulates the nested-table drop of a DROP DATABASE failing (e.g. Keeper disappearing while a nested
+    /// ReplicatedReplacingMergeTree deletes its own Keeper metadata, or a filesystem error for a plain nested
+    /// table) after `beforeDropDatabase` has already deactivated the startup task, to test recovery via
+    /// `onDropDatabaseFailed` in both modes.
+    if (local_context->isInternalQuery())
+        fiu_do_on(FailPoints::materialized_postgresql_fail_nested_table_drop,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                "Injected failure while dropping a nested table of a coordinated MaterializedPostgreSQL database");
+        });
+
     /// Modify context into nested_context and pass query to Atomic database.
-    DatabaseAtomic::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, sync);
+    /// In coordinated mode drop the nested replicated table without the usual
+    /// `database_atomic_delay_before_drop_table_sec` delay. The DROP DATABASE teardown removes this replica's
+    /// registration (and, for the last replica, the shared coordination nodes) synchronously, so leaving the
+    /// nested tables' Keeper trees behind for the delay window would let a prompt CREATE on the same keeper
+    /// path adopt a half-dead shared tree: a ghost replica that never answers part fetches, and stale block
+    /// deduplication hashes.
+    DatabaseAtomic::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, isCoordinated() || sync);
+    nested_table_removed_during_drop = true;
+}
+
+
+void DatabaseMaterializedPostgreSQL::renameTable(
+    ContextPtr local_context, const String & table_name, IDatabase & to_database,
+    const String & to_table_name, bool exchange, bool dictionary)
+{
+    /// Reject RENAME / EXCHANGE TABLE. The base `DatabaseAtomic::renameTable` would rename only the local nested
+    /// table, while the replication state keeps the PostgreSQL table name: the cached `materialized_tables`
+    /// wrappers (so `tryGetTable` still serves the old key), the handler's `materialized_storages`, the persisted
+    /// `materialized_postgresql_tables_list` and - in coordinated mode - the shared publication and every peer
+    /// replica. `SHOW TABLES` would follow the renamed nested metadata while reads and the replication startup
+    /// still look for the original name, and a coordinated setup would silently diverge from its peers. Renaming
+    /// a replicated table is not meaningful anyway: the name mirrors the PostgreSQL table it replicates. Only
+    /// genuine (non-internal) user queries are refused; internal cleanup must still be able to move nested tables.
+    if (!local_context->isInternalQuery())
+    {
+        if (isCoordinated())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "RENAME / EXCHANGE TABLE is not supported for a coordinated MaterializedPostgreSQL setup "
+                "(materialized_postgresql_keeper_path is set). "
+                "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "RENAME / EXCHANGE TABLE is not supported for a MaterializedPostgreSQL database: the name of a "
+            "replicated table mirrors the name of the PostgreSQL table it replicates");
+    }
+
+    DatabaseAtomic::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
+}
+
+
+void DatabaseMaterializedPostgreSQL::beforeTruncateDatabase(ContextPtr local_context)
+{
+    /// Reject a database-wide TRUNCATE. Both `TRUNCATE DATABASE db` (which drops each nested table) and
+    /// `TRUNCATE ALL TABLES FROM db` (which truncates each one) are executed by walking the nested tables through
+    /// an internal context (see `InterpreterDropQuery::executeToDatabaseImpl`, which also deliberately skips
+    /// `stopReplication` for a truncate), so they operate on the local nested storages directly and never reach
+    /// the per-table `StorageMaterializedPostgreSQL::checkTableCanBeDropped` guard. The replication handler stays
+    /// live with its slot and publication, so the local copy is wiped while replication keeps advancing from the
+    /// current `confirmed_flush_lsn`: the truncated rows are never reloaded and the database stops reflecting
+    /// PostgreSQL. In coordinated mode this additionally wipes one replica's copy of the shared replicated data
+    /// while the shared slot/publication/`snapshot_completed` marker survive. There is no stop/drop/resnapshot
+    /// path behind a truncate, so refuse it up front. Only genuine (non-internal) user queries are refused;
+    /// internal cleanup must still be able to remove nested tables.
+    if (!local_context->isInternalQuery())
+    {
+        if (isCoordinated())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "TRUNCATE DATABASE / TRUNCATE ALL TABLES is not supported for a coordinated MaterializedPostgreSQL "
+                "setup (materialized_postgresql_keeper_path is set). "
+                "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "TRUNCATE DATABASE / TRUNCATE ALL TABLES is not supported for a MaterializedPostgreSQL database: "
+            "it would delete the local copy of the replicated data while replication continues from the current "
+            "position in PostgreSQL, so the deleted rows would never be reloaded. "
+            "Recreate the database to reload it from a fresh snapshot instead");
+    }
+}
+
+
+void DatabaseMaterializedPostgreSQL::beforeDropDatabase(ContextPtr)
+{
+    nested_table_removed_during_drop = false;
+
+    /// The generic DROP DATABASE path drops every nested table (in `InterpreterDropQuery::executeToDatabaseImpl`)
+    /// before it ever reaches `DatabaseMaterializedPostgreSQL::drop` / `PostgreSQLReplicationHandler::
+    /// shutdownFinal`. In coordinated mode the nested tables are this replica's local copy of the shared
+    /// replicated data, so the last-replica teardown of the shared slot/publication/marker has to be decided
+    /// here - while the nested tables still exist - not after they are gone.
+    ///
+    /// Stop the background startup task first, in every mode (outside `handler_mutex`, which
+    /// `startSynchronization` also takes). The generic drop path calls `stopReplication` right after this hook,
+    /// which clears `synchronization_started` without quiescing the task - so a still-armed startup retry waking
+    /// mid-drop could re-enter `startSynchronization` and recreate the PostgreSQL publication and replication
+    /// slot (and even nested tables) while the drop is already tearing the database down. In coordinated mode it
+    /// additionally must not build the handler / create the nested tables concurrently with the teardown below.
+    /// A refused drop re-arms the task in `onDropDatabaseFailed` (or in the catch below), so deactivating it
+    /// never leaves a database whose background startup had not run yet (attach/restart window) mounted but
+    /// permanently not synchronizing.
+    startup_task->deactivate();
+
+    /// Only coordinated databases have teardown work to do here.
+    if (!isCoordinated())
+        return;
+
+    std::lock_guard lock(handler_mutex);
+
+    /// `coordinatedTeardownBeforeDataDrop` makes the last-replica decision fail-close: if Keeper is unreachable
+    /// it throws, aborting the drop before any nested table is removed (retry once Keeper is reachable again); if
+    /// this is the last replica it removes the shared coordination nodes now so a Keeper outage or a failure
+    /// during the subsequent nested-table drop can never leave the shared state behind after the last copy is
+    /// deleted; and if it is not the last replica it keeps this replica registered until `drop` removes it, after
+    /// the nested tables have actually been dropped.
+    try
+    {
+        /// `startSynchronization` may never have run: on attach or after a restart the coordinated nested tables
+        /// and the persistent `<keeper_path>/replicas/<name>` registration already exist, but `replication_handler`
+        /// is still null until the background startup task builds it. Build it from the persisted settings now,
+        /// purely to run the fail-close teardown below (constructing the handler only resolves the coordination
+        /// path / replica-name macros; it does not connect to PostgreSQL or start replication). Without this,
+        /// dropping the database in that window would delete the local nested tables without unregistering this
+        /// replica or removing the shared slot/publication/`snapshot_completed` marker, and a later recreate on
+        /// the same keeper path could resume from `confirmed_flush_lsn` into empty tables.
+        if (!replication_handler)
+            replication_handler = makeReplicationHandler();
+
+        replication_handler->coordinatedTeardownBeforeDataDrop();
+    }
+    catch (...)
+    {
+        /// The drop is refused and the database stays alive, so recover: undo the `deactivate` above and, if the
+        /// teardown had already stopped the live handler, discard it so the startup task rebuilds replication.
+        recoverAfterRefusedDrop();
+        throw;
+    }
+}
+
+
+void DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop(bool force_resnapshot)
+{
+    /// Undo the `deactivate` from `beforeDropDatabase`: a database whose background startup had not run yet
+    /// (attach/restart window) must still be able to build its handler and start (or, in coordinated mode,
+    /// rejoin) replication; without this it would stay mounted but dead until a server restart. For a database
+    /// whose synchronization already started the rescheduled task is a no-op (see the `synchronization_started`
+    /// guard in `startSynchronization`).
+    ///
+    /// If the handler had already been stopped when the drop was refused - by `stopReplication` in the generic
+    /// drop path, or by the coordinated teardown's one post-shutdown step (the last replica's removal of the
+    /// shared coordination nodes) - re-arming the startup task alone would not recover while
+    /// `synchronization_started` is still set: the flag would make the restarted task a no-op with the handler
+    /// staying dead. Discard the stopped handler and clear the flag, so the startup task rebuilds replication
+    /// from scratch.
+    /// The nested tables that the refused drop removed must be brought back - or the database must fail
+    /// closed, when they cannot be. `applyPartialDropRecoveryMode` decides which of the two applies.
+    if (force_resnapshot)
+    {
+        /// The decision below lives in this object only, but the re-armed startup can be interrupted by a
+        /// server restart, which reconstructs the database from its metadata - with `is_attach` back to
+        /// true and `manual_repair_required` back to false. The steady-state attach path would then look
+        /// for the nested tables the refused drop has removed and retry forever. Record the partial drop
+        /// next to the database metadata first, so the same decision is taken again on every startup until
+        /// one completes (see `startSynchronization`).
+        persistPartialDropRecoveryMarker();
+        applyPartialDropRecoveryMode();
+    }
+
+    if (replication_handler && replication_handler->isStopped())
+    {
+        replication_handler.reset();
+        synchronization_started = false;
+    }
+    if (!shutdown_called)
+    {
+        /// If the refused drop had already run through `stopReplication` (the generic drop path), it set
+        /// `replication_stopped` when it emptied the wrapper map. Control is handed back to the startup
+        /// task now, so restore the startup-window semantics as well: until `startSynchronization`
+        /// republishes the wrappers - indefinitely, if startup keeps failing and retrying - user-facing
+        /// reads must wrap the nested tables on the fly again (see `tryGetTable` / `getTableForRead`)
+        /// instead of falling back to the raw nested tables, which would expose stale and deleted row
+        /// versions. `handler_mutex` is held by the caller; taking `tables_mutex` inside it is the
+        /// documented lock order.
+        {
+            std::lock_guard tables_lock(tables_mutex);
+            replication_stopped = false;
+        }
+        startup_task->activateAndSchedule();
+    }
+}
+
+
+String DatabaseMaterializedPostgreSQL::getPartialDropRecoveryMarkerPath() const
+{
+    /// The name starts with a dot on purpose: `DatabaseOnDisk::iterateMetadataFiles` skips such entries,
+    /// while every other extension in a metadata directory is rejected as an incorrect file name.
+    /// `getMetadataPath` ends with a separator, exactly like in `DatabaseOnDisk::getObjectMetadataPath`.
+    return getMetadataPath() + ".partial_drop_recovery";
+}
+
+
+void DatabaseMaterializedPostgreSQL::persistPartialDropRecoveryMarker()
+{
+    const auto marker_path = getPartialDropRecoveryMarkerPath();
+    try
+    {
+        auto db_disk = getDisk();
+        if (!db_disk->existsFile(marker_path))
+            db_disk->createFile(marker_path);
+    }
+    catch (...)
+    {
+        /// The in-memory recovery still runs, so this is no worse than before the marker existed: only a
+        /// server restart before the re-armed startup finishes would lose the decision. Report it loudly,
+        /// because such a restart leaves the database retrying a startup that cannot succeed.
+        tryLogCurrentException(log,
+            "Could not persist the partial-drop recovery marker " + marker_path + ". If this server is "
+            "restarted before replication is started again, the database will have to be dropped and recreated");
+    }
+}
+
+
+void DatabaseMaterializedPostgreSQL::removePartialDropRecoveryMarker()
+{
+    const auto marker_path = getPartialDropRecoveryMarkerPath();
+    auto db_disk = getDisk();
+    if (db_disk->existsFile(marker_path))
+    {
+        db_disk->removeFileIfExists(marker_path);
+        LOG_INFO(log, "The database recovered from a partially applied DROP DATABASE, removed {}", marker_path);
+    }
+}
+
+
+void DatabaseMaterializedPostgreSQL::applyPartialDropRecoveryMode()
+{
+    /// A refused generic `DROP DATABASE` can already have removed some nested tables before a
+    /// later removal throws. This is also possible in the attach/restart window, before a
+    /// replication handler has been rebuilt. Rebuild as a CREATE-style startup in either case:
+    /// it recreates the missing nested tables, clears the ones that survived the partial drop
+    /// (otherwise the reloaded snapshot would be appended to their pre-drop contents, resurrecting
+    /// the rows PostgreSQL deleted while replication was down) and reloads a snapshot from an
+    /// empty slot.
+    ///
+    /// This is impossible for a user-managed replication slot (`materialized_postgresql_replication_slot`):
+    /// the slot belongs to the user, so the create-style startup neither drops nor recreates it and there is
+    /// no fresh exported snapshot to load - it would reuse the original `materialized_postgresql_snapshot`
+    /// token, which the documentation explicitly allows the user to invalidate (by ending the exporting
+    /// PostgreSQL transaction) once the initial sync is confirmed. Forcing a create-style startup there would
+    /// first clear the nested tables that survived the partial drop and only then fail to load them back.
+    /// Fail close instead: keep the attach-style recovery, which touches no data, and refuse to resume
+    /// replication until the operator repairs the database. Resuming would be worse than refusing: the tables
+    /// the refused drop removed would be silently skipped while the shared slot's `confirmed_flush_lsn`
+    /// advances past their changes, so their data would be lost for good.
+    if (!(*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty())
+    {
+        manual_repair_required = true;
+
+        LOG_ERROR(log,
+            "A refused DROP DATABASE has already removed some of the nested tables, and this database uses a "
+            "user-managed replication slot `{}`, for which the missing tables cannot be reloaded automatically "
+            "(a new snapshot cannot be exported from a slot this server does not manage, and the original "
+            "`materialized_postgresql_snapshot` token is not guaranteed to be valid anymore). Replication will "
+            "not be resumed, so that the changes of the removed tables are not skipped while the replication "
+            "slot advances past them. Drop the database and recreate it with a freshly created replication slot "
+            "and the snapshot exported with it",
+            (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value);
+    }
+    else
+        is_attach = false;
+}
+
+
+void DatabaseMaterializedPostgreSQL::onDropDatabaseFailed(ContextPtr)
+{
+    /// Reached when a DROP DATABASE was refused (threw) after `beforeDropDatabase` returned successfully - most
+    /// importantly when the generic drop path then failed to remove one of the nested tables (e.g. Keeper
+    /// disappeared while a nested ReplicatedReplacingMergeTree was deleting its own Keeper metadata). By that
+    /// point `beforeDropDatabase` has already deactivated the startup task and the generic drop path has already
+    /// run `stopReplication`, so without this the database would stay mounted but permanently not consuming until
+    /// a server restart, which violates the contract that a refused drop never leaves the database silently dead.
+    /// This applies to both modes: the coordinated teardown ran in `beforeDropDatabase`, but the startup-task
+    /// re-arm is needed for a plain database just as much. Recovery is idempotent, so a double call (a failure
+    /// inside `beforeDropDatabase`, which recovers in its own catch, is also routed here) is harmless.
+    std::lock_guard lock(handler_mutex);
+    recoverAfterRefusedDrop(/* force_resnapshot */ nested_table_removed_during_drop);
 }
 
 
 void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
 {
+    /// Reached after the generic DROP DATABASE path has already dropped the nested tables. In coordinated mode
+    /// the last-replica decision (and, for the last replica, the removal of the shared coordination nodes) has
+    /// already been made in `beforeDropDatabase`, while the nested tables still existed. `shutdownFinal` here is
+    /// the authoritative post-data teardown: it removes this replica's registration for the non-last case (now
+    /// that its nested tables are gone) and cleans up the shared PostgreSQL slot/publication for the last case;
+    /// running it after `beforeDropDatabase` is idempotent. In non-coordinated mode this is the only teardown.
     std::lock_guard lock(handler_mutex);
-    if (replication_handler)
-        replication_handler->shutdownFinal();
+
+    /// `replication_handler` may still be null here if the drop happened before the background startup task ever
+    /// ran (attach/restart window; in coordinated mode `beforeDropDatabase` has already built it). The PostgreSQL
+    /// publication and the logical replication slot exist independently of the handler object, so skipping the
+    /// teardown would leak them in PostgreSQL after the database is gone (a leaked slot retains WAL and can
+    /// exhaust `max_replication_slots`). Build the handler from the persisted settings, purely to run the final
+    /// cleanup (constructing it does not connect to PostgreSQL or start replication).
+    if (!replication_handler)
+        replication_handler = makeReplicationHandler();
+    replication_handler->shutdownFinal();
 
     DatabaseAtomic::drop(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context));
 }
@@ -670,8 +1364,13 @@ StoragePtr DatabaseMaterializedPostgreSQL::getTableForRead(const String & table_
 
     /// Startup window: the map is empty because `startSynchronization` has not published the wrappers
     /// yet (see tryGetTable), so wrap the nested table on the fly. If `startSynchronization` publishes
-    /// the wrappers concurrently, the wrapper built here is equivalent to the published one.
-    return std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
+    /// the wrappers concurrently, the wrapper built here is equivalent to the published one - including
+    /// the coordinated flag, which the storage-level DDL guards check (see tryGetTable).
+    auto wrapper = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
+    wrapper->setCoordinated(isCoordinated());
+    if (isReplicationReady())
+        wrapper->setDatabaseReplicationReady();
+    return wrapper;
 }
 
 
@@ -785,6 +1484,20 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         /// was created must not turn its stored definition into a server that cannot boot.
         const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
 
+        /// `InterpreterCreateQuery` enforces the experimental opt-in only for `CREATE DATABASE`
+        /// (it skips the check for every `ATTACH`, so that a database created earlier keeps loading
+        /// after the setting is turned off). A user `ATTACH DATABASE ... ENGINE =
+        /// MaterializedPostgreSQL(...)` that spells out the full definition does not replay anything
+        /// though - it instantiates a brand new experimental database - so without the check here it
+        /// would be a plain bypass of the opt-in. Enforce it on exactly the paths that are treated as
+        /// fresh user input below (an internal metadata replay and the short `ATTACH DATABASE name`
+        /// syntax stay exempt).
+        if (args.create_query.attach && !is_internal_metadata_replay && !args.create_query.attach_short_syntax
+            && !args.context->getSettingsRef()[Setting::allow_experimental_database_materialized_postgresql])
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
+                            "MaterializedPostgreSQL is an experimental database engine. "
+                            "Enable allow_experimental_database_materialized_postgresql to use it");
+
         /// A named collection may specify the endpoint as `addresses_expr`, which fills only
         /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
         /// below is built from `host` / `port`. This engine keeps a single replication connection,
@@ -834,6 +1547,28 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             args.context->getSettingsRef()[Setting::postgresql_connection_attempt_timeout],
             configuration.ssl);
 
+        /// The coordination validator is skipped only when an already-persisted definition is replayed:
+        /// an internal metadata replay (server startup / restore) and the short attach syntax
+        /// (`ATTACH DATABASE name`, which re-reads the stored definition). Those were validated when they
+        /// were created, and re-validating them here could turn a later server-side change (for example a
+        /// macro edit) into a database that cannot load. A user `ATTACH DATABASE ... ENGINE =
+        /// MaterializedPostgreSQL(...)` with a full definition is fresh user input, exactly like a CREATE,
+        /// and stays fail-closed: nothing re-validates the definition later, so letting it through would
+        /// accept the very combinations the validator exists to reject (a coordinated keeper path with a
+        /// plain `ReplacingMergeTree` nested engine, a user-managed slot or snapshot, a per-replica macro
+        /// in the shared path, and so on).
+        if (!is_internal_metadata_replay && !args.create_query.attach_short_syntax)
+        {
+            /// `{uuid}` in the coordination path is only safe when every replica ends up with the same
+            /// UUID, which is the case exactly when the DDL carries it: an ON CLUSTER query, or an
+            /// explicit `UUID '...'` clause. Otherwise each server generates its own UUID. This mirrors
+            /// how `TableZnodeInfo::resolve` decides whether a ReplicatedMergeTree path may use `{uuid}`.
+            const bool allow_uuid_macro = args.context->isDDLOrOnClusterInternal() || args.create_query.has_uuid;
+            validateMaterializedPostgreSQLCoordinationSettings(
+                *postgresql_replica_settings, args.context, args.database_name, args.uuid,
+                configuration.database, /* postgres_table */ "", allow_uuid_macro);
+        }
+
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
             args.context, args.metadata_path, args.uuid, args.create_query.attach,
             args.database_name, configuration.database, connection_info,
@@ -861,13 +1596,14 @@ ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpi
 
 Creates a ClickHouse database with tables from PostgreSQL database. Firstly, database with engine `MaterializedPostgreSQL` creates a snapshot of PostgreSQL database and loads required tables. Required tables can include any subset of tables from any subset of schemas from specified database. Along with the snapshot database engine acquires LSN and once initial dump of tables is performed - it starts pulling updates from WAL. After database is created, newly added tables to PostgreSQL database are not automatically added to replication. They have to be added manually with `ATTACH TABLE db.table` query.
 
-Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. In this case you should use `ATTACH`/ `DETACH PERMANENTLY` queries to reload table completely. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
+Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. In a non-coordinated setup, use `DETACH TABLE ... PERMANENTLY` and `ATTACH TABLE` to reload the table completely. In a coordinated setup, individual table changes are unsupported because they would affect only one replica; reconcile the PostgreSQL schema and recreate the database instead. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
 
 :::note
 This database engine is experimental. To use it, set `allow_experimental_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
 ```sql
 SET allow_experimental_database_materialized_postgresql=1
 ```
+The setting is required for every fresh database definition: for `CREATE DATABASE`, and also for an `ATTACH DATABASE` that spells out the full engine definition. Only replaying an already-persisted definition - server startup, and the short `ATTACH DATABASE name` syntax - does not need it, so a database created earlier keeps loading after the setting has been turned off.
 :::
 
 ## Creating a database {#creating-a-database}
@@ -907,6 +1643,8 @@ After `MaterializedPostgreSQL` database is created, it does not automatically de
 ATTACH TABLE postgres_database.new_table;
 ```
 
+An `ATTACH TABLE` becomes durable only once the table has really joined the publication and the running replication: on failure the table, its entry in [`materialized_postgresql_tables_list`](#materialized-postgresql-tables-list) and the nested table created for it are removed together, so a failed attach can simply be retried. If the nested table cannot be removed either (for example a disk error), the table is deliberately left attached instead of becoming an invisible leftover that every retry would collide with; remove it with `DETACH TABLE ... PERMANENTLY` (see below) and retry the attach.
+
 :::warning
 Before version 22.1, adding a table to replication left a non-removed temporary replication slot (named `{db_name}_ch_replication_slot_tmp`). If attaching tables in ClickHouse version before 22.1, make sure to delete it manually (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Otherwise disk usage will grow. This issue is fixed in 22.1.
 :::
@@ -918,6 +1656,14 @@ It is possible to remove specific tables from replication:
 ```sql
 DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
 ```
+
+`DROP TABLE` of an individual table is not supported for a `MaterializedPostgreSQL` database: it would remove only the local nested table, while the table remains in the persisted [`materialized_postgresql_tables_list`](#materialized-postgresql-tables-list) and in the PostgreSQL publication, so its replication would silently stop. Use `DETACH TABLE ... PERMANENTLY` as shown above, which also removes the table from the tables list and the publication.
+
+Detaching the last replicated table is rejected: it would persist an empty [`materialized_postgresql_tables_list`](#materialized-postgresql-tables-list), and an empty list does not mean "replicate no tables" - it makes the table set be re-derived from the current PostgreSQL schema on the next startup, so the detach would not stick. Drop the database instead.
+
+`RENAME TABLE` and `EXCHANGE TABLES` are not supported for a `MaterializedPostgreSQL` database: the name of a replicated table mirrors the name of the PostgreSQL table it replicates, and renaming only the local table would leave the replication state (including the persisted [`materialized_postgresql_tables_list`](#materialized-postgresql-tables-list)) pointing at the original name. A database-wide truncate (`TRUNCATE DATABASE` / `TRUNCATE ALL TABLES FROM`) is not supported either: it would delete the local copy of the replicated data while replication continues from the current position in PostgreSQL, so the deleted rows would never be reloaded. Recreate the database to reload it from a fresh snapshot instead.
+
+In coordinated mode (see [`materialized_postgresql_keeper_path`](#materialized-postgresql-keeper-path)) adding and removing individual tables is not supported at all, because it would change only the local replica; recreate the database with an updated table list instead.
 
 ## PostgreSQL schema {#schema}
 
@@ -1055,6 +1801,8 @@ The settings can be changed, if necessary, using a DDL query. But it is impossib
 ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
 ```
 
+In coordinated mode the query is also accepted on a standby replica (which has no active consumer) - including a former active worker that has been demoted back to standby: the new value is applied when that replica later becomes the active worker.
+
 ### `materialized_postgresql_use_unique_replication_consumer_identifier` {#materialized_postgresql_use_unique_replication_consumer_identifier}
 
 Use a unique replication consumer identifier for replication. Default: `0`.
@@ -1066,6 +1814,34 @@ Map the PostgreSQL `date` and `timestamp`/`timestamptz` types to ClickHouse `Dat
 If set to `0`, the narrower `Date` and `DateTime` types are used instead (values outside their range or with sub-second precision are not representable).
 
 This setting only controls the column types chosen by type inference when the nested tables are created, so it must be specified at `CREATE DATABASE` time. It cannot be changed afterwards with `ALTER DATABASE ... MODIFY SETTING` (the already created nested tables keep their fixed column types, and such a change is rejected); recreate the database to change it. It is not applicable to the `MaterializedPostgreSQL` table engine, where the column types are declared explicitly.
+
+### `materialized_postgresql_table_engine` {#materialized-postgresql-table-engine}
+
+Engine used for the nested tables that the engine creates. One of `ReplacingMergeTree` (default), `ReplicatedReplacingMergeTree`, `SharedReplacingMergeTree`. The replicated and shared variants require [`materialized_postgresql_keeper_path`](#materialized-postgresql-keeper-path) to be set, which enables cross-replica coordination of the replication slot. `SharedReplacingMergeTree` is only available in ClickHouse Cloud.
+
+It must be specified at `CREATE` time (it determines how the nested tables are created and cannot be changed afterwards).
+
+### `materialized_postgresql_keeper_path` {#materialized-postgresql-keeper-path}
+
+Keeper (or ZooKeeper) path used to coordinate the PostgreSQL logical replication slot across ClickHouse replicas. Default: empty (coordination disabled).
+
+When set, coordination is enabled: exactly one replica (the "active worker") consumes the replication slot at a time, and the others stand by and take over automatically when it becomes unavailable. This is what makes it safe to use a replicated/shared nested table engine for high availability - a PostgreSQL logical replication slot allows only one active consumer, so without coordination two replicas would race and lose changes. The active worker is elected with an ephemeral node in Keeper (similar to `S3Queue`, the Keeper-coordinated `Kafka` engine, and refreshable materialized views), so failover happens once the previous worker's Keeper session ends. A graceful stop of the active worker (`DETACH DATABASE`, a non-last `DROP DATABASE`, server shutdown) releases the leader node explicitly and confirms the removal in Keeper - the node lives under the server's shared Keeper session, which outlives the database - so a peer takes over promptly instead of staying on standby for as long as that session lives.
+
+The path supports the `{uuid}` and `{shard}` macros. It **must resolve to the same value on every participating replica** (it is both the coordination namespace and the root of the shared nested tables), so a per-replica or per-server macro such as `{replica}` or `{server_uuid}` is **rejected at `CREATE` time** - including when it is reached indirectly through a config macro that expands to one - because it would place each replica on a disjoint Keeper subtree. Put the per-replica part in [`materialized_postgresql_replica_name`](#materialized-postgresql-replica-name) instead. A misspelled or unsupported macro in this path or in `materialized_postgresql_replica_name` is also rejected at `CREATE` time (both settings are macro-expanded during validation exactly as the replication handler expands them later), instead of surfacing only in the background startup task. The `{uuid}` macro is accepted only when the UUID is guaranteed to be identical on every replica - an `ON CLUSTER` query, a table inside a `Replicated` database, or an explicit `UUID '...'` clause in the `CREATE` query. A plain `CREATE` generates its own UUID on every server, so `{uuid}` is **rejected at `CREATE` time** there: the replicas would not only sit on disjoint Keeper subtrees, they would still contend for the same PostgreSQL replication slot and publication (their names are derived from the PostgreSQL source, not from the keeper path), each believing it is the only active worker, and WAL could be lost. It cannot be combined with [`materialized_postgresql_use_unique_replication_consumer_identifier`](#materialized_postgresql_use_unique_replication_consumer_identifier), because coordination relies on a single shared replication slot. For the same reason it cannot be combined with a user-managed [`materialized_postgresql_replication_slot`](#materialized-postgresql-replication-slot) or [`materialized_postgresql_snapshot`](#materialized-postgresql-snapshot): coordination owns the shared slot and must be able to drop and recreate it (re-exporting a fresh snapshot) if the active worker dies before the initial snapshot completes, which is impossible for a slot it does not manage. It also requires [`materialized_postgresql_table_engine`](#materialized-postgresql-table-engine) to be set to `ReplicatedReplacingMergeTree` or `SharedReplacingMergeTree`: with a plain `ReplacingMergeTree` the standby replicas would hold no data, so a takeover would lose every row replicated before the failover. Coordination stores its leader/replica/snapshot nodes in Keeper and the nested tables are replicated, so Keeper (or ZooKeeper) must be configured on the server; a coordinated `CREATE DATABASE` on a server with no Keeper is rejected at `CREATE` time rather than left retrying in the background. All of this validation also applies to a user `ATTACH DATABASE` that spells out the full engine definition - it is fresh user input, exactly like a `CREATE`; only replaying an already-persisted definition (server startup, and the short `ATTACH DATABASE name` syntax, which re-reads the stored definition) is exempt.
+
+Only the active worker loads the initial snapshot; the other replicas receive the data (both the snapshot and ongoing changes) through ClickHouse replication of the shared replicated nested tables. A durable snapshot marker in Keeper records that the initial snapshot loaded every table: a new active worker resumes from the slot's confirmed position only when the marker exists, and otherwise clears the nested tables and redoes the snapshot from scratch. The marker is fenced on the live leadership session - a worker whose Keeper session expires mid-snapshot aborts instead of publishing the marker or starting a consumer, so a deposed worker can never mask its successor's replacement snapshot with a stale marker. The redo of the snapshot is fenced the same way: a worker whose leadership session is no longer alive aborts before truncating the nested tables and before dropping or recreating the shared slot, so a deposed worker cannot wipe the tables its successor has already reloaded or discard the slot the successor just created. An active worker whose startup fails before its consumer is running (for example, the snapshot of any of the tables cannot be loaded) aborts the whole attempt - it never starts a consumer that would advance the shared replication slot while skipping the tables whose snapshot failed - and releases the leadership instead of retrying while holding it, so a healthy replica can take over and redo the full snapshot. If that release cannot be confirmed in Keeper (the removal of the leader node failed, which does not prove the node is still there), the leadership claim is given up anyway and a leftover leader node is recognized and removed on the next election: a replica never keeps acting as the active worker, and never touches the shared slot or snapshot state, without provably holding the leader node. The replication slot and the PostgreSQL publication are shared by all participating replicas: dropping the database on one replica keeps them for the others and only dropping the last replica removes them from PostgreSQL. That last-replica decision is made in Keeper *before* any nested table is dropped: if this is the last replica, the shared coordination nodes (including the snapshot marker) are removed first, so that even if the subsequent nested-table drop (or the process) fails, the shared state is never left behind after the last copy is deleted; and a `DROP DATABASE` while Keeper is unreachable fails instead of removing the local nested tables - otherwise it could delete the last copy of the data while leaving the shared slot and snapshot marker behind (a later recreate would then resume into empty tables); retry the drop once Keeper is reachable. This holds even for a `DROP DATABASE` issued immediately after a restart, before the background replication has finished starting up (and a `DROP DATABASE` refused in that window leaves the background startup intact, so the replica still rejoins the setup). More generally, a refused (failed) drop never leaves the replica silently dead: if the failure happened only after the drop had already stopped the replica's consumer - including a failure while deleting this replica's own local nested tables (for example if Keeper disappears while a nested replicated table is removing its own Keeper metadata) - replication is rebuilt in the background and the replica rejoins the setup once Keeper is reachable again. The last-replica decision is fenced in Keeper (on the shared `replicas` node) so that even with concurrent `DROP DATABASE` on different replicas only one of them can ever act as the last replica. A replica that is not the last one keeps its registration in Keeper until its local nested tables have actually been dropped - removing the registration and winning the fence is a single atomic operation, never two steps - so even a server that dies in the middle of a non-last `DROP DATABASE` stays visible to every later last-replica check: no peer can tear down the shared slot, publication and Keeper subtrees around its surviving local data, and after a restart the replica simply resumes replicating (the drop can then be retried). The last replica's teardown also holds an ownership token under the keeper path from the moment it wins that fence until the shared PostgreSQL slot and publication have actually been dropped; while the token is held, a fresh coordinated `CREATE DATABASE` on the same keeper path is rejected - the token's absence is asserted atomically with the joining replica's registration in Keeper, so even a `CREATE` racing the very start of a teardown cannot slip past the fence - and the pending by-name drops can never delete a new setup's slot or publication. If the tearing-down server dies before completing the teardown, the leftover `teardown` node under the keeper path must be removed manually (after dropping the leftover replication slot and publication in PostgreSQL) before the path can be reused. The nested tables of a coordinated database are dropped without the usual delayed-drop window (as with `DROP TABLE ... SYNC`), so their shared Keeper subtrees do not outlive the `DROP DATABASE`; and if the final PostgreSQL cleanup of the last replica still fails, a leftover publication with no surviving coordination state in Keeper is detected on the next coordinated `CREATE DATABASE` and dropped rather than silently adopted with its stale table set. All replicas of one coordinated setup must also agree on the naming-affecting settings - [`materialized_postgresql_table_engine`](#materialized-postgresql-table-engine), [`materialized_postgresql_schema`](#materialized-postgresql-schema), [`materialized_postgresql_schema_list`](#materialized-postgresql-schema-list) and `materialized_postgresql_tables_list_with_schema` - and must replicate the same PostgreSQL source: the same source database and, for the single-table `MaterializedPostgreSQL` table engine, the same source table (in particular, a coordinated single-table engine and a coordinated database engine can never share one keeper path, because they derive different replication slot and publication names even for the same source table). These determine how the ClickHouse names of the shared nested tables (and the names of the shared replication slot and publication) are derived. The first replica publishes this identity under the keeper path, and a replica that disagrees with it is rejected (at `CREATE` time when the setup already exists in Keeper): it would either adopt the same publication yet build a disjoint replicated tree that never receives the other replicas' data, or share the coordination bookkeeping while working against a different PostgreSQL slot and publication, so that dropping one setup could tear down or leak the other's PostgreSQL objects. The set of replicated tables is fenced the same way: the first replica publishes its derived table set under the keeper path before it builds any nested table (the shared publication is only created later, by the elected active worker), and a replica whose derived set differs is refused - so two replicas created concurrently with different `materialized_postgresql_tables_list` values (or with the same empty value around a source schema change) cannot silently build diverging nested tables on one keeper path. Once the shared publication exists, joining replicas derive their table set from it, so a refused join converges by itself when the lists are reconciled. If the shared publication is temporarily absent - for example it was dropped externally and has to be recreated - the table set fenced in Keeper is used instead of the local `materialized_postgresql_tables_list`, so a replica that once adopted the publication's table set over a mismatching local list keeps that set across restarts and recreates the publication with it. The shared nested-table schema is authoritative: a replica whose PostgreSQL schema has drifted from it (e.g. the source table was altered or renamed after the coordinated database was first created, since `MaterializedPostgreSQL` continues by column position and does not track PostgreSQL DDL) cannot join and reports a schema-drift error; reconcile the PostgreSQL schema or recreate the database. Dynamically adding, removing, or renaming individual tables (`ATTACH TABLE` / `DETACH TABLE PERMANENTLY` / `DROP TABLE` / `RENAME TABLE` / `EXCHANGE TABLES`) is not supported in coordinated mode: each would only change the local replica while the shared publication, tables-list setting and peer replicas keep the old set, silently diverging the replicas. Recreate the database with an updated `materialized_postgresql_tables_list` instead. For the same reason a database-wide truncate (`TRUNCATE DATABASE` / `TRUNCATE ALL TABLES FROM`) is also rejected: it would locally wipe this replica's copy of the shared replicated data while the shared slot, publication and snapshot marker (and the live consumer) stay in place.
+
+Coordinated mode also does not support a column-filtered `materialized_postgresql_tables_list` (e.g. `table1(col1, col2)`): all replicas share one set of nested tables on the same Keeper path and must agree on the exact column projection, but the per-table column list is taken from each replica's local setting rather than from the shared publication, so a column filter is rejected at `CREATE` time. List the tables without column filters so every replica builds the identical shared schema.
+
+### `materialized_postgresql_replica_name` {#materialized-postgresql-replica-name}
+
+Replica identity used for the coordination node and for the nested replicated table engine. Default: `{replica}`. Supports the `{uuid}`, `{shard}` and `{replica}` macros. It **must resolve to a distinct value on every replica**, and this is enforced: each replica's registration node stores its identity, so a `CREATE` whose replica name is already registered by another replica is rejected (synchronously when the registration is already visible in Keeper) instead of silently collapsing two replicas onto one registration, which would corrupt the bookkeeping that decides when the last replica removes the shared replication slot and publication.
+
+The expanded value must also be a **single Keeper node name**: an empty value, or a value containing `/` (such as `'{shard}/{replica}'`), is rejected at `CREATE` time and again when the replica registers itself. Replicas are tracked as `<keeper_path>/replicas/<name>`, and the last-replica fence fires by removing the `/replicas` node once it becomes empty; with an extra path level in between it never becomes empty, so the shared replication slot, publication and snapshot marker would leak forever, even after the last replica is dropped.
+
+Together with [`materialized_postgresql_keeper_path`](#materialized-postgresql-keeper-path), this setting forms the **coordination identity** of the replica, which must stay the same for the lifetime of the coordinated setup. Both settings are re-expanded from the current server configuration on every startup, while the shared nested tables keep the expansion they were created with and the `<keeper_path>/replicas/<name>` registration is persistent. A configuration-only change of a macro they expand through (directly, or through an intermediate config macro) is therefore refused when the replica starts up, with an error naming both the new and the previously used identity: continuing would make the replica elect, register and tear down under a different Keeper identity than the shared data it already holds, leaving the old `/replicas` subtree unable to drain (leaking the shared replication slot, publication and snapshot marker) and possibly splitting leader election from the shared nested-table path. Restore the configuration to the values the replica was created with, or drop the engine on that replica and recreate it on the new coordination path.
+
+The refusal keeps the engine mounted and droppable, and dropping it in that state tears down the coordination state that actually exists: the drop path takes the identity persisted in the metadata of the nested tables the replica owns, not the one the current configuration expands to, so it unregisters and makes its last-replica decision under the original identity instead of orphaning it. This also holds when the settings cannot be expanded at all any more, for instance because a macro they go through was removed from the configuration. A replica whose name changed while it had registered itself but had not created any nested table yet - the one window in which no nested-table metadata records the original identity - is recovered from its registration in Keeper instead: that registration stores an identity of the replica that no macro feeds into, so the stale node is recognized and removed (both when the replica starts up and when it is dropped) rather than being left behind to keep the shared `replicas` node non-empty forever, which would stop any future drop from ever becoming the last-replica drop.
 
 ## TLS/SSL {#tls-ssl}
 
@@ -1085,6 +1861,12 @@ The TLS/SSL parameters are part of the PostgreSQL connection parameters, which a
 
 ## Notes {#notes}
 
+### Refused `DROP DATABASE` {#refused-drop-database}
+
+A `DROP DATABASE` that fails (for example because a nested table cannot be removed) never leaves the database silently dead: replication is rebuilt in the background and the database keeps replicating as if the statement had never been issued, so the drop can simply be retried. Such a failure can happen after some of the replicated tables have already been removed. The recovery then reloads a fresh snapshot of every table, clearing the tables that survived the failed drop first, so the database converges to the exact current state of PostgreSQL instead of keeping rows that were deleted in PostgreSQL while replication was down.
+
+This automatic repair is not possible for a user-managed replication slot (see [`materialized_postgresql_replication_slot`](#materialized-postgresql-replication-slot) and the section below): a snapshot cannot be exported from a slot ClickHouse does not manage, and the snapshot identifier passed in [`materialized_postgresql_snapshot`](#materialized-postgresql-snapshot) is only valid as long as the exporting PostgreSQL transaction is open. If a failed `DROP DATABASE` of such a database has already removed some of the replicated tables, replication is not resumed - the removed tables would be silently skipped while the replication slot advances past their changes, losing their data. The refusal is reported in the server log and the database has to be dropped and recreated with a freshly created replication slot and the snapshot exported with it.
+
 ### Failover of the logical replication slot {#logical-replication-slot-failover}
 
 Logical Replication Slots which exist on the primary are not available on standby replicas.
@@ -1092,6 +1874,8 @@ So if there is a failover, new primary (the old physical standby) won't be aware
 A solution to this is to manage replication slots yourself and define a permanent replication slot (some information can be found [here](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). You'll need to pass slot name via `materialized_postgresql_replication_slot` setting, and it has to be exported with `EXPORT SNAPSHOT` option. The snapshot identifier needs to be passed via `materialized_postgresql_snapshot` setting.
 
 Please note that this should be used only if it is actually needed. If there is no real need for that or full understanding why, then it is better to allow the table engine to create and manage its own replication slot.
+
+Alternatively, for high availability across ClickHouse replicas, set [`materialized_postgresql_keeper_path`](#materialized-postgresql-keeper-path) together with a replicated nested table engine ([`materialized_postgresql_table_engine`](#materialized-postgresql-table-engine)). Several ClickHouse replicas then share one replication slot: exactly one of them consumes it at a time and the others take over automatically on failure, while the nested tables are kept in sync as ClickHouse replicas.
 
 **Example (from [@bchrobot](https://github.com/bchrobot))**
 

@@ -512,6 +512,23 @@ public:
     /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;
 
+    /// Called by DROP DATABASE before any of the database's tables are dropped, so an engine can veto the drop
+    /// (throw) before any local data is removed - e.g. to fail-close while a coordination service it depends on
+    /// is unreachable. Not called for DETACH or TRUNCATE. Default: no-op.
+    virtual void beforeDropDatabase(ContextPtr /*context*/) {}
+
+    /// Called by TRUNCATE DATABASE / TRUNCATE ALL TABLES FROM db before any of the database's tables are
+    /// truncated or dropped (the database-wide truncate is implemented by walking the nested tables directly),
+    /// so an engine can veto it (throw) before any local data is removed. Default: no-op.
+    virtual void beforeTruncateDatabase(ContextPtr /*context*/) {}
+
+    /// Called by DROP DATABASE if the drop failed (threw) at any point after `beforeDropDatabase` was invoked,
+    /// so an engine that committed teardown work in `beforeDropDatabase` (e.g. stopping a coordinated
+    /// replication handler before the nested tables are removed) can recover when the subsequent local
+    /// nested-table drop throws and the drop is refused, instead of staying mounted but silently stopped.
+    /// Must be idempotent. Default: no-op.
+    virtual void onDropDatabaseFailed(ContextPtr /*context*/) {}
+
     /// Delete data and metadata stored inside the database, if exists.
     virtual void drop(ContextPtr /*context*/) {}
 
