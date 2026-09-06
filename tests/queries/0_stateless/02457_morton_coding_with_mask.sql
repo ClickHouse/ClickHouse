@@ -140,4 +140,22 @@ except
 drop table if exists morton_numbers_mask_02457;
 drop table if exists morton_numbers_mask_3_02457;
 
+-- The ratio-mask form is the second consumer of the per-dimension decoders, through
+-- FunctionMortonDecode::shrink(). Cover every ratio, staying inside each one's domain.
+SELECT '----- SHRINK RATIO 2..8 -----';
+select count() from (select number as n from numbers(50000))
+where mortonDecode(tuple(2), mortonEncode(tuple(2), n % 4294967296)) != tuple(n % 4294967296);
+select count() from (select number as n from numbers(50000))
+where mortonDecode(tuple(3), mortonEncode(tuple(3), n % 2097152)) != tuple(n % 2097152);
+select count() from (select number as n from numbers(50000))
+where mortonDecode(tuple(4), mortonEncode(tuple(4), n % 65536)) != tuple(n % 65536);
+select count() from (select number as n from numbers(50000))
+where mortonDecode(tuple(5), mortonEncode(tuple(5), n % 4096)) != tuple(n % 4096);
+select count() from (select number as n from numbers(50000))
+where mortonDecode(tuple(6), mortonEncode(tuple(6), n % 1024)) != tuple(n % 1024);
+select count() from (select number as n from numbers(50000))
+where mortonDecode(tuple(7), mortonEncode(tuple(7), n % 512)) != tuple(n % 512);
+select count() from (select number as n from numbers(50000))
+where mortonDecode(tuple(8), mortonEncode(tuple(8), n % 256)) != tuple(n % 256);
+
 SELECT '----- END -----';
