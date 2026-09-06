@@ -37,3 +37,51 @@ multi-column: PREWHERE
 multi-column: WHERE
 100	1
 200	2
+nullable argument, column read first: PREWHERE
+10
+20
+nullable argument, column read first: WHERE
+10
+20
+nullable argument, argument read first: PREWHERE
+10
+20
+nullable argument, tuple body: PREWHERE
+10
+20
+nullable argument, nested lambda: PREWHERE
+10
+20
+nullable argument, outer binder with a nested lambda: PREWHERE
+10
+20
+unread first argument: PREWHERE
+10
+20
+colliding name resolves per site
+[310]
+[320]
+nullable column, plain argument: PREWHERE
+10
+20
+LowCardinality(String) column: PREWHERE
+a
+b
+argument named after a generated action name
+[3]
+argument named after a generated action name, nested use
+[13]
+argument named after a generated action name, analyzer disabled
+[3]
+nested lambda argument named after a generated action name
+[3]
+nested lambda argument named after a generated action name, analyzer disabled
+[3]
+generated action name argument, read in the body
+[6]
+generated action name argument, read in the body, analyzer disabled
+[45]
+column named after a generated action name
+[3]
+column named after a generated action name, analyzer disabled
+[3]
