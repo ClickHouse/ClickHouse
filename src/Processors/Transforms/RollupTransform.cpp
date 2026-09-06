@@ -70,29 +70,56 @@ MutableColumnPtr GroupByModifierTransform::getColumnWithDefaults(size_t key, siz
     return result_column;
 }
 
-RollupTransform::RollupTransform(SharedHeader header, AggregatingTransformParamsPtr params_, bool use_nulls_)
+RollupTransform::RollupTransform(
+    SharedHeader header, AggregatingTransformParamsPtr params_, bool use_nulls_, const std::vector<size_t> & key_positions_)
     : GroupByModifierTransform(std::move(header), params_, use_nulls_)
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
-{}
+{
+    num_group_by_elements = key_positions_.empty() ? keys.size() : key_positions_.size();
+
+    /// A prefix holds a key iff it reaches any position that key was written at, so the key leaves
+    /// the prefix only once it has shrunk past the *first* of them. Shrinking past a later position
+    /// of a repeated key drops nothing and re-emits the same grouping set, which is what the list
+    /// as written asks for.
+    key_dropped_at_position.assign(num_group_by_elements, no_key);
+    std::vector<bool> already_seen(keys.size(), false);
+    for (size_t position = 0; position < num_group_by_elements; ++position)
+    {
+        const size_t key = key_positions_.empty() ? position : key_positions_[position];
+        if (!already_seen[key])
+        {
+            already_seen[key] = true;
+            key_dropped_at_position[position] = key;
+        }
+    }
+}
 
 Chunk RollupTransform::generate()
 {
     if (!consumed_chunks.empty())
     {
         mergeConsumed();
-        last_removed_key = keys.size();
+        last_removed_position = num_group_by_elements;
+        set_counter = 0;
     }
 
     auto gen_chunk = std::move(current_chunk);
+    /// `set_counter` counts the keys dropped so far, which is the number the emitted chunk carries.
+    const UInt64 gen_set = set_counter;
 
-    if (last_removed_key)
+    if (last_removed_position)
     {
-        --last_removed_key;
-        auto key = keys[last_removed_key];
+        --last_removed_position;
 
         auto num_rows = gen_chunk.getNumRows();
         auto columns = gen_chunk.getColumns();
-        columns[key] = getColumnWithDefaults(key, num_rows);
+
+        if (const size_t key_to_drop = key_dropped_at_position[last_removed_position]; key_to_drop != no_key)
+        {
+            auto key = keys[key_to_drop];
+            columns[key] = getColumnWithDefaults(key, num_rows);
+            ++set_counter;
+        }
 
         Chunks chunks;
         chunks.emplace_back(std::move(columns), num_rows);
@@ -101,7 +128,7 @@ Chunk RollupTransform::generate()
 
     finalizeChunk(gen_chunk, aggregates_mask);
     if (!gen_chunk.empty())
-        gen_chunk.addColumn(0, ColumnUInt64::create(gen_chunk.getNumRows(), set_counter++));
+        gen_chunk.addColumn(0, ColumnUInt64::create(gen_chunk.getNumRows(), gen_set));
     return gen_chunk;
 }
 

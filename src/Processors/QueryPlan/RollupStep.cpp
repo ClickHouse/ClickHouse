@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -51,9 +52,11 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-RollupStep::RollupStep(const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_)
+RollupStep::RollupStep(
+    const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_, std::vector<size_t> key_positions_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(generateOutputHeader(params_.getHeader(*input_header_, final_), params_.keys, use_nulls_)), getTraits())
     , params(std::move(params_))
+    , key_positions(std::move(key_positions_))
     , keys_size(params.keys_size)
     , final(final_)
     , use_nulls(use_nulls_)
@@ -72,7 +75,7 @@ void RollupStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
             return addGroupingSetForTotals(header, params.keys, use_nulls, settings, keys_size);
 
         auto transform_params = std::make_shared<AggregatingTransformParams>(header, std::move(params), true);
-        return std::make_shared<RollupTransform>(header, std::move(transform_params), use_nulls);
+        return std::make_shared<RollupTransform>(header, std::move(transform_params), use_nulls, key_positions);
     });
 }
 
@@ -125,6 +128,25 @@ void RollupStep::serialize(Serialization & ctx) const
     /// states, so the argument columns do not exist in its input), which the generic
     /// `serializeAggregateDescriptions` rejects.
     serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out);
+
+    /// A peer too old for the positions would expand from the deduplicated key list and answer a
+    /// repeated-key CUBE or ROLLUP with the grouping sets this change exists to correct. Dropping
+    /// them silently is a wrong result on a mixed-version cluster, so fail instead - and only when
+    /// the query actually repeats a key, which leaves every other plan shippable as before.
+    if (!key_positions.empty() && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Serializing a {} whose GROUP BY list repeats a key requires query plan serialization version >= {}; "
+            "the receiving server is too old and would expand the wrong grouping sets",
+            "RollupStep",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS);
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
+    {
+        writeVarUInt(key_positions.size(), ctx.out);
+        for (size_t position : key_positions)
+            writeVarUInt(position, ctx.out);
+    }
 }
 
 QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)
@@ -173,7 +195,23 @@ QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)
     /// planner-built params carry `only_merge = false` as well.
     params.only_merge = false;
 
-    return std::make_unique<RollupStep>(ctx.input_headers.front(), std::move(params), final, use_nulls);
+    std::vector<size_t> key_positions;
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
+    {
+        UInt64 num_positions = 0;
+        readVarUInt(num_positions, ctx.in);
+        key_positions.resize(num_positions);
+        for (auto & position : key_positions)
+        {
+            UInt64 value = 0;
+            readVarUInt(value, ctx.in);
+            if (value >= keys.size())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Grouping key position {} is out of range", value);
+            position = value;
+        }
+    }
+
+    return std::make_unique<RollupStep>(ctx.input_headers.front(), std::move(params), final, use_nulls, std::move(key_positions));
 }
 
 void registerRollupStep(QueryPlanStepRegistry & registry);
