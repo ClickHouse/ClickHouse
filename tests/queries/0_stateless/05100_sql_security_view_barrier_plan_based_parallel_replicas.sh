@@ -29,6 +29,7 @@ CREATE USER $invoker;
 CREATE USER $definer;
 GRANT SELECT ON $db.pb_pr_secrets TO $definer;
 GRANT SELECT ON $db.pb_pr_secrets TO $invoker;
+GRANT CREATE TEMPORARY TABLE ON *.* TO $invoker;
 
 CREATE ROW POLICY ${definer}_source_policy ON $db.pb_pr_secrets
 FOR SELECT USING owner = 'visible_owner' TO $definer;
