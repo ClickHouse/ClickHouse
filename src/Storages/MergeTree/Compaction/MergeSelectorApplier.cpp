@@ -22,6 +22,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_selector_window_size;
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
+    extern const MergeTreeSettingsUInt64 min_partition_age_to_force_merge_seconds;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsUInt64 parts_to_throw_insert;
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
@@ -121,6 +122,8 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
 
     if (!ctx.merge_tree_settings[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
         simple_merge_settings.min_age_to_force_merge = ctx.merge_tree_settings[MergeTreeSetting::min_age_to_force_merge_seconds];
+
+    simple_merge_settings.min_partition_age_to_force_merge = ctx.merge_tree_settings[MergeTreeSetting::min_partition_age_to_force_merge_seconds];
 
     if (ctx.aggressive)
         simple_merge_settings.base = 1;

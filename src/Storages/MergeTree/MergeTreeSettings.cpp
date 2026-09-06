@@ -785,6 +785,34 @@ partition and not on subset.
 Possible values:
 - true, false
 )", false) \
+    DECLARE(UInt64, min_partition_age_to_force_merge_seconds, 0, R"(
+Merge parts in a partition if every part in it is older than this value, i.e.
+the partition no longer receives inserts. Unlike
+`min_age_to_force_merge_seconds` with `min_age_to_force_merge_on_partition_only`,
+the partition does not have to fit into a single merge: each merge still
+respects `max_bytes_to_merge_at_max_space_in_pool`. Works for Simple and
+StochasticSimple merge selectors.
+
+Forcing works exactly like `min_age_to_force_merge_seconds`: it waives the
+size-ratio requirement that normally keeps an unbalanced merge from being
+assigned, and it also waives the `min_parts_to_merge_at_once` floor, so a
+forced merge can cover fewer parts than that floor asks for. No other
+heuristic is turned off: `merge_selector_window_size` still bounds which parts
+are examined, and `merge_selector_enable_heuristic_to_remove_small_parts_at_right`
+still trims a trailing small part from a selected range of three parts or more.
+Either of those that a workload needs off must be turned off explicitly through
+its own setting.
+
+Cannot be combined with `min_age_to_force_merge_seconds` together with
+`min_age_to_force_merge_on_partition_only`. That pair merges a whole partition
+at once, and only such a merge is marked final, which is what lets a
+`ReplacingMergeTree` run `CLEANUP`; forcing regular merges by partition age
+would pre-empt it. Use the pair for partitions that fit into a single merge and
+this setting for the ones that do not.
+
+Possible values:
+- Positive integer.
+)", 0) \
     DECLARE(Bool, enable_max_bytes_limit_for_min_age_to_force_merge, true, R"(
 If settings `min_age_to_force_merge_seconds` and
 `min_age_to_force_merge_on_partition_only` should respect setting
@@ -2682,6 +2710,20 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool backg
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
             (*this)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_optimize_entire_partition].value,
             background_pool_tasks);
+    }
+
+    if ((*this)[MergeTreeSetting::min_partition_age_to_force_merge_seconds]
+        && (*this)[MergeTreeSetting::min_age_to_force_merge_on_partition_only]
+        && (*this)[MergeTreeSetting::min_age_to_force_merge_seconds])
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting 'min_partition_age_to_force_merge_seconds' cannot be combined with "
+            "'min_age_to_force_merge_seconds' + 'min_age_to_force_merge_on_partition_only': the latter merges a "
+            "whole partition at once, and only that merge is marked final, which is what enables "
+            "ReplacingMergeTree cleanup. Use one of the two mechanisms: "
+            "'min_age_to_force_merge_on_partition_only' for partitions that fit into a single merge, "
+            "'min_partition_age_to_force_merge_seconds' for partitions that do not.");
     }
 
     // Zero index_granularity is nonsensical.
