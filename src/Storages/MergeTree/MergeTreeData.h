@@ -2049,6 +2049,10 @@ protected:
             const DiskPtr disk;
 
             bool is_loaded = false;
+            /// Set from the ancestor that loaded `Active` and therefore covers this part. Copied by value
+            /// because the tree does not outlive active parts loading and the cover may be replaced by a merge.
+            bool covering_part_is_non_transactional = false;
+            String covering_part_name;
             std::map<MergeTreePartInfo, std::shared_ptr<Node>> children;
         };
 
@@ -2280,7 +2284,9 @@ private:
         const String & part_name,
         const DiskPtr & part_disk_ptr,
         MergeTreeDataPartState to_state,
-        DB::SharedMutex & part_loading_mutex);
+        DB::SharedMutex & part_loading_mutex,
+        bool covering_part_is_non_transactional = false,
+        const String & covering_part_name = {});
 
     LoadPartResult loadDataPartWithRetries(
         const MergeTreePartInfo & part_info,
@@ -2290,7 +2296,9 @@ private:
         DB::SharedMutex & part_loading_mutex,
         size_t backoff_ms,
         size_t max_backoff_ms,
-        size_t max_tries);
+        size_t max_tries,
+        bool covering_part_is_non_transactional = false,
+        const String & covering_part_name = {});
 
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
