@@ -1946,12 +1946,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
     for (ColumnVariant::Discriminator i = 0; i != new_variants.size(); ++i)
         new_variant_types_to_new_global_discriminator[new_variants[i]->getName()] = i;
 
-    /// Create set of old variant types.
     const auto & old_variants = from_variant.getVariants();
-    UnorderedMapWithMemoryTracking<String, ColumnVariant::Discriminator> old_variant_types_to_old_global_discriminator;
-    old_variant_types_to_old_global_discriminator.reserve(old_variants.size());
-    for (ColumnVariant::Discriminator i = 0; i != old_variants.size(); ++i)
-        old_variant_types_to_old_global_discriminator[old_variants[i]->getName()] = i;
 
     /// Check that the set of old variants types is a subset of new variant types and collect new global discriminator for each old global discriminator.
     UnorderedMapWithMemoryTracking<ColumnVariant::Discriminator, ColumnVariant::Discriminator> old_global_discriminator_to_new;
@@ -1962,29 +1957,64 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
     /// representation instead of reusing it as-is, otherwise later reads would interpret the bytes using the
     /// wrong layout and crash. We keep the converting wrapper keyed by the old global discriminator.
     UnorderedMapWithMemoryTracking<ColumnVariant::Discriminator, WrapperType> old_global_discriminator_to_convert_wrapper;
-    for (const auto & [old_variant_type, old_discriminator] : old_variant_types_to_old_global_discriminator)
+    /// Track which new variants an old variant is mapped onto, so that only genuinely new variants are appended below.
+    VectorWithMemoryTracking<bool> new_discriminator_mapped(new_variants.size(), false);
+    for (ColumnVariant::Discriminator old_discriminator = 0; old_discriminator != old_variants.size(); ++old_discriminator)
     {
-        auto it = new_variant_types_to_new_global_discriminator.find(old_variant_type);
-        if (it == new_variant_types_to_new_global_discriminator.end())
-            throw Exception(
-                ErrorCodes::CANNOT_CONVERT_TYPE,
-                "Cannot convert type {} to {}. Conversion between Variant types is allowed only when new Variant type is an extension "
-                "of an initial one", from_variant.getName(), to_variant.getName());
-        old_global_discriminator_to_new[old_discriminator] = it->second;
-
         const auto & old_type = old_variants[old_discriminator];
-        const auto & new_type = new_variants[it->second];
-        if (!old_type->equals(*new_type))
+        ColumnVariant::Discriminator new_discriminator = 0;
+        bool force_convert = false;
+
+        auto it = new_variant_types_to_new_global_discriminator.find(old_type->getName());
+        if (it != new_variant_types_to_new_global_discriminator.end())
+        {
+            new_discriminator = it->second;
+        }
+        else
+        {
+            /// The old variant is not present by name in the new Variant. This is normally forbidden,
+            /// but two aggregate-state types can share the same state representation while differing by
+            /// function name (e.g. quantileExactTuple vs quantilesExactTuple(0.9)), possibly nested
+            /// inside a composite type. buildCommonHeaderForUnion may pick one UNION/set-op branch's
+            /// Variant type as the common header for another branch: IDataType::equals() treats such
+            /// members as equal, so the branch must be physically converted to the equals()-equal new
+            /// variant rather than rejected. Otherwise the branch keeps emitting its own variant type
+            /// and the strict per-stream block-structure check aborts at pipeline build.
+            std::optional<ColumnVariant::Discriminator> matched;
+            for (size_t j = 0; j != new_variants.size(); ++j)
+            {
+                if (!new_discriminator_mapped[j] && old_type->equals(*new_variants[j]))
+                {
+                    matched = static_cast<ColumnVariant::Discriminator>(j);
+                    break;
+                }
+            }
+            if (!matched)
+                throw Exception(
+                    ErrorCodes::CANNOT_CONVERT_TYPE,
+                    "Cannot convert type {} to {}. Conversion between Variant types is allowed only when new Variant type is an extension "
+                    "of an initial one", from_variant.getName(), to_variant.getName());
+            new_discriminator = *matched;
+            /// Names differ (same representation): force a real converting wrapper so the subcolumn is
+            /// physically rebuilt with the target function instead of passing through unchanged.
+            force_convert = true;
+        }
+
+        old_global_discriminator_to_new[old_discriminator] = new_discriminator;
+        new_discriminator_mapped[new_discriminator] = true;
+
+        const auto & new_type = new_variants[new_discriminator];
+        if (force_convert || !old_type->equals(*new_type))
             old_global_discriminator_to_convert_wrapper[old_discriminator] = prepareUnpackDictionaries(old_type, new_type);
     }
 
     /// Collect variant types and their global discriminators that should be added to the old Variant to get the new Variant.
     VectorWithMemoryTracking<std::pair<DataTypePtr, ColumnVariant::Discriminator>> variant_types_and_discriminators_to_add;
-    variant_types_and_discriminators_to_add.reserve(new_variants.size() - old_variants.size());
+    variant_types_and_discriminators_to_add.reserve(new_variants.size());
     for (size_t i = 0; i != new_variants.size(); ++i)
     {
-        if (!old_variant_types_to_old_global_discriminator.contains(new_variants[i]->getName()))
-            variant_types_and_discriminators_to_add.emplace_back(new_variants[i], i);
+        if (!new_discriminator_mapped[i])
+            variant_types_and_discriminators_to_add.emplace_back(new_variants[i], static_cast<ColumnVariant::Discriminator>(i));
     }
 
     return [old_global_discriminator_to_new, old_global_discriminator_to_convert_wrapper, old_variants, new_variants, variant_types_and_discriminators_to_add]
@@ -3022,6 +3052,47 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
         return wrapper;
 }
 
+namespace
+{
+
+/// IDataType::equals() is tolerant of aggregate-state types that share the same state representation
+/// but differ by function name (e.g. quantileExactTuple vs quantilesExactTuple(0.9)); it compares
+/// them via haveSameStateRepresentation(). If such a difference is nested inside a composite type
+/// (Tuple/Array/Map/...), the top-level types still compare equal(), so an identity CAST wrapper
+/// would pass the source column through unchanged - it keeps emitting the source aggregate function
+/// while the target type advertises another. The column's name (getName()) embeds the actual
+/// function, so the strict per-stream block-structure check later aborts. Detect this so we skip the
+/// identity wrapper and fall through to the real recursive wrapper, which rebuilds each aggregate
+/// column with the target function. Returns true only when the two (already equals()-equal) types
+/// contain an aggregate-function subtype that is not strictly equal.
+bool hasNonStrictlyEqualAggregateSubtype(const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    const auto * from_agg = typeid_cast<const DataTypeAggregateFunction *>(from_type.get());
+    const auto * to_agg = typeid_cast<const DataTypeAggregateFunction *>(to_type.get());
+    if (from_agg && to_agg)
+        return !DataTypeAggregateFunction::strictEquals(from_type, to_type);
+
+    /// The two types are equal() (same structure), so their children line up positionally.
+    DataTypes from_children;
+    DataTypes to_children;
+    from_type->forEachChild([&](const IDataType & child) { from_children.push_back(child.getPtr()); });
+    to_type->forEachChild([&](const IDataType & child) { to_children.push_back(child.getPtr()); });
+
+    if (from_children.size() != to_children.size())
+        return false;
+
+    for (size_t i = 0; i < from_children.size(); ++i)
+    {
+        const auto * from_child_agg = typeid_cast<const DataTypeAggregateFunction *>(from_children[i].get());
+        const auto * to_child_agg = typeid_cast<const DataTypeAggregateFunction *>(to_children[i].get());
+        if (from_child_agg && to_child_agg && !DataTypeAggregateFunction::strictEquals(from_children[i], to_children[i]))
+            return true;
+    }
+    return false;
+}
+
+}
+
 FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
 {
     if (isUInt8(from_type) && isBool(to_type))
@@ -3043,7 +3114,11 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             if (DataTypeAggregateFunction::strictEquals(from_type, to_type))
                 return createIdentityWrapper(from_type);
         }
-        else
+        /// The same must hold for aggregate-state types nested inside a composite type: an identity
+        /// wrapper would pass the source column through with its original aggregate function, leaving
+        /// the physical column name diverging from the target type name (see
+        /// hasNonStrictlyEqualAggregateSubtype). Fall through to the real recursive wrapper in that case.
+        else if (!hasNonStrictlyEqualAggregateSubtype(from_type, to_type))
             return createIdentityWrapper(from_type);
     }
     else if (WhichDataType(from_type).isNothing())
