@@ -1,0 +1,20 @@
+--- UInt32 partition (Avro int) ---
+1	x
+2	y
+3	z
+y
+--- DateTime64 partition (Avro long from Decimal64 ticks) ---
+2024-01-01 00:00:00.123456	a
+2024-06-15 12:30:00.654321	b
+2
+--- Bucket partition (Avro int from Field::UInt64) ---
+1	a
+2	b
+3	c
+4	d
+spec field-id: 1001
+manifest partition names: id
+manifest schema: {"field-id":1001,"name":"id","type":"int"}
+--- Float32 partition (Avro float from Field::Float64) ---
+1.25	a
+2.5	b
