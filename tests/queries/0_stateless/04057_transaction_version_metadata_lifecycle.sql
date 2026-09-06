@@ -5,8 +5,12 @@
 
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (n Int64) ENGINE = MergeTree ORDER BY n
-    SETTINGS old_parts_lifetime=3600;
+    SETTINGS old_parts_lifetime=3600, merge_tree_clear_old_parts_interval_seconds=100000;
 SYSTEM STOP MERGES t;
+-- A rolled back part's `remove_time` is 0, so `old_parts_lifetime` does not hold it and the parts
+-- cleanup could delete it before the assertions below read `system.parts`. This statement cannot
+-- stop an iteration already in flight; the pinned interval above keeps that one's parts pass shut.
+SYSTEM STOP CLEANUP t;
 SET throw_on_unsupported_query_inside_transaction=0;
 
 -- 1. Non-transactional insert: creation_csn = NonTransactionalCSN = 1,
