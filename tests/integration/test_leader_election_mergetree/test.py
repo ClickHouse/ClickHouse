@@ -3300,14 +3300,12 @@ def test_follower_lazy_drop_table_keeps_shared_data(started_cluster):
         node2.query(f"DROP TABLE {database}.{table} SYNC")
 
         # The proxy must have answered `dropSkipsDataDirectoryCleanup` on behalf of the
-        # nested `MergeTree`. The message is anchored to this table so an earlier
+        # nested `MergeTree`. The check is anchored to this table's UUID so an earlier
         # (eagerly loaded) drop in the same session cannot satisfy it.
-        assert node2.contains_in_log(
-            f"Skipping per-disk data cleanup of dropped table {database}.{table} "
-            f"({SHARED_UUID_LAZY_FOLLOWER_DROP})"
-        ), (
+        skip_lines = node2.grep_in_log("Skipping per-disk data cleanup of dropped table")
+        assert SHARED_UUID_LAZY_FOLLOWER_DROP in skip_lines, (
             "The catalog did not skip the per-disk cleanup for the dropped lazy proxy, "
-            "so the shared data was only saved by chance"
+            f"so the shared data was only saved by chance. Matching log lines: {skip_lines!r}"
         )
 
         objects_after_drop = list(
