@@ -1109,6 +1109,15 @@ void Connection::sendQuery(
             settings_to_send = &*modified_settings;
         }
 
+        if (server_revision < DBMS_MIN_REVISION_WITH_PROFILE_TRACES && settings->isChanged("send_profile_traces"))
+        {
+            /// Older peers neither recognize the setting nor emit trace packets.
+            if (!modified_settings)
+                modified_settings.emplace(*settings);
+            modified_settings->setDefaultValue("send_profile_traces");
+            settings_to_send = &*modified_settings;
+        }
+
         auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
                                                                                                           : SettingsWriteFormat::BINARY;
         settings_to_send->write(*out, settings_format);
@@ -1194,6 +1203,7 @@ void Connection::sendQuery(
     block_in.reset();
     block_logs_in.reset();
     block_profile_events_in.reset();
+    block_profile_traces_in.reset();
     block_out.reset();
 
     out->finishChunk();
@@ -1620,6 +1630,10 @@ Packet Connection::receivePacket()
                 res.block = receiveProfileEvents();
                 return res;
 
+            case Protocol::Server::ProfileTraces:
+                res.block = receiveProfileTraces();
+                return res;
+
             case Protocol::Server::TimezoneUpdate:
                 /// Same cap + control-char sanitization as the handshake read; the field
                 /// reaches the client's terminal via the time-zone warning path.
@@ -1690,6 +1704,16 @@ Block Connection::receiveProfileEvents()
 {
     initBlockProfileEventsInput();
     return receiveDataImpl(*block_profile_events_in);
+}
+
+Block Connection::receiveProfileTraces()
+{
+    if (!block_profile_traces_in)
+    {
+        initMaybeCompressedInput();
+        block_profile_traces_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, format_settings);
+    }
+    return receiveDataImpl(*block_profile_traces_in);
 }
 
 

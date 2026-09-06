@@ -27,12 +27,14 @@ namespace DB
 class QueryStatus;
 struct Progress;
 class InternalTextLogsQueue;
+class InternalProfileTracesQueue;
 
 class ThreadStatus;
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
 using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
+using InternalProfileTracesQueuePtr = std::shared_ptr<InternalProfileTracesQueue>;
 
 /**
  * We use **constinit** here to tell the compiler the current_thread variable is initialized.
@@ -75,6 +77,9 @@ public:
 
     static void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue);
     static InternalProfileEventsQueuePtr getInternalProfileEventsQueue();
+
+    static void attachInternalProfileTracesQueue(const InternalProfileTracesQueuePtr & queue);
+    static InternalProfileTracesQueuePtr getInternalProfileTracesQueue();
 
     static void attachQueryForLog(const String & query_);
 

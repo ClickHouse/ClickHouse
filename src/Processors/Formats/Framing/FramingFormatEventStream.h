@@ -8,7 +8,7 @@ namespace DB
 /** Frames packets as HTTP server-sent events (`text/event-stream`).
   *
   * Every packet is represented as an event with the name corresponding to the packet kind
-  * (`data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `exception`).
+  * (`data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `profile_traces`, `exception`).
   * A block of data produced by the output format is base64-encoded into a single `data` field of the
   * event, and decodes to the fully formatted payload with all of its newlines.
   * Auxiliary packets are represented as JSON, e.g.:
@@ -45,6 +45,7 @@ protected:
     void writeProgressPacket(const Progress & progress) override;
     void writeLogsPacket(const Block & block) override;
     void writeProfileEventsPacket(const Block & block) override;
+    void writeProfileTracesPacket(const Block & block) override;
     void writeExceptionPacket(const String & message) override;
 };
 

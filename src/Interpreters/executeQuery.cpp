@@ -123,6 +123,7 @@
 
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/ProfileTraces.h>
 
 #include <Poco/Logger.h>
 #include <Poco/Net/SocketAddress.h>
@@ -225,6 +226,7 @@ namespace Setting
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsBool send_profile_events;
+    extern const SettingsBool send_profile_traces;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
@@ -3857,11 +3859,12 @@ FramingFormatPtr createFramingFormatIfApplicable(
     return framing;
 }
 
-/// The queues for server logs and profile events that a framing format sends as packets.
+/// The queues for server logs, profile events and sampled traces that a framing format sends as packets.
 struct FramingQueues
 {
     std::shared_ptr<InternalTextLogsQueue> logs_queue;
     InternalProfileEventsQueuePtr profile_events_queue;
+    InternalProfileTracesQueuePtr profile_traces_queue;
 };
 
 /// Attach or detach the logs and profile-events queues on the current thread (the thread group of
@@ -3932,6 +3935,20 @@ void syncFramingQueuesWithSettings(const ContextMutablePtr & context, FramingQue
         queues.profile_events_queue.reset();
         CurrentThread::attachInternalProfileEventsQueue(nullptr);
     }
+
+    if (framing_enabled && settings[Setting::send_profile_traces])
+    {
+        if (!queues.profile_traces_queue)
+        {
+            queues.profile_traces_queue = InternalProfileTracesQueue::create(context->getCurrentQueryId());
+            CurrentThread::attachInternalProfileTracesQueue(queues.profile_traces_queue);
+        }
+    }
+    else if (queues.profile_traces_queue)
+    {
+        CurrentThread::attachInternalProfileTracesQueue(nullptr);
+        queues.profile_traces_queue.reset();
+    }
 }
 
 /// Wire the queues attached by `syncFramingQueuesWithSettings` into the framing format.
@@ -3943,6 +3960,9 @@ void setFramingQueues(IFramingFormat & framing, const ContextMutablePtr & contex
     if (queues.profile_events_queue)
         framing.setProfileEventsQueue(
             queues.profile_events_queue, getFQDNOrHostName(), context->getSettingsRef()[Setting::interactive_delay]);
+
+    if (queues.profile_traces_queue)
+        framing.setProfileTracesQueue(queues.profile_traces_queue, context->getSettingsRef()[Setting::interactive_delay]);
 }
 
 }

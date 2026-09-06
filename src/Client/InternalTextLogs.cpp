@@ -6,6 +6,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <IO/WriteHelpers.h>
@@ -161,6 +163,30 @@ void InternalTextLogs::writeProfileEvents(const Block & block)
         writeCString(")", wb);
 
         writeChar('\n', wb);
+    }
+}
+
+void InternalTextLogs::writeProfileTraces(const Block & block)
+{
+    FormatSettings settings;
+    settings.json.quote_64bit_integers = true;
+    std::vector<SerializationPtr> serializations;
+    for (const auto & column : block)
+        serializations.push_back(column.type->getDefaultSerialization());
+
+    for (size_t row = 0; row < block.rows(); ++row)
+    {
+        writeChar('{', wb);
+        for (size_t column = 0; column < block.columns(); ++column)
+        {
+            if (column)
+                writeChar(',', wb);
+            const auto & value = block.getByPosition(column);
+            writeJSONString(value.name, wb, settings);
+            writeChar(':', wb);
+            serializations[column]->serializeTextJSON(*value.column, row, wb, settings);
+        }
+        writeCString("}\n", wb);
     }
 }
 

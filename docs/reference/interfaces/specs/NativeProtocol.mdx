@@ -159,6 +159,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | HTTP_HANDLER_IN_CLIENT_INFO     | 54490   | ClientInfo             | Adds `http_handler_name` and `http_request_url` (both `String`) to the **HTTP** branch of ClientInfo, immediately after `http_referer`. They carry the name of the matched SQL-defined HTTP handler and the request URL, so that `currentHandler`/`currentRequestURL` and the `http_handler_name`/`http_request_url` `system.query_log` columns stay populated on remote shards for distributed handler queries. Written only when `query_interface = HTTP` (empty strings for a non-handler HTTP query); required once negotiated version ≥ 54490 — omitting it desynchronizes the rest of the Query packet. |
 | QUANTILE_DETERMINISTIC_SKIP_DEGREE | 54491 | Block (Column) | Bumps the state version of `AggregateFunction(quantileDeterministic, ...)` (and the `quantiles`/`median` spellings of it) from `0` to `1`, which appends a trailing `UInt8 skip_degree` to each serialized state. Only the state payload of that one aggregate function changes; the column framing is untouched, and every other aggregate function keeps its own version. Below this revision the writer emits version `0` states, so an older peer is unaffected. |
 | STRING_WITH_SIZE_STREAM_SERIALIZATION | 54492 | Block (Column)         | `String` columns switch from the per-value length-prefixed layout to a separate stream of cumulative byte offsets (the same offsets layout an `Array` uses), sent as-is: `[UInt64 × num_rows offsets][data blob]`. Gated on the negotiated revision; below 54492 the writer uses the per-value length prefixes. The wire carries no per-column marker for this — both peers derive it from the revision alone. See [String column layout](/reference/interfaces/specs/NativeFormat#string-type). |
+| PROFILE_TRACES | 54493 | ProfileTraces | The server may emit sampled query stack traces when `send_profile_traces = 1`. The block body follows the query's compression flag. |
 
 ## Packet envelope {#packet-envelope}
 
@@ -359,6 +360,7 @@ On error at any point the server sends an `Exception` instead of `EndOfStream`, 
    | `Log` (10)            | Server log line. |
    | `TableColumns` (11)   | Column-defaults metadata. |
    | `ProfileEvents` (14)  | Performance counters. |
+   | `ProfileTraces` (19)  | Sampled query stack traces, enabled by `send_profile_traces` at revision `54493`+. |
    | `Exception` (2)       | Decode and return as error. Exit the loop and return to `READY`. |
    | anything else         | Unexpected during the query phase. Terminate the connection. |
 
@@ -754,6 +756,29 @@ The 6 columns:
 The `value` column's element type is not fixed across packets — older servers emit `UInt64`, newer ones `Int64`. Read the column's type string from the block header rather than assuming one width.
 </Note>
 
+### ProfileTraces (packet type 19) {#profiletraces}
+
+Server → Client, available at negotiated revision `54493` and above when `send_profile_traces = 1`. This setting is independent of `send_profile_events`. Existing profiler settings control which traces are sampled; enabling delivery alone does not enable a sampler.
+
+The server's trace collector must be enabled by the `trace_log` server configuration. Streaming does not read or flush `system.trace_log` and does not require permission to select from that table.
+
+The envelope is a packet-type `VarUInt` of `19`, an empty `table_name` binary string, and a [Native block](/reference/interfaces/specs/NativeFormat). Only the block body follows the query's compression flag. Blocks contain at most 1024 rows with this schema, in order:
+
+| # | Name | Type | Description |
+|---|------|------|-------------|
+| 1 | `host_name` | `String` | Host that collected the sample, preserved when forwarded. |
+| 2 | `query_id` | `String` | Query that produced the sample, including remote query IDs. |
+| 3 | `trace_type` | `String` | Sample type, such as `CPU`, `Real`, or `MemorySample`. |
+| 4 | `thread_id` | `UInt64` | OS thread ID on the originating host. |
+| 5 | `event_time_microseconds` | `UInt64` | Sample timestamp in microseconds since the Unix epoch. |
+| 6 | `trace` | `Array(UInt64)` | Normalized instruction addresses, ordered from the leaf frame outward. |
+| 7 | `symbols` | `Array(String)` | Symbol corresponding to each address; an empty string denotes an unresolved frame. |
+| 8 | `size` | `Int64` | Allocation or deallocation size for memory samples; zero for time samples. |
+
+Packets may be interleaved with query results and INSERT metadata. The server drains accepted samples before `EndOfStream`, and before a query exception when the connection is still usable. Clients must continue receiving until the terminal packet; a `ProfileTraces` block is never a result block or a completion marker. Delivery uses bounded queues, so samples may be dropped when a consumer cannot keep up.
+
+Wire settings enable collection before query analysis. A `send_profile_traces` value supplied only in SQL `SETTINGS` takes effect when execution starts after analysis. Distributed SELECT queries forward remote trace blocks with their original host and query identifiers. Remote INSERT uploads disable delivery to avoid blocking while both peers are sending data. When connecting to a server below revision `54493`, the native client omits the `send_profile_traces` wire setting, and an older client never receives this packet from a newer server.
+
 ### TableColumns (packet type 11) {#tablecolumns}
 
 Server → Client, gated by `COLUMN_DEFAULTS_METADATA` (v54410). The server sends it before the INSERT schema block to carry column-default metadata, but only when the negotiated version is ≥ 54410 **and** the `input_format_defaults_for_omitted_fields` setting is enabled. Below 54410 the packet is never sent, so an older client must **not** wait for it — the schema `Data` block comes directly. A v54410+ client should be ready for either order: an optional `TableColumns`, then the schema block.
@@ -934,6 +959,7 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 | 16   | MergeTreeReadTaskRequest       | not specified       | Parallel read task assignment |
 | 17   | TimezoneUpdate                 | [TimezoneUpdate](#timezoneupdate) | Server timezone update |
 | 18   | SSHChallenge                   | [SSH auth](#ssh-authentication) | SSH auth challenge |
+| 19   | ProfileTraces                  | [ProfileTraces](#profiletraces) | Sampled query stack traces |
 
 ### QueryPlan {#queryplan}
 

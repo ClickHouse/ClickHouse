@@ -1,6 +1,8 @@
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CPUID.h>
+#include <Common/ErrnoException.h>
+#include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/MemoryTracker.h>
@@ -12,6 +14,9 @@
 #include <base/scope_guard.h>
 
 #include <string_view>
+#include <chrono>
+#include <cstring>
+#include <poll.h>
 
 namespace
 {
@@ -29,8 +34,14 @@ namespace
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+    extern const int TIMEOUT_EXCEEDED;
+}
+
 LazyPipeFDs TraceSender::pipe;
-std::atomic<bool> TraceSender::shutdown{false};
+std::atomic<bool> TraceSender::shutdown{true};
 std::atomic<int> TraceSender::in_flight{0};
 
 static thread_local bool inside_send = false;
@@ -57,12 +68,13 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         return;
 
     constexpr size_t buf_size = sizeof(char) /// TraceCollector stop flag
+        + sizeof(UInt64)                     /// Profile trace subscription ID
         + sizeof(UInt8)                      /// String size
         + QUERY_ID_MAX_LEN                   /// Maximum query_id length
         + sizeof(UInt8)                      /// Number of stack frames
         + sizeof(FramePointers)              /// Collected stack trace, maximum capacity
         + sizeof(TraceType)                  /// trace type
-        + sizeof(UInt64)                     /// cpu_id
+        + sizeof(Int32)                      /// cpu_id (the signed result of get_cpuid)
         + sizeof(UInt64)                     /// thread_id
         + sizeof(ThreadName)                 /// thread name enum
         + sizeof(Int64)                      /// size
@@ -81,7 +93,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 
     std::string_view query_id;
-    UInt64 cpu_id = CPU::get_cpuid();
+    Int32 cpu_id = CPU::get_cpuid();
     UInt64 thread_id = 0;
 
     if (CurrentThread::isInitialized())
@@ -98,6 +110,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     }
 
     writeChar(false, out);  /// true if requested to stop the collecting thread.
+    writePODBinary(CurrentThread::isInitialized() ? CurrentThread::get().getProfileTracesId() : UInt64{0}, out);
 
     writeBinary(static_cast<uint8_t>(query_id.size()), out);
     out.write(query_id.data(), query_id.size());
@@ -131,6 +144,39 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
 
     /// Multiple threads are calling this function concurrently, so writes to pipe should be atomic (single flush).
     chassert(out.getFlushCount() == 1);
+}
+
+bool TraceSender::flushProfileTraces(UInt64 subscription_id)
+{
+    in_flight.fetch_add(1);
+    SCOPE_EXIT(in_flight.fetch_sub(1));
+    if (shutdown.load())
+        return false;
+
+    /// Keep the marker in one atomic write, just like a sampled stack. The ordinary sender
+    /// drops samples on a full pipe, but a final drain needs a delivered ordering marker.
+    char buffer[1 + sizeof(subscription_id)];
+    buffer[0] = 2;
+    memcpy(buffer + 1, &subscription_id, sizeof(subscription_id));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (true)
+    {
+        auto written = ::write(pipe.fds_rw[1], buffer, sizeof(buffer));
+        if (written == static_cast<ssize_t>(sizeof(buffer)))
+            return true;
+        if (written < 0 && errno != EINTR && errno != EAGAIN)
+            throw ErrnoException(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Cannot flush profile traces");
+        if (written >= 0)
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Incomplete profile trace flush marker");
+
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+        if (remaining <= 0)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timed out writing profile trace flush marker");
+        pollfd descriptor{pipe.fds_rw[1], POLLOUT, 0};
+        int result = ::poll(&descriptor, 1, static_cast<int>(remaining));
+        if (result < 0 && errno != EINTR)
+            throw ErrnoException(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Cannot wait to flush profile traces");
+    }
 }
 
 }

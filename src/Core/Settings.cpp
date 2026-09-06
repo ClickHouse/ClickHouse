@@ -2622,6 +2622,19 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     \
+    DECLARE(Bool, send_profile_traces, false, R"(
+Send sampled query stack traces to clients that support profile trace packets in the native protocol, or over HTTP when `framing_output_format` is enabled.
+
+Samples are delivered directly from the server's trace collector; clients do not need access to `system.trace_log` or to flush that table. The trace collector must be enabled in the server configuration. Sampling uses the existing `query_profiler_cpu_time_period_ns`, `query_profiler_real_time_period_ns`, `memory_profiler_step`, and `memory_profiler_sample_probability` settings. Enabling this setting does not change their values.
+
+Delivery is best effort: queues and batches are bounded, and samples can be dropped when sampling or the client cannot keep up. Stack symbols are resolved on the server, with an empty string for an unresolved frame. Profile trace packets are sent at most once in `interactive_delay` microseconds during execution, independently of `send_profile_events`, with a final drain before the terminal packet. Plain HTTP responses do not include profile trace packets.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    \
     DECLARE(Bool, send_progress_in_http_headers, false, R"(
 Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
 
@@ -2652,7 +2665,7 @@ Framing formats are independent of output formats: they encapsulate bytes produc
 
 One deliberate exception: an output format that drops totals and extremes in its plain output because it cannot represent them (the `JSONCompactEachRow` family) does emit them under framing, into the `totals` and `extremes` packets. For such formats the concatenation of the `data` packets alone is exactly the unframed output, and the `totals` and `extremes` packets carry additional rows that the unframed output does not contain.
 
-Server logs are included if the `send_logs_level` setting is set, and profile events are included if the `send_profile_events` setting is enabled (they are sent at most once in `interactive_delay` microseconds, and progress packets are also throttled by `interactive_delay`).
+Server logs are included if the `send_logs_level` setting is set. Profile events are included if `send_profile_events` is enabled, and stack trace samples are included if `send_profile_traces` is enabled. Profile events and trace batches are sent independently at most once in `interactive_delay` microseconds during execution, and progress packets are also throttled by `interactive_delay`. The remaining samples are drained before the terminal `progress` or `exception` packet. See [profile trace packets](/interfaces/framing-formats#framing-format-profile-traces) for their schema and sampling controls.
 
 A successful stream ends with a final `progress` packet carrying the final counters (`result_rows`, `result_bytes`, `memory_usage`), written after the trailing `log` and `profile_events` packets emitted by the query-finish logging, like the final progress packet of the native protocol. On failure, the `exception` packet is the last packet instead - with one exception: when the failure happens after part of the packet stream has already been produced into the response and can no longer be discarded (a packet write fails partway through, the delivery of the `exception` packet itself fails, or the response stream fails while being flushed or closed), the framing fails closed - the stream is terminated without a terminal `exception` packet, and the client observes a truncated response and an aborted HTTP connection instead of a parseable terminal packet. Nothing is ever appended after a partial packet stream, so a plain HTTP error body is never mixed into it.
 
@@ -2665,7 +2678,7 @@ The setting currently applies to the HTTP protocol and is ignored for other inte
 Possible values:
 
 - `None` - transparently routes everything applicable (data, totals, extremes, progress) to the output format, and ignores everything that is not applicable (metrics, logs), so everything works as it is by default.
-- `EventStream` - frames packets as HTTP server-sent events (`text/event-stream`). Every packet is sent as an event with the corresponding name: `data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `exception`. Progress and other auxiliary packets are sent as JSON. Because server-sent events are a text protocol that treats line breaks (including carriage returns, `\r`) as delimiters, a block of formatted data is base64-encoded into a single `data` field of the event, which decodes to the fully formatted payload with all of its newlines; the `Content-Type` carries a `payload=base64` parameter to say so. Any output format can be carried this way byte-exactly, text and binary alike.
+- `EventStream` - frames packets as HTTP server-sent events (`text/event-stream`). Every packet is sent as an event with the corresponding name: `data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `profile_traces`, `exception`. Progress and other auxiliary packets are sent as JSON. Because server-sent events are a text protocol that treats line breaks (including carriage returns, `\r`) as delimiters, a block of formatted data is base64-encoded into a single `data` field of the event, which decodes to the fully formatted payload with all of its newlines; the `Content-Type` carries a `payload=base64` parameter to say so. Any output format can be carried this way byte-exactly, text and binary alike.
 - `JSONEachPacketBase64` - every packet is a JSON object on a separate line, and the formatted data is base64-encoded, e.g. `{"packet":"data","data":"eyJ4IjoxfQo="}`. Suitable for binary output formats.
 - `JSONEachPacketString` - every packet is a JSON object on a separate line, and the formatted data is put into a string, e.g. `{"packet":"data","data":"{\"x\":1}\n"}`.
 

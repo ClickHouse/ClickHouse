@@ -319,6 +319,7 @@ private:
     std::unique_ptr<NativeReader> block_in;
     std::unique_ptr<NativeReader> block_logs_in;
     std::unique_ptr<NativeReader> block_profile_events_in;
+    std::unique_ptr<NativeReader> block_profile_traces_in;
 
     /// Where to write data for INSERT.
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
@@ -389,6 +390,7 @@ private:
     Block receiveLogData();
     Block receiveDataImpl(NativeReader & reader);
     Block receiveProfileEvents();
+    Block receiveProfileTraces();
 
     String receiveTableColumns();
     std::unique_ptr<Exception> receiveException() const;

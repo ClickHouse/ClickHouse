@@ -55,6 +55,8 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Common/SettingSource.h>
 #include <Common/SettingsChanges.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ProfileTracesBlocker.h>
 #include <Common/Stopwatch.h>
 #include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
@@ -112,6 +114,7 @@ namespace Setting
     extern const SettingsBool run_query_in_background;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsBool send_profile_events;
+    extern const SettingsBool send_profile_traces;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsSeconds send_timeout;
     extern const SettingsTimezone session_timezone;
@@ -690,6 +693,8 @@ void TCPHandler::runImpl()
                 CurrentThread::attachInternalProfileEventsQueue(query_state->profile_queue);
             }
 
+            updateProfileTracesQueue(*query_state);
+
             if (!is_interserver_mode)
                 session->checkIfUserIsStillValid();
 
@@ -946,6 +951,7 @@ void TCPHandler::runImpl()
 
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
+            updateProfileTracesQueue(*query_state);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -1170,7 +1176,10 @@ void TCPHandler::runImpl()
                     out->sync();
                 }
                 else
+                {
+                    sendProfileTraces(*query_state, true);
                     sendException(*exception, send_exception_with_stack_trace);
+                }
             }
             catch (...)
             {
@@ -1934,6 +1943,8 @@ void TCPHandler::sendProfileEvents(QueryState & state)
 
 void TCPHandler::sendSelectProfileEvents(QueryState & state)
 {
+    sendProfileTraces(state);
+
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
         return;
 
@@ -1943,12 +1954,76 @@ void TCPHandler::sendSelectProfileEvents(QueryState & state)
 
 void TCPHandler::sendInsertProfileEvents(QueryState & state)
 {
-    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT)
-        return;
+    /// Remote insert uploads do not continuously consume replies while sending data.
     if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         return;
 
+    sendProfileTraces(state);
+
+    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT)
+        return;
+
     sendProfileEvents(state);
+}
+
+void TCPHandler::updateProfileTracesQueue(QueryState & state)
+{
+    const bool enabled = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_PROFILE_TRACES
+        && state.query_context->getSettingsRef()[Setting::send_profile_traces];
+    if (enabled && !state.profile_traces_queue)
+    {
+        state.profile_traces_queue = InternalProfileTracesQueue::create(state.query_context->getCurrentQueryId());
+        CurrentThread::attachInternalProfileTracesQueue(state.profile_traces_queue);
+    }
+    else if (!enabled && state.profile_traces_queue)
+    {
+        state.profile_traces_queue->finish();
+        CurrentThread::attachInternalProfileTracesQueue(nullptr);
+        state.profile_traces_queue.reset();
+    }
+}
+
+void TCPHandler::sendProfileTraces(QueryState & state, bool finish)
+{
+    if (!state.profile_traces_queue)
+        return;
+
+    if (!finish && state.after_send_profile_traces.elapsedMicroseconds()
+        < state.query_context->getSettingsRef()[Setting::interactive_delay])
+        return;
+
+    /// Serializing memory samples must not generate new samples of the transport itself.
+    ProfileTracesBlocker block_memory_tracking;
+
+    if (finish)
+        state.profile_traces_queue->finish();
+
+    if (!state.query_context->getSettingsRef()[Setting::send_profile_traces])
+        return;
+
+    do
+    {
+        Block block = state.profile_traces_queue->getBlock();
+        if (!block.rows())
+            break;
+
+        if (!state.profile_traces_block_out)
+        {
+            initMaybeCompressedOut(state);
+            state.profile_traces_block_out = std::make_unique<NativeWriter>(
+                *state.maybe_compressed_out, client_tcp_protocol_version,
+                std::make_shared<const Block>(block.cloneEmpty()), getFormatSettings(state.query_context));
+        }
+
+        writeVarUInt(Protocol::Server::ProfileTraces, *out);
+        writeStringBinary("", *out);
+        state.profile_traces_block_out->write(block);
+        if (state.maybe_compressed_out != out)
+            state.profile_traces_block_out->flush();
+        out->finishChunk();
+        state.after_send_profile_traces.restart();
+    }
+    while (finish);
 }
 
 
@@ -3393,6 +3468,8 @@ void TCPHandler::trySendExceptionWithoutConnectionBuffers(const Exception & e)
 
 void TCPHandler::sendEndOfStream(QueryState & state)
 {
+    sendProfileTraces(state, true);
+
     state.sent_all_data = true;
     state.io.setAllDataSent();
 
