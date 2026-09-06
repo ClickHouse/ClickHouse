@@ -174,6 +174,23 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_ty
 /// node is returned unchanged.
 QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node);
 
+/// Maps an `in`-family function name to its null-aware counterpart the way `transform_null_in` does
+/// (`in` -> `nullIn` and so on). Any other name is returned unchanged.
+std::string_view getNullInFunctionName(std::string_view function_name);
+
+/// Returns the name a pass must use when it creates an `in`-family function node after normal resolution,
+/// which is the name `resolveFunction` would have produced for it. With `transform_null_in` the resolver
+/// renames the `in` family, so a pass running later emits the un-renamed name, a remote shard or parallel
+/// replica renames it while re-analyzing the shipped AST, and the two sides then disagree about what the
+/// node is called (issue #112032). This is the same divergence `foldConstantCast` above exists for.
+/// Returns `std::nullopt` when the renaming would not preserve the node's meaning, in which case the caller
+/// must keep the expression it was going to replace: only `in` takes the default implementation for NULLs
+/// (`src/Functions/in.cpp`), which is what makes it propagate a NULL argument instead of comparing it and
+/// what makes its result `Nullable`. That adaptor examines the top-level argument type, so the two names
+/// agree in value and in type exactly when the left argument cannot itself be NULL.
+std::optional<String> getInFunctionNameForPassCreatedNode(
+    const String & in_function_name, const DataTypePtr & left_argument_type, const ContextPtr & context);
+
 /// Resolves function node as ordinary function with given name.
 /// Arguments and parameters are taken from the node.
 void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context);

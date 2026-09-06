@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -69,6 +70,7 @@ namespace Setting
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
+    extern const SettingsBool transform_null_in;
 }
 
 namespace ErrorCodes
@@ -201,6 +203,39 @@ std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & fu
         return "globalNotNullInIgnoreSet";
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid local IN function name {}", function_name);
+}
+
+std::string_view getNullInFunctionName(std::string_view function_name)
+{
+    if (function_name == "in")
+        return "nullIn";
+    if (function_name == "notIn")
+        return "notNullIn";
+    if (function_name == "globalIn")
+        return "globalNullIn";
+    if (function_name == "globalNotIn")
+        return "globalNotNullIn";
+
+    return function_name;
+}
+
+std::optional<String> getInFunctionNameForPassCreatedNode(
+    const String & in_function_name, const DataTypePtr & left_argument_type, const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::transform_null_in])
+        return in_function_name;
+
+    const auto null_in_function_name = getNullInFunctionName(in_function_name);
+    if (null_in_function_name == in_function_name)
+        return in_function_name;
+
+    /// `canContainNull`, not `isNullable`: a `Variant` or `Dynamic` carries NULL via a discriminator
+    /// without being wrapped in `Nullable`. `hasDynamicStructure` covers a `Dynamic` nested in a
+    /// container, which both names reject alike.
+    if (canContainNull(*left_argument_type) || left_argument_type->hasDynamicStructure())
+        return {};
+
+    return String(null_in_function_name);
 }
 
 void makeUniqueColumnNamesInBlock(Block & block)

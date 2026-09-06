@@ -2335,24 +2335,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         checkFunctionNodeHasEmptyNullsAction(function_node);
         if (scope.context->getSettingsRef()[Setting::transform_null_in])
-        {
-            static constexpr std::array<std::pair<std::string_view, std::string_view>, 4> in_function_to_replace_null_in_function_map =
-            {{
-                {"in", "nullIn"},
-                {"notIn", "notNullIn"},
-                {"globalIn", "globalNullIn"},
-                {"globalNotIn", "globalNotNullIn"},
-            }};
-
-            for (const auto & [in_function_name, in_function_name_to_replace] : in_function_to_replace_null_in_function_map)
-            {
-                if (function_name == in_function_name)
-                {
-                    function_name = in_function_name_to_replace;
-                    break;
-                }
-            }
-        }
+            function_name = getNullInFunctionName(function_name);
 
         auto & function_in_arguments_nodes = function_node.getArguments().getNodes();
         if (function_in_arguments_nodes.size() != 2)
