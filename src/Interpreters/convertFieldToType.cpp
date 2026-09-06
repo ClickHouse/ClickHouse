@@ -1,6 +1,7 @@
 #include <Interpreters/convertFieldToType.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -581,6 +582,22 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (const auto * enum_from_type = dynamic_cast<const IDataTypeEnum *>(unwrapped_hint))
             return convertFieldToTypeImpl(
                 enum_from_type->castToName(src), type, nullptr, format_settings, strict, convert_inexact_floats);
+
+        /// Every other known source type is rendered with its own text serialization, so that a set
+        /// built for `IN` holds what `CAST(x AS String)` produces. `FieldVisitorToString` below writes
+        /// a query literal instead, which for several types is not the value's text at all: a `Date`
+        /// comes out as its day number, a `Float64` as `1.`, and a `UUID` or an `IPv4` carries the
+        /// quote characters of the literal inside the string.
+        if (unwrapped_hint)
+        {
+            auto column = unwrapped_hint->createColumn();
+            if (column->tryInsert(src))
+            {
+                WriteBufferFromOwnString out;
+                unwrapped_hint->getDefaultSerialization()->serializeText(*column, 0, out, format_settings);
+                return convertFieldToTypeImpl(out.str(), type, nullptr, format_settings, strict, convert_inexact_floats);
+            }
+        }
 
         return applyVisitor(FieldVisitorToString(), src);
     }
