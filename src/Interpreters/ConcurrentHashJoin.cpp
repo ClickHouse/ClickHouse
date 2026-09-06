@@ -82,9 +82,10 @@ void updateStatistics(
     const DB::StatsCollectingParams & build_params,
     const DB::StatsCollectingParams & match_params,
     bool probe_phase_finished,
-    size_t hash_table_matches)
+    size_t hash_table_matches,
+    bool hash_table_matches_are_measured)
 {
-    if (match_params.isCollectionAndUseEnabled() && probe_phase_finished)
+    if (match_params.isCollectionAndUseEnabled() && probe_phase_finished && hash_table_matches_are_measured)
         DB::getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = hash_table_matches}, match_params);
 
     if (!build_params.isCollectionAndUseEnabled() || !hash_joins[0]->data->twoLevelMapIsUsed())
@@ -266,7 +267,12 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
             return;
 
         updateStatistics(
-            hash_joins, stats_collecting_params.build, stats_collecting_params.match, probe_phase_finished, hash_table_matches);
+            hash_joins,
+            stats_collecting_params.build,
+            stats_collecting_params.match,
+            probe_phase_finished,
+            hash_table_matches,
+            hash_joins[0]->data->hash_table_matches_are_measured);
 
         if (!hash_joins[0]->data->twoLevelMapIsUsed())
             return;

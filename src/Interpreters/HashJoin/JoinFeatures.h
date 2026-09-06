@@ -38,6 +38,11 @@ struct JoinFeatures
     static constexpr bool need_flags = MapGetter<KIND, STRICTNESS, mapsKindOf<Map>()>::flagged;
 
     static constexpr bool is_maps_all = std::is_same_v<std::decay_t<Map>, HashJoin::MapsAll>;
+
+    /// Only MapsAll keeps every right row of a key, so only there do the recorded words resolve to
+    /// exact rows. The residual path is excluded: its words count output rows rather than left rows,
+    /// and both metrics come from elsewhere there
+    static constexpr bool refs_can_carry_stats = is_maps_all && (inner || left || full);
 };
 
 }

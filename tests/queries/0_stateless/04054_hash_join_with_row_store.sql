@@ -95,6 +95,79 @@ WHERE event_date >= yesterday() AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_disabed_by_runtime_stats' AND type = 'QueryFinish');
 
+SELECT '--- Match stats and a probe that emits no right column ---';
+
+-- A probe that emits no right column, such as `SELECT count()`, cannot count matches at all, so its
+-- zero is structural rather than measured and must not become the cached match count for the join.
+-- Otherwise the next full output run over the same join reads that zero and loses the row store.
+SET param__internal_join_table_stat_hints = '{}';
+
+CREATE TABLE right_wide (k UInt64, v1 Int64, v2 UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO right_wide SELECT number, number, number FROM numbers(20000);
+
+-- Separate table for `parallel_hash`: `join_algorithm` is not part of the match stats cache key.
+CREATE TABLE right_wide_ph (k UInt64, v1 Int64, v2 UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO right_wide_ph SELECT number, number, number FROM numbers(20000);
+
+SELECT r.v1, r.v2 FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 0, log_comment = 'rs_hash_1_warm';
+
+SELECT count() FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, log_comment = 'rs_hash_2_no_emit_probe';
+
+SELECT r.v1, r.v2 FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, log_comment = 'rs_hash_3_after_no_emit_probe';
+
+SELECT r.v1, r.v2 FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, enable_hash_join_row_store = 0, log_comment = 'rs_hash_4_row_store_off';
+
+SELECT r.v1, r.v2 FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide_ph r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 0, log_comment = 'rs_par_1_warm';
+
+SELECT count() FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide_ph r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, log_comment = 'rs_par_2_no_emit_probe';
+
+SELECT r.v1, r.v2 FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide_ph r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, log_comment = 'rs_par_3_after_no_emit_probe';
+
+SELECT r.v1, r.v2 FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_wide_ph r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'parallel_hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2, enable_hash_join_row_store = 0, log_comment = 'rs_par_4_row_store_off';
+
+CREATE TABLE right_exact (k UInt64, v1 Int64, v2 UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO right_exact SELECT number, number, number FROM numbers(20000);
+
+-- With no cached match count the estimate alone must not reach the ratio, so this reads 0. It also
+-- publishes nothing, because match collection is off for it.
+SELECT r.v1, r.v2 FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_exact r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2,
+         collect_hash_table_stats_during_joins = 0, log_comment = 'rs_exact_1_cold';
+
+-- `EXPLAIN ANALYZE matches = 1` records exact matches, so this probe counts them even though it emits
+-- no right column, and its count is a measurement that must still reach the cache.
+SELECT count() FROM (EXPLAIN ANALYZE matches = 1
+    SELECT count() FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_exact r ON p.k = r.k
+    SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0) FORMAT Null;
+
+SELECT r.v1, r.v2 FROM (SELECT number % 20000 AS k FROM numbers(200000)) p JOIN right_exact r ON p.k = r.k FORMAT Null
+SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, min_rows_ratio_for_hash_join_row_store = 2,
+         log_comment = 'rs_exact_3_after_explain_probe';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The `_2_no_emit_probe` and `_4_row_store_off` rows read 0 and show the counter can report an
+-- unbuilt row store; the `_1_warm` and `_3_after_no_emit_probe` rows must read 1.
+SELECT log_comment, ProfileEvents['JoinBuildRowStoreMicroseconds'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+  AND log_comment IN ('rs_hash_1_warm', 'rs_hash_2_no_emit_probe', 'rs_hash_3_after_no_emit_probe', 'rs_hash_4_row_store_off',
+                      'rs_par_1_warm', 'rs_par_2_no_emit_probe', 'rs_par_3_after_no_emit_probe', 'rs_par_4_row_store_off',
+                      'rs_exact_1_cold', 'rs_exact_3_after_explain_probe')
+ORDER BY log_comment;
+
+DROP TABLE right_exact;
+DROP TABLE right_wide_ph;
+DROP TABLE right_wide;
+
 -- Keep the row store enabled regardless of cardinality estimates.
 SET min_rows_ratio_for_hash_join_row_store = 0;
 

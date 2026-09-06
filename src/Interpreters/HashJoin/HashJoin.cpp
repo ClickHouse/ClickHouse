@@ -1455,7 +1455,7 @@ HashJoin::~HashJoin()
                         {.ht_size = ht_size, .source_rows = data->rows_to_join}, stats_collecting_params.build);
             }
 
-            if (stats_collecting_params.match.isCollectionAndUseEnabled() && probe_phase_finished)
+            if (stats_collecting_params.match.isCollectionAndUseEnabled() && probe_phase_finished && hash_table_matches_are_measured)
                 getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = hash_table_matches}, stats_collecting_params.match);
         }
     }
@@ -2907,6 +2907,22 @@ void HashJoin::onBuildPhaseFinish()
 
     if (matched_rows_stats)
         matched_rows_stats->prepareRightFlagsIfNeeded(data->columns);
+
+    /// `hash_table_matches` only advances where the probe records row refs, so the same condition
+    /// decides whether its final value is a measurement or a structural zero.
+    [[maybe_unused]] const bool dispatched = joinDispatch(
+        kind,
+        strictness,
+        data->maps.front(),
+        preferUseMapsAll(),
+        [&](auto kind_, auto strictness_, auto & maps_)
+        {
+            constexpr JoinFeatures<kind_, strictness_, std::decay_t<decltype(maps_)>> features;
+            const size_t num_columns_to_add = sample_block_with_columns_to_add.columns() + (features.is_asof_join ? 1 : 0);
+            hash_table_matches_are_measured = !features.is_any_join
+                && (num_columns_to_add > 0 || (features.refs_can_carry_stats && recordsRowRefsForStats()));
+        });
+    chassert(dispatched);
 
     build_phase_finished = true;
     LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(total_bytes), getTotalRowCount());

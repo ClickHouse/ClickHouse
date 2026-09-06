@@ -703,6 +703,7 @@ private:
 
     /// Rows emitted from hash-table matches across all probe threads (excludes default/miss rows).
     size_t hash_table_matches = 0;
+    bool hash_table_matches_are_measured = true;
 
     /// Whether the maps store keys alone, see `JoinMapsKind::Set`. Decided once, before they are created.
     bool use_set_maps = false;
