@@ -132,7 +132,9 @@ private:
 };
 
 /// Returns type of scalars of Array of arbitrary dimensions and takes into account Tuples of Nested.
-DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements);
+/// The descent stops at the first type it cannot enter, so it consumes only a prefix of `tuple_elements`.
+/// `num_consumed_tuple_elements` is the length of that prefix; the caller owns the rest of the path.
+DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements, size_t & num_consumed_tuple_elements);
 
 /// Returns Array type with requested scalar type and number of dimensions.
 DataTypePtr createArrayOfType(DataTypePtr type, size_t num_dimensions);
