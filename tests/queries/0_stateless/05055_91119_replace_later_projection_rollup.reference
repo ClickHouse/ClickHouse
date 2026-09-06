@@ -1,0 +1,22 @@
+--- later projection item over an earlier REPLACE, group_by_use_nulls = 0 ---
+10	11
+10	11
+--- the same with group_by_use_nulls = 1 ---
+10	11
+10	11
+--- a later matcher over an earlier REPLACE, group_by_use_nulls = 0 ---
+0	10	4
+1	10	2
+2	10	4
+--- the same with group_by_use_nulls = 1 ---
+1	10	2
+2	10	4
+\N	10	4
+--- a later projection item over an earlier REPLACE with an aggregate, group_by_use_nulls = 0 ---
+0	4	5
+1	2	3
+2	4	5
+--- the same with group_by_use_nulls = 1 ---
+1	2	3
+2	4	5
+\N	4	5

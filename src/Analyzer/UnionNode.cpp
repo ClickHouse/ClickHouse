@@ -171,10 +171,14 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
 
 void UnionNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
 {
+    /// Deduplicate by (column name, source); see the comment in QueryNode::addCorrelatedColumn.
+    const auto & new_column = correlated_column->as<ColumnNode &>();
     auto & correlated_columns = getCorrelatedColumns().getNodes();
     for (const auto & column : correlated_columns)
     {
-        if (column->isEqual(*correlated_column))
+        const auto & existing_column = column->as<ColumnNode &>();
+        if (existing_column.getColumnName() == new_column.getColumnName()
+            && existing_column.getColumnSourceOrNull() == new_column.getColumnSourceOrNull())
             return;
     }
     correlated_columns.push_back(correlated_column);
