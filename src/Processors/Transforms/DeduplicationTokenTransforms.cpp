@@ -141,7 +141,10 @@ void AddDeduplicationInfoTransform::transform(Chunk & chunk)
     if (info->getVisitedViews().empty())
     {
         info->setRootViewID(root_view_id);
-        info->setSourceBlockNumber(block_number++);
+        /// A row-less chunk carries no dedup token (`setUserToken` with count 0 is a no-op)
+        /// and is dropped by squashing, so it must not consume a source block number.
+        if (chunk.getNumRows() > 0)
+            info->setSourceBlockNumber(block_number++);
     }
     info->updateOriginalBlock(chunk, getInputPort().getSharedHeader());
 }
