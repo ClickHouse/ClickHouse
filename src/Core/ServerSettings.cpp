@@ -1342,8 +1342,14 @@ The threshold ratio for purging jemalloc relative to the memory available to Cli
     DECLARE(UInt64, memory_worker_decay_adjustment_period_ms, 5000, R"(
 Duration in milliseconds that memory pressure must persist before dynamically adjusting jemalloc's `dirty_decay_ms`. When memory usage remains above the purge threshold for this period, automatic dirty page decay is disabled (`dirty_decay_ms=0`) to aggressively reclaim memory. When usage stays below the threshold for this period, the default decay behavior is restored. Set to 0 to disable dynamic adjustment and use jemalloc's default decay settings.
 )", 0) \
-    DECLARE(Bool, memory_worker_correct_memory_tracker, 0, R"(
-Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups
+    DECLARE(Bool, memory_worker_correct_memory_tracker, 1, R"(
+Whether the background memory worker corrects the global memory tracker, on every tick, from an external measurement of the memory the process really uses: the cgroup memory usage when cgroups are available (see `memory_worker_use_cgroup`), otherwise jemalloc's `stats.resident`.
+
+The global memory tracker is a counter: allocations add to it and deallocations subtract from it. Any accounting asymmetry stays in it for the lifetime of the process, because nothing else lowers it, and an upward drift is never worked off — the memory it describes has already been freed. Once the drift alone exceeds `max_server_memory_usage`, every allocation fails, down to the zero-byte check at the start of a connection, and the server rejects all queries while using a fraction of its limit. Correcting from a measurement bounds the lifetime of such a drift to one tick of the worker (`memory_worker_period_ms`, by default 50 ms when reading from cgroups and 100 ms when reading from jemalloc).
+
+The correction does not hide the drift. `MemoryTrackingUncorrected` keeps the value the tracker would have had with no corrections applied, so `MemoryTrackingUncorrected - MemoryTracking` is the drift accumulated so far.
+
+Setting this to `0` restores the behavior of previous versions: the tracker is corrected only on the first tick of the worker and whenever it goes negative.
 )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
     DECLARE(Double, memory_worker_rss_speculative_reserve_ratio, getDefaultMemoryWorkerRssSpeculativeReserveRatio(), R"(
