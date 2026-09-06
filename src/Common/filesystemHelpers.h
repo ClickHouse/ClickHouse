@@ -100,6 +100,10 @@ time_t getChangeTime(const std::string & path);
 
 bool isSymlink(const fs::path & path);
 bool isSymlinkNoThrow(const fs::path & path);
+/// Whether any filesystem object exists at the path, including a dangling symlink. Never follows
+/// the final symlink, and tolerates a trailing slash. Throws if the path cannot be inspected, so
+/// an inconclusive answer is never reported as absence.
+bool existsNoFollow(const fs::path & path);
 fs::path readSymlink(const fs::path & path);
 
 }

@@ -2422,9 +2422,15 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     // When creating a table, when checking if the data path exists, it should use the local disk to check, not the database disk. Because the database disk stores metadata files only.
     auto full_data_path = fs::path{getContext()->getPath()} / data_path;
 
-    if (!create.attach && !data_path.empty() && fs::exists(full_data_path))
+    /// `ATTACH ... FROM` moves data into the destination, so unlike a plain `ATTACH` it needs a free
+    /// one. `data_path` ends in a slash, so `fs::exists` misses a non-directory there and follows a
+    /// dangling symlink to nothing; `existsNoFollow` sees both. Scoped so `CREATE` is unchanged.
+    if (!data_path.empty()
+        && ((!create.attach && fs::exists(full_data_path))
+            || (create.has_attach_from_path && FS::existsNoFollow(full_data_path))))
     {
-        if (getContext()->getZooKeeperMetadataTransaction() &&
+        if (!create.attach &&
+            getContext()->getZooKeeperMetadataTransaction() &&
             !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery() &&
             !DatabaseCatalog::instance().hasUUIDMapping(create.uuid) &&
             Context::getGlobalContextInstance()->isServerCompletelyStarted() &&

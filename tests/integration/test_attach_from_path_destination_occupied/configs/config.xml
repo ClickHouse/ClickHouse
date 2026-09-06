@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- Set to 1 so the "move the occupied directory to trash" branch of the
+         destination-collision guard is CONFIGURATION-ENABLED. Without this the
+         no-trash-side-effect assertions below would be vacuous. -->
+    <allow_moving_table_directory_to_trash>1</allow_moving_table_directory_to_trash>
+    <database_atomic_delay_before_drop_table_sec>0</database_atomic_delay_before_drop_table_sec>
+</clickhouse>
