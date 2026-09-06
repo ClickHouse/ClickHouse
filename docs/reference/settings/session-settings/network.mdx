@@ -14,9 +14,11 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 ## network_compression_method {#network_compression_method}
 
-<SettingsInfoBlock type="String" default_value="LZ4" />
+<SettingsInfoBlock type="String" default_value="ZSTD" />
 
-The codec for compressing the client/server and server/server communication.
+The codec for compressing the client/server and server/server communication over the native protocol.
+
+The setting does not apply to the streaming-exchange channel of distributed queries, which always uses the server default codec: every compressed frame is self-describing, so the receiver detects the codec automatically.
 
 Possible values:
 
@@ -31,7 +33,7 @@ Possible values:
 
 ## network_zstd_compression_level {#network_zstd_compression_level}
 
-<SettingsInfoBlock type="Int64" default_value="1" />
+<SettingsInfoBlock type="Int64" default_value="3" />
 
 Adjusts the level of ZSTD compression. Used only when [network_compression_method](/reference/settings/session-settings/network#network_compression_method) is set to `ZSTD`.
 

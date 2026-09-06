@@ -13,6 +13,7 @@
 #include <Storages/System/StorageSystemBackups.h>
 #include <Storages/System/StorageSystemBuildOptions.h>
 #include <Storages/System/StorageSystemHypotheticalIndexes.h>
+#include <Storages/System/StorageSystemHypotheticalProjections.h>
 #include <Storages/System/StorageSystemInstrumentation.h>
 #include <Storages/System/StorageSystemCollations.h>
 #include <Storages/System/StorageSystemClusters.h>
@@ -44,7 +45,6 @@
 #include <Storages/System/StorageSystemMetrics.h>
 #include <Storages/System/StorageSystemHistogramMetrics.h>
 #include <Storages/System/StorageSystemDimensionalMetrics.h>
-#include <Storages/System/StorageSystemModels.h>
 #include <Storages/System/StorageSystemMutations.h>
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Storages/System/StorageSystemPrimes.h>
@@ -958,6 +958,30 @@ FROM system.hypothetical_indexes;
 
 .see_also
 - [`CREATE HYPOTHETICAL INDEX`](/reference/statements/hypothetical-index#create-hypothetical-index)
+- [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif)
+)DOCS_MD");
+    attach<StorageSystemHypotheticalProjections>(context, system_database, "hypothetical_projections", R"DOCS_MD(
+.description
+Lists every hypothetical (what-if) projection defined in the current session. See [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) and [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif).
+
+The contents are session-scoped: each connection sees only its own hypothetical projections, and the table is empty when none have been created in the current session.
+
+The current `(database, table)` are resolved by UUID at query time, so they reflect `RENAME TABLE` and entries for dropped tables are hidden automatically.
+
+.examples
+```sql
+CREATE HYPOTHETICAL PROJECTION p_by_b ON t (SELECT a, b ORDER BY b);
+SELECT name, type, sorting_key FROM system.hypothetical_projections;
+```
+
+```text
+┌─name───┬─type───┬─sorting_key─┐
+│ p_by_b │ Normal │ ['b']       │
+└────────┴────────┴─────────────┘
+```
+
+.see_also
+- [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection)
 - [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif)
 )DOCS_MD");
 #if USE_XRAY
@@ -2814,10 +2838,6 @@ loading_duration:            0
 last_exception:
 comment:                     The temporary dictionary
 ```
-)DOCS_MD");
-    attach<StorageSystemModels>(context, system_database, "models", R"DOCS_MD(
-.description
-Contains a list of CatBoost models loaded into a `LibraryBridge`'s memory along with time when it was loaded.
 )DOCS_MD");
     attach<StorageSystemClusters>(context, system_database, "clusters", R"DOCS_MD(
 .description

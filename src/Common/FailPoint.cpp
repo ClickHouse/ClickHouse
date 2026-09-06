@@ -46,6 +46,8 @@ static struct InitFiu
     ONCE(remote_query_executor_cancel_before_send) \
     PAUSEABLE_ONCE(remote_query_executor_receive_packet_pause) \
     PAUSEABLE_ONCE(remote_query_executor_finish_drain_pause) \
+    PAUSEABLE_ONCE(remote_query_executor_finish_drain_hold) \
+    PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
@@ -262,6 +264,9 @@ static struct InitFiu
     PAUSEABLE(backup_from_snapshot_pause_before_mount_parent_removal) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
+    PAUSEABLE_ONCE(restore_pause_before_data_restore_tasks) \
+    PAUSEABLE_ONCE(backups_pause_before_publishing_progress) \
+    PAUSEABLE_ONCE(restore_pause_before_publishing_final_progress) \
     PAUSEABLE(sc_state_application_pause) \
     PAUSEABLE(sc_state_application_pause_after_fetch) \
     PAUSEABLE(sc_state_fetch_pause_before_version_check) \
