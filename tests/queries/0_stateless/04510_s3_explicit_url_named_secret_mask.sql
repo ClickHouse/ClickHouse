@@ -361,6 +361,11 @@ CREATE TABLE t_04510_azte7 (x UInt8) ENGINE = AzureBlobStorage('http://localhost
                  'visible_04510_tec5', 'visible_04510_teb5', 'visible_04510_teacctname',
                  'SEKRIT_AZTECTLKEY'); -- { serverError STD_EXCEPTION }
 
+-- The two-argument signature takes container and path from the url and a shared access signature
+-- beside it, so its second argument is a credential wherever the same rule serves the engine.
+CREATE TABLE t_04510_azte8 (x UInt8) ENGINE = AzureQueue('http://localhost:11111/visible_04510_teq/cont/*',
+                 'SEKRIT_AZTESAS2') SETTINGS mode = 'unordered'; -- { serverError UNKNOWN_FORMAT }
+
 -- Backup database engine reconstructs the nested S3 destination; extra_credentials must be masked.
 CREATE DATABASE db_04510_ec ENGINE = Backup('', S3('url_dbec', 'ak', 'SEKRIT_SAK',
                  extra_credentials(external_id = 'SEKRIT_EID'))); -- { serverError BAD_ARGUMENTS }

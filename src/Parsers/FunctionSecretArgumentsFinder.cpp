@@ -1122,17 +1122,23 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
         if (tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
             fourth_argument_is_format = fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg);
     }
-    /// 'account_key' is used in the signature: the shape above is the one that takes a format there.
-    const bool has_account_key = !fourth_argument_is_format && (url_arg_idx + 4 < count);
+    /// Which argument holds a credential: the two-argument shape takes container and path from the url
+    /// and a shared access signature beside it (`endpoint.sas_auth`), the longer ones an 'account_key',
+    /// unless the fourth argument names the format, which that signature has instead.
+    std::optional<size_t> credential_arg_idx;
+    if (count == url_arg_idx + 2)
+        credential_arg_idx = url_arg_idx + 1;
+    else if (!fourth_argument_is_format && (url_arg_idx + 4 < count))
+        credential_arg_idx = url_arg_idx + 4;
 
     /// The engine reads this argument as a connection string or as a plain account url. A value of
     /// another shape is read by neither rule below, and hiding a connection string replaces its whole
-    /// argument, which cannot be combined with hiding 'account_key'.
+    /// argument, which cannot be combined with hiding the credential argument.
     String connection_value;
     const auto shape = tryGetStringFromArgument(url_arg_idx, &connection_value)
         ? classifyAzureConnectionValue(connection_value)
         : AzureConnectionValue::Unmaskable;
-    if (shape == AzureConnectionValue::Unmaskable || (shape == AzureConnectionValue::ConnectionString && has_account_key))
+    if (shape == AzureConnectionValue::Unmaskable || (shape == AzureConnectionValue::ConnectionString && credential_arg_idx))
     {
         maskEveryArgument();
         return;
@@ -1141,9 +1147,8 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
     if (maskAzureConnectionString(url_arg_idx))
         return;
 
-    /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
-    if (has_account_key)
-        markSecretArgument(url_arg_idx + 4);
+    if (credential_arg_idx)
+        markSecretArgument(*credential_arg_idx);
 }
 
 void FunctionSecretArgumentsFinder::findRedisFunctionSecretArguments()
