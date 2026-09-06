@@ -9,6 +9,7 @@
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/ServerSettings.h>
+#include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DatabaseFactory.h>
@@ -147,9 +148,17 @@ ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 
 static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, bool secure)
 {
-    auto host_port = global_context->getInterserverIOAddress();
+    /// Determine the advertised host using the fallback chain:
+    /// 1. replica_host (if configured)
+    /// 2. the configured interserver host (`interserver_http_host` or `interserver_https_host`,
+    ///    falling back to `getFQDNOrHostName` when neither is set)
+    String host;
+    if (global_context->hasReplicaHost())
+        host = global_context->getReplicaHost();
+    else
+        host = global_context->getInterserverIOAddress().first;
     UInt16 port = secure ? global_context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : global_context->getTCPPort();
-    return Cluster::Address::toString(host_port.first, port) + ':' + toString(db_uuid);
+    return Cluster::Address::toString(host, port) + ':' + toString(db_uuid);
 }
 
 // Return <address, port, uuid>
@@ -502,7 +511,14 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
             current_shard = shard;
             shards.emplace_back();
         }
-        String hostname = unescapeForFileName(host_port);
+        /// `host_port` is `escapeForFileName(host) + ':' + port`, so unescaping it as a whole yields an
+        /// ambiguous `host:port` string for a bare IPv6 literal (e.g. `2001:db8::1:9000`), which
+        /// `parseAddress` cannot split back into host and port. Parse the parts separately and
+        /// re-assemble the address in the unambiguous bracketed form instead.
+        auto [host, port] = Cluster::Address::fromString(host_port);
+        if (host.contains(':') && !host.starts_with('['))
+            host = '[' + host + ']';
+        String hostname = host + ':' + toString(port);
         shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica), {}});
     }
 
@@ -706,6 +722,30 @@ void DatabaseReplicated::initDatabaseReplica(const ZooKeeperPtr & current_zookee
                     zookeeper_path,
                     replica_host_id,
                     host_id);
+
+            /// Another server may be running with the same shard and replica name: the database UUID alone does not
+            /// identify a server, because `CREATE DATABASE ... ON CLUSTER` gives every host the same database UUID.
+            /// Only reject the rewrite when the `/active` ephemeral node is owned by a different server: a stale node
+            /// left by our own previous session (whose Keeper session has not expired yet) is removed a bit later by
+            /// `DatabaseReplicatedDDLWorker::initializeReplication`, so it must not block the restart of this server.
+            String active_id;
+            if (current_zookeeper->tryGet(replica_path + "/active", active_id))
+            {
+                if (active_id.ends_with(REPLICA_UNSYNCED_MARKER))
+                    active_id.resize(active_id.size() - strlen(REPLICA_UNSYNCED_MARKER));
+
+                if (active_id != toString(ServerUUID::get()))
+                    throw Exception(
+                        ErrorCodes::REPLICA_ALREADY_EXISTS,
+                        "Replica {} of shard {} of replicated database at {} is active on another server and has a different "
+                        "host ID. Replica host ID: '{}', current host ID: '{}', server UUID of the active replica: '{}'",
+                        replica_name,
+                        shard_name,
+                        zookeeper_path,
+                        replica_host_id,
+                        host_id,
+                        active_id);
+            }
 
             // After restarting, InterserverIOAddress might change (e.g: config updated, `getFQDNOrHostName` returns a different one)
             // If the UUID in the keeper is the same as the current server UUID, we will update the host_id in keeper

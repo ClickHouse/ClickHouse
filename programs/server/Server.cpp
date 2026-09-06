@@ -454,6 +454,7 @@ namespace ServerSetting
     extern const ServerSettingsString interserver_http_host;
     extern const ServerSettingsUInt64 interserver_http_port;
     extern const ServerSettingsString interserver_https_host;
+    extern const ServerSettingsString replica_host;
     extern const ServerSettingsUInt64 interserver_https_port;
     extern const ServerSettingsString include_from;
     extern const ServerSettingsString tmp_path;
@@ -2027,6 +2028,12 @@ try
 
     LOG_DEBUG(log, "Initializing interserver credentials.");
     global_context->updateInterserverCredentials(config());
+
+    if (const String & replica_host = server_settings[ServerSetting::replica_host].value; !replica_host.empty())
+    {
+        global_context->setReplicaHost(replica_host);
+        LOG_DEBUG(log, "Configuration parameter 'replica_host' is set to '{}'.", replica_host);
+    }
 
     std::shared_ptr<StatelessWorkerEndpoint> stateless_worker_endpoint_ptr{nullptr};
     String stateless_worker_endpoint_name;

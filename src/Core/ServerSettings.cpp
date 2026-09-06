@@ -1691,6 +1691,27 @@ Similar to `<interserver_http_host>`, except that this hostname can be used by o
 <interserver_https_host>example.clickhouse.com</interserver_https_host>
 ```
 )", 0) \
+    DECLARE(String, replica_host, "", R"(
+The hostname that [`Replicated`](/reference/engines/database-engines/replicated) databases use to identify this server when registering with ZooKeeper. Useful when the server is behind a load balancer or NAT and the hostname visible to other replicas differs from the configured interserver host.
+
+If not set, ClickHouse falls back to the configured interserver host, which is `interserver_http_host` or `interserver_https_host`, depending on which of `interserver_http_port` and `interserver_https_port` is specified. If that host is not set either, the hostname returned by `getFQDNOrHostName` is used.
+
+:::note
+The advertised hostname is also used for the cluster that a `Replicated` database exposes automatically (see `system.clusters`), exactly as the interserver host is used when `replica_host` is not set. A replica is treated as local for that cluster only if its advertised host resolves to a local interface, so an address that does not resolve locally on the server itself (for example, a virtual IP of a load balancer) makes the server consider its own replica remote, and queries to that cluster go through the network instead of running locally. Prefer a hostname that resolves to the server both from other replicas and from the server itself.
+:::
+
+An IPv6 address may be given either as a bare literal or in the bracketed form; both are published to the automatically generated cluster in the bracketed form.
+
+**Example**
+
+```xml
+<replica_host>public.node1.example.com</replica_host>
+```
+
+**See also**
+
+- [Replicated database engine](/reference/engines/database-engines/replicated)
+)", 0) \
     DECLARE(UInt64, interserver_https_port, 0, R"(
 Port for exchanging data between ClickHouse servers over `<HTTPS>`.
 
