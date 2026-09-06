@@ -3245,6 +3245,123 @@ def test_legacy_identity_not_adopted_when_publication_missing(started_cluster):
         cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
 
 
+def test_legacy_identity_not_adopted_with_wrong_table_set(started_cluster):
+    # Fail-close half of the legacy-identity adoption, wrong-table-set case. The legacy publication name is
+    # schema-blind, so proving ownership by schema alone is not enough: a same-schema publication that lists
+    # a DIFFERENT set of tables belongs to another engine over the same schema. A schema-scoped database that
+    # lost its schema-aware slot must NOT adopt such a publication — streaming WAL through the foreign table
+    # set would silently stop replicating this engine's own tables (and DROP would later drop the foreign
+    # publication). So the legacy identity is adopted only when the legacy publication publishes EXACTLY this
+    # engine's tables; a wrong-table-set publication fails closed and the schema-aware slot is NOT recreated
+    # (no re-snapshot into the already-populated nested tables).
+    cursor = pg_manager.get_db_cursor()
+    schema_name = "wts2_schema"
+    table_a = "wts2_a"
+    table_b = "wts2_b"
+    pg_db = "wts2_src"
+    mat_db = "mat_wts2"
+
+    create_postgres_schema(cursor, schema_name)
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db,
+        schema_name=schema_name,
+        postgres_database="postgres_database",
+    )
+    create_postgres_table_with_schema(cursor, schema_name, table_a)
+    create_postgres_table_with_schema(cursor, schema_name, table_b)
+    instance.query(
+        f"INSERT INTO {pg_db}.{table_a} SELECT number, number from numbers(0, 30)"
+    )
+    instance.query(
+        f"INSERT INTO {pg_db}.{table_b} SELECT number, number from numbers(0, 30)"
+    )
+
+    # The schema-scoped database replicates BOTH tables of the schema and owns a schema-aware identity.
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        postgres_database="postgres_database",
+        settings=[f"materialized_postgresql_schema = '{schema_name}'"],
+    )
+    check_tables_are_synchronized(
+        instance, table_a, postgres_database=pg_db, materialized_database=mat_db
+    )
+    check_tables_are_synchronized(
+        instance, table_b, postgres_database=pg_db, materialized_database=mat_db
+    )
+
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    schema_aware_slot = slots[0]
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    pubs = [row[0] for row in cursor.fetchall()]
+    assert len(pubs) == 1, f"expected exactly one publication, got {pubs}"
+    schema_aware_publication = pubs[0]
+
+    legacy_slot = "postgres_database"
+    legacy_publication = "postgres_database_ch_publication"
+
+    # While the server is down, rewrite the PostgreSQL side into a schema-blind legacy slot whose legacy
+    # publication publishes only ONE of this engine's two tables (wts2_a) — a different table set in the same
+    # schema, so it belongs to another engine.
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{schema_aware_slot}')")
+    cursor.execute(f"DROP PUBLICATION {schema_aware_publication}")
+    cursor.execute(
+        f'CREATE PUBLICATION {legacy_publication} FOR TABLE ONLY "{schema_name}"."{table_a}"'
+    )
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{legacy_slot}', 'pgoutput')"
+    )
+    instance.start_clickhouse()
+
+    # The attach fails closed: the legacy publication lists a different table set, so it cannot be proven to
+    # belong to this engine and is not adopted. The error surfaces in the log.
+    assert_logs_contain_with_retry(
+        instance,
+        "publishes a different set of tables than this engine replicates",
+        retry_count=120,
+        sleep_time=1,
+    )
+
+    # The schema-aware slot is NOT recreated (recreating it is the only thing that re-runs the initial sync,
+    # so its continued absence proves no re-snapshot happened), and the foreign legacy slot and publication
+    # are left exactly as they were. Give the retrying startup task time to prove nothing changed.
+    for _ in range(15):
+        cursor.execute(
+            "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        slots = {row[0] for row in cursor.fetchall()}
+        assert (
+            schema_aware_slot not in slots
+        ), f"schema-aware slot was recreated; the attach must fail closed, got {slots}"
+        time.sleep(1)
+    assert slots == {legacy_slot}, f"legacy slot must stay untouched, got {slots}"
+    cursor.execute(
+        f"SELECT tablename FROM pg_publication_tables WHERE pubname = '{legacy_publication}'"
+    )
+    published = {row[0] for row in cursor.fetchall()}
+    assert published == {
+        table_a
+    }, f"the foreign legacy publication must not be altered, got {published}"
+
+    pg_manager.drop_materialized_db(mat_db)
+    # The engine never adopted the manually created legacy slot/publication, so DROP DATABASE leaves them
+    # behind; drop them explicitly.
+    cursor.execute(
+        f"SELECT slot_name FROM pg_replication_slots WHERE slot_name = '{legacy_slot}'"
+    )
+    if cursor.fetchall():
+        cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
+    cursor.execute(f"DROP PUBLICATION IF EXISTS {legacy_publication}")
+
+
 def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
     # Regression for the retry gap flagged in review of
     # https://github.com/ClickHouse/ClickHouse/pull/107425. On attach the standalone
@@ -3350,6 +3467,2151 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
     )
     if cursor.fetchall():
         cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
+
+
+def test_unique_identifier_legacy_publication_not_adopted_across_schemas(started_cluster):
+    # Regression for a gap in the unique-identifier half of adoptLegacyReplicationIdentityIfNeeded, found
+    # in review of https://github.com/ClickHouse/ClickHouse/pull/110493. With
+    # `materialized_postgresql_use_unique_replication_consumer_identifier`, the pre-salt publication name
+    # ignores the setting and is always the schema-blind `<postgres_database>_ch_publication` (see
+    # legacy_publication_name's construction), so — unlike the pre-salt slot name, which embeds this
+    # object's own ClickHouse UUID — its existence proves nothing about which engine's schema it belongs
+    # to. A database replicating a NON-default schema that loses its own salted slot and publication on
+    # attach adopts the schema-blind pre-salt slot (still self-proving), but must NOT adopt a schema-blind
+    # pre-salt publication owned by a different, default-schema engine. It cannot recover by creating a
+    # fresh salted publication either: replication streams through the adopted slot, and pgoutput resolves
+    # publication membership from the historic catalog snapshot at each change's LSN, so a publication
+    # created after those changes were written to WAL is skipped and their rows are silently lost. So the
+    # attach fails closed (never hijacking the foreign publication, never losing the WAL gap) and keeps
+    # retrying, and replication resumes on its own once the operator resolves the conflict.
+    table = "uid_table"
+    schema_name = "uid_schema"
+    mat_db = "mat_uid_schema"
+    pg_db = "uid_src"
+
+    # A table in the default schema, published by a hand-crafted publication that stands in for a foreign,
+    # unrelated engine already owning the schema-blind name. No real ClickHouse object is needed for it —
+    # only the PostgreSQL-side objects the adoption logic looks at.
+    cursor = pg_manager.get_db_cursor()
+    create_postgres_table(cursor, table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 50)"
+    )
+    foreign_publication = "postgres_database_ch_publication"
+    cursor.execute(f'DROP PUBLICATION IF EXISTS "{foreign_publication}"')
+    cursor.execute(f'CREATE PUBLICATION "{foreign_publication}" FOR TABLE ONLY "{table}"')
+
+    # A database replicating a different, non-default schema of the same PostgreSQL database, with its own
+    # table and distinct data (values >= 1000) so cross-talk with the foreign, default-schema table is
+    # detectable.
+    create_postgres_schema(cursor, schema_name)
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db,
+        schema_name=schema_name,
+        postgres_database="postgres_database",
+    )
+    create_postgres_table_with_schema(cursor, schema_name, table)
+    instance.query(
+        f"INSERT INTO {pg_db}.{table} SELECT number, number + 1000 FROM numbers(0, 30)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        postgres_database="postgres_database",
+        settings=[
+            f"materialized_postgresql_schema = '{schema_name}'",
+            "materialized_postgresql_use_unique_replication_consumer_identifier = 1",
+        ],
+    )
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db, materialized_database=mat_db
+    )
+
+    # The freshly created database uses the salted identity: the slot is the object's own ClickHouse UUID
+    # salted with the server UUID, and the publication is the same salted hash (schema plays no role in
+    # either, since the unique-identifier branch takes priority — see getReplicationSlotName/getPublicationName).
+    uuid_value = instance.query(
+        f"SELECT uuid FROM system.databases WHERE name = '{mat_db}'"
+    ).strip()
+    presalt_slot = uuid_value.lower().replace("-", "_")
+
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    salted_slot = slots[0]
+    assert salted_slot != presalt_slot
+
+    cursor.execute(
+        f"SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication' "
+        f"AND pubname != '{foreign_publication}'"
+    )
+    pubs = [row[0] for row in cursor.fetchall()]
+    assert len(pubs) == 1, f"expected exactly one non-foreign publication, got {pubs}"
+    salted_publication = pubs[0]
+
+    # While the server is down — the upgrade scenario — the database loses both its own salted slot and
+    # publication, and a schema-blind pre-salt slot appears (as a deployment created before the salting
+    # would own). Its own publication is deliberately NOT recreated: only the foreign, default-schema
+    # publication with that schema-blind name exists.
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{salted_slot}')")
+    cursor.execute(f'DROP PUBLICATION "{salted_publication}"')
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{presalt_slot}', 'pgoutput')"
+    )
+    instance.start_clickhouse()
+
+    # The attach adopts the self-proving pre-salt slot, but fails closed on the publication: the foreign
+    # one is not this engine's schema, and a fresh salted one would lose the WAL gap. The ownership
+    # conflict is logged and startup keeps retrying.
+    assert_logs_contain_with_retry(
+        instance,
+        "publishes tables from a schema this engine does not replicate",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # No cross-talk and no silent progress: the replica never pulls the foreign default-schema rows and
+    # never advances past the 30 rows it already has. Re-check a few times so a wrong adoption would surface.
+    for _ in range(5):
+        assert 0 == int(
+            instance.query(f"SELECT countIf(value < 1000) FROM {mat_db}.{table}")
+        ), "no rows from the foreign, default-schema table must leak in"
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        time.sleep(1)
+
+    # The foreign publication is left untouched, and no fresh salted publication was created (the attach
+    # failed closed before createPublicationIfNeeded).
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    pubs = {row[0] for row in cursor.fetchall()}
+    assert pubs == {
+        foreign_publication
+    }, f"expected only the untouched foreign publication, got {pubs}"
+    cursor.execute(
+        f"SELECT DISTINCT schemaname FROM pg_publication_tables WHERE pubname = '{foreign_publication}'"
+    )
+    assert [("public",)] == cursor.fetchall(), "the foreign publication must stay untouched"
+
+    # The pre-salt slot is in use (adopted) but untouched on the PostgreSQL side; no salted slot reappears.
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    assert {presalt_slot} == {
+        row[0] for row in cursor.fetchall()
+    }, "only the adopted pre-salt slot must exist"
+
+    # Recovery: once the operator resolves the conflict on the PostgreSQL side — giving this engine back its
+    # own publication (schema-blind name, but publishing THIS engine's schema) — the retry adopts it and
+    # replication resumes. Rows written after the correct publication exists stream through with no gap.
+    cursor.execute(f'DROP PUBLICATION "{foreign_publication}"')
+    cursor.execute(
+        f'CREATE PUBLICATION "{foreign_publication}" FOR TABLE ONLY "{schema_name}"."{table}"'
+    )
+    instance.query(
+        f"INSERT INTO {pg_db}.{table} SELECT number, number + 1000 FROM numbers(30, 20)"
+    )
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db, materialized_database=mat_db
+    )
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+    assert 0 == int(
+        instance.query(f"SELECT countIf(value < 1000) FROM {mat_db}.{table}")
+    ), "still no rows from the foreign, default-schema table"
+
+    pg_manager.drop_materialized_db(mat_db)
+    cursor.execute(f'DROP PUBLICATION IF EXISTS "{foreign_publication}"')
+
+
+def test_unique_identifier_adopts_own_publication_from_schema_list(started_cluster):
+    # Companion to the test above and a regression for the same review of
+    # https://github.com/ClickHouse/ClickHouse/pull/110493: the ownership check for the schema-blind
+    # pre-salt publication must recognize this engine's schemas in EVERY mode, not only
+    # `materialized_postgresql_schema`. With `materialized_postgresql_schema_list` the common-schema setting
+    # is empty while the engine still replicates non-default schemas, so the schema set is derived from the
+    # list (see computeReplicatedSchemas). Before the fix such a deployment coerced its schema set to
+    # `"public"`, failed to recognize its own pre-salt publication on upgrade, and refused to start (fail
+    # closed) instead of adopting it. Here the own pre-salt publication exists and is correctly adopted, so
+    # the changes written before the restart stream in and nothing is orphaned.
+    #
+    # The schema list intentionally names more than one schema. A `materialized_postgresql_schema_list` with a
+    # single non-default schema is a separate, pre-existing limitation: PostgreSQL table names are
+    # schema-qualified in the nested database and in the publication only when the list names more than one
+    # schema (see fetchPostgreSQLTablesList), so a single-schema list would fail to build the publication for
+    # reasons unrelated to this fix. Two schemas exercise the schema-qualified path this fix targets.
+    schemas = ["list_schema_a", "list_schema_b"]
+    table = "postgresql_replica_0"
+    mat_db = "mat_list_schema"
+    pg_dbs = ["list_src_a", "list_src_b"]
+    presalt_publication = "postgres_database_ch_publication"
+
+    cursor = pg_manager.get_db_cursor()
+    for schema_name, pg_db in zip(schemas, pg_dbs):
+        create_postgres_schema(cursor, schema_name)
+        pg_manager.create_clickhouse_postgres_db(
+            database_name=pg_db,
+            schema_name=schema_name,
+            postgres_database="postgres_database",
+        )
+        create_postgres_table_with_schema(cursor, schema_name, table)
+        instance.query(
+            f"INSERT INTO {pg_db}.{table} SELECT number, number FROM numbers(0, 30)"
+        )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        postgres_database="postgres_database",
+        settings=[
+            f"materialized_postgresql_schema_list = '{', '.join(schemas)}'",
+            "materialized_postgresql_use_unique_replication_consumer_identifier = 1",
+        ],
+    )
+    for schema_name, pg_db in zip(schemas, pg_dbs):
+        check_tables_are_synchronized(
+            instance,
+            table,
+            schema_name=schema_name,
+            postgres_database=pg_db,
+            materialized_database=mat_db,
+        )
+
+    uuid_value = instance.query(
+        f"SELECT uuid FROM system.databases WHERE name = '{mat_db}'"
+    ).strip()
+    presalt_slot = uuid_value.lower().replace("-", "_")
+
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    salted_slot = slots[0]
+    assert salted_slot != presalt_slot
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    pubs = [row[0] for row in cursor.fetchall()]
+    assert len(pubs) == 1, f"expected exactly one publication, got {pubs}"
+    salted_publication = pubs[0]
+    assert salted_publication != presalt_publication
+
+    # Reconstruct a pre-salt deployment while the server is down: the schema-blind slot (bare UUID) and the
+    # schema-blind publication that publishes THIS engine's non-default-schema tables. Rows added after both
+    # exist must stream through the adopted slot after the restart.
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{salted_slot}')")
+    cursor.execute(f'DROP PUBLICATION "{salted_publication}"')
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{presalt_slot}', 'pgoutput')"
+    )
+    published_tables = ", ".join(f'"{schema_name}"."{table}"' for schema_name in schemas)
+    cursor.execute(
+        f'CREATE PUBLICATION "{presalt_publication}" FOR TABLE ONLY {published_tables}'
+    )
+    for schema_name in schemas:
+        cursor.execute(
+            f'INSERT INTO "{schema_name}"."{table}" (key, value) SELECT g, g FROM generate_series(30, 49) AS g'
+        )
+    instance.start_clickhouse()
+
+    # The attach adopts both the pre-salt slot and — now that its schemas are recognized as belonging to this
+    # engine — the pre-salt publication. No re-snapshot, no orphaned or freshly created salted objects.
+    for schema_name, pg_db in zip(schemas, pg_dbs):
+        check_tables_are_synchronized(
+            instance,
+            table,
+            schema_name=schema_name,
+            postgres_database=pg_db,
+            materialized_database=mat_db,
+        )
+        assert 50 == int(
+            instance.query(f"SELECT count() FROM `{mat_db}`.`{schema_name}.{table}`")
+        )
+
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    assert {presalt_slot} == {
+        row[0] for row in cursor.fetchall()
+    }, "only the adopted pre-salt slot must exist"
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert {presalt_publication} == {
+        row[0] for row in cursor.fetchall()
+    }, "only the adopted pre-salt publication must exist"
+
+    pg_manager.drop_materialized_db(mat_db)
+    cursor.execute(f'DROP PUBLICATION IF EXISTS "{presalt_publication}"')
+
+
+def test_unique_identifier_legacy_publication_not_adopted_with_wrong_table_set(
+    started_cluster,
+):
+    # Regression for the stronger ownership proof requested in review of
+    # https://github.com/ClickHouse/ClickHouse/pull/110493. The pre-salt publication name is schema-blind,
+    # so a schema-name check alone does not prove ownership: another engine replicating a DIFFERENT set of
+    # tables of the SAME schema may already own an identically-named publication. Adopting it would leave the
+    # engine streaming through the wrong publication — some of its own tables would never receive WAL after
+    # the upgrade, while the extra tables would only be skipped. So the pre-salt publication is adopted only
+    # when it publishes EXACTLY this engine's set of tables; a same-schema publication that lists a different
+    # set fails closed (never hijacked, never replaced by a fresh publication that would lose the WAL gap),
+    # and startup keeps retrying until the operator restores the correct publication.
+    schema_name = "wts_schema"
+    tables = ["wts_a", "wts_b"]
+    mat_db = "mat_wts_schema"
+    pg_db = "wts_src"
+    presalt_publication = "postgres_database_ch_publication"
+
+    cursor = pg_manager.get_db_cursor()
+    create_postgres_schema(cursor, schema_name)
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db,
+        schema_name=schema_name,
+        postgres_database="postgres_database",
+    )
+    for table in tables:
+        create_postgres_table_with_schema(cursor, schema_name, table)
+        instance.query(
+            f"INSERT INTO {pg_db}.{table} SELECT number, number FROM numbers(0, 30)"
+        )
+
+    # A database replicating the WHOLE non-default schema (both tables), with the unique identifier.
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        postgres_database="postgres_database",
+        settings=[
+            f"materialized_postgresql_schema = '{schema_name}'",
+            "materialized_postgresql_use_unique_replication_consumer_identifier = 1",
+        ],
+    )
+    for table in tables:
+        check_tables_are_synchronized(
+            instance, table, postgres_database=pg_db, materialized_database=mat_db
+        )
+
+    uuid_value = instance.query(
+        f"SELECT uuid FROM system.databases WHERE name = '{mat_db}'"
+    ).strip()
+    presalt_slot = uuid_value.lower().replace("-", "_")
+
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    salted_slot = slots[0]
+    assert salted_slot != presalt_slot
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    pubs = [row[0] for row in cursor.fetchall()]
+    assert len(pubs) == 1, f"expected exactly one publication, got {pubs}"
+    salted_publication = pubs[0]
+    assert salted_publication != presalt_publication
+
+    # While the server is down — the upgrade scenario — the database loses both its own salted slot and
+    # publication, a schema-blind pre-salt slot appears, and the schema-blind pre-salt publication that
+    # exists publishes only ONE of this engine's two tables (a WRONG table set, standing in for a different
+    # engine that owned the schema-blind name for its own, narrower table subset).
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{salted_slot}')")
+    cursor.execute(f'DROP PUBLICATION "{salted_publication}"')
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{presalt_slot}', 'pgoutput')"
+    )
+    cursor.execute(
+        f'CREATE PUBLICATION "{presalt_publication}" FOR TABLE ONLY "{schema_name}"."{tables[0]}"'
+    )
+    instance.start_clickhouse()
+
+    # The attach adopts the self-proving pre-salt slot, but fails closed on the publication: it publishes a
+    # different set of tables than this engine replicates, so it belongs to another engine. The conflict is
+    # logged and startup keeps retrying.
+    assert_logs_contain_with_retry(
+        instance,
+        "publishes a different set of tables than this engine replicates",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # No silent progress: the replica stays at the 30 rows it already had and never adopts the wrong
+    # publication. Re-check a few times so a wrong adoption would surface.
+    for _ in range(5):
+        for table in tables:
+            assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        time.sleep(1)
+
+    # No fresh salted publication was created (the attach failed closed before createPublicationIfNeeded);
+    # only the wrong pre-salt publication and the adopted pre-salt slot exist.
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert {presalt_publication} == {
+        row[0] for row in cursor.fetchall()
+    }, "no fresh salted publication must be created"
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    assert {presalt_slot} == {
+        row[0] for row in cursor.fetchall()
+    }, "only the adopted pre-salt slot must exist"
+
+    # Recovery: once the operator restores this engine's own publication (schema-blind name, but publishing
+    # this engine's EXACT table set), the retry adopts it and replication resumes. Rows written after the
+    # correct publication exists stream through with no gap.
+    cursor.execute(f'DROP PUBLICATION "{presalt_publication}"')
+    published_tables = ", ".join(f'"{schema_name}"."{table}"' for table in tables)
+    cursor.execute(
+        f'CREATE PUBLICATION "{presalt_publication}" FOR TABLE ONLY {published_tables}'
+    )
+    for table in tables:
+        instance.query(
+            f"INSERT INTO {pg_db}.{table} SELECT number, number FROM numbers(30, 20)"
+        )
+    for table in tables:
+        check_tables_are_synchronized(
+            instance, table, postgres_database=pg_db, materialized_database=mat_db
+        )
+        assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+    cursor.execute(f'DROP PUBLICATION IF EXISTS "{presalt_publication}"')
+
+
+def test_attach_fails_closed_when_publication_lost_behind_slot(started_cluster):
+    # On attach, replication resumes from the existing replication slot's confirmed_flush_lsn. If the
+    # publication was lost while the slot survived, recreating the publication and resuming from the
+    # slot would silently skip every change committed while the publication did not exist: pgoutput
+    # resolves publication membership from a historic catalog snapshot at each change's LSN, so a
+    # publication created after those changes were written never delivers them, and the replica falls
+    # permanently behind without any error. The attach must fail closed instead, leaving the decision -
+    # recreate the publication and explicitly accept the loss of the gap, or rebuild the replica - to
+    # an operator, and must keep retrying so replication resumes once the conflict is resolved.
+    table = "pub_lost_table"
+    mat_db = "pub_lost_database"
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the server is down, the publication disappears (the slot survives), and more rows are
+    # committed: the WAL gap that a recreated publication would silently drop.
+    instance.stop_clickhouse()
+    cursor.execute(f'DROP PUBLICATION "{publication}"')
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "would silently lose every change written to PostgreSQL while the publication did not exist",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: the publication is not recreated behind the surviving slot, and no rows moved.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        time.sleep(1)
+    cursor.execute(
+        "SELECT count(*) FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    assert slots == [row[0] for row in cursor.fetchall()]
+
+    # Recovery is the operator's explicit decision. The always-safe path is a rebuild: dropping the
+    # database removes the surviving slot, and recreating it takes a fresh snapshot that contains every
+    # row - including the ones committed while the publication did not exist. Nothing was lost by
+    # failing closed. (Recreating the publication behind the surviving slot instead would either lose
+    # the gap silently or leave PostgreSQL itself refusing to stream past it, depending on the
+    # PostgreSQL version - which is exactly why the engine refuses to do it on its own.)
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+    cursor.execute(
+        "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    # And the rebuilt replica keeps streaming.
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_fails_closed_when_slot_lost_behind_publication(started_cluster):
+    # The mirror of the case above: on attach the publication survives, but the replication slot is gone
+    # (for example after a PostgreSQL major upgrade, which does not preserve replication slots but keeps
+    # publications in the catalog, or after an operator dropped the slot). The slot holds the position
+    # replication resumes from, so without it there is nothing to resume. Re-snapshotting the current
+    # PostgreSQL state into the already-populated nested tables would silently leave the replica stale:
+    # snapshot rows are materialized with _sign = 1 and _version = 1, so they neither delete rows that
+    # disappeared from PostgreSQL while the slot was gone nor override rows whose last replicated version
+    # is already greater than 1. The attach must fail closed instead and keep retrying, leaving a clean
+    # rebuild as the operator's explicit recovery.
+    table = "slot_lost_table"
+    mat_db = "slot_lost_database"
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    slot = slots[0]
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+
+    # While the server is down, the replication slot disappears (the publication survives), and more rows
+    # are committed. A re-snapshot on attach would silently miss deletions and stale updates; a clean
+    # rebuild would not.
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "would silently leave the replica stale",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: no fresh slot is created behind the surviving publication, and no rows moved.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        time.sleep(1)
+    cursor.execute(
+        "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+    cursor.execute(
+        "SELECT count(*) FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert 1 == int(cursor.fetchall()[0][0])
+
+    # Recovery is a clean rebuild: dropping the database removes the leftover publication, and recreating
+    # it takes a fresh snapshot that contains every row - including the ones committed while the slot was
+    # gone. Nothing was lost by failing closed.
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+    cursor.execute(
+        "SELECT count(*) FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    # And the rebuilt replica keeps streaming.
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_fails_closed_when_publication_drifts_from_tables_list(started_cluster):
+    # On attach the existing publication is reused as-is (it is this engine's persisted table set) and the
+    # replication slot resumes from its confirmed_flush_lsn. If the publication has drifted and no longer
+    # publishes a table this engine replicates - here materialized_postgresql_tables_list = 'a, b' but an
+    # operator ran ALTER PUBLICATION ... DROP TABLE b - resuming would stream WAL filtered through the
+    # drifted publication, so table b silently stops receiving changes, and re-adding it to the publication
+    # afterwards cannot recover the changes committed while it was unpublished (pgoutput resolves publication
+    # membership from a historic catalog snapshot at each change's LSN). The attach must fail closed instead.
+    table_a = "drift_tables_list_a"
+    table_b = "drift_tables_list_b"
+    mat_db = "drift_tables_list_database"
+    pg_manager.create_postgres_table(table_a)
+    pg_manager.create_postgres_table(table_b)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_a} SELECT number, number FROM numbers(0, 30)"
+    )
+    instance.query(
+        f"INSERT INTO postgres_database.{table_b} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table_a}, {table_b}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the server is down, the publication drifts (table_b is dropped from it), and more rows are
+    # committed to both tables: the changes to table_b that resuming through the drifted publication would
+    # silently never deliver.
+    instance.stop_clickhouse()
+    cursor.execute(f'ALTER PUBLICATION "{publication}" DROP TABLE {table_b}')
+    cursor.execute(f"INSERT INTO {table_a} SELECT i, i FROM generate_series(30, 49) AS i")
+    cursor.execute(f"INSERT INTO {table_b} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "no longer publishes the following table(s) this engine replicates",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: neither table advances (the engine does not resume through the drifted publication).
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_a}"))
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_b}"))
+        time.sleep(1)
+
+    # Recovery is a clean rebuild: dropping the database removes the drifted publication and its slot, and
+    # recreating it takes a fresh snapshot with a full publication, so every row - including the ones
+    # committed while table_b was unpublished - is restored. Nothing was lost by failing closed.
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table_a}, {table_b}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_a}"))
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_b}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_fails_closed_when_whole_schema_publication_drifts(started_cluster):
+    # The whole-schema database engine (no materialized_postgresql_tables_list) treats its publication as
+    # its persisted table set on attach. Its current-identity drift check lives in fetchRequiredTables()
+    # and compares the publication against the tables it already replicated in the previous run (their
+    # nested tables exist on disk), not against the live schema - a table created in PostgreSQL after
+    # CREATE DATABASE is legitimately absent from both. Here a table that WAS replicated is dropped from the
+    # publication, which would silently stop streaming its changes, so the attach must fail closed.
+    table_a = "drift_whole_schema_a"
+    table_b = "drift_whole_schema_b"
+    mat_db = "drift_whole_schema_database"
+    pg_manager.create_postgres_table(table_a)
+    pg_manager.create_postgres_table(table_b)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_a} SELECT number, number FROM numbers(0, 30)"
+    )
+    instance.query(
+        f"INSERT INTO postgres_database.{table_b} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the server is down, a table that was already replicated is dropped from the publication.
+    instance.stop_clickhouse()
+    cursor.execute(f'ALTER PUBLICATION "{publication}" DROP TABLE {table_b}')
+    cursor.execute(f"INSERT INTO {table_a} SELECT i, i FROM generate_series(30, 49) AS i")
+    cursor.execute(f"INSERT INTO {table_b} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "no longer publishes the following table(s) this database already replicated",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: neither table advances.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_a}"))
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_b}"))
+        time.sleep(1)
+
+    # Recovery is a clean rebuild.
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_a}"))
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_b}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_fails_closed_when_both_slot_and_publication_lost(started_cluster):
+    # On attach, if BOTH the replication slot and the publication are gone while the replica already holds
+    # data from a previous run (its nested tables exist on disk), the code would otherwise fall through to an
+    # in-place re-snapshot into those already-populated nested tables. The slot being gone too does not make
+    # that re-snapshot any less destructive: snapshot rows are materialized with _sign = 1 and _version = 1,
+    # so rows deleted from PostgreSQL while replication was down remain visible and rows whose last WAL
+    # version was already higher are not repaired, silently leaving the replica stale. The attach must fail
+    # closed, leaving a clean rebuild as the operator's recovery. (A never-yet-synchronized database, with no
+    # nested tables on disk, is exempted and is allowed to run its initial snapshot.)
+    table = "both_lost_table"
+    mat_db = "both_lost_database"
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    slot = slots[0]
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the server is down, both the slot and the publication disappear, and more rows are committed.
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+    cursor.execute(f'DROP PUBLICATION "{publication}"')
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "this replica already holds data from a previous run",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: no rows moved, and neither a fresh slot nor a fresh publication is created.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        time.sleep(1)
+    cursor.execute(
+        "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+    cursor.execute(
+        "SELECT count(*) FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+
+    # Recovery is a clean rebuild: dropping the database (a no-op cleanup, since both objects are already
+    # gone) and recreating it takes a fresh snapshot that contains every row, including the ones committed
+    # while replication was down. Nothing was lost by failing closed.
+    pg_manager.drop_materialized_db(mat_db)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    # And the rebuilt replica keeps streaming.
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_tolerates_extra_table_added_to_whole_schema_publication(started_cluster):
+    # The mirror of test_attach_fails_closed_when_whole_schema_publication_drifts: a table that this
+    # database never replicated is ADDED to the publication while the server is down (for example an
+    # operator ran ALTER PUBLICATION ... ADD TABLE). The extra table has no nested table on disk, so it
+    # must be ignored on attach - the on-disk table set (the tables replicated in the previous run) is
+    # authoritative. Otherwise fetchRequiredTables() would return the extra table too, the database engine
+    # would build a wrapper for it, and startSynchronization() would throw on its missing nested table on
+    # every attach retry, leaving the whole database unable to resume replication for the tables it does
+    # replicate.
+    table_a = "grow_pub_a"
+    table_b = "grow_pub_b"
+    table_c = "grow_pub_c"
+    mat_db = "grow_pub_database"
+    pg_manager.create_postgres_table(table_a)
+    pg_manager.create_postgres_table(table_b)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_a} SELECT number, number FROM numbers(0, 30)"
+    )
+    instance.query(
+        f"INSERT INTO postgres_database.{table_b} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the server is down, a brand-new table this database never replicated is created and added to
+    # the publication, and more rows are committed to the two replicated tables.
+    instance.stop_clickhouse()
+    create_postgres_table(cursor, table_c)
+    cursor.execute(f'ALTER PUBLICATION "{publication}" ADD TABLE {table_c}')
+    cursor.execute(f"INSERT INTO {table_a} SELECT i, i FROM generate_series(30, 49) AS i")
+    cursor.execute(f"INSERT INTO {table_b} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    # Replication resumes for the tables that were already replicated: the extra published table is ignored
+    # rather than turned into a table to materialize, so the database does not get stuck retrying forever.
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_a}"))
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_b}"))
+
+    # The extra table is not materialized - a table is only replicated once it is explicitly attached.
+    assert "0" == instance.query(f"EXISTS TABLE {mat_db}.{table_c}").strip()
+
+    # Ongoing changes keep streaming for the replicated tables.
+    cursor.execute(f"INSERT INTO {table_a} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_a}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_fails_closed_when_publication_rewritten_to_different_schema(started_cluster):
+    # Regression flagged in review of https://github.com/ClickHouse/ClickHouse/pull/110493: the
+    # current-identity drift check reused the existing publication on attach and, in the single-schema
+    # modes (materialized_postgresql_schema, the default public schema, a whole-schema database over one
+    # common schema), compared only the bare table NAMES. The MaterializedPostgreSQL WAL consumer also keys
+    # relation messages by the bare relation name in that mode. So if an operator rewrote the publication
+    # from schema_a.t to schema_b.t (the SAME bare table name in a different schema) while the server was
+    # down, attach silently passed and then replayed WAL from schema_b.t into the ClickHouse table for
+    # schema_a.t. The check must compare exact (schema, table) pairs and fail closed instead. This exercises
+    # the current-identity path (the standalone table engine, whose check lives in startSynchronization()).
+    cursor = pg_manager.get_db_cursor()
+    schema_a = "rewrite_a"
+    schema_b = "rewrite_b"
+    table = "rewrite_t"
+    clickhouse_postgres_db = "postgres_database_rewrite_schema"
+
+    create_postgres_schema(cursor, schema_a)
+    create_postgres_schema(cursor, schema_b)
+    create_postgres_table_with_schema(cursor, schema_a, table)
+    create_postgres_table_with_schema(cursor, schema_b, table)
+
+    # Distinct data so cross-schema replay is detectable: schema_b's values are offset by 1000.
+    cursor.execute(
+        f'INSERT INTO "{schema_a}"."{table}" (key, value) SELECT g, g FROM generate_series(0, 29) AS g'
+    )
+
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=clickhouse_postgres_db,
+        schema_name=schema_a,
+        postgres_database="postgres_database",
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema_a}'
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=clickhouse_postgres_db,
+        materialized_database="default",
+    )
+    assert 30 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the table is detached, the publication is rewritten to publish the SAME table name from a
+    # different schema, and rows are committed to that foreign table. Resuming through the rewritten
+    # publication would replay these rows (value >= 1000) into the ClickHouse table for schema_a.t.
+    instance.query(f"DETACH TABLE {table} PERMANENTLY")
+    cursor.execute(
+        f'ALTER PUBLICATION "{publication}" DROP TABLE "{schema_a}"."{table}"'
+    )
+    cursor.execute(
+        f'ALTER PUBLICATION "{publication}" ADD TABLE "{schema_b}"."{table}"'
+    )
+    cursor.execute(
+        f'INSERT INTO "{schema_b}"."{table}" (key, value) SELECT g, g + 1000 FROM generate_series(0, 19) AS g'
+    )
+
+    # ATTACH returns immediately (startup is delayed); the background startup task fails closed on the
+    # (schema, table) mismatch and keeps retrying.
+    instance.query(f"ATTACH TABLE {table}")
+    assert_logs_contain_with_retry(
+        instance,
+        "no longer publishes the following table(s) this engine replicates",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: the table does not advance, and NONE of schema_b's rows (value >= 1000) are replayed
+    # into it - there is no cross-schema replay.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {table}"))
+        assert 0 == int(instance.query(f"SELECT countIf(value >= 1000) FROM {table}"))
+        time.sleep(1)
+
+    # Recovery is a clean rebuild: dropping the table removes the rewritten publication and its slot, and
+    # recreating it takes a fresh snapshot of schema_a.t only (still no schema_b rows).
+    instance.query(f"DROP TABLE {table} SYNC")
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema_a}'
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=clickhouse_postgres_db,
+        materialized_database="default",
+    )
+    assert 30 == int(instance.query(f"SELECT count() FROM {table}"))
+    assert 0 == int(instance.query(f"SELECT countIf(value >= 1000) FROM {table}"))
+
+    instance.query(f"DROP TABLE {table} SYNC")
+
+
+def test_attach_fails_closed_when_whole_schema_publication_rewritten_to_different_schema(
+    started_cluster,
+):
+    # The whole-schema attach-path counterpart of
+    # test_attach_fails_closed_when_publication_rewritten_to_different_schema. A MaterializedPostgreSQL
+    # database over a single non-default schema (materialized_postgresql_schema, no
+    # materialized_postgresql_tables_list) keeps its publication as its persisted table set; its drift
+    # check lives in fetchRequiredTables(). Before the fix it compared bare table names, so rewriting the
+    # publication from schema_a.t to schema_b.t (same bare name, other schema) while the server was down
+    # passed and then replayed schema_b.t's WAL into schema_a.t's ClickHouse table. It must compare exact
+    # (schema, table) pairs and fail closed.
+    cursor = pg_manager.get_db_cursor()
+    schema_a = "ws_rewrite_a"
+    schema_b = "ws_rewrite_b"
+    table = "ws_rewrite_t"
+    mat_db = "ws_rewrite_database"
+    pg_db_a = "ws_rewrite_a_src"
+
+    create_postgres_schema(cursor, schema_a)
+    create_postgres_schema(cursor, schema_b)
+    create_postgres_table_with_schema(cursor, schema_a, table)
+    create_postgres_table_with_schema(cursor, schema_b, table)
+
+    cursor.execute(
+        f'INSERT INTO "{schema_a}"."{table}" (key, value) SELECT g, g FROM generate_series(0, 29) AS g'
+    )
+
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db_a,
+        schema_name=schema_a,
+        postgres_database="postgres_database",
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_schema = '{schema_a}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db_a, materialized_database=mat_db
+    )
+    assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the server is down, the publication is rewritten to publish the same table name from a
+    # different schema, and rows are committed to that foreign table.
+    instance.stop_clickhouse()
+    cursor.execute(
+        f'ALTER PUBLICATION "{publication}" DROP TABLE "{schema_a}"."{table}"'
+    )
+    cursor.execute(
+        f'ALTER PUBLICATION "{publication}" ADD TABLE "{schema_b}"."{table}"'
+    )
+    cursor.execute(
+        f'INSERT INTO "{schema_b}"."{table}" (key, value) SELECT g, g + 1000 FROM generate_series(0, 19) AS g'
+    )
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "no longer publishes the following table(s) this database already replicated",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: the table does not advance and no schema_b rows (value >= 1000) are replayed.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        assert 0 == int(
+            instance.query(f"SELECT countIf(value >= 1000) FROM {mat_db}.{table}")
+        )
+        time.sleep(1)
+
+    # Recovery is a clean rebuild.
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_schema = '{schema_a}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db_a, materialized_database=mat_db
+    )
+    assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+    assert 0 == int(
+        instance.query(f"SELECT countIf(value >= 1000) FROM {mat_db}.{table}")
+    )
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_fails_closed_when_foreign_schema_table_added_to_publication(
+    started_cluster,
+):
+    # Regression flagged in review of https://github.com/ClickHouse/ClickHouse/pull/110493: the
+    # current-identity drift check on attach compared exact (schema, table) pairs and rejected a publication
+    # that no longer publishes one of this engine's tables, but it TOLERATED extra tables the publication
+    # publishes that this engine does not replicate. In the single-schema modes
+    # (materialized_postgresql_schema, the default public schema, a whole-schema database over one common
+    # schema) that is not safe: MaterializedPostgreSQLConsumer keys relation messages by the bare relation
+    # name, so an extra foreign-schema table whose bare name collides with a replicated table (schema_a.t is
+    # still published, but an operator also ADDs schema_b.t while the server is down) has its WAL replayed
+    # into the ClickHouse table for schema_a.t. The check must fail closed on such a bare-name collision.
+    # This exercises the current-identity path (the standalone table engine, whose check lives in
+    # startSynchronization()).
+    cursor = pg_manager.get_db_cursor()
+    schema_a = "extra_collide_a"
+    schema_b = "extra_collide_b"
+    table = "extra_collide_t"
+    clickhouse_postgres_db = "postgres_database_extra_collide_schema"
+
+    create_postgres_schema(cursor, schema_a)
+    create_postgres_schema(cursor, schema_b)
+    create_postgres_table_with_schema(cursor, schema_a, table)
+    create_postgres_table_with_schema(cursor, schema_b, table)
+
+    # Distinct data so cross-schema replay is detectable: schema_b's values are offset by 1000.
+    cursor.execute(
+        f'INSERT INTO "{schema_a}"."{table}" (key, value) SELECT g, g FROM generate_series(0, 29) AS g'
+    )
+
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=clickhouse_postgres_db,
+        schema_name=schema_a,
+        postgres_database="postgres_database",
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema_a}'
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=clickhouse_postgres_db,
+        materialized_database="default",
+    )
+    assert 30 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the table is detached, the publication KEEPS schema_a.t but ALSO gains schema_b.t (the same bare
+    # table name in a different schema), and rows are committed to that foreign table. Resuming through this
+    # publication would replay these rows (value >= 1000) into the ClickHouse table for schema_a.t because the
+    # consumer maps the bare name "t" onto the single storage.
+    instance.query(f"DETACH TABLE {table} PERMANENTLY")
+    cursor.execute(
+        f'ALTER PUBLICATION "{publication}" ADD TABLE "{schema_b}"."{table}"'
+    )
+    cursor.execute(
+        f'INSERT INTO "{schema_b}"."{table}" (key, value) SELECT g, g + 1000 FROM generate_series(0, 19) AS g'
+    )
+
+    # ATTACH returns immediately (startup is delayed); the background startup task fails closed on the
+    # bare-name collision and keeps retrying.
+    instance.query(f"ATTACH TABLE {table}")
+    assert_logs_contain_with_retry(
+        instance,
+        "whose bare name collides with a table this engine replicates",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: the table does not advance, and NONE of schema_b's rows (value >= 1000) are replayed into
+    # it - there is no cross-schema replay.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {table}"))
+        assert 0 == int(instance.query(f"SELECT countIf(value >= 1000) FROM {table}"))
+        time.sleep(1)
+
+    # Recovery is a clean rebuild: dropping the table removes the publication and its slot, and recreating it
+    # takes a fresh snapshot of schema_a.t only (still no schema_b rows).
+    instance.query(f"DROP TABLE {table} SYNC")
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_schema = '{schema_a}'
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=clickhouse_postgres_db,
+        materialized_database="default",
+    )
+    assert 30 == int(instance.query(f"SELECT count() FROM {table}"))
+    assert 0 == int(instance.query(f"SELECT countIf(value >= 1000) FROM {table}"))
+
+    instance.query(f"DROP TABLE {table} SYNC")
+
+
+def test_attach_fails_closed_when_foreign_schema_table_added_to_whole_schema_publication(
+    started_cluster,
+):
+    # The whole-schema attach-path counterpart of
+    # test_attach_fails_closed_when_foreign_schema_table_added_to_publication. A MaterializedPostgreSQL
+    # database over a single non-default schema (materialized_postgresql_schema, no
+    # materialized_postgresql_tables_list) keeps its publication as its persisted table set; its drift check
+    # lives in fetchRequiredTables(). Adding schema_b.t to the publication while KEEPING schema_a.t (same bare
+    # name, other schema) while the server was down must fail closed instead of resuming and replaying
+    # schema_b.t's WAL into schema_a.t's ClickHouse table.
+    cursor = pg_manager.get_db_cursor()
+    schema_a = "ws_extra_collide_a"
+    schema_b = "ws_extra_collide_b"
+    table = "ws_extra_collide_t"
+    mat_db = "ws_extra_collide_database"
+    pg_db_a = "ws_extra_collide_a_src"
+
+    create_postgres_schema(cursor, schema_a)
+    create_postgres_schema(cursor, schema_b)
+    create_postgres_table_with_schema(cursor, schema_a, table)
+    create_postgres_table_with_schema(cursor, schema_b, table)
+
+    cursor.execute(
+        f'INSERT INTO "{schema_a}"."{table}" (key, value) SELECT g, g FROM generate_series(0, 29) AS g'
+    )
+
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db_a,
+        schema_name=schema_a,
+        postgres_database="postgres_database",
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_schema = '{schema_a}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db_a, materialized_database=mat_db
+    )
+    assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the server is down, the publication keeps schema_a.t but also gains schema_b.t (the same table
+    # name in a different schema), and rows are committed to that foreign table.
+    instance.stop_clickhouse()
+    cursor.execute(
+        f'ALTER PUBLICATION "{publication}" ADD TABLE "{schema_b}"."{table}"'
+    )
+    cursor.execute(
+        f'INSERT INTO "{schema_b}"."{table}" (key, value) SELECT g, g + 1000 FROM generate_series(0, 19) AS g'
+    )
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "whose bare name collides with a table this database replicates",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: the table does not advance and no schema_b rows (value >= 1000) are replayed.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        assert 0 == int(
+            instance.query(f"SELECT countIf(value >= 1000) FROM {mat_db}.{table}")
+        )
+        time.sleep(1)
+
+    # Recovery is a clean rebuild.
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_schema = '{schema_a}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(
+        instance, table, postgres_database=pg_db_a, materialized_database=mat_db
+    )
+    assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+    assert 0 == int(
+        instance.query(f"SELECT countIf(value >= 1000) FROM {mat_db}.{table}")
+    )
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_fails_closed_when_publication_publish_flags_altered(started_cluster):
+    # The attach-time membership checks prove WHICH tables the publication publishes; the definition check
+    # proves HOW it publishes them. Here the table list still matches, but an operator ran
+    # ALTER PUBLICATION ... SET (publish = 'insert') while the server was down: resuming from the slot
+    # through that publication would silently omit every UPDATE and DELETE, and restoring the definition
+    # afterwards cannot recover them (pgoutput resolves the publication definition from a historic catalog
+    # snapshot at each change's LSN). The attach must fail closed instead.
+    table = "publish_flags_altered"
+    mat_db = "publish_flags_altered_database"
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the server is down, the publication definition is altered to publish only INSERTs, and UPDATEs
+    # are committed: the changes that resuming through the altered publication would silently never deliver.
+    instance.stop_clickhouse()
+    cursor.execute(f'ALTER PUBLICATION "{publication}" SET (publish = \'insert\')')
+    cursor.execute(f"UPDATE {table} SET value = value + 1000 WHERE key < 10")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "does not publish all operation types",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: nothing advances and the omitted UPDATEs are not half-applied.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        assert 0 == int(
+            instance.query(f"SELECT countIf(value >= 1000) FROM {mat_db}.{table}")
+        )
+        time.sleep(1)
+
+    # Recovery is a clean rebuild: dropping the database removes the altered publication and its slot, and
+    # recreating it takes a fresh snapshot with a full publication, so every row - including the updated
+    # ones - is restored. Nothing was lost by failing closed.
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+    assert 10 == int(
+        instance.query(f"SELECT countIf(value >= 1000) FROM {mat_db}.{table}")
+    )
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_fails_closed_when_publication_row_filter_added(started_cluster):
+    # The PostgreSQL 15+ variant of the definition check: the publication still publishes exactly this
+    # engine's table, but an operator rewrote it with a row filter
+    # (ALTER PUBLICATION ... SET TABLE t WHERE (...)) while the server was down. Resuming from the slot
+    # through it would silently drop every change the filter excludes, so the attach must fail closed.
+    table = "publication_row_filter"
+    mat_db = "publication_row_filter_database"
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    instance.stop_clickhouse()
+    cursor.execute(
+        f'ALTER PUBLICATION "{publication}" SET TABLE ONLY {table} WHERE (key < 5)'
+    )
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "applies a row filter or a column list",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    # Fail closed: the engine does not resume through the filtered publication.
+    for _ in range(5):
+        assert 30 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+        time.sleep(1)
+
+    # Recovery is a clean rebuild, restoring every row including the gap ones.
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            "SELECT count(*) FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+# A PostgreSQL table without a primary key and without a replica identity index cannot be materialized:
+# the initial snapshot of that table fails, so the database engine creates its publication and its
+# replication slot but never creates a single nested table. That is the "never yet synchronized" state the
+# two tests below restart in.
+postgres_table_template_without_primary_key = """
+    CREATE TABLE IF NOT EXISTS "{}" (
+    key Integer NOT NULL, value Integer)
+    """
+
+
+def wait_for_replication_slot(cursor, expected_count=1):
+    for _ in range(60):
+        cursor.execute(
+            "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        slots = [row[0] for row in cursor.fetchall()]
+        if len(slots) == expected_count:
+            return slots
+        time.sleep(1)
+    raise AssertionError(f"expected {expected_count} replication slot(s), got {slots}")
+
+
+def test_attach_bootstraps_when_publication_survives_a_never_synchronized_run(
+    started_cluster,
+):
+    # On attach a surviving publication without its replication slot normally fails closed: there is no
+    # position to resume from, and re-snapshotting into already-populated nested tables would silently leave
+    # the replica stale. That reasoning only applies once a previous run actually materialized data. If the
+    # first synchronization was interrupted after the publication was created but before the replication
+    # slot was (here: the slot is dropped while the server is down, and the only table could not be
+    # materialized at all because it had no primary key), there are no nested tables on disk, nothing can be
+    # made stale, and the initial snapshot through the surviving publication is the correct - and only -
+    # way forward. Failing closed there would strand the database in a retry loop forever.
+    table = "never_synchronized_table"
+    mat_db = "never_synchronized_database"
+    pg_manager.create_postgres_table(
+        table, template=postgres_table_template_without_primary_key
+    )
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 29) AS i")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+
+    # The publication and the slot exist, but the table was never materialized.
+    slots = wait_for_replication_slot(cursor)
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{table}"))
+
+    # Interrupt that first synchronization: while the server is down the slot disappears (the publication
+    # survives), and the table gets the primary key it was missing, so the restart can finally snapshot it.
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{slots[0]}')")
+    cursor.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (key)")
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    # The attach must bootstrap instead of failing closed: a fresh slot is created behind the surviving
+    # publication and the initial snapshot materializes every row.
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+    wait_for_replication_slot(cursor)
+
+    # And the bootstrapped replica keeps streaming.
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_bootstraps_when_slot_and_publication_survive_a_never_synchronized_run(
+    started_cluster,
+):
+    # The same never-synchronized state, but this time the interrupted first run leaves BOTH the
+    # publication and the replication slot behind - nothing was dropped on the PostgreSQL side, the run
+    # simply never materialized a table (here: the only table had no primary key, so it could not be
+    # snapshotted). An existing slot makes the attach path resume from its position instead of running the
+    # initial snapshot, and it then asks every storage for a nested table that was never created, throwing
+    # `UNKNOWN_TABLE` and retrying forever. There is no local data to protect in that state, so the attach
+    # must drop the leftover slot and bootstrap from scratch.
+    table = "never_synchronized_intact_table"
+    mat_db = "never_synchronized_intact_database"
+    pg_manager.create_postgres_table(
+        table, template=postgres_table_template_without_primary_key
+    )
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 29) AS i")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+
+    # The publication and the slot exist, but the table was never materialized.
+    wait_for_replication_slot(cursor)
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{table}"))
+
+    # Restart with both PostgreSQL-side objects intact, after giving the table the primary key it was
+    # missing so that the initial snapshot can finally run.
+    instance.stop_clickhouse()
+    cursor.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (key)")
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    # The attach must bootstrap: the leftover slot is dropped, a fresh one is created and the initial
+    # snapshot materializes every row - including the ones written while the server was down.
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+    wait_for_replication_slot(cursor)
+
+    # And the bootstrapped replica keeps streaming.
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_attach_bootstraps_when_slot_survives_a_never_synchronized_run(
+    started_cluster,
+):
+    # If the first synchronization created both PostgreSQL objects but failed before materializing a table,
+    # dropping the publication while ClickHouse is down must not strand the database. The leftover slot has
+    # no consumed snapshot to resume, and no nested table exists that a fresh snapshot could make stale.
+    table = "never_synchronized_slot_only_table"
+    mat_db = "never_synchronized_slot_only_database"
+    pg_manager.create_postgres_table(
+        table, template=postgres_table_template_without_primary_key
+    )
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 29) AS i")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+
+    wait_for_replication_slot(cursor)
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{table}"))
+
+    instance.stop_clickhouse()
+    cursor.execute(f"DROP PUBLICATION {publications[0]}")
+    cursor.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (key)")
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    # Attach recreates the publication and the leftover slot, then snapshots every existing row.
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+    wait_for_replication_slot(cursor)
+
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_legacy_identity_not_adopted_when_nothing_was_replicated_yet(started_cluster):
+    # The legacy replication identity is adopted on attach so that an upgraded deployment keeps using the
+    # slot and publication it already has, instead of re-snapshotting into its populated nested tables. A
+    # database whose first synchronization was interrupted before it materialized a single table has no
+    # such data: its on-disk table set is empty, so the exact-table-set ownership proof has no evidence to
+    # work with and would reject every real legacy publication as foreign, blocking the upgrade forever.
+    # Adoption is therefore skipped in that state and the initial synchronization runs under the current
+    # identity, creating its own publication, slot and snapshot from scratch.
+    table = "legacy_never_synchronized_table"
+    mat_db = "legacy_never_synchronized_database"
+    pg_manager.create_postgres_table(
+        table, template=postgres_table_template_without_primary_key
+    )
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 29) AS i")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+            "materialized_postgresql_use_unique_replication_consumer_identifier = 1",
+        ],
+    )
+    salted_slots = wait_for_replication_slot(cursor)
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{table}"))
+
+    # Reconstruct the PostgreSQL-side state of a deployment created before the unique replication consumer
+    # identifier became salted with the server UUID, whose first synchronization was interrupted: pre-salt
+    # slot and publication, no nested table on disk. The pre-salt slot name is the bare ClickHouse database
+    # UUID, and the pre-salt publication name ignores the unique-identifier setting.
+    db_uuid = instance.query(
+        f"SELECT uuid FROM system.databases WHERE name = '{mat_db}'"
+    ).strip()
+    presalt_slot = db_uuid.lower().replace("-", "_")
+    presalt_publication = "postgres_database_ch_publication"
+
+    instance.stop_clickhouse()
+    for slot in salted_slots:
+        cursor.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    for publication in [row[0] for row in cursor.fetchall()]:
+        cursor.execute(f'DROP PUBLICATION "{publication}"')
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{presalt_slot}', 'pgoutput')"
+    )
+    cursor.execute(
+        f'CREATE PUBLICATION "{presalt_publication}" FOR TABLE ONLY "{table}"'
+    )
+    cursor.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (key)")
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    # The attach must not try to adopt the pre-salt identity, and must not fail closed either: it runs its
+    # initial synchronization under the salted identity and materializes every row.
+    assert_logs_contain_with_retry(
+        instance,
+        "this database has not replicated any table yet",
+        retry_count=60,
+        sleep_time=1,
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    # A salted slot and a salted publication of its own were created, while the pre-salt objects of the
+    # interrupted run were left untouched for the operator.
+    slots = wait_for_replication_slot(cursor, expected_count=2)
+    assert presalt_slot in slots
+    salted_slot = [slot for slot in slots if slot != presalt_slot][0]
+    cursor.execute("SELECT pubname FROM pg_publication")
+    publications = [row[0] for row in cursor.fetchall()]
+    assert presalt_publication in publications
+    assert len(publications) == 2, f"expected two publications, got {publications}"
+
+    # And the replica keeps streaming through its own identity.
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    # Dropping the database removes only its own objects; clean up the leftovers of the interrupted run
+    # explicitly (a leftover replication slot would also block dropping the PostgreSQL database).
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            f"SELECT count(*) FROM pg_replication_slots WHERE slot_name = '{salted_slot}'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+    cursor.execute(f"SELECT pg_drop_replication_slot('{presalt_slot}')")
+    cursor.execute(f'DROP PUBLICATION "{presalt_publication}"')
+
+
+def test_fresh_full_definition_attach_table_bootstraps(started_cluster):
+    # The attach-time fail-closed checks refuse an initial snapshot whenever this replica already holds
+    # data from a previous run. The standalone table engine has no on-disk table set to test that against,
+    # and a replay of its stored metadata does imply a completed previous run - but a full-definition
+    # `ATTACH TABLE ... ENGINE = MaterializedPostgreSQL` is not such a replay. It is a freshly supplied
+    # definition introducing a brand-new object that has never replicated anything, and it still takes the
+    # attach path because StorageMaterializedPostgreSQL treats every LoadingStrictnessLevel::ATTACH as an
+    # attach. With neither a replication slot nor a publication in PostgreSQL, refusing here would make the
+    # `ATTACH` succeed and then leave the background startup task retrying forever without ever
+    # replicating. The table must bootstrap instead: run its initial snapshot and then stream.
+    table = "fresh_attach_table"
+    table_uuid = "00000000-0000-0000-0000-000000110493"
+    pg_manager.create_postgres_table(table)
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 49) AS i")
+
+    # Neither the slot nor the publication of this brand-new object exists yet.
+    slot = f"postgres_database_{table}_ch_replication_slot"
+    publication = f"postgres_database_{table}_ch_publication"
+    cursor.execute(
+        f"SELECT count(*) FROM pg_replication_slots WHERE slot_name = '{slot}'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+    cursor.execute(f"SELECT count(*) FROM pg_publication WHERE pubname = '{publication}'")
+    assert 0 == int(cursor.fetchall()[0][0])
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        ATTACH TABLE default.{table} UUID '{table_uuid}' (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100
+        """
+    )
+
+    # The initial snapshot runs (the `ATTACH` startup is delayed, so this is the background task), and the
+    # slot and the publication this engine needs are created from scratch.
+    check_tables_are_synchronized(instance, table, materialized_database="default")
+    assert 50 == int(instance.query(f"SELECT count() FROM {table}"))
+    cursor.execute(
+        f"SELECT count(*) FROM pg_replication_slots WHERE slot_name = '{slot}'"
+    )
+    assert 1 == int(cursor.fetchall()[0][0])
+    cursor.execute(f"SELECT count(*) FROM pg_publication WHERE pubname = '{publication}'")
+    assert 1 == int(cursor.fetchall()[0][0])
+
+    # And the bootstrapped table keeps streaming from the WAL.
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database="default")
+    assert 60 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    instance.query(f"DROP TABLE {table} SYNC")
+    for _ in range(30):
+        cursor.execute(
+            f"SELECT count(*) FROM pg_replication_slots WHERE slot_name = '{slot}'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+    cursor.execute(
+        f"SELECT count(*) FROM pg_replication_slots WHERE slot_name = '{slot}'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+
+
+def test_attach_table_keeps_schema_list_database_restartable(started_cluster):
+    # Regression for a review finding on https://github.com/ClickHouse/ClickHouse/pull/110493: for a
+    # database created with `materialized_postgresql_schema_list`, `ATTACH TABLE` used to persist
+    # `materialized_postgresql_tables_list` into the stored definition without clearing the schema list,
+    # so the next startup rebuilt the replication handler from a definition carrying both settings and
+    # failed with "Cannot have schema list and tables list at the same time" - one successful recovery
+    # attach poisoned the database's own metadata. The table list must not be persisted in this mode:
+    # the attach is durable through the nested table on disk plus the publication membership, which the
+    # whole-schema attach path treats as the authoritative replicated set on restart. `DETACH TABLE ...
+    # PERMANENTLY` had the same bug and must stay symmetric.
+    #
+    # The schema list names two schemas because table names are schema-qualified in the nested database
+    # and in the publication only when the list names more than one schema (see fetchPostgreSQLTablesList) -
+    # a pre-existing property of this mode.
+    schemas = ["atl_schema_a", "atl_schema_b"]
+    table = "postgresql_replica_0"
+    extra_table = "postgresql_replica_1"
+    mat_db = "attach_schema_list_db"
+    pg_dbs = ["atl_src_a", "atl_src_b"]
+
+    cursor = pg_manager.get_db_cursor()
+    for schema_name, pg_db in zip(schemas, pg_dbs):
+        create_postgres_schema(cursor, schema_name)
+        pg_manager.create_clickhouse_postgres_db(
+            database_name=pg_db,
+            schema_name=schema_name,
+            postgres_database="postgres_database",
+        )
+        create_postgres_table_with_schema(cursor, schema_name, table)
+        instance.query(
+            f"INSERT INTO {pg_db}.{table} SELECT number, number FROM numbers(0, 30)"
+        )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        postgres_database="postgres_database",
+        settings=[
+            f"materialized_postgresql_schema_list = '{', '.join(schemas)}'",
+        ],
+    )
+    for schema_name, pg_db in zip(schemas, pg_dbs):
+        check_tables_are_synchronized(
+            instance,
+            table,
+            schema_name=schema_name,
+            postgres_database=pg_db,
+            materialized_database=mat_db,
+        )
+
+    # A table created in a replicated schema after the database does not join replication by itself;
+    # `ATTACH TABLE` is the documented way to add it.
+    create_postgres_table_with_schema(cursor, schemas[0], extra_table)
+    instance.query(
+        f"INSERT INTO {pg_dbs[0]}.{extra_table} SELECT number, number FROM numbers(0, 30)"
+    )
+    instance.query(f"ATTACH TABLE `{mat_db}`.`{schemas[0]}.{extra_table}`")
+    check_tables_are_synchronized(
+        instance,
+        extra_table,
+        schema_name=schemas[0],
+        postgres_database=pg_dbs[0],
+        materialized_database=mat_db,
+    )
+
+    # The stored definition must stay self-consistent: the schema list survives and no tables list is
+    # persisted alongside it.
+    show_create = instance.query(f"SHOW CREATE DATABASE `{mat_db}`")
+    assert "materialized_postgresql_schema_list" in show_create
+    assert "materialized_postgresql_tables_list" not in show_create
+
+    # The startup that used to throw "Cannot have schema list and tables list at the same time":
+    # replication must come back for all three tables, including the attached one.
+    instance.restart_clickhouse()
+    for schema_name, pg_db, tbl in [
+        (schemas[0], pg_dbs[0], table),
+        (schemas[1], pg_dbs[1], table),
+        (schemas[0], pg_dbs[0], extra_table),
+    ]:
+        instance.query(
+            f"INSERT INTO {pg_db}.{tbl} SELECT number, number FROM numbers(30, 20)"
+        )
+        check_tables_are_synchronized(
+            instance,
+            tbl,
+            schema_name=schema_name,
+            postgres_database=pg_db,
+            materialized_database=mat_db,
+        )
+        assert 50 == int(
+            instance.query(f"SELECT count() FROM `{mat_db}`.`{schema_name}.{tbl}`")
+        )
+
+    # The symmetric path: a permanent detach must not persist the tables list either, and the database
+    # must again survive a restart, with the detached table gone and the others still replicating.
+    instance.query(f"DETACH TABLE `{mat_db}`.`{schemas[0]}.{extra_table}` PERMANENTLY")
+    show_create = instance.query(f"SHOW CREATE DATABASE `{mat_db}`")
+    assert "materialized_postgresql_schema_list" in show_create
+    assert "materialized_postgresql_tables_list" not in show_create
+
+    instance.restart_clickhouse()
+    for schema_name, pg_db in zip(schemas, pg_dbs):
+        instance.query(
+            f"INSERT INTO {pg_db}.{table} SELECT number, number FROM numbers(50, 20)"
+        )
+        check_tables_are_synchronized(
+            instance,
+            table,
+            schema_name=schema_name,
+            postgres_database=pg_db,
+            materialized_database=mat_db,
+        )
+        assert 70 == int(
+            instance.query(f"SELECT count() FROM `{mat_db}`.`{schema_name}.{table}`")
+        )
+    assert 0 == int(
+        instance.query(f"EXISTS TABLE `{mat_db}`.`{schemas[0]}.{extra_table}`")
+    )
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_detach_permanently_rejects_last_replicated_table(started_cluster):
+    # Regression for a review finding on https://github.com/ClickHouse/ClickHouse/pull/110493:
+    # `DETACH TABLE ... PERMANENTLY` used to be accepted for the last table a MaterializedPostgreSQL
+    # database replicates, which left the database unable to come back up: after the last detach the
+    # publication publishes nothing and no nested table is left on disk, so the next startup had no
+    # authoritative replicated set, bootstrapped it from the live PostgreSQL schema again
+    # (re-snapshotting exactly the tables that were detached on purpose) and then refused to resume
+    # replication, because the attach-time drift check sees an empty publication while the expected set
+    # was just repopulated from the schema. Detaching the last table is now rejected up front, so a
+    # query that succeeds can no longer leave the database unable to start.
+    tables = ["detach_last_a", "detach_last_b"]
+    tables_list = ",".join(tables)
+    cursor = pg_manager.get_db_cursor()
+    for table in tables:
+        cursor.execute(f"DROP TABLE IF EXISTS {table}")
+        cursor.execute(f"CREATE TABLE {table} (key integer PRIMARY KEY, value integer)")
+        cursor.execute(f"INSERT INTO {table} VALUES (1, 1)")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{tables_list}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    for table in tables:
+        check_tables_are_synchronized(
+            instance, table, postgres_database=pg_manager.get_default_database()
+        )
+
+    # Detaching a table while another one remains replicated stays allowed.
+    instance.query(f"DETACH TABLE test_database.{tables[0]} PERMANENTLY")
+
+    # The last one is refused, and the refused query changes nothing: the table keeps replicating.
+    error = instance.query_and_get_error(
+        f"DETACH TABLE test_database.{tables[1]} PERMANENTLY"
+    )
+    assert "QUERY_NOT_ALLOWED" in error
+    assert "it is the only table replicated by" in error
+
+    # The persisted definition still lists the table (the single quotes of the setting value are
+    # escaped in the TSV-formatted query result).
+    assert "materialized_postgresql_tables_list = \\'detach_last_b\\'" in instance.query(
+        "SHOW CREATE DATABASE test_database"
+    )
+    cursor.execute(f"INSERT INTO {tables[1]} VALUES (2, 2)")
+    check_tables_are_synchronized(
+        instance, tables[1], postgres_database=pg_manager.get_default_database()
+    )
+
+    # And the database still comes back up after a restart - the startup that used to throw.
+    instance.restart_clickhouse()
+    cursor.execute(f"INSERT INTO {tables[1]} VALUES (3, 3)")
+    check_tables_are_synchronized(
+        instance, tables[1], postgres_database=pg_manager.get_default_database()
+    )
+    assert 0 == int(instance.query(f"EXISTS TABLE test_database.{tables[0]}"))
+
+    pg_manager.drop_materialized_db()
 
 
 if __name__ == "__main__":
