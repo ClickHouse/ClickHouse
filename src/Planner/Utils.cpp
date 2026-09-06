@@ -21,7 +21,12 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
+
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageView.h>
 
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
@@ -30,6 +35,7 @@
 #include <AggregateFunctions/WindowFunction.h>
 
 #include <Analyzer/Utils.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -82,6 +88,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
@@ -568,13 +575,112 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
     return select_query_info;
 }
 
-FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const TableExpressionNodePtr & table_expression,
-        PlannerContextPtr & planner_context,
-        NameSet table_expression_required_names_without_filter)
+NameSet checkAccessRights(
+    const StoragePtr & storage,
+    const StorageID & storage_id,
+    const StorageSnapshotPtr & storage_snapshot,
+    const Names & column_names,
+    const ContextPtr & query_context)
 {
-    const auto & query_context = planner_context->getQueryContext();
+    /// StorageDummy is created on preliminary stage, ignore access check for it.
+    if (typeid_cast<const StorageDummy *>(storage.get()))
+        return {};
 
+    if (column_names.empty())
+    {
+        NameSet accessible_columns;
+        /** For a trivial queries like "SELECT count() FROM table", "SELECT 1 FROM table" access is granted if at least
+          * one table column is accessible.
+          */
+        auto access = query_context->getAccess();
+        const auto * alias = storage->as<StorageAlias>();
+        for (const auto & column : storage_snapshot->metadata->getColumns())
+        {
+            /// An `Alias` also requires access to the selected column of its target table.
+            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
+                && (!alias || alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name)))
+                accessible_columns.insert(column.name);
+        }
+
+        if (accessible_columns.empty())
+        {
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
+                query_context->getUserName(),
+                storage_id.getFullTableName());
+        }
+        return accessible_columns;
+    }
+
+    // In case of cross-replication we don't know what database is used for the table.
+    // `storage_id.hasDatabase()` can return false only on the initiator node.
+    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
+    if (storage_id.hasDatabase())
+        query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+
+    return {};
+}
+
+void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tree,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & query_context)
+{
+    StoragePtr storage;
+    StorageID storage_id = StorageID::createEmpty();
+    StorageSnapshotPtr storage_snapshot;
+
+    if (const auto * table_node = table_expression->as<TableNode>())
+    {
+        storage = table_node->getStorage();
+        storage_id = table_node->getStorageID();
+        storage_snapshot = table_node->getStorageSnapshot();
+    }
+    else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
+    {
+        /// A parameterized view is resolved as a `TableFunctionNode` wrapping a real `StorageView`, see
+        /// `prepareBuildQueryPlanForTableExpression`. Regular table functions are checked in `ITableFunction::execute`.
+        const auto & table_function_storage = table_function_node->getStorage();
+        const auto * storage_view = table_function_storage ? table_function_storage->as<StorageView>() : nullptr;
+        if (!storage_view || !storage_view->isParameterizedView())
+            return;
+
+        storage = table_function_storage;
+        storage_id = table_function_node->getStorageID();
+        storage_snapshot = table_function_node->getStorageSnapshot();
+    }
+    else
+    {
+        return;
+    }
+
+    NameSet column_names;
+    traverseQueryTree(
+        filter_query_tree,
+        [](const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
+        {
+            /// Don't go inside an ALIAS column expression: a grant on the alias name is sufficient.
+            const auto * column_node = parent->as<ColumnNode>();
+            if (!column_node || !column_node->hasExpression())
+                return true;
+            const auto & column_source = column_node->getColumnSourceOrNull();
+            return !(column_source && column_source->getNodeType() == QueryTreeNodeType::TABLE);
+        },
+        [&](const QueryTreeNodePtr & node)
+        {
+            const auto * column_node = node->as<ColumnNode>();
+            if (column_node && column_node->getColumnSourceOrNull().get() == table_expression.get())
+                column_names.insert(column_node->getColumnName());
+        });
+    if (column_names.empty())
+        return;
+
+    checkAccessRights(storage, storage_id, storage_snapshot, Names(column_names.begin(), column_names.end()), query_context);
+}
+
+QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
+        const TableExpressionNodePtr & table_expression,
+        const ContextPtr & query_context)
+{
     /// If the filter expression is a standalone subquery (e.g. ROW POLICY
     /// USING (SELECT 1)), wrap it with notEquals(<subquery>, 0) so that
     /// buildQueryTree produces a FunctionNode at the top level instead of
@@ -598,13 +704,26 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
     QueryAnalysisPass query_analysis_pass(table_expression);
     query_analysis_pass.run(filter_query_tree, query_context);
 
-    /// Optimize logical expressions in the filter, e.g. convert OR-chains of
-    /// equalities into IN (important for row policies that produce many
-    /// permissive conditions like `x = 1 OR x = 2 OR ... OR x = N`).
-    LogicalExpressionOptimizerPass logical_expression_optimizer_pass;
-    logical_expression_optimizer_pass.run(filter_query_tree, query_context);
+    return filter_query_tree;
+}
 
-    return buildFilterInfo(std::move(filter_query_tree), table_expression, planner_context, std::move(table_expression_required_names_without_filter));
+FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
+        const TableExpressionNodePtr & table_expression,
+        PlannerContextPtr & planner_context,
+        NameSet table_expression_required_names_without_filter,
+        bool check_access_rights)
+{
+    const auto & query_context = planner_context->getQueryContext();
+    auto filter_query_tree = buildFilterQueryTree(std::move(filter_expression), table_expression, query_context);
+
+    if (check_access_rights)
+        checkAccessRightsForFilter(filter_query_tree, table_expression, query_context);
+
+    return buildFilterInfo(
+        std::move(filter_query_tree),
+        table_expression,
+        planner_context,
+        std::move(table_expression_required_names_without_filter));
 }
 
 FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
@@ -612,6 +731,14 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter)
 {
+    const auto & query_context = planner_context->getQueryContext();
+
+    /// Optimize logical expressions in the filter, e.g. convert OR-chains of
+    /// equalities into IN (important for row policies that produce many
+    /// permissive conditions like `x = 1 OR x = 2 OR ... OR x = N`).
+    LogicalExpressionOptimizerPass logical_expression_optimizer_pass;
+    logical_expression_optimizer_pass.run(filter_query_tree, query_context);
+
     if (table_expression_required_names_without_filter.empty())
     {
         auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);

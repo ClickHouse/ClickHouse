@@ -143,6 +143,20 @@ UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
     return access_control.getID<User>(*definer);
 }
 
+namespace
+{
+
+/// Custom-key parallel replicas are the only parallel replicas mode that evaluates a user-supplied expression
+/// over the table's columns. Turning parallel replicas off in the body context disables both the per-replica
+/// custom key filter and the initiator-side shipping of the body to the replicas.
+void dropParallelReplicasCustomKey(Context & body_context)
+{
+    body_context.setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    body_context.setSetting("parallel_replicas_custom_key", String{});
+}
+
+}
+
 ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context, const ClientInfo * client_info) const
 {
     if (!sql_security_type)
@@ -192,18 +206,36 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (context->hasClusterFunctionReadTaskCallback())
         new_context->setClusterFunctionReadTaskCallback(context->getClusterFunctionReadTaskCallback());
 
+    auto changed_settings = context->getSettingsRef().changes();
+    /// Invoker filters must not be injected into a DEFINER/NONE body.
+    changed_settings.removeSetting("additional_table_filters");
+
+    /// The invoker's `parallel_replicas_custom_key` is an expression over the columns of the tables the body
+    /// reads. Inside the body it would be resolved and access-checked as the definer (or with no user at all),
+    /// which would let the invoker probe columns of the underlying tables through the row count. The outer
+    /// query has already applied the key to the view's own columns, so the body reads without it.
+    ///
+    /// The key is dropped both when the invoker's context has custom-key parallel replicas active and when the
+    /// query merely supplied the key: the activation settings may come from the definer's profile (or from the
+    /// default profile for `NONE`), and the invoker's key would then be evaluated in the body all the same.
+    const bool drop_custom_key = context->canUseParallelReplicasCustomKey() || changed_settings.tryGet("parallel_replicas_custom_key");
+
     if (sql_security_type == SQLSecurityType::NONE)
     {
-        new_context->applySettingsChanges(context->getSettingsRef().changes());
+        new_context->applySettingsChanges(changed_settings);
+        if (drop_custom_key)
+            dropParallelReplicasCustomKey(*new_context);
         return new_context;
     }
 
     new_context->setUser(getDefinerID(context));
 
-    auto changed_settings = context->getSettingsRef().changes();
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
     new_context->setSetting("allow_ddl", 1);
+    /// After the constraints: the definer's profile must not be able to keep the invoker's key alive.
+    if (drop_custom_key)
+        dropParallelReplicasCustomKey(*new_context);
 
     return new_context;
 }
