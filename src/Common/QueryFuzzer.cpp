@@ -5557,7 +5557,12 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// malformed-input error paths, `try*` variants the null paths
         {"idnaDecode", "idnaEncode", "punycodeDecode", "punycodeEncode", "tryIdnaEncode", "tryPunycodeDecode"},
         /// Readable size / duration parsers (String → number; bare, OrNull and OrZero variants)
-        {"parseReadableSize", "parseReadableSizeOrNull", "parseReadableSizeOrZero", "parseTimeDelta"},
+        {"parseReadableSize",
+         "parseReadableSizeOrNull",
+         "parseReadableSizeOrZero",
+         "parseTimeDelta",
+         "parseTimeDeltaOrNull",
+         "parseTimeDeltaOrZero"},
         /// Polygon scalar predicates and measures (polygon(s) → number/UInt8),
         /// Cartesian ↔ Spherical pairs. The unprefixed `area`/`perimeter` functions are the
         /// generic-geometry equivalents of the `polygonArea`/`polygonPerimeter` ones.
