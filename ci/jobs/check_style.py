@@ -349,6 +349,12 @@ CLICKHOUSE_DISKS_WRITE_RE = re.compile(
 # tests instead. The only acceptable additions are false positives - tests that only touch
 # their own scratch files - and they must say so in a comment.
 SERVER_DATA_MANIPULATION_EXCLUSIONS = {
+    # False positive: edits only the metadata of the view this test itself created - a view has
+    # no data parts, so none of the part/blob reference-counting hazards this check guards against
+    # apply. On a remote database disk it goes through `clickhouse-disks` rather than a raw copy,
+    # drops the metadata cache afterwards, restores the original definition, and the test is tagged
+    # no-replicated-database / no-shared-catalog.
+    "04603_columnless_view_metadata_no_server_abort.sh",
     # False positive: writes only an mktemp scratch file under CLICKHOUSE_TMP.
     "04326_disks_app_read_checksums.sh",
 }
