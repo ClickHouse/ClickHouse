@@ -137,11 +137,9 @@ namespace
         }
         else
         {
-            /// A fixed and contiguous column other than a `FixedString` reads `sizeof(value)` bytes and
-            /// ignores the length, so a narrower bound completes itself from outside the payload. A wider
-            /// one decodes correctly, and every currently released writer emitted those.
-            if (column->isFixedAndContiguous() && !DB::isFixedString(non_nullable_type)
-                && str.length() < column->sizeOfValueIfFixed())
+            /// A fixed-width column ignores the declared length: `ColumnVector` and `ColumnDecimal` read past the payload,
+            /// `ColumnFixedString` zero fills it. A wider bound still decodes to the value the writer stored.
+            if (column->isFixedAndContiguous() && str.length() < column->sizeOfValueIfFixed())
                 return std::nullopt;
 
             /// For all other types except decimal binary representation

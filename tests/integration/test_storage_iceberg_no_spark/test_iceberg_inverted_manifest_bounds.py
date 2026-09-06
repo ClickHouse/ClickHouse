@@ -14,7 +14,7 @@ import pyarrow as pa
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import NestedField, Schema
-from pyiceberg.types import DecimalType, LongType
+from pyiceberg.types import DecimalType, FixedType, LongType
 
 from helpers.config_cluster import minio_access_key, minio_secret_key
 from helpers.iceberg_utils import (
@@ -198,8 +198,9 @@ def _set_bounds_in_manifests(manifests, field_id, lower_raw, upper_raw):
 
 
 def _resize_bounds_in_manifests(manifests, field_id, width):
-    """Re-declare one column's bounds with `width` bytes, keeping the little-endian value the writer
-    stored: high-order bytes are dropped when narrowing and zero filled when widening."""
+    """Re-declare one column's bounds with `width` bytes: keep the first `width` bytes the writer
+    stored and zero fill when widening. Which end of the value that drops depends on the column: the
+    high-order bytes of a little-endian number, the last characters of a byte string."""
 
     def resize(data_file):
         lower = next(
@@ -446,3 +447,85 @@ def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spa
     assert _set_bounds_in_manifests(manifests, 3, b"\x7f\xff\xff\xf0", b"\x7f\xff\xff\xfa") > 0
     assert pruned_files(e_expr) == 0
     assert pruned_files(id_expr) == 1
+
+
+def test_iceberg_narrow_fixed_manifest_bounds(started_cluster_iceberg_no_spark):
+    """A `fixed[N]` bound narrower than its column is zero filled to the column's width instead of
+    completed from outside the payload, so it stays ordered against the other bound while describing
+    less than the data file holds.
+
+    ClickHouse cannot write a `fixed[N]` column, so pyiceberg writes the table, as the decimal test
+    above does and for the same reason."""
+    cluster = started_cluster_iceberg_no_spark
+    instance = cluster.instances["node1"]
+    table_name = "test_iceberg_narrow_fixed_bounds_" + get_uuid_str()
+    key_prefix = f"var/lib/clickhouse/user_files/iceberg_data/default/{table_name}"
+
+    catalog = load_catalog(
+        "demo",
+        **{
+            "uri": f"http://localhost:{cluster.iceberg_rest_catalog_port}",
+            "type": "rest",
+            "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
+            "s3.access-key-id": minio_access_key,
+            "s3.secret-access-key": minio_secret_key,
+        },
+    )
+    namespace = f"clickhouse_{get_uuid_str()}"
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(
+        f"{namespace}.{table_name}",
+        schema=Schema(
+            NestedField(1, "f", FixedType(3), required=False),
+            NestedField(2, "n", LongType(), required=False),
+        ),
+        location=f"s3://{cluster.minio_bucket}/{key_prefix}",
+        partition_spec=PartitionSpec(),
+    )
+
+    # The field ids must reach the Parquet files for the Iceberg reader to match the columns.
+    arrow_schema = pa.schema(
+        [
+            pa.field("f", pa.binary(3), True, metadata={b"PARQUET:field_id": b"1"}),
+            pa.field("n", pa.int64(), True, metadata={b"PARQUET:field_id": b"2"}),
+        ]
+    )
+    # One data file per append, with disjoint ranges in both columns. The two `f` values of a file
+    # differ in their last character, so a bound that keeps only the first two describes less than
+    # the file holds rather than the same range spelled shorter.
+    for leading in "1234":
+        table.append(
+            pa.Table.from_pylist(
+                [
+                    {"f": f"{leading}10".encode(), "n": int(leading) * 10},
+                    {"f": f"{leading}99".encode(), "n": int(leading) * 10 + 1},
+                ],
+                schema=arrow_schema,
+            )
+        )
+
+    source = (
+        f"icebergS3(s3, filename = '{key_prefix}/', format=Parquet, "
+        f"url = 'http://minio1:9001/{cluster.minio_bucket}/')"
+    )
+    assert instance.query(f"SELECT count() FROM {source}", settings=NOCACHE).strip() == "8"
+
+    def pruned_files(where):
+        return _pruned_files(
+            instance, table_name, f"SELECT f, n FROM {source} WHERE {where} ORDER BY ALL"
+        )
+
+    # Control: only the first data file holds an `f` below '200' or an `n` below 15, so each filter
+    # prunes the other three. Without it a `fixed[N]` column that contributed no min/max condition at
+    # all, for any reason, would satisfy the assertion below.
+    assert pruned_files("f < '200'") == 3
+    assert pruned_files("n < 15") == 3
+
+    # Re-declare `f` in two bytes. Zero filling the third leaves the first file's upper bound at
+    # '19\0', below the '199' it stores, and below the filter, which would prune the only file the
+    # filter's rows are in; the pair '11\0'..'19\0' is ordered, so the sibling guard above does not
+    # reach it. `n` is well formed in the same manifest entry and must keep pruning.
+    manifests = MinioManifests(cluster.minio_client, cluster.minio_bucket, key_prefix)
+    assert _resize_bounds_in_manifests(manifests, 1, 2) > 0
+    assert pruned_files("f > '190'") == 0
+    assert pruned_files("n < 15") == 3
