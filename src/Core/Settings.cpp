@@ -2761,7 +2761,11 @@ Set to 0 to disable the limit. Has no effect on the default `query_plan_optimize
 )", EXPERIMENTAL) \
 DECLARE(UInt64, query_plan_optimize_join_order_randomize, 0, R"(
 When non-zero, the join order optimizer uses randomly generated cardinalities and NDVs instead of real statistics.
-When set to 1, a random seed is generated, when set to a value > 1, that value is used as the seed directly.
+When set to 1, the seed is derived from the initial query id, so every plan built for one query, including the plans
+built by remote replicas, uses the same seed and therefore the same join order. Rerunning the same query text gets a new
+id and therefore a new seed, which may select a different ordering; pass an explicit query id to keep the seed stable.
+An empty initial query id, which is what an internal or background plan carries, falls back to a random seed.
+When set to a value > 1, that value is used as the seed directly.
 This is intended for testing to find errors caused by different join orderings.
 )", EXPERIMENTAL) \
     \
