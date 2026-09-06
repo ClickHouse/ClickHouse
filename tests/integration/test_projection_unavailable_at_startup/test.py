@@ -1,6 +1,6 @@
-"""A projection whose definition cannot be analyzed is skipped only at `LoadingStrictnessLevel::FORCE_ATTACH`.
+"""A projection whose definition cannot be analyzed is skipped at `LoadingStrictnessLevel::FORCE_ATTACH` or above.
 
-That level is produced when the server loads its metadata at startup, so restarting a real server is the
+Only the server's own metadata load reaches that, so restarting a real server is the
 only way to reach the skip: an explicit `ATTACH TABLE` runs one level lower and throws instead of
 skipping, and `UNDROP TABLE` throws earlier still, while parsing the stored statement. Hence an
 integration test rather than a stateless one.
