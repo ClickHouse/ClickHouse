@@ -25,8 +25,10 @@ class IAsynchronousReader;
 class IBackup;
 class LongConnectionLimit;
 class EncryptionHeaderCache;
+class QueryStatus;
 struct AsyncReadCounters;
 
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 using FileCachePtr = std::shared_ptr<FileCache>;
 using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
 using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesLog>;
@@ -256,8 +258,9 @@ private:
 
     /// build() helpers: one per logical stage group.
     /// Each helper reads private state and returns the (partial) impl buffer.
-    /// `query_id` is captured once on the calling thread before any stage runs.
-    std::unique_ptr<ReadBufferFromFileBase> buildGatherStage(const std::string & query_id) const;
+    /// `query_id` and `query_status` are captured once on the calling thread before any stage runs.
+    std::unique_ptr<ReadBufferFromFileBase> buildGatherStage(
+        const std::string & query_id, const QueryStatusPtr & query_status) const;
     std::unique_ptr<ReadBufferFromFileBase> buildSingleObjectStage(const std::string & query_id) const;
     std::unique_ptr<ReadBufferFromFileBase> wrapMemoryCache(std::unique_ptr<ReadBufferFromFileBase> impl) const;
     std::unique_ptr<ReadBufferFromFileBase> wrapAsyncPrefetch(std::unique_ptr<ReadBufferFromFileBase> impl) const;

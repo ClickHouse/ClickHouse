@@ -19,6 +19,7 @@
 #include <IO/LocalSourceReader.h>
 #include <IO/ObjectStorageSourceReader.h>
 #include <IO/FileEncryptionCommon.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Common/CurrentThread.h>
@@ -188,9 +189,17 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     /// context, so calling `CurrentThread::getQueryId` there would return "".
     const std::string query_id(CurrentThread::getQueryId());
 
+    /// Resolved on this thread for the same reason as `query_id` above.
+    QueryStatusPtr query_status;
+    if (source->read_settings.remote_fs_settings.interruptible_reads)
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElementSafe();
+    }
+
     auto impl = gather
-        ? buildGatherStage(query_id)        // Stages 1+2+3 (+3.5 DC)
-        : buildSingleObjectStage(query_id); // Stages 1+2 (+2.5 DC)
+        ? buildGatherStage(query_id, query_status) // Stages 1+2+3 (+3.5 DC)
+        : buildSingleObjectStage(query_id);        // Stages 1+2 (+2.5 DC)
 
     impl = wrapMemoryCache(std::move(impl));   // Stage 4
     impl = wrapAsyncPrefetch(std::move(impl)); // Stage 5
@@ -230,6 +239,16 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     }
     else if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
     {
+        /// The executor has no interruption point, so serving this read would silently drop
+        /// the caller's opt-in. Fall back to the gather path, which honors it.
+        if (settings.remote_fs_settings.interruptible_reads)
+        {
+            LOG_DEBUG(log,
+                "use_reader_executor: falling back to the legacy read path "
+                "(interruptible reads not yet supported by the executor)");
+            return nullptr;
+        }
+
         /// An object of unknown size (HEAD without Content-Length) arrives with
         /// `bytes_size` 0 — indistinguishable from a genuinely empty object — and
         /// the executor cannot stream to EOF yet, so fall back rather than read it
@@ -320,7 +339,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     return std::make_unique<PipelineReadBuffer>(std::move(executor));
 }
 
-std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std::string & query_id) const
+std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(
+    const std::string & query_id, const QueryStatusPtr & query_status) const
 {
     /// -- Stages 1+2+3: Source + FilesystemCache + Gather --
     /// Object storage path: wrap per-object buffers with optional filesystem cache,
@@ -439,7 +459,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
         /// Copy, not move: fallback may be called multiple times (e.g. after
         /// connection pool exhaustion on different read ranges).
         auto fallback_creator = [gather_creator, objects = source->objects,
-                                 captured_settings = settings]() mutable
+                                 captured_settings = settings, query_status]() mutable
             -> std::unique_ptr<ReadBufferFromFileBase>
         {
             auto creator_copy = gather_creator;
@@ -448,7 +468,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
                 objects,
                 captured_settings.remote_fs_settings.min_bytes_for_seek,
                 /* use_external_buffer */ true,
-                /* buffer_size */ 0);
+                /* buffer_size */ 0,
+                query_status);
         };
 
         auto impl = DistributedCache::readWithDistributedCache(
@@ -469,7 +490,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
         source->objects,
         settings.remote_fs_settings.min_bytes_for_seek,
         use_external_buffer,
-        buffer_size);
+        buffer_size,
+        query_status);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(const std::string & query_id) const
