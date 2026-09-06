@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <ranges>
@@ -547,7 +548,17 @@ bool MergeTreeReaderCompact::needSkipStream(size_t column_pos, const ISerializat
         return false;
 
     bool is_offsets = !substream.empty() && substream.back().type == ISerialization::Substream::ArraySizes;
-    return !is_offsets || columns_for_offsets[column_pos]->level < ISerialization::getArrayLevel(substream);
+    if (!is_offsets)
+        return true;
+
+    /// Only levels that fillMissingColumns can consume (the directly nested Array dimensions) may
+    /// be read. Offsets hidden inside a Map or Tuple belong to the suppressed column's own data:
+    /// reading them sizes array-shaped Tuple elements while their scalar siblings stay empty.
+    size_t max_level = columns_for_offsets[column_pos]->level;
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(columns_to_read[column_pos].getTypeInStorage().get()))
+        max_level = std::min(max_level, array_type->getNumberOfDimensions() - 1);
+
+    return max_level < ISerialization::getArrayLevel(substream);
 }
 
 }
