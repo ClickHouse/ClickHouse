@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/DateTimeTransforms.h>
+#include <Functions/dateRoundingMonotonicity.h>
 #include <base/arithmeticOverflow.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -84,7 +85,15 @@ public:
     /// dictionary always contains a default value (epoch/0) which would violate this check.
     bool canBeExecutedOnDefaultArguments() const override { return overload != ToStartOfIntervalOverload::Origin; }
     bool hasInformationAboutMonotonicity() const override { return true; }
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override { return { .is_monotonic = true, .is_always_monotonic = true }; }
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    {
+        /// A `Date32` argument outside the standard-precision result range is still narrowed by a
+        /// plain cast, and a wrapping rounding is not monotonic.
+        if (WhichDataType(type).isDate32() && !date32RangeFitsStandardPrecisionResult(left, right))
+            return {.is_always_monotonic_where_defined = true};
+
+        return { .is_monotonic = true, .is_always_monotonic = true };
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {

@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/DateTimeTransforms.h>
+#include <Functions/dateRoundingMonotonicity.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -37,8 +38,13 @@ class FunctionDateTrunc final : public IFunction
 public:
     static constexpr auto name = "dateTrunc";
 
-    FunctionDateTrunc(FunctionOverloadResolverPtr to_start_of_interval_, IntervalKind::Kind datepart_kind_)
-        : to_start_of_interval(to_start_of_interval_), datepart_kind(datepart_kind_) {}
+    FunctionDateTrunc(
+        FunctionOverloadResolverPtr to_start_of_interval_, IntervalKind::Kind datepart_kind_, bool result_is_standard_precision_)
+        : to_start_of_interval(to_start_of_interval_)
+        , datepart_kind(datepart_kind_)
+        , result_is_standard_precision(result_is_standard_precision_)
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -76,14 +82,23 @@ public:
         return true;
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
+        /// The same seam as in `toStartOfInterval`, which this function delegates to: a `Date32`
+        /// argument rounded into a standard-precision result is narrowed by a plain cast and wraps
+        /// outside the result's range, and a wrapping rounding is not monotonic. At
+        /// `function_date_trunc_return_type_behavior = 0` the result widens instead, so nothing wraps.
+        if (result_is_standard_precision && WhichDataType(type).isDate32()
+            && !date32RangeFitsStandardPrecisionResult(left, right))
+            return {.is_always_monotonic_where_defined = true};
+
         return { .is_monotonic = true, .is_always_monotonic = true };
     }
 
 private:
     FunctionOverloadResolverPtr to_start_of_interval;
     IntervalKind::Kind datepart_kind;
+    bool result_is_standard_precision;
 };
 
 
@@ -237,7 +252,8 @@ public:
         if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", datepart_param, getName());
 
-        auto function = std::make_shared<FunctionDateTrunc>(to_start_of_interval, datepart_kind);
+        const bool result_is_standard_precision = isDate(return_type) || isDateTime(return_type);
+        auto function = std::make_shared<FunctionDateTrunc>(to_start_of_interval, datepart_kind, result_is_standard_precision);
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)

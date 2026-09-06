@@ -1,0 +1,15 @@
+2
+2
+3
+3
+3
+3
+2
+2
+the index is still used when the whole range fits the result type
+40
+40
+1
+a DateTime64 argument saturates and stays monotonic
+1
+1
