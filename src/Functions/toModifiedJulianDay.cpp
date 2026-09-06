@@ -101,6 +101,14 @@ namespace DB
         {
             return true;
         }
+
+        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+        /// row references it, so the throwing variant must not be executed on the whole dictionary -
+        /// the empty string is not a date and it would fail on entirely valid data.
+        bool canBeExecutedOnDefaultArguments() const override
+        {
+            return nullOnErrors;
+        }
     };
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
