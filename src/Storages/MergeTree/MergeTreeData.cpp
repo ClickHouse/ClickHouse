@@ -12049,7 +12049,290 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     String clickhouse_path = fs::canonical(local_context->getPath());
     String default_shadow_path = fs::path(clickhouse_path) / "shadow/";
     fs::create_directories(default_shadow_path);
-    auto increment = Increment(fs::path(default_shadow_path) / "increment.txt").get(true);
+
+    /// If `shadow/increment.txt` was left missing or empty by a previous
+    /// interrupted writer (see `CounterInFile::add`), recovery starts the
+    /// counter back at zero. Without a hint, the next FREEZE without
+    /// `WITH NAME` would then try to create `shadow/1/`, which can collide
+    /// with an already-existing backup directory. Compute the maximum existing
+    /// numeric backup-directory name and pass it as a lower bound so the
+    /// recovered counter does not reuse an allocated `shadow/<N>/`.
+
+    /// Value of a `shadow/` subdirectory name if an unnamed FREEZE could have
+    /// allocated it, else nullopt. Such a FREEZE names the directory
+    /// `toString(counter)`, so the name must be the canonical decimal spelling of
+    /// a value the Int64 counter can hold.
+    auto numeric_dir_value = [](const std::string & name) -> std::optional<UInt64>
+    {
+        /// Int64 max is included: recovery from `max - 1` adds one and reaches it.
+        static constexpr UInt64 max_reachable_id = static_cast<UInt64>(std::numeric_limits<Int64>::max());
+        if (name.empty() || !std::all_of(name.begin(), name.end(), [](char c) { return c >= '0' && c <= '9'; }))
+            return {};
+        /// "0" is the only canonical name starting with a zero digit.
+        if (name.size() > 1 && name[0] == '0')
+            return {};
+        try
+        {
+            size_t consumed = 0;
+            UInt64 parsed = static_cast<UInt64>(std::stoull(name, &consumed));
+            if (consumed != name.size() || parsed > max_reachable_id)
+                return {};
+            return parsed;
+        }
+        catch (const std::out_of_range &)
+        {
+            return {};
+        }
+    };
+
+    /// Set when the scan below refuses because an existing backup already holds the
+    /// counter's maximum. That refusal shares its error code with the counter file's
+    /// own overflow but is a different, externally-removable state, and only the
+    /// named reservation path below may treat one of the two as benign.
+    bool provider_refused_on_existing_backup = false;
+
+    /// Lower bound for the recovered counter. Computed lazily and ONLY on the
+    /// recovery path (empty or missing counter), under the counter lock, via
+    /// `Increment::get`'s provider argument: a healthy counter ignores the
+    /// bound, so a freshly-started server with a valid counter never pays this
+    /// scan, and a transient per-disk failure never fails an ordinary FREEZE.
+    auto max_existing_id_provider = [this, numeric_dir_value, &provider_refused_on_existing_backup]() -> UInt64
+    {
+        const String shadow_relative = "shadow";
+        UInt64 max_existing_id = 0;
+
+        /// Each part is frozen onto its OWN disk (see
+        /// `DataPartStorageOnDiskBase::freeze`), so numeric `shadow/<N>`
+        /// directories can exist on any configured disk while the counter file
+        /// lives only on the default disk. The bound must therefore cover every
+        /// disk that can hold a backup, not just the default one. Walk all
+        /// configured disks (the counter is server-global), deduplicating by
+        /// physical path so delegate/cache disks layered over the same storage
+        /// are not scanned twice.
+        std::unordered_set<String> scanned_paths;
+        for (const auto & [disk_name, disk] : getContext()->getDisksMap())
+        {
+            /// A broken disk cannot be scanned now and may hold numeric
+            /// `shadow/<N>` backups, but a broken disk is a routine, possibly
+            /// long-lived state and must not make every FREEZE on the server
+            /// fail. Skip it and log, so an operator can raise the counter
+            /// manually if that disk later returns with hidden backups. An
+            /// unexpected FS error during the scan below still propagates.
+            /// Logged at INFO (not WARNING) because this recovery path runs on
+            /// every empty-or-missing-counter FREEZE and an unrelated broken
+            /// disk is common; at WARNING it would also surface to client
+            /// stderr under `send_logs_level=warning`.
+            if (disk->isBroken())
+            {
+                LOG_INFO(
+                    log,
+                    "Disk '{}' is broken and was skipped while recovering the FREEZE backup "
+                    "counter from an empty or missing shadow/increment.txt. If it holds numeric "
+                    "shadow/<N> backups, set shadow/increment.txt above their maximum once the "
+                    "disk is restored, to avoid a later unnamed FREEZE reusing a directory.",
+                    disk_name);
+                continue;
+            }
+
+            if (!scanned_paths.insert(disk->getPath()).second)
+                continue;
+
+            /// Tolerated only for web-backed metadata, which FREEZE cannot write to, so
+            /// nothing it hides can be an allocated identifier. Read-only-ness alone does
+            /// not establish that (`DiskLocal::checkAccessImpl`, `ReadOnlyDiskWrapper`),
+            /// so every other disk fails closed.
+            /// All three exception types below are needed: `DiskLocal` calls
+            /// `std::filesystem` directly, so it throws `std::filesystem_error`, which
+            /// derives from neither `DB::Exception` nor `Poco::Exception`.
+            auto skip_uninspectable_never_frozen_disk = [&](const String & reason)
+            {
+                const auto metadata_type = disk->getDataSourceDescription().metadata_type;
+                if (metadata_type != MetadataStorageType::StaticWeb && metadata_type != MetadataStorageType::WebIndex)
+                    return false;
+
+                LOG_INFO(
+                    log,
+                    "Web-backed disk '{}' could not be inspected ({}), so it was skipped while "
+                    "recovering the FREEZE backup counter from an empty or missing "
+                    "shadow/increment.txt. FREEZE cannot write to such a disk, so it holds no "
+                    "backup identifier this server allocated.",
+                    disk_name,
+                    reason);
+                return true;
+            };
+
+            /// Every metadata call below inspects this one disk, so they must share the
+            /// filter: a disk can answer the first from cached metadata and only reach
+            /// its backing store on a later one. Aborting a partial scan is safe because
+            /// entries seen before the failure are counted and the bound only rises.
+            try
+            {
+                if (!disk->existsDirectory(shadow_relative))
+                    continue;
+
+                /// This is collision-avoidance, so the scan must observe EVERY
+                /// existing numeric `shadow/<N>`. A failure that could hide one
+                /// fails the FREEZE rather than silently producing a too-low bound
+                /// that would let the recovered counter reuse an allocated
+                /// directory. Only successfully inspected non-numeric names are
+                /// skipped.
+                /// A backup is always a directory, and the iterator also yields plain
+                /// files, so the name alone does not identify one. Counting a numeric
+                /// file would raise the bound over identifiers that are still free,
+                /// and one named the counter's maximum would refuse every recovery.
+                ///
+                /// The path is rebuilt from the name rather than taken from the
+                /// iterator: a wrapping disk such as `DiskEncrypted` yields its
+                /// delegate's already-wrapped path, which `existsDirectory` would wrap
+                /// a second time and report absent, hiding a real backup.
+                for (auto it = disk->iterateDirectory(shadow_relative); it->isValid(); it->next())
+                    if (auto value = numeric_dir_value(it->name());
+                        value && disk->existsDirectory(fs::path(shadow_relative) / it->name()))
+                        max_existing_id = std::max(max_existing_id, *value);
+            }
+            catch (const Exception & e)
+            {
+                if (!skip_uninspectable_never_frozen_disk(e.message()))
+                    throw;
+                continue;
+            }
+            catch (const Poco::Exception & e)
+            {
+                if (!skip_uninspectable_never_frozen_disk(e.displayText()))
+                    throw;
+                continue;
+            }
+            catch (const std::filesystem::filesystem_error & e)
+            {
+                if (!skip_uninspectable_never_frozen_disk(e.what()))
+                    throw;
+                continue;
+            }
+        }
+
+        /// The recovered counter becomes this bound plus one, so a backup already
+        /// holding the counter's maximum leaves no next id: refuse rather than
+        /// overflow and reuse that directory.
+        if (max_existing_id >= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+        {
+            /// Distinguishes this refusal from the counter file's own overflow, which
+            /// carries the same error code but is a durable state. See the handler on
+            /// the named reservation path below.
+            provider_refused_on_existing_backup = true;
+            throw Exception(
+                ErrorCodes::LIMIT_EXCEEDED,
+                "Cannot recover the FREEZE backup counter: a backup directory named {} already "
+                "exists, which is the largest value the counter can hold, so no next backup id "
+                "can be allocated. Remove or rename that directory. Writing a value into "
+                "shadow/increment.txt instead cannot help: no value above that name is "
+                "representable, and a lower one would hand out an identifier a backup already "
+                "holds.",
+                max_existing_id);
+        }
+
+        return max_existing_id;
+    };
+
+    /// The directory a named FREEZE creates, resolved before the counter is
+    /// touched because whether an id has to be reserved depends on the name.
+    const String named_dir = with_name.empty() ? String() : escapeForFileName(with_name);
+
+    /// The id a named FREEZE consumes, when its directory is one an unnamed FREEZE
+    /// could allocate. A recovered counter is the bound plus one, so zero is never
+    /// allocated and `shadow/0` therefore needs no reservation.
+    std::optional<UInt64> named_reserved_id;
+    if (!with_name.empty())
+    {
+        named_reserved_id = numeric_dir_value(named_dir);
+        if (named_reserved_id == 0)
+            named_reserved_id.reset();
+    }
+
+    /// Invariant: a directory an unnamed FREEZE could allocate must be reserved before
+    /// this function returns, and the counter must never hold a value no scan produced.
+    Increment increment_file(fs::path(default_shadow_path) / "increment.txt");
+    UInt64 increment = 0;
+    if (with_name.empty())
+        increment = increment_file.get(/*create_if_need=*/ true, /*min_initial_value=*/ 0, max_existing_id_provider);
+    else if (named_reserved_id)
+    {
+        /// Reserve the name, recovering the counter first when it is missing or
+        /// empty. Recovery runs the same all-disk scan as the unnamed path and is
+        /// additionally floored by this name, so the counter ends up at or above it -
+        /// AT the name when it is the highest id in play, higher when the scan found a
+        /// larger existing backup. Either way the name is marked allocated, because an
+        /// unnamed FREEZE hands out the stored value plus one and so can never reuse
+        /// this directory. A healthy counter ignores both bounds and is merely
+        /// advanced, exactly as before.
+        try
+        {
+            increment_file.get(
+                /*create_if_need=*/ true, /*min_initial_value=*/ *named_reserved_id - 1, max_existing_id_provider);
+        }
+        catch (const Exception & e)
+        {
+            /// Tolerated only when the COUNTER is at the maximum: nothing can be
+            /// allocated in that state, so there is no id to reserve against, and it
+            /// is durable because only writing the file can leave it. The scan's
+            /// refusal shares this code but names a directory `SYSTEM UNFREEZE` can
+            /// remove without the counter lock, so proceeding unreserved would let a
+            /// later unnamed FREEZE hand out this very name.
+            if (e.code() != ErrorCodes::LIMIT_EXCEEDED || provider_refused_on_existing_backup)
+                throw;
+
+            LOG_TRACE(
+                log,
+                "The FREEZE backup counter is exhausted, so FREEZE WITH NAME '{}' reserved no "
+                "backup id. A FREEZE without WITH NAME cannot allocate a directory while the "
+                "counter is in this state, so the name cannot be reused.",
+                with_name);
+        }
+    }
+    else
+    {
+        /// `create_if_need = false` throws on a missing or empty file, leaving
+        /// recovery pending for the unnamed FREEZE that needs it. Every state with
+        /// no next value to hand out has nothing to reserve, so the handlers below
+        /// let the named FREEZE proceed.
+        try
+        {
+            increment_file.get(/*create_if_need=*/ false);
+        }
+        catch (const ErrnoException & e)
+        {
+            /// No counter file yet: nothing to reserve against, and creating it is
+            /// the unnamed path's job. Any other errno (permissions, IO) is real.
+            if (e.getErrno() != ENOENT)
+                throw;
+        }
+        catch (const Exception & e)
+        {
+            /// An exhausted counter has no next value for an unnamed FREEZE to
+            /// allocate, so there is no id to reserve against - and the guard
+            /// throws before writing, so the stored maximum is left intact. Every
+            /// other ClickHouse error (fstat, short read, ...) is real.
+            if (e.code() != ErrorCodes::LIMIT_EXCEEDED)
+                throw;
+
+            LOG_TRACE(
+                log,
+                "shadow/increment.txt is at the maximum the counter can hold, so FREEZE WITH NAME "
+                "'{}' reserved no backup id. A FREEZE without WITH NAME cannot allocate a "
+                "directory while the counter is in this state.",
+                with_name);
+        }
+        catch (const Poco::Exception &)
+        {
+            /// The counter exists but is empty (`CounterInFile::add` rejects it
+            /// when it may not create). Recovery stays pending for the unnamed
+            /// FREEZE that needs the scan, so there is nothing to reserve here.
+            LOG_TRACE(
+                log,
+                "shadow/increment.txt is empty, so FREEZE WITH NAME '{}' reserved no backup id. "
+                "The counter is recovered by the next FREEZE without WITH NAME.",
+                with_name);
+        }
+    }
 
     const String shadow_path = "shadow/";
 

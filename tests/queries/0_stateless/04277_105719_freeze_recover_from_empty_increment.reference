@@ -1,0 +1,14 @@
+Scenario A FREEZE succeeded
+Scenario B FREEZE succeeded
+Scenario C unnamed FREEZE allocated next id
+Scenario D unnamed FREEZE did not reuse numeric named backup
+Scenario E unnamed FREEZE ignored oversized numeric backup
+Scenario J unnamed FREEZE ignored a non-canonical numeric backup
+Scenario G named FREEZE left recovery pending
+Scenario H named FREEZE reserved its numeric name
+Scenario N named FREEZE reserved its numeric name on an empty counter
+Scenario P named FREEZE reserved its numeric name before creating the directory
+Scenario O non-numeric named FREEZE left the empty counter alone
+Scenario M unnamed FREEZE ignored a numeric plain file
+Scenario F unnamed FREEZE scanned the non-default disk
+increment.txt is non-empty
