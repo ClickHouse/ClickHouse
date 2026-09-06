@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace Setting
@@ -53,9 +52,6 @@ WebObjectStorageUsage getWebObjectStorageUsage(
 
 ColumnsDescription TableFunctionURLCluster::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
-    if (getWebObjectStorageUsage(filename, configuration, context).has_url_wildcards)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "`urlCluster` does not support wildcard expansion from HTTP index pages");
-
     return TableFunctionURL::getActualTableStructure(context, is_insert_query);
 }
 
@@ -65,9 +61,9 @@ StoragePtr TableFunctionURLCluster::getStorage(
 {
     const auto usage = getWebObjectStorageUsage(source, configuration, context);
     if (usage.has_url_wildcards)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "`urlCluster` does not support wildcard expansion from HTTP index pages");
+        checkExperimentalURLWildcardFromIndexPages(context);
 
-    if (usage.has_archive_pattern)
+    if (usage.has_url_wildcards || usage.has_archive_pattern)
     {
         /// `structure` has no corresponding `getStorage` argument. It is the value parsed by
         /// `ITableFunctionFileLike` together with the source, format, and compression arguments.
@@ -209,10 +205,14 @@ FROM urlCluster(
 
 The archive is distributed using the same `StorageObjectStorageCluster` implementation as `s3Cluster`. The [cluster_function_process_archive_on_multiple_nodes](/operations/settings/settings#cluster_function_process_archive_on_multiple_nodes) setting controls whether files from one archive can be processed on multiple cluster nodes.
 
+Wildcards can be used both in the archive URL and in the path inside the archive. Expanding `*` or `**` in the URL requires [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages).
+
 ## Globs in URL {#globs-in-url}
 
 Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](/reference/functions/table-functions/remote#globs-in-addresses) function.
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements) setting.
+
+With [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages) enabled, `urlCluster` expands `*` and `**` in URL paths by reading HTTP index pages and distributes the matched files across the cluster.
 
 ## Related {#related}
 

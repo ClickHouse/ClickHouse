@@ -47,17 +47,6 @@ namespace ErrorCodes
 
 namespace
 {
-    void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
-    {
-        if (context->getSettingsRef()[Setting::allow_experimental_url_wildcard_from_index_pages])
-            return;
-
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Wildcard expansion for `url` from HTTP index pages is experimental. "
-            "Set `allow_experimental_url_wildcard_from_index_pages = 1` to enable it");
-    }
-
     ASTs makeWebObjectStorageEngineArgs(
         const String & source,
         const String & format,
@@ -98,6 +87,17 @@ namespace
 
         return engine_args;
     }
+}
+
+void TableFunctionURL::checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context) const
+{
+    if (context->getSettingsRef()[Setting::allow_experimental_url_wildcard_from_index_pages])
+        return;
+
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "Wildcard expansion for `url` from HTTP index pages is experimental. "
+        "Set `allow_experimental_url_wildcard_from_index_pages = 1` to enable it");
 }
 
 std::shared_ptr<StorageWebConfiguration> TableFunctionURL::createWebObjectStorageConfiguration(

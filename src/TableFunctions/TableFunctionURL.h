@@ -92,6 +92,8 @@ protected:
 
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
+    void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context) const;
+
     std::shared_ptr<StorageWebConfiguration> createWebObjectStorageConfiguration(
         const String & source,
         const String & format_,
