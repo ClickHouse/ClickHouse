@@ -1,0 +1,93 @@
+-- t_empty_columns: rows before
+1000	499500	12688800205083956790
+-- t_empty_columns: rows after empty columns.txt reload
+1000	499500	12688800205083956790
+-- t_empty_columns: rebuilt columns.txt on disk
+columns format version: 1
+`a` UInt64
+`s` String
+-- t_empty_columns: rows after recovered reload
+1000	499500	12688800205083956790
+-- t_empty_columns: rows after absent columns.txt reload
+1000	499500	12688800205083956790
+-- t_empty_columns_bn: rows before
+1000	499500	12444261028201855304
+-- t_empty_columns_bn: rows after empty columns.txt reload
+1000	499500	12444261028201855304
+-- t_empty_columns_bn: rebuilt columns.txt on disk
+columns format version: 1
+`a` UInt64
+`s` String
+`_block_number` UInt64
+`_block_offset` UInt64
+-- t_empty_columns_bn: rows after recovered reload
+1000	499500	12444261028201855304
+-- t_empty_columns_bn: rows after absent columns.txt reload
+1000	499500	12444261028201855304
+-- t_empty_columns_ld: rows before
+500	250000	6753304225218678229
+-- t_empty_columns_ld: rows after empty columns.txt reload
+500	250000	6753304225218678229
+-- t_empty_columns_ld: rebuilt columns.txt on disk
+columns format version: 1
+`a` UInt64
+`s` String
+`_row_exists` UInt8
+-- t_empty_columns_ld: rows after recovered reload
+500	250000	6753304225218678229
+-- t_empty_columns_ld: rows after absent columns.txt reload
+500	250000	6753304225218678229
+-- t_empty_columns_tuple: value digest before
+999000
+-- t_empty_columns_tuple: value digest after empty columns.txt reload
+999000
+-- t_empty_columns_tuple: value digest after recovered reload
+999000
+-- t_empty_columns_map: value digest before
+1498500
+-- t_empty_columns_map: value digest after empty columns.txt reload
+1498500
+-- t_empty_columns_map: value digest after recovered reload
+1498500
+-- t_empty_columns_map_bucketed: value digest before
+1498500
+-- t_empty_columns_map_bucketed: value digest after empty columns.txt reload
+1498500
+-- t_empty_columns_map_bucketed: value digest after recovered reload
+1498500
+-- t_empty_columns_nested: n.a digest before
+1000000
+-- t_empty_columns_nested: one active part after recovery
+1
+-- t_empty_columns_nested: n.a digest after empty columns.txt reload
+1000000
+-- t_empty_columns_nested: n.a digest after recovered reload
+1000000
+-- t_empty_columns_discarded: m digest before
+1498500
+-- t_empty_columns_discarded: active parts after refused recovery
+0
+-- t_empty_columns_discarded: part kept for recovery
+1
+-- t_empty_columns_fallback: t.x digest before
+999000
+-- t_empty_columns_fallback: t.x digest after empty columns.txt + absent columns_substreams.txt reload
+999000
+-- t_empty_columns_fallback: t.x digest after recovered reload
+999000
+-- t_empty_columns_shared_offsets: n.a digest after recovery
+1000000
+-- t_empty_columns_shared_offsets: consistent part after recovery
+1
+-- t_empty_columns_shared_offsets_data: n.a and n.b digests after recovery
+1000000	2000
+-- t_empty_columns_shared_offsets_data: consistent part after recovery
+1
+-- t_empty_columns_projection: rows before
+600	134550
+-- t_empty_columns_projection: usable projection after recovery
+1
+-- t_empty_columns_projection: _block_number listed once in the rebuilt columns.txt
+1
+-- t_empty_columns_projection: rows after recovery
+600	134550

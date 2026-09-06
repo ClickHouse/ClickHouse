@@ -2655,9 +2655,10 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     NamesAndTypesList loaded_columns;
     bool is_readonly_storage = getDataPartStorage().isReadonly();
 
-    if (auto in = readFileIfExists("columns.txt"))
+    auto columns_file = readFileIfExists("columns.txt");
+    if (columns_file && !columns_file->eof())
     {
-        loaded_columns.readText(*in);
+        loaded_columns.readText(*columns_file);
 
         for (auto & column : loaded_columns)
             setVersionToAggregateFunctions(column.type, true);
@@ -2665,6 +2666,7 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         if (!info.isPatch())
             attachQuantizeSerializations(loaded_columns, getMetadataSnapshot()->getColumns());
     }
+    /// If there is no column.txt or it's empty, try to recover it from the metadata.
     else
     {
         /// We can get list of columns only from columns.txt in compact parts.
@@ -2673,10 +2675,38 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
                 name, path, getDataPartStorage().getDiskName());
 
         auto metadata_snapshot = getMetadataSnapshot();
-        /// If there is no file with a list of columns, write it down.
+
+        /// No (or empty) columns.txt: rebuild it.
+
+        /// Load columns substreams, so we can check if specific column exists in the data part via getFirstFileNameForColumn correctly.
+        loadColumnsSubstreams(/*validate_against_loaded_columns=*/false);
+
+        /// The file is only ever written non-empty, so present-but-empty means its content was
+        /// discarded as corrupted. Presence would then be inferred from the default serialization,
+        /// dropping every column stored in another layout.
+        if (getColumnsSubstreams().empty() && getDataPartStorage().existsFile(COLUMNS_SUBSTREAMS_FILE_NAME))
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Cannot rebuild columns.txt of part {}: {} was discarded as corrupted",
+                name, COLUMNS_SUBSTREAMS_FILE_NAME);
+
+        NameSet loaded_column_names;
         for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
-            if (getFileNameForColumn(column))
+        {
+            if (getFirstFileNameForColumn(column).has_value())
+            {
                 loaded_columns.push_back(column);
+                loaded_column_names.insert(column.name);
+            }
+        }
+
+        /// Persistent virtual columns the part carries (getAllPhysical omits them), in the order
+        /// writeColumns wrote them: after the physical columns. A projection lists the parent
+        /// virtuals it stores among its own physical columns, so skip what is already present.
+        for (const auto & column : metadata_snapshot->virtuals.getNamesAndTypes(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader))
+        {
+            if (!loaded_column_names.contains(column.name) && getFirstFileNameForColumn(column).has_value())
+                loaded_columns.push_back(column);
+        }
 
         if (loaded_columns.empty())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
@@ -2686,16 +2716,14 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     }
 
     SerializationInfoByName infos({});
-    if (auto in = readFileIfExists(SERIALIZATION_FILE_NAME))
-        infos = SerializationInfoByName::readJSON(loaded_columns, *in);
+    if (auto serialization_file = readFileIfExists(SERIALIZATION_FILE_NAME))
+        infos = SerializationInfoByName::readJSON(loaded_columns, *serialization_file);
 
     std::optional<int32_t> loaded_metadata_version;
     if (load_metadata_version)
     {
-        if (auto in = readFileIfExists(METADATA_VERSION_FILE_NAME))
-        {
-            readIntText(loaded_metadata_version.emplace(), *in);
-        }
+        if (auto metadata_version_file = readFileIfExists(METADATA_VERSION_FILE_NAME))
+            readIntText(loaded_metadata_version.emplace(), *metadata_version_file);
     }
 
     if (!loaded_metadata_version)
@@ -2709,13 +2737,14 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     setColumns(loaded_columns, infos, *loaded_metadata_version);
 }
 
-void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_)
+void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_, bool validate_against_loaded_columns)
 {
     /// The interned list is shared between parts and outlives the query, so it is not charged to it;
     /// see `setColumns`.
     MemoryTrackerBlockerInThread not_charged_to_the_query;
 
-    columns_substreams_.validateColumns(getColumns().getNames());
+    if (validate_against_loaded_columns)
+        columns_substreams_.validateColumns(getColumns().getNames());
     /// Drop the interned list first, as in `setColumns`. Callers always pass a list of their own.
     chassert(&columns_substreams_ != columns_substreams.get());
     columns_substreams = SharedPartColumns::getEmptyColumnsSubstreams();
@@ -2745,7 +2774,7 @@ void IMergeTreeDataPart::moveMetadataToDedicatedArena()
         reallocateByCopy(patch_part_index);
 }
 
-void IMergeTreeDataPart::loadColumnsSubstreams()
+void IMergeTreeDataPart::loadColumnsSubstreams(bool validate_against_loaded_columns)
 {
     if (auto in = readFileIfExists(COLUMNS_SUBSTREAMS_FILE_NAME))
     {
@@ -2780,7 +2809,7 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
             }
         }
 
-        setColumnsSubstreams(loaded_columns_substreams);
+        setColumnsSubstreams(loaded_columns_substreams, validate_against_loaded_columns);
     }
     /// In Compact part with marks for substreams we must have substreams file. For other cases it's not mandatory.
     else if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)

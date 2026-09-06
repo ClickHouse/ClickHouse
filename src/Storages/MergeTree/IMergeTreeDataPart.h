@@ -188,7 +188,9 @@ public:
     /// Return information about secondary indexes size on disk for all indexes in part
     IndexSize getTotalSecondaryIndicesSize() const;
 
-    virtual std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const = 0;
+    /// First stream file name (no extension) in the column's serialization, or nullopt if the
+    /// column has no files here. A column may have several stream files; this returns only one.
+    virtual std::optional<String> getFirstFileNameForColumn(const NameAndTypePair & column) const = 0;
 
     virtual ~IMergeTreeDataPart();
 
@@ -204,7 +206,7 @@ public:
     /// We could have separate method like setMetadata, but it's much more convenient to set it up with columns
     void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version);
 
-    void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_);
+    void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_, bool validate_against_loaded_columns = true);
 
     /// Re-home the small, part-lifetime metadata that build paths may populate outside the
     /// dedicated MergeTree arena (`partition`, `ttl_infos`, `expired_columns`, and for patch parts
@@ -938,7 +940,7 @@ private:
     void loadColumns(bool require, bool load_metadata_version);
 
     /// Reads columns substreams from columns_substreams.txt.
-    void loadColumnsSubstreams();
+    void loadColumnsSubstreams(bool validate_against_loaded_columns = true);
 
     /// Reads invalidated_system_columns.txt if present.
     void loadInvalidatedSystemColumns();
