@@ -129,8 +129,18 @@ void RollupStep::serialize(Serialization & ctx) const
     /// `serializeAggregateDescriptions` rejects.
     serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out);
 
-    /// The GROUP BY list keeps repeated keys, which `params.keys` does not; an older peer has no
-    /// field for them and reads the deduplicated list alone, which is the behaviour it had anyway.
+    /// A peer too old for the positions would expand from the deduplicated key list and answer a
+    /// repeated-key CUBE or ROLLUP with the grouping sets this change exists to correct. Dropping
+    /// them silently is a wrong result on a mixed-version cluster, so fail instead - and only when
+    /// the query actually repeats a key, which leaves every other plan shippable as before.
+    if (!key_positions.empty() && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Serializing a {} whose GROUP BY list repeats a key requires query plan serialization version >= {}; "
+            "the receiving server is too old and would expand the wrong grouping sets",
+            "RollupStep",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS);
+
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
     {
         writeVarUInt(key_positions.size(), ctx.out);
