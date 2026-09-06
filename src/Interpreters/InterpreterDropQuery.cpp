@@ -25,6 +25,7 @@
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Databases/DatabaseReplicated.h>
@@ -491,7 +492,23 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP IF EMPTY is not implemented for databases");
 
     if (!truncate && database->hasReplicationThread())
-        database->stopReplication();
+    {
+        try
+        {
+            database->stopReplication();
+        }
+        catch (Coordination::Exception & e)
+        {
+            /// A DROP does not need replication stopped cleanly: the database is going away, and the
+            /// ephemeral nodes it holds are released when the Keeper session expires. A DETACH keeps
+            /// the database on disk to be reattached, so there the error still matters.
+            if (!drop || !Coordination::isHardwareError(e.code))
+                throw;
+            tryLogCurrentException(
+                getLogger("InterpreterDropQuery"),
+                fmt::format("Failed to stop replication of database {} before dropping it", backQuoteIfNeed(database_name)));
+        }
+    }
 
     if (database->shouldBeEmptyOnDetach())
     {
