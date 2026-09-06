@@ -352,8 +352,9 @@ void StorageMergeTree::read(
 {
     const auto & settings = local_context->getSettingsRef();
     /// reading step for parallel replicas with the analyzer is built in Planner, so don't do it here
+    /// A shard number shipped for a different cluster cannot scope this read.
     if (local_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
-        && !settings[Setting::allow_experimental_analyzer])
+        && !settings[Setting::allow_experimental_analyzer] && !ClusterProxy::hasForeignShardScope(local_context))
     {
         ClusterProxy::executeQueryWithParallelReplicas(
             query_plan, getStorageID(), processed_stage, query_info.query, local_context, query_info.storage_limits);

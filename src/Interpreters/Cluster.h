@@ -296,6 +296,11 @@ public:
 
     const String & getName() const { return name; }
 
+    /// Identifies the shard NUMBERING rather than the cluster: two clusters share it only when a shard
+    /// number denotes the same shard in both. Deriving a cluster keeps the name but may renumber the
+    /// shards, so the name cannot serve this purpose. Empty identifies nothing and never compares equal.
+    const String & getShardScopeIdentity() const { return shard_scope_identity; }
+
 private:
     SlotToShard slot_to_shard;
 
@@ -342,6 +347,7 @@ private:
     size_t local_shard_count = 0;
 
     String name;
+    String shard_scope_identity;
 };
 
 using ClusterPtr = std::shared_ptr<Cluster>;

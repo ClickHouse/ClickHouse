@@ -156,3 +156,63 @@ def test_parallel_replicas_over_distributed(
         )
         == expected_result
     )
+
+
+def test_foreign_shard_scope_is_not_applied(start_cluster):
+    # A `_shard_num` shipped by the initiator of a distributed query says which shard of THAT cluster
+    # the sub-query serves. The view below names a different cluster_for_parallel_replicas, where the
+    # same number indexes an unrelated shard: shard 2 of test_foreign_shard_scope is the n4 group,
+    # which the outer read never addresses and which holds different rows. Applying the number there
+    # returned that group's data with no error at all.
+    table_name = "test_foreign_scope"
+    group_a = nodes[0:3]  # shard 1 of both clusters
+    group_b = nodes[3:6]  # shard 2 of test_foreign_shard_scope only
+    for node in nodes:
+        node.query(f"DROP VIEW IF EXISTS {table_name}_v SYNC")
+        node.query(f"DROP VIEW IF EXISTS {table_name}_v_no_pr SYNC")
+        node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+        node.query(
+            f"CREATE TABLE {table_name} (key Int64) Engine=MergeTree ORDER BY key"
+        )
+
+    # Distinct per-shard data is the whole oracle: the n4 group's rows must not be able to pass for the
+    # n1 group's. Every replica of a shard holds that shard's rows, so which replica answers cannot
+    # change the result -- only reading the wrong SHARD can.
+    for node in group_a:
+        node.query(f"INSERT INTO {table_name} SELECT number FROM numbers(10)")
+    for node in group_b:
+        node.query(f"INSERT INTO {table_name} SELECT 1000000 + number FROM numbers(10)")
+
+    view_settings = (
+        "enable_parallel_replicas = 1, max_parallel_replicas = 3, "
+        "parallel_replicas_for_non_replicated_merge_tree = 1, "
+        "automatic_parallel_replicas_mode = 0, "
+        "cluster_for_parallel_replicas = 'test_foreign_shard_scope'"
+    )
+    for node in nodes:
+        node.query(
+            f"CREATE VIEW {table_name}_v AS SELECT key FROM {table_name} SETTINGS {view_settings}"
+        )
+        node.query(
+            f"CREATE VIEW {table_name}_v_no_pr AS SELECT key FROM {table_name} SETTINGS enable_parallel_replicas = 0"
+        )
+
+    # prefer_localhost_replica = 0 is mandatory: a shard served by the local replica ships no
+    # `_shard_num` over the wire, so with the default 1 the query never reaches the code under test.
+    settings = {"prefer_localhost_replica": 0, "parallel_replicas_plan_based": 0}
+
+    # Both shards of the outer cluster are the n1 group, so the answer is its sum counted twice, and the
+    # control view (no parallel replicas) fixes what that is.
+    expected = nodes[0].query(
+        f"SELECT sum(key) FROM cluster('test_outer_two_shards_same_node', currentDatabase(), {table_name}_v_no_pr)",
+        settings=settings,
+    )
+    assert expected.strip() == "90", expected
+
+    assert (
+        nodes[0].query(
+            f"SELECT sum(key) FROM cluster('test_outer_two_shards_same_node', currentDatabase(), {table_name}_v)",
+            settings=settings,
+        )
+        == expected
+    )
