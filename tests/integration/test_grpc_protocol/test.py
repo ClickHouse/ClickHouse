@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import uuid
+import zlib
 from threading import Thread
 
 import grpc
@@ -744,15 +745,19 @@ def test_compressed_output_streaming():
     assert data == (b"0\n") * 100000
 
 
-def test_compressed_output_gzip():
+@pytest.mark.parametrize(
+    "compression_type,decompress",
+    [("gzip", gzip.decompress), ("deflate", zlib.decompress)],
+)
+def test_compressed_output_gzip_and_deflate_level_12(compression_type, decompress):
     query_info = clickhouse_grpc_pb2.QueryInfo(
         query="SELECT 0 FROM numbers(1000)",
-        output_compression_type="gzip",
-        output_compression_level=6,
+        output_compression_type=compression_type,
+        output_compression_level=12,
     )
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
     result = stub.ExecuteQuery(query_info)
-    assert gzip.decompress(result.output) == (b"0\n") * 1000
+    assert decompress(result.output) == (b"0\n") * 1000
 
 
 def test_compressed_totals_and_extremes():

@@ -402,9 +402,6 @@
 [submodule "contrib/simdutf"]
 	path = contrib/simdutf
 	url = https://github.com/ClickHouse/simdutf
-[submodule "contrib/libdeflate"]
-	path = contrib/libdeflate
-	url = https://github.com/ClickHouse/libdeflate
 [submodule "contrib/wagyu"]
 	path = contrib/wagyu
 	url = https://github.com/ClickHouse/wagyu
