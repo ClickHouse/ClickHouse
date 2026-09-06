@@ -116,7 +116,8 @@ ProcessList::EntryPtr ProcessList::insert(
     const IAST * ast,
     ContextMutablePtr query_context,
     UInt64 watch_start_nanoseconds,
-    bool is_internal)
+    bool is_internal,
+    QuerySlotPtr query_slot)
 {
     EntryPtr res;
 
@@ -138,14 +139,13 @@ ProcessList::EntryPtr ProcessList::insert(
     // is already acquired at this point, and the upcoming multi-resource scheduler will admit query slots
     // and memory reservations together as a single allocation. Splitting their admission across the
     // `ProcessList` mutex would prevent that unification and is a worse design overall.
-    QuerySlotPtr query_slot;
     MemoryReservationPtr memory_reservation;
     if (!is_unlimited_query)
     {
         /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
         auto workload_entity_storage = query_context->getWorkloadEntityStoragePtr();
         String query_resource_name = workload_entity_storage->getQueryResourceName();
-        if (!query_resource_name.empty())
+        if (!query_slot && !query_resource_name.empty())
         {
             if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
                 query_slot = std::make_unique<QuerySlot>(link);

@@ -1260,6 +1260,11 @@ Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
 **See Also**
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
+    DECLARE(Bool, use_query_slot_to_refresh_materialized_view, false, R"(
+When enabled, refreshable materialized views request a query slot in the workload selected by their SELECT settings before starting refresh execution. This requires a configured QUERY resource for that workload. While queued, the refresh reports `WaitingForResource` in `system.view_refreshes` without occupying a background execution worker.
+
+Disabled by default for compatibility: existing refreshes continue to bypass QUERY admission, while their SELECT workload still applies to execution. Requires a server restart.
+)", 0) \
     DECLARE(Bool, cpu_slot_preemption, true, R"(
 Defines how workload scheduling for CPU resources (MASTER THREAD and WORKER THREAD) is done.
 

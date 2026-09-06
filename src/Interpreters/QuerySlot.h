@@ -11,6 +11,7 @@
 #include <exception>
 #include <mutex>
 #include <memory>
+#include <optional>
 
 
 namespace DB
@@ -20,7 +21,27 @@ namespace DB
 // the resource scheduler before query execution and hold it until query is finished.
 // Specified link should point to a queue of some workload within the resource created with:
 //   CREATE RESOURCE query (QUERY)
-class QuerySlot final: private ResourceRequest, public boost::noncopyable
+class IQuerySlot
+{
+public:
+    virtual ~IQuerySlot() = default;
+};
+
+using QuerySlotPtr = std::unique_ptr<IQuerySlot>;
+
+/// Common accounting for synchronous and asynchronous query admission.
+class QuerySlotBase : public IQuerySlot, protected ResourceRequest, public boost::noncopyable
+{
+protected:
+    void acquired();
+    /// Call while the classifier keeping the scheduler constraints alive still exists.
+    void release();
+
+private:
+    std::optional<CurrentMetrics::Increment> acquired_slot_increment;
+};
+
+class QuerySlot final : public QuerySlotBase
 {
 public:
     /// Blocks until a query slot is acquired
@@ -42,9 +63,6 @@ private:
     std::condition_variable cv;
     bool granted = false;
     std::exception_ptr exception;
-    std::optional<CurrentMetrics::Increment> acquired_slot_increment;
 };
-
-using QuerySlotPtr = std::unique_ptr<QuerySlot>;
 
 }

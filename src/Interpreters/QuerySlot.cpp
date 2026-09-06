@@ -36,15 +36,25 @@ QuerySlot::QuerySlot(ResourceLink link_)
     cv.wait(lock, [this] { return granted || exception; }); // TODO(serxa): add query slot wait deadline w/ canceling
     if (exception)
         throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Unable to obtain a query slot: {}", getExceptionMessage(exception, /* with_stacktrace = */ false));
-    ProfileEvents::increment(ProfileEvents::ConcurrentQuerySlotsAcquired);
-    acquired_slot_increment.emplace(CurrentMetrics::ConcurrentQueryAcquired);
+    acquired();
 }
 
 QuerySlot::~QuerySlot()
 {
-    acquired_slot_increment.reset();
     if (granted)
-        finish();
+        release();
+}
+
+void QuerySlotBase::acquired()
+{
+    ProfileEvents::increment(ProfileEvents::ConcurrentQuerySlotsAcquired);
+    acquired_slot_increment.emplace(CurrentMetrics::ConcurrentQueryAcquired);
+}
+
+void QuerySlotBase::release()
+{
+    acquired_slot_increment.reset();
+    finish();
 }
 
 void QuerySlot::execute()
