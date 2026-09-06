@@ -90,6 +90,26 @@ public:
         /// True when this coordinator runs an executable or executable pool UDF.
         bool is_user_defined_function = false;
 
+        /// Exchange data through a shared-memory file instead of the stdin/stdout pipes.
+        /// The pipes then carry only control commands (see ShellCommandSource.cpp).
+        bool use_shared_memory = false;
+
+        /// Initial size in bytes of the shared-memory region. Valid only if use_shared_memory = true.
+        size_t shared_memory_size = 0;
+
+        /// Upper bound in bytes to which the region may grow on demand. When it equals
+        /// shared_memory_size the region never grows. Valid only if use_shared_memory = true.
+        size_t shared_memory_max_size = 0;
+
+        /// Overlap serialization of the next chunk with the child's processing of the current one
+        /// using two regions and a background thread. Doubles the region memory. Valid only if
+        /// use_shared_memory = true.
+        bool shared_memory_pipeline = false;
+
+        /// Directory (expected to be tmpfs) where the shared-memory file is created.
+        /// Valid only if use_shared_memory = true.
+        std::string shared_memory_path;
+
     };
 
     explicit ShellCommandSourceCoordinator(const Configuration & configuration_);

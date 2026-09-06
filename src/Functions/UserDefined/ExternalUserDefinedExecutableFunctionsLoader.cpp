@@ -1,9 +1,12 @@
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 
+#include <limits>
+
 #include <Core/UUID.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <boost/algorithm/string/split.hpp>
+#include <Common/SharedMemoryRegion.h>
 #include <Common/StringUtils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -230,6 +233,77 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     bool is_deterministic = config.getBool(key_in_config + ".deterministic", false);
 
     bool send_chunk_header = config.getBool(key_in_config + ".send_chunk_header", false);
+
+    bool use_shared_memory = config.getBool(key_in_config + ".use_shared_memory", false);
+    size_t shared_memory_size = config.getUInt64(key_in_config + ".shared_memory_size", 0);
+    size_t shared_memory_max_size = config.getUInt64(key_in_config + ".shared_memory_max_size", 0);
+    bool shared_memory_pipeline = config.getBool(key_in_config + ".shared_memory_pipeline", false);
+    std::string shared_memory_path = config.getString(key_in_config + ".shared_memory_path", "/dev/shm");
+
+    if (use_shared_memory)
+    {
+        /// Reject invalid combinations before probing the configured shared-memory directory below.
+        if (send_chunk_header)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Executable user defined function {}: `use_shared_memory` is incompatible with `send_chunk_header`",
+                name);
+
+        if (shared_memory_size == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Executable user defined function {}: `shared_memory_size` must be greater than zero when `use_shared_memory` is enabled",
+                name);
+
+        /// An explicitly empty `shared_memory_path` would place the backing file at the filesystem
+        /// root instead of the `/dev/shm` default, so reject it here rather than at query time.
+        if (shared_memory_path.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Executable user defined function {}: `shared_memory_path` must not be empty",
+                name);
+
+        if (!shared_memory_path.starts_with('/'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Executable user defined function {}: `shared_memory_path` ({}) must be an absolute path",
+                name, shared_memory_path);
+
+        /// The size is later charged to a signed memory tracker (`Int64`) and passed to `ftruncate`
+        /// (`off_t`, a signed 64-bit type on Linux). Reject values that would overflow those signed
+        /// types: otherwise a huge `UInt64` would become a negative allocation in the memory tracker
+        /// (corrupting accounting and possibly bypassing the memory limit) before `ftruncate` fails.
+        static constexpr UInt64 max_shared_memory_size = static_cast<UInt64>(std::numeric_limits<Int64>::max());
+        if (shared_memory_size > max_shared_memory_size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Executable user defined function {}: `shared_memory_size` ({}) must not exceed {}",
+                name, shared_memory_size, max_shared_memory_size);
+
+        /// A zero (unset) maximum means "do not grow": pin the cap to the initial size.
+        if (shared_memory_max_size == 0)
+            shared_memory_max_size = shared_memory_size;
+        else if (shared_memory_max_size < shared_memory_size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Executable user defined function {}: `shared_memory_max_size` ({}) must not be smaller than `shared_memory_size` ({})",
+                name, shared_memory_max_size, shared_memory_size);
+        else if (shared_memory_max_size > max_shared_memory_size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Executable user defined function {}: `shared_memory_max_size` ({}) must not exceed {}",
+                name, shared_memory_max_size, max_shared_memory_size);
+
+        UInt64 shared_memory_region_count = shared_memory_pipeline ? 2 : 1;
+        if (shared_memory_max_size > max_shared_memory_size / shared_memory_region_count)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Executable user defined function {}: total shared-memory charge ({} regions of up to {} bytes) must not exceed {}",
+                name, shared_memory_region_count, shared_memory_max_size, max_shared_memory_size);
+
+        /// Validate filesystem support and `/proc/self/fd` access while loading the function, so an
+        /// unusable configuration is rejected once instead of failing every invocation.
+        SharedMemoryRegion::checkSupported(shared_memory_path);
+    }
+    else if (shared_memory_pipeline)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Executable user defined function {}: `shared_memory_pipeline` requires `use_shared_memory` to be enabled",
+            name);
+    }
+
     size_t command_termination_timeout_seconds = config.getUInt64(key_in_config + ".command_termination_timeout", 10);
     size_t command_read_timeout_milliseconds = config.getUInt64(key_in_config + ".command_read_timeout", 10000);
     size_t command_write_timeout_milliseconds = config.getUInt64(key_in_config + ".command_write_timeout", 10000);
@@ -314,7 +388,12 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
         .is_executable_pool = is_executable_pool,
         .send_chunk_header = send_chunk_header,
         .execute_direct = execute_direct,
-        .is_user_defined_function = true
+        .is_user_defined_function = true,
+        .use_shared_memory = use_shared_memory,
+        .shared_memory_size = shared_memory_size,
+        .shared_memory_max_size = shared_memory_max_size,
+        .shared_memory_pipeline = shared_memory_pipeline,
+        .shared_memory_path = std::move(shared_memory_path)
     };
 
     auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);

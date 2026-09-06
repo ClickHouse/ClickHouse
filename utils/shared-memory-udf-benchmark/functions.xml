@@ -1,0 +1,60 @@
+<functions>
+    <!--
+      Four functionally identical echo UDFs that differ only in the transport, so a benchmark can
+      attribute wall-clock differences to the transport alone. All use `executable_pool` (so process
+      startup is amortized), the same `TabSeparated` format and the same String -> String signature.
+    -->
+
+    <!-- Baseline: plain pipe transport, streaming (flush per row). -->
+    <function>
+        <type>executable_pool</type>
+        <name>bench_pipe_stream</name>
+        <return_type>String</return_type>
+        <argument><type>String</type></argument>
+        <format>TabSeparated</format>
+        <pool_size>16</pool_size>
+        <command>echo_pipe.py</command>
+    </function>
+
+    <!-- Fair pipe baseline: one flush per chunk via send_chunk_header. -->
+    <function>
+        <type>executable_pool</type>
+        <name>bench_pipe_chunk</name>
+        <return_type>String</return_type>
+        <argument><type>String</type></argument>
+        <format>TabSeparated</format>
+        <pool_size>16</pool_size>
+        <send_chunk_header>1</send_chunk_header>
+        <command>echo_pipe_chunked.py</command>
+    </function>
+
+    <!-- Shared-memory transport (synchronous). -->
+    <function>
+        <type>executable_pool</type>
+        <name>bench_shm</name>
+        <return_type>String</return_type>
+        <argument><type>String</type></argument>
+        <format>TabSeparated</format>
+        <pool_size>16</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>134217728</shared_memory_size>
+        <command>echo_shm.py</command>
+    </function>
+
+    <!--
+      Compute-heavy variant: echo_shm_busy.py adds per-chunk CPU work, so the command's compute
+      time dominates the server-side serialization instead of the other way round.
+    -->
+    <function>
+        <type>executable_pool</type>
+        <name>bench_shm_busy</name>
+        <return_type>String</return_type>
+        <argument><type>String</type></argument>
+        <format>TabSeparated</format>
+        <pool_size>16</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>134217728</shared_memory_size>
+        <command>echo_shm_busy.py</command>
+    </function>
+
+</functions>

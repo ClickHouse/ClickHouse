@@ -1601,6 +1601,11 @@ The server successfully detected this situation and will download merged part fr
     M(ExecutableUserDefinedFunctionInputBytes, "Total bytes written to the stdin of executable and executable_pool user-defined function child processes.", ValueType::Bytes) \
     M(ExecutableUserDefinedFunctionOutputBytes, "Total bytes read from the stdout of executable and executable_pool user-defined function child processes.", ValueType::Bytes) \
     M(ExecutableUserDefinedFunctionPoolWaitMicroseconds, "Time spent waiting on tryBorrowObject when the executable_pool user-defined function pool is exhausted, in microseconds.", ValueType::Microseconds) \
+    M(ExecutableUDFSharedMemoryCalls, "Number of chunk exchanges performed through the shared-memory transport of executable user-defined functions.", ValueType::Number) \
+    M(ExecutableUDFSharedMemoryInputBytes, "Total bytes of serialized input placed into the shared-memory region of executable user-defined functions (not copied through the kernel).", ValueType::Bytes) \
+    M(ExecutableUDFSharedMemoryOutputBytes, "Total bytes of serialized output read back from the shared-memory region of executable user-defined functions (not copied through the kernel).", ValueType::Bytes) \
+    M(ExecutableUDFSharedMemoryRegionGrowths, "Number of times a shared-memory region of an executable user-defined function was grown to fit a larger chunk.", ValueType::Number) \
+    M(ExecutableUDFSharedMemoryAllocatedBytes, "Total bytes allocated (or added on growth) for shared-memory regions of executable user-defined functions.", ValueType::Bytes) \
     \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \
