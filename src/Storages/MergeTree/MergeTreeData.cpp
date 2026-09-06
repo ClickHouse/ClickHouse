@@ -11358,6 +11358,14 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             predicate, virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
 
         rows = virtual_columns_block.rows();
+
+        /// A physical column named `_part` shadows the virtual one, which is then absent from the
+        /// block (see `getHeaderWithVirtualsForFilter`), so the surviving rows cannot be mapped back
+        /// to parts. Decline the projection instead of failing the query; the caller falls back to an
+        /// ordinary read.
+        if (!virtual_columns_block.has("_part"))
+            return {};
+
         part_name_column = virtual_columns_block.getByName("_part").column;
     }
 
