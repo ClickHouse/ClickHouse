@@ -58,6 +58,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int TYPE_MISMATCH;
+    extern const int UNKNOWN_STATUS_OF_INSERT;
     extern const int UNEXPECTED_TABLE_ENGINE;
 }
 
@@ -129,13 +130,11 @@ namespace
 
     /// Asks every replica itself, not one per shard as cluster() would, and afresh on every request: a verdict kept
     /// for later would let a same-schema table swapped in under the name meanwhile take a write unchecked.
-    void checkShardTargets(
-        const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context, bool refuse_unavailable)
+    std::vector<PrometheusShardTargetIdentity>
+    probeShardTargets(const IStorage & storage, const PrometheusQueryDistributedTarget & target, const ContextPtr & context)
     {
         const auto & remote_id = target.remote_time_series_storage_id;
         const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
-        const auto metadata = storage.getInMemoryMetadataPtr(context, false);
-        const auto time_series_type = metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type->getName();
 
         /// An undeclared database is each replica's own default, except on a replica that is this server itself: the
         /// read and the write pin prefer_localhost_replica on and parallel replicas off, so it runs on this context.
@@ -147,62 +146,91 @@ namespace
             const String table_predicate = quoteString(remote_id.table_name);
             return "SELECT (SELECT engine FROM system.tables WHERE database = " + database_predicate + " AND name = " + table_predicate
                 + ") AS engine, (SELECT type FROM system.columns WHERE database = " + database_predicate + " AND table = " + table_predicate
-                + " AND name = " + quoteString(TimeSeriesColumnNames::TimeSeries) + ") AS ts_type";
+                + " AND name = " + quoteString(TimeSeriesColumnNames::TimeSeries) + ") AS ts_type"
+                + ", (SELECT toString(uuid) FROM system.tables WHERE database = " + database_predicate + " AND name = " + table_predicate
+                + ") AS uuid";
         };
         const auto nullable_string = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
-        const auto probe_header = std::make_shared<const Block>(Block{{nullable_string, "engine"}, {nullable_string, "ts_type"}});
+        const auto probe_header
+            = std::make_shared<const Block>(Block{{nullable_string, "engine"}, {nullable_string, "ts_type"}, {nullable_string, "uuid"}});
 
         /// On the server's own context, and only ever after the caller's own grants are checked: a read
         /// requires READ ON REMOTE above, so the probe reports nothing the caller's own cluster() could not.
         auto probe_context = Context::createCopy(context->getGlobalContext());
         probe_context->makeQueryContext();
         probe_context->setCurrentQueryId("");
-        /// An unreachable replica then answers nothing rather than failing the probe; judged below.
+        /// An unreachable replica then answers nothing rather than failing the probe; judged by the caller.
         probe_context->setSetting("skip_unavailable_shards", true);
+
+        auto field_at = [](const Block & block, size_t position) -> String
+        {
+            const Field field = (*block.getByPosition(position).column)[0];
+            return field.isNull() ? "" : field.safeGet<String>();
+        };
+
+        std::vector<PrometheusShardTargetIdentity> identities;
+        for (const auto [shard_info, shard_addresses] : std::views::zip(cluster->getShardsInfo(), cluster->getShardsAddresses()))
+            for (const auto [pool, address] : std::views::zip(shard_info.per_replica_pools, shard_addresses))
+            {
+                auto & identity = identities.emplace_back();
+                identity.replica = pool->getAddress();
+                RemoteQueryExecutor probe(pool, make_probe_query(address.is_local), probe_header, probe_context);
+                try
+                {
+                    for (Block block = probe.readBlock(); !block.empty(); block = probe.readBlock())
+                    {
+                        block = convertBLOBColumns(block);
+                        identity.answered = true;
+                        identity.engine = field_at(block, 0);
+                        identity.time_series_type = field_at(block, 1);
+                        identity.uuid = field_at(block, 2);
+                    }
+                }
+                catch (const NetException &)
+                {
+                    /// A pooled connection to a replica that went away unnoticed fails on first use, not when handed out.
+                }
+            }
+        return identities;
+    }
+
+    /// The verdict on what the probe found: a write refuses what a read leaves to its own shard-skip settings.
+    void checkShardTargets(
+        const IStorage & storage,
+        const PrometheusQueryDistributedTarget & target,
+        const ContextPtr & context,
+        const std::vector<PrometheusShardTargetIdentity> & identities,
+        bool refuse_unavailable)
+    {
+        const auto & remote_id = target.remote_time_series_storage_id;
+        const auto metadata = storage.getInMemoryMetadataPtr(context, false);
+        const auto time_series_type = metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type->getName();
 
         UInt64 wrong_engine_replicas = 0;
         UInt64 wrong_type_replicas = 0;
         std::set<String> wrong_types;
         /// Unreachable, or without the table: the sink cannot use them either, and what answers to the name later is unchecked.
         Strings unavailable_replicas;
-        for (const auto [shard_info, shard_addresses] : std::views::zip(cluster->getShardsInfo(), cluster->getShardsAddresses()))
-            for (const auto [pool, address] : std::views::zip(shard_info.per_replica_pools, shard_addresses))
+        for (const auto & identity : identities)
+        {
+            if (!identity.answered)
+                unavailable_replicas.push_back(fmt::format("{} (unreachable)", identity.replica));
+            else if (identity.engine.empty())
+                unavailable_replicas.push_back(
+                    fmt::format("{} (no table {})", identity.replica, backQuoteIfNeed(remote_id.table_name)));
+            else if (identity.engine != "TimeSeries")
+                ++wrong_engine_replicas;
+            /// Not exposed to the probe, or not there at all: the type went unchecked either way.
+            else if (identity.time_series_type.empty())
+                unavailable_replicas.push_back(fmt::format(
+                    "{} (no `{}` column on {})", identity.replica, TimeSeriesColumnNames::TimeSeries,
+                    backQuoteIfNeed(remote_id.table_name)));
+            else if (identity.time_series_type != time_series_type)
             {
-                RemoteQueryExecutor probe(pool, make_probe_query(address.is_local), probe_header, probe_context);
-                bool answered = false;
-                try
-                {
-                    for (Block block = probe.readBlock(); !block.empty(); block = probe.readBlock())
-                    {
-                        block = convertBLOBColumns(block);
-                        answered = true;
-                        const Field engine = (*block.getByPosition(0).column)[0];
-                        const Field ts_type = (*block.getByPosition(1).column)[0];
-                        if (engine.isNull())
-                            unavailable_replicas.push_back(
-                                fmt::format("{} (no table {})", pool->getAddress(), backQuoteIfNeed(remote_id.table_name)));
-                        else if (engine.safeGet<String>() != "TimeSeries")
-                            ++wrong_engine_replicas;
-                        /// Not exposed to the probe, or not there at all: the type went unchecked either way.
-                        else if (ts_type.isNull())
-                            unavailable_replicas.push_back(fmt::format(
-                                "{} (no `{}` column on {})", pool->getAddress(), TimeSeriesColumnNames::TimeSeries,
-                                backQuoteIfNeed(remote_id.table_name)));
-                        else if (ts_type.safeGet<String>() != time_series_type)
-                        {
-                            ++wrong_type_replicas;
-                            wrong_types.insert(ts_type.safeGet<String>());
-                        }
-                    }
-                }
-                catch (const NetException &)
-                {
-                    /// A pooled connection to a replica that went away unnoticed fails on first use, not when handed out.
-                    answered = false;
-                }
-                if (!answered)
-                    unavailable_replicas.push_back(fmt::format("{} (unreachable)", pool->getAddress()));
+                ++wrong_type_replicas;
+                wrong_types.insert(identity.time_series_type);
             }
+        }
 
         if (wrong_engine_replicas)
             throw Exception(
@@ -282,14 +310,14 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
     }
 
     /// Whether an unavailable replica fails the read is the read's own decision, as for any cluster() call.
-    checkShardTargets(storage, *target, context, /* refuse_unavailable = */ false);
+    checkShardTargets(storage, *target, context, probeShardTargets(storage, *target, context), /* refuse_unavailable = */ false);
 }
 
-void checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context)
+std::vector<PrometheusShardTargetIdentity> checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context)
 {
     const auto target = resolvePrometheusQueryTarget(storage);
     if (!target)
-        return;
+        return {};
 
     /// The sink honours both as for any INSERT (the second only without a key); here a batch goes where the key sends it or nowhere.
     const auto & settings = context->getSettingsRef();
@@ -300,7 +328,46 @@ void checkPrometheusQueryDistributedWrite(const IStorage & storage, const Contex
             "samples are routed by the table's sharding key alone",
             storage.getStorageID().getNameForLogs());
 
-    checkShardTargets(storage, *target, context, /* refuse_unavailable = */ true);
+    auto targets = probeShardTargets(storage, *target, context);
+    checkShardTargets(storage, *target, context, targets, /* refuse_unavailable = */ true);
+    return targets;
+}
+
+void checkPrometheusQueryDistributedWriteDelivered(
+    const IStorage & storage, const ContextPtr & context, const std::vector<PrometheusShardTargetIdentity> & checked_targets)
+{
+    const auto target = resolvePrometheusQueryTarget(storage);
+    if (!target)
+        return;
+
+    std::vector<PrometheusShardTargetIdentity> delivered_to;
+    try
+    {
+        delivered_to = probeShardTargets(storage, *target, context);
+    }
+    catch (...)
+    {
+        /// Delivered but not witnessed: the status is unknown, which must stay retryable rather than become a 4xx.
+        throw Exception(
+            ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+            "Remote write over table {} is not acknowledged: its targets could not be checked again ({}): retry",
+            storage.getStorageID().getNameForLogs(), getCurrentExceptionMessage(false));
+    }
+
+    Strings changed_replicas;
+    for (const auto [checked, delivered] : std::views::zip(checked_targets, delivered_to))
+        if (delivered != checked)
+            changed_replicas.push_back(checked.replica);
+    if (delivered_to.size() != checked_targets.size())
+        changed_replicas.push_back("every replica (the cluster changed)");
+    if (changed_replicas.empty())
+        return;
+
+    throw Exception(
+        ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+        "Remote write over table {} is not acknowledged: its target named {} changed on {} while the samples were delivered: retry",
+        storage.getStorageID().getNameForLogs(), backQuoteIfNeed(target->remote_time_series_storage_id.table_name),
+        fmt::join(changed_replicas, ", "));
 }
 
 }

@@ -5,6 +5,7 @@
 
 #include <optional>
 #include <string_view>
+#include <vector>
 
 
 namespace DB
@@ -38,8 +39,25 @@ void checkNoBypassedReadRestriction(
 /// all before the probe; then every replica's target must be a TimeSeries table of the wrapper's `time_series` type.
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
 
+/// What one replica said the table the wrapper names on it is: nothing when unreachable, and each field
+/// empty when the replica has no such table or does not expose its `time_series` column.
+struct PrometheusShardTargetIdentity
+{
+    String replica;
+    bool answered = false;
+    String engine;
+    String time_series_type;
+    String uuid;
+    bool operator==(const PrometheusShardTargetIdentity &) const = default;
+};
+
 /// The same probe for a write, which also refuses an unreachable replica or a missing table or type (it would take
 /// samples unchecked) and insert_shard_id / insert_distributed_one_random_shard: the sharding key alone routes a batch.
-void checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context);
+std::vector<PrometheusShardTargetIdentity> checkPrometheusQueryDistributedWrite(const IStorage & storage, const ContextPtr & context);
+
+/// The sink writes by name, so a batch is acknowledged only once every replica still holds the target checked: one
+/// swapped meanwhile leaves the write's status unknown, a retryable error that has Prometheus resend the batch.
+void checkPrometheusQueryDistributedWriteDelivered(
+    const IStorage & storage, const ContextPtr & context, const std::vector<PrometheusShardTargetIdentity> & checked_targets);
 
 }
