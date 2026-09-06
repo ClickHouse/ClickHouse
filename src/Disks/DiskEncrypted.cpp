@@ -319,6 +319,44 @@ namespace
         DirectoryIteratorPtr delegate;
         String path_prefix;
     };
+
+    /// The prefix levels live inside the wrapped disk, so it is that disk which synchronizes the
+    /// directory holding each created level - for a one-level prefix its own root, i.e. the empty
+    /// path. A remote wrapped disk cannot synchronize a directory at all and is skipped.
+    void createDirectoriesDurably(IDisk & delegate, const String & path, LoggerPtr log)
+    {
+        /// Revisit if a remote disk ever implements getDirectorySyncGuard: today it cannot
+        /// synchronize a directory, so probing for missing levels would be remote calls for nothing.
+        if (delegate.isRemote())
+        {
+            delegate.createDirectories(path);
+            return;
+        }
+
+        String anchored = path;
+        while (!anchored.empty() && anchored.back() == '/')
+            anchored.pop_back();
+
+        /// Must be collected before creating: afterwards nothing is missing any more.
+        std::vector<fs::path> created_levels;
+        for (fs::path p = anchored; !p.empty() && !delegate.existsDirectory(p.string()); p = p.parent_path())
+            created_levels.push_back(p);
+
+        delegate.createDirectories(path);
+
+        /// Each created level's owning parent, independently: one level's failure must not stop the others.
+        for (const auto & level : created_levels)
+        {
+            try
+            {
+                auto sync_guard = delegate.getDirectorySyncGuard(level.parent_path().string());
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Cannot fsync directory {} of disk {} after creating {}", level.parent_path().string(), delegate.getName(), level.string()));
+            }
+        }
+    }
 }
 
 class DiskEncryptedReservation : public IReservation
@@ -363,7 +401,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
     , current_settings(std::move(settings_))
 {
-    delegate->createDirectories(disk_path);
+    createDirectoriesDurably(*delegate, disk_path, getLogger("DiskEncrypted"));
 }
 
 DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_)
@@ -374,7 +412,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
     , current_settings(std::move(settings_))
 {
-    delegate->createDirectories(disk_path);
+    createDirectoriesDurably(*delegate, disk_path, getLogger("DiskEncrypted"));
 }
 
 ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
