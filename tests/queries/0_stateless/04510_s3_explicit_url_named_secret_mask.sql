@@ -254,8 +254,8 @@ BACKUP TABLE nonexistent_04510 TO Null(); -- { serverError UNKNOWN_TABLE }
 -- name: a named collection with an optional filename, three arguments (connection string or account url,
 -- container, path), or five (adding account_name and account_key). An argument outside those shapes is
 -- rejected only after the statement is logged, and AzureQueue has no backup engine at all. The last
--- three statements are the controls: five arguments hide only the account_key, a connection string hides
--- its AccountKey, and the three-argument shape has nothing to hide, so it stays visible verbatim.
+-- two statements are the controls: a connection string hides its AccountKey, and the three-argument
+-- shape has nothing to hide, so it stays visible verbatim.
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct', 'cont', 'blob',
                  'SEKRIT_AZTO4'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing, 'dir',
@@ -264,8 +264,6 @@ BACKUP TABLE nonexistent_04510 TO AzureQueue('http://localhost:11111/acct', 'con
                  'SEKRIT_AZQTO'); -- { serverError BACKUP_ENGINE_NOT_FOUND }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_AZTOCSKEY==;',
                  'cont', 'blob', 'acct', 'SEKRIT_AZTOCS5'); -- { serverError BAD_ARGUMENTS }
-BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct#f', 'cont', 'blob',
-                 'acct', 'SEKRIT_AZTO5KEY'); -- { serverError BAD_ARGUMENTS }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=a;AccountKey=c2VrcmV0Cg==;',
                  'cont', 'visible_04510_dir/b.zip'); -- { serverError BAD_ARGUMENTS }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct', 'visible_04510_cont', 'visible_04510_dir/b.zip'); -- { serverError BAD_ARGUMENTS }
@@ -319,6 +317,23 @@ BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
                  connection_string = 'http://localhost:11111/acct',
                  connection_string = 'DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_AZNCDUP==;'); -- { serverError BAD_ARGUMENTS }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing, container = 'visible_04510_c1', container = 'visible_04510_c2'); -- { serverError BAD_ARGUMENTS }
+
+-- An account url is shown only when it is a plain storage account URL, which is what the destination
+-- requires beside explicit credentials: userinfo, a query string (a SAS is a credential) and a fragment
+-- each carry a credential of their own, in any shape and under any scheme spelling. The last statement
+-- is the control: a plain url keeps the account url, container, path and account name visible while
+-- account_key is hidden, and reaches the account_key decoding that rejects it.
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 storage_account_url = 'http://user:SEKRIT_AZNCUSERINFO@localhost:11111/acct'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 storage_account_url = 'HTTPS://localhost:11111/acct?sig=SEKRIT_AZNCSAS'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://user:SEKRIT_AZ3USERINFO@localhost:11111/acct',
+                 'cont', 'blob'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct#f', 'cont', 'blob',
+                 'acct', 'SEKRIT_AZTO5KEY'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/visible_04510_acct5',
+                 'visible_04510_cont5', 'visible_04510_blob5', 'visible_04510_acctname5',
+                 'SEKRIT_AZ5PLAINKEY'); -- { serverError STD_EXCEPTION }
 
 -- Backup database engine reconstructs the nested S3 destination; extra_credentials must be masked.
 CREATE DATABASE db_04510_ec ENGINE = Backup('', S3('url_dbec', 'ak', 'SEKRIT_SAK',

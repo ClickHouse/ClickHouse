@@ -27,6 +27,46 @@ namespace
         return changed;
     }
 
+    /// How an Azure destination reads a connection value, and whether the masking here can show it.
+    enum class AzureConnectionValue
+    {
+        /// The only shape `validatePlainStorageAccountURL` (`registerBackupEngineAzureBlobStorage.cpp`)
+        /// accepts beside explicit credentials: an http(s) scheme and a host, and no userinfo, query or
+        /// fragment, each of which is a credential of its own (`http://user:key@host`, a SAS `?sig=`).
+        PlainStorageAccountURL,
+        /// A connection string, whose secret keys `maskAzureConnectionString` masks in place.
+        ConnectionString,
+        /// A value that can carry a credential no rule here masks.
+        Unmaskable,
+    };
+
+    AzureConnectionValue classifyAzureConnectionValue(const String & value)
+    {
+        static constexpr std::string_view SEPARATOR = "://";
+        const size_t separator = value.find(SEPARATOR);
+        const std::string_view scheme = std::string_view(value).substr(0, std::min(separator, value.length()));
+        /// The scheme grammar `maskURIUserinfo` reads. A connection string does not match it, even when
+        /// one of its values embeds an endpoint URL.
+        const bool is_url = separator != String::npos && !scheme.empty() && isAlphaASCII(scheme.front())
+            && std::all_of(
+                   scheme.begin(), scheme.end(), [](char c) { return isAlphaNumericASCII(c) || c == '+' || c == '.' || c == '-'; });
+        /// `maskAzureConnectionString` masks nothing in a value starting with `http`, so one that is no
+        /// URL either would be left as written.
+        if (!is_url)
+            return value.starts_with("http") ? AzureConnectionValue::Unmaskable : AzureConnectionValue::ConnectionString;
+
+        if ((!equalsCaseInsensitive(scheme, "http") && !equalsCaseInsensitive(scheme, "https"))
+            || value.find_first_of("?#") != String::npos)
+            return AzureConnectionValue::Unmaskable;
+
+        const size_t authority_begin = separator + SEPARATOR.length();
+        const size_t authority_end = std::min(value.find('/', authority_begin), value.length());
+        /// A host, with no userinfo in front of it.
+        if (authority_end == authority_begin || value.find('@', authority_begin) < authority_end)
+            return AzureConnectionValue::Unmaskable;
+        return AzureConnectionValue::PlainStorageAccountURL;
+    }
+
     /// The backup engines whose locator arguments name a destination without any credential in them,
     /// each with the argument count it accepts. `BackupFactory` registers exactly these plus `S3` and
     /// `AzureBlobStorage`, which do carry one.
@@ -1499,7 +1539,11 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageBackupSecretArguments()
             String value;
             if (findNamedArgument(&value, key, 1) < 0)
                 continue;
-            if (value.empty() || (!value.starts_with("http") && findNamedArgument(nullptr, "account_key", 1) >= 0))
+            /// Hiding a connection string replaces its whole argument, which cannot be combined with
+            /// hiding `account_key`.
+            const auto shape = classifyAzureConnectionValue(value);
+            if (value.empty() || shape == AzureConnectionValue::Unmaskable
+                || (shape == AzureConnectionValue::ConnectionString && findNamedArgument(nullptr, "account_key", 1) >= 0))
             {
                 maskEveryArgument();
                 return;
@@ -1520,12 +1564,20 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageBackupSecretArguments()
     if (count == 3)
     {
         /// Only this shape accepts a connection string, which can embed `AccountKey`.
+        String connection_value;
+        if (tryGetStringFromArgument(0, &connection_value)
+            && classifyAzureConnectionValue(connection_value) == AzureConnectionValue::Unmaskable)
+        {
+            maskEveryArgument();
+            return;
+        }
         maskAzureConnectionString(0);
         return;
     }
 
     String storage_account_url;
-    if (!tryGetStringFromArgument(0, &storage_account_url) || !storage_account_url.starts_with("http"))
+    if (!tryGetStringFromArgument(0, &storage_account_url)
+        || classifyAzureConnectionValue(storage_account_url) != AzureConnectionValue::PlainStorageAccountURL)
     {
         /// This shape requires a plain account URL. A connection string here can only be hidden whole,
         /// which cannot be combined with hiding `account_key`.
