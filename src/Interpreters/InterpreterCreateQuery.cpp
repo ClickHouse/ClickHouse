@@ -91,6 +91,7 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/TablesLoader.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
 
@@ -2316,6 +2317,34 @@ catch (...)
     throw;
 }
 
+/// A table function whose storage is chosen by the current user's grants cannot be persisted at any
+/// nesting depth: the outermost one is refused through `canBeUsedToCreateTable`, but the same
+/// function nested in an argument of another table function, e.g. `remote(..., viewIfPermitted(...))`
+/// or `remote(..., loop(viewIfPermitted(...)))`, would be persisted along with it and later resolved
+/// on a local shard under the connection's credentials instead of the reader's grants, disclosing
+/// the guarded structure or data. The same carrier exists in a table engine definition: the `Remote`
+/// and `RemoteSecure` engines store a table function target in `remote_table_function_ptr`, so the
+/// veto is applied to the engine arguments as well.
+void throwIfNestedTableFunctionDependsOnCurrentUserGrants(const ASTPtr & ast, const ContextPtr & context)
+{
+    for (const auto & child : ast->children)
+    {
+        if (const auto * function = child->as<ASTFunction>())
+        {
+            if (const auto nested_table_function = TableFunctionFactory::instance().tryGet(function->name, context);
+                nested_table_function && nested_table_function->dependsOnCurrentUserGrants())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Table function '{}' cannot be used to create a table, neither directly nor nested in another table "
+                    "function or in a table engine argument",
+                    function->name);
+            }
+        }
+        throwIfNestedTableFunctionDependsOnCurrentUserGrants(child, context);
+    }
+}
+
 }
 
 bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
@@ -2522,6 +2551,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (!table_function->canBeUsedToCreateTable())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", table_function->getName());
 
+        throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, getContext());
+
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
         /// and because storage lifetime is bigger than query context lifetime.
@@ -2535,6 +2566,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
     else
     {
+        /// A table engine can carry a table function target of its own: `ENGINE = Remote(..., f(...))`
+        /// stores `f` in `remote_table_function_ptr` and resolves it later, so the same veto that the
+        /// `AS <table function>` path applies must hold here. Definitions loaded back from metadata
+        /// that was already validated when the table was created are not re-checked, so a table that
+        /// predates this check still attaches instead of disappearing on server startup.
+        if (create.storage && create.storage->engine && !isLoadingFromExistingMetadata(mode) && !create.attach_short_syntax)
+            throwIfNestedTableFunctionDependsOnCurrentUserGrants(create.storage->engine->ptr(), getContext());
+
         res = StorageFactory::instance().get(create,
             data_path,
             getContext(),

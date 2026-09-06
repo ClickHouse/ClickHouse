@@ -44,6 +44,15 @@ public:
 
     std::string getName() const override { return name; }
 
+    /// The branch this function chooses depends on the current user, and a persisted table has no
+    /// user: under the global context it is created and attached with, the `ELSE` branch is unreachable.
+    bool canBeUsedToCreateTable() const override { return false; }
+
+    /// For the same reason the function cannot be persisted nested in another table function either,
+    /// e.g. `CREATE TABLE ... AS remote(..., viewIfPermitted(...))`: on a local shard the branch is
+    /// then decided under the connection's credentials instead of the reader's grants.
+    bool dependsOnCurrentUserGrants() const override { return true; }
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
