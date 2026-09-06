@@ -316,6 +316,8 @@ static struct InitFiu
     REGULAR(check_database_datalake_negative) \
     REGULAR(restart_replica_fail_after_detach) \
     REGULAR(database_replicated_force_metadata_digest_check) \
+    REGULAR(database_replicated_dump_fail_to_get_metadata_snapshot) \
+    REGULAR(database_replicated_dump_throw_std_logic_error) \
     ONCE(oom_canary_force_oom_evidence) \
     PAUSEABLE(truncate_database_tables_pause) \
     PAUSEABLE(database_materialized_postgresql_pause_before_table_drop) \
