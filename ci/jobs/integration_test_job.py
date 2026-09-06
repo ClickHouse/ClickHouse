@@ -7,7 +7,11 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
+from ci.jobs.scripts.bugfix_validation import (
+    bugfix_build_types,
+    download_master_builds,
+    find_master_builds,
+)
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
@@ -1657,14 +1661,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             build_urls = find_master_builds(build_types)
             assert build_urls, "Could not find master builds in S3"
         if build_urls:
-            for bt, url in build_urls.items():
-                bt_path = bt_paths[bt]
-                if not info.is_local_run or not Path(bt_path).is_file():
-                    print(f"NOTE: Downloading {bt} build to [{bt_path}]")
-                    Shell.run(
-                        f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
-                    )
-                    Shell.run(f"chmod +x {bt_path}", verbose=True)
+            download_master_builds(build_urls, bt_paths, info.is_local_run)
         clickhouse_path = f"{temp_path}/clickhouse_{build_types[0]}"
 
     if is_bugfix_validation or is_flaky_check:
