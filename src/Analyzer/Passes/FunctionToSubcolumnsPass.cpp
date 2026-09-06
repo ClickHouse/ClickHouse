@@ -834,17 +834,36 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
     return column_node;
 }
 
+/// Wrapper storages answer both predicates by traversing what they wrap (StorageMerge walks
+/// every child table), so each answer is memoized for the lifetime of one visitor.
+struct SubcolumnSupportAnswers
+{
+    bool all_transformers;
+    std::optional<bool> tuple_element_only;
+};
+
+using SubcolumnSupportCache = std::unordered_map<const IStorage *, SubcolumnSupportAnswers>;
+
 /// A storage may permit only tuple element rewrites while still refusing every other transformer
 /// (see IStorage::supportsOptimizationToTupleElementSubcolumns). Applied by both passes through
 /// getTypedNodesForOptimization, so their decisions cannot diverge.
-bool storageAllowsTransformer(const IStorage & storage, TypeIndex type_id, const String & function_name)
+bool storageAllowsTransformer(
+    const IStorage & storage, TypeIndex type_id, const String & function_name, SubcolumnSupportCache & cache)
 {
-    if (storage.supportsOptimizationToSubcolumns())
+    auto it = cache.find(&storage);
+    if (it == cache.end())
+        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt}).first;
+
+    auto & answers = it->second;
+    if (answers.all_transformers)
         return true;
-    return storage.supportsOptimizationToTupleElementSubcolumns() && type_id == TypeIndex::Tuple && function_name == "tupleElement";
+    if (!answers.tuple_element_only)
+        answers.tuple_element_only = storage.supportsOptimizationToTupleElementSubcolumns();
+    return *answers.tuple_element_only && type_id == TypeIndex::Tuple && function_name == "tupleElement";
 }
 
-std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
+std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr>
+getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context, SubcolumnSupportCache & subcolumn_support_cache)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -881,7 +900,7 @@ std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesFo
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, column.type->getTypeId(), function_node->getFunctionName())
+    if (!storageAllowsTransformer(*storage, column.type->getTypeId(), function_node->getFunctionName(), subcolumn_support_cache)
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
@@ -897,7 +916,8 @@ std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesFo
 /// Returns the outermost function, the underlying column, the table,
 /// and the chain of intermediate function nodes.
 std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr, std::vector<FunctionNode *>>
-getTypedNodesForChainedOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
+getTypedNodesForChainedOptimization(
+    const QueryTreeNodePtr & node, const ContextPtr & context, SubcolumnSupportCache & subcolumn_support_cache)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -943,7 +963,7 @@ getTypedNodesForChainedOptimization(const QueryTreeNodePtr & node, const Context
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, column.type->getTypeId(), function_node->getFunctionName())
+    if (!storageAllowsTransformer(*storage, column.type->getTypeId(), function_node->getFunctionName(), subcolumn_support_cache)
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
@@ -978,7 +998,8 @@ public:
             return;
         }
 
-        auto [function_node, first_argument_node, column_source] = getTypedNodesForOptimization(node, getContext());
+        auto [function_node, first_argument_node, column_source]
+            = getTypedNodesForOptimization(node, getContext(), subcolumn_support_cache);
         if (function_node && first_argument_node && column_source)
         {
             enterImpl(*function_node, *first_argument_node, column_source);
@@ -994,7 +1015,8 @@ public:
             return;
 
         /// Chained match (e.g. tupleElement over Dynamic through arrayElement).
-        auto [chain_func, chain_col, chain_source, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
+        auto [chain_func, chain_col, chain_source, intermediates]
+            = getTypedNodesForChainedOptimization(node, getContext(), subcolumn_support_cache);
         if (chain_func && chain_col && chain_source)
         {
             enterImpl(*chain_func, *chain_col, chain_source, intermediates);
@@ -1125,6 +1147,8 @@ private:
     std::vector<bool> in_where_prewhere_stack;
 
     std::unordered_set<const IQueryTreeNode *> processed_sources;
+    /// Memoizes the storage subcolumn support predicates for the lifetime of this visitor.
+    SubcolumnSupportCache subcolumn_support_cache;
     bool can_wrap_result_columns_with_nullable = false;
     bool has_where_prewhere_or_group_by = false;
 
@@ -1232,6 +1256,9 @@ private:
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
 
+    /// Memoizes the storage subcolumn support predicates for the lifetime of this visitor.
+    SubcolumnSupportCache subcolumn_support_cache;
+
 public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>;
     using Base::Base;
@@ -1273,7 +1300,8 @@ public:
         /// Direct match: first argument is a ColumnNode.
         /// Restructured from "if (!match) return" to "if (match) { ... } return"
         /// so that failed direct matches fall through to the chained match below.
-        auto [function_node, first_argument_column_node, column_source] = getTypedNodesForOptimization(node, getContext());
+        auto [function_node, first_argument_column_node, column_source]
+            = getTypedNodesForOptimization(node, getContext(), subcolumn_support_cache);
         if (function_node && first_argument_column_node && column_source)
         {
             auto column = first_argument_column_node->getColumn();
@@ -1306,7 +1334,8 @@ public:
         }
 
         /// Chained match: first argument is a chain of functions with a ColumnNode at the bottom.
-        auto [chain_func, chain_col, chain_source, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
+        auto [chain_func, chain_col, chain_source, intermediates]
+            = getTypedNodesForChainedOptimization(node, getContext(), subcolumn_support_cache);
         if (chain_func && chain_col && chain_source)
         {
             auto column = chain_col->getColumn();
