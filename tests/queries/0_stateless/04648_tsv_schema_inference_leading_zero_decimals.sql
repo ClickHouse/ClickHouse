@@ -1,4 +1,4 @@
--- 1. Leading-zero decimals must now infer Float64 in the TSV family, as they always did in CSV.
+-- 1. Leading-zero decimals must now infer `Float64` in the `TSV` family, as they always did in `CSV`.
 SELECT 'group 1: TSV infers Float64';
 DESC format(TSV, '0.0');
 DESC format(TSV, '0.5');
@@ -10,7 +10,7 @@ DESC format(TSV, '00.0');
 DESC format(TSV, '0000000.1');
 DESC format(TSV, '0.0000000000000000000000001');
 
--- 2. The same values in CSV, so the CSV/TSV agreement this fixes is asserted and not assumed.
+-- 2. The same values in `CSV`, so the `CSV`/`TSV` agreement this fixes is asserted and not assumed.
 SELECT 'group 2: CSV control, must equal group 1';
 DESC format(CSV, '0.0');
 DESC format(CSV, '0.5');
@@ -22,11 +22,11 @@ DESC format(CSV, '00.0');
 DESC format(CSV, '0000000.1');
 DESC format(CSV, '0.0000000000000000000000001');
 
--- 3. Zero-padded integers deliberately stay String. Do not "simplify" this group away: with integer
--- inference enabled these values infer an integer type, and the TSV value parser (readIntTextUnsafe)
--- reads the leading '0' as the whole value, so inferring a number would turn a wrong type into a hard
--- parse error on data that reads today. This is the parser-side limitation of issue #5999.
-SELECT 'group 3: zero-padded integers stay String';
+-- 3. Zero-padded integers infer an integer type, as they always did in `CSV`. They stayed `String` until
+-- the `TSV` value parser (`readIntTextUnsafe`) learned to read a run of leading zeros: while that parser
+-- read the first '0' as the whole value, inferring a number would have turned a wrong type into a hard
+-- parse error. That was the parser-side limitation of issue #5999.
+SELECT 'group 3: zero-padded integers infer an integer type';
 DESC format(TSV, '00');
 DESC format(TSV, '007');
 DESC format(TSV, '03242');
@@ -78,7 +78,7 @@ DESC format(CSV, '+.5');
 DESC format(CSV, '-.0');
 DESC format(CSV, '-00.5');
 
--- 6. Date-shaped controls: date inference runs before the leading-zero check, so these cannot move.
+-- 6. `Date`-shaped controls: date inference runs before the leading-zero check, so these cannot move.
 SELECT 'group 6: date-shaped controls stay String';
 DESC format(TSV, '0001-01-01');
 DESC format(TSV, '09:30:00');
@@ -95,7 +95,7 @@ SELECT * FROM format(TSV, 'x Float64', '00.0');
 SELECT * FROM format(TSV, 'x Float64', '0000000.1');
 SELECT * FROM format(TSV, 'x Float64', '0.0000000000000000000000001');
 
--- 8. Silent row loss: a first row inferring String while a later row infers a number makes TSV header
+-- 8. Silent row loss: a first row inferring `String` while a later row infers a number makes `TSV` header
 -- auto-detection consume the data row as a column name, so the row disappears from the result.
 SELECT 'group 8: no row is lost';
 SELECT count() FROM format(TSV, '0.0\n10.5\n2.3');
@@ -108,10 +108,10 @@ SELECT 'group 9: type merge';
 DESC format(TSV, '0.0\n0.5');
 DESC format(TSV, '0.5\n1.5');
 
--- 10. A leading zero no longer forces exponent forms to String. Inference now validates the number it
+-- 10. A leading zero no longer forces exponent forms to `String`. Inference now validates the number it
 -- delimited with the same parser the value reader uses, so a malformed exponent such as `0.5e+` is
 -- declined by inference itself and a valid one such as `0e5` is admitted. The leading-zero check
--- therefore covers integers only, and TSV agrees with CSV throughout this group.
+-- therefore covers integers only, and `TSV` agrees with `CSV` throughout this group.
 SELECT 'group 10: valid exponent forms infer Float64 in TSV, as in CSV';
 DESC format(TSV, '0e5') SETTINGS input_format_try_infer_exponent_floats = 1;
 DESC format(TSV, '0E5') SETTINGS input_format_try_infer_exponent_floats = 1;
@@ -136,9 +136,8 @@ DESC format(CSV, '0.5e10') SETTINGS input_format_try_infer_exponent_floats = 1;
 DESC format(CSV, '0.5e+') SETTINGS input_format_try_infer_exponent_floats = 1;
 SELECT * FROM format(CSV, '0.5e+') SETTINGS input_format_try_infer_exponent_floats = 1;
 
--- 11. The integer part of the check is derived from the inferred type, so it follows
--- input_format_try_infer_integers: with integer inference disabled, inference yields Float64, the value
--- is readable, and the check no longer applies.
+-- 11. `input_format_try_infer_integers` still decides whether these are an integer type or `Float64`, and
+-- the value is readable either way.
 SELECT 'group 11: try_infer_integers = 1 (the default)';
 DESC format(TSV, '0.5') SETTINGS input_format_try_infer_integers = 1;
 DESC format(TSV, '00') SETTINGS input_format_try_infer_integers = 1;
@@ -165,7 +164,7 @@ SELECT * FROM format(TSV, 'x Float64', '01');
 SELECT * FROM format(TSV, 'x Float64', '00000');
 SELECT * FROM format(TSV, 'x Float64', '018446744073709551615');
 
--- 12. The other formats sharing the Raw and Escaped escaping rules.
+-- 12. The other formats sharing the `Raw` and `Escaped` escaping rules.
 SELECT 'group 12: TSV-family siblings';
 DESC format(TSVRaw, '0.0');
 DESC format(TSVRaw, '007');
@@ -180,16 +179,16 @@ DESC format(TSV, '00.');
 DESC format(TSV, '08.5');
 DESC format(TSV, '0000000000.5');
 
--- 14. The Dynamic runtime path: this arm is not schema-inference only, the inferred type is immediately
+-- 14. The `Dynamic` runtime path: this arm is not schema-inference only, the inferred type is immediately
 -- used to deserialize the value.
 SELECT 'group 14: Dynamic runtime path';
 SELECT d, dynamicType(d) FROM format(TSV, 'd Dynamic', '0.0');
 SELECT d, dynamicType(d) FROM format(TSV, 'd Dynamic', '007');
 SELECT d, dynamicType(d) FROM format(CSV, 'd Dynamic', '0.0');
 
--- 15. TSKV also uses the Escaped rule, so a leading-zero decimal now infers Float64 there too. TSKV
+-- 15. `TSKV` also uses the `Escaped` rule, so a leading-zero decimal now infers `Float64` there too. `TSKV`
 -- decodes escape sequences before inferring but parses the original bytes when reading, so a field whose
--- escapes were decoded must keep inferring String. Nested values are out of that guard's reach, so an
+-- escapes were decoded must keep inferring `String`. Nested values are out of that guard's reach, so an
 -- escaped number inside an array still infers a numeric element type. The escaped forms below use unhex
 -- so the exact wire bytes are unambiguous: 783D305C783245350A is `x=0\x2E5` plus a newline.
 SELECT 'group 15: TSKV plain values';
@@ -214,7 +213,7 @@ DESC format(TSKV, unhex('783D615C783245620A'));
 SELECT * FROM format(TSKV, unhex('783D615C783245620A'));
 DESC format(TSKV, unhex('783D305C700A'));
 SELECT * FROM format(TSKV, unhex('783D305C700A'));
--- The guard requires both a decoded escape and a numeric inferred type, so a decoded escape in a Date or
+-- The guard requires both a decoded escape and a numeric inferred type, so a decoded escape in a `Date` or
 -- in a nested value keeps that type. DESC only: both reads fail here and on master alike.
 -- 783D323032302D30312D305C7833310A is `x=2020-01-0\x31` plus a newline, 633D5B305C783245355D0A is
 -- `c=[0\x2E5]` plus a newline.
