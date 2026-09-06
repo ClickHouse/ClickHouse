@@ -1,3 +1,4 @@
+#include <atomic>
 #include <optional>
 #include <shared_mutex>
 
@@ -7,6 +8,7 @@
 #include <Columns/ColumnTuple.h>
 
 #include <Common/Logger.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnDecimal.h>
 
@@ -684,8 +686,16 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
                         other_type->getName(), data_types[set_type_idx]->getName());
 }
 
+static UInt64 getNextMergeTreeSetIndexId()
+{
+    static std::atomic<UInt64> counter{0};
+    return counter.fetch_add(1, std::memory_order_relaxed);
+}
+
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
-    : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))
+    : has_all_keys(set_elements.size() == indexes_mapping_.size())
+    , indexes_mapping(std::move(indexes_mapping_))
+    , instance_id(getNextMergeTreeSetIndexId())
 {
     ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
@@ -723,6 +733,56 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
 
     for (size_t i = 0; i < tuple_size; ++i)
         ordered_set[i] = block_to_sort.getByPosition(i).column;
+
+    /// Only fixed-width key columns keep the cached ranges buffer small and bounded: their
+    /// columns hold at most one value, so reuse cannot grow them. Variable-width columns
+    /// (e.g. `ColumnString`) do not release reserved capacity on popBack, so caching them in
+    /// thread-local storage could pin arbitrarily large buffers after the query ends.
+    cache_ranges = std::all_of(ordered_set.begin(), ordered_set.end(),
+        [](const ColumnPtr & column) { return column->valuesHaveFixedSize(); });
+}
+
+MergeTreeSetIndex::FieldValueRanges & MergeTreeSetIndex::getFieldValueRangesBuffer(FieldValueRanges & scratch) const
+{
+    size_t tuple_size = indexes_mapping.size();
+
+    if (!cache_ranges)
+    {
+        /// Query-scoped scratch buffer: normally tracked, freed when the caller returns.
+        scratch.reserve(tuple_size);
+        for (size_t i = 0; i < tuple_size; ++i)
+            scratch.emplace_back(*ordered_set[i]);
+        return scratch;
+    }
+
+    struct CacheEntry
+    {
+        UInt64 set_index_id;
+        FieldValueRanges ranges;
+    };
+    /// Must exceed the number of IN-set key conditions checked per mark within one query,
+    /// otherwise every call misses and rebuilds the buffer as before this cache existed.
+    static constexpr size_t max_entries = 8;
+    thread_local std::vector<CacheEntry> cache;
+
+    for (auto & entry : cache)
+        if (entry.set_index_id == instance_id)
+            return entry.ranges;
+
+    /// The cache outlives the query, so its memory (also freed here on eviction) must not be
+    /// charged to whichever query happens to be running on this thread. See FieldValue::update
+    /// for the same blocker on reallocations of the cached columns.
+    MemoryTrackerBlockerInThread blocker;
+
+    FieldValueRanges ranges;
+    ranges.reserve(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+        ranges.emplace_back(*ordered_set[i], /*block_memory_tracker=*/ true);
+
+    if (cache.size() >= max_entries)
+        cache.erase(cache.begin());
+    cache.push_back({instance_id, std::move(ranges)});
+    return cache.back().ranges;
 }
 
 /** Return the BoolMask where:
@@ -740,24 +800,14 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
 
     size_t tuple_size = indexes_mapping.size();
 
-    struct FieldValueRange
-    {
-        FieldValue left;
-        FieldValue right;
-        bool left_included = false;
-        bool right_included = false;
-
-        explicit FieldValueRange(const IColumn & prototype) : left(prototype.cloneEmpty()), right(prototype.cloneEmpty()) {}
-    };
-
-    std::vector<FieldValueRange> ranges;
-    ranges.reserve(tuple_size);
+    FieldValueRanges scratch;
+    FieldValueRanges & ranges = getFieldValueRangesBuffer(scratch);
     for (size_t i = 0; i < tuple_size; ++i)
     {
         size_t key_column = indexes_mapping[i].key_index;
         auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
 
-        ranges.emplace_back(*ordered_set[i]);
+        FieldValueRange & range = ranges[i];
 
         if (!is_key_col_present)
         {
@@ -767,10 +817,10 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
             /// we do not know whether to createWholeUniverse() or createWholeUniverseWithoutNull().
             /// So, we choose the more relaxed option:
             /// [-inf, +inf] instead of ( -inf, +inf ).
-            ranges.back().left.update(NEGATIVE_INFINITY);
-            ranges.back().right.update(POSITIVE_INFINITY);
-            ranges.back().left_included = true;
-            ranges.back().right_included = true;
+            range.left.update(NEGATIVE_INFINITY);
+            range.right.update(POSITIVE_INFINITY);
+            range.left_included = true;
+            range.right_included = true;
             continue;
         }
 
@@ -783,10 +833,10 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
         if (!new_range)
             return {true, true};
 
-        ranges.back().left.update(new_range->left);
-        ranges.back().right.update(new_range->right);
-        ranges.back().left_included = new_range->left_included;
-        ranges.back().right_included = new_range->right_included;
+        range.left.update(new_range->left);
+        range.right.update(new_range->right);
+        range.left_included = new_range->left_included;
+        range.right_included = new_range->right_included;
     }
 
     /// lhs < rhs return -1
@@ -902,18 +952,8 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
 {
     size_t tuple_size = indexes_mapping.size();
 
-    struct FieldValueRange
-    {
-        FieldValue left;
-        FieldValue right;
-        bool left_included = false;
-        bool right_included = false;
-
-        explicit FieldValueRange(const IColumn & prototype) : left(prototype.cloneEmpty()), right(prototype.cloneEmpty()) {}
-    };
-
-    std::vector<FieldValueRange> ranges;
-    ranges.reserve(tuple_size);
+    FieldValueRanges scratch;
+    FieldValueRanges & ranges = getFieldValueRangesBuffer(scratch);
     for (size_t i = 0; i < tuple_size; ++i)
     {
         if (indexes_mapping[i].key_index >= key_ranges.size())
@@ -928,11 +968,11 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
         if (!new_range)
             return {true, true};
 
-        ranges.emplace_back(*ordered_set[i]);
-        ranges.back().left.update(new_range->left);
-        ranges.back().right.update(new_range->right);
-        ranges.back().left_included = new_range->left_included;
-        ranges.back().right_included = new_range->right_included;
+        FieldValueRange & range = ranges[i];
+        range.left.update(new_range->left);
+        range.right.update(new_range->right);
+        range.left_included = new_range->left_included;
+        range.right_included = new_range->right_included;
     }
 
     /// lhs < rhs return -1
@@ -1058,6 +1098,11 @@ void MergeTreeSetIndex::FieldValue::update(const Field & x)
         value = x;
     else
     {
+        /// When the column belongs to the thread-local buffer of getFieldValueRangesBuffer, which
+        /// outlives the query, its reallocations must not be charged to the current query.
+        std::optional<MemoryTrackerBlockerInThread> blocker;
+        if (block_memory_tracker)
+            blocker.emplace();
         /// Keep at most one element in column.
         if (!column->empty())
             column->popBack(1);
