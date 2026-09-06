@@ -3348,6 +3348,15 @@ private:
                     ctx->new_data_part->checksums.files.erase(projection_file);
             }
 
+            /// The same for a declaration that could not be analyzed: `prepare` left its directory out of this
+            /// part and nothing can rebuild it, so its inherited entry is always an orphan.
+            for (const auto & projection_name : ctx->metadata_snapshot->projections.getUnavailableNames())
+            {
+                const auto projection_file = projection_name + ".proj";
+                if (ctx->files_to_skip.contains(projection_file))
+                    ctx->new_data_part->checksums.files.erase(projection_file);
+            }
+
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
             {
@@ -4299,6 +4308,15 @@ bool MutateTask::prepare()
         /// Skip the corrupted-part orphan files (see `MutationContext::orphan_skip_index_files`);
         /// `collectFilesToSkip` cannot reach them since they are absent from `checksums.txt`.
         ctx->files_to_skip.insert(ctx->orphan_skip_index_files.begin(), ctx->orphan_skip_index_files.end());
+
+        /// A declaration that could not be analyzed has no `ProjectionDescription`, so nothing above can decide
+        /// whether its data still matches the rows this mutation rewrites. Leave it out of the new part when a
+        /// writer runs; without one no row changes. `MutateSomePartColumnsTask::finalize` drops its stale entry.
+        if (ctx->mutating_pipeline_builder.initialized())
+        {
+            for (const auto & projection_name : ctx->metadata_snapshot->projections.getUnavailableNames())
+                ctx->files_to_skip.insert(projection_name + ".proj");
+        }
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->metadata_snapshot,

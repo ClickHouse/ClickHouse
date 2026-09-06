@@ -1831,6 +1831,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             throw Exception(exception.code(), "Cannot apply ALTER because it breaks projection {}: {}", projection.name, exception.message());
         }
     }
+    for (const auto & definition_ast : metadata_copy.projections.getUnavailableDefinitions())
+        new_projections.addUnavailable(definition_ast->clone());
     metadata_copy.projections = std::move(new_projections);
 
     /// Changes in columns may lead to changes in TTL expressions.

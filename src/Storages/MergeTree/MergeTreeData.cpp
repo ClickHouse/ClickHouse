@@ -76,6 +76,9 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 #include <Functions/FunctionFactory.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
@@ -439,6 +442,7 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_SIZE_LIMIT_EXCEEDED;
+    extern const int ILLEGAL_PROJECTION;
 }
 
 namespace FailPoints
@@ -6041,6 +6045,35 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     if (!is_replay_on_another_replica)
         local_context->checkMergeTreeSettingsConstraints(
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
+
+    /// Shared Catalog replays every ALTER on its replicas too, and marks such a replay in the client
+    /// info rather than in a ZooKeeper metadata transaction.
+    bool is_secondary_replay = is_replay_on_another_replica;
+#if CLICKHOUSE_CLOUD
+    if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
+        is_secondary_replay = true;
+#endif
+
+    /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate, so an ALTER
+    /// that invalidates it (dropping or retyping a column it uses) would be accepted and then persisted next to a
+    /// table it no longer matches. `DROP PROJECTION` and `CLEAR PROJECTION` share a command type and cannot do that.
+    if (!is_secondary_replay && new_metadata.projections.hasUnavailable())
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type == AlterCommand::DROP_PROJECTION)
+                continue;
+
+            throw Exception(
+                ErrorCodes::ILLEGAL_PROJECTION,
+                "Cannot ALTER table {}: projection {} is declared but could not be analyzed when the table was loaded, "
+                "so this ALTER cannot be validated against it. The server log records why. Removing that cause and "
+                "restarting the server may make the projection usable again; otherwise drop the declaration with "
+                "ALTER TABLE ... DROP PROJECTION",
+                getStorageID().getNameForLogs(),
+                fmt::join(new_metadata.projections.getUnavailableNames(), ", "));
+        }
+    }
 
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
