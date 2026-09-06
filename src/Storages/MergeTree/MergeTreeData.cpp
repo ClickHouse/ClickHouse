@@ -1416,10 +1416,29 @@ void MergeTreeData::checkProperties(
                                                { return old_type->equals(*new_type); }))
                                            return false;
 
-                                       return std::ranges::equal(
-                                           findMistypedAliasColumnsOfTextIndex(old_index, old_metadata.columns, type_context)
-                                               | std::views::keys,
-                                           mistyped_columns | std::views::keys);
+                                       const auto old_mistyped = findMistypedAliasColumnsOfTextIndex(
+                                           old_index, old_metadata.columns, type_context);
+
+                                       if (!std::ranges::equal(
+                                               old_mistyped | std::views::keys, mistyped_columns | std::views::keys))
+                                           return false;
+
+                                       /// The declared type of the offending ALIAS is the last input that
+                                       /// decides the violation and is not covered above: the expanded
+                                       /// expression and the resolved types both come from the expression,
+                                       /// so neither moves when only the declaration is retyped. Widening
+                                       /// `a Array(FixedString(3))` to `Array(FixedString(2))` over the same
+                                       /// expression is a different unusable index, read through a different
+                                       /// `CAST`, and every other comparison here is blind to it.
+                                       return std::ranges::all_of(
+                                           mistyped_columns | std::views::keys,
+                                           [&](const String & column_name)
+                                           {
+                                               const auto * old_column = old_metadata.columns.tryGet(column_name);
+                                               const auto * new_column = new_metadata.columns.tryGet(column_name);
+                                               return old_column && new_column
+                                                   && old_column->type->equals(*new_column->type);
+                                           });
                                    });
 
                         if (!inherited)

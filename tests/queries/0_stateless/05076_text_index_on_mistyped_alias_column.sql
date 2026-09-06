@@ -165,3 +165,29 @@ ALTER TABLE db_05076_chain.t_chain
     MODIFY COLUMN b String ALIAS toString(a); -- { serverError BAD_ARGUMENTS }
 
 DROP DATABASE db_05076_chain;
+
+-- The declared type of the offending ALIAS is the one input the comparisons above are blind to:
+-- the expanded expression and the resolved types both come from the expression, so neither moves
+-- when only the declaration is retyped. It is still a different unusable index.
+SET allow_deprecated_database_ordinary = 1;
+DROP DATABASE IF EXISTS db_05076_declared;
+CREATE DATABASE db_05076_declared ENGINE = Ordinary;
+
+ATTACH TABLE db_05076_declared.t_declared
+(
+    m Map(String, String),
+    a Array(FixedString(3)) ALIAS mapValues(m),
+    INDEX fts_declared a TYPE text(tokenizer = array)
+) ENGINE = MergeTree ORDER BY tuple();
+
+ALTER TABLE db_05076_declared.t_declared ADD COLUMN w UInt8;
+SELECT count() FROM system.columns WHERE database = 'db_05076_declared' AND table = 't_declared' AND name = 'w';
+
+ALTER TABLE db_05076_declared.t_declared
+    MODIFY COLUMN a Array(FixedString(2)) ALIAS mapValues(m); -- { serverError BAD_ARGUMENTS }
+
+-- Retyping it to the type the expression actually produces removes the violation, so it is allowed.
+ALTER TABLE db_05076_declared.t_declared MODIFY COLUMN a Array(String) ALIAS mapValues(m);
+SELECT count() FROM system.data_skipping_indices WHERE database = 'db_05076_declared' AND table = 't_declared';
+
+DROP DATABASE db_05076_declared;
