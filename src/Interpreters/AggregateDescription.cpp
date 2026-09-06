@@ -96,32 +96,37 @@ void AggregateDescription::explain(WriteBuffer & out, const std::string & prefix
 
 void AggregateDescription::explainPretty(ExplainFormatSettings & settings) const
 {
-    auto & out = settings.out;
+    /// Each rendered argument is bounded on its own, so k of them compose to k times the cap.
+    String pretty;
 
     if (function)
-        out << function->getName();
+        pretty += function->getName();
 
     const Array & aggregate_parameters = function ? function->getParameters() : parameters;
     bool first_param = true;
     for (const auto & param : aggregate_parameters)
     {
-        out << (first_param ? "(" : ", ");
+        pretty += first_param ? "(" : ", ";
         first_param = false;
-        out << applyVisitor(FieldVisitorToString(), param);
+        pretty += applyVisitor(FieldVisitorToString(), param);
     }
     if (!aggregate_parameters.empty())
-        out << ')';
+        pretty += ')';
 
-    out << '(';
+    pretty += '(';
     bool first = true;
     for (const auto & arg : argument_names)
     {
-        if (!first)
-            out << ", ";
+        if (!first && !QueryPlanFormat::appendBounded(pretty, ", "))
+            break;
         first = false;
-        out << QueryPlanFormat::formatColumnPretty(arg, settings.pretty_names);
+        if (!QueryPlanFormat::appendBounded(pretty, QueryPlanFormat::formatColumnPretty(arg, settings.pretty_names)))
+            break;
     }
-    out << ')';
+    pretty += ')';
+    QueryPlanFormat::clipToMaxLength(pretty);
+
+    settings.out << pretty;
 }
 
 void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
