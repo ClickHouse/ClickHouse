@@ -298,11 +298,25 @@ static Plan getPlan(
         if (partition_index >= plan.partitions.size())
             continue;
 
+        /// `lower/upper_reference_data_file_path` bound the delete file's own `file_path` column,
+        /// so a data file outside them has no deleted rows recorded in this delete file.
+        const auto & lower = delete_file->parsed_entry->lower_reference_data_file_path;
+        const auto & upper = delete_file->parsed_entry->upper_reference_data_file_path;
+
         for (auto & data_file : plan.partitions[partition_index])
         {
-            if (data_file->data_object_info->info.sequence_number <= delete_file->sequence_number)
-                data_file->data_object_info->addPositionDeleteObject(
-                    delete_file, persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key));
+            if (data_file->data_object_info->info.sequence_number > delete_file->sequence_number)
+                continue;
+
+            const auto & data_file_path = data_file->data_object_info->info.data_object_file_path_key;
+            bool can_contain_data_file_deletes
+                = (!lower.has_value() || *lower <= data_file_path)
+                && (!upper.has_value() || *upper >= data_file_path);
+            if (!can_contain_data_file_deletes)
+                continue;
+
+            data_file->data_object_info->addPositionDeleteObject(
+                delete_file, persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key));
         }
     }
     plan.history = std::move(snapshots_info);
