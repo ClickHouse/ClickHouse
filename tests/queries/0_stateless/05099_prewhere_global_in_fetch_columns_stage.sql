@@ -7,6 +7,11 @@
 
 SET prefer_localhost_replica = 0;
 
+-- Pinned on: the old analyzer answers 0 for any `PREWHERE` over this shape, set or not, and fails a
+-- bare `count()` over it with `THERE_IS_NO_COLUMN`. That is a separate pre-existing defect, and the
+-- planner exercised below is the analyzer's.
+SET enable_analyzer = 1;
+
 -- Pinned off: with a serialized plan the `Merge` gets an empty header for its `Distributed` child
 -- at `FetchColumns`, so on master every query over this shape already fails with
 -- `THERE_IS_NO_COLUMN` - a set-free `PREWHERE k < 4` included. #113413 covers that, not this test.
