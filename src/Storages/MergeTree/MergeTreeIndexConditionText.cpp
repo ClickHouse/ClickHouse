@@ -32,8 +32,11 @@
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
 namespace DB
@@ -1590,8 +1593,14 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     /// It is true because `arrayElement` (and the equivalent subcolumn access) returns default value if key doesn't exist in the map,
     /// therefore we can use index to skip granules and use direct read as a hint for the original condition.
 
+    /// The result type may be Nullable(UInt8) / LowCardinality(UInt8) / LowCardinality(Nullable(UInt8))
+    /// when the map key is wrapped (e.g. `m[CAST('key' AS LowCardinality(Nullable(String)))] = 'value'`).
+    /// This is still safe: a non-NULL constant key returns the map value type default for a missing key
+    /// (not NULL), so the "predicate is false on the default value" invariant checked below on the empty
+    /// map holds.
     const auto * dag_node = function_node.getDAGNode();
-    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic() || !WhichDataType(dag_node->result_type).isUInt8())
+    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic()
+        || !WhichDataType(removeLowCardinalityAndNullable(dag_node->result_type)).isUInt8())
         return false;
 
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
@@ -1631,10 +1640,26 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
                 if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
                     return false;
 
-                if (const_key_argument->type != ActionsDAG::ActionType::COLUMN || !isStringOrFixedString(const_key_argument->result_type))
+                /// The key constant may be wrapped in Nullable / LowCardinality / LowCardinality(Nullable)
+                /// (e.g. `m[CAST('key' AS LowCardinality(Nullable(String)))]`).
+                if (const_key_argument->type != ActionsDAG::ActionType::COLUMN
+                    || !isStringOrFixedString(removeLowCardinalityAndNullable(const_key_argument->result_type)))
                     return false;
 
-                key_const_value = std::string{const_key_argument->column->getDataAt(0)};
+                /// Unwrap Const/LowCardinality/Nullable to reach the underlying string value.
+                ColumnPtr key_column = const_key_argument->column;
+                if (const auto * const_column = checkAndGetColumn<const ColumnConst>(key_column.get()))
+                    key_column = const_column->getDataColumnPtr();
+                key_column = recursiveRemoveLowCardinality(key_column);
+                if (const auto * nullable_column = checkAndGetColumn<const ColumnNullable>(key_column.get()))
+                {
+                    /// A NULL key makes arrayElement return NULL, breaking the default-value invariant.
+                    if (nullable_column->isNullAt(0))
+                        return false;
+                    key_column = nullable_column->getNestedColumnPtr();
+                }
+
+                key_const_value = std::string{key_column->getDataAt(0)};
             }
             else
             {
@@ -1698,11 +1723,38 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
 
 bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const
 {
-    /// Handle `arrayElement(map_col, 'key')` form (i.e., `map['key']`).
     if (node.isFunction())
     {
         const auto function = node.toFunctionNode();
-        if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
+        const auto function_name = function.getFunctionName();
+
+        /// Unwrap a CAST that only changes the Nullable / LowCardinality wrappers of the element,
+        /// e.g. `m[CAST('key' AS Nullable(String))]` becomes `_CAST(arrayElement(m, 'key'), 'Nullable(String)')`
+        /// (or `_CAST(m.key_<key>, ...)`).
+        ///
+        /// We must ONLY see through casts that PRESERVE the indexed bytes. The `mapValues` text index
+        /// stores raw `String` tokens, so a byte-changing cast (e.g. to `FixedString(N)`, which pads the
+        /// value with trailing zero bytes) would make us search the index for a token that differs from
+        /// what is actually stored, and a matching granule could be wrongly pruned. So only recurse when
+        /// the cast's target type reduces to the same base type as its argument after stripping
+        /// LowCardinality/Nullable (the nullability/LowCardinality-only wrappers this PR targets).
+        if ((function_name == "_CAST" || function_name == "CAST") && function.getArgumentsSize() == 2)
+        {
+            const auto * cast_node = function.getDAGNode();
+            const auto argument = function.getArgumentAt(0);
+            const auto * argument_node = argument.getDAGNode();
+            if (!cast_node || !argument_node)
+                return false;
+
+            if (!removeLowCardinalityAndNullable(cast_node->result_type)
+                     ->equals(*removeLowCardinalityAndNullable(argument_node->result_type)))
+                return false;
+
+            return hasIndexForMapElementValue(argument);
+        }
+
+        /// Handle `arrayElement(map_col, 'key')` form (i.e., `map['key']`).
+        if (function.getArgumentsSize() == 2 && function_name == "arrayElement")
         {
             const auto column_name = function.getArgumentAt(0).getColumnName();
             return hasIndexForColumn(fmt::format("mapValues({})", column_name));

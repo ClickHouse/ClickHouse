@@ -1,0 +1,20 @@
+-- results are correct and independent of the key type wrapper
+2
+2
+2
+2
+0
+0
+0
+-- mapValues index prunes granules for wrapped constant key (issue #110031)
+1
+1
+1
+-- mapKeys index prunes granules for wrapped constant key (issue #110031)
+1
+1
+1
+-- byte-changing FixedString cast on value must NOT wrongly prune (issue #110031 review)
+2
+0
+1
