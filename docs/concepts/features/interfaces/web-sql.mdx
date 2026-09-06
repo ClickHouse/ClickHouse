@@ -45,6 +45,12 @@ Tabs also integrate with the browser's History API and the URL:
 - The history state carries the active tab, so the browser's back and forward buttons switch tabs.
 - The URL gains a `tab=<name>` parameter. On load, the URL's query and `tab` parameter are reconciled with the saved tabs: an existing tab with that name is reused (and its query is substituted), or a new tab is created when the name is not found or was unnamed. This makes it possible to open a URL with a new query while keeping your own saved tabs.
 
+## Notebook mode {#notebook-mode}
+
+A tab can be turned into a notebook — an ordered sequence of query and text cells — by adding a
+cell with the `[+]` button that appears under a result. Notebook mode is per tab. See
+[Web UI Notebook Mode](/concepts/features/interfaces/web-ui-notebook).
+
 ### Limitations {#limitations}
 
 Switching tabs while a query is running discards the running state of that query.
