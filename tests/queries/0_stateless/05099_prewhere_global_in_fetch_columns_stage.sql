@@ -26,6 +26,13 @@ SELECT count() FROM merge(currentDatabase(), '^t_fc_dist_[ui]$') PREWHERE k GLOB
 SELECT count() FROM merge(currentDatabase(), '^t_fc_dist_[ui]$') PREWHERE k GLOBAL IN (SELECT k FROM t_fc_dist_u WHERE k < 2) SETTINGS prefer_localhost_replica = 1;
 
 -- Control: a single matched table needs no type unification, so its stage is delegated as usual and
--- this line passes without the fix. It keeps the test keyed on the stage rather than on `merge()`
+-- this line passes without the fix. It keeps the test keyed on the stage rather than on `merge`
 -- plus `GLOBAL IN` in general.
 SELECT count() FROM merge(currentDatabase(), '^t_fc_dist_u$') PREWHERE k GLOBAL IN (SELECT k FROM t_fc_dist_u WHERE k < 2);
+
+-- A row-level filter is the reader's other set carrier. The policy predicate holds the only set
+-- here, so with `PREWHERE k < 4` matching every row the count is decided by the policy alone. It
+-- reads `numbers` because the predicate is re-resolved on the shard, where a table name does not.
+CREATE ROW POLICY r05099 ON t_fc_u, t_fc_i USING k IN (SELECT number FROM numbers(2)) TO ALL;
+SELECT count() FROM merge(currentDatabase(), '^t_fc_dist_[ui]$') PREWHERE k < 4;
+DROP ROW POLICY r05099 ON t_fc_u, t_fc_i;
