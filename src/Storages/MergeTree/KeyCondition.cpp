@@ -71,6 +71,9 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
+extern const int MEMORY_LIMIT_EXCEEDED;
+extern const int QUERY_WAS_CANCELLED;
+extern const int TIMEOUT_EXCEEDED;
 }
 
 const KeyCondition::AtomMap KeyCondition::atom_map
@@ -1643,9 +1646,13 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
         }
         /// Invariant: every function receives the argument type it was built for, so the cached result
         /// keeps this function's own result type and representation.
-        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
-        (*columns)[result_idx].column
-            = func->execute(args, (*columns)[result_idx].type, args.front().column->size(), /* dry_run = */ false);
+        ///
+        /// Compute before publishing the cache entry. The function is evaluated on values the analysis
+        /// substitutes, so it can fail for one of them - `intDiv(1, a - 1)` divides by zero at `a = 1` -
+        /// and a placeholder entry with a null column left behind by a throw would be found by the
+        /// lookup above on the next call for the same (function, column) pair and dereferenced.
+        auto result_column = func->execute(args, func->getResultType(), args.front().column->size(), /* dry_run = */ false);
+        field.columns->emplace_back(ColumnWithTypeAndName{result_column, func->getResultType(), result_name});
     }
 
     return {field.columns, field.row_idx, result_idx};
@@ -5274,16 +5281,43 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             /// To avoid this we make range left and right included.
             /// Any function that treats NULL specially is not monotonic.
             /// Thus we can safely use isNull() as an -Inf/+Inf indicator here.
-            if (!key_range.left.isNull())
+            ///
+            /// The function is evaluated on the endpoints of a key range, which are values the analysis
+            /// substitutes rather than values the query asked about, so it can fail for an endpoint the
+            /// predicate itself excludes: `intDiv(1, p - 1)` divides by zero on the boundary `p = 1`
+            /// even under `WHERE p != 1`. Index analysis is an approximation, and its answer for a
+            /// range it cannot evaluate is "unknown" - the same answer it already gives for a function
+            /// that is not monotonic on the range - which leaves the range unpruned. Letting the error
+            /// escape instead turns a valid query into an exception, or makes it depend on whether
+            /// another index happened to prune the range first.
+            try
             {
-                key_range.left = applyFunction(func, current_type, key_range.left);
-                key_range.left_included = true;
-            }
+                if (!key_range.left.isNull())
+                {
+                    key_range.left = applyFunction(func, current_type, key_range.left);
+                    key_range.left_included = true;
+                }
 
-            if (!key_range.right.isNull())
+                if (!key_range.right.isNull())
+                {
+                    key_range.right = applyFunction(func, current_type, key_range.right);
+                    key_range.right_included = true;
+                }
+            }
+            catch (const Exception & e)
             {
-                key_range.right = applyFunction(func, current_type, key_range.right);
-                key_range.right_included = true;
+                /// A broken invariant, a memory limit, a deadline or a cancellation is not something
+                /// the analysis may decide to ignore: these are the outer guards of the query, and
+                /// `applyFunction` runs the function on a whole boundary column, so a conversion with a
+                /// cancellation budget can hit `max_execution_time` here. Swallowing that would let the
+                /// query proceed to a full scan instead of aborting.
+                if (e.code() == ErrorCodes::LOGICAL_ERROR
+                    || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+                    || e.code() == ErrorCodes::QUERY_WAS_CANCELLED
+                    || e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
+                    throw;
+
+                return {};
             }
         }
         else
