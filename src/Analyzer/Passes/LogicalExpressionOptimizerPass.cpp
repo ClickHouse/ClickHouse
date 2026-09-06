@@ -2019,6 +2019,10 @@ private:
                     if (!filter.converted_value)
                         return;
 
+            /// A `Nothing` operand collapses the AND's own result type to `Nothing`, which holds no value.
+            if (isNothing(function_node.getResultType()))
+                return;
+
             node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
             return;
         }
