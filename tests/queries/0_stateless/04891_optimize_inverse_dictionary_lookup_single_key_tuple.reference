@@ -1,0 +1,190 @@
+tuple(k), equals, one match - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE equals(__table1.k, \'22222222-2222-2222-2222-222222222222\')
+tuple(k), equals, one match
+1
+tuple(k), equals, one match, opt off
+1
+tuple(k), equals, two matches - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE in(__table1.k, _CAST([\'44444444-4444-4444-4444-444444444444\', \'11111111-1111-1111-1111-111111111111\'], \'Array(UUID)\'))
+tuple(k), equals, two matches
+2
+tuple(k), equals, two matches, opt off
+2
+tuple(k), equals, no matches - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE 0
+tuple(k), equals, no matches
+0
+tuple(k), equals, no matches, opt off
+0
+tuple(k), notEquals - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE in(__table1.k, (
+    SELECT k AS k
+    FROM dictionary(\'dict_single_key\')
+    WHERE notEquals(attr, \'none\')
+))
+tuple(k), notEquals
+3
+tuple(k), notEquals, opt off
+3
+tuple(k), like - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE in(__table1.k, (
+    SELECT k AS k
+    FROM dictionary(\'dict_single_key\')
+    WHERE like(attr, \'pay%\')
+))
+tuple(k), like
+2
+tuple(k), like, opt off
+2
+tuple-typed column, equals - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE equals(tupleElement(__table1.kt, 1), \'22222222-2222-2222-2222-222222222222\')
+tuple-typed column, equals
+1
+tuple-typed column, equals, opt off
+1
+tuple-typed column, like - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE in(tupleElement(__table1.kt, 1), (
+    SELECT k AS k
+    FROM dictionary(\'dict_single_key\')
+    WHERE like(attr, \'pay%\')
+))
+tuple-typed column, like
+2
+tuple-typed column, like, opt off
+2
+nullable tuple expr, equals - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE equals(tupleElement(if(notEquals(__table1.k, \'33333333-3333-3333-3333-333333333333\'), tuple(__table1.k), _CAST(NULL, \'Nullable(Nothing)\')), 1), \'22222222-2222-2222-2222-222222222222\')
+nullable tuple expr, equals
+1
+nullable tuple expr, equals, opt off
+1
+nullable tuple expr, like - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE in(tupleElement(if(notEquals(__table1.k, \'33333333-3333-3333-3333-333333333333\'), tuple(__table1.k), _CAST(NULL, \'Nullable(Nothing)\')), 1), (
+    SELECT k AS k
+    FROM dictionary(\'dict_single_key\')
+    WHERE like(attr, \'pay%\')
+))
+nullable tuple expr, like
+2
+nullable tuple expr, like, opt off
+2
+implicit key conversion, wrapped, equals - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE equals(accurateCast(toString(__table1.k), \'UUID\'), \'22222222-2222-2222-2222-222222222222\')
+implicit key conversion, wrapped, equals
+1
+implicit key conversion, wrapped, equals, opt off
+1
+implicit key conversion, wrapped, like - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE in(accurateCast(toString(__table1.k), \'UUID\'), (
+    SELECT k AS k
+    FROM dictionary(\'dict_single_key\')
+    WHERE like(attr, \'pay%\')
+))
+implicit key conversion, wrapped, like
+2
+implicit key conversion, wrapped, like, opt off
+2
+implicit key conversion, bare, equals
+1
+implicit key conversion, bare, equals, opt off
+1
+implicit key conversion, simple key, equals - plan
+SELECT count() AS `count()`
+FROM default.data_n AS __table1
+WHERE in(accurateCast(toString(__table1.n), \'UInt64\'), _CAST([1, 4], \'Array(UInt64)\'))
+implicit key conversion, simple key, equals
+2
+implicit key conversion, simple key, equals, opt off
+2
+implicit key conversion, numeric widening, equals - plan
+SELECT count() AS `count()`
+FROM default.data_n AS __table1
+WHERE equals(toUInt8(__table1.n), _CAST(2, \'UInt64\'))
+implicit key conversion, numeric widening, equals
+1
+implicit key conversion, numeric widening, equals, opt off
+1
+lossy key conversion, in-range values - plan
+SELECT count() AS `count()`
+FROM default.data_wide AS __table1
+WHERE in(accurateCast(__table1.w, \'UInt8\'), _CAST([4, 1], \'Array(UInt8)\'))
+lossy key conversion, in-range values
+2
+lossy key conversion, in-range values, opt off
+2
+lossy key conversion, wrapped, in-range values
+2
+lossy key conversion, wrapped, in-range values, opt off
+2
+lossy key conversion, zero-match fold
+0
+NULL-keyed row match, tuple carrier - plan
+SELECT count() AS `count()`
+FROM default.data_nk AS __table1
+WHERE in(tupleElement(if(notEquals(__table1.id, 0), tuple(__table1.id), _CAST(NULL, \'Nullable(Nothing)\')), 1), _CAST([NULL], \'Array(Nullable(UInt64))\'))
+NULL-keyed row match, tuple carrier, projected
+0
+0
+NULL-keyed row match, tuple carrier, projected, opt off
+0
+0
+NULL-keyed row match, tuple carrier, NOT pred
+2
+NULL-keyed row match, tuple carrier, NOT pred, opt off
+2
+NULL-keyed row match, tuple carrier, isNull pred
+0
+NULL-keyed row match, tuple carrier, isNull pred, opt off
+0
+NULL-keyed row match, bare nullable key, NOT pred
+2
+NULL-keyed row match, bare nullable key, NOT pred, opt off
+2
+non-NULL single-key match on nullable-keyed dict - plan
+SELECT count() AS `count()`
+FROM default.data_nk AS __table1
+WHERE equals(toNullable(__table1.id), _CAST(1, \'Nullable(UInt64)\'))
+non-NULL single-key match on nullable-keyed dict
+1
+non-NULL single-key match on nullable-keyed dict, opt off
+1
+bare key, equals - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE equals(__table1.k, \'22222222-2222-2222-2222-222222222222\')
+bare key, equals
+1
+bare key, equals, opt off
+1
+tuple(k), constant on the left
+1
+two-column key, equals - plan
+SELECT count() AS `count()`
+FROM default.data AS __table1
+WHERE in(tuple(__table1.k, __table1.k2), _CAST([(\'44444444-4444-4444-4444-444444444444\', \'d\'), (\'11111111-1111-1111-1111-111111111111\', \'a\')], \'Array(Tuple(UUID, String))\'))
+two-column key, equals
+2
+two-column key, equals, opt off
+2

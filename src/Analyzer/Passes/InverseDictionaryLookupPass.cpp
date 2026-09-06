@@ -373,6 +373,87 @@ public:
         if (dict_structure.key && hasNullableComponentInComplexKey(dictget_function_info.key_expr_node))
             return;
 
+        if (key_cols.size() == 1)
+        {
+            auto & key_expr_node = dictget_function_info.key_expr_node;
+
+            /// A complex-key dictionary with a single key column accepts both the bare key
+            /// expression (`dictGet(..., k)`) and its one-element tuple wrapper
+            /// (`dictGet(..., tuple(k))`). The rewrites below compare the key expression with
+            /// bare key values: scalar constants produced by `dictGetKeys` or a single-column
+            /// `SELECT` from `dictionary(...)`. Unwrap the tuple, otherwise the rewrite pits
+            /// `Tuple(T)` against `T` and fails with ILLEGAL_TYPE_OF_ARGUMENT.
+            /// The tuple can also be `Nullable` (e.g. produced by `if(cond, tuple(k), NULL)`):
+            /// `tupleElement` propagates the `NULL` to the extracted element, and a `NULL` key
+            /// behaves the same on both sides of the rewrite (`dictGet` returns `NULL`, so the
+            /// comparison is `NULL`; `NULL IN (...)` is `NULL` as well).
+            /// Simple-key dictionaries are intentionally not affected: for them `dictGet`
+            /// rejects the tuple form even without this optimization.
+            if (dict_structure.key)
+            {
+                const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
+                const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
+                if (key_expr_tuple_type && key_expr_tuple_type->getElements().size() == 1)
+                {
+                    const auto * key_expr_function = key_expr_node->as<FunctionNode>();
+                    if (key_expr_function && key_expr_function->getFunctionName() == "tuple"
+                        && key_expr_function->getArguments().getNodes().size() == 1)
+                    {
+                        /// A syntactic wrapper: `tuple(k)` -> `k`.
+                        key_expr_node = key_expr_function->getArguments().getNodes().front();
+                    }
+                    else
+                    {
+                        /// Not a `tuple(...)` call, but still a (possibly `Nullable`) one-element
+                        /// tuple, e.g. a column of type `Tuple(UUID)`: extract the element.
+                        auto tuple_element_function_node = std::make_shared<FunctionNode>("tupleElement");
+                        tuple_element_function_node->getArguments().getNodes()
+                            = {key_expr_node, std::make_shared<ConstantNode>(Field(static_cast<UInt64>(1)))};
+                        resolveOrdinaryFunctionNodeByName(*tuple_element_function_node, "tupleElement", getContext());
+                        key_expr_node = std::move(tuple_element_function_node);
+                    }
+                }
+            }
+
+            /// `dictGet` implicitly converts the key columns to the dictionary key types
+            /// (`IDictionary::convertKeyColumns`, which uses `castColumnAccurate`), so e.g.
+            /// a `String` key expression is valid for a `UUID` key column, and an `Int16`
+            /// expression over a `UInt8` key column throws on values outside of `UInt8`.
+            /// The rewrites below compare the key expression with values of the key column
+            /// type, and the generic comparison converts via a common supertype instead.
+            /// That is equivalent to the converted lookup only when the key column type is
+            /// itself the supertype (a total widening, e.g. a narrow integer column against
+            /// a wide key type) - keep such expressions untouched, which also keeps them
+            /// usable for index analysis (the same criterion `canReplaceWithDictGetKeys`
+            /// uses for the attribute side). The criterion is total for integer-to-float
+            /// pairs as well: `getLeastSupertype` refuses e.g. `Int64` with `Float64`
+            /// (not enough mantissa bits), so an integer expression stays on this fast path
+            /// only when the float key type represents every its value exactly. Otherwise mirror the `dictGet` conversion with
+            /// `accurateCast`: it makes `String` keys comparable with e.g. `UUID` columns
+            /// (the comparison alone throws NO_COMMON_TYPE) and preserves the throwing
+            /// behavior on lossy conversions where the comparison would silently return
+            /// false (e.g. `Int16` values outside of a `UInt8` key column).
+            /// For a `Nullable` expression that needs such a conversion `dictGet` itself
+            /// throws whenever the nested default value does not convert (at NULL rows the
+            /// nested column holds default values, and e.g. an empty string does not parse
+            /// as `UUID`) - skip the rewrite and keep the behavior of the unoptimized query.
+            const DataTypePtr & key_col_type = key_cols.front().type;
+            const DataTypePtr stripped_key_expr_type = removeLowCardinalityAndNullable(key_expr_node->getResultType());
+            const DataTypePtr stripped_key_col_type = removeLowCardinalityAndNullable(key_col_type);
+            const DataTypePtr key_supertype = tryGetLeastSupertype(DataTypes{stripped_key_expr_type, stripped_key_col_type});
+            if (!key_supertype || !key_supertype->equals(*stripped_key_col_type))
+            {
+                if (isNullableOrLowCardinalityNullable(key_expr_node->getResultType()))
+                    return;
+
+                auto accurate_cast_function_node = std::make_shared<FunctionNode>("accurateCast");
+                accurate_cast_function_node->getArguments().getNodes()
+                    = {key_expr_node, std::make_shared<ConstantNode>(key_col_type->getName())};
+                resolveOrdinaryFunctionNodeByName(*accurate_cast_function_node, "accurateCast", getContext());
+                key_expr_node = std::move(accurate_cast_function_node);
+            }
+        }
+
         const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
 
         if (!dict_structure.hasAttribute(attr_col_name))
@@ -453,6 +534,12 @@ public:
                 /// non-null `0` - observable via `isNull(predicate)`.
                 /// `SELECT count() WHERE isNull(predicate)` returns `1` without the rewrite and
                 /// `0` with it.
+                ///
+                /// Like any constant fold, this replaces the predicate without evaluating the
+                /// key expression: when the key needs the accurate conversion inserted above,
+                /// `dictGet` throws for rows whose key value does not convert, and that error
+                /// disappears here together with the lookup. This matches the pre-existing
+                /// behavior for bare mistyped key expressions.
                 if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type))
                 {
                     auto zero_type = std::make_shared<DataTypeUInt8>();
@@ -461,8 +548,14 @@ public:
                     return;
                 }
 
-                /// Single key -> key_expr = <that key>
-                if (keys_size == 1)
+                /// Single key -> key_expr = <that key>.
+                /// Only for a non-NULL key. For the NULL key of a Nullable-keyed dictionary,
+                /// `key_expr = NULL` is NULL for every row, while `dictGet` misses the NULL
+                /// row for non-NULL keys and the predicate must be false there. The `IN`
+                /// form below preserves that: `x IN [NULL]` is false for non-NULL `x` and
+                /// NULL for NULL `x`, matching `dictGet` (a NULL key expression gives a NULL
+                /// result, so the comparison is NULL as well).
+                if (keys_size == 1 && !keys_array.front().isNull())
                 {
                     const Field & single_key_field = keys_array.front();
 
@@ -480,7 +573,7 @@ public:
                     return;
                 }
 
-                /// Multiple keys -> key_expr IN <constant array-of-keys>
+                /// Multiple keys (or a single NULL key) -> key_expr IN <constant array-of-keys>
                 /// keys_constant->getResultType() is Array(T) or Array(Tuple(...))
                 auto keys_const_node = std::make_shared<ConstantNode>(keys_field, keys_constant->getResultType());
 
