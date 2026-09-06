@@ -42,6 +42,9 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 
 namespace DB
@@ -700,10 +703,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// metadata transaction, so neither `mode` nor `is_ddl_replay` can tell it apart from user input.
     const bool is_stored_definition = args.getLocalContext()->isRecoveryFromStoredMetadata();
 
+    /// Shared Catalog secondaries re-execute the initiator's DDL without a metadata transaction, so
+    /// they are told apart by the client info instead (the same marker `AlterCommands` and
+    /// `StorageKeeperMap` use); an older initiator may have committed a definition this check refuses.
+#if CLICKHOUSE_CLOUD
+    const bool is_shared_catalog_replay = args.getLocalContext()->getClientInfo().is_shared_catalog_internal
+        && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext());
+#else
+    const bool is_shared_catalog_replay = false;
+#endif
+
     /// Statistics of a column that is not physically stored can never be built: the column is absent
     /// from every written block. Columns inferred from ZooKeeper describe an already existing table,
     /// so a new replica of a table predating this check still starts.
-    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay && !args.columns.empty())
     {
         for (const auto & column : columns)
         {
