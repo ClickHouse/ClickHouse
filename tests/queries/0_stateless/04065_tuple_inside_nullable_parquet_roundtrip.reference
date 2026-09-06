@@ -165,11 +165,12 @@ DROP TABLE IF EXISTS test_nullable_tuple_describe;
 CREATE TABLE test_nullable_tuple_describe (c0 Nullable(Tuple(UInt32, String))) ENGINE = Memory;
 INSERT INTO test_nullable_tuple_describe VALUES ((1, 'a')), (NULL), ((3, 'c'));
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_describe.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_describe;
--- Parquet V3 native reader: inferred type (struct-level NULL not supported, becomes (NULL,NULL))
+-- Parquet V3 native reader: an OPTIONAL group with an all-REQUIRED subtree is inferred as
+-- Nullable(Tuple), so the struct-level NULL survives inference.
 SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04065_describe.parquet', 'Parquet');
-(1,'a')	Tuple(\n    `1` Nullable(UInt32),\n    `2` Nullable(String))
-(NULL,NULL)	Tuple(\n    `1` Nullable(UInt32),\n    `2` Nullable(String))
-(3,'c')	Tuple(\n    `1` Nullable(UInt32),\n    `2` Nullable(String))
+(1,'a')	Nullable(Tuple(`1` Nullable(UInt32), `2` Nullable(String)))
+\N	Nullable(Tuple(`1` Nullable(UInt32), `2` Nullable(String)))
+(3,'c')	Nullable(Tuple(`1` Nullable(UInt32), `2` Nullable(String)))
 DROP TABLE test_nullable_tuple_describe;
 -- Array(Nullable(Tuple)) flattened via import_nested
 DROP TABLE IF EXISTS test_nullable_tuple_import_nested;
