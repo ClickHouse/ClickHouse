@@ -10,7 +10,6 @@
 -- splits into the intersecting and non-intersecting lanes this test targets instead of being broadcast.
 SET enable_parallel_replicas = 0, max_rows_to_group_by = 0, distributed_plan_default_reader_bucket_count = 4,
     distributed_plan_max_rows_to_broadcast = 0, max_final_threads = 1;
-SET automatic_parallel_replicas_mode = 0;
 
 DROP TABLE IF EXISTS t_ni_rep;
 CREATE TABLE t_ni_rep (k UInt64, v UInt64, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY k SETTINGS index_granularity = 64, merge_max_block_size = 8192;

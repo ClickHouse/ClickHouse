@@ -103,6 +103,8 @@
 #include <Storages/SelectQueryInfo.h>
 #include <TableFunctions/ITableFunction.h>
 
+#include <algorithm>
+#include <array>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -274,6 +276,29 @@ void cleanupTempFile(const DB::ASTPtr & parsed_query, const String & tmp_file)
                 fs::remove(tmp_file);
         }
     }
+}
+
+/// Whether the argument of the interactive `\d` command is the name of a table, as in `\d hits`,
+/// rather than a continuation of the `SHOW TABLES` query that a bare `\d` expands to, as in
+/// `\d FROM system` or `\d NOT LIKE 'hits%'`. A table named after one of these clauses has to be
+/// quoted, which is also what tells it apart from the clause.
+bool isTableNameArgument(std::string_view argument)
+{
+    static constexpr auto show_tables_clauses = std::to_array<std::string_view>(
+        {"FROM", "IN", "NOT", "LIKE", "ILIKE", "WHERE", "LIMIT", "INTO", "FORMAT", "SETTINGS", "PARALLEL"});
+
+    while (!argument.empty() && isWhitespaceASCII(argument.front()))
+        argument.remove_prefix(1);
+
+    /// An unquoted name begins an identifier, a quoted one starts with a backtick or a double
+    /// quote. Anything else is not a name: no argument at all, or the `;` of a bare command.
+    if (argument.empty()
+        || !(isValidIdentifierBegin(argument.front()) || argument.front() == '`' || argument.front() == '"'))
+        return false;
+
+    const std::string_view first_word(argument.begin(), std::ranges::find_if(argument, isWhitespaceASCII));
+
+    return std::ranges::none_of(show_tables_clauses, [&](std::string_view clause) { return boost::iequals(first_word, clause); });
 }
 
 void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_file)
@@ -1695,7 +1720,11 @@ std::optional<Settings> ClientBase::settingsWithoutCompatibilityDerived() const
     if (!settings.hasSettingsChangedByCompatibility())
         return {};
     Settings result = settings;
-    result.resetSettingsChangedByCompatibility();
+    /// Keep the derived values but clear their `changed` flags: `Connection::sendQuery` picks the
+    /// client-side network codec from the values (so `compatibility` rolls back the codec of the
+    /// compressed packets this client sends), while only changed settings are serialized (so the
+    /// server re-derives them from `compatibility` itself and honors its own constraints).
+    result.markSettingsChangedByCompatibilityAsUnchanged();
     return result;
 }
 
@@ -3249,10 +3278,17 @@ void ClientBase::processParsedSingleQuery(
     /// at, and emitting `BEL` would just contaminate the captured stderr stream.
     /// The default lives here (not in the CLI option) so that a value from the
     /// client config file is not clobbered when the flag is omitted.
+    ///
+    /// The threshold is checked against the client's own clock rather than
+    /// `elapsedSeconds`, which prefers the server-reported time. The server-reported time only
+    /// advances when a `Progress` packet arrives, and no final `Progress` packet is sent when a query
+    /// fails, so on the error path it is stale by an unbounded amount - enough to skip the chime for a
+    /// query that clearly ran past the threshold. The wall-clock time the user waited for is also what
+    /// the chime is about.
     UInt64 chime_threshold_seconds = getClientConfiguration().getUInt64("chime-threshold-seconds", 5);
     if (chime_threshold_seconds > 0
         && stderr_is_a_tty
-        && progress_indication.elapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
+        && progress_indication.clientElapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
     {
         error_stream << '\x07';
         error_stream.flush();
@@ -4847,27 +4883,26 @@ Block ClientBase::fetchInternalQueryResult(
     /// query in a session, so read the effective dialect and `readonly` only after applying it.
     applySettingsFromServerIfNeeded();
 
-    /// The internal queries (of the AI agent and of the `help` command) are ClickHouse SQL,
-    /// so when the session was switched to another dialect, this query is explicitly pinned
-    /// to the ClickHouse dialect. The rest of the session settings are not sent: the query
-    /// runs under the defaults of the connection, like before.
+    /// The internal queries (of the AI agent and of the `help` command) are ClickHouse SQL and
+    /// must not run under the rest of the session, so what travels with them is only the knobs
+    /// that select the network codec, together with the pin to the ClickHouse dialect - see
+    /// `networkCompressionSettings`.
+    ///
+    /// `readonly = 1` rejects every setting change, that pin among them. Nothing is sent in such a
+    /// session, and one whose dialect is not ClickHouse cannot run these queries at all, so it is
+    /// told what to do about it instead of being handed a server error about the `dialect` setting.
+    const bool session_is_readonly = client_context->getSettingsRef()[Setting::readonly] == 1;
     const bool needs_clickhouse_dialect
         = dialect_may_be_changed_by_profile || client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse;
-    /// `readonly = 1` rejects every setting change, including the dialect pin used by both the
-    /// agent and `help` / `man`. Fail before sending the internal query so users get guidance
-    /// instead of a server setting exception.
-    if (needs_clickhouse_dialect && client_context->getSettingsRef()[Setting::readonly] == 1)
+    if (needs_clickhouse_dialect && session_is_readonly)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The internal query requires the ClickHouse SQL dialect, but `readonly = 1` does not allow changing the "
             "`dialect` setting. Run `SET dialect = 'clickhouse'` first");
 
     std::optional<Settings> settings_to_send;
-    if (needs_clickhouse_dialect)
-    {
-        settings_to_send.emplace();
-        settings_to_send->set("dialect", "clickhouse");
-    }
+    if (!session_is_readonly)
+        settings_to_send = networkCompressionSettings(client_context->getSettingsRef());
 
 #if USE_CLIENT_AI
     /// Tag the queries of the agent (schema exploration, documentation lookups) in the query log,
@@ -5563,7 +5598,7 @@ void ClientBase::runInteractive()
             if (connection_needs_resynchronization)
                 resynchronizeConnectionAfterError();
             connection_needs_resynchronization = true;
-            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), error_stream);
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), client_context->getSettingsRef(), error_stream);
             if (suggest->lastExchangeEndedInSync())
                 connection_needs_resynchronization = false;
         }
@@ -5697,11 +5732,22 @@ void ClientBase::runInteractive()
     /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
     lr->enableBracketedPaste();
 
-    static const std::initializer_list<std::pair<String, String>> backslash_aliases =
+    /// The `psql`-style commands. `\d` follows `psql` in expanding to a listing of the tables when
+    /// it is used without an argument and to a description of a table when a table name is given.
+    struct BackslashAlias
+    {
+        std::string_view command;
+        std::string_view query;
+        /// The query to use when the argument is the name of a table; empty if the command has no
+        /// such form and the argument always continues `query`.
+        std::string_view query_for_table;
+    };
+
+    static const std::initializer_list<BackslashAlias> backslash_aliases =
         {
-            { "\\l", "SHOW DATABASES" },
-            { "\\d", "SHOW TABLES" },
-            { "\\c", "USE" },
+            { "\\l", "SHOW DATABASES", {} },
+            { "\\d", "SHOW TABLES", "DESCRIBE TABLE" },
+            { "\\c", "USE", {} },
         };
 
     static const std::initializer_list<String> repeat_last_input_aliases =
@@ -5759,18 +5805,20 @@ void ClientBase::runInteractive()
             has_vertical_output_suffix = true;
         }
 
-        for (const auto & [alias, command] : backslash_aliases)
+        for (const auto & [command, query, query_for_table] : backslash_aliases)
         {
-            auto it = std::search(input.begin(), input.end(), alias.begin(), alias.end());
+            auto it = std::search(input.begin(), input.end(), command.begin(), command.end());
             if (it != input.end() && std::all_of(input.begin(), it, isWhitespaceASCII))
             {
-                it += alias.size();
-                if (it == input.end() || isWhitespaceASCII(*it))
+                it += command.size();
+                if (it == input.end() || isWhitespaceASCII(*it) || *it == ';')
                 {
-                    String new_input = command;
-                    // append the rest of input to the command
+                    const std::string_view argument(it, input.end());
+
+                    String new_input{!query_for_table.empty() && isTableNameArgument(argument) ? query_for_table : query};
+                    // append the rest of input to the query
                     // for parameters support, e.g. \c db_name -> USE db_name
-                    new_input.append(it, input.end());
+                    new_input.append(argument);
                     input = std::move(new_input);
                     break;
                 }
@@ -5804,7 +5852,7 @@ void ClientBase::runInteractive()
             if (connection_needs_resynchronization)
                 resynchronizeConnectionAfterError();
             connection_needs_resynchronization = true;
-            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), error_stream);
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), client_context->getSettingsRef(), error_stream);
             if (suggest->lastExchangeEndedInSync())
                 connection_needs_resynchronization = false;
         }

@@ -14,6 +14,7 @@ import glob
 # Not requests, to avoid requiring extra dependency.
 import http.client
 import io
+import ipaddress
 import itertools
 import json
 import math
@@ -46,7 +47,7 @@ from errno import EPERM, ESRCH
 from pathlib import Path
 from ssl import SSLEOFError
 from subprocess import PIPE, Popen
-from time import sleep, time
+from time import monotonic, sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 try:
@@ -219,6 +220,9 @@ CGROUP_VERSION = detect_cgroup_version()
 
 BASH = "/bin/bash"
 
+# Appended to output rescued from a timed-out command: the dump is incomplete.
+TRUNCATED_ON_TIMEOUT_MARKER = "[output truncated: command timed out]"
+
 def shell_get_output(
     cmd: str, timeout: Optional[float] = None, keep_output_on_error: bool = False
 ) -> str:
@@ -247,6 +251,19 @@ def shell_get_output(
             return (e.output or "").strip()
         print(
             f"Error running command {cmd!r}: {e}\n{trim_for_log(e.output)}",
+            file=sys.stderr,
+        )
+        return ""
+    except subprocess.TimeoutExpired as e:
+        # A separate branch because TimeoutExpired is not a CalledProcessError
+        # subclass, and its output is bytes even under text=True.
+        output = e.output or b""
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", errors="replace")
+        if keep_output_on_error and output.strip():
+            return f"{output.strip()}\n{TRUNCATED_ON_TIMEOUT_MARKER}"
+        print(
+            f"Error running command {cmd!r}: {e}\n{trim_for_log(output)}",
             file=sys.stderr,
         )
         return ""
@@ -286,6 +303,13 @@ class SharedEngineReplacer:
     )
 
     OLD_SYNTAX_OR_ARGUMENTS_RE = r"Tree\(.*[0-9]+.*\)"
+
+    # `default_table_engine` names an engine family in a setting value rather than in an `ENGINE =`
+    # clause, so the mapping above never sees it. Tables generated from the setting (such as the inner
+    # tables of a `TimeSeries` table) need it rewritten too, or they stay replicated.
+    DEFAULT_TABLE_ENGINE_RE = (
+        r"(default_table_engine\s*=\s*'?)Replicated([a-zA-Z]*MergeTree'?)"
+    )
 
     CLUSTER_KEYWORDS = [
         "test_shard_localhost",
@@ -448,6 +472,9 @@ class SharedEngineReplacer:
             return modified_statement
         return line
 
+    def _replace_default_table_engine(self, line):
+        return re.sub(self.DEFAULT_TABLE_ENGINE_RE, r"\1Shared\2", line)
+
     def _replace_database_engines(self, line):
         pattern = r"(CREATE DATABASE\s+(?:IF NOT EXISTS\s+)?(?:`[^`]*`|\S+))(\s*ENGINE\s*=\s*(Shared|Replicated|Atomic|Ordinary|Memory)(\(.*\))?)"
         if re.search(pattern, line, flags=re.IGNORECASE):
@@ -528,6 +555,8 @@ class SharedEngineReplacer:
                         ):
                             line = line.replace(engine_from, engine_to)
                             break
+
+                    line = self._replace_default_table_engine(line)
 
                 if args.shared_catalog_stress:
                     line = self._replace_data_engines(line)
@@ -1067,12 +1096,17 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
+# Per-PID lldb budget: the release value is also the fallback for a caller that
+# cannot tell which flavor the server is.
+LLDB_TIMEOUT = 30
+LLDB_SLOW_BUILD_TIMEOUT = 120
+
+
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
-def get_stacktraces_from_lldb(pid):
-    # 30s ceiling: `thread backtrace all` should finish in seconds even on a
-    # debug build with many threads; anything beyond that means lldb itself
-    # is wedged (e.g. signal-handler deadlock on the inferior). Killing lldb
-    # leaves the server process untouched.
+def get_stacktraces_from_lldb(pid, timeout: float = LLDB_TIMEOUT):
+    # The budget bounds a wedged lldb (e.g. signal-handler deadlock on the
+    # inferior); it is not an estimate of the work, which scales with the
+    # binary's unwind/symbol cost. Killing lldb leaves the server untouched.
     # macOS restricts task_for_pid(): in --batch mode a non-root lldb cannot
     # attach to the server on a CI runner (the user is not in the _developer
     # group and there is no interactive authorization), so it exits 1. The
@@ -1087,7 +1121,7 @@ def get_stacktraces_from_lldb(pid):
     # it, instead of shell_get_output flooding stderr with nothing attached.
     return shell_get_output(
         f"{sudo}{lldb} --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
-        timeout=30,
+        timeout=timeout,
         keep_output_on_error=True,
     )
 
@@ -1259,6 +1293,37 @@ def is_asan_build(args):
     return out.strip() not in ("", "0")
 
 
+def is_slow_build_binary(args) -> bool:
+    """Debug/sanitizer/coverage flavor read from the binary, not the server.
+
+    Mirrors the flag set `collect_build_flags` derives, so the answer matches
+    what `args.build_flags` would have said had the server come up. An
+    unreadable or unparseable result is reported as not-slow, keeping the
+    tighter of the two budgets.
+    """
+    binary = getattr(args, "binary", "clickhouse")
+    local = find_clickhouse_command(binary, "local")
+    # Name the same four sanitizers `collect_build_flags` maps, not every
+    # `-fsanitize=`: a CFI build carries `-fsanitize=cfi-vcall` on top of
+    # RelWithDebInfo, and the collected-flags path calls that a release build.
+    sanitizers = " OR ".join(
+        f"position('sanitize={san}' IN value)"
+        for san in ("thread", "address", "undefined", "memory")
+    )
+    out = shell_get_output(
+        f"{local} --query \""
+        "SELECT countIf(name = 'BUILD_TYPE' AND position('Debug' IN value)) "
+        "+ countIf(name = 'WITH_COVERAGE' AND value IN ('ON', '1')) "
+        f"+ countIf(name = 'CXX_FLAGS' AND ({sanitizers})) "
+        'FROM system.build_options"',
+        timeout=60,
+    )
+    try:
+        return int(out.strip()) > 0
+    except ValueError:
+        return False
+
+
 # Full server stacktraces are written here — one file per collector, not per
 # test: print_*_stacktraces also run from the end-of-run hung check, where no
 # single test owns the dump. The CI job runs clickhouse-test from its output
@@ -1278,15 +1343,49 @@ def _append_stacktrace_log(filename: str, block: str) -> None:
         print(f"Could not write {filename}: {e}", file=sys.stderr)
 
 
-def print_c_stacktraces(args) -> None:
+def lldb_timeout_for_build(args) -> float:
+    """Per-PID lldb budget for this server's build flavor.
+
+    Debug, sanitizer and coverage builds are far more expensive to unwind and
+    symbolize, the same reason `MergeTreeSettingsRandomizer.get_random_settings`
+    raises its granularity bounds on a `slow_build`.
+
+    Must read `args.build_flags`, not the module-level RELEASE_NON_SANITIZED /
+    SANITIZED globals, which a spawned worker re-imports at their defaults while
+    `args` is transferred intact.  When the flags were never collected (server
+    never started), read the flavor from the binary via `clickhouse local`, the
+    same server-independent route `is_asan_build` takes; the release budget is
+    only the last resort, when even that read fails.
+    """
+    build_flags = getattr(args, "build_flags", None)
+    if build_flags is None:
+        return LLDB_SLOW_BUILD_TIMEOUT if is_slow_build_binary(args) else LLDB_TIMEOUT
+    slow_build = (
+        any(flag in build_flags for flag in BuildFlags.SANITIZERS)
+        or BuildFlags.DEBUG in build_flags
+        or BuildFlags.WITH_COVERAGE in build_flags
+    )
+    return LLDB_SLOW_BUILD_TIMEOUT if slow_build else LLDB_TIMEOUT
+
+
+def print_c_stacktraces(
+    args,
+    per_pid_timeout: Optional[float] = None,
+    total_timeout: float = LLDB_SLOW_BUILD_TIMEOUT,
+) -> None:
     """C++-side backtraces via lldb.  Works whenever the server process
     exists and is debuggable, independent of whether SQL is reachable.
 
     Every call site is one of two situations: we're aborting the whole
     run (SERVER_DIED, liveness check, hung-check, check_server_started)
-    or terminating the one wedged test (timeout_handler).  lldb's "thread
-    backtrace all" pause is on the order of seconds - acceptable in both
-    cases against the diagnostic value.
+    or terminating the one wedged test (timeout_handler).
+
+    `per_pid_timeout` None means derive it from the build flavor, which on a
+    server that never started costs a `clickhouse local` read of the binary.
+    `total_timeout` bounds the whole pid loop, which can span up to 20
+    processes; it is an independent limit, not a multiple of the per-PID one.
+    A caller inside a fired one-shot `signal.alarm` must pass both, because
+    that alarm cannot bound work running in its own handler.
 
     Skipped under ASan, where attaching a debugger disables
     LeakSanitizer detections.
@@ -1319,15 +1418,34 @@ def print_c_stacktraces(args) -> None:
         )
         return
 
-    for pid in all_pids:
+    # Costs a `clickhouse local` read of the binary when the flags are missing,
+    # and neither return above consumes it.
+    if per_pid_timeout is None:
+        per_pid_timeout = lldb_timeout_for_build(args)
+
+    deadline = monotonic() + total_timeout
+    for index, pid in enumerate(all_pids):
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            # Name the skipped pids: silence here reads as "nothing to dump".
+            print(
+                f"Ran out of the {total_timeout:.0f}s lldb budget: "
+                f"skipping {len(all_pids) - index} of {len(all_pids)} processes "
+                f"({', '.join(str(p) for p in all_pids[index:])})."
+            )
+            break
         label = "main server" if pid == server_pid else "replica"
         print(f"\nCollecting C stacktraces from {label} process {pid} with lldb:")
-        bt = get_stacktraces_from_lldb(pid)
+        bt = get_stacktraces_from_lldb(pid, timeout=min(per_pid_timeout, remaining))
         if bt and len(bt) >= 1000:
+            truncated = TRUNCATED_ON_TIMEOUT_MARKER in bt
             block = f"=== PID {pid} ({label}) ===\n{bt}"
             _append_stacktrace_log(C_STACKTRACES_LOG, block)
             print(trim_for_log(block, 100))
-            print(f"(full lldb backtrace saved to {C_STACKTRACES_LOG})")
+            print(
+                f"({'partial' if truncated else 'full'} lldb backtrace saved to "
+                f"{C_STACKTRACES_LOG})"
+            )
         else:
             print(f"Got suspiciously small stacktraces from {pid}: {bt}")
 
@@ -3458,7 +3576,9 @@ class TestCase:
                         or "Attempt to read after eof" in stderr
                     )
                     and "Received exception from server" not in stderr
-                    and not check_server_liveness(self.args)
+                    # Only a server that is really gone stops the whole run: a
+                    # stalled but live server keeps the plain exit-code failure.
+                    and probed_server_is_gone(self.args)
                 ):
                     reason = FailureReason.LIVENESS_CHECK_FAILED
 
@@ -3932,7 +4052,10 @@ class TestCase:
                 except Exception:
                     # If health-check failed, double-check server liveness. A single
                     # check may fail because of memory exhaustion, for example.
-                    if not check_server_liveness(self.args):
+                    # A server that is unresponsive but still holds its
+                    # listening socket is stalled, not dead - do not stop the
+                    # run for it; the parent hung check owns that verdict.
+                    if probed_server_is_gone(self.args):
                         return TestResult(
                             self.name,
                             TestStatus.FAIL,
@@ -4075,7 +4198,7 @@ class TestCase:
             exc_description = self.add_info_about_settings(
                 self.get_description_from_exception_info(sys.exc_info())
             )
-            if not check_server_liveness(self.args):
+            if probed_server_is_gone(self.args):
                 return TestResult(
                     self.name,
                     TestStatus.FAIL,
@@ -4083,7 +4206,8 @@ class TestCase:
                     total_time,
                     exc_description,
                 )
-            # Server is alive — this was a transient network error.
+            # Server is alive (answering, or silent but still holding its
+            # listening socket) - this was a transient network error or a stall.
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
@@ -4119,13 +4243,16 @@ class TestCase:
         try:
             self._cleanup_database(args, timeout)
         except (ConnectionError, http.client.ImproperConnectionState) as e:
-            # Cleanup is best-effort only when the server is actually dead.
+            # Cleanup is best-effort only when the server is actually dead -
+            # positively so: with the hung check's grace a stalled server can
+            # recover and the run continues, and a database left behind by a
+            # DROP that only timed out would then leak into later tests.
             # If the server is still alive, this was a real cleanup failure
             # (leftover state, unfinished DROP) and must propagate so the
             # outer handler in run() classifies it as CONNECTION_ERROR — a
             # silent swallow would let a test stay OK while leaving its
             # database behind, hiding the bug.
-            if check_server_liveness(args):
+            if not probed_server_is_gone(args):
                 raise
             # Server died between the test finishing and cleanup running.
             # The test's database is moot; the hung-check or the next test
@@ -4939,7 +5066,12 @@ def run_tests_array(
                         # stay around either way and can be captured at
                         # end-of-run.
                         print_sql_stacktraces(args)
-                        print_c_stacktraces(args)
+                        # Explicit budget: this runs from the fired one-shot
+                        # alarm, which cannot bound its own handler, and
+                        # stop_tests() below still needs the outer timeout.
+                        print_c_stacktraces(
+                            args, per_pid_timeout=LLDB_TIMEOUT, total_timeout=60
+                        )
                         stop_tests()
                     raise TimeoutError("Test execution timed out")
 
@@ -5003,8 +5135,8 @@ def run_tests_array(
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
-                    # Claim before collecting: the sweep below blocks up to 30s per
-                    # server process, and a cause claimed after it loses to any
+                    # Claim before collecting: the sweep below can block for the
+                    # whole lldb budget, and a cause claimed after it loses to any
                     # cause claimed during it.
                     try_claim_stop_cause(stop_exit_code, STOP_TESTING_EXIT_CODE)
                     print_sql_stacktraces(args)
@@ -5113,6 +5245,371 @@ def check_server_liveness(args, max_retries=10) -> bool:
             if attempt < max_retries - 1:
                 sleep(min(2**attempt, 10))
     return False
+
+
+# `/proc/net/tcp` state column for TCP_LISTEN, from `include/net/tcp_states.h`.
+_TCP_LISTEN_STATE = "0A"
+
+
+def _unpack_proc_net_address(hex_address: str) -> Optional[bytes]:
+    """The address of a `/proc/net/{tcp,tcp6}` row, in network byte order.
+
+    The kernel prints the address as host-endian 32-bit words, so every word is
+    byte-swapped on a little-endian machine: 8 hex characters for IPv4, four
+    such words for IPv6.
+    """
+    try:
+        raw = bytes.fromhex(hex_address)
+    except ValueError:
+        return None
+    if len(raw) not in (4, 16):
+        return None
+    if sys.byteorder == "little":
+        raw = b"".join(raw[i : i + 4][::-1] for i in range(0, len(raw), 4))
+    return raw
+
+
+def _normalized_address(packed: bytes) -> bytes:
+    """An IPv4-mapped IPv6 address as its plain IPv4 form, everything else as is."""
+    if len(packed) == 16 and packed[:12] == b"\x00" * 10 + b"\xff\xff":
+        return packed[12:]
+    return packed
+
+
+def _listener_serves_probe(listening: bytes, probed: Set[bytes]) -> bool:
+    """Does a socket listening on `listening` answer a probe to `probed`?
+
+    A wildcard listener (`0.0.0.0` or `::`) answers on every local address, so
+    it always does; otherwise the addresses must be the same one.
+    """
+    if not any(listening):
+        return True
+    return _normalized_address(listening) in {_normalized_address(a) for a in probed}
+
+
+def _resolve_addresses(host: str) -> Set[bytes]:
+    """The addresses `host` resolves to, packed, or an empty set when it does not."""
+    try:
+        infos = socket.getaddrinfo(host.strip("[]"), None, type=socket.SOCK_STREAM)
+    except (socket.gaierror, UnicodeError):
+        return set()
+    packed = set()
+    for family, _, _, _, sockaddr in infos:
+        if family in (socket.AF_INET, socket.AF_INET6):
+            packed.add(socket.inet_pton(family, sockaddr[0].split("%")[0]))
+    return packed
+
+
+def _listening_socket_inodes(port: int, addresses: Set[bytes]) -> Optional[Set[str]]:
+    """Inodes of the sockets listening on `port` for one of `addresses`.
+
+    Filtering by address as well as by port is what keeps the identity tied to
+    the endpoint the liveness probe talks to: another process bound to the same
+    port on a different local address (`127.0.0.2` next to `127.0.0.1`) is a
+    different server, and must neither buy a grace for the probed one nor keep
+    its identity alive across a swap.
+
+    `None` when the tables cannot be read at all (no `/proc`, i.e. not Linux) -
+    that is "cannot tell", not "nothing is listening".
+    """
+    inodes = set()
+    read_any = False
+    for path in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            with open(path, encoding="utf-8") as f:
+                lines = f.read().splitlines()[1:]
+        except OSError:
+            continue
+        read_any = True
+        for line in lines:
+            fields = line.split()
+            # local_address, st, ..., inode
+            if len(fields) < 10 or fields[3] != _TCP_LISTEN_STATE:
+                continue
+            local_address, _, local_port = fields[1].rpartition(":")
+            try:
+                if int(local_port, 16) != port:
+                    continue
+            except ValueError:
+                continue
+            listening = _unpack_proc_net_address(local_address)
+            if listening is None or not _listener_serves_probe(listening, addresses):
+                continue
+            inodes.add(fields[9])
+    return inodes if read_any else None
+
+
+def _pid_owning_sockets(inodes: Set[str]) -> Optional[int]:
+    """The process holding one of `inodes`, or None when it cannot be resolved.
+
+    Diagnostics only: the socket table already proves the owner is alive, and
+    `/proc/<pid>/fd` is only readable for our own processes, so a server
+    running as another user resolves to None without changing any verdict.
+    """
+    targets = {f"socket:[{inode}]" for inode in inodes}
+    try:
+        pids = [int(entry) for entry in os.listdir("/proc") if entry.isdigit()]
+    except OSError:
+        return None
+    for pid in pids:
+        try:
+            for fd in os.listdir(f"/proc/{pid}/fd"):
+                try:
+                    if os.readlink(f"/proc/{pid}/fd/{fd}") in targets:
+                        return pid
+                except OSError:
+                    continue
+        except OSError:
+            continue
+    return None
+
+
+def _probed_local_addresses(args) -> Optional[Set[bytes]]:
+    """The addresses on this host that the liveness probe talks to.
+
+    `None` when the probe does not talk to this host at all - either the name
+    does not resolve, or it resolves to an address that is neither a loopback
+    address nor one of this host's own.  Resolving instead of matching literal
+    spellings is what makes local aliases (`127.0.0.2`, an entry in
+    `/etc/hosts`, the machine's own name) read as local, rather than falling
+    through to "cannot tell" and losing the grace.
+    """
+    host = getattr(args, "tcp_host", None) or "localhost"
+    addresses = _resolve_addresses(host)
+    if not addresses:
+        return None
+    own = _resolve_addresses(socket.gethostname()) | _resolve_addresses(
+        socket.getfqdn()
+    )
+    for packed in addresses:
+        address = ipaddress.ip_address(packed)
+        if address.is_loopback or address.is_unspecified or packed in own:
+            continue
+        return None
+    return addresses
+
+
+def probed_server_process(
+    args,
+) -> Tuple[Optional[bool], Optional[int], Optional[Set[str]]]:
+    """Is the server the liveness probe talks to still running?
+
+    Returns `(alive, pid, inodes)`, where `alive` is True when a process on
+    this host still holds the listening socket for the probed address and
+    port, False when nothing listens there any more, and None when it cannot
+    be told (a server on another host, or no `/proc`).  `pid` is best-effort
+    and only used in messages.  `inodes` is the set of listening-socket inodes
+    behind `alive` - the identity of the listener, which is what tells the
+    original server apart from a replacement that re-bound the same port.
+
+    The socket, not `pgrep`: `get_all_server_pids` sees every
+    `clickhouse-server` of this user, and the multi-replica functional harness
+    keeps extra replicas on other ports (`18123` / `28123`), so it would call a
+    dead main server "alive" for as long as any replica survives.  A listening
+    socket is owned by exactly one process and the kernel drops it when that
+    process dies, while a process merely parked - the stall this whole class
+    exists for - keeps it.
+
+    The address is part of the identity, not only the port: a listener bound to
+    a different local address on the same port is a different server, and would
+    otherwise be able to buy the grace for a probed endpoint that is already
+    dead.
+    """
+    addresses = _probed_local_addresses(args)
+    if addresses is None:
+        return None, None, None
+    inodes = _listening_socket_inodes(args.http_port, addresses)
+    if inodes is None:
+        return None, None, None
+    if not inodes:
+        return False, None, None
+    return True, _pid_owning_sockets(inodes), inodes
+
+
+def probed_server_is_gone(args, max_retries=10) -> bool:
+    """Did the liveness probe fail *and* is the server it talks to really gone?
+
+    The same live-vs-gone split `HungCheckMonitor` makes in the parent loop, for
+    the worker side.  A failed probe alone only says the server is not
+    answering, and a sanitizer build can stop the world for minutes and then
+    carry on; turning every failed probe into a global abort would keep killing
+    such runs at the old `~165 s` latency no matter what the parent monitor
+    decides.  Without positive evidence of a live listener (no `/proc`, a
+    server on another host) the answer is "gone", as in the parent monitor.
+    """
+    if check_server_liveness(args, max_retries=max_retries):
+        return False
+    alive, _, _ = probed_server_process(args)
+    return alive is not True
+
+
+class HungCheckMonitor:
+    """Decides when a server that stopped answering means the run must be aborted.
+
+    A failed liveness probe says the server is not answering.  It does not say
+    the server is gone.  A sanitizer build can stop making progress
+    process-wide for minutes - every thread parked at once, no CPU burnt, no
+    log line, other processes on the box unaffected - and then carry on.
+    `check_server_liveness` gives up after at most ~165 s, so such a stall was
+    reported as "Server died" for a server that answered again a minute later
+    and then shut down cleanly, throwing away an otherwise green run.
+
+    So the verdict is split by the evidence that is actually available:
+
+      * the server process is gone: abort on the first failed probe, at the
+        same latency as before;
+      * the process is still there: keep probing, and only call it a hang once
+        the server has stayed silent for `GRACE_WITH_LIVE_PROCESS`.
+
+    "Still there" is decided by the listening socket on the probed port, not by
+    `pgrep`: the process behind that socket is exactly the one the probe talks
+    to, so a surviving replica on another port cannot buy a grace for a dead
+    main server (see `probed_server_process`).  Not being able to tell (no
+    `/proc`, or a server on another host) reads as gone - without positive
+    evidence of a live server we keep the previous behaviour instead of sitting
+    out the grace.
+
+    "Still there" also means the *same* server: the grace is pinned to the
+    socket inodes it was granted for.  A watchdog can replace a dead server
+    with a fresh process on the same port mid-grace; "someone listens on the
+    port" would keep reading alive across that swap and a probe answered by
+    the replacement would silently resume the run on a server that lost all
+    its state.  When the original listener's sockets are gone the original
+    server is gone, and the run aborts - whether or not the port is held again.
+
+    The pin must predate the failed probe: that probe spends its whole retry
+    budget (~165 s) before the port is inspected, so a swap inside that window
+    would otherwise be pinned as if it were the server the tests were talking
+    to.  Hence the listener identity is also tracked while the server answers,
+    and the grace is only ever granted to the listener that was answering.
+    """
+
+    # Long enough to cover the multi-minute whole-process stalls observed on
+    # sanitizer builds, short enough to stay well inside a job's own budget.
+    # A server that really is deadlocked is still reported, just later.
+    GRACE_WITH_LIVE_PROCESS = 600.0
+    # How often to probe, in any state.  Inside the grace the re-probe is a
+    # single attempt, so without a gate a server refusing connections instantly
+    # would be probed at the caller loop's own 10 Hz; while the server answers
+    # every probe also reads the listener identity from /proc/net, whose tables
+    # grow with every connection the tests open.  The gate adds at most one
+    # interval to noticing a stall - noise next to the failing probe's own
+    # ~165 s retry budget.
+    RETRY_INTERVAL = 10.0
+
+    def __init__(self, args):
+        self.args = args
+        # Start of the current silent stretch; None while the server answers.
+        self.unresponsive_since = None
+        self.last_probe_at = 0.0
+        # Socket inodes of the listener the current grace was granted for;
+        # None while the server answers.
+        self.grace_holder_inodes = None
+        # Socket inodes of the listener seen while the probe was answering -
+        # the only server a grace may be granted to; None when it cannot be
+        # told.  Read together with every answered probe: an identity promoted
+        # on a schedule of its own can lag behind the listener that actually
+        # answered, and a restart answering inside that lag would then read as
+        # an unseen swap on the next failed probe.
+        self.answering_holder_inodes = None
+
+    @staticmethod
+    def _listener_changed(
+        granted: Optional[Set[str]], current: Optional[Set[str]]
+    ) -> bool:
+        """True when the probed port is now held by sockets disjoint from the
+        ones it was held by before: the original server is gone and something
+        else (e.g. a watchdog restart) took the port.  Unknown on either side
+        is not evidence of a swap."""
+        return granted is not None and current is not None and not (current & granted)
+
+    def _grace_holder_replaced(self, inodes: Optional[Set[str]]) -> bool:
+        return self._listener_changed(self.grace_holder_inodes, inodes)
+
+    def is_hung(self) -> bool:
+        """Probe the server once; True when the silence should abort the run.
+
+        Safe to call from a tight loop: the probes are interval-gated in every
+        state, so the caller's own cadence buys neither extra queries nor extra
+        /proc/net reads.
+        """
+        now = time()
+        if now - self.last_probe_at < self.RETRY_INTERVAL:
+            return False
+        self.last_probe_at = now
+
+        # The first probe of a silent stretch keeps the full retry budget, so a
+        # server that is gone is reported as fast as before.  After that the
+        # budget has already been spent proving the server unresponsive, and
+        # repeating it would block the caller for minutes per iteration.
+        if check_server_liveness(
+            self.args, max_retries=1 if self.unresponsive_since else 10
+        ):
+            if self.unresponsive_since is not None:
+                # The answer must come from the server the grace was granted
+                # for, not from a replacement that re-bound the port while the
+                # original was silent - resuming on a fresh server would hide
+                # both its death and everything the restart lost.
+                _, _, inodes = probed_server_process(self.args)
+                if self._grace_holder_replaced(inodes):
+                    print(
+                        "Server answered the liveness check, but the listening "
+                        f"socket on port {self.args.http_port} changed hands "
+                        "during the silence - the original server is gone and "
+                        "was replaced; reporting it dead."
+                    )
+                    return True
+                print(
+                    "Server answered the liveness check again after "
+                    f"{time() - self.unresponsive_since:.0f}s - it was stalled, "
+                    "not dead; continuing the run."
+                )
+                self.unresponsive_since = None
+                self.grace_holder_inodes = None
+                self.answering_holder_inodes = inodes
+            else:
+                # Captured with the answer it belongs to, so the identity can
+                # never be stale relative to the last answered probe: whoever
+                # answered is whoever may later be granted a grace.
+                _, _, self.answering_holder_inodes = probed_server_process(self.args)
+            return False
+
+        if self.unresponsive_since is None:
+            # Anchor on the start of the probe, not its end: the probe itself
+            # spends most of the window the server was already silent for.
+            self.unresponsive_since = now
+        unresponsive_for = time() - self.unresponsive_since
+
+        alive, server_pid, inodes = probed_server_process(self.args)
+        if not alive or self._grace_holder_replaced(inodes):
+            return True
+        if self.grace_holder_inodes is None:
+            # First failed probe of this silent stretch.  The probe itself
+            # spends its whole retry budget before this point, so the port may
+            # already have changed hands: a still-silent replacement that
+            # re-bound it inside that window must not inherit the grace - the
+            # server that was answering is gone.
+            if self._listener_changed(self.answering_holder_inodes, inodes):
+                print(
+                    "Server did not answer the liveness check, and the "
+                    f"listening socket on port {self.args.http_port} changed "
+                    "hands since it last answered - the server the tests were "
+                    "talking to is gone and was replaced; reporting it dead."
+                )
+                return True
+            # Pin the grace to the listener it is being granted for.
+            self.grace_holder_inodes = inodes
+        if unresponsive_for >= self.GRACE_WITH_LIVE_PROCESS:
+            return True
+        where = f"process {server_pid}" if server_pid is not None else "its process"
+        print(
+            "Server did not answer the liveness check, but the listening socket "
+            f"on port {self.args.http_port} is still held, so {where} is still "
+            f"alive ({unresponsive_for:.0f}s so far) - waiting up to "
+            f"{self.GRACE_WITH_LIVE_PROCESS:.0f}s for it to recover before "
+            "declaring a hang."
+        )
+        return False
 
 
 def _read_process_rss(pid: Optional[int]) -> Optional[int]:
@@ -5525,6 +6022,8 @@ def do_run_tests(
         MEMORY_PRESSURE_THRESHOLD = 0.8
         last_memory_check = time()
 
+        hung_check_monitor = HungCheckMonitor(args)
+
         while processes:
             sleep(0.1)
             sys.stdout.flush()
@@ -5579,10 +6078,10 @@ def do_run_tests(
             # and stop all processes in this case. The probe takes 65-165 s to
             # conclude, so it is not started once a stop is already pending.
             if args.hung_check and not stop_testing.is_set():
-                if not check_server_liveness(args):
+                if hung_check_monitor.is_hung():
                     print("Hung check failed: server liveness check failed")
-                    # Claim before collecting: the sweep below can block ~30s per
-                    # server process.
+                    # Claim before collecting: the sweep below can block for the
+                    # whole lldb budget.
                     try_claim_stop_cause(stop_exit_code, HUNG_CHECK_EXIT_CODE)
                     print_sql_stacktraces(args)
                     print_c_stacktraces(args)
@@ -6133,7 +6632,10 @@ ORDER BY (test_name, callee_offset)
         if selftest_rows == 0:
             raise Exception(
                 "Coverage self-test FAILED: coverage_log has 0 rows for _selftest — "
-                "coverage mapping is not working (binary built without WITH_COVERAGE_DEPTH?)"
+                "read the coverageDiag tuples printed above: zero name_refs means the "
+                "static counters were not updated (LLVM_PROFILE_FILE with %c relocates "
+                "counter updates out of that section); non-zero name_refs with zero "
+                "non_empty_file_regions means no coverage region resolved them"
             )
         print(f"Coverage self-test: coverage_log rows for _selftest = {selftest_rows} (OK)")
         # Validate that the coverage mapping parser produced no bogus line numbers.

@@ -26,6 +26,16 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 自适应聚合器冻结线程本地哈希表时的键数量 (参见 `enable_adaptive_aggregator`) 。较小的值可使冻结后的表保持在缓存中，较大的值则可让其吸收更多高频键。值为 0 时，表会在首次有机会时冻结，这会使该算法的行为类似于分片聚合器 (`enable_sharding_aggregator`) ：每个键都根据其哈希进行路由，并由单个所有者聚合；区别仅在于，聚合会延后到合并阶段，而不是在扫描期间在线程之间交换。
 
+<div id="adaptive_aggregator_freeze_threshold_bytes">
+  ## adaptive_aggregator_freeze_threshold_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4194304" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "新增设置：以字节数限制自适应聚合器冻结本地表；该限制与键数量阈值中先达到者生效；0 将禁用字节限制。"}]}]} />
+
+自适应聚合器冻结线程本地哈希表时对应的内存大小 (请参阅 `enable_adaptive_aggregator`) 。此设置与 `adaptive_aggregator_freeze_threshold` 中任一阈值先达到时，表即会被冻结。该大小指本地表自身已分配的字节数 (包括其哈希表缓冲区和 Arena) ，在块之间进行检查。当键或聚合状态较宽时，字节限制尤为重要：仅使用键数量阈值会使这类表增长到超出 CPU 缓存容量。使用默认值时，键和状态宽度常规的表仍会按键数量冻结。0 将禁用字节限制，因此仅由键数量阈值决定。
+
 <div id="add_http_cors_header">
   ## add_http_cors_header
 </div>
@@ -525,6 +535,20 @@ Cloud 默认值：`0`。
 
 带有 `json = 1` 或 `distributed = 1` 的 `EXPLAIN PLAN` 无论此设置如何，都会保留 legacy (26.7 之前) 的默认值，除非显式设置了 `actions`、`compact` 或 `pretty`。pretty 输出无法表示 JSON 结果或按分片划分的分布式查询计划，因此这些模式只有以 legacy 形式呈现时才能正确显示。
 
+<div id="explain_syntax_single_record">
+  ## explain_syntax_single_record
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "从 26.8 版本开始，`EXPLAIN SYNTAX` 会将格式化后的查询作为单条记录（包含嵌入的换行符）返回，而非每行一条记录。将此设置为 `false` 可恢复 26.8 之前每行一条记录的输出。"}]}]} />
+
+将 `EXPLAIN SYNTAX` 的输出作为单条记录 (包含嵌入的换行符) 返回，而非每行一条记录，从而使结果成为单个可恢复的行 (例如，`SELECT count() FROM (EXPLAIN SYNTAX ...)` 返回 `1`) 。
+
+在 `EXPLAIN SYNTAX` 语句中显式指定 `single_record` 选项 (例如，`EXPLAIN SYNTAX single_record = 0 SELECT ...`) 将始终覆盖此设置。
+
+将此设置为 `false` 可恢复 26.8 之前每行一条记录的输出；或者将 `compatibility` 设置为任何早于 `26.8` 的版本。
+
 <div id="extract_key_value_pairs_max_pairs_per_row">
   ## extract_key_value_pairs_max_pairs_per_row
 </div>
@@ -568,7 +592,7 @@ ClickHouse 会从该表的过时副本中选择最合适的一个。
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "hive"},{"label": "未提供 `partition_strategy` 时，将类文件表引擎（S3、AzureBlobStorage 等）的默认分区策略从 `wildcard` 改为 `hive`。"}]}]} />
 
-类文件表引擎的默认分区策略。仅当路径不包含 `{_partition_id}` 占位符时适用：此类路径仅兼容 `wildcard` 策略，因此始终采用 `wildcard`。
+类文件表引擎的默认分区策略。仅适用于路径中不含 glob 或 `{_partition_id}` 占位符的 `CREATE` 查询。包含 `{_partition_id}` 的路径始终使用 `wildcard`。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。如果此设置为 `wildcard`，但路径中没有 `{_partition_id}`，则不使用分区策略；无法将此选择持久化到引擎参数中的表引擎 (例如 `HDFS`) 将拒绝此类 `CREATE`。
 
 <div id="filesystem_prefetches_limit">
   ## filesystem_prefetches_limit
@@ -1486,6 +1510,21 @@ FORMAT Null;
 6666 rows in set. ...
 ```
 
+<div id="resumable_backup_from_snapshot">
+  ## resumable_backup_from_snapshot
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "用于启用可恢复 `BACKUP FROM SNAPSHOT` 的新 Experimental 设置。"}]}]} />
+
+启用可恢复的 `BACKUP FROM SNAPSHOT`：失败后可重新执行，而无需重新复制已完成批次中的
+条目。仅适用于 ClickHouse Cloud 中目录形式的
+`S3` 和 `AzureBlobStorage` 目标端。在不支持 `BACKUP FROM SNAPSHOT` 的 ClickHouse 开源构建中启用此设置，
+会使 `BACKUP` 因 `WRONG_BACKUP_SETTINGS` 而失败。
+
 <div id="rows_before_aggregation">
   ## rows_before_aggregation
 </div>
@@ -1495,6 +1534,24 @@ FORMAT Null;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "提供 rows_before_aggregation 统计信息的精确值，表示聚合前读取的行数"}]}]} />
 
 启用后，ClickHouse 将提供 rows&#95;before&#95;aggregation 统计信息的精确值，表示聚合前读取的行
+
+<div id="run_query_in_background">
+  ## run_query_in_background
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，用于在后台运行查询，使其脱离提交该查询的连接，并丢弃结果。"}]}]} />
+
+启用后，服务器会在后台调度查询，立即返回一个空的成功结果，并继续运行查询直至完成，不受连接状态影响。
+
+后台查询不会在服务器重启后保留。关闭服务器时，它遵循与前台查询相同的服务器设置：`shutdown_wait_unfinished_queries` 决定取消查询还是等待其完成 (无论哪种情况，队列中的条目都会被丢弃，且不会写入 `system.query_log`) ，`shutdown_wait_unfinished` 则限制服务器的最长等待时间。
+
+可通过其 `query_id` 跟踪查询：运行期间可在 `system.processes` 中查看；查询完成且查询日志条目已刷新后，可在 `system.query_log` 中查看。
+
+适用于通过原生 TCP 和 HTTP 协议接收的查询。通过 HTTP 时，将该设置作为 URL 参数传递。无法通过 `SET` 更改；可按查询启用，或在用户或 profile 级别启用。
+
+主要用例是长时间运行的 `INSERT ... SELECT`，以确保客户端连接断开时查询不会丢失。
 
 <div id="secondary_indices_enable_bulk_filtering">
   ## secondary_indices_enable_bulk_filtering
@@ -1746,6 +1803,16 @@ TCPHandler 收到查询后休眠的时长
 * `0` - 剩余字符串不会包含在结果数组的最后一个元素中。
 * `1` - 剩余字符串会包含在结果数组的最后一个元素中。这是 Spark 的 [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) 函数和 Python 的 [`string.split()`](https://docs.python.org/3/library/stdtypes.html#str.split) 方法的行为。
 
+<div id="statistics_max_set_size_for_exact_selectivity_estimation">
+  ## statistics_max_set_size_for_exact_selectivity_estimation
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "10000"},{"label": "新增设置，用于限制估算大型集合 `IN` 选择性时的成本：超过此限制后，估算器会使用集合大小及其边界范围，而非精确范围。在 26.8 之前，估算没有上限，因此先前的值为 0（无限制）；与早期版本兼容时，`compatibility` 会恢复任意大小集合的精确范围。"}]}]} />
+
+`IN` 运算符右侧集合的最大大小。对于不超过该大小的集合，选择性估算器会推导出该集合覆盖的精确范围。推导这些范围需要为每个元素分配一个 `Field`、进行一次排序，并对每个元素执行一次统计信息探测；对于大型集合，这些操作会成为查询计划的主要开销。超过此限制后，估算器会改为根据集合大小及其边界范围推导选择性，只需对集合进行一次线性遍历，无需排序或逐元素执行统计信息探测。零表示无限制。
+
 <div id="stop_refreshable_materialized_views_on_startup">
   ## stop_refreshable_materialized_views_on_startup
 </div>
@@ -1781,6 +1848,18 @@ TCPHandler 收到查询后休眠的时长
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 允许或禁止空 INSERT，默认启用 (空插入时会抛出错误) 。仅适用于通过 [`ClickHouse 客户端`](/zh/concepts/features/interfaces/cli) 或 [gRPC 接口](/zh/concepts/features/interfaces/grpc) 执行的 INSERT。
+
+<div id="time_series_prefer_recent_samples_table">
+  ## time_series_prefer_recent_samples_table
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置：当请求的时间范围完全落在 TimeSeries 表近期样本表的 TTL 窗口内时，从该表读取数据。"}]}]} />
+
+当请求的整个时间范围完全落在近期样本表的生存时间 (TTL) 窗口内时，从 [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 表的近期样本表而非主样本表读取数据 (请参阅 TimeSeries 表引擎的 `recent_samples_ttl_seconds` 设置) 。
 
 <div id="timeout_before_checking_execution_speed">
   ## timeout_before_checking_execution_speed

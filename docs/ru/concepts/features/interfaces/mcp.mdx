@@ -1,0 +1,49 @@
+---
+description: 'Обзор Model Context Protocol и MCP-сервера ClickHouse'
+keywords: ['ClickHouse', 'MCP', 'Model Context Protocol', 'ИИ', 'интерфейсы']
+sidebarTitle: 'Model Context Protocol (MCP)'
+slug: /interfaces/mcp
+title: 'Model Context Protocol (MCP)'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+[Model Context Protocol](https://www.anthropic.com/news/model-context-protocol) (MCP) — это открытый стандарт, позволяющий ИИ-ассистентам подключаться к внешним системам.
+Он предоставляет единый интерфейс, через который модели могут получать доступ к источникам данных, API, базам данных и инструментам без необходимости создавать отдельную интеграцию для каждой комбинации модели и сервиса.
+
+ИИ-приложению достаточно один раз реализовать MCP, чтобы подключаться к любому совместимому серверу.
+Аналогично, MCP-сервер может предоставлять свои возможности любому совместимому клиенту.
+
+<div id="architecture">
+  ## Архитектура
+</div>
+
+MCP использует клиент-серверную архитектуру:
+
+* MCP-клиенты, такие как Claude Desktop, Cursor или VS Code, устанавливают соединение с MCP-серверами.
+* MCP-серверы предоставляют инструменты и возможности через стандартизированный интерфейс.
+* ИИ-модели при необходимости используют эти инструменты для доступа к внешним данным и функциям.
+
+<Image img="/images/use-cases/AI_ML/MCP/mcp_overview.webp" alt="Клиент-серверная архитектура MCP" size="lg" />
+
+На GitHub доступны поддерживаемые сообществом подборки [MCP-клиентов](https://github.com/punkpeye/awesome-mcp-clients) и [MCP-серверов](https://github.com/punkpeye/awesome-mcp-servers).
+
+<div id="clickhouse-mcp-server">
+  ## MCP-сервер ClickHouse
+</div>
+
+[MCP-сервер ClickHouse](https://github.com/ClickHouse/mcp-clickhouse) позволяет ИИ-ассистенту обнаруживать базы данных и таблицы, просматривать схемы и выполнять SQL-запросы к кластеру ClickHouse.
+Набор инструментов, предоставляемых сервером, может различаться в зависимости от версии, поэтому названия инструментов из примеров см. в соответствующем руководстве по интеграции.
+
+По умолчанию сервер разрешает только запросы для чтения.
+Используйте отдельного пользователя ClickHouse только с теми разрешениями, которые необходимы помощнику.
+
+Чтобы подключить локальный MCP-клиент, см. [Настройка MCP-сервера ClickHouse](/ru/guides/use-cases/ai-ml/MCP/claude-desktop).
+Сведения об управляемом удалённом сервере см. в разделе [Удалённый MCP-сервер в ClickHouse Cloud](/ru/products/cloud/features/ai-ml/remote-mcp).
+
+<Tip>
+  **Навыки агента**
+
+  [Репозиторий ClickHouse Agent Skills](https://github.com/ClickHouse/agent-skills) содержит готовые инструкции, которые расширяют возможности ИИ-агентов для программирования за счёт экспертизы, специфичной для ClickHouse, включая проектирование схем, оптимизацию запросов и шаблоны ингестии данных.
+</Tip>

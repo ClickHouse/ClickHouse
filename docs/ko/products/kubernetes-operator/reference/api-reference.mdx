@@ -101,6 +101,7 @@ ClickHouseClusterSpec는 ClickHouseCluster의 원하는 상태를 정의합니�
 | `labels`                         | object (keys:string, values:string)                                                                                                 | 리소스에 추가할 레이블입니다.                                                                                                                                                                             | false    |                |
 | `annotations`                    | object (keys:string, values:string)                                                                                                 | 리소스에 추가할 어노테이션입니다.                                                                                                                                                                           | false    |                |
 | `podDisruptionBudget`            | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | PodDisruptionBudget는 각 세그먼트에 대해 생성되는 PDB를 구성합니다.<br />설정하지 않으면 연산자는 단일 레플리카<br />세그먼트에는 기본적으로 maxUnavailable=1을, 다중 레플리카 세그먼트에는 minAvailable=1을 사용합니다.                                       | false    |                |
+| `networkPolicy`                  | [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)                                                                         | NetworkPolicy는 클러스터에 대해 관리되는 NetworkPolicy를 구성합니다.                                                                                                                                           | false    |                |
 | `settings`                       | [ClickHouseSettings](#clickhousesettings)                                                                                           | ClickHouse 서버의 구성 매개변수입니다.                                                                                                                                                                   | false    | &#123;  &#125; |
 | `clusterDomain`                  | string                                                                                                                              | ClusterDomain은 DNS 해석에 사용되는 Kubernetes 클러스터 도메인 접미사입니다.                                                                                                                                      | false    | cluster.local  |
 | `upgradeChannel`                 | string                                                                                                                              | UpgradeChannel은 메이저 버전 업그레이드 확인에 사용할 릴리스 채널을 지정합니다.<br />비어 있으면 마이너 업데이트만 제안됩니다. 허용되는 값은 stable, lts 또는 특정 major.minor 버전(예: 25.8)입니다.                                                       | false    |                |
@@ -133,6 +134,25 @@ ClickHouseClusterStatus는 ClickHouseCluster의 현재 관찰된 상태를 정�
 다음 항목에 표시됩니다:
 
 * [ClickHouseCluster](#clickhousecluster)
+
+<div id="clickhousenetworkpolicyspec">
+  ## ClickHouseNetworkPolicySpec
+</div>
+
+ClickHouseNetworkPolicySpec는 ClickHouse 클러스터에 대해 관리되는 NetworkPolicy를 구성합니다.
+관리형 정책은 클러스터 내부 트래픽을 포괄합니다.
+
+* 레플리카 간 연결
+* 연산자에서 클러스터로의 액세스
+  클라이언트 연결 및 메트릭 스크래핑을 포함한 그 외 모든 인그레스에는 사용자가 정의한 NetworkPolicy가 필요합니다.
+
+| 필드       | 유형                                          | 설명                                                                                                              | 필수    | 기본값      |
+| -------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ----- | -------- |
+| `policy` | [NetworkPolicyPolicy](#networkpolicypolicy) | 이 정책은 연산자가 클러스터 파드로의 인그레스를 제한하는 NetworkPolicy를 관리할지 여부를 제어합니다.<br />설정하지 않으면 기본값은 &quot;Disabled&quot;입니다. | false | Disabled |
+
+다음에 포함됩니다.
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
 
 <div id="clickhousesettings">
   ## ClickHouseSettings
@@ -360,7 +380,8 @@ KeeperClusterSpec는 KeeperCluster의 원하는 상태를 정의합니다.
 | `labels`               | object (keys:string, values:string)                                                                                                 | 리소스에 추가할 추가 레이블입니다.                                                                                                                                                                 | false    |               |
 | `annotations`          | object (keys:string, values:string)                                                                                                 | 리소스에 추가할 추가 어노테이션입니다.                                                                                                                                                               | false    |               |
 | `podDisruptionBudget`  | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | PodDisruptionBudget는 Keeper 클러스터용으로 생성되는 PDB를 구성합니다.<br />설정하지 않으면 연산자는 기본적으로 maxUnavailable=replicas/2를 사용합니다.<br />(2F+1 클러스터의 quorum 유지); 단일 레플리카 클러스터는 maxUnavailable=1을 사용합니다. | false    |               |
-| `settings`             | [KeeperSettings](#keepersettings)                                                                                                   | ClickHouse Keeper server의 구성 매개변수입니다.                                                                                                                                               | false    |               |
+| `networkPolicy`        | [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)                                                                                 | NetworkPolicy는 Keeper 클러스터용으로 관리되는 NetworkPolicy를 구성합니다.                                                                                                                            | false    |               |
+| `settings`             | [KeeperSettings](#keepersettings)                                                                                                   | ClickHouse Keeper 서버의 구성 매개변수입니다.                                                                                                                                               | false    |               |
 | `clusterDomain`        | string                                                                                                                              | ClusterDomain은 DNS 해석에 사용되는 Kubernetes 클러스터 도메인 접미사입니다.                                                                                                                             | false    | cluster.local |
 | `upgradeChannel`       | string                                                                                                                              | UpgradeChannel은 메이저 버전 업그레이드 확인에 사용할 릴리스 채널을 지정합니다.<br />비어 있으면 마이너 업데이트만 제안됩니다. 허용되는 값은 stable, lts 또는 특정 major.minor 버전(예: 25.8)입니다.                                              | false    |               |
 | `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | 버전 감지 job에 대한 VersionProbeTemplate 재정의입니다.<br />Deprecated: Keeper 버전 프로브 job은 사용되지 않습니다. 이 필드는 이전 버전과의 호환성을 위해 유지됩니다.                                                              | false    |               |
@@ -390,6 +411,26 @@ KeeperClusterStatus는 KeeperCluster의 관찰된 상태를 정의합니다.
 다음 항목에 나타납니다:
 
 * [KeeperCluster](#keepercluster)
+
+<div id="keepernetworkpolicyspec">
+  ## KeeperNetworkPolicySpec
+</div>
+
+KeeperNetworkPolicySpec는 Keeper 클러스터에 적용되는 관리형 NetworkPolicy를 구성합니다.
+관리형 정책은 클러스터 내부 트래픽에 적용됩니다.
+
+* 레플리카 간 연결
+* 연산자에서 클러스터로의 액세스
+* 이 Keeper 클러스터를 참조하는 ClickHouse 클러스터의 액세스
+  메트릭 스크래핑을 비롯한 그 밖의 모든 인그레스에는 사용자가 정의한 NetworkPolicy가 필요합니다.
+
+| 필드       | 유형                                          | 설명                                                                                                                | 필수    | 기본값      |
+| -------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----- | -------- |
+| `policy` | [NetworkPolicyPolicy](#networkpolicypolicy) | 이 정책은 연산자가 Keeper 파드로의 인그레스를 제한하는 NetworkPolicy를 관리할지 여부를 제어합니다.<br />설정하지 않으면 기본값은 &quot;Disabled&quot;입니다. | false | Disabled |
+
+다음에서 사용됩니다.
+
+* [KeeperClusterSpec](#keeperclusterspec)
 
 <div id="keepersettings">
   ## KeeperSettings
@@ -441,6 +482,22 @@ NamedTemplateMeta는 이름이 필요한 템플릿 객체에서 지원되는 메
 다음 항목에 나타납니다:
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
+
+<div id="networkpolicypolicy">
+  ## NetworkPolicyPolicy
+</div>
+
+NetworkPolicyPolicy는 연산자가 클러스터의 NetworkPolicy를 관리할지 결정합니다.
+
+| 필드         | 설명                                                                              |
+| ---------- | ------------------------------------------------------------------------------- |
+| `Enabled`  | NetworkPolicyEnabled는 연산자가 클러스터 파드로의 인그레스를 제한하는 NetworkPolicy를 관리하도록 합니다.<br /> |
+| `Disabled` | NetworkPolicyDisabled는 관리형 NetworkPolicy를 비활성화하며, 존재하는 경우 연산자가 이를 삭제합니다.<br />  |
+
+다음 위치에 나타납니다:
+
+* [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
+* [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
 <div id="pdbpolicy">
   ## PDBPolicy

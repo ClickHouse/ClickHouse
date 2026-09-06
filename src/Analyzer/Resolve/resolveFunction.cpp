@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/hasNullable.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -38,6 +39,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/exists.h>
 #include <Columns/validateColumnType.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
@@ -70,6 +72,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_FUNCTION;
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int TYPE_MISMATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
@@ -834,6 +838,226 @@ static void flattenArrayTableExpressionOnRightOfIn(
     flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, context);
 }
 
+/// Validate that the number of columns on the left side of IN matches the number of columns
+/// in the subquery (or table) on the right side. This must happen during analysis, before
+/// constant folding can optimize away the IN expression and silently hide the mismatch.
+/// Both arguments must already be resolved (and the right side already flattened by the
+/// `flattenArray*OnRightOfIn` helpers where applicable). Shared by the regular IN handling
+/// and the `rewrite_in_to_join` EXISTS rewrite, so the reported error and the moment it is
+/// thrown do not depend on that setting.
+static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argument, const QueryTreeNodePtr & in_second_argument)
+{
+    auto in_second_argument_type = in_second_argument->getNodeType();
+    auto in_first_argument_result_type = in_first_argument->getResultType();
+    if ((in_second_argument_type == QueryTreeNodeType::QUERY
+            || in_second_argument_type == QueryTreeNodeType::UNION
+            || in_second_argument_type == QueryTreeNodeType::TABLE)
+        && in_first_argument_result_type)
+    {
+        /// `FunctionIn::getReturnTypeImpl` rejects every left operand whose type has a dynamic
+        /// structure with `ILLEGAL_TYPE_OF_ARGUMENT` before it ever looks at the set arity, and it
+        /// does so at analysis time too, so constant folding cannot hide that error. This includes
+        /// types whose dynamic structure comes from a nested member, such as
+        /// `Tuple(Dynamic, UInt8)`. Report nothing here for them: otherwise the arity check below
+        /// would win and replace the existing unsupported-type contract with
+        /// `NUMBER_OF_COLUMNS_DOESNT_MATCH`.
+        if (in_first_argument_result_type->hasDynamicStructure())
+            return;
+
+        /// `getResultType` may be null for unresolved nodes (e.g. a lambda used as the left side of IN).
+        /// Such cases are rejected later with a more informative error, so skip the column-count check here.
+        /// Count tuple elements only for a top-level `DataTypeTuple`, matching how `FunctionIn`
+        /// unpacks the left operand at runtime: it inspects the raw left column/type and unpacks
+        /// only a top-level `ColumnTuple`/`DataTypeTuple`. A `Nullable(Tuple(...))` (or a
+        /// `LowCardinality(...)` wrapper) is kept as a single key column, so we must count it as one
+        /// here as well - otherwise a real mismatch like
+        /// `CAST((1, 1), 'Nullable(Tuple(UInt8, UInt8))') IN (SELECT 1, 1)` would slip through.
+        size_t left_columns_count = 1;
+        const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(in_first_argument_result_type.get());
+        if (left_tuple_type)
+            left_columns_count = left_tuple_type->getElements().size();
+
+        NamesAndTypes right_projection_columns;
+        /// Whether we could determine the right-side column set at all. An empty
+        /// `right_projection_columns` means "no columns" only when this is true; otherwise the
+        /// shape is simply unknown here (e.g. a `TableNode` whose set is built later in the
+        /// Planner and has no storage snapshot yet) and the check must be skipped.
+        bool right_columns_determined = false;
+        if (const auto * query_node = in_second_argument->as<QueryNode>())
+        {
+            right_projection_columns = query_node->getProjectionColumns();
+            right_columns_determined = true;
+        }
+        else if (const auto * union_node = in_second_argument->as<UnionNode>())
+        {
+            right_projection_columns = union_node->computeProjectionColumns();
+            right_columns_determined = true;
+        }
+        else if (const auto * in_table_node = in_second_argument->as<TableNode>())
+        {
+            /// `x IN table` is a documented equivalent of `x IN (SELECT * FROM table)`: the set is
+            /// built from the table's ordinary columns (a `StorageSet` keeps its declared columns,
+            /// other tables build the set in the Planner). The `TableNode` is left intact above
+            /// rather than rewritten into a subquery, so derive the right-side columns from the
+            /// storage snapshot here - the same columns the table-function rewrite selects. Without
+            /// this, an empty one-column table lets `(1, 1) IN table` reach `FunctionIn`'s empty-set
+            /// fast path and silently return `0` instead of throwing `NUMBER_OF_COLUMNS_DOESNT_MATCH`.
+            if (const auto & storage_snapshot = in_table_node->getStorageSnapshot())
+            {
+                auto table_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
+                right_projection_columns = NamesAndTypes(table_columns.begin(), table_columns.end());
+                right_columns_determined = true;
+            }
+        }
+
+        /// A right-hand side that resolves to no columns (a table whose only columns are special
+        /// ones, a parameterized view carrying empty metadata, or an already-normalized
+        /// zero-projection query) is turned into a single synthesized `UInt64` constant column by
+        /// the set builder / `buildQueryToReadColumnsFromTableExpression` (which appends a constant
+        /// `1` to preserve the row count). Mirror that here so the arity check runs against the same
+        /// single column the executor will see - otherwise a multi-column left side would skip the
+        /// check and reach `FunctionIn`'s empty-set fast path, silently returning `0` instead of
+        /// throwing `NUMBER_OF_COLUMNS_DOESNT_MATCH`.
+        if (right_columns_determined && right_projection_columns.empty())
+            right_projection_columns.emplace_back("1", std::make_shared<DataTypeUInt64>());
+
+        size_t right_columns_count = right_projection_columns.size();
+
+        /// A scalar is not a one-element tuple. Both sides have one physical column in
+        /// this shape, so the ordinary column-count check below cannot detect it. The
+        /// set builder also rejects this conversion, but it must be reported here before
+        /// constant folding can remove the `IN` expression from an unreachable predicate.
+        if (right_columns_count == 1 && !left_tuple_type
+            && !isNothing(removeNullable(in_first_argument_result_type)))
+        {
+            /// Compare the types the set actually uses as keys, i.e. after stripping the wrappers
+            /// that `Set::getElementTypes` removes (`LowCardinality` recursively and a top-level
+            /// `Nullable`). A `Nullable(Tuple(...))` (or `LowCardinality(...)`) left side is a tuple
+            /// key, not a scalar: `FunctionIn` keeps it as one key and `Set::execute` compares it
+            /// element by element against a single right `Tuple` column, which is a perfectly valid
+            /// one-key comparison and must not be rejected here.
+            const auto left_single_key_type = removeNullable(recursiveRemoveLowCardinality(in_first_argument_result_type));
+            const auto right_single_key_type = removeNullable(recursiveRemoveLowCardinality(right_projection_columns.front().type));
+            if (typeid_cast<const DataTypeTuple *>(right_single_key_type.get())
+                && !typeid_cast<const DataTypeTuple *>(left_single_key_type.get()))
+            {
+                /// Not every non-tuple left type is a mismatch either: `Set::execute` casts the whole
+                /// left value to the single right key type, and that cast is defined for some
+                /// non-tuple sources - `String`, for instance, is parsed into the tuple by
+                /// `FunctionCast::createTupleWrapper`. So reject only when no cast path exists at
+                /// all, probing at the type level with an *empty* column exactly like the
+                /// column-count probe below (the cast wrapper is built before any row is touched,
+                /// and a fabricated row could fail a per-value check the real rows would pass).
+                bool left_castable_to_single_key = false;
+                try
+                {
+                    castColumnAccurate({left_single_key_type->createColumn(), left_single_key_type, "left"}, right_single_key_type);
+                    left_castable_to_single_key = true;
+                }
+                catch (const Exception &)  /// NOLINT(bugprone-empty-catch)
+                {
+                    /// No cast path exists - report the mismatch below.
+                }
+
+                if (!left_castable_to_single_key)
+                    throw Exception(
+                        ErrorCodes::TYPE_MISMATCH,
+                        "Cannot cast {} to {} in IN",
+                        in_first_argument_result_type->getName(),
+                        right_projection_columns.front().type->getName());
+            }
+        }
+
+        if (right_columns_count > 0 && left_columns_count != right_columns_count)
+        {
+            /// When the right side returns a single column, `FunctionIn` does not unpack the
+            /// left tuple: it compares the whole left-side value against that one column as a
+            /// single key (see `FunctionIn::executeImpl`, which unpacks only when the set has
+            /// more than one key column whose count equals the left tuple size). Such a
+            /// comparison is valid whenever the left value can be cast to the right column type:
+            /// a single `Tuple` of the same arity, but also `String`, `Dynamic`, or a
+            /// `Variant`/`Nullable`/`LowCardinality` that can hold the whole tuple. So we reject
+            /// the query only when that cast is impossible, which is exactly when the runtime
+            /// would throw (e.g. `(1, 1) IN (SELECT 1)`, where a `Tuple` cannot be cast to
+            /// `UInt8`). Mirroring the runtime here avoids false positives while still catching
+            /// the genuine mismatch before constant folding can optimize the IN away and hide it.
+            bool left_comparable_as_single_key = false;
+            if (right_columns_count == 1)
+            {
+                const auto & right_single_type = right_projection_columns.front().type;
+
+                /// A single right `Tuple` column of the same arity as a top-level left tuple is
+                /// always an arity match: the whole left tuple is compared against it as one key,
+                /// element by element. Whether the element types are compatible is a runtime
+                /// question - an incompatible pair (e.g. `(id1, id2) IN (SELECT tuple(id2, id1))` where the
+                /// elements are `Decimal` vs `Date`) surfaces at runtime as `ILLEGAL_COLUMN` /
+                /// `ILLEGAL_TYPE_OF_ARGUMENT`, not as a column-count mismatch. The structural probe
+                /// below would instead reject such a same-arity tuple whenever an element cast is
+                /// impossible (e.g. a nested-tuple element that cannot be cast to the corresponding
+                /// right element), misreporting it as a column-count mismatch, so short-circuit on
+                /// matching arity here rather than running the probe.
+                /// Detect the arity on the set key type, i.e. after stripping the wrappers that
+                /// `Set::getElementTypes` removes (`LowCardinality` recursively, and a top-level
+                /// `Nullable` with the default `transform_null_in = 0`); otherwise a single right
+                /// column typed as `Nullable(Tuple(...))` would not be recognized as a tuple and
+                /// would fall through to the probe, which then misreports a `NULL`-element default
+                /// cast failure as a column-count mismatch.
+                auto right_single_key_type = removeNullable(recursiveRemoveLowCardinality(right_single_type));
+                const auto * right_tuple_type = typeid_cast<const DataTypeTuple *>(right_single_key_type.get());
+                if (left_tuple_type && right_tuple_type && right_tuple_type->getElements().size() == left_columns_count)
+                {
+                    left_comparable_as_single_key = true;
+                }
+                else
+                {
+                    /// The right side is a single non-tuple column (or a tuple of a different
+                    /// arity). The whole left tuple is compared against it as one key, so this is a
+                    /// genuine column-count mismatch only when the left type cannot be cast to the
+                    /// right type at all - i.e. no cast path exists between the two types, as for a
+                    /// `Tuple` to a plain number (`(1, 1) IN (SELECT 1)`). It is *not* a mismatch
+                    /// when the left type can be held as one key by the right type (`String`,
+                    /// `Dynamic`, a `Variant` that lists the tuple type, ...); any per-value
+                    /// incompatibility of such a cast (a `NULL` in a nullable element, a number out
+                    /// of range, a string too long for a `FixedString`) is a runtime question that
+                    /// surfaces at execution as its own error, not a column-count mismatch.
+                    ///
+                    /// So probe castability at the type level only, with an *empty* left column:
+                    /// `castColumnAccurate` builds the cast wrapper before touching any row
+                    /// (`FunctionCast::prepare` -> `createFunctionAdaptor(...).build()`), and that
+                    /// build throws for a structurally impossible cast regardless of the row count,
+                    /// so zero rows are enough to tell "a cast path exists" from "cannot be cast".
+                    /// A populated probe row must be avoided: inserting a default fabricates data
+                    /// the runtime never sees (e.g. a `NULL` for a nullable element) that can fail a
+                    /// per-value check the actual rows would pass, turning a runtime concern into a
+                    /// spurious analysis-time column-count error.
+                    auto left_probe_column = in_first_argument_result_type->createColumn();
+                    try
+                    {
+                        /// Use a plain accurate cast (not `accurateOrNull`): the latter casts to
+                        /// `Nullable(target)`, which is itself invalid for targets that cannot be
+                        /// wrapped in `Nullable` (e.g. `Dynamic`, `Variant`), so it would spuriously
+                        /// fail for valid right column types. `Set::execute` likewise uses the plain
+                        /// accurate cast for such types.
+                        castColumnAccurate(
+                            {ColumnPtr(std::move(left_probe_column)), in_first_argument_result_type, "left"},
+                            right_single_type);
+                        left_comparable_as_single_key = true;
+                    }
+                    catch (const Exception &)  /// NOLINT(bugprone-empty-catch)
+                    {
+                        /// No cast path exists - fall through and report the mismatch below.
+                    }
+                }
+            }
+
+            if (!left_comparable_as_single_key)
+                throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                    "Number of columns in section IN doesn't match. {} at left, {} at right.",
+                    left_columns_count, right_columns_count);
+        }
+    }
+}
+
 /// Builds and resolves `IF(isNull(element), NULL, has(array, element))`
 QueryTreeNodePtr QueryAnalyzer::makeNullSafeHas(
     QueryTreeNodePtr array_arg,    // [1,2,number]
@@ -1566,19 +1790,63 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (in_second_argument->as<QueryNode>())
             {
-                /// The rewrite below produces a correlated subquery, so it requires the setting.
-                /// Checked here (not at the gate) so constant/tuple `IN` is never rejected.
-                if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
-                    throw Exception(
-                        ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
-
                 /// An array subquery on the right of IN is the set of its elements (see
                 /// `flattenArraySubqueryOnRightOfIn`). Flatten it with arrayJoin before building the
                 /// EXISTS rewrite, so the comparison below is `x = <element>` rather than `x = <array>`.
                 /// Otherwise this branch would keep the reported bug alive whenever `rewrite_in_to_join`
                 /// is enabled, making the new behavior depend on an unrelated setting.
                 flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, scope.context);
+
+                /// Validate the column-count match before building the EXISTS rewrite. The rewrite
+                /// wraps a multi-column right side into a single `tuple(...)` column and compares it
+                /// with `equals`, so without this check an arity mismatch would surface later as
+                /// `BAD_ARGUMENTS` ("Cannot compare tuples of different sizes") from the tuple
+                /// comparison - or be folded away entirely - instead of the analysis-time
+                /// `NUMBER_OF_COLUMNS_DOESNT_MATCH` the regular IN path reports.
+                validateInColumnsCountMatch(in_first_argument, in_second_argument);
+            }
+
+            /// When the right side is a single column and the left side is kept as one key,
+            /// regular IN does not unpack the left value: the whole left value is one set key, and
+            /// `Set::execute` accurately casts it to the right column type before probing (so
+            /// e.g. `(toUInt16(256), x) IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'))` throws
+            /// when `256` does not fit into `Int8`). The `equals` predicate built by this rewrite
+            /// compares element-wise over a common supertype instead and cannot reproduce those
+            /// semantics, so skip the rewrite for this shape and fall through to the regular IN
+            /// handling below - the observable behavior must not depend on `rewrite_in_to_join`.
+            /// The mutated clones are discarded; the regular path re-resolves the original
+            /// arguments and flattens/validates them again itself.
+            /// A wrapped tuple such as `Nullable(Tuple(...))` (or a `LowCardinality(...)` wrapper) is
+            /// kept as a single key by `FunctionIn` as well - it unpacks only a raw top-level
+            /// `ColumnTuple`/`DataTypeTuple`. The same is true for every type with dynamic
+            /// structure, which regular `IN` rejects before building the set, and for plain
+            /// `Variant`, which still needs the accurate set-key cast when it has no dynamic
+            /// member. Scalar values also need that cast when their type differs from the sole
+            /// subquery column type. Unwrap the wrappers before identifying the structural types.
+            bool left_value_compared_as_single_key = false;
+            if (const auto * rhs_query_node = in_second_argument->as<QueryNode>())
+            {
+                const auto & left_result_type = in_first_argument->getResultType();
+                const auto left_key_type = left_result_type ? removeNullable(removeLowCardinality(left_result_type)) : nullptr;
+                left_value_compared_as_single_key = rhs_query_node->getProjectionColumns().size() == 1
+                    && left_key_type
+                    && (typeid_cast<const DataTypeTuple *>(left_key_type.get()) || left_key_type->hasDynamicStructure() || isVariant(left_key_type)
+                        || isNullableOrLowCardinalityNullable(left_result_type)
+                        || !left_result_type->equals(*rhs_query_node->getProjectionColumns().front().type));
+            }
+
+            if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key)
+            {
+                /// The rewrite below produces a correlated subquery, so it requires the setting.
+                /// Checked here rather than at the gate above, so that the shapes which are not
+                /// rewritten at all are never rejected because of it: a constant or tuple `IN`, and
+                /// the single-key shape just identified, which stays on the regular `IN` path.
+                /// Otherwise enabling `rewrite_in_to_join` alone would change query acceptance even
+                /// though no correlated rewrite happens.
+                if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
 
                 /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
 
@@ -1587,7 +1855,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// query "SELECT * FROM numbers(3)" returns column `number` which will collide with outer column `number`
                 auto subquery_node = std::move(in_second_argument);
 
-                String unique_column_name = "__subquery_column_" + toString(UUIDHelpers::generateV4());
+                /// Name the column after the subquery it projects rather than at random: two
+                /// identical `IN` expressions have to stay identical through the rewrite, or the
+                /// analyzer rejects a query that repeats one of them under a single alias with
+                /// `MULTIPLE_EXPRESSIONS_FOR_ALIAS` - a query it accepts without the rewrite. The
+                /// name only has to differ from the names of the outer scope, which the prefix
+                /// already takes care of.
+                const auto subquery_hash = subquery_node->getTreeHash(/*compare_options=*/ {.compare_aliases = false});
+                String unique_column_name
+                    = fmt::format("__subquery_column_{}_{}", subquery_hash.low64, subquery_hash.high64);
 
                 /// Re-resolve subquery columns setting the unique alias
                 auto subquery_projection_columns = subquery_node->as<QueryNode>()->getProjectionColumns();
@@ -2141,6 +2417,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 projection_columns.emplace_back(column.name, column.type);
             }
 
+            /// A table function whose storage exposes no ordinary columns (for example `cluster()` /
+            /// `remote()` against a parameterized view, whose metadata carries no stored columns) would
+            /// otherwise be rewritten into a subquery with an empty projection. `buildQueryToReadColumnsFromTableExpression`
+            /// - the helper the `TableNode` right-hand side goes through - appends a single constant `1`
+            /// column in that case to preserve the row count, so mirror it here. This keeps the rewritten
+            /// subquery well-formed (a single-column set the executor can build) and, crucially, makes the
+            /// analysis-time IN column-count check below see exactly the one-column shape the executor will,
+            /// so `(1, 1) IN table_function(...)` is rejected with `NUMBER_OF_COLUMNS_DOESNT_MATCH` instead
+            /// of diverging into `FunctionIn`'s empty-set fast path.
+            if (column_nodes_to_select->getNodes().empty())
+            {
+                auto constant_data_type = std::make_shared<DataTypeUInt64>();
+                column_nodes_to_select->getNodes().emplace_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+                projection_columns.emplace_back("1", std::move(constant_data_type));
+            }
+
             auto in_second_argument_query_node = std::make_shared<QueryNode>(Context::createCopy(scope.context));
             in_second_argument_query_node->setIsSubquery(true);
             in_second_argument_query_node->getProjectionNode() = std::move(column_nodes_to_select);
@@ -2476,6 +2768,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
         }
 
+        validateInColumnsCountMatch(in_first_argument, in_second_argument);
     }
 
     /// Initialize function argument columns
