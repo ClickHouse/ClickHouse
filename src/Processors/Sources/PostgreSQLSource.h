@@ -21,11 +21,14 @@ class PostgreSQLSource : public ISource
 {
 
 public:
+    /// structure_hint_, if set, is appended to the error of a failed value conversion. Callers that
+    /// map the result positionally use it to state the column order the result must be in.
     PostgreSQLSource(
         postgres::ConnectionHolderPtr connection_holder_,
         const String & query_str_,
         SharedHeader sample_block,
-        UInt64 max_block_size_);
+        UInt64 max_block_size_,
+        const String & structure_hint_ = {});
 
     String getName() const override { return "PostgreSQL"; }
 
@@ -55,6 +58,7 @@ private:
     const UInt64 max_block_size;
     bool auto_commit = true;
     ExternalResultDescription description;
+    const String structure_hint;
 
     std::atomic<bool> started{false};
     /// Asks the read to stop. A signal only: it never takes the teardown from whoever owes it.
