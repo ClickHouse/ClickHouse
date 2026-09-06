@@ -1,5 +1,10 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/109214
 
+-- The naming cases below are analyzer-specific: the legacy expansion substitutes the lambda
+-- argument only in children of the body, so a root `x -> x` stays the identifier `x` and the
+-- query fails with UNKNOWN_IDENTIFIER. Pin the mode instead of inheriting the job profile.
+SET enable_analyzer = 1;
+
 -- A named transformer (APPLY with a prefix, or REPLACE) over a bare matcher/asterisk
 -- expansion is rejected: there is no single column to carry the name.
 SELECT * APPLY (x -> compound_value.*, 'f_') FROM (SELECT 1 AS a); -- { serverError BAD_ARGUMENTS }
