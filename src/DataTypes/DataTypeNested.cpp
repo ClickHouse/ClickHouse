@@ -48,6 +48,12 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
         if (!name_type)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Data type Nested accepts only pairs with name and type");
 
+        if (name_type->default_expression)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Data type Nested cannot have a DEFAULT expression for element '{}'. "
+                "DEFAULT inside a data type is only allowed in a column declaration.",
+                name_type->name);
+
         auto nested_type = DataTypeFactory::instance().get(name_type->type);
         nested_types.push_back(std::move(nested_type));
         nested_names.push_back(name_type->name);

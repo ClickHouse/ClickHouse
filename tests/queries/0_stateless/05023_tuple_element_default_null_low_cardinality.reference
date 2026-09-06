@@ -1,0 +1,4 @@
+already_nullable	Tuple(a Nullable(String))	DEFAULT	tuple(NULL)
+already_nullable_lc	Tuple(a LowCardinality(Nullable(String)))	DEFAULT	tuple(NULL)
+promoted_lc	Tuple(a LowCardinality(Nullable(String)))	DEFAULT	tuple(NULL)
+(NULL)	(NULL)	(NULL)
