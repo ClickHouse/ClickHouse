@@ -201,6 +201,70 @@ bool isSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const 
     return false;
 }
 
+/// A requested subcolumn (e.g. `arr.size0`) that a child table cannot resolve, but whose parent
+/// column (`arr`) it does have under a type the Merge table converts anyway. Such a subcolumn
+/// must be derived from the converted parent rather than filled with a type default.
+struct DerivableSubcolumn
+{
+    String parent_name;                 /// "arr" for the requested "arr.size0"
+    String subcolumn_name;              /// "size0"
+    DataTypePtr type;                   /// the Merge table's type of "arr.size0"
+    DataTypePtr parent_type_in_merge;   /// the Merge table's type of "arr" -- the conversion target
+};
+
+/// Returns nullopt for a name the child resolves, a non-subcolumn, or a genuinely absent parent --
+/// that last case must keep its default-value behaviour, which is what makes a Merge over tables
+/// with different column sets work.
+std::optional<DerivableSubcolumn> tryGetDerivableSubcolumn(
+    const StorageSnapshotPtr & child_snapshot,
+    const StorageSnapshotPtr & merge_snapshot,
+    const GetColumnsOptions & child_options,
+    const String & column_name)
+{
+    if (child_snapshot->tryGetColumn(child_options, column_name))
+        return {};
+
+    auto merge_options = GetColumnsOptions(GetColumnsOptions::All)
+        .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All)
+        .withSubcolumns(merge_snapshot->storage.supportsSubcolumns());
+
+    auto merge_column = merge_snapshot->tryGetColumn(merge_options, column_name);
+    if (!merge_column || !merge_column->isSubcolumn())
+        return {};
+
+    auto parent_name = merge_column->getNameInStorage();
+
+    /// The parent must be in the child's physical read list: an `EPHEMERAL` parent has no data, and
+    /// an `ALIAS` one is reachable only through alias expansion, so neither is derived here. The
+    /// subcolumn itself is still looked up with the caller's kind above, so `arr.size0` short-circuits.
+    auto child_parent_options = child_options;
+    child_parent_options.kind = GetColumnsOptions::AllPhysical;
+    if (!child_snapshot->tryGetColumn(child_parent_options, parent_name))
+        return {};
+
+    auto merge_parent = merge_snapshot->tryGetColumn(merge_options, parent_name);
+    if (!merge_parent)
+        return {};
+
+    return DerivableSubcolumn{
+        .parent_name = parent_name,
+        .subcolumn_name = merge_column->getSubcolumnName(),
+        .type = merge_column->type,
+        .parent_type_in_merge = merge_parent->type};
+}
+
+/// `getSubcolumn(_CAST(<parent>, '<Merge parent type>'), '<subcolumn>')`
+/// The `_CAST` must be part of this expression rather than left to the downstream converting
+/// actions, which match positionally.
+ASTPtr makeDerivedSubcolumnExpression(const DerivableSubcolumn & derivation)
+{
+    return makeASTFunction("getSubcolumn",
+        makeASTFunction("_CAST",
+            make_intrusive<ASTIdentifier>(derivation.parent_name),
+            make_intrusive<ASTLiteral>(derivation.parent_type_in_merge->getName())),
+        make_intrusive<ASTLiteral>(derivation.subcolumn_name));
+}
+
 }
 
 StorageMerge::DatabaseNameOrRegexp::DatabaseNameOrRegexp(
@@ -1060,6 +1124,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         Names column_names_as_aliases;
         bool is_smallest_column_requested = false;
         Aliases aliases;
+        Aliases derived_aliases;
     };
     std::unordered_map<String, CachedModifiedQueryInfo> query_info_cache;
 
@@ -1122,6 +1187,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table {} doesn't support sampling", storage->getStorageID().getNameForLogs());
 
             Aliases aliases;
+            Aliases derived_aliases;
             RowPolicyDataOpt row_policy_data_opt;
             auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
@@ -1237,8 +1303,12 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 && !std::dynamic_pointer_cast<StorageMerge>(storage)
                 && !std::dynamic_pointer_cast<StorageDistributed>(storage)
                 && !storage->isView();
+            /// The capability is part of the key because column resolution for the child runs with
+            /// `withSubcolumns(storage->supportsSubcolumns())`: two children with identical declared
+            /// columns but different capability resolve a requested subcolumn differently.
             auto structure_key = can_cache
-                ? (std::get<0>(table) + "\n" + storage_metadata_snapshot->getColumns().toString(false))
+                ? (std::get<0>(table) + "\n" + (storage->supportsSubcolumns() ? "1\n" : "0\n")
+                   + storage_metadata_snapshot->getColumns().toString(false))
                 : String{};
             auto cache_it = can_cache ? query_info_cache.find(structure_key) : query_info_cache.end();
 
@@ -1253,6 +1323,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 column_names_as_aliases = cached.column_names_as_aliases;
                 is_smallest_column_requested = cached.is_smallest_column_requested;
                 aliases = cached.aliases;
+                derived_aliases = cached.derived_aliases;
 
                 /// Deep-clone the AST `query` because `createPlanForTable` may mutate it
                 /// in-place via `modified_select.setFinal()` (e.g. when the underlying storage's
@@ -1282,7 +1353,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             else
             {
                 modified_query_info
-                    = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases);
+                    = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases, derived_aliases);
 
                 if (can_cache)
                 {
@@ -1294,7 +1365,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     SelectQueryInfo cached_query_info = modified_query_info;
                     if (cached_query_info.query)
                         cached_query_info.query = cached_query_info.query->clone();
-                    query_info_cache[structure_key] = {std::move(cached_query_info), column_names_as_aliases, is_smallest_column_requested, aliases};
+                    query_info_cache[structure_key] = {std::move(cached_query_info), column_names_as_aliases, is_smallest_column_requested, aliases, derived_aliases};
                 }
             }
 
@@ -1368,9 +1439,29 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 }
             }
 
+            /// The parent must be in the read list or the derivation below falls back to a default
+            /// that disagrees with the parent returned in the same row. The scan runs over the names
+            /// actually requested: a child carrying any `ALIAS` column has the read list replaced.
+            Names derived_subcolumn_parents;
+            if (modified_query_info.table_expression)
+            {
+                auto child_options = GetColumnsOptions(GetColumnsOptions::All)
+                    .withSubcolumns(nested_storage_snapshot->storage.supportsSubcolumns())
+                    .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+
+                for (const auto & column_name : real_column_names)
+                    if (auto derivation = tryGetDerivableSubcolumn(
+                            nested_storage_snapshot, merge_storage_snapshot, child_options, column_name))
+                        derived_subcolumn_parents.push_back(derivation->parent_name);
+            }
+
             Names column_names_to_read = column_names_as_aliases.empty() ? std::move(real_column_names) : std::move(column_names_as_aliases);
 
             std::erase_if(column_names_to_read, [existing_columns = nested_storage_snapshot->getAllColumnsDescription()](const auto & column_name){ return !existing_columns.has(column_name) && !existing_columns.hasSubcolumn(GetColumnsOptions::All, column_name); });
+
+            for (const auto & parent_name : derived_subcolumn_parents)
+                if (std::find(column_names_to_read.begin(), column_names_to_read.end(), parent_name) == column_names_to_read.end())
+                    column_names_to_read.push_back(parent_name);
 
             auto child = createPlanForTable(
                 nested_storage_snapshot,
@@ -1390,7 +1481,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             {
                 /// Source tables could have different but convertible types, like numeric types of different width.
                 /// We must return streams with structure equals to structure of Merge table.
-                convertAndFilterSourceStream(*common_header, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
+                convertAndFilterSourceStream(*common_header, modified_query_info, nested_storage_snapshot, aliases, derived_aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
@@ -1572,7 +1663,8 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     Names required_column_names,
     Names & column_names_as_aliases,
     bool & is_smallest_column_requested,
-    Aliases & aliases) const
+    Aliases & aliases,
+    Aliases & derived_aliases) const
 {
     const auto & [database_name, storage, storage_lock, table_name] = storage_with_lock_and_name;
     const StorageID current_storage_id = storage->getStorageID();
@@ -1601,6 +1693,8 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         /// This happens when merge() is used over tables with different schemas and the processing
         /// stage is above FetchColumns (e.g., for distributed/remote tables where the full query
         /// is sent to the child for processing).
+        ///
+        /// A subcolumn of a column the child DOES have is not such a column: it is derived from the parent's conversion.
         auto storage_columns = storage_snapshot_->metadata->getColumns();
 
         std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
@@ -1615,6 +1709,27 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             /// The child can produce this value, so it must not be replaced by a default.
             if (isSubcolumnOfAliasColumn(storage_columns, column_name))
                 continue;
+
+            if (auto derivation = tryGetDerivableSubcolumn(
+                    storage_snapshot_, merge_storage_snapshot, get_column_options, column_name))
+            {
+                auto expression = makeDerivedSubcolumnExpression(*derivation);
+
+                /// Resolve the expression against this child so `createPlanForTable` -- which may
+                /// re-analyze the tree it converts back to AST -- sees a valid node rather than a
+                /// reference to a subcolumn the child does not have.
+                auto derived_node = buildQueryTree(expression, modified_context);
+                QueryAnalysisPass(modified_query_info.table_expression).run(derived_node, modified_context);
+                column_name_to_node.emplace(column_name, derived_node);
+
+                /// Above `FetchColumns` the child's output no longer contains the parent, so the
+                /// resolved replacement above stands alone. `derived_aliases` rather than `aliases`
+                /// because the cast must run after the child's row policy filter.
+                if (common_processed_stage == QueryProcessingStage::FetchColumns)
+                    derived_aliases.push_back({.name = column_name, .type = derivation->type, .expression = expression->clone()});
+
+                continue;
+            }
 
             auto merge_column = merge_storage_snapshot->tryGetColumn(
                 GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All)
@@ -2147,6 +2262,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     SelectQueryInfo & modified_query_info,
     const StorageSnapshotPtr & snapshot,
     const Aliases & aliases,
+    const Aliases & derived_aliases,
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
     ChildPlan & child,
@@ -2156,9 +2272,11 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     auto pipe_columns = before_block_header->getNamesAndTypesList();
 
-    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    bool use_analyzer = local_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+
+    auto add_alias_step = [&](const AliasData & alias)
     {
-        for (const auto & alias : aliases)
+        if (use_analyzer)
         {
             ActionsDAG actions_dag(pipe_columns);
 
@@ -2182,10 +2300,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
             auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(actions_dag));
             child.plan.addStep(std::move(expression_step));
         }
-    }
-    else
-    {
-        for (const auto & alias : aliases)
+        else
         {
             pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
             ASTPtr expr = alias.expression;
@@ -2197,11 +2312,22 @@ void ReadFromMerge::convertAndFilterSourceStream(
             auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(actions_dag));
             child.plan.addStep(std::move(expression_step));
         }
-    }
+    };
+
+    /// The child's own `ALIAS` columns stay before the filter: a row policy is analyzed against
+    /// all of the child's columns, `ALIAS` ones included, so its predicate may reference them.
+    for (const auto & alias : aliases)
+        add_alias_step(alias);
 
     /// This is the filter for the individual source table, that's why filtering has to be done before all structure adaptations.
     if (row_policy_data_opt)
         row_policy_data_opt->addFilterTransform(child.plan);
+
+    /// Subcolumns derived from a parent column, on the other hand, go after the filter: the
+    /// derivation casts the parent, and a parent value in a row the policy removes must not be able
+    /// to make that cast throw. Still before the structural conversion the derivation must precede.
+    for (const auto & alias : derived_aliases)
+        add_alias_step(alias);
 
     /** Output headers may differ from what StorageMerge expects in some cases.
       * When the child table engine produces a query plan for the stage after FetchColumns,

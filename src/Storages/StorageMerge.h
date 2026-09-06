@@ -252,7 +252,10 @@ private:
         Names required_column_names,
         Names & column_names_as_aliases,
         bool & is_smallest_column_requested,
-        Aliases & aliases) const;
+        Aliases & aliases,
+        /// Aliases that derive a requested subcolumn from its parent column. Unlike `aliases`, they
+        /// are materialized after the child's row policy filter.
+        Aliases & derived_aliases) const;
 
     /// An object of this helper class is created
     ///  when processing a Merge table data source (subordinary table)
@@ -330,6 +333,7 @@ private:
         SelectQueryInfo & modified_query_info,
         const StorageSnapshotPtr & snapshot,
         const Aliases & aliases,
+        const Aliases & derived_aliases,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
         ChildPlan & child,

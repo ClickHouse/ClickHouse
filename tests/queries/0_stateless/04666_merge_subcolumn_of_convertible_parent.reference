@@ -1,0 +1,113 @@
+size0 agrees with length, subcolumns off
+6	6
+size0 agrees with length, subcolumns on
+6	6
+no row where size0 disagrees with length
+0
+subcolumn read with the parent never mentioned
+6
+nested array parent
+5	5
+identically-structured mistyped children agree
+t_merge_sub_twin_a	3
+t_merge_sub_twin_b	3
+t_merge_sub_twin_good	2
+merge over merge, subcolumns off
+6	6
+merge over merge, subcolumns on
+6	6
+alias-bearing child, parent never mentioned, subcolumns off
+6
+alias-bearing child, parent never mentioned, subcolumns on
+6
+alias-bearing child, parent also requested
+6	6
+alias-bearing child through a nested merge
+6
+ephemeral parent keeps the default, subcolumns off
+3
+ephemeral parent keeps the default, subcolumns on
+3
+alias parent keeps the default, subcolumns off
+3
+alias parent keeps the default, subcolumns on
+3
+constant alias parent keeps the default too
+3	6
+materialized parent is still derived, subcolumns off
+4	4
+materialized parent is still derived, subcolumns on
+4
+default parent is still derived, subcolumns off
+7	7
+default parent is still derived, subcolumns on
+7
+read-time default parent is still derived, subcolumns off
+7	7
+read-time default parent is still derived, subcolumns on
+7
+subcolumn-less child engine still derives, StripeLog
+3	3
+2	2
+capable sibling control, TinyLog
+3	3
+2	2
+an unconvertible parent value throws instead of defaulting
+row policy hides an unconvertible parent value, subcolumns off
+5	5
+row policy hides an unconvertible parent value, subcolumns on
+5
+and the parent-only form agrees
+5
+row policy plus a WHERE on the derived subcolumn
+1
+1
+1
+row policy on a child ALIAS column
+5	5
+row policy on a child ALIAS column, parent never mentioned
+5
+an unconvertible default parent value throws without the policy
+row policy hides an unconvertible default parent value, subcolumns off
+5	5
+row policy hides an unconvertible default parent value, subcolumns on
+5
+the distributed child is planned as a remote read
+1
+an unconvertible parent value behind a distributed child throws without the policy
+row policy on a distributed child hides an unconvertible parent value
+5
+row policy on a distributed child plus a WHERE on the derived subcolumn
+1
+wider element type child
+6	6
+nullable element type child
+6	6
+map parent
+2	2
+child missing the column keeps its default
+3	3	4
+null subcolumn agrees with IS NULL
+1	1
+homogeneous merge still folds to the offsets subcolumn
+4900000
+and needs more than the cap without the fold
+and the plan still reads the offsets subcolumn
+1
+old analyzer rejects the subcolumn instead of returning a wrong value
+old analyzer still reads the converted parent
+6
+old analyzer keeps the implicit rewrite correct
+6
+view over a mistyped target is unaffected
+capability differs under identical declarations, high-capability child first
+5
+1	2
+2	3
+capability differs under identical declarations, low-capability child first
+5
+1	2
+2	3
+the parent column agrees in both orders
+5
+5
