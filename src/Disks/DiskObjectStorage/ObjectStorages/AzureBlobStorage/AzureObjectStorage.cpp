@@ -55,6 +55,7 @@ namespace ErrorCodes
 {
     extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int UNSUPPORTED_METHOD;
+    extern const int FILE_CHANGED_DURING_READ;
 }
 
 namespace
@@ -359,6 +360,14 @@ void AzureObjectStorage::removeObjectImpl(
     const auto & path = object.remote_path;
     LOG_TEST(log, "Removing single object: {}", path);
 
+    /// A `StoredObject` that carries an `ETag` names one generation of the blob, not just a path:
+    /// the delete is then pinned to that generation with `If-Match`, so a blob that was overwritten
+    /// after the caller looked at it (a `MOVE` copies the generation it selected, then deletes)
+    /// is left in place instead of being deleted without the newer generation having been seen.
+    /// The header wants the quoted entity-tag form, while a tag from a listing is bare.
+    const bool pinned_to_etag = !object.etag.empty();
+    const Azure::ETag if_match = pinned_to_etag ? Azure::ETag(AzureBlobStorage::toQuotedETag(object.etag)) : Azure::ETag();
+
     Stopwatch watch;
     Int32 error_code = 0;
     String error_message;
@@ -367,12 +376,16 @@ void AzureObjectStorage::removeObjectImpl(
     {
         if (isAdlsGen2Endpoint(connection_params.endpoint))
         {
-            buildDataLakeFileClient(path)->Delete();
+            Azure::Storage::Files::DataLake::DeleteFileOptions options;
+            options.AccessConditions.IfMatch = if_match;
+            buildDataLakeFileClient(path)->Delete(options);
             success = true;
         }
         else
         {
-            auto delete_info = client_ptr->GetBlobClient(path).Delete();
+            Azure::Storage::Blobs::DeleteBlobOptions options;
+            options.AccessConditions.IfMatch = if_match;
+            auto delete_info = client_ptr->GetBlobClient(path).Delete(options);
             success = delete_info.Value.Deleted;
             if (!if_exists && !delete_info.Value.Deleted)
                 throw Exception(
@@ -384,6 +397,27 @@ void AzureObjectStorage::removeObjectImpl(
     {
         error_code = static_cast<Int32>(e.StatusCode);
         error_message = e.Message;
+
+        /// The precondition did not hold: the blob is not the generation the caller selected, so
+        /// nothing was deleted. This is not "the object does not exist" and must not be swallowed
+        /// by `if_exists`; the caller decides whether to look at the new generation and start over.
+        if (pinned_to_etag && e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
+        {
+            if (blob_storage_log)
+                blob_storage_log->addEvent(
+                    BlobStorageLogElement::EventType::Delete,
+                    /* bucket */ connection_params.getContainer(),
+                    /* remote_path */ path,
+                    object.local_path,
+                    object.bytes_size,
+                    watch.elapsedMicroseconds(),
+                    error_code,
+                    error_message);
+            throw Exception(
+                ErrorCodes::FILE_CHANGED_DURING_READ,
+                "Object {} was not deleted: it changed after it was selected (its `ETag` is no longer {})",
+                path, object.etag);
+        }
 
         if (!if_exists)
         {

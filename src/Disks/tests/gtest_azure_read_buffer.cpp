@@ -9,7 +9,10 @@
 #include <string>
 #include <vector>
 
+#include <Common/tests/gtest_global_context.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 #include <IO/ReadHelpers.h>
@@ -133,9 +136,9 @@ public:
     std::unique_ptr<Azure::Core::Http::RawResponse> Send(Azure::Core::Http::Request & request, const Azure::Core::Context & context) override
     {
         const bool first_response = responses_sent == 0;
-        const std::string & current_etag = (first_response || etags.etag_after_first.empty())
-            ? etags.etag
-            : etags.etag_after_first;
+        const std::string & current_etag = overwritten_etag
+            ? *overwritten_etag
+            : (first_response || etags.etag_after_first.empty()) ? etags.etag : etags.etag_after_first;
         const size_t current_blob_size = first_response ? blob_size : blob_size_after_first.value_or(blob_size);
         ++responses_sent;
 
@@ -167,6 +170,28 @@ public:
             accepted->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
             accepted->SetHeader("x-ms-copy-id", "copy-id");
             accepted->SetHeader("x-ms-copy-status", "success");
+            accepted->SetBodyStream(std::make_unique<LyingBodyStream>(std::vector<uint8_t>{}, 0));
+            return accepted;
+        }
+
+        /// `Delete Blob`. A real endpoint evaluates `If-Match` against the current generation and
+        /// answers `412 Precondition Failed` when it does not hold; the generation deleted (if any)
+        /// and the header of every request are recorded so a test can tell what was deleted.
+        if (request.GetMethod() == Azure::Core::Http::HttpMethod::Delete)
+        {
+            if (auto if_match = request.GetHeader("if-match"); if_match.HasValue())
+            {
+                delete_if_match_headers.push_back(if_match.Value());
+                if (etags.honour_if_match && if_match.Value() != current_etag)
+                    return preconditionFailed();
+            }
+            else
+                delete_if_match_headers.emplace_back();
+
+            deleted_generations.push_back(current_etag);
+
+            auto accepted = std::make_unique<Azure::Core::Http::RawResponse>(1, 1, Azure::Core::Http::HttpStatusCode::Accepted, "Accepted");
+            accepted->SetHeader("Content-Length", "0");
             accepted->SetBodyStream(std::make_unique<LyingBodyStream>(std::vector<uint8_t>{}, 0));
             return accepted;
         }
@@ -267,6 +292,17 @@ public:
     /// The `x-ms-source-if-match` header of each native copy request, empty when it carried none.
     const std::vector<std::string> & sourceIfMatchHeaders() const { return source_if_match_headers; }
 
+    /// The generation (its `ETag` at that moment) that each successful `Delete Blob` removed.
+    const std::vector<std::string> & deletedGenerations() const { return deleted_generations; }
+
+    /// The `If-Match` header of each `Delete Blob` request, empty when it carried none.
+    const std::vector<std::string> & deleteIfMatchHeaders() const { return delete_if_match_headers; }
+
+    /// The object is overwritten by somebody else: from now on the endpoint holds the generation
+    /// `new_etag`, whatever `ETagBehaviour` said. Lets a test place the overwrite at an exact point
+    /// of a sequence of requests, such as between the copy and the delete of a move.
+    void overwriteObject(const std::string & new_etag) { overwritten_etag = new_etag; }
+
 private:
     static std::unique_ptr<Azure::Core::Http::RawResponse> preconditionFailed()
     {
@@ -289,6 +325,9 @@ private:
     std::string uploaded;
     std::vector<std::string> natively_copied_generations;
     std::vector<std::string> source_if_match_headers;
+    std::vector<std::string> deleted_generations;
+    std::vector<std::string> delete_if_match_headers;
+    std::optional<std::string> overwritten_etag;
 };
 
 /// Reads a blob from an endpoint that answers every ranged request with at most
@@ -575,6 +614,133 @@ NativeCopyOutcome copyNatively(
         .copied_generations = transport->nativelyCopiedGenerations(),
         .source_if_match_headers = transport->sourceIfMatchHeaders(),
         .uploaded = transport->uploadedData()};
+}
+
+/// A shared endpoint (`transport`) seen through a fresh client, so that several clients of one test
+/// (the one a copy is driven through, the one an object storage deletes through) observe the same
+/// object and the same overwrite.
+Azure::Storage::Blobs::BlobContainerClient blobContainerClientOver(const std::shared_ptr<MisbehavingRangeTransport> & transport)
+{
+    Azure::Storage::Blobs::BlobClientOptions client_options;
+    client_options.Retry.MaxRetries = 0;
+    client_options.Transport.Transport = transport;
+    return Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options);
+}
+
+std::shared_ptr<DB::AzureBlobStorage::ContainerClient> containerClientOver(const std::shared_ptr<MisbehavingRangeTransport> & transport)
+{
+    return std::make_shared<DB::AzureBlobStorage::ContainerClient>(blobContainerClientOver(transport), /* blob_prefix */ "");
+}
+
+/// An `AzureObjectStorage` over the shared endpoint `transport`.
+std::unique_ptr<DB::AzureObjectStorage> objectStorageOver(const std::shared_ptr<MisbehavingRangeTransport> & transport)
+{
+    /// The delete path creates a `BlobStorageLogWriter`, which looks the log up in the global context.
+    getContext();
+
+    return std::make_unique<DB::AzureObjectStorage>(
+        "azure",
+        DB::AzureBlobStorage::AuthMethod{DB::AzureBlobStorage::ConnectionString{""}},
+        std::make_unique<DB::AzureBlobStorage::ContainerClient>(blobContainerClientOver(transport), /* blob_prefix */ ""),
+        std::make_unique<DB::AzureBlobStorage::RequestSettings>(),
+        DB::AzureBlobStorage::ConnectionParams{},
+        /* object_namespace */ "container",
+        /* description */ "http://azure.invalid/container",
+        /* common_key_prefix */ "");
+}
+
+/// A `StoredObject` for the blob `blob`, pinned to the generation `etag` (unpinned when empty).
+DB::StoredObject blobGeneration(const std::string & etag)
+{
+    DB::StoredObject object("blob");
+    object.etag = etag;
+    return object;
+}
+
+/// What a delete left behind at the endpoint.
+struct DeleteOutcome
+{
+    /// The generation that each successful `Delete Blob` removed.
+    std::vector<std::string> deleted_generations;
+    /// The `If-Match` header of each `Delete Blob` request, empty when it carried none.
+    std::vector<std::string> if_match_headers;
+};
+
+/// Deletes the blob through an `AzureObjectStorage`, pinned to `expected_etag`, against an endpoint
+/// whose object generation behaves as `etags` says.
+DeleteOutcome deleteThroughObjectStorage(const std::string & expected_etag, const ETagBehaviour & etags)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false, etags);
+
+    objectStorageOver(transport)->removeObjectIfExists(blobGeneration(expected_etag));
+
+    return DeleteOutcome{.deleted_generations = transport->deletedGenerations(), .if_match_headers = transport->deleteIfMatchHeaders()};
+}
+
+/// What an Azure `MOVE` (the `after_processing = 'move'` step of `ObjectStorageQueue`) left behind
+/// at the endpoint.
+struct MoveOutcome
+{
+    /// The generation of the source that the copy transferred.
+    std::vector<std::string> copied_generations;
+    /// The generation that each successful `Delete Blob` removed.
+    std::vector<std::string> deleted_generations;
+    /// The error code the delete failed with, if it did.
+    std::optional<int> delete_error_code;
+};
+
+/// Drives the sequence of an Azure `MOVE` the way `ObjectStorageQueuePostProcessor::moveAzureBlobs`
+/// does it: `HEAD` the source, copy the generation it reports (natively, pinned to its `ETag`),
+/// then delete the same generation through the object storage. With `overwrite_between_copy_and_delete`,
+/// the source is overwritten by somebody else after the copy has completed and before the delete.
+MoveOutcome moveBlob(bool overwrite_between_copy_and_delete)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+    auto src_client = containerClientOver(transport);
+    auto object_storage = objectStorageOver(transport);
+
+    auto properties = src_client->GetBlobClient("blob").GetProperties().Value;
+    const std::string src_etag = DB::AzureBlobStorage::getETagOrEmpty(properties.ETag);
+
+    auto settings = std::make_shared<DB::AzureBlobStorage::RequestSettings>();
+    settings->use_native_copy = true;
+    settings->max_single_part_copy_size = properties.BlobSize + 1;
+    settings->max_single_read_retries = 1;
+    settings->max_single_download_retries = 1;
+
+    DB::copyAzureBlobStorageFile(
+        src_client,
+        src_client,
+        /* src_container_for_logging */ "container",
+        /* src_blob */ "blob",
+        /* src_size */ properties.BlobSize,
+        src_etag,
+        /* dest_container_for_logging */ "container",
+        /* dest_blob */ "moved/blob",
+        settings,
+        DB::ReadSettings{},
+        /* object_to_attributes */ std::nullopt);
+
+    if (overwrite_between_copy_and_delete)
+        transport->overwriteObject(ETagBehaviour::second_generation);
+
+    std::optional<int> delete_error_code;
+    try
+    {
+        object_storage->removeObjectIfExists(blobGeneration(src_etag));
+    }
+    catch (const DB::Exception & e)
+    {
+        delete_error_code = e.code();
+    }
+
+    return MoveOutcome{
+        .copied_generations = transport->nativelyCopiedGenerations(),
+        .deleted_generations = transport->deletedGenerations(),
+        .delete_error_code = delete_error_code};
 }
 
 }
@@ -1248,6 +1414,93 @@ TEST(AzureNativeCopy, NoETagMeansNoCondition)
 
     ASSERT_EQ(outcome.copied_generations, (std::vector<std::string>{ETagBehaviour::second_generation}));
     ASSERT_EQ(outcome.source_if_match_headers, (std::vector<std::string>{""}));
+}
+
+/// A `StoredObject` that carries an `ETag` is deleted with `If-Match` in the quoted form the header
+/// wants, and an object whose generation is the selected one is deleted.
+TEST(AzureConditionalDelete, UnchangedObject)
+{
+    DeleteOutcome outcome;
+    ASSERT_NO_THROW(outcome = deleteThroughObjectStorage(
+        ETagBehaviour::first_generation,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true}));
+
+    ASSERT_EQ(outcome.deleted_generations, (std::vector<std::string>{ETagBehaviour::first_generation}));
+    ASSERT_EQ(outcome.if_match_headers, (std::vector<std::string>{ETagBehaviour::first_generation}));
+}
+
+/// The object was overwritten after the caller selected its generation: the endpoint refuses the
+/// pinned delete with `412 Precondition Failed`, which must surface as the object having changed
+/// (not be swallowed as "the object does not exist" by the if-exists semantics), and the newer
+/// generation must stay in place.
+TEST(AzureConditionalDelete, PreconditionFailedOnChangedObject)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::second_generation, .etag_after_first = "", .honour_if_match = true});
+
+    try
+    {
+        objectStorageOver(transport)->removeObjectIfExists(blobGeneration(ETagBehaviour::first_generation));
+        FAIL() << "Expected an exception on a pinned delete of an object overwritten after it was selected";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    }
+
+    ASSERT_TRUE(transport->deletedGenerations().empty());
+    ASSERT_EQ(transport->deleteIfMatchHeaders(), (std::vector<std::string>{ETagBehaviour::first_generation}));
+}
+
+/// The tag was read from a blob listing, whose `Etag` element carries the bare tag: `If-Match` must
+/// still be sent quoted, or a real endpoint would refuse every pinned delete of a listed blob.
+TEST(AzureConditionalDelete, BareETag)
+{
+    DeleteOutcome outcome;
+    ASSERT_NO_THROW(outcome = deleteThroughObjectStorage(
+        ETagBehaviour::first_generation_bare,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true}));
+
+    ASSERT_EQ(outcome.deleted_generations, (std::vector<std::string>{ETagBehaviour::first_generation}));
+    ASSERT_EQ(outcome.if_match_headers, (std::vector<std::string>{ETagBehaviour::first_generation}));
+}
+
+/// A `StoredObject` without an `ETag` (every caller that deletes by path) gets the unconditional
+/// delete it always got, with no `If-Match` at all.
+TEST(AzureConditionalDelete, NoETagMeansNoCondition)
+{
+    DeleteOutcome outcome;
+    ASSERT_NO_THROW(outcome = deleteThroughObjectStorage(
+        /* expected_etag */ "",
+        ETagBehaviour{.etag = ETagBehaviour::second_generation, .etag_after_first = "", .honour_if_match = true}));
+
+    ASSERT_EQ(outcome.deleted_generations, (std::vector<std::string>{ETagBehaviour::second_generation}));
+    ASSERT_EQ(outcome.if_match_headers, (std::vector<std::string>{""}));
+}
+
+/// A move of a source that nobody touches copies and deletes one and the same generation.
+TEST(AzureMove, UnchangedSource)
+{
+    MoveOutcome outcome;
+    ASSERT_NO_THROW(outcome = moveBlob(/* overwrite_between_copy_and_delete */ false));
+
+    ASSERT_FALSE(outcome.delete_error_code.has_value());
+    ASSERT_EQ(outcome.copied_generations, (std::vector<std::string>{ETagBehaviour::first_generation}));
+    ASSERT_EQ(outcome.deleted_generations, (std::vector<std::string>{ETagBehaviour::first_generation}));
+}
+
+/// The source is overwritten after the copy has completed and before the delete: the delete is
+/// pinned to the generation that was copied, so the endpoint refuses it, the move fails with the
+/// object having changed, and the newer generation, which was never copied, is not deleted.
+TEST(AzureMove, SourceOverwrittenBetweenCopyAndDelete)
+{
+    MoveOutcome outcome;
+    ASSERT_NO_THROW(outcome = moveBlob(/* overwrite_between_copy_and_delete */ true));
+
+    ASSERT_EQ(outcome.delete_error_code, std::optional<int>(DB::ErrorCodes::FILE_CHANGED_DURING_READ));
+    ASSERT_EQ(outcome.copied_generations, (std::vector<std::string>{ETagBehaviour::first_generation}));
+    ASSERT_TRUE(outcome.deleted_generations.empty());
 }
 
 #endif
