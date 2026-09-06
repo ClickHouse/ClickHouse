@@ -86,6 +86,8 @@ SELECT
     toString(number)
 FROM numbers(100000);
 
+-- Range analysis is declined for a key whose container elements can be NULL: a range over such values
+-- orders a nested NULL first, while the data and the predicate order it last, so it bounds nothing.
 EXPLAIN indexes = 1
 SELECT count()
 FROM test_has_idx_tuple_col_nullable_elements
