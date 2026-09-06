@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
@@ -15,6 +16,73 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
+    /// Reads a selector from the TimeSeries tables of the shards of a cluster, selecting on each shard
+    /// and evaluating centrally.
+    ASTPtr fromRangeSelectorOnCluster(std::string_view instant_selector_text,
+                                      TimestampType min_time,
+                                      TimestampType max_time,
+                                      const ConverterContext & context)
+    {
+        /// SELECT timeSeriesIdToTags(id) AS tags, timestamp, value
+        /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>)
+        SelectQueryBuilder shard_builder;
+
+        shard_builder.select_list.push_back(makeASTFunction("timeSeriesIdToTags", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
+        shard_builder.select_list.back()->setAlias(ColumnNames::Tags);
+
+        shard_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+        shard_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+
+        const auto & remote_storage_id = context.remote_time_series_storage_id;
+        auto selector_function = makeASTFunction("timeSeriesSelector");
+        /// An empty database name means each shard uses its own default database.
+        if (remote_storage_id.hasDatabase())
+            selector_function->arguments->children.push_back(make_intrusive<ASTLiteral>(remote_storage_id.database_name));
+        selector_function->arguments->children.push_back(make_intrusive<ASTLiteral>(remote_storage_id.getTableName()));
+        selector_function->arguments->children.push_back(make_intrusive<ASTLiteral>(String{instant_selector_text}));
+        selector_function->arguments->children.push_back(timeSeriesTimestampToAST(min_time, context.timestamp_data_type));
+        selector_function->arguments->children.push_back(timeSeriesTimestampToAST(max_time, context.timestamp_data_type));
+        shard_builder.from_table_function = std::move(selector_function);
+
+        /// SELECT tags, timestamp, value FROM cluster(<cluster>, view(<shard query>))
+        SelectQueryBuilder cluster_builder;
+
+        cluster_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
+        cluster_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+        cluster_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+
+        /// Declared on the generated call itself, so the ephemeral Distributed storage carries the
+        /// wrapper's fan-out semantics and the caller's own setting still overrides them normally.
+        auto cluster_settings = make_intrusive<ASTSetQuery>();
+        cluster_settings->is_standalone = false;
+        cluster_settings->changes.emplace_back("skip_unavailable_shards", context.skip_unavailable_shards);
+        cluster_settings->changes.emplace_back("skip_unavailable_shards_mode", context.skip_unavailable_shards_mode);
+
+        cluster_builder.from_table_function = makeASTFunction(
+            "cluster",
+            make_intrusive<ASTLiteral>(context.cluster_name),
+            makeASTFunction("view", shard_builder.getSelectQuery()),
+            std::move(cluster_settings));
+
+        /// Always ship the query text: a serialized plan binds an unqualified name on the
+        /// initiator, and shards do not apply their own row policies to a shipped plan (#112891).
+        cluster_builder.settings_changes.emplace_back("serialize_query_plan", false);
+
+        /// SELECT timeSeriesTagsToGroup(tags) AS group, timestamp, value FROM view(<cluster query>)
+        /// Groups are node-local: without the view() the whole query goes to the shards, which each restart their own counter.
+        SelectQueryBuilder builder;
+
+        builder.select_list.push_back(makeASTFunction("timeSeriesTagsToGroup", make_intrusive<ASTIdentifier>(ColumnNames::Tags)));
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+
+        builder.from_table_function = makeASTFunction("view", cluster_builder.getSelectQuery());
+
+        return builder.getSelectQuery();
+    }
+
     SQLQueryPiece fromRangeSelector(std::string_view instant_selector_text,
                                     const Node * node,
                                     ConverterContext & context)
@@ -25,6 +93,15 @@ namespace
 
         SQLQueryPiece res{node, ResultType::RANGE_VECTOR, StoreMethod::RAW_DATA};
 
+        TimestampType min_time = node_range.start_time - node_range.window + 1;
+        TimestampType max_time = node_range.end_time;
+
+        if (!context.cluster_name.empty())
+        {
+            res.select_query = fromRangeSelectorOnCluster(instant_selector_text, min_time, max_time, context);
+            return res;
+        }
+
         /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
         /// FROM timeSeriesSelectorToGrid(<selector>, <start_time>, <end_time>, <step>, <window>)
         SelectQueryBuilder builder;
@@ -34,9 +111,6 @@ namespace
 
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
-
-        TimestampType min_time = node_range.start_time - node_range.window + 1;
-        TimestampType max_time = node_range.end_time;
 
         builder.from_table_function = makeASTFunction(
             "timeSeriesSelector",

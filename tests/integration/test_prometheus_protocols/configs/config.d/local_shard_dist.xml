@@ -1,0 +1,27 @@
+<clickhouse>
+    <remote_servers>
+        <!-- One shard, no <default_database>: local on this node (Cluster::Address::is_local), so the sink and
+             the read rewrite run it in-process on the caller's context instead of over the connection. -->
+        <local_shard_dist>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </local_shard_dist>
+        <!-- The same local replica twice: a shard that parallel replicas could spread over. -->
+        <local_shard_two_replicas>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </local_shard_two_replicas>
+    </remote_servers>
+</clickhouse>
