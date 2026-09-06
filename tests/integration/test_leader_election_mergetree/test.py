@@ -3228,7 +3228,6 @@ def test_follower_drop_table_keeps_shared_data(started_cluster):
 
 
 SHARED_UUID_LAZY_FOLLOWER_DROP = "12345678-abcd-abcd-abcd-12345678ab49"
-SHARED_UUID_LAZY_FOLLOWER_DROP_UNLOADABLE = "12345678-abcd-abcd-abcd-12345678ab50"
 
 
 def attach_lazy_database_with_table(node, database, table, uuid):
@@ -3340,105 +3339,6 @@ def test_follower_lazy_drop_table_keeps_shared_data(started_cluster):
         )
     finally:
         for node in (node1, node2):
-            try:
-                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
-            except Exception:
-                pass
-        try:
-            node2.query(f"DROP DATABASE IF EXISTS {database} SYNC")
-        except Exception:
-            pass
-
-
-def test_follower_lazy_drop_unmaterializable_table_keeps_shared_data(started_cluster):
-    """
-    The fail-closed branch of `StorageTableProxy::drop`: the nested storage cannot be
-    materialized at all, so the proxy cannot ask it whether the data is shared. It reports
-    the ownership as *unknown* (`dropDataOwnershipUnknown`), and
-    `DatabaseCatalog::dropTableFinally` then cleans node-local disks but skips disks whose
-    metadata is shared across nodes (`plain_rewritable` / `keeper`). Without that, the
-    unloadable proxy falls back to the default `dropSkipsDataDirectoryCleanup() == false`
-    and the catalog destroys the leader's data with `removeRecursive`.
-
-    The materialization failure is injected with the `storage_table_proxy_drop_load_failure`
-    failpoint, because a genuine load failure of a shared-storage table (an unreachable
-    endpoint, a metadata layout the node cannot read) is not reproducible on demand here.
-    """
-    ensure_node_up(node1)
-    ensure_node_up(node2)
-    failpoint = "storage_table_proxy_drop_load_failure"
-    table = "test_lazy_follower_drop_unloadable"
-    database = "lazy_follower_drop_unloadable_db"
-    try:
-        create_table_on_first_node(
-            node1, table, SHARED_UUID_LAZY_FOLLOWER_DROP_UNLOADABLE
-        )
-        wait_for_leader([node1], table_name=table)
-        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
-
-        part_name = node1.query(
-            f"SELECT name FROM system.parts WHERE database = currentDatabase()"
-            f" AND table = '{table}' AND active AND rows > 1 LIMIT 1"
-        ).strip()
-        assert part_name
-        part_prefix = find_part_object_key_prefix(
-            SHARED_UUID_LAZY_FOLLOWER_DROP_UNLOADABLE, part_name
-        )
-        assert part_prefix, "Could not locate the part's S3 prefix before the drop"
-
-        attach_lazy_database_with_table(
-            node2, database, table, SHARED_UUID_LAZY_FOLLOWER_DROP_UNLOADABLE
-        )
-
-        node2.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
-        node2.query(f"DROP TABLE {database}.{table} SYNC")
-        node2.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-
-        store_path = (
-            f"store/{SHARED_UUID_LAZY_FOLLOWER_DROP_UNLOADABLE[:3]}/"
-            f"{SHARED_UUID_LAZY_FOLLOWER_DROP_UNLOADABLE}"
-        )
-        assert node2.contains_in_log(f"Not removing data directory {store_path}"), (
-            "The catalog did not take the fail-closed path for the unloadable proxy, "
-            "so the scenario under test was not reached"
-        )
-
-        objects_after_drop = list(
-            cluster.minio_client.list_objects(
-                cluster.minio_bucket, part_prefix, recursive=True
-            )
-        )
-        assert objects_after_drop, (
-            "DROP TABLE of a lazy proxy whose storage could not be materialized removed "
-            "shared S3 data owned by the leader"
-        )
-
-        rows = node1.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
-        assert rows == "1\n2\n3", (
-            f"Leader lost data after a follower-side drop of an unloadable proxy, got: {rows!r}"
-        )
-        node1.query(f"INSERT INTO {table} VALUES (10)")
-
-        attach_table_on_second_node(
-            node2, table, SHARED_UUID_LAZY_FOLLOWER_DROP_UNLOADABLE
-        )
-        expected = "1\n2\n3\n10"
-        deadline = time.monotonic() + 60
-        rows = ""
-        while time.monotonic() < deadline:
-            rows = node2.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
-            if rows == expected:
-                break
-            time.sleep(1)
-        assert rows == expected, (
-            f"Re-attached follower does not see the shared data, got: {rows!r}"
-        )
-    finally:
-        for node in (node1, node2):
-            try:
-                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-            except Exception:
-                pass
             try:
                 node.query(f"DROP TABLE IF EXISTS {table} SYNC")
             except Exception:

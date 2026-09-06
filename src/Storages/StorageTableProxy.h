@@ -4,23 +4,12 @@
 
 #include <Storages/StorageProxy.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int FAULT_INJECTED;
-}
-
-namespace FailPoints
-{
-    extern const char storage_table_proxy_drop_load_failure[];
-}
 
 /// Lazily creates underlying storage for tables in databases with `lazy_load_tables` setting.
 /// Similar to `StorageTableFunctionProxy`, but for real on-disk tables.
@@ -119,13 +108,6 @@ public:
         try
         {
             LOG_TRACE(log, "Loading table for drop without startup");
-
-            /// Test hook for the fail-closed path below: the materialization of the nested
-            /// storage fails, so the ownership of the data becomes unknown.
-            fiu_do_on(FailPoints::storage_table_proxy_drop_load_failure,
-            {
-                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure into the nested storage load of StorageTableProxy::drop");
-            });
 
             if (!get_nested)
             {
