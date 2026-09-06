@@ -44,6 +44,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUT.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
@@ -75,6 +76,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char async_insert_pause_before_schedule[];
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -435,6 +441,8 @@ void AsynchronousInsertQueue::clear()
 void AsynchronousInsertQueue::scheduleDataProcessingJob(
     const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr current_query_thread_group)
 {
+    FailPointInjection::pauseFailPoint(FailPoints::async_insert_pause_before_schedule);
+
     /// Intuitively it seems reasonable to process first inserted blocks first.
     /// We add new chunks in the end of entries list, so they are automatically ordered by creation time
     chassert(!data->entries.empty());
@@ -725,6 +733,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
                       has_enough_queries ? "enough queries accumulated" :
                       "maximum busy wait timeout exceeded");
             data->timeout_ms = Milliseconds::zero();
+            data->trackFlush(shard.in_flight_flushes);
             data_to_process = std::move(data);
 
             NOEXCEPT_SCOPE({
@@ -753,11 +762,14 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
             CurrentMetrics::add(CurrentMetrics::AsynchronousInsertQueueBytes, entry_data_size);
         }
 
-        if (data_to_process)
-            scheduleDataProcessingJob(key, std::move(data_to_process), getContext(), shard_num);
-        else
+        if (!data_to_process)
             shard.are_tasks_available.notify_one();
     }
+
+    /// Pool admission can wait for a running flush to finish. Keep that backpressure on this
+    /// producer, but allow other inserts to append to their buffers in the same queue shard.
+    if (data_to_process)
+        scheduleDataProcessingJob(key, std::move(data_to_process), getContext(), shard_num);
 
     return PushResult
     {
@@ -959,6 +971,20 @@ void AsynchronousInsertQueue::flushAll()
         "Will wait for finishing of {} flushing jobs (about {} inserts, {} bytes, {} distinct queries)",
         pool.active(), total_entries, total_bytes, total_queries);
 
+    /// A removed batch can contain already acknowledged inserts while still waiting for
+    /// pool admission. `flush_stopped` and the shard locks above ensure no new batches
+    /// can enter this state until the forced flush finishes. Wait without the shard mutex
+    /// so producers can continue buffering and submitting the batches already removed.
+    for (auto & shard : queue_shards)
+    {
+        auto in_flight = shard.in_flight_flushes.load();
+        while (in_flight)
+        {
+            shard.in_flight_flushes.wait(in_flight);
+            in_flight = shard.in_flight_flushes.load();
+        }
+    }
+
     /// Wait until all jobs are finished. That includes also jobs
     /// that were scheduled before the call of 'flushAll'.
     /// All other pending inserts are blocked by 'flush_stopped'.
@@ -1017,6 +1043,7 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num) TSA_NO_THR
 
                     shard.iterators.erase(it->second.key.hash);
 
+                    it->second.data->trackFlush(shard.in_flight_flushes);
                     entries_to_flush.emplace_back(std::move(it->second));
 
                     shard.queue.erase(it);
