@@ -309,8 +309,8 @@ static std::vector<UInt8> autoAssignNumberForEnum(const ASTPtr & arguments, bool
 
     if (assign_count != 0 && assign_count != arguments->children.size() - 1)
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                        "All elements of Enum data type must be of form: "
-                        "'name' = number or 'name', where name is string literal and number is an integer");
+                        "All elements of Enum data type after the first one must be of the same form: "
+                        "either all 'name' = number, or all 'name'");
 
     arguments->children = assign_number_child;
     return relative_flags;
