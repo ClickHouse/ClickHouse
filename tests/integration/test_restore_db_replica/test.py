@@ -1,5 +1,6 @@
 import random
 import string
+import threading
 import time
 
 import pytest
@@ -622,6 +623,306 @@ def test_failed_restore_db_replica_on_normal_replica(
 
     node_1.query(f"DROP DATABASE {exclusive_database_name} SYNC")
     node_2.query(f"DROP DATABASE {exclusive_database_name} SYNC")
+
+
+def test_restore_db_replica_waits_for_in_flight_ddl(
+    start_cluster,
+    exclusive_database_name,
+):
+    fail_point = "database_replicated_pause_before_initial_entry_execution"
+    seed_table = "seed_table"
+    parked_table = "parked_table"
+
+    # One replica only: the test deletes this replica's Keeper state to make the restore legal, and a
+    # second replica would change what the restore recovers from.
+    node_1.query(
+        f"""
+            CREATE DATABASE {exclusive_database_name}
+            ENGINE=Replicated("/clickhouse/{exclusive_database_name}", \'{{shard}}\', \'{{replica}}\')
+        """
+    )
+    create_table(node_1, f"{exclusive_database_name}.{seed_table}")
+
+    zk = cluster.get_kazoo_client("zoo1")
+    replica_path = f"/clickhouse/{exclusive_database_name}/replicas/shard1|replica1"
+
+    restore_query_id = f"restore_{generate_random_string(10)}"
+
+    finished = []
+    finished_lock = threading.Lock()
+    create_result = {}
+    restore_result = {}
+
+    def run_query(query, sink, label, query_id=None):
+        try:
+            node_1.query(query, query_id=query_id)
+            sink["ok"] = True
+        except Exception as ex:
+            sink["error"] = str(ex)
+        with finished_lock:
+            finished.append(label)
+
+    create_thread = threading.Thread(
+        target=run_query,
+        args=(
+            f"CREATE TABLE {exclusive_database_name}.{parked_table} (n UInt64) ENGINE = MergeTree ORDER BY n",
+            create_result,
+            "create",
+        ),
+    )
+    restore_thread = threading.Thread(
+        target=run_query,
+        args=(
+            f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}",
+            restore_result,
+            "restore",
+            restore_query_id,
+        ),
+    )
+
+    try:
+        node_1.query(f"SYSTEM ENABLE FAILPOINT {fail_point}")
+        create_thread.start()
+
+        # Blocks until the CREATE is parked inside tryEnqueueAndExecuteEntry, still holding
+        # the table-level DDLGuard that InterpreterCreateQuery took for it.
+        node_1.query(f"SYSTEM WAIT FAILPOINT {fail_point} PAUSE", timeout=60)
+
+        # A healthy database refuses the restore ("digest ... already exists"), so drop this
+        # replica's Keeper state first. /log survives, so the parked entry can still commit.
+        zk_rmr_with_retries(zk, replica_path)
+        assert zk.exists(replica_path) is None
+
+        restore_thread.start()
+
+        # The restore must start and then stay unfinished for as long as the entry is parked.
+        # Both halves are latched, so neither can be missed by a slow poll: once the restore
+        # finishes it stays finished, and once it recreates its Keeper node that node stays.
+        # Blocked on the guard it never finishes at all, so the window cannot be too short.
+        observed_running = False
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            with finished_lock:
+                assert "restore" not in finished, (
+                    "SYSTEM RESTORE DATABASE REPLICA finished while a replicated DDL entry"
+                    f" was still executing through the DDL worker it replaces: {restore_result}"
+                )
+            assert zk.exists(replica_path) is None, (
+                "SYSTEM RESTORE DATABASE REPLICA recreated the replica in Keeper while a"
+                " replicated DDL entry was still executing through the DDL worker it replaces"
+            )
+            if not observed_running:
+                observed_running = (
+                    node_1.query(
+                        "SELECT count() FROM system.processes"
+                        f" WHERE query_id = '{restore_query_id}'"
+                    ).strip()
+                    == "1"
+                )
+            time.sleep(0.2)
+
+        assert observed_running, (
+            "SYSTEM RESTORE DATABASE REPLICA was never observed running, so the window it"
+            f" is supposed to block in was never entered. finished={finished}"
+        )
+
+        node_1.query(f"SYSTEM DISABLE FAILPOINT {fail_point}")
+
+        create_thread.join(timeout=120)
+        restore_thread.join(timeout=120)
+        assert not create_thread.is_alive(), "the parked CREATE TABLE never returned"
+        assert not restore_thread.is_alive(), (
+            "SYSTEM RESTORE DATABASE REPLICA never returned after the entry was released;"
+            f" finished={finished}"
+        )
+
+        assert restore_result == {"ok": True}, f"restore failed: {restore_result}"
+        # The entry loses the race for the database lock the restore now holds exclusively,
+        # exactly as it does against the pre-existing guard in DROP DATABASE.
+        create_error = create_result.get("error", "")
+        assert (
+            "Code: 159" in create_error
+            and "Unable to acquire the database lock" in create_error
+        ), f"expected the parked entry to fail with TIMEOUT_EXCEEDED on the database lock, got: {create_result}"
+        assert node_1.query("SELECT 1").strip() == "1"
+        assert zk.exists(replica_path)
+        assert seed_table in get_tables_from_replicated(node_1, exclusive_database_name)
+    finally:
+        # Disable first, so a failed assertion above cannot leave a thread parked forever.
+        try:
+            node_1.query(f"SYSTEM DISABLE FAILPOINT {fail_point}")
+        except Exception as ex:
+            print(ex)
+        for thread in (create_thread, restore_thread):
+            if thread.ident is not None:
+                thread.join(timeout=120)
+        try:
+            node_1.query(f"DROP DATABASE IF EXISTS {exclusive_database_name} SYNC")
+        except Exception as ex:
+            print(ex)
+
+
+def test_restore_db_replica_waits_for_database_sync(
+    start_cluster,
+    exclusive_database_name,
+):
+    # SYSTEM SYNC DATABASE REPLICA holds the database-wide DDLGuard while it waits, and that guard
+    # does not imply the shared database lock, so a waiting sync isolates it from the exclusive
+    # lock the restore takes next.
+    fail_point = "database_replicated_stop_entry_execution"
+    remote_table = "remote_table"
+
+    prepare_db(exclusive_database_name)
+    for node in cluster_nodes:
+        node.query(f"SYSTEM SYNC DATABASE REPLICA {exclusive_database_name}")
+
+    zk = cluster.get_kazoo_client("zoo1")
+    digest_path = (
+        f"/clickhouse/{exclusive_database_name}/replicas/shard1|replica1/digest"
+    )
+
+    sync_query_id = f"sync_{generate_random_string(10)}"
+    restore_query_id = f"restore_{generate_random_string(10)}"
+
+    finished = []
+    finished_lock = threading.Lock()
+    sync_result = {}
+    restore_result = {}
+
+    def run_query(query, sink, label, query_id, settings=None):
+        try:
+            node_1.query(query, query_id=query_id, settings=settings)
+            sink["ok"] = True
+        except Exception as ex:
+            sink["error"] = str(ex)
+        with finished_lock:
+            finished.append(label)
+
+    sync_thread = threading.Thread(
+        target=run_query,
+        args=(
+            f"SYSTEM SYNC DATABASE REPLICA {exclusive_database_name}",
+            sync_result,
+            "sync",
+            sync_query_id,
+            {"receive_timeout": 120},
+        ),
+    )
+    restore_thread = threading.Thread(
+        target=run_query,
+        args=(
+            f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}",
+            restore_result,
+            "restore",
+            restore_query_id,
+        ),
+    )
+
+    try:
+        node_1.query(f"SYSTEM ENABLE FAILPOINT {fail_point}")
+
+        # The entry is enqueued from the other replica, so no query thread on node_1 holds a
+        # table-level DDLGuard: this failpoint parks node_1's own worker thread before it takes
+        # one. That is what makes the arm measure the database-wide guard and nothing else.
+        node_2.query(
+            f"CREATE TABLE {exclusive_database_name}.{remote_table} (n UInt32)"
+            " ENGINE = ReplicatedMergeTree ORDER BY n",
+            settings={
+                "distributed_ddl_task_timeout": 5,
+                "distributed_ddl_output_mode": "never_throw",
+            },
+        )
+        node_1.query(f"SYSTEM WAIT FAILPOINT {fail_point} PAUSE", timeout=60)
+
+        # node_1 is behind the log now, so the sync waits instead of returning at once.
+        sync_thread.start()
+        # `getDDLGuard(db, "")` is the first statement of `syncReplicatedDatabase`, and this
+        # line is logged after it and immediately before the wait, so seeing it for this query
+        # id proves the sync holds the guard.
+        sync_latch = (
+            f"{{{sync_query_id}}} <Trace> InterpreterSystemQuery: Synchronizing entries"
+        )
+        deadline = time.monotonic() + 60
+        while not node_1.contains_in_log(sync_latch):
+            assert time.monotonic() < deadline, (
+                f"SYSTEM SYNC DATABASE REPLICA never reached its wait: {sync_result}"
+            )
+            time.sleep(0.2)
+
+        digest_before_restore = zk.get(digest_path)[0]
+        restore_thread.start()
+
+        # Latched, as in the test above. The digest is the condition that fires: an unguarded
+        # restore rewrites it to force recovery, and only then reaches the worker reset, where it
+        # blocks on the parked thread - so "did not finish" alone would pass unguarded too. The
+        # sync half keeps the arm honest, because a sync that stopped waiting holds no guard.
+        observed_running = False
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            with finished_lock:
+                assert "sync" not in finished, (
+                    "SYSTEM SYNC DATABASE REPLICA stopped waiting before the window ended, so"
+                    f" this arm measured nothing: {sync_result}"
+                )
+                assert "restore" not in finished, (
+                    "SYSTEM RESTORE DATABASE REPLICA finished while SYSTEM SYNC DATABASE REPLICA"
+                    f" held the database guard: {restore_result}"
+                )
+            assert zk.get(digest_path)[0] == digest_before_restore, (
+                "SYSTEM RESTORE DATABASE REPLICA rewrote this replica's digest in Keeper during"
+                " the window in which SYSTEM SYNC DATABASE REPLICA was waiting"
+            )
+            if not observed_running:
+                observed_running = (
+                    node_1.query(
+                        "SELECT count() FROM system.processes"
+                        f" WHERE query_id = '{restore_query_id}'"
+                    ).strip()
+                    == "1"
+                )
+            time.sleep(0.2)
+
+        assert observed_running, (
+            "SYSTEM RESTORE DATABASE REPLICA was never observed running, so the window it"
+            f" is supposed to block in was never entered. finished={finished}"
+        )
+
+        node_1.query(f"SYSTEM DISABLE FAILPOINT {fail_point}")
+
+        sync_thread.join(timeout=180)
+        restore_thread.join(timeout=180)
+        assert not sync_thread.is_alive(), "SYSTEM SYNC DATABASE REPLICA never returned"
+        assert not restore_thread.is_alive(), (
+            "SYSTEM RESTORE DATABASE REPLICA never returned after the sync released the"
+            f" database guard; finished={finished}"
+        )
+
+        assert sync_result == {"ok": True}, f"sync failed: {sync_result}"
+        # Once released the restore reaches the same refusal it gives on any healthy replica, so
+        # it was delayed and not broken.
+        assert (
+            f"Replica node '/clickhouse/{exclusive_database_name}/replicas/shard1|replica1/digest'"
+            " in ZooKeeper already exists" in restore_result.get("error", "")
+        ), f"expected the restore to refuse a healthy replica, got: {restore_result}"
+        assert remote_table in get_tables_from_replicated(node_1, exclusive_database_name)
+    finally:
+        # Disable first, so a failed assertion above cannot leave a thread parked forever.
+        try:
+            node_1.query(f"SYSTEM DISABLE FAILPOINT {fail_point}")
+        except Exception as ex:
+            print(ex)
+        for thread in (sync_thread, restore_thread):
+            if thread.ident is not None:
+                thread.join(timeout=180)
+        for node in cluster_nodes:
+            try:
+                node.query(f"DROP DATABASE IF EXISTS {exclusive_database_name} SYNC")
+            except Exception as ex:
+                print(ex)
+
+    assert node_1.query(
+        f"SELECT count() FROM system.fail_points WHERE name = '{fail_point}' AND enabled"
+    ) == TSV([0])
 
 
 def test_restore_db_replica_on_cluster(
