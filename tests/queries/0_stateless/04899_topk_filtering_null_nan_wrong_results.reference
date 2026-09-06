@@ -1,0 +1,194 @@
+parts	1
+json nan rows	10
+arr ANF ON 	[NULL]
+arr ANF OFF	[NULL]
+map ANF ON 	{'k':NULL}
+map ANF OFF	{'k':NULL}
+lc  ANF ON 	[NULL]
+lc  ANF OFF	[NULL]
+atn ANF ON 	[(1,NULL)]
+atn ANF OFF	[(1,NULL)]
+arr DNL ON 	[300]	2000
+arr DNL ON 	[200]	1000
+arr DNL ON 	[100]	0
+arr DNL OFF	[300]	2000
+arr DNL OFF	[200]	1000
+arr DNL OFF	[100]	0
+f64 ANF ON 	nan
+f64 ANF OFF	nan
+f32 ANF ON 	nan
+f32 ANF OFF	nan
+bf  ANF ON 	nan
+bf  ANF OFF	nan
+f64 DNF ON 	nan
+f64 DNF OFF	nan
+f64 ANL ON 	50	0
+f64 ANL ON 	nan	2999
+f64 ANL ON 	nan	2998
+f64 ANL OFF	50	0
+f64 ANL OFF	nan	2999
+f64 ANL OFF	nan	2998
+f64 DNL ON 	50	0
+f64 DNL ON 	nan	2999
+f64 DNL ON 	nan	2998
+f64 DNL OFF	50	0
+f64 DNL OFF	nan	2999
+f64 DNL OFF	nan	2998
+bf  ANL ON 	50	0
+bf  ANL ON 	nan	2999
+bf  ANL ON 	nan	2998
+bf  ANL OFF	50	0
+bf  ANL OFF	nan	2999
+bf  ANL OFF	nan	2998
+tup ANL ON 	(50,0)	0
+tup ANL ON 	(nan,0)	2999
+tup ANL ON 	(nan,0)	2998
+tup ANL OFF	(50,0)	0
+tup ANL OFF	(nan,0)	2999
+tup ANL OFF	(nan,0)	2998
+tup DNL ON 	(50,0)	0
+tup DNL ON 	(nan,0)	2999
+tup DNL ON 	(nan,0)	2998
+tup DNL OFF	(50,0)	0
+tup DNL OFF	(nan,0)	2999
+tup DNL OFF	(nan,0)	2998
+arrf ANF ON 	[nan]
+arrf ANF OFF	[nan]
+tupf ANF ON 	(nan,0)
+tupf ANF OFF	(nan,0)
+mapf ANF ON 	{'k':nan}
+mapf ANF OFF	{'k':nan}
+lcf ANF ON 	[nan]
+lcf ANF OFF	[nan]
+json ANF ON 	{"f":null}
+json ANF OFF	{"f":null}
+jsub ANF ON 	nan
+jsub ANF OFF	nan
+tdyn ANF ON 	(nan)
+tdyn ANF OFF	(nan)
+tdyn ANL ON 	(50)	0
+tdyn ANL ON 	(nan)	2999
+tdyn ANL ON 	(nan)	2998
+tdyn ANL OFF	(50)	0
+tdyn ANL OFF	(nan)	2999
+tdyn ANL OFF	(nan)	2998
+tvar ANL ON 	(50)	0
+tvar ANL ON 	(nan)	2999
+tvar ANL ON 	(nan)	2998
+tvar ANL OFF	(50)	0
+tvar ANL OFF	(nan)	2999
+tvar ANL OFF	(nan)	2998
+tvs ANL ON 	('aaa')	0
+tvs ANL ON 	(NULL)	2999
+tvs ANL ON 	(NULL)	2998
+tvs ANL OFF	('aaa')	0
+tvs ANL OFF	(NULL)	2999
+tvs ANL OFF	(NULL)	2998
+dyord DESC ON 	(1000)	2999
+dyord DESC ON 	(1000)	2998
+dyord DESC OFF	(1000)	2999
+dyord DESC OFF	(1000)	2998
+dyord ASC ON 	(0)	999
+dyord ASC ON 	(0)	998
+dyord ASC OFF	(0)	999
+dyord ASC OFF	(0)	998
+ctl stord DESC ON 	(1000)	2999
+ctl stord DESC ON 	(1000)	2998
+ctl stord DESC OFF	(1000)	2999
+ctl stord DESC OFF	(1000)	2998
+vsta ASC ON 	(900)	2999
+vsta ASC ON 	(900)	2998
+vsta ASC OFF	(900)	2999
+vsta ASC OFF	(900)	2998
+vsta DESC ON 	(4)	1999
+vsta DESC ON 	(4)	1998
+vsta DESC OFF	(4)	1999
+vsta DESC OFF	(4)	1998
+skip1 ON 	nan
+skip1 OFF	nan
+skip0 ON 	nan
+skip0 OFF	nan
+lcn ANF ON 	\N
+lcn ANF OFF	\N
+lcfd ANF ON 	nan
+lcfd ANF OFF	nan
+ctl arr ANL ON 	[100]	0
+ctl arr ANL ON 	[200]	1000
+ctl arr ANL ON 	[300]	2000
+ctl arr ANL OFF	[100]	0
+ctl arr ANL OFF	[200]	1000
+ctl arr ANL OFF	[300]	2000
+ctl arr DNF ON 	[NULL]	2999
+ctl arr DNF ON 	[NULL]	2998
+ctl arr DNF ON 	[NULL]	2997
+ctl arr DNF OFF	[NULL]	2999
+ctl arr DNF OFF	[NULL]	2998
+ctl arr DNF OFF	[NULL]	2997
+ctl arrf ANL ON 	[50]	0
+ctl arrf ANL ON 	[nan]	2999
+ctl arrf ANL ON 	[nan]	2998
+ctl arrf ANL OFF	[50]	0
+ctl arrf ANL OFF	[nan]	2999
+ctl arrf ANL OFF	[nan]	2998
+ctl atf  ANL ON 	[(50,0)]	0
+ctl atf  ANL ON 	[(nan,0)]	2999
+ctl atf  ANL ON 	[(nan,0)]	2998
+ctl atf  ANL OFF	[(50,0)]	0
+ctl atf  ANL OFF	[(nan,0)]	2999
+ctl atf  ANL OFF	[(nan,0)]	2998
+ctl nf ANF ON 	\N	1750
+ctl nf ANF ON 	\N	1500
+ctl nf ANF ON 	\N	1250
+ctl nf ANF OFF	\N	1750
+ctl nf ANF OFF	\N	1500
+ctl nf ANF OFF	\N	1250
+ctl nf ANL ON 	50	0
+ctl nf ANL ON 	nan	2999
+ctl nf ANL ON 	nan	2998
+ctl nf ANL OFF	50	0
+ctl nf ANL OFF	nan	2999
+ctl nf ANL OFF	nan	2998
+ctl nf DNF ON 	\N	1750
+ctl nf DNF ON 	\N	1500
+ctl nf DNF ON 	\N	1250
+ctl nf DNF OFF	\N	1750
+ctl nf DNF OFF	\N	1500
+ctl nf DNF OFF	\N	1250
+ctl nf DNL ON 	50	0
+ctl nf DNL ON 	nan	2999
+ctl nf DNL ON 	nan	2998
+ctl nf DNL OFF	50	0
+ctl nf DNL OFF	nan	2999
+ctl nf DNL OFF	nan	2998
+ctl u64 ON 	100
+ctl u64 OFF	100
+ctl dec ANL ON 	50	0
+ctl dec ANL ON 	77	2999
+ctl dec ANL ON 	77	2998
+ctl dec ANL OFF	50	0
+ctl dec ANL OFF	77	2999
+ctl dec ANL OFF	77	2998
+ctl ord ANL ON 	50	0
+ctl ord ANL ON 	77	2999
+ctl ord ANL ON 	77	2998
+ctl ord ANL OFF	50	0
+ctl ord ANL OFF	77	2999
+ctl ord ANL OFF	77	2998
+pres arr	1
+pres f64	1
+pres tup	1
+pres tdyn	0
+pres dyord	0
+pres vsta	0
+pres stord	1
+pres jsub	1
+pres jroot	0
+pres off varlen	0
+pres off master	0
+skipidx f64	0
+skipidx u64	1
+skipidx lcn	0
+skipidx lcfd	0
+skipidx lcw	1
+eff f64	1
+eff arr	1

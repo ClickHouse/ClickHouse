@@ -2,6 +2,7 @@
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/hasNullable.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -159,22 +160,23 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     /// The skip-index top-k path ranks granules via raw Field comparison
     /// (MinMaxGranuleItem::operator<) which does not respect nulls_direction
-    /// or collation. Restrict it to types where raw Field ordering matches
+    /// or collation, and orders NaN as the greatest value regardless of the
+    /// ORDER BY direction. Restrict it to types where raw Field ordering matches
     /// ORDER BY semantics. This check mirrors the guard in
     /// ReadFromMergeTree::buildIndexes for defense-in-depth.
     bool skip_index_type_eligible = sort_column.type->isValueRepresentedByNumber()
         && !sort_column.type->isNullable()
+        && !hasTypeThatCanContainFloat(sort_column.type)
         && !sort_col_desc.collator;
 
     bool use_skip_index = settings.use_skip_indexes_for_top_k
         && skip_index_type_eligible
         && read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name);
 
-    /// Dynamic and Variant columns cannot be reliably filtered: their lessOrEquals
-    /// returns Nullable(UInt8) rather than UInt8, causing an "Unexpected return type"
-    /// logical error when the prewhere filter is executed. Comparison functions also
-    /// reject zero-sized tuples even though ORDER BY supports them. Skip the optimization
-    /// for these types.
+    /// The threshold is a bare Field, so it can only order types whose Field ordering matches
+    /// ORDER BY. Comparison functions also reject zero-sized tuples even though ORDER BY
+    /// supports them.
+    /// TODO: lift the Field restriction once the threshold carries the full sort-key representation.
     ///
     /// For variable-length types (e.g. String, Array, Map, Tuple containing variable-length
     /// elements), the per-row threshold comparison cost can exceed its savings — most notably
@@ -185,8 +187,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     const auto * sort_column_tuple_type = typeid_cast<const DataTypeTuple *>(sort_column.type.get());
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
         && !read_from_mergetree_step->getPrewhereInfo()
-        && !isDynamic(sort_column.type)
-        && !isVariant(sort_column.type)
+        && !hasRuntimeTypedType(sort_column.type)
         && (!sort_column_tuple_type || !sort_column_tuple_type->getElements().empty())
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
 
