@@ -185,18 +185,13 @@ with gzip.open("trips_0.gz", "rb") as f:
     header = f.readline().decode().rstrip("\n").split("\t")
     index = {name: i for i, name in enumerate(header)}
     for raw in f:
-        # About 14% of rows carry bytes that are not valid UTF-8, and JSON
-        # requires valid UTF-8, so the line is repaired on decode. Those bytes
-        # are confined to the file's `pickup` and `dropoff` geometry columns,
-        # which COLUMNS does not publish; tab is ASCII, so the repair cannot
-        # move the field boundaries. Every column published below is therefore
-        # byte-identical to the source. Verified over all 1,000,660 rows: no
-        # published cell differs from a strict decode, and none contains
-        # U+FFFD.
-        parts = raw.decode("utf-8", errors="replace").rstrip("\n").split("\t")
+        # Split on the raw bytes and decode only the columns being published.
+        # The file carries columns this example does not use that are not
+        # valid UTF-8, and decoding the whole line would have to corrupt them.
+        parts = raw.rstrip(b"\n").split(b"\t")
         row = {}
         for col in COLUMNS:
-            value = parts[index[col]]
+            value = parts[index[col]].decode()
             if value == "":
                 row[col] = None
             elif col in INTS:
