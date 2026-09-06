@@ -1,0 +1,14 @@
+basic_csv_quoted	86400	86400125
+basic_csv_unquoted	86400	86400125
+best_effort_csv_quoted	86400	86400125
+best_effort_csv_unquoted	86400	86400125
+best_effort_json	86400	86400125
+best_effort_tsv	86400	86400125
+best_effort_us_json	86400	86400125
+best_effort_us_tsv	86400	86400125
+best_effort_us_values	86400	86400125
+best_effort_values	86400	86400125
+"1970-01-02 05:30:00","1970-01-02 05:30:00.125"
+"1970-01-02T00:00:00Z","1970-01-02T00:00:00.125Z"
+"86400","86400.125"
+805101007D5C260500000000

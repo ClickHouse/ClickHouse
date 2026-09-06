@@ -11,8 +11,8 @@
   * ISO output need it. Constructing a `DateLUTImpl` walks ~146k days through cctz, and the data types
   * (`DataTypeDateTime`, `DataTypeDateTime64`) are constructed just to name a column type - e.g. when building the
   * schemas of the system tables at startup - without ever touching UTC. Resolving UTC here made every such
-  * construction build a second, always-unused lookup table. The serializations that do need it declare their own
-  * `utc_time_zone` member instead, so the cost is paid once per formatter.
+  * construction build a second, always-unused lookup table. Serializations resolve UTC lazily in the text
+  * parsing and formatting paths that need it, without building it for binary serialization.
   */
 class TimezoneMixin
 {

@@ -40,6 +40,15 @@ public:
         return *date_lut.default_impl.load(std::memory_order_acquire);
     }
 
+    static ALWAYS_INLINE const DateLUTImpl & utcTimezoneInstance()
+    {
+        /// Cache the UTC table globally and lazily: it is immutable, independent of session/server timezones,
+        /// and owned by the process-lifetime `DateLUT` singleton. Thread-safe static initialization lets all threads
+        /// reuse the reference without a mutex and timezone-map lookup per value.
+        static const auto & time_zone = instance("UTC");
+        return time_zone;
+    }
+
     static void setDefaultTimezone(std::string_view time_zone)
     {
         auto & date_lut = getInstance();
