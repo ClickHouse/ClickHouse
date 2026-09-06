@@ -3,10 +3,14 @@
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/ColumnDefault.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Columns/IColumn.h>
+#include <Core/Names.h>
 #include <Core/Settings.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -34,6 +38,8 @@ public:
     struct Data
     {
         ContextPtr context;
+        StorageMetadataPtr metadata_snapshot;
+        NameSet visited_default_columns;
         FirstNonDeterministicFunctionResult result;
     };
 
@@ -42,35 +48,57 @@ public:
         return true;
     }
 
-    static void visit(const ASTPtr & node, Data & data)
-    {
-        if (data.result.nondeterministic_function_name || data.result.subquery)
-            return;
-
-        if (node->as<ASTSelectQuery>())
-        {
-            /// We cannot determine if subquery is deterministic or not,
-            /// so we do not allow to use subqueries in mutation without allow_nondeterministic_mutations=1
-            data.result.subquery = true;
-        }
-        else if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
-        {
-            /// Property of being deterministic for lambda expression is completely determined
-            /// by the contents of its definition, so we just proceed to it.
-            if (function->name != "lambda")
-            {
-                /// NOTE It may be an aggregate function, so get(...) may throw.
-                /// However, an aggregate function can be used only in subquery and we do not go into subquery.
-                const auto func = FunctionFactory::instance().get(function->name, data.context);
-                if (!func->isDeterministic())
-                    data.result.nondeterministic_function_name = func->getName();
-            }
-        }
-    }
+    static void visit(const ASTPtr & node, Data & data);
 };
 
 using FirstNonDeterministicFunctionFinder = InDepthNodeVisitor<FirstNonDeterministicFunctionMatcher, true>;
 using FirstNonDeterministicFunctionData = FirstNonDeterministicFunctionMatcher::Data;
+
+void FirstNonDeterministicFunctionMatcher::visit(const ASTPtr & node, Data & data)
+{
+    if (data.result.nondeterministic_function_name || data.result.subquery)
+        return;
+
+    if (node->as<ASTSelectQuery>())
+    {
+        /// We cannot determine if subquery is deterministic or not,
+        /// so we do not allow to use subqueries in mutation without allow_nondeterministic_mutations=1
+        data.result.subquery = true;
+        return;
+    }
+
+    if (data.metadata_snapshot)
+    {
+        if (const auto * identifier = node->as<ASTIdentifier>(); identifier && !identifier->isParam())
+        {
+            const auto column_name = identifier->shortName();
+            if (data.visited_default_columns.insert(column_name).second)
+            {
+                auto column_default = data.metadata_snapshot->columns.getDefault(column_name);
+                if (column_default && column_default->expression
+                    && (column_default->kind == ColumnDefaultKind::Alias || column_default->kind == ColumnDefaultKind::Ephemeral))
+                {
+                    auto default_expression = column_default->expression->clone();
+                    FirstNonDeterministicFunctionFinder(data).visit(default_expression);
+                }
+            }
+        }
+    }
+
+    if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
+    {
+        /// Property of being deterministic for lambda expression is completely determined
+        /// by the contents of its definition, so we just proceed to it.
+        if (function->name != "lambda")
+        {
+            /// NOTE It may be an aggregate function, so get(...) may throw.
+            /// However, an aggregate function can be used only in subquery and we do not go into subquery.
+            const auto func = FunctionFactory::instance().get(function->name, data.context);
+            if (!func->isDeterministic())
+                data.result.nondeterministic_function_name = func->getName();
+        }
+    }
+}
 
 /// Executes and replaces with literals
 /// non-deterministic functions in query.
@@ -139,9 +167,12 @@ using ExecuteNonDeterministicConstFunctionsVisitor = InDepthNodeVisitor<ExecuteN
 
 }
 
-FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const MutationCommand & command, ContextPtr context)
+FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(
+    const MutationCommand & command,
+    ContextPtr context,
+    StorageMetadataPtr metadata_snapshot)
 {
-    FirstNonDeterministicFunctionMatcher::Data finder_data{context, {}};
+    FirstNonDeterministicFunctionMatcher::Data finder_data{context, metadata_snapshot, {}, {}};
 
     switch (command.type)
     {
