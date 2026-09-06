@@ -4,6 +4,7 @@
 #include <tuple>
 #include <base/defines.h>
 #include <Common/AggregatedMetrics.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
@@ -20,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/SharedPartColumns.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
@@ -27,7 +29,7 @@
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/Streaming/CursorPromoter.h>
+#include <Storages/MergeTree/Streaming/Cursors/CursorPromoter.h>
 #include <Storages/Streaming/SubscriptionManager.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/DataDestinationType.h>
@@ -38,6 +40,7 @@
 #include <Poco/Timestamp.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -353,7 +356,7 @@ public:
         const VolumePtr & volume,
         const String & part_dir,
         const ReadSettings & read_settings,
-        bool part_may_exist_on_disk = true) const;
+        PartDirIntent intent) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreActive parts (the parts are ready, but not yet in the active set).
@@ -562,6 +565,10 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
+    /// The contract is std::nullopt here, so this only matters when a wrapper (`Merge`,
+    /// `MaterializedView`, `Buffer`) delegating the read to this table forwards the question.
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override { return true; }
+
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts & parts, const Names & required_columns, ContextPtr local_context) const override;
 
     bool supportsFinal() const override;
@@ -570,8 +577,11 @@ public:
 
     bool supportsTTL() const override { return true; }
 
+    bool supportsStatistics() const override { return true; }
+
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsSparseSerialization() const override { return true; }
+    bool supportsPinnedSnapshot() const override { return true; }
 
     bool supportsLightweightDelete() const override;
 
@@ -866,7 +876,10 @@ public:
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     /// The decision to delay or throw is made according to settings 'parts_to_delay_insert' and 'parts_to_throw_insert'.
-    void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const;
+    /// With allow_delay = false, only the throw checks are performed and the function never sleeps:
+    /// this is for a check on the query thread before the insert pipeline is built, where a sleep
+    /// would run once per parallel sink stream instead of once per query.
+    void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay = true) const;
 
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
@@ -876,34 +889,63 @@ public:
     /// If the table contains too many uncompressed bytes in patches, throw an exception.
     void throwLightweightUpdateIfNeeded(UInt64 added_uncompressed_bytes) const;
 
+    /// If the size of the table exceeds any of the limits from the 'max_table_size_rows',
+    /// 'max_table_size_bytes_compressed', 'max_table_size_bytes_uncompressed' settings, throw an exception.
+    /// The limit on the number of rows is checked against active data parts only, while the limits on the
+    /// number of bytes are checked across all active and inactive data parts, because the purpose of these
+    /// settings is to limit disk usage. Parts that are already accepted into the working set by a concurrent
+    /// operation (in the 'PreActive' state) are counted as well.
+    void throwIfTableSizeLimitsExceeded() const;
+
+    /// The same, for an operation that adds a whole batch of parts at once and removes the parts covered by
+    /// 'drop_range' only afterwards: `REPLACE PARTITION FROM` and `ATTACH PARTITION FROM` commit the new parts
+    /// first, with block numbers above the range being dropped, and remove the destination partition later
+    /// through `removePartsInRangeFromWorkingSet`. The parts being replaced are therefore not covered by any of
+    /// the new parts and the per-part check cannot see them. The whole batch is accounted at once, and a
+    /// replacement that is not larger than what it replaces is always allowed, exactly like a size-reducing
+    /// merge or mutation, so that a table that has crossed a limit can be brought back under it.
+    /// 'drop_range' is empty for `ATTACH PARTITION FROM`, which does not remove anything.
+    void throwIfTableSizeLimitsExceededForReplacement(
+        const DataPartsLock & parts_lock,
+        const MutableDataPartsVector & added_parts,
+        const std::optional<MergeTreePartInfo> & drop_range) const;
+
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
     /// Adds the part in the PreActive state (the part will be added to the active set later with out_transaction->commit()).
     /// Returns true if part was added. Returns false if part is covered by bigger part.
+    ///
+    /// If 'check_table_size_limits' is set, throws if the table size exceeds the limits from the
+    /// 'max_table_size_*' settings. It should be unset only when the part does not represent new data,
+    /// e.g. on replicated fetches, which get the data that has been already accepted by another replica.
     bool renameTempPartAndAdd(
         MutableDataPartPtr & part,
         Transaction & transaction,
         DataPartsLock & lock,
-        bool rename_in_transaction);
+        bool rename_in_transaction,
+        bool check_table_size_limits = true);
 
     /// The same as renameTempPartAndAdd but the block range of the part can contain existing parts.
     /// Returns all parts covered by the added part (in ascending order).
     DataPartsVector renameTempPartAndReplace(
         MutableDataPartPtr & part,
         Transaction & out_transaction,
-        bool rename_in_transaction);
+        bool rename_in_transaction,
+        bool check_table_size_limits = true);
     DataPartsVector renameTempPartAndReplaceUnlocked(
         MutableDataPartPtr & part,
         DataPartsLock & lock,
         Transaction & out_transaction,
-        bool rename_in_transaction);
+        bool rename_in_transaction,
+        bool check_table_size_limits = true);
 
     /// Unlocked version of previous one. Useful when added multiple parts with a single lock.
     bool renameTempPartAndReplaceUnlocked(
         MutableDataPartPtr & part,
         Transaction & out_transaction,
         DataPartsLock & lock,
-        bool rename_in_transaction);
+        bool rename_in_transaction,
+        bool check_table_size_limits = true);
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
@@ -1031,6 +1073,10 @@ public:
     /// If something is wrong, throws an exception.
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
+    /// the half of checkAlterIsPossible that depends only on metadata and settings, without the
+    /// transient guards. lets a caller ask whether a command is eligible at all
+    void checkAlterEligibility(const AlterCommands & commands, ContextPtr context) const;
+
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
     void checkDropOrRenameCommandDoesntAffectInProgressMutations(
@@ -1149,7 +1195,7 @@ public:
         return column_sizes;
     }
 
-    ColumnSizeByName getColumnSizes(const Names & columns) const override;
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
     IndexSizeByName getSecondaryIndexSizes() const override
     {
@@ -1172,7 +1218,34 @@ public:
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsLock * acquired_lock = nullptr) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
-    std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
+    /// Returns the set of partition IDs affected by mutation commands.
+    /// nullopt means all partitions are affected. An empty set means zero partitions are affected.
+    /// `commands_run_in_background` tells how the commands will be interpreted: an ALTER mutation
+    /// runs asynchronously with a context derived from the background context, while a lightweight
+    /// update interprets its commands in the foreground with the submitting context. The predicate
+    /// analysis must run in the matching context, otherwise it accepts or rejects predicates the
+    /// execution would treat differently.
+    /// If `analyzed_partition_ids` is not null, it receives the partition IDs whose parts every
+    /// predicate-pruned command actually analyzed (the intersection of the per-command local parts
+    /// snapshots). A caller that widens the result with externally visible partitions must widen
+    /// only with partitions absent from this set: a partition the pruner analyzed and ruled out
+    /// must not be re-added, and a partition it could not have seen must not be skipped.
+    std::optional<std::set<String>> getPartitionIdsAffectedByCommands(
+        const MutationCommands & commands,
+        ContextPtr query_context,
+        bool commands_run_in_background,
+        std::unordered_set<String> * analyzed_partition_ids) const;
+
+    /// Analyze the predicate and return partition IDs that cannot be pruned away.
+    /// Returns nullopt if pruning is not possible (e.g. no partition key, predicate doesn't reference it,
+    /// or an error occurred during analysis). An empty set means zero partitions are affected.
+    /// If `analyzed_partition_ids` is not null, it receives the partition IDs of all parts in the
+    /// snapshot the pruner iterated (both kept and pruned ones).
+    std::optional<std::set<String>> getPartitionIdsPrunedByPredicate(
+        const ASTPtr & predicate,
+        ContextPtr query_context,
+        bool command_runs_in_background,
+        std::unordered_set<String> * analyzed_partition_ids) const;
 
     /// Returns set of partition_ids of all Active parts
     std::unordered_set<String> getAllPartitionIds() const;
@@ -1332,12 +1405,16 @@ public:
     size_t getTotalMergesWithTTLInMergeList() const;
 
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
+
     /// `metadata_snapshot` must come from the source part being covered
     /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
+    /// For a part in a patch partition, `patch_part_index` must be seeded from a covered or
+    /// sibling part (see `PatchPartIndex::cloneEmpty`) to keep the partition uniform.
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeTransactionPtr & txn) const;
+        const MergeTreeTransactionPtr & txn,
+        std::optional<PatchPartIndex> patch_part_index) const;
 
     MergeTreeDataFormatVersion format_version;
 
@@ -1478,6 +1555,20 @@ public:
     /// Returns an object that protects temporary directory from cleanup
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
 
+    /// Removes a temporary part directory, keeping shared zero-copy blobs that other replicas may
+    /// still reference (same rule for the background cleaner and for the reclaim below).
+    void removeSharedTemporaryDirectory(const DiskPtr & disk, const String & relative_path) const;
+
+    /// Removes a leftover of an interrupted operation at `relative_data_path / part_dir_name`, if any.
+    /// The name must be claimed, and temporary (starts with "tmp", no '/'), so payload directories such
+    /// as "detached/<dir>" can never be reclaimed by mistake. Runs before the part storage is built.
+    void reclaimStaleTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name) const;
+
+    /// Claims the name (exclusive, throws a `LOGICAL_ERROR` exception if already claimed), reclaims a
+    /// leftover, and returns the guard releasing the claim. Callers that know the name is collision-free
+    /// (e.g. from a Keeper-allocated block number) pass `may_have_leftover = false` to skip the probe.
+    scope_guard claimTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name, bool may_have_leftover = true) const;
+
     void waitForOutdatedPartsToBeLoaded() const;
     void waitForUnexpectedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
@@ -1485,7 +1576,11 @@ public:
     void triggerBackgroundOperations();
 
     /// Returns cached metadata snapshot of a patch part that contains the following columns.
-    StorageMetadataPtr getPatchPartMetadata(const ColumnsDescription & patch_part_desc, const String & patch_partition_id, ContextPtr local_context) const;
+    PatchPartMetadata getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const;
+
+    /// Returns the effective sorting key for applying a v2 patch part:
+    /// the longest common prefix of the patch's persisted sorting key and the table's current sorting key.
+    std::shared_ptr<const KeyDescription> getPatchPartSortingKey(const IMergeTreeDataPart & patch_part) const;
 
     static MergingParams getMergingParamsForPatchParts();
 
@@ -1552,6 +1647,8 @@ protected:
 
     void unregisterFromMergeSelection(const MergeTreeSettingsPtr & settings);
 
+    void invalidateColumnAndSecondaryIndexSizesUnlocked() const;
+
     void resetColumnSizes()
     {
         column_sizes.clear();
@@ -1559,22 +1656,43 @@ protected:
     }
 
 private:
-    struct NamesAndTypesListHash
+    /// `SharedPartColumns::describeColumns` of the stored columns, plus the `share_nested_offsets` value
+    /// the bundle was built with (readers compare its descriptions against the live setting).
+    struct SharedPartColumnsCacheKey
     {
-        size_t operator()(const NamesAndTypesList & list) const noexcept;
+        std::reference_wrapper<const String> interning_key;
+        bool collect_nested;
     };
-    struct ColumnsDescriptionCache
+    struct SharedPartColumnsCacheKeyHash
     {
-        std::shared_ptr<const ColumnsDescription> original;
-        std::shared_ptr<const ColumnsDescription> with_collected_nested;
+        size_t operator()(const SharedPartColumnsCacheKey & key) const noexcept;
     };
-    mutable AggregatedMetrics::GlobalSum columns_descriptions_metric_handle;
-    mutable std::mutex columns_descriptions_cache_mutex;
-    mutable std::unordered_map<NamesAndTypesList, ColumnsDescriptionCache, NamesAndTypesListHash> columns_descriptions_cache TSA_GUARDED_BY(columns_descriptions_cache_mutex);
+    struct SharedPartColumnsCacheKeyEqual
+    {
+        bool operator()(const SharedPartColumnsCacheKey & lhs, const SharedPartColumnsCacheKey & rhs) const
+        {
+            return lhs.collect_nested == rhs.collect_nested && lhs.interning_key.get() == rhs.interning_key.get();
+        }
+    };
+    mutable AggregatedMetrics::GlobalSum shared_part_columns_metric_handle;
+    mutable SharedMutex shared_part_columns_cache_mutex;
+    /// Interning cache for the schema-derived metadata shared across data parts (see SharedPartColumns.h).
+    /// The key references the `interning_key` member of the bundle it maps to, so it is stored only once
+    /// per entry; the bundle is always alive while its entry exists because the cache holds a strong
+    /// reference.
+    mutable std::unordered_map<SharedPartColumnsCacheKey, SharedPartColumnsPtr, SharedPartColumnsCacheKeyHash, SharedPartColumnsCacheKeyEqual>
+        shared_part_columns_cache TSA_GUARDED_BY(shared_part_columns_cache_mutex);
+
+    /// Returns the interned reference to the cache entry to be evicted when no part uses it anymore.
+    /// Only `SharedPartColumnsHolder` may call it, so the reference accounting cannot be bypassed.
+    void releaseSharedPartColumns(SharedPartColumnsPtr shared_part_columns) const;
+    friend class SharedPartColumnsHolder;
 
 public:
-    ColumnsDescriptionCache getColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
-    void decrefColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
+    /// Returns a holder of the shared metadata bundle for parts storing exactly these columns,
+    /// building and interning it on first request. The holder returns the reference to the cache
+    /// when it is destroyed or reassigned, so unused entries are evicted (see SharedPartColumns.h).
+    SharedPartColumnsHolder getSharedPartColumnsForColumns(const NamesAndTypesList & columns) const;
     size_t getColumnsDescriptionsCacheSize() const;
 
 protected:
@@ -1657,11 +1775,16 @@ protected:
     /// protected by @data_parts_mutex.
     SerializationInfoByName serialization_hints{{}};
 
-    /// A cache for metadata snapshots for patch parts.
-    /// The key is a partition id of patch part.
-    /// Patch parts in one partition always have the same structure.
+    /// Cached metadata used to read patch parts, by the structure hash from their partition id.
+    /// Bounded by the number of distinct structures of patch parts.
     mutable std::mutex patch_parts_metadata_mutex;
-    mutable std::unordered_map<String, StorageMetadataPtr> patch_parts_metadata_cache;
+    mutable std::unordered_map<String, PatchPartMetadata> patch_parts_metadata_cache;
+
+    /// Cached effective sorting keys for applying v2 patch parts.
+    /// An effective key is a prefix of the table's current sorting key, so it is identified by its size.
+    /// Invalidated on ALTER: the effective key depends on the table's current sorting key.
+    mutable std::mutex patch_parts_sorting_keys_mutex;
+    mutable std::map<size_t, std::shared_ptr<const KeyDescription>> patch_parts_sorting_keys_cache;
 
     MergeTreePartsMover parts_mover;
 
@@ -2035,7 +2158,14 @@ protected:
 
     std::vector<LoadPartResult> loadDataPartsFromDisk(PartLoadingTreeNodes & parts_to_load);
 
-    QueryPipeline updateLightweightImpl(const MutationCommands & commands, ContextPtr query_context);
+    struct LightweightUpdateResult
+    {
+        QueryPipeline pipeline;
+        PatchPartMetadata patch_metadata;
+    };
+
+    /// Builds a pipeline that reads the updated rows and the metadata of the new patch part.
+    LightweightUpdateResult updateLightweightImpl(const MutationCommands & commands, ContextPtr query_context);
 
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
@@ -2058,7 +2188,34 @@ private:
         Transaction & out_transaction,
         DataPartsLock & lock,
         DataPartsVector * out_covered_parts,
-        bool rename_in_transaction);
+        bool rename_in_transaction,
+        bool check_table_size_limits);
+
+    /// The same as the public throwIfTableSizeLimitsExceeded, but for the callers that already hold a lock on the parts set.
+    /// The 'covered_parts' are the active parts that the committed 'added_part' replaces: they are not counted,
+    /// because they are removed from the active set when the operation commits. An operation replacing them with
+    /// a not larger part is always allowed, so that a table that has crossed a limit can get back under it.
+    void throwIfTableSizeLimitsExceeded(
+        const DataPartsAnyLock & parts_lock,
+        const IMergeTreeDataPart * added_part,
+        const DataPartsVector & covered_parts) const;
+
+    /// The aggregate size of a set of data parts, as it is accounted by the 'max_table_size_*' limits.
+    struct PartsSize
+    {
+        UInt64 rows = 0;
+        UInt64 bytes_compressed = 0;
+        UInt64 bytes_uncompressed = 0;
+    };
+
+    /// The size of the given parts. Patch parts represent mutations of rows in regular parts,
+    /// not additional table rows, so they do not contribute to the number of rows.
+    static PartsSize calculatePartsSize(const DataPartsVector & parts);
+
+    /// The current size of the table as it is accounted by the 'max_table_size_*' limits: the number of rows
+    /// of the parts that are or are about to become active, and the number of bytes of all the parts that
+    /// occupy the disks, including the inactive ones.
+    PartsSize calculateTableSizeForLimits(const DataPartsAnyLock & parts_lock) const;
 
     /// RAII Wrapper for atomic work with currently moving parts
     /// Acquire them in constructor and remove them in destructor

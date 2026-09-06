@@ -1,5 +1,6 @@
 #include <Columns/ColumnVector.h>
 
+#include <base/defines.h>
 #include <base/bit_cast.h>
 #include <base/scope_guard.h>
 #include <base/sort.h>
@@ -60,12 +61,6 @@ void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColu
     T element{};
     readBinaryLittleEndian<T>(element, in);
     data.emplace_back(std::move(element));
-}
-
-template <typename T>
-void ColumnVector<T>::skipSerializedInArena(ReadBuffer & in) const
-{
-    in.ignore(sizeof(T));
 }
 
 template <typename T>
@@ -458,6 +453,23 @@ size_t ColumnVector<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, i
     checkEqualRangeEndAssumeSorted(
         begin, end, run_end, [&](size_t i) { return CompareHelper<T>::equals(d[i], d[begin], nan_direction_hint); });
     return run_end;
+}
+
+template <typename T>
+Int64 ColumnVector<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+{
+    const auto & rhs = assert_cast<const Self &>(rhs_);
+    const T * lhs_data = data.data();
+    const T * rhs_data = rhs.data.data();
+    const T lhs_value = lhs_data[n];
+    const T rhs_value = rhs_data[m];
+    static constexpr size_t linear_probe = 16;
+
+    return compareTrackAtImpl(
+        CompareHelper<T>::compare(lhs_value, rhs_value, nan_direction_hint),
+        n, m, data.size(), rhs.data.size(), linear_probe,
+        [&](size_t row) { return CompareHelper<T>::less(lhs_data[row], rhs_value, nan_direction_hint); },
+        [&](size_t row) { return CompareHelper<T>::greater(lhs_value, rhs_data[row], nan_direction_hint); });
 }
 
 template <typename T>
@@ -1174,6 +1186,23 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max, size_t start, size_t
         * NOTE: There exist many different NaNs.
         * Different NaN could be returned: not bit-exact value as one of NaNs from column.
         */
+    if constexpr (has_find_extreme_implementation<T> && is_floating_point<T>)
+    {
+        auto cur_min = findExtremeMin(data.data(), start, end);
+        auto cur_max = findExtremeMax(data.data(), start, end);
+
+        if (!cur_min || !cur_max)
+        {
+            min = NaNOrZero<T>();
+            max = NaNOrZero<T>();
+            return;
+        }
+
+        min = NearestFieldType<T>(*cur_min);
+        max = NearestFieldType<T>(*cur_max);
+        return;
+    }
+
     size_t i = start;
     if constexpr (is_floating_point<T>)
     {
@@ -1418,6 +1447,13 @@ std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
 }
 
 template <typename T>
+bool ColumnVector<T>::hasOnlyTypeDefaults() const
+{
+    /// A conservative bit check intentionally keeps -0.0 columns physical.
+    return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
+}
+
+template <typename T>
 void ColumnVector<T>::serializeAsComparable(size_t n, String & out) const
 {
     if constexpr (std::is_integral_v<T>)
@@ -1529,7 +1565,8 @@ template ColumnPtr ColumnVector<UInt64>::indexImpl<UInt8>(const PaddedPODArray<U
 template ColumnPtr ColumnVector<UInt64>::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const;
 template ColumnPtr ColumnVector<UInt64>::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t limit) const;
 
-#if defined(OS_DARWIN)
+/// `size_t` is not covered by the instantiations above where it is a type of its own.
+#if defined(SIZE_T_IS_A_DISTINCT_TYPE)
 template ColumnPtr ColumnVector<UInt8>::indexImpl<size_t>(const PaddedPODArray<size_t> & indexes, size_t limit) const;
 template ColumnPtr ColumnVector<UInt64>::indexImpl<size_t>(const PaddedPODArray<size_t> & indexes, size_t limit) const;
 #endif

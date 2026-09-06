@@ -20,7 +20,7 @@ namespace zkutil
 namespace DB
 {
 
-class PipelineExecutor;
+class CompletedPipelineExecutor;
 class QueryStatus;
 
 class StorageMaterializedView;
@@ -288,9 +288,9 @@ private:
         /// this executor. Refresh task will then reconsider what to do, re-checking `stop_requested`,
         /// `out_of_schedule_refresh_requested`, etc.
         std::atomic_bool interrupt_execution {false};
-        PipelineExecutor * executor = nullptr;
+        CompletedPipelineExecutor * executor = nullptr;
         /// Process-list entry of the in-flight refresh query, so interruptExecution() can mark it
-        /// killed. Set/cleared together with `executor`.
+        /// killed. Set as soon as the query enters the process list, before it is interpreted.
         std::shared_ptr<QueryStatus> executing_query_status;
         /// Interrupts internal CREATE/EXCHANGE/DROP queries that refresh does. Only used during shutdown.
         StopSource cancel_ddl_queries;

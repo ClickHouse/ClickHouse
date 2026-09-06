@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/// Parses information about target tables (external or inner) of a materialized view or a window view.
+/// Parses information about target tables (external or inner) of a materialized view.
 /// The function parses one or multiple parts of a CREATE query looking like this:
 ///     TO db.table_name
 ///     TO INNER UUID 'XXX'

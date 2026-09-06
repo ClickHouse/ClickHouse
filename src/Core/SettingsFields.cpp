@@ -8,6 +8,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
@@ -19,6 +20,7 @@
 #pragma clang diagnostic pop
 
 #include <cmath>
+#include <limits>
 
 
 namespace DB
@@ -403,13 +405,27 @@ template <>
 void SettingFieldSeconds::parseFromString(const String & str)
 {
     Float64 n = parse<Float64>(str.data(), str.size());
-    *this = Poco::Timespan{static_cast<Int64>(n * microseconds_per_unit)};
+    *this = Poco::Timespan{float64AsSecondsToTimespan(n)};
 }
 
 template <>
 void SettingFieldMilliseconds::parseFromString(const String & str)
 {
     *this = stringToNumber<UInt64>(str);
+}
+
+template <SettingFieldTimespanUnit unit_>
+Int64 SettingFieldTimespan<unit_>::microsecondsFromUnits(UInt64 units)
+{
+    constexpr std::string_view unit_name = unit == SettingFieldTimespanUnit::Millisecond ? "milliseconds" : "seconds";
+    if (units > static_cast<UInt64>(std::numeric_limits<Int64>::max() / static_cast<Int64>(microseconds_per_unit)))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot convert {} to microseconds: the setting's value in {} is too big: {}",
+            unit_name,
+            unit_name,
+            units);
+    return static_cast<Int64>(units * microseconds_per_unit);
 }
 
 template <SettingFieldTimespanUnit unit_>
@@ -573,8 +589,11 @@ void SettingFieldTimezone::readBinary(ReadBuffer & in)
 
 void SettingFieldTimezone::validateTimezone(const std::string & tz_str)
 {
+    if (tz_str.empty())
+        return;
+
     cctz::time_zone validated_tz;
-    if (!tz_str.empty() && !cctz::load_time_zone(tz_str, &validated_tz))
+    if (!DateLUTImpl::isSupportedTimeZoneName(tz_str) || !cctz::load_time_zone(tz_str, &validated_tz))
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
 }
 

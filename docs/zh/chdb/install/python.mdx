@@ -66,29 +66,29 @@ print(f"Execution time: {result.elapsed()} seconds")
 ```python
 import chdb
 
-# 创建连接（默认为内存模式）
+# Create connection (":memory:" is a temporary, non-persistent database)
 conn = chdb.connect(":memory:")
-# 或使用基于文件的方式：conn = chdb.connect("mydata.db")
+# Or use file-based: conn = chdb.connect("mydata.db")
 
-# 创建游标以执行查询
+# Create cursor for query execution
 cur = conn.cursor()
 
-# 执行查询
+# Execute queries
 cur.execute("SELECT number, toString(number) as str FROM system.numbers LIMIT 3")
 
-# 以不同方式获取结果
-print(cur.fetchone())    # 单行：(0, '0')
-print(cur.fetchmany(2))  # 多行：((1, '1'), (2, '2'))
+# Fetch results in different ways
+print(cur.fetchone())    # Single row: (0, '0')
+print(cur.fetchmany(2))  # Multiple rows: ((1, '1'), (2, '2'))
 
-# 获取元数据
+# Get metadata
 print(cur.column_names())  # ['number', 'str']
 print(cur.column_types())  # ['UInt64', 'String']
 
-# 将游标用作迭代器
+# Use cursor as iterator
 for row in cur:
     print(row)
 
-# 始终关闭资源
+# Always close resources
 cur.close()
 conn.close()
 ```
@@ -358,121 +358,24 @@ cursor.executemany(
 ```
 
 <div id="user-defined-functions">
-  ### 用户自定义函数 (UDF)
+  ### Python 用户自定义函数 (UDF)
 </div>
 
-通过自定义 Python 函数扩展 SQL：
-
-<div id="basic-udf-usage">
-  #### UDF 基础用法
-</div>
+chDB 支持原生进程内 Python UDF，具有类型化参数、自动类型推断以及可配置的 NULL 和异常处理机制。
 
 ```python
-from chdb.udf import chdb_udf
-from chdb import query
+from chdb import query, func
+from chdb.sqltypes import INT64
 
-# 简单数学函数
-@chdb_udf()
-def add_numbers(a, b):
-    return int(a) + int(b)
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
 
-# 字符串处理函数
-@chdb_udf()
-def reverse_string(text):
-    return text[::-1]
-
-# JSON 处理函数  
-@chdb_udf()
-def extract_json_field(json_str, field):
-    import json
-    try:
-        data = json.loads(json_str)
-        return str(data.get(field, ''))
-    except:
-        return ''
-
-# 在查询中使用 UDF
-result = query("""
-    SELECT 
-        add_numbers('10', '20') as sum_result,
-        reverse_string('hello') as reversed,
-        extract_json_field('{"name": "John", "age": 30}', 'name') as name
-""")
-print(result)
+result = query("SELECT add(2, 3)")
+print(result)  # 5
 ```
 
-<div id="advanced-udf-custom-return-types">
-  #### 带自定义返回类型的高级 UDF
-</div>
-
-```python
-# 具有特定返回类型的 UDF
-@chdb_udf(return_type="Float64")
-def calculate_bmi(height_str, weight_str):
-    height = float(height_str) / 100  # 将厘米转换为米
-    weight = float(weight_str)
-    return weight / (height * height)
-
-# 用于数据验证的 UDF
-@chdb_udf(return_type="UInt8") 
-def is_valid_email(email):
-    import re
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return 1 if re.match(pattern, email) else 0
-
-# 在复杂查询中使用
-result = query("""
-    SELECT 
-        name,
-        calculate_bmi(height, weight) as bmi,
-        is_valid_email(email) as has_valid_email
-    FROM (
-        SELECT 
-            'John' as name, '180' as height, '75' as weight, 'john@example.com' as email
-        UNION ALL
-        SELECT 
-            'Jane' as name, '165' as height, '60' as weight, 'invalid-email' as email
-    )
-""", "Pretty")
-print(result)
-```
-
-<div id="udf-best-practices">
-  #### UDF 最佳实践
-</div>
-
-1. **无状态函数**：UDF 应为不带副作用的纯函数
-2. **在函数内部导入**：所有必需的模块都必须在 UDF 内部导入
-3. **String 输入/输出**：所有 UDF 参数均为字符串 (TabSeparated 格式) 
-4. **错误处理**：加入 try-catch 块以增强 UDF 的健壮性
-5. **性能**：UDF 会对每一行调用一次，因此应尽量优化性能
-
-```python
-# 结构良好的 UDF，包含错误处理
-@chdb_udf(return_type="String")
-def safe_json_extract(json_str, path):
-    import json
-    try:
-        data = json.loads(json_str)
-        keys = path.split('.')
-        result = data
-        for key in keys:
-            if isinstance(result, dict) and key in result:
-                result = result[key]
-            else:
-                return 'null'
-        return str(result)
-    except Exception as e:
-        return f'error: {str(e)}'
-
-# 用于处理复杂的嵌套 JSON
-query("""
-    SELECT safe_json_extract(
-        '{"user": {"profile": {"name": "Alice", "age": 25}}}',
-        'user.profile.name'
-    ) as extracted_name
-""")
-```
+有关注册方法、类型系统、NULL 处理、异常处理和日期时间支持的完整说明，请参阅 [Python UDF 指南](/zh/chdb/guides/python-udf)。有关完整的 API 参考文档，请参阅 [Python UDF API 参考文档](/zh/chdb/api/python#user-defined-functions)。较早的 `@chdb_udf` 装饰器仍可使用，但已由此 API 替代——请参阅 [旧版 API](/zh/chdb/api/python#legacy-udf)。
 
 <div id="streaming-queries">
   ### 流式查询处理

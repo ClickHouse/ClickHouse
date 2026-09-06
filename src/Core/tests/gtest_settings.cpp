@@ -9,6 +9,13 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <limits>
+
+namespace DB::ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 namespace
 {
 using namespace DB;
@@ -175,4 +182,137 @@ GTEST_TEST(QueryParameters, DuplicateNameOnTheWireLastOccurrenceWins)
     ReadBufferFromString in(out.str());
     NameToNameMap parameters = readQueryParameters(in);
     ASSERT_EQ(parameters.at("x"), "2");
+}
+
+GTEST_TEST(Settings, KnownSettingFlaggedCustomOnTheWireIsReadIntoItsTypedField)
+{
+    /// A client older than a setting has no typed field for it, so it holds the setting as a custom
+    /// field and sends it with the CUSTOM flag. The receiver knows the setting, so it must end up in
+    /// the typed field and be seen as changed.
+    Settings sent;
+    sent.setCustom("log_comment", Field(String("hello")));
+    sent.setCustom("max_block_size", Field(UInt64(1234)));
+    sent.setCustom("custom_unknown_here", Field(String("kept")));
+
+    WriteBufferFromOwnString out;
+    sent.write(out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+
+    Settings settings;
+    ReadBufferFromString in(out.str());
+    settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+
+    ASSERT_TRUE(settings.isChanged("log_comment"));
+    ASSERT_EQ(settings.get("log_comment"), Field(String("hello")));
+    ASSERT_TRUE(settings.isChanged("max_block_size"));
+    ASSERT_EQ(settings.get("max_block_size"), Field(UInt64(1234)));
+
+    /// A name that is not a setting here stays a custom setting.
+    ASSERT_TRUE(settings.isChanged("custom_unknown_here"));
+    ASSERT_EQ(settings.get("custom_unknown_here"), Field(String("kept")));
+}
+
+GTEST_TEST(SettingFieldTimespan, ValueAlwaysFitsInt64Microseconds)
+{
+    constexpr Int64 max_ms = std::numeric_limits<Int64>::max() / 1000;
+    constexpr Int64 max_s = std::numeric_limits<Int64>::max() / 1000000;
+
+    /// Values whose microseconds fit Int64 are stored exactly.
+    ASSERT_EQ(SettingFieldMilliseconds(UInt64(0)).totalMicroseconds(), 0);
+    ASSERT_EQ(SettingFieldMilliseconds(UInt64(5000)).totalMicroseconds(), 5000000);
+    ASSERT_EQ(SettingFieldSeconds(UInt64(300)).totalMicroseconds(), 300000000);
+    ASSERT_EQ(SettingFieldMilliseconds(UInt64(max_ms)).totalMilliseconds(), max_ms);
+    ASSERT_EQ(SettingFieldSeconds(UInt64(max_s)).totalSeconds(), max_s);
+
+    /// Larger values are rejected instead of wrapping mod 2^64. Before the check, UInt64 max
+    /// wrapped to -1 ms, 2^61 to exactly 0 ms and 2^61 + 1 to exactly 1 ms.
+    ASSERT_THROW(SettingFieldMilliseconds(UInt64(max_ms) + 1), DB::Exception);
+    ASSERT_THROW(SettingFieldMilliseconds{std::numeric_limits<UInt64>::max()}, DB::Exception);
+    ASSERT_THROW(SettingFieldMilliseconds(UInt64(1) << 61), DB::Exception);
+    ASSERT_THROW(SettingFieldMilliseconds((UInt64(1) << 61) + 1), DB::Exception);
+    ASSERT_THROW(SettingFieldSeconds{std::numeric_limits<UInt64>::max()}, DB::Exception);
+
+    /// Every integer producer funnels into the same check: Field (SET and profiles) and the
+    /// native-protocol binary form.
+    SettingFieldMilliseconds assigned;
+    ASSERT_THROW(assigned = std::numeric_limits<UInt64>::max(), DB::Exception);
+    ASSERT_THROW(SettingFieldMilliseconds(Field(UInt64(1) << 61)), DB::Exception);
+
+    /// The largest accepted value survives a string round-trip exactly.
+    SettingFieldMilliseconds largest{UInt64(max_ms)};
+    SettingFieldMilliseconds reparsed;
+    reparsed.parseFromString(largest.toString());
+    ASSERT_EQ(reparsed.totalMicroseconds(), largest.totalMicroseconds());
+}
+
+GTEST_TEST(SettingFieldTimespan, SecondsParseFromStringChecksTheRange)
+{
+    SettingFieldSeconds seconds;
+    seconds.parseFromString("300");
+    ASSERT_EQ(seconds.totalSeconds(), 300);
+
+    /// A value that does not fit Int64 microseconds is rejected, the same as through Field.
+    ASSERT_THROW(seconds.parseFromString("1e30"), DB::Exception);
+}
+GTEST_TEST(SettingsCompatibility, MarkChangedByCompatibilityAsUnchangedKeepsTheValues)
+{
+    /// The client passes such a Settings object to `Connection::sendQuery`: the values that
+    /// `compatibility` derived must keep acting locally (the client-side network codec is picked
+    /// from them by value), but they must not be serialized to the server, which sends only
+    /// changed settings and re-derives these from `compatibility` itself.
+    DB::Settings settings;
+    settings.set("compatibility", "26.6");
+    ASSERT_TRUE(settings.hasSettingsChangedByCompatibility());
+    ASSERT_TRUE(settings.isChanged("network_compression_method"));
+    const auto derived_method = settings.get("network_compression_method");
+    const auto derived_level = settings.get("network_zstd_compression_level");
+
+    settings.markSettingsChangedByCompatibilityAsUnchanged();
+
+    ASSERT_FALSE(settings.hasSettingsChangedByCompatibility());
+    ASSERT_FALSE(settings.isChanged("network_compression_method"));
+    ASSERT_FALSE(settings.isChanged("network_zstd_compression_level"));
+    ASSERT_EQ(settings.get("network_compression_method"), derived_method);
+    ASSERT_EQ(settings.get("network_zstd_compression_level"), derived_level);
+
+    /// The explicitly set `compatibility` itself stays changed and is still serialized.
+    ASSERT_TRUE(settings.isChanged("compatibility"));
+
+    /// The demoted settings no longer count as compatibility-derived: a later
+    /// `resetSettingsChangedByCompatibility` must not touch them.
+    settings.resetSettingsChangedByCompatibility();
+    ASSERT_EQ(settings.get("network_compression_method"), derived_method);
+}
+
+GTEST_TEST(SettingsTier, GetTierDecodesEveryEncoding)
+{
+    using Flags = BaseSettingsHelpers::Flags;
+
+    /// Every tier encoding survives the Flags::TIER mask. PRIVATE_PREVIEW needs the third bit:
+    /// with a two-bit mask it reads as PRODUCTION, which leaves such a setting ungated at every
+    /// allow_feature_tier level.
+    EXPECT_EQ(BaseSettingsHelpers::getTier(SettingsTierType::PRODUCTION), SettingsTierType::PRODUCTION);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(SettingsTierType::OBSOLETE), SettingsTierType::OBSOLETE);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(SettingsTierType::EXPERIMENTAL), SettingsTierType::EXPERIMENTAL);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(SettingsTierType::BETA), SettingsTierType::BETA);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(SettingsTierType::PRIVATE_PREVIEW), SettingsTierType::PRIVATE_PREVIEW);
+
+    /// 20, 24 and 28 are the only masked values the three tier bits can hold that name no tier.
+    for (UInt64 unknown_tier : {20, 24, 28})
+    {
+        try
+        {
+            BaseSettingsHelpers::getTier(unknown_tier);
+            FAIL() << "getTier accepted the unknown tier encoding " << unknown_tier;
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), DB::ErrorCodes::INCORRECT_DATA);
+        }
+    }
+
+    /// Flags::TIER is disjoint from every other flag bit, so neighbours do not disturb the read.
+    constexpr UInt64 private_preview = static_cast<UInt64>(SettingsTierType::PRIVATE_PREVIEW);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::IMPORTANT), SettingsTierType::PRIVATE_PREVIEW);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::CUSTOM), SettingsTierType::PRIVATE_PREVIEW);
+    EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::HOT_RELOAD), SettingsTierType::PRIVATE_PREVIEW);
 }

@@ -53,6 +53,36 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_IS_DROPPED;
     extern const int TABLE_ALREADY_EXISTS;
+    extern const int POSTGRESQL_CONNECTION_FAILURE;
+}
+
+namespace
+{
+    /// Demote only a connection failure to the (unreachable) remote, so that anything else is not
+    /// hidden. Must be called from within a catch block: it rethrows the active exception to classify it.
+    /// A failed connect arrives rewrapped by `PoolWithFailover::get` as `POSTGRESQL_CONNECTION_FAILURE`,
+    /// a connection dropped mid-query as a raw `pqxx::broken_connection`.
+    LogsLevel toleratedConnectionFailureLogLevel()
+    {
+        try
+        {
+            throw;
+        }
+        catch (const pqxx::broken_connection &)
+        {
+            return LogsLevel::warning;
+        }
+        catch (const Exception & e)
+        {
+            return e.code() == ErrorCodes::POSTGRESQL_CONNECTION_FAILURE ? LogsLevel::warning : LogsLevel::error;
+        }
+        /// Ok to not report anything here: the exception stays active and the caller logs it at the
+        /// level returned from here.
+        catch (...)
+        {
+            return LogsLevel::error;
+        }
+    }
 }
 
 static const auto suffix = ".removed";
@@ -85,7 +115,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         db_disk->createDirectories(metadata_path);
     }
 
-    cleaner_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
+    cleaner_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
 }
 
@@ -140,10 +170,35 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(__PRETTY_FUNCTION__, "", toleratedConnectionFailureLogLevel());
     }
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
+}
+
+/// Note: DatabasePostgreSQL does not own the underlying data -- it lives on the remote Postgres server.
+/// dropTable() is implemented as detachTablePermanently() for this engine, so a "dropped" table
+/// here is really just a locally-detached, remotely-recoverable table (same semantics as an
+/// explicit DETACH TABLE PERMANENTLY). It is therefore correct for such tables to show up here
+/// with is_permanently = 1, tracked via detached_or_dropped.
+DatabaseDetachedTablesSnapshotIteratorPtr DatabasePostgreSQL::getDetachedTablesIterator(
+    ContextPtr /* context */, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
+{
+    SnapshotDetachedTables snapshot;
+    std::lock_guard lock(mutex);
+    for (const auto & table_name : detached_or_dropped)
+    {
+        if (filter_by_table_name && !filter_by_table_name(table_name))
+            continue;
+        SnapshotDetachedTable snapshot_table;
+        snapshot_table.database = database_name;
+        snapshot_table.table = table_name;
+        auto db_disk = getDisk();
+        fs::path table_marked_removed_path = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+        snapshot_table.is_permanently = db_disk->existsFile(table_marked_removed_path);
+        snapshot.emplace(table_name, std::move(snapshot_table));
+    }
+    return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(std::move(snapshot));
 }
 
 
@@ -303,6 +358,29 @@ void DatabasePostgreSQL::createTable(ContextPtr local_context, const String & ta
 }
 
 
+void DatabasePostgreSQL::detachTablePermanently(ContextPtr, const String & table_name)
+{
+    if (!persistent)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE PERMANENTLY is not supported for non-persistent PostgreSQL database");
+
+    auto db_disk = getDisk();
+    std::lock_guard lock{mutex};
+
+    if (!checkPostgresTable(table_name))
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot detach table {} because it does not exist", getTableNameForLogs(table_name));
+
+    if (detached_or_dropped.contains(table_name))
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped/detached", getTableNameForLogs(table_name));
+
+    fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+    db_disk->createFile(mark_table_removed);
+
+    if (cache_tables)
+        cached_tables.erase(table_name);
+
+    detached_or_dropped.emplace(table_name);
+}
+
 void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /* sync */)
 {
     if (!persistent)
@@ -375,7 +453,7 @@ void DatabasePostgreSQL::removeOutdatedTables()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(__PRETTY_FUNCTION__, "", toleratedConnectionFailureLogLevel());
 
         /** Avoid repeated interrupting other normal routines (they acquire locks!)
           * for the case of unavailable connection, since it is possible to be
@@ -399,19 +477,36 @@ void DatabasePostgreSQL::removeOutdatedTables()
         }
     }
 
+    /// Reconcile detached_or_dropped with the live remote schema:
+    /// - If a table was only ordinarily DETACH'd (no .removed marker), and the remote table
+    ///   has disappeared, the entry is pruned (nothing left to ATTACH).
+    /// - If a table was permanently detached (DETACH TABLE PERMANENTLY or DROP TABLE → .removed exists),
+    ///   the marker and entry are preserved even if the remote table disappears. This ensures that
+    ///   if a same-name table is later recreated remotely, it stays hidden in ClickHouse until
+    ///   explicit ATTACH TABLE — matching the documented behavior.
     auto db_disk = getDisk();
     for (auto iter = detached_or_dropped.begin(); iter != detached_or_dropped.end();)
     {
         if (!actual_tables.contains(*iter))
         {
-            auto table_name = *iter;
-            iter = detached_or_dropped.erase(iter);
-
-            if (!persistent)
-                continue;
-
+            const auto & table_name = *iter;
             fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-            db_disk->removeFileIfExists(table_marked_as_removed);
+            bool is_permanent = persistent && db_disk->existsFile(table_marked_as_removed);
+
+            /// Only prune non-permanent detach entries when the remote table disappears.
+            /// Permanent detach markers (.removed) are preserved so a recreated remote table
+            /// stays hidden until explicit ATTACH TABLE.
+            if (!is_permanent)
+            {
+                if (persistent)
+                    db_disk->removeFileIfExists(table_marked_as_removed);
+                iter = detached_or_dropped.erase(iter);
+            }
+            else
+            {
+                /// Permanent detach: preserve the marker and keep the table in detached_or_dropped
+                ++iter;
+            }
         }
         else
             ++iter;
@@ -493,13 +588,43 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     }
     else
     {
-        /// Remove extra engine argument (`schema` and `use_table_cache`)
-        if (storage_engine_arguments->children.size() >= 5)
-            storage_engine_arguments->children.resize(4);
+        auto & arguments = storage_engine_arguments->children;
+
+        /// The trailing `key = value` arguments (the TLS/SSL parameters) are accepted by the table
+        /// engine as well, so keep them in the synthesized definition; otherwise re-running it would
+        /// silently fall back to the libpq TLS defaults.
+        size_t num_positional_arguments = arguments.size();
+        while (num_positional_arguments > 0)
+        {
+            const auto * function = arguments[num_positional_arguments - 1]->as<ASTFunction>();
+            if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2
+                || !function->arguments->children[0]->as<ASTIdentifier>())
+                break;
+            --num_positional_arguments;
+        }
+
+        /// Keep the fifth positional argument (the remote `schema`): once the table name is inserted
+        /// below it lands in the table engine's own `schema` position, and dropping it would silently
+        /// repoint the emitted definition at the default PostgreSQL schema. Remove the remaining
+        /// positional arguments (`use_table_cache`, including the deprecated form where it is the
+        /// numeric fifth argument), which the table engine does not take.
+        /// Whether the fifth argument is a schema is decided by the already-parsed configuration and
+        /// not by the shape of the stored AST: the database engine folds every positional argument
+        /// with `evaluateConstantExpressionOrIdentifierAsLiteral`, so the schema may be stored as an
+        /// arbitrary constant expression rather than a string literal. The folded value is emitted
+        /// instead of the original node for the same reason.
+        size_t num_positional_to_keep = 4;
+        if (num_positional_arguments > 4 && !configuration.schema.empty())
+        {
+            arguments[4] = make_intrusive<ASTLiteral>(configuration.schema);
+            num_positional_to_keep = 5;
+        }
+        if (num_positional_arguments > num_positional_to_keep)
+            arguments.erase(arguments.begin() + num_positional_to_keep, arguments.begin() + num_positional_arguments);
 
         /// Add table_name to engine arguments.
-        if (storage_engine_arguments->children.size() >= 2)
-            storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, make_intrusive<ASTLiteral>(table_id.table_name));
+        if (num_positional_arguments >= 2)
+            arguments.insert(arguments.begin() + 2, make_intrusive<ASTLiteral>(table_id.table_name));
     }
 
     return create_table_query;
@@ -530,45 +655,52 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, false);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, /*require_table=*/ false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else
         {
-            if (engine_args.size() < 4 || engine_args.size() > 6)
+            /// The TLS/SSL parameters are trailing `key = value` arguments; the copy keeps them in
+            /// the stored `CREATE DATABASE` query, where they are masked when it is formatted.
+            ASTs positional_arguments = engine_args;
+            configuration.ssl = StoragePostgreSQL::extractSSLParamsFromArguments(positional_arguments, args.context);
+
+            if (positional_arguments.size() < 4 || positional_arguments.size() > 6)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "PostgreSQL Database require `host:port`, `database_name`, `username`, `password`"
-                                "[, `schema` = "", `use_table_cache` = 0");
+                                "[, `schema` = "", `use_table_cache` = 0] "
+                                "(optionally followed by sslmode = '...', sslrootcert_pem = '...', "
+                                "sslcert_pem = '...', sslkey_pem = '...')");
 
-            for (auto & engine_arg : engine_args)
-                engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
+            for (auto & positional_argument : positional_arguments)
+                positional_argument = evaluateConstantExpressionOrIdentifierAsLiteral(positional_argument, args.context);
 
-            const auto & host_port = safeGetLiteralValue<String>(engine_args[0], engine_name);
+            const auto & host_port = safeGetLiteralValue<String>(positional_arguments[0], engine_name);
             size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
 
             configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
-            configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
-            configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
-            configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+            configuration.database = safeGetLiteralValue<String>(positional_arguments[1], engine_name);
+            configuration.username = safeGetLiteralValue<String>(positional_arguments[2], engine_name);
+            configuration.password = safeGetLiteralValue<String>(positional_arguments[3], engine_name);
 
             bool is_deprecated_syntax = false;
-            if (engine_args.size() >= 5)
+            if (positional_arguments.size() >= 5)
             {
-                auto arg_value = engine_args[4]->as<ASTLiteral>()->value;
+                auto arg_value = positional_arguments[4]->as<ASTLiteral>()->value;
                 if (arg_value.getType() == Field::Types::Which::String)
                 {
-                    configuration.schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
+                    configuration.schema = safeGetLiteralValue<String>(positional_arguments[4], engine_name);
                 }
                 else
                 {
-                    use_table_cache = safeGetLiteralValue<UInt8>(engine_args[4], engine_name);
+                    use_table_cache = safeGetLiteralValue<UInt8>(positional_arguments[4], engine_name);
                     LOG_WARNING(getLogger("DatabaseFactory"), "A deprecated syntax of PostgreSQL database engine is used");
                     is_deprecated_syntax = true;
                 }
             }
 
-            if (!is_deprecated_syntax && engine_args.size() >= 6)
-                use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
+            if (!is_deprecated_syntax && positional_arguments.size() >= 6)
+                use_table_cache = safeGetLiteralValue<UInt8>(positional_arguments[5], engine_name);
         }
 
         /// Enforce the server's outbound-host policy, exactly like the table engine and the table
@@ -636,7 +768,10 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 - `schema` — PostgreSQL schema.
 - `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
-## Data types support {#data_types-support}
+TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named collection](/operations/named-collections.md) or as trailing key-value arguments: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files, accepted only from a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead, can be specified from SQL (for example, `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`), and are masked in logs and `SHOW` queries like a password. When unset, `libpq` defaults apply (`sslmode=prefer`).
+
+<a id="data_types-support"></a>
+## Data types support {#data-types-support}
 
 | PostgreSQL       | ClickHouse                                                   |
 |------------------|--------------------------------------------------------------|

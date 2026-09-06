@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # raw query string straight to `executeQuery`, so it is the path that exercises this directly.
 
 JSON=$(${CLICKHOUSE_CLIENT} -q "SELECT parseQueryToJSON('SELECT 1') FORMAT TSVRaw")
-URL="${CLICKHOUSE_URL}&allow_experimental_json_ast_dialect=1&dialect=clickhouse_json"
+URL="${CLICKHOUSE_URL}&enable_json_ast_dialect=1&dialect=clickhouse_json"
 
 # 1. A lone JSON AST object executes.
 ${CLICKHOUSE_CURL} -sS "$URL" --data-binary "$JSON"

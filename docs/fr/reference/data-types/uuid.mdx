@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Un identifiant universellement unique (UUID) est une valeur de 16 octets utilisée pour identifier des enregistrements. Pour plus d’informations sur les UUID, consultez [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
 
-Bien qu’il existe différentes variantes d’UUID, par exemple UUIDv4 et UUIDv7 (voir [ici](https://datatracker.ietf.org/doc/html/draft-ietf-uuidrev-rfc4122bis)), ClickHouse ne vérifie pas que les UUID insérés sont conformes à une variante particulière.
+Bien qu’il existe différentes variantes d’UUID, par exemple UUIDv4 et UUIDv7 (voir [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562)), ClickHouse ne vérifie pas que les UUID insérés sont conformes à une variante particulière.
 En interne, les UUID sont traités comme une séquence de 16 octets aléatoires, avec une [représentation 8-4-4-4-12](https://en.wikipedia.org/wiki/Universally_unique_identifier#Textual_representation) au niveau SQL.
 
 Exemple de valeur UUID :
