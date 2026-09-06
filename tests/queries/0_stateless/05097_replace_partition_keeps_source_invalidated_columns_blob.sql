@@ -1,19 +1,21 @@
 -- Tags: no-fasttest
--- no-fasttest: needs the `s3_no_cache` storage policy (MinIO).
+-- no-fasttest: needs the `s3_no_cache` storage policy (MinIO) and `system.blob_storage_log`.
 
 -- `REPLACE PARTITION FROM` and `MOVE PARTITION TO TABLE` clone the source part with hardlinks and then
 -- rewrite `invalidated_system_columns.txt` for the clone. On a disk with local metadata the hardlink is
--- the very same metadata file, so a rewrite that does not unlink it first goes through the shared inode:
--- it retires the blob the source part pointed to, and both parts end up referencing the clone's new blob
--- with a link count of one. Reads still succeed at that point - which is why this test does not stop
--- there - but the source part no longer holds a reference of its own, so removing the clone retires the
--- blob out from under it. The destination table is therefore dropped, the retired blobs are waited for,
--- and the source part is reloaded: its `invalidated_system_columns.txt` must still be readable, which is
--- what the part load requires. An uncached S3 disk is used so that the reads after the re-attach go to
--- the object storage. `min_bytes_for_full_part_storage = 0` pins the full part storage, where
+-- the very same metadata file, so a rewrite that does not unlink it first goes through the shared inode
+-- and `WriteMode::Rewrite` retires the blob it replaces - the blob the source part uploaded - without
+-- regard to the other link to it. The two parts then share one blob where they must have one each.
+--
+-- That anomaly is invisible to reads: the shared inode stays self-consistent, both parts resolve to the
+-- clone's blob and its contents are identical. What it does leave behind is the retirement itself, so
+-- that is what is asserted here: `system.blob_storage_log` must not show the clone's rewrite deleting a
+-- blob that was uploaded for the source table. The `uploads` line is a positive control - it fails if
+-- the log is empty or the files were never written, instead of letting the check pass vacuously.
+--
+-- `min_bytes_for_full_part_storage = 0` pins the full part storage, where
 -- `invalidated_system_columns.txt` is a file of its own: a packed part keeps it inside `data.packed`
--- and is a different layout with a different sharing story, so the randomized threshold must not
--- decide which one this regression exercises.
+-- and is a different layout, so the randomized threshold must not decide which one runs here.
 
 DROP TABLE IF EXISTS src_05097;
 DROP TABLE IF EXISTS mid_05097;
@@ -31,16 +33,32 @@ INSERT INTO dst_05097 VALUES (1, 100);
 -- The clone shares the blobs of the moved part and rewrites its `invalidated_system_columns.txt`.
 ALTER TABLE dst_05097 REPLACE PARTITION 1 FROM mid_05097;
 
--- Removing the clone must not retire a blob the source part still references.
-DROP TABLE dst_05097 SYNC;
+-- A retired blob is logged when it is actually deleted from the object storage.
 SYSTEM WAIT BLOBS CLEANUP 's3_no_cache';
+SYSTEM FLUSH LOGS blob_storage_log;
 
--- Reload the source part from the object storage.
+WITH
+    (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 'mid_05097') AS mid_uuid,
+    (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 'dst_05097') AS dst_uuid,
+    (SELECT groupArray(remote_path) FROM system.blob_storage_log
+        WHERE disk_name = 's3_no_cache' AND event_type = 'Upload'
+            AND local_path LIKE concat('%', mid_uuid, '%/invalidated_system_columns.txt')) AS source_blobs
+SELECT
+    'uploads', (SELECT count() FROM system.blob_storage_log
+        WHERE disk_name = 's3_no_cache' AND event_type = 'Upload'
+            AND (local_path LIKE concat('%', mid_uuid, '%/invalidated_system_columns.txt')
+                OR local_path LIKE concat('%', dst_uuid, '%/invalidated_system_columns.txt'))),
+    'source blobs retired by the clone', (SELECT count() FROM system.blob_storage_log
+        WHERE disk_name = 's3_no_cache' AND event_type = 'Delete'
+            AND local_path LIKE concat('%', dst_uuid, '%/invalidated_system_columns.txt')
+            AND has(source_blobs, remote_path));
+
+-- The source part is still readable, from the object storage: the disk has no cache.
 DETACH TABLE mid_05097;
 ATTACH TABLE mid_05097;
-
 SELECT 'mid', x FROM mid_05097 ORDER BY x;
-SELECT 'detached', count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 'mid_05097';
+SELECT 'dst', x FROM dst_05097 ORDER BY x;
 
 DROP TABLE src_05097;
 DROP TABLE mid_05097;
+DROP TABLE dst_05097;
