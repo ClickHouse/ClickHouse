@@ -1,0 +1,30 @@
+B single PREWHERE on the converted column
+{'a':1,'b':2}
+{'b':2}
+G Array parent, single PREWHERE
+['10','20','30']
+['50','60']
+C single row policy on the converted column
+{'a':1}
+{'a':1,'b':2}
+A row policy and PREWHERE on the converted column
+{'a':1,'b':2}
+J PREWHERE on another column
+{'a':1,'b':2}
+I row policy on another column
+{'a':1,'b':2}
+N additional_table_filters and PREWHERE
+{'a':1,'b':2}
+F Array parent, row policy and PREWHERE
+['10','20','30']
+W Nullable parent, filters on distinct columns
+7	x
+W2 LowCardinality parent, both filters on the same column
+y
+Z bare-column row policy and PREWHERE on the same column
+1
+2
+Y Nullable parent, both filters on the same column
+8
+D matching types, row policy and PREWHERE
+{'a':1,'b':2}
