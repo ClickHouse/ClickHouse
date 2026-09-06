@@ -1487,6 +1487,35 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
+    /// A shortcut for ATTACH a previously detached view. OR REPLACE and a SQL SECURITY clause are
+    /// excluded: the stored metadata owns the definition, so such a clause would be dropped here.
+    if (attach && !replace_view && !sql_security && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
+    {
+        auto query = make_intrusive<ASTCreateQuery>();
+        node = query;
+
+        query->attach = attach;
+        query->if_not_exists = if_not_exists;
+        query->is_ordinary_view = is_ordinary_view;
+        query->is_materialized_view = is_materialized_view;
+        query->cluster = cluster_str;
+        query->setIsTemporary(is_temporary);
+
+        auto * short_attach_table_id = table->as<ASTTableIdentifier>();
+        query->database = short_attach_table_id->getDatabase();
+        query->table = short_attach_table_id->getTable();
+        query->uuid = short_attach_table_id->uuid;
+        query->has_uuid = short_attach_table_id->uuid != UUIDHelpers::Nil;
+        query->has_uuid_clause = short_attach_table_id->has_uuid;
+
+        if (query->database)
+            query->children.push_back(query->database);
+        if (query->table)
+            query->children.push_back(query->table);
+
+        return true;
+    }
+
     if (ParserKeyword{Keyword::REFRESH}.ignore(pos, expected))
     {
         // REFRESH only with materialized views
@@ -3742,15 +3771,16 @@ AS key_name1 = 'some value' [[NOT] OVERRIDABLE], key_name2 = 'some value' [[NOT]
     factory.registerStatement("ATTACH",
     {
         .description = R"DOCS_MD(
-Attaches a table or a dictionary, for example, when moving a database to another server.
+Attaches a table, a view or a dictionary, for example, when moving a database to another server.
 
 **Syntax**
 
 ```sql
 ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
+ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name ...
 ```
 
-The query does not create data on disk, but assumes that data is already in the appropriate places, and just adds information about the specified table, dictionary or database to the server. After executing the `ATTACH` query, the server will know about the existence of the table, dictionary or database.
+The query does not create data on disk, but assumes that data is already in the appropriate places, and just adds information about the specified table, view, dictionary or database to the server. After executing the `ATTACH` query, the server will know about the existence of the table, view, dictionary or database.
 
 If a table was previously detached ([DETACH](/reference/statements/detach) query), meaning that its structure is known, you can use shorthand without defining the structure.
 
@@ -3760,7 +3790,10 @@ If a table was previously detached ([DETACH](/reference/statements/detach) query
 
 ```sql
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name
 ```
+
+The shorthand takes the definition from stored metadata, which is read on the node that runs the query. The view spellings are therefore local only: use `ATTACH TABLE` to re-attach a detached view on a cluster or in a `Replicated` database.
 
 This query is used when starting the server. The server stores table metadata as files with `ATTACH` queries, which it simply runs at launch (with the exception of some system tables, which are explicitly created on the server).
 
@@ -3868,6 +3901,7 @@ ATTACH DATABASE [IF NOT EXISTS] name [ENGINE=<database engine>] [ON CLUSTER clus
         .syntax = R"(
 ATTACH TABLE|VIEW|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name
 ATTACH TABLE name FROM 'path/to/data/' (col1 Type1, ...)
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ATTACH TABLE [db.]name AS [NOT] REPLICATED

@@ -274,6 +274,31 @@ void normalizeLegacyToTimeInCreateQuery(ASTPtr & query, const ContextPtr & conte
     replaceLegacyToTime(*query);
 }
 
+/// A stub ATTACH carries no definition of its own: the stored metadata owns it. A columns node that
+/// holds nothing is no definition either, and one can be built directly through `clickhouse_json`.
+bool isShortAttach(const ASTCreateQuery & create)
+{
+    const auto * columns_list = create.columns_list ? create.columns_list->as<ASTColumns>() : nullptr;
+    const bool has_columns = create.columns_list && (!columns_list || !columns_list->empty());
+
+    return create.attach && (!create.storage || !create.storage->engine) && !has_columns;
+}
+
+/// A short ATTACH is authorized only once the stored definition has been read, which happens on the
+/// node that executes the query. A distributed route enqueues before that read, and the worker
+/// replaying the entry runs with no user, hence full access.
+void rejectShortAttachViewOutsideOneNode(const ASTCreateQuery & create)
+{
+    if (!create.isView() || !isShortAttach(create))
+        return;
+
+    throw Exception(ErrorCodes::INCORRECT_QUERY,
+        "The short ATTACH {0} is not supported for ON CLUSTER queries and Replicated "
+        "databases, because the stored definition is read on the node that executes the "
+        "query. Replace {0} with TABLE, keeping the rest of the query.",
+        create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
+}
+
 }
 
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
@@ -1768,7 +1793,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
 
-    if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
+    const bool is_short_attach = isShortAttach(create);
+
+    if (!is_short_attach && !create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
         create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
 
     if (create.sql_security)
@@ -1777,7 +1804,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     DDLGuardPtr ddl_guard;
 
     // If this is a stub ATTACH query, read the query definition from the database
-    if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
+    if (is_short_attach)
     {
         /// First, reject any user-supplied storage clauses or top-level fields that the
         /// short-ATTACH path below would silently drop by overwriting `create` with the
@@ -1831,6 +1858,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
         if (database && database->shouldReplicateQuery(getContext(), query_ptr))
         {
+            /// The database is resolved again here, so it can be Replicated even when it was not at
+            /// the earlier check.
+            rejectShortAttachViewOutsideOneNode(create);
+
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable(), database.get());
             create.setDatabase(database_name);
             guard->releaseTableLock();
@@ -1838,7 +1869,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         }
 
         if (!create.cluster.empty())
+        {
+            rejectShortAttachViewOutsideOneNode(create);
             return executeQueryOnCluster(create);
+        }
 
         if (!database)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -1855,7 +1889,33 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         FunctionNameNormalizer::visit(query.get());
         auto create_query = query->as<ASTCreateQuery &>();
 
-        /// Set replicated or not replicated MergeTree engine in metadata and query
+        if (!create.is_dictionary && create_query.is_dictionary)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Cannot ATTACH TABLE {}.{}, it is a Dictionary",
+                backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
+
+        if (create.is_dictionary && !create_query.is_dictionary)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Cannot ATTACH DICTIONARY {}.{}, it is a Table",
+                backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
+
+        /// The VIEW spelling is authorized with CREATE_VIEW, which CREATE_TABLE implies, so it must
+        /// not reach a non-view. The TABLE spelling needs no such check: it requires CREATE_TABLE.
+        if (create.isView() && !create_query.isView())
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Cannot ATTACH VIEW {}.{}, it is a Table",
+                backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
+
+        /// `isView` also covers Window Views, which the view parser cannot spell, so the stub would
+        /// silently take the stored kind.
+        if (create.isView() && create_query.is_window_view)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Cannot ATTACH VIEW {}.{}, it is a WindowView. Replace VIEW with TABLE, keeping the "
+                "rest of the query",
+                backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
+
+        /// Follows the checks of the stored kind above: the conversion rewrites the metadata on disk
+        /// and removes transaction files, and neither can be rolled back once the query fails.
         if (create.attach_as_replicated.has_value())
         {
             if (database->isTableExist(create.getTable(), getContext()))
@@ -1867,15 +1927,23 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             convertMergeTreeTableIfPossible(create_query, database, create.attach_as_replicated.value());
         }
 
-        if (!create.is_dictionary && create_query.is_dictionary)
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Cannot ATTACH TABLE {}.{}, it is a Dictionary",
-                backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
+        /// `getRequiredAccess` ran on the stub, which has no definition, so nothing the stored
+        /// definition carries is authorized yet, and CREATE_VIEW alone reaches here. An `IF NOT
+        /// EXISTS` no-op applies no definition, so it must not demand the definition's grants.
+        if (create.isView() && !(if_not_exists && database->isTableExist(create.getTable(), getContext())))
+        {
+            if (create_query.sql_security)
+                processSQLSecurityOption(
+                    getContext(), create_query.sql_security->as<ASTSQLSecurity &>(), create_query.is_materialized_view, mode);
 
-        if (create.is_dictionary && !create_query.is_dictionary)
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Cannot ATTACH DICTIONARY {}.{}, it is a Table",
-                backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
+            AccessRightsElements target_access;
+            if (create_query.targets)
+                for (const auto & target : create_query.targets->targets)
+                    if (target.table_id)
+                        target_access.emplace_back(
+                            AccessType::SELECT | AccessType::INSERT, target.table_id.database_name, target.table_id.table_name);
+            getContext()->checkAccess(target_access);
+        }
 
         create = create_query; // Copy the saved create query, but use ATTACH instead of CREATE
 
@@ -3584,6 +3652,20 @@ BlockIO InterpreterCreateQuery::execute()
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
     bool is_create_database = create.database && !create.table;
+
+    /// Rejected here as well, so the error names the cluster the user wrote before
+    /// `maybeRemoveOnCluster` below can drop it. A temporary object belongs to no database, so it
+    /// keeps the rejection `createTable` already has for it.
+    if (!is_create_database && !create.isTemporary() && create.isView() && isShortAttach(create))
+    {
+        auto attach_database = DatabaseCatalog::instance().tryGetDatabase(
+            create.database ? create.getDatabase() : getContext()->getCurrentDatabase());
+
+        if (!create.cluster.empty()
+            || (attach_database && attach_database->shouldReplicateQuery(getContext(), query_ptr)))
+            rejectShortAttachViewOutsideOneNode(create);
+    }
+
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (create.attach_as_replicated.has_value())

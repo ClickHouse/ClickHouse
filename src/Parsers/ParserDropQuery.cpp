@@ -390,10 +390,10 @@ DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 Detaching does not delete the data or metadata of a table, a materialized view, a dictionary or a database. If an entity was not detached `PERMANENTLY`, on the next server launch the server will read the metadata and recall the table/view/dictionary/database again. If an entity was detached `PERMANENTLY`, there will be no automatic recall.
 
-Whether a table, a dictionary or a database was detached permanently or not, in both cases you can reattach them using the [ATTACH](/reference/statements/attach) query.
+Whether a table, a view, a dictionary or a database was detached permanently or not, in both cases you can reattach them using the [ATTACH](/reference/statements/attach) query.
 System log tables can be also attached back (e.g. `query_log`, `text_log`, etc.). Other system tables can't be reattached. On the next server launch the server will recall those tables again.
 
-`ATTACH MATERIALIZED VIEW` does not work with short syntax (without `SELECT`), but you can attach it using the `ATTACH TABLE` query.
+A detached view can be reattached either with `ATTACH VIEW` or with `ATTACH TABLE`. On a cluster or in a `Replicated` database, use `ATTACH TABLE`.
 
 Note that you can not detach permanently the table which is already detached (temporary). But you can attach it back and then detach permanently again.
 
