@@ -396,10 +396,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return convertNumericType<UInt16>(src, type, strict, convert_inexact_floats);
         }
 
-        if (which_type.isDateTime() && src.getType() == Field::Types::UInt64)
+        if (which_type.isDateTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {
-            /// `DateTime` stores `UInt32` under the hood, so `UInt64` is the canonical `Field` type and no conversion is needed.
-            return src;
+            /// `DateTime` stores `UInt32` under the hood; convert through `UInt32` to produce the canonical
+            /// `UInt64` `Field` and to range-check the input so out-of-range integers are not silently
+            /// truncated by the `DateTime` serializer downstream.
+            return convertNumericType<UInt32>(src, type, strict, convert_inexact_floats);
         }
 
         if (which_type.isTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
@@ -501,9 +503,22 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isDateTime64()
             && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64 || src.getType() == Field::Types::Decimal64))
         {
-            const auto scale = static_cast<const DataTypeDateTime64 &>(type).getScale();
-            const auto decimal_value
-                = DecimalUtils::decimalFromComponents<DateTime64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
+            const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
+            const auto scale = date_time64_type.getScale();
+            const Int64 whole = applyVisitor(FieldVisitorConvertToNumber<Int64>(), src);
+
+            /// Scaling the seconds up to ticks can overflow the `Int64` storage of the column. Such a value is
+            /// not representable at all, so return Null ("cannot convert") like the `Date`, `Date32` and
+            /// `DateTime` branches above, instead of throwing out of a comparison or an `IN` set.
+            /// Values that fit into `Int64` but fall outside the calendar window `[0000-01-01, 9999-12-31]`
+            /// are deliberately kept: unlike the narrower `Date`/`DateTime`, a `DateTime64` column really can
+            /// store such a tick count (it is only displayed clamped to the boundary), so rejecting it would
+            /// make an existing row unmatchable by its own value.
+            DateTime64 decimal_value;
+            if (!DecimalUtils::tryGetDecimalFromComponentsWithMultiplier<DateTime64>(
+                    whole, 0, DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale), decimal_value))
+                return {};
+
             return Field(DecimalField<DateTime64>(decimal_value, scale));
         }
 

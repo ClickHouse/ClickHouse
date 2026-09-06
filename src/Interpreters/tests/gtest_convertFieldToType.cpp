@@ -422,3 +422,55 @@ TEST(ConvertFieldToTypeStrictness, Float64ToFloat32)
     EXPECT_TRUE(convertFieldToType(too_big, *to_type, from_type.get(), {}, /*strict=*/ false, /*convert_inexact_floats=*/ true).isNull());
     EXPECT_TRUE(convertFieldToType(too_big, *to_type, from_type.get(), {}, /*strict=*/ true).isNull());
 }
+
+/// `Date` and `DateTime` are stored in narrower integers than the `Field` carriers (`UInt64`/`Int64`) that
+/// reach `convertFieldToType`. Out-of-range day/second numbers must be rejected (`Null`) instead of being
+/// silently truncated when the value is later materialized into a column. (`Date32` is covered by the
+/// `NumericToDate32` suite above, which checks the even narrower representable calendar.)
+TEST(ConvertFieldToTypeStrictness, OutOfRangeDateAndTimeIntegers)
+{
+    const auto & type_factory = DataTypeFactory::instance();
+
+    const auto date_type = type_factory.get("Date");
+    const auto datetime_type = type_factory.get("DateTime");
+
+    /// `Date` is `UInt16`.
+    EXPECT_EQ(convertFieldToType(Field(UInt64(1)), *date_type), Field(UInt64(1)));
+    EXPECT_TRUE(convertFieldToType(Field(UInt64(100000)), *date_type).isNull());
+    EXPECT_TRUE(convertFieldToType(Field(Int64(-1)), *date_type).isNull());
+
+    /// `DateTime` is `UInt32`; both the `UInt64` and the `Int64` carrier have to be range-checked.
+    EXPECT_EQ(convertFieldToType(Field(UInt64(1)), *datetime_type), Field(UInt64(1)));
+    EXPECT_EQ(convertFieldToType(Field(Int64(1)), *datetime_type), Field(UInt64(1)));
+    EXPECT_TRUE(convertFieldToType(Field(UInt64(5000000000)), *datetime_type).isNull());
+    EXPECT_TRUE(convertFieldToType(Field(Int64(5000000000)), *datetime_type).isNull());
+    EXPECT_TRUE(convertFieldToType(Field(Int64(-1)), *datetime_type).isNull());
+}
+
+/// A `DateTime64` column stores a raw `Int64` tick count. Scaling a whole number of seconds up to that tick
+/// count can overflow `Int64`, and the result is then not representable at all - such a value must be rejected
+/// (`Null`) rather than throwing out of a comparison. Ticks that do fit `Int64` are kept even when they fall
+/// outside the calendar window `[0000-01-01, 9999-12-31]`: the column can really store them (they are only
+/// displayed clamped to the boundary), so rejecting them would make an existing row unmatchable by its value.
+TEST(ConvertFieldToTypeStrictness, OutOfRangeDateTime64Integers)
+{
+    const auto & type_factory = DataTypeFactory::instance();
+
+    const auto seconds_type = type_factory.get("DateTime64(0, 'UTC')");
+    const auto nanoseconds_type = type_factory.get("DateTime64(9, 'UTC')");
+
+    /// `9999-12-31 23:59:59` UTC, the last time point the column can display, and the first one past it.
+    EXPECT_EQ(
+        convertFieldToType(Field(Int64(253402300799)), *seconds_type),
+        Field(DecimalField<DateTime64>(DateTime64(253402300799), 0)));
+    EXPECT_EQ(
+        convertFieldToType(Field(Int64(253402300800)), *seconds_type),
+        Field(DecimalField<DateTime64>(DateTime64(253402300800), 0)));
+
+    /// Scaling the seconds up to nanoseconds overflows the `Int64` tick storage.
+    EXPECT_EQ(
+        convertFieldToType(Field(Int64(1)), *nanoseconds_type),
+        Field(DecimalField<DateTime64>(DateTime64(1000000000), 9)));
+    EXPECT_TRUE(convertFieldToType(Field(Int64(253402300799)), *nanoseconds_type).isNull());
+    EXPECT_TRUE(convertFieldToType(Field(UInt64(253402300799)), *nanoseconds_type).isNull());
+}

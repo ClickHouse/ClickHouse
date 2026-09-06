@@ -1,0 +1,77 @@
+out of range bounds are rejected
+the exclusive TO bound may be one step outside of the range
+256	0	255
+129	-128	0
+1	5	5
+a TO bound out of range is fine when STEP stops before it
+87	0	255
+87	-128	127
+[5,250]
+without FROM the bound is rejected only when every anchor wraps
+84	5	254
+25	-125	-5
+[5]
+STALENESS caps the sequence before TO, so the TO bound is not rejected
+20	5	24
+20	-24	-5
+7	5	23
+[250,251,252,253,254]
+[250]
+an INTERVAL step can never reach a TO out of range in the fill direction, so such a TO is rejected
+1	2020-01-01	2020-01-01
+1	2020-01-01	2020-01-01
+3	2026-03-05	2028-03-05
+an INTERVAL step clamps at the calendar boundary, which for Date32 and DateTime64 is inside the storage range
+1
+1
+7	2020-01-01	2026-01-01
+4	2020-01-01 00:00:00	2020-01-04 00:00:00
+3	2026-03-05	2028-03-05
+bounds between the calendar boundary and the storage boundary of Date32 and DateTime64 are invalid
+2
+1
+2
+3
+a numeric step over DateTime64 must not generate ticks beyond the calendar
+1	9999-12-31 23:59:58	9999-12-31 23:59:58
+2	9999-12-31 23:59:59.998	9999-12-31 23:59:59.999
+2	9999-12-31 23:59:58	9999-12-31 23:59:59
+an INTERVAL step that stagnates at the calendar boundary before an in-range TO is rejected
+1	9998-06-01 00:00:00	9998-06-01 00:00:00
+5
+an INTERVAL step that wraps around the column type before an in-range TO is rejected
+4	2106-01-01 00:00:00	2106-01-04 00:00:00
+a numeric step that wraps the Int64 arithmetic carrier is rejected
+a step that wraps before the next data row is rejected
+a generated value out of range of the column type is rejected at runtime
+[11,14,17,20,23,26,29,32,35,38,41,44,47,50,53,56,59,62,65,68,71,74,77,80,83,86,89,92,95,98,101,104,107,110,113,116,119,122,125,128,131,134,137,140,143,146,149,152,155,158,161,164,167,170,173,176,179,182,185,188,191,194,197,200,203,206,209,212,215,218,221,224,227,230,233,236,239,242,245,248,251,254]
+[127]
+a fill towards a STALENESS border out of range of the column type is rejected
+10	9999-12-31 23:59:58
+10	2020-01-01 00:00:09
+in-range filling is unchanged
+[1,2,3,4,5,6,7,8,9]
+[-1,-2,-3,-4,-5,-6,-7]
+4	2025-12-30	2026-01-02
+7	2020-01-01	2026-01-01
+4	2025-12-30	2026-01-02
+20	2020-06-16 00:00:00	2020-06-16 09:30:00
+[5,5.25,5.5,5.75]
+DISTINCT in order over a filled stream
+256
+256
+NaN and infinity in a float fill column stay accepted
+1	nan
+2	0
+3	100
+1	inf
+2	0
+3	100
+0
+1
+5
+nan
+1e300
+5
+the runtime check covers a trailing fill column as well
+162	254
