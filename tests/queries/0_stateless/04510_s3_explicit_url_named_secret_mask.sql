@@ -234,6 +234,84 @@ BACKUP TABLE nonexistent_04510 TO S3(nc_bkporder_missing,
 BACKUP TABLE nonexistent_04510 TO S3('url_bkp_mixed',
                  access_key_id = 'ak', 'SEKRIT_BKPMIX'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
+-- The credential-free engines (Disk, File, Memory, Null) are credential-free only in the shape they
+-- read: File and Memory take one argument, Disk two, Null none. A surplus argument is rejected after
+-- the statement is logged, so it reaches the log holding whatever was written in it, and an engine name
+-- that is not registered at all has no known shape to trust; both must be hidden. The last statement is
+-- the control: the shape Null does read carries nothing to hide, so it stays visible verbatim and gets
+-- as far as resolving the table.
+BACKUP TABLE nonexistent_04510 TO File('nonexistent_04510',
+                 'SEKRIT_TOFILEOVER'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+BACKUP TABLE nonexistent_04510 TO Disk('backups', 'nonexistent_04510',
+                 'SEKRIT_TODISKOVER'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+BACKUP TABLE nonexistent_04510 TO Memory('nonexistent_04510',
+                 'SEKRIT_TOMEMOVER'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+BACKUP TABLE nonexistent_04510 TO Null('SEKRIT_TONULLOVER'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+BACKUP TABLE nonexistent_04510 TO Foo('SEKRIT_TOUNKNOWN'); -- { serverError BACKUP_ENGINE_NOT_FOUND }
+BACKUP TABLE nonexistent_04510 TO Null(); -- { serverError UNKNOWN_TABLE }
+
+-- The AzureBlobStorage backup destination reads a different signature than the table engine of the same
+-- name: a named collection with an optional filename, three arguments (connection string or account url,
+-- container, path), or five (adding account_name and account_key). An argument outside those shapes is
+-- rejected only after the statement is logged, and AzureQueue has no backup engine at all. The last
+-- three statements are the controls: five arguments hide only the account_key, a connection string hides
+-- its AccountKey, and the three-argument shape has nothing to hide, so it stays visible verbatim.
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct', 'cont', 'blob',
+                 'SEKRIT_AZTO4'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing, 'dir',
+                 'SEKRIT_AZTONCPOS'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureQueue('http://localhost:11111/acct', 'cont', 'blob',
+                 'SEKRIT_AZQTO'); -- { serverError BACKUP_ENGINE_NOT_FOUND }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_AZTOCSKEY==;',
+                 'cont', 'blob', 'acct', 'SEKRIT_AZTOCS5'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct#f', 'cont', 'blob',
+                 'acct', 'SEKRIT_AZTO5KEY'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=a;AccountKey=c2VrcmV0Cg==;',
+                 'cont', 'visible_04510_dir/b.zip'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct', 'visible_04510_cont', 'visible_04510_dir/b.zip'); -- { serverError BAD_ARGUMENTS }
+
+-- A named collection can be overridden per statement, and the destination evaluates those overrides as
+-- constant expressions. An override this rule cannot read may hold either credential, and hiding a
+-- connection string replaces the whole argument, which cannot be combined with hiding account_key, so
+-- both shapes hide the locator whole. The last three statements are the controls: a connection string
+-- alone still hides only its AccountKey, account_key alone is hidden by itself, and an account url
+-- override does not take the replacement path, so it stays visible next to a hidden account_key.
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 connection_string = concat('DefaultEndpointsProtocol=https;AccountName=a;AccountKey=',
+                 'SEKRIT_AZNCEXPR')); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 connection_string = 'DefaultEndpointsProtocol=https;AccountName=a;AccountKey=c2VrcmV0Cg==;',
+                 account_key = 'SEKRIT_AZNCBOTH'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 storage_account_url = concat('https://a.blob.core.windows.net/c?sig=',
+                 'SEKRIT_AZNCURLEXPR')); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 connection_string = 'DefaultEndpointsProtocol=https;AccountName=visible_04510_acct;AccountKey=SEKRIT_AZNCCS==;'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 account_key = 'SEKRIT_AZNCKEY'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 storage_account_url = 'http://localhost:11111/visible_04510_url',
+                 account_key = 'SEKRIT_AZNCURLKEY'); -- { serverError BAD_ARGUMENTS }
+
+-- An override key can be an expression too, and one this rule cannot read hides which credential the
+-- value is: both the computed key and a malformed override hide the locator whole, as the S3 form above
+-- already does for a key it cannot read.
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 concat('account_', 'key') = 'SEKRIT_AZNCKEYEXPR'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 equals('account_key', 'SEKRIT_AZNCEQ3', 'surplus')); -- { serverError BAD_ARGUMENTS }
+
+-- connection_string and storage_account_url are mutually exclusive, and the destination reads at most
+-- one of them, so an override it never reads holds whatever was written there. The last statement is
+-- the control: a key that carries no credential stays visible however often it is repeated.
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 connection_string = 'http://localhost:11111/acct',
+                 storage_account_url = 'DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_AZNCPAIR==;'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 connection_string = 'http://localhost:11111/acct',
+                 connection_string = 'DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_AZNCDUP==;'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing, container = 'visible_04510_c1', container = 'visible_04510_c2'); -- { serverError BAD_ARGUMENTS }
+
 -- Backup database engine reconstructs the nested S3 destination; extra_credentials must be masked.
 CREATE DATABASE db_04510_ec ENGINE = Backup('', S3('url_dbec', 'ak', 'SEKRIT_SAK',
                  extra_credentials(external_id = 'SEKRIT_EID'))); -- { serverError BAD_ARGUMENTS }
@@ -272,13 +350,87 @@ CREATE DATABASE db_04510_mixed ENGINE = Backup('', S3('url_dbmixed',
 CREATE DATABASE db_04510_ncurl ENGINE = Backup('', S3(nc_dburl_missing,
                  url = concat('https://user:SEKRIT_PW@', 'localhost/x?X-Amz-Signature=SEKRIT_SIG'))); -- { serverError BAD_ARGUMENTS }
 
--- The reconstructor must fail closed on an unsupported tail (headers), not emit it verbatim.
+-- The reconstructor must fail closed on an unsupported tail (headers), not emit it verbatim, and the
+-- rejection message must not echo it either: a nested map's values are hidden only by its parent's
+-- formatter, so such a node formatted on its own carries them in plaintext.
 CREATE DATABASE db_04510_hdr ENGINE = Backup('', S3('url_dbhdr', 'ak', 'SEKRIT_SAK',
-                 headers('X-Auth' = 'SEKRIT_HDR'))); -- { serverError BAD_ARGUMENTS }
+                 headers('X-Auth' = 'SEKRIT_DBHDR'))); -- { serverError BAD_ARGUMENTS }
 
 -- The reconstructor must also fail closed on a constant-expression extra_credentials key.
 CREATE DATABASE db_04510_expr ENGINE = Backup('', S3('url_dbexpr', 'ak', 'SEKRIT_SAK',
                  extra_credentials(concat('extern', 'al_id') = 'SEKRIT_EXPR'))); -- { serverError BAD_ARGUMENTS }
+
+-- `Backup(database_name, locator)` is the only valid shape. The statement is logged before the arity
+-- is validated, so a credential parked in a surplus argument must be hidden as well.
+CREATE DATABASE db_04510_tail ENGINE = Backup('', S3('url_dbtail', 'ak', 'SEKRIT_SAK'),
+                 'SEKRIT_DBTAIL'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+CREATE DATABASE db_04510_tmap ENGINE = Backup('', S3('url_dbtmap', 'ak', 'SEKRIT_SAK'),
+                 extra_credentials(external_id = 'SEKRIT_DBTMAP')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+CREATE DATABASE db_04510_lone ENGINE = Backup(S3('url_dblone', 'ak',
+                 'SEKRIT_DBLONE')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+-- A locator is also a credential carrier in the database-name position, where the argument is neither
+-- masked by the S3 rule below nor safe to echo: the message that rejects it formats it standalone.
+CREATE DATABASE db_04510_swap ENGINE = Backup(S3('url_dbswap', 'ak', 'SEKRIT_DBSWAP'),
+                 ''); -- { serverError BAD_ARGUMENTS }
+
+-- An identifier is not a literal either, and the parsers evaluate one as a literal, so the
+-- database-name position must hold a literal before the rest of the shape is trusted.
+CREATE DATABASE db_04510_ident ENGINE = Backup(SEKRIT_DBIDENT,
+                 S3('url_dbident', 'ak', 'SEKRIT_SAK')); -- { serverError BAD_ARGUMENTS }
+
+-- A credential-free locator (Disk, File, Memory, Null) names its destination with literals and holds
+-- no credential, but it keeps a named override or nested map that it never reads, and that can carry
+-- one. Both the logged text and the not-found message identify the locator, so both must hide it.
+CREATE DATABASE db_04510_ftail ENGINE = Backup('src_04510',
+                 File('nonexistent_04510', extra_credentials(external_id = 'SEKRIT_DBFTAIL'))); -- { serverError BACKUP_NOT_FOUND }
+
+-- A surplus literal argument reaches the same locator through the shape check instead of the tail, and
+-- it is rejected only after the statement is logged, so it has to be hidden as well. The two controls
+-- that follow hold the argument counts these engines do read (File one, Disk two), where the locator
+-- names a destination only: nothing is masked, so both the logged text and the not-found message keep
+-- it visible verbatim, and the transcript records the statement as sent rather than a re-formatted AST.
+CREATE DATABASE db_04510_fover ENGINE = Backup('src_04510',
+                 File('nonexistent_04510', 'SEKRIT_DBFILEOVER')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+CREATE DATABASE db_04510_dover ENGINE = Backup('src_04510',
+                 Disk('backups', 'nonexistent_04510', 'SEKRIT_DBDISKOVER')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+CREATE DATABASE db_04510_mover ENGINE = Backup('src_04510',
+                 Memory('nonexistent_04510', 'SEKRIT_DBMEMOVER')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+CREATE DATABASE db_04510_fvalid ENGINE = Backup('src_04510', File('nonexistent_04510')); -- { serverError BACKUP_NOT_FOUND }
+CREATE DATABASE db_04510_dvalid ENGINE = Backup('src_04510', Disk('backups', 'nonexistent_04510')); -- { serverError BACKUP_NOT_FOUND }
+
+-- A credential value given as an expression is hidden in the logged text, but evaluating it can fail
+-- with a message that quotes its input, so the rejection must not carry that message either. The url
+-- has to parse for the locator to reach credential evaluation at all.
+CREATE DATABASE db_04510_eval ENGINE = Backup('', S3('http://localhost:11111/test/04510eval', 'ak', 'SEKRIT_SAK',
+                 extra_credentials(external_id = toUInt64('SEKRIT_DBEVAL')))); -- { serverError BAD_ARGUMENTS }
+
+-- A locator that is not a function cannot be reconstructed, so the whole argument must be hidden
+-- rather than echoed, both in the logged query text and in the recorded exception message. The
+-- statement is logged and the exception is recorded before validation rejects the locator. This
+-- spelling decodes, so what rejects it here is the destination behind it.
+CREATE DATABASE db_04510_quoted ENGINE = Backup('', 'S3(\'url_dbquoted\', \'ak\', \'SEKRIT_QUOTED\')'); -- { serverError BAD_ARGUMENTS }
+
+-- A string that decodes to no locator is rejected by the parse of the string itself, and a message
+-- quoting what failed to parse would carry the whole spelling, credentials included.
+CREATE DATABASE db_04510_undecodable ENGINE = Backup('', 'not a locator SEKRIT_DBSTR'); -- { serverError BAD_ARGUMENTS }
+
+-- An argument in neither spelling reaches the locator decoder, whose message used to echo it.
+CREATE DATABASE db_04510_ident ENGINE = Backup('', SEKRIT_DBIDENT); -- { serverError BAD_ARGUMENTS }
+
+-- A non-tail argument that is neither a literal nor `key = value` cannot be reconstructed either. It
+-- is rejected by a different message than the quoted locator above, and that message used to echo the
+-- offending argument verbatim, so it needs its own tag.
+CREATE DATABASE db_04510_nonlit ENGINE = Backup('', S3(concat('SEKRIT_NONLIT', 'x'),
+                 'url_dbnonlit')); -- { serverError BAD_ARGUMENTS }
+
+-- S3 is not the only backup engine whose locator carries credentials: AzureBlobStorage takes an
+-- account_key and accepts connection strings and named-collection overrides that carry one too.
+-- Only S3 is reconstructed above, so an Azure locator keeps its engine name and argument count
+-- (neither is a secret) and every argument is hidden. The url carries a query string, which the
+-- engine rejects before it reaches the network.
+CREATE DATABASE db_04510_azure ENGINE = Backup('', AzureBlobStorage('http://localhost:11111/acct?sig=x',
+                 'cont', 'blob', 'account', 'SEKRIT_AZUREKEY')); -- { serverError BAD_ARGUMENTS }
 
 -- The S3 database engine accepts no positional beyond secret_access_key; an extra positional must
 -- be masked in the logged query text.
@@ -338,7 +490,15 @@ ORDER BY event_time_microseconds;
 -- logs each DDL from the replay worker, which re-masks a rewritten AST independently, so assert
 -- the masking property over every row this test produced, replay rows included. count() > 0 keeps
 -- an empty row set from passing vacuously.
-SELECT count() > 0, countIf(query LIKE '%SEKRIT%')
+-- The third column covers the recorded exception messages of the eight unreconstructible-locator
+-- statements above, whose rejections used to echo the locator verbatim - one tag per message, since
+-- they are thrown at different sites. It is scoped to those tags because widening it to every
+-- deliberately-failing statement here would report unrelated pre-existing echoes.
+SELECT count() > 0, countIf(query LIKE '%SEKRIT%'),
+       countIf(exception LIKE '%SEKRIT_QUOTED%' OR exception LIKE '%SEKRIT_NONLIT%'
+               OR exception LIKE '%SEKRIT_DBHDR%' OR exception LIKE '%SEKRIT_DBSWAP%'
+               OR exception LIKE '%SEKRIT_DBEVAL%' OR exception LIKE '%SEKRIT_DBFTAIL%'
+               OR exception LIKE '%SEKRIT_DBSTR%' OR exception LIKE '%SEKRIT_DBIDENT%')
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type != 'QueryStart'

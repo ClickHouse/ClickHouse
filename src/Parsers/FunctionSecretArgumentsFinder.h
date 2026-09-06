@@ -180,6 +180,18 @@ protected:
     bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const;
     static bool tryGetStringFromArgument(const AbstractFunction::Argument & argument, String * res, bool allow_identifier = true);
 
+    /// `BackupInfo` keeps named overrides and a trailing map for every backup engine, including the
+    /// ones that read neither, so an argument that is not a plain literal can carry a credential.
+    static bool hasOnlyLiteralArguments(const AbstractFunction & function);
+
+    /// Whether a backup locator names its destination with exactly the literal arguments its engine
+    /// accepts, and therefore holds no credential. An engine that takes fewer rejects the rest only
+    /// after the statement has been formatted for logging, so the count has to be checked here too.
+    static bool isCredentialFreeBackupLocator(const AbstractFunction & function);
+
+    /// Hides every argument, for a shape whose valid slots cannot be established.
+    void maskEveryArgument();
+
     void findRemoteFunctionSecretArguments();
 
     /// Tries to get either a database name or a qualified table name from an argument.
@@ -206,6 +218,10 @@ protected:
     void findDataLakeCatalogSecretArguments();
     void findBackupDatabaseSecretArguments();
     void findBackupNameSecretArguments();
+
+    /// A backup destination reads a different signature than the table engine of the same name, so the
+    /// table-engine rule leaves an argument it does not model visible.
+    void findAzureBlobStorageBackupSecretArguments();
 
     /// Whether a specified argument can be the name of a named collection?
     bool isNamedCollectionName(size_t arg_idx) const;

@@ -256,9 +256,8 @@ def test_restore_on_cluster_authorizes_an_embedded_definition_over_an_existing_d
     # the check is skipped here and the restricted user reaches the embedded locator unchecked.
     #
     # The outer locator is File and IS granted, so a denial naming READ ON S3 can only come from the
-    # embedded S3 locator. `BACKUP DATABASE` serializes the locator as a string that
-    # `BackupInfo::fromAST` rejects before any check, so the function form is written into the
-    # manifest directly - the attacker-controlled-manifest shape this authorization exists for.
+    # embedded S3 locator. The manifest is crafted to point that locator at a denied destination,
+    # which is the attacker-controlled-manifest shape this authorization exists for.
     # Every locator here is credential-free (File locally, a 1-argument S3 URL in the manifest): the
     # later definition-mismatch error logs both definitions, and a masked credential in that line
     # trips the tests-only `throw_on_match` masking rule and aborts the server.
@@ -289,7 +288,7 @@ def test_restore_on_cluster_authorizes_an_embedded_definition_over_an_existing_d
     assert "READ ON S3" in error, error
 
     # With the grant, authorization passes: the restore proceeds past CHECKING_ACCESS_RIGHTS and
-    # fails later on the pre-existing string-vs-function definition mismatch instead.
+    # fails later because the crafted definition names S3 where the live one names File.
     node.query(f"GRANT READ ON S3 TO {USER}")
     error = node.query_and_get_error(
         "RESTORE DATABASE dbembedded ON CLUSTER one_shard FROM File('outer10')", user=USER
@@ -300,11 +299,11 @@ def test_restore_on_cluster_authorizes_an_embedded_definition_over_an_existing_d
     node.query("DROP DATABASE dbembedded SYNC")
 
 
-def test_restore_on_cluster_of_a_real_backup_engine_manifest_is_unchanged(started_cluster):
+def test_restore_on_cluster_of_a_real_backup_engine_manifest(started_cluster):
     # The manifest is NOT crafted here, which is the point: `BACKUP DATABASE` serializes the inner
-    # locator as a string, and authorizing it would parse it and reject it with BAD_ARGUMENTS before
-    # any access decision. Only this shape can catch that, so it is a separate case from the crafted
-    # one - which asserts the security property but cannot see this class.
+    # locator as a function, so an uncrafted manifest is authorizable exactly as it stands, with no
+    # rewriting. The exact-text assertion below is a second, independent oracle for that
+    # serialization - the archived definition rather than one of the display surfaces.
     node.query("DROP DATABASE IF EXISTS dbreal SYNC")
     node.query("BACKUP DATABASE d67785 TO File('inner11') FORMAT Null")
     node.query("CREATE DATABASE dbreal ENGINE = Backup('d67785', File('inner11'))")
@@ -313,28 +312,74 @@ def test_restore_on_cluster_of_a_real_backup_engine_manifest_is_unchanged(starte
         ["bash", "-c", "cat /var/lib/clickhouse/backups/outer11/metadata/dbreal.sql"],
         user="root",
     )
-    # The locator really is the string form: an ASTLiteral, not an ASTFunction.
-    assert "Backup('d67785', 'File(\\'inner11\\')')" in manifest, manifest
+    # A nested ASTFunction, not an opaque ASTLiteral.
+    assert "Backup('d67785', File('inner11'))" in manifest, manifest
 
-    # Only the outer locator's own grant; the string-form inner one must not be authorized at all.
+    # Both locators are File, so this one grant covers the outer one and the inner one alike.
     node.query(f"GRANT READ ON FILE TO {USER}")
 
-    # Target exists, so nothing is created and the restore fully succeeds. Authorizing the string
-    # form turns this into `Code: 36` out of CHECKING_ACCESS_RIGHTS.
+    # Target exists, so nothing is created and the restore fully succeeds: the inner locator is
+    # authorized, and READ ON FILE covers it.
     node.query(
         "RESTORE DATABASE dbreal ON CLUSTER one_shard FROM File('outer11') FORMAT Null", user=USER
     )
 
-    # Target absent, so creation runs and rejects the string form - as it does without this feature.
-    # `While creating database` is what pins the failure to the creation stage rather than the
-    # access-check one, which is where the same code would report it.
+    # Target absent, so creation runs too: the function-form locator parses, and the same grant
+    # carries it. Before the locator was serialized as a function this rejected with BAD_ARGUMENTS.
     node.query("DROP DATABASE dbreal SYNC")
-    error = node.query_and_get_error(
-        "RESTORE DATABASE dbreal ON CLUSTER one_shard FROM File('outer11')", user=USER
+    node.query(
+        "RESTORE DATABASE dbreal ON CLUSTER one_shard FROM File('outer11') FORMAT Null", user=USER
     )
-    assert "ACCESS_DENIED" not in error, error
-    assert "BAD_ARGUMENTS" in error, error
-    assert "While creating database" in error, error
+    # Positive control: the database really was created, in the working form, and reads through.
+    assert (
+        node.query("SELECT engine_full FROM system.databases WHERE name = 'dbreal' FORMAT TSVRaw")
+        == "Backup('d67785', File('inner11'))\n"
+    )
+    assert node.query("SELECT x FROM dbreal.secrets") == "42\n"
+    node.query("DROP DATABASE dbreal SYNC")
+
+
+def test_restore_on_cluster_authorizes_a_legacy_string_locator(started_cluster):
+    # An older server serialized a `Backup` database's locator as a string literal, and
+    # `parseAndAuthorizeLocator` returns before the source check for a non-function argument, so a
+    # backup taken then carried a definition that reached creation unauthorized. The archive reader
+    # now parses that literal back into the function form, which is what makes it checkable.
+    #
+    # The outer locator is File and IS granted, so a denial naming READ ON S3 can only come from the
+    # inner locator - which is deliberately under the denied prefix.
+    inner = s3(DENIED + "/b13")
+    node.query("DROP DATABASE IF EXISTS dbleg SYNC")
+    node.query(f"BACKUP DATABASE d67785 TO {inner} FORMAT Null")
+    node.query(f"CREATE DATABASE dbleg ENGINE = Backup('d67785', {inner})")
+    node.query("BACKUP DATABASE dbleg TO File('outer13') FORMAT Null")
+
+    # Rewrite the archived definition into the spelling an older server wrote. A quoted heredoc
+    # delimiter keeps the shell away from the backslashes of the SQL literal.
+    path = "/var/lib/clickhouse/backups/outer13/metadata/dbleg.sql"
+    archived = node.exec_in_container(["bash", "-c", f"cat {path}"], user="root")
+    assert inner in archived, archived
+    legacy = archived.replace(
+        inner, "'" + inner.replace("\\", "\\\\").replace("'", "\\'") + "'"
+    )
+    node.exec_in_container(
+        ["bash", "-c", f"cat > {path} <<'LEGACY_DEF_EOF'\n{legacy}\nLEGACY_DEF_EOF"],
+        user="root",
+    )
+    assert node.exec_in_container(["bash", "-c", f"cat {path}"], user="root").strip() == (
+        legacy.strip()
+    )
+
+    node.query(f"GRANT READ ON FILE TO {USER}")
+
+    # Target absent, so the definition is on its way to creation when it is authorized. Without the
+    # normalization the check is skipped and creation rejects the literal with BAD_ARGUMENTS instead.
+    node.query("DROP DATABASE dbleg SYNC")
+    error = node.query_and_get_error(
+        "RESTORE DATABASE dbleg ON CLUSTER one_shard FROM File('outer13')", user=USER
+    )
+    assert "ACCESS_DENIED" in error, error
+    assert "READ ON S3" in error, error
+    assert node.query("SELECT count() FROM system.databases WHERE name = 'dbleg'") == "0\n"
 
 
 def test_explicit_base_backup_locator_is_authorized_on_the_initiator(started_cluster):
@@ -420,3 +465,35 @@ def test_on_cluster_is_authorized_on_the_initiator(started_cluster):
         f"BACKUP TABLE d67785.secrets ON CLUSTER one_shard TO {s3(ALLOWED + '/b4')} FORMAT Null",
         user=USER,
     )
+
+
+def test_create_database_on_cluster_authorizes_either_locator_spelling(started_cluster):
+    # `parseAndAuthorizeLocator` is the only check that sees the real user for an `ON CLUSTER`
+    # definition, because the worker leg that creates the database carries no user at all. It
+    # returned before the source check for a locator that is not a function, which was safe only
+    # while creation rejected that spelling; the string form an older server persisted now loads,
+    # so the same locator has to be authorized here too.
+    inner = s3(DENIED + "/b16")
+    quoted = "'" + inner.replace("\\", "\\\\").replace("'", "\\'") + "'"
+    node.query("DROP DATABASE IF EXISTS dbocl ON CLUSTER one_shard SYNC")
+    node.query(f"BACKUP DATABASE d67785 TO {inner} FORMAT Null")
+
+    for spelling in (inner, quoted):
+        error = node.query_and_get_error(
+            f"CREATE DATABASE dbocl ON CLUSTER one_shard ENGINE = Backup('d67785', {spelling})",
+            user=USER,
+        )
+        assert "ACCESS_DENIED" in error, error
+        # The denial must be the source check, not some other missing privilege.
+        assert "READ ON S3" in error, error
+        assert node.query("SELECT count() FROM system.databases WHERE name = 'dbocl'") == "0\n"
+
+    # With the grant both spellings are accepted, and both open the same backup.
+    node.query(f"GRANT READ ON S3 TO {USER}")
+    for spelling in (inner, quoted):
+        node.query(
+            f"CREATE DATABASE dbocl ON CLUSTER one_shard ENGINE = Backup('d67785', {spelling})",
+            user=USER,
+        )
+        assert node.query("SELECT x FROM dbocl.secrets") == "42\n"
+        node.query("DROP DATABASE dbocl ON CLUSTER one_shard SYNC")

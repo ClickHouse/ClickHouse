@@ -26,6 +26,45 @@ namespace
         changed |= maskPresignedURLParameters(url);
         return changed;
     }
+
+    /// The backup engines whose locator arguments name a destination without any credential in them,
+    /// each with the argument count it accepts. `BackupFactory` registers exactly these plus `S3` and
+    /// `AzureBlobStorage`, which do carry one.
+    std::optional<size_t> credentialFreeBackupEngineArity(const String & engine_name)
+    {
+        if (engine_name == "File" || engine_name == "Memory")
+            return 1;
+        if (engine_name == "Disk")
+            return 2;
+        if (engine_name == "Null")
+            return 0;
+        return {};
+    }
+}
+
+void FunctionSecretArgumentsFinder::maskEveryArgument()
+{
+    for (size_t i = 0, size = function->arguments->size(); i < size; ++i)
+        markSecretArgument(i);
+}
+
+bool FunctionSecretArgumentsFinder::hasOnlyLiteralArguments(const AbstractFunction & function)
+{
+    if (!function.hasArguments())
+        return true;
+    for (size_t i = 0, size = function.arguments->size(); i < size; ++i)
+        if (!function.arguments->at(i)->tryGetLiteralText(nullptr))
+            return false;
+    return true;
+}
+
+bool FunctionSecretArgumentsFinder::isCredentialFreeBackupLocator(const AbstractFunction & function)
+{
+    auto arity = credentialFreeBackupEngineArity(function.name());
+    if (!arity)
+        return false;
+    /// An engine reads its own arguments only, so a surplus one holds whatever the statement put there.
+    return (function.hasArguments() ? function.arguments->size() : 0) == *arity && hasOnlyLiteralArguments(function);
 }
 
 void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argument_is_named)
@@ -1169,8 +1208,14 @@ void FunctionSecretArgumentsFinder::findDataLakeCatalogSecretArguments()
 
 void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
 {
-    if (function->arguments->size() < 2)
+    /// `Backup(database_name, locator)` is the only valid shape, and a locator carrying credentials can
+    /// be written in either position, so any other shape hides every argument. The arity and the engine
+    /// name are not secrets, and the query is formatted for logging before validation rejects it.
+    if (function->arguments->size() != 2 || !function->arguments->at(0)->tryGetLiteralText(nullptr))
+    {
+        maskEveryArgument();
         return;
+    }
 
     auto storage_arg = function->arguments->at(1);
     auto storage_function = storage_arg->getFunction();
@@ -1180,7 +1225,33 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
     ///   Backup('', S3('url', 'access_key_id', 'secret_access_key' [, ...]))
     ///   Backup('', S3(named_collection, ..., secret_access_key = '...', session_token = '...', ...))
     /// by reconstructing the nested `S3(...)` with the secret arguments replaced by `[HIDDEN]`.
-    if (!storage_function || storage_function->name() != "S3" || !storage_function->hasArguments())
+    if (!storage_function)
+    {
+        /// A locator must be a function, but the query is formatted for logging before validation rejects it.
+        markSecretArgument(1);
+        return;
+    }
+
+    if (storage_function->name() != "S3")
+    {
+        if (isCredentialFreeBackupLocator(*storage_function))
+            return;
+
+        /// Any other locator holds a credential no rule below reconstructs (`AzureBlobStorage` holds
+        /// `account_key` and connection-string material); its engine name and arity are not secrets.
+        std::string replacement = storage_function->name() + "(";
+        for (size_t i = 0, size = storage_function->hasArguments() ? storage_function->arguments->size() : 0; i < size; ++i)
+            replacement += i > 0 ? ", '[HIDDEN]'" : "'[HIDDEN]'";
+        replacement += ")";
+
+        result.start = 1;
+        result.count = 1;
+        result.replacement = std::move(replacement);
+        result.quote_replacement = false;
+        return;
+    }
+
+    if (!storage_function->hasArguments())
         return;
 
     const auto & nested_args = *storage_function->arguments;
@@ -1363,10 +1434,102 @@ void FunctionSecretArgumentsFinder::findBackupNameSecretArguments()
         maskS3UrlArgument(positional, 0);
         maskS3PositionalsFrom(positional, positional.size() == 3 ? 2 : 1);
     }
-    else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
+    else if (engine_name == "AzureBlobStorage")
     {
-        findAzureBlobStorageTableEngineSecretArguments();
+        findAzureBlobStorageBackupSecretArguments();
     }
+    else if (!isCredentialFreeBackupLocator(*function))
+    {
+        /// Everything else either is an engine no rule here reconstructs, or has arguments the named
+        /// engine does not read (an override, a nested map, a surplus slot), which can carry a credential.
+        /// `AzureQueue` reaches this branch: it is a table engine, not a registered backup engine.
+        maskEveryArgument();
+    }
+}
+
+void FunctionSecretArgumentsFinder::findAzureBlobStorageBackupSecretArguments()
+{
+    /// The destination reads AzureBlobStorage(named_collection [, 'filename'] [, key = value, ...]),
+    /// ('connection_string|storage_account_url', 'container', 'path'), or those three followed by
+    /// ('account_name', 'account_key'). An argument no shape reads holds whatever was written in it.
+    const size_t count = function->arguments->size();
+
+    if (isNamedCollectionName(0))
+    {
+        size_t filenames = 0;
+        for (size_t i = 1; i < count; ++i)
+        {
+            const auto argument_function = function->arguments->at(i)->getFunction();
+            if (argument_function && argument_function->name() == "equals")
+            {
+                /// A key this rule cannot read hides which credential the override carries.
+                if (argument_function->arguments && argument_function->arguments->size() == 2
+                    && tryGetStringFromArgument(*argument_function->arguments->at(0), nullptr))
+                    continue;
+                maskEveryArgument();
+                return;
+            }
+            if (++filenames > 1 || !function->arguments->at(i)->tryGetLiteralText(nullptr))
+            {
+                maskEveryArgument();
+                return;
+            }
+        }
+        /// The collection holds the credentials, so only an override written here can carry one. A
+        /// destination reads at most one of the two mutually exclusive connection keys, and rejects a
+        /// second one only after the statement has been formatted, so a surplus one stays as written.
+        size_t connection_overrides = 0;
+        for (const auto & key : {"connection_string", "storage_account_url"})
+            for (ssize_t i = findNamedArgument(nullptr, key, 1); i >= 0;
+                 i = findNamedArgument(nullptr, key, static_cast<size_t>(i) + 1))
+                ++connection_overrides;
+
+        /// An override this rule cannot read may hold either credential, and hiding a connection string
+        /// replaces its whole argument, which cannot be combined with hiding a second one or `account_key`.
+        if (connection_overrides > 1)
+        {
+            maskEveryArgument();
+            return;
+        }
+        for (const auto & key : {"connection_string", "storage_account_url"})
+        {
+            String value;
+            if (findNamedArgument(&value, key, 1) < 0)
+                continue;
+            if (value.empty() || (!value.starts_with("http") && findNamedArgument(nullptr, "account_key", 1) >= 0))
+            {
+                maskEveryArgument();
+                return;
+            }
+        }
+        if (maskAzureConnectionString(-1, /* argument_is_named= */ true, 1))
+            return;
+        findSecretNamedArgument("account_key", 1);
+        return;
+    }
+
+    if ((count != 3 && count != 5) || !hasOnlyLiteralArguments(*function))
+    {
+        maskEveryArgument();
+        return;
+    }
+
+    if (count == 3)
+    {
+        /// Only this shape accepts a connection string, which can embed `AccountKey`.
+        maskAzureConnectionString(0);
+        return;
+    }
+
+    String storage_account_url;
+    if (!tryGetStringFromArgument(0, &storage_account_url) || !storage_account_url.starts_with("http"))
+    {
+        /// This shape requires a plain account URL. A connection string here can only be hidden whole,
+        /// which cannot be combined with hiding `account_key`.
+        maskEveryArgument();
+        return;
+    }
+    markSecretArgument(4);
 }
 
 bool FunctionSecretArgumentsFinder::isNamedCollectionName(size_t arg_idx) const

@@ -2,10 +2,13 @@
 #include <Backups/BackupSettings.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/IBackup.h>
+#include <Databases/DatabaseBackup.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/insertAtEnd.h>
@@ -30,6 +33,26 @@ namespace ErrorCodes
 extern const int BACKUP_ENTRY_NOT_FOUND;
 extern const int CANNOT_RESTORE_TABLE;
 extern const int CANNOT_RESTORE_DATABASE;
+}
+
+namespace
+{
+
+/// A definition read from a backup may hold the locator in the string form an older server persisted.
+/// The engine cannot open that form, and the definition comparison below compares the two textually.
+void normalizeLegacyBackupDatabaseLocator(const ASTPtr & create_database_query)
+{
+    auto * create = create_database_query->as<ASTCreateQuery>();
+    if (!create || !create->storage || !create->storage->engine)
+        return;
+
+    auto * engine = create->storage->engine;
+    if (engine->name != "Backup" || !engine->arguments || engine->arguments->children.size() != 2)
+        return;
+
+    engine->arguments->children[1] = DatabaseBackup::normalizeLegacyLocator(engine->arguments->children[1]);
+}
+
 }
 
 BackupMetadataFinder::BackupMetadataFinder(
@@ -379,6 +402,7 @@ void BackupMetadataFinder::findDatabaseInBackupImpl(
         ParserCreateQuery create_parser;
         ASTPtr create_database_query
             = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        normalizeLegacyBackupDatabaseLocator(create_database_query);
         renameDatabaseAndTableNameInCreateQuery(create_database_query, renaming_map, context->getGlobalContext());
         String create_database_query_str = create_database_query->formatWithSecretsOneLine();
 
@@ -395,8 +419,8 @@ void BackupMetadataFinder::findDatabaseInBackupImpl(
                 ErrorCodes::CANNOT_RESTORE_DATABASE,
                 "Extracted two different create queries for the same database {}: {} and {}",
                 backQuoteIfNeed(database_name),
-                database_info.create_database_query_str,
-                create_database_query_str);
+                database_info.create_database_query->formatForErrorMessage(),
+                create_database_query->formatForErrorMessage());
         }
 
         database_info.create_database_query = create_database_query;

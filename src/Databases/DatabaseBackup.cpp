@@ -19,6 +19,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 
@@ -72,6 +73,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -464,8 +466,10 @@ ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
 
+    /// The locator must stay a nested function: a string literal is opaque to secret masking, which
+    /// then has to hide the whole argument, and this text is what the metadata file keeps.
     const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
-        backQuoteIfNeed(database_name), quoteString(config.database_name), quoteString(config.backup_info.toString()));
+        backQuoteIfNeed(database_name), quoteString(config.database_name), config.backup_info.toString());
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser,
@@ -493,6 +497,13 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseBackup::getTablesForBackup(co
 namespace
 {
 
+/// The locator form an older server persisted: the text of the function, quoted as a single string.
+bool isLegacyStringLocator(const ASTPtr & locator)
+{
+    const auto * literal = locator->as<ASTLiteral>();
+    return literal && literal->value.getType() == Field::Types::Which::String;
+}
+
 DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
 {
     if (engine_args.size() != 2)
@@ -501,18 +512,55 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
 
     DatabaseBackup::Configuration result;
 
-    result.database_name = checkAndGetLiteralArgument<String>(engine_args[0], "database_name");
-    result.backup_info = BackupInfo::fromAST(*engine_args[1]);
+    /// `checkAndGetLiteralArgument` formats the argument it rejects, and a locator written in this
+    /// position would format its credentials in plaintext.
+    try
+    {
+        result.database_name = checkAndGetLiteralArgument<String>(engine_args[0], "database_name");
+    }
+    catch (const Exception &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'database_name' must be a string literal");
+    }
+    result.backup_info = BackupInfo::fromAST(*DatabaseBackup::normalizeLegacyLocator(engine_args[1]));
 
     return result;
 }
 
 }
 
+ASTPtr DatabaseBackup::normalizeLegacyLocator(const ASTPtr & locator)
+{
+    if (!isLegacyStringLocator(locator))
+        return locator;
+
+    try
+    {
+        /// `BackupInfo::toAST` stamps the `BACKUP_NAME` kind, which renders a key-value argument as
+        /// `equals(k, v)`, so a node built that way would not compare equal to a live definition.
+        ParserIdentifierWithOptionalParameters locator_parser;
+        ASTPtr parsed = parseQuery(
+            locator_parser,
+            locator->as<ASTLiteral>()->value.safeGet<String>(),
+            0,
+            DBMS_DEFAULT_MAX_PARSER_DEPTH,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        /// Only a function is a locator; an identifier or a scalar parses but opens nothing.
+        BackupInfo::fromAST(*parsed);
+        return parsed;
+    }
+    catch (...)
+    {
+        /// Quoting the locator here would print the credentials it carries.
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse the locator of a Backup database");
+    }
+}
+
 void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context)
 {
-    /// A locator we cannot parse opens nothing: creation rejects it, so there is nothing to authorize.
-    if (engine_args.size() == 2 && !engine_args[1]->as<ASTFunction>())
+    /// A locator that is neither a function nor the legacy string form opens nothing: creation rejects
+    /// it, so there is nothing to authorize.
+    if (engine_args.size() == 2 && !engine_args[1]->as<ASTFunction>() && !isLegacyStringLocator(engine_args[1]))
         return;
 
     auto config = parseArguments(engine_args, query_context);
