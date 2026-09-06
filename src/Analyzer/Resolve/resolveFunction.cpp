@@ -37,6 +37,8 @@
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Formats/FormatSettings.h>
+#include <IO/WriteBufferFromString.h>
 #include <Functions/exists.h>
 #include <Columns/validateColumnType.h>
 #include <Interpreters/castColumn.h>
@@ -1206,6 +1208,44 @@ static QueryTreeNodePtr buildScalarInComparison(
     auto raw_if = std::make_shared<FunctionNode>("if");
     raw_if->getArguments().getNodes() = {is_null_fn, null_const, ifnull_fn};
     return raw_if;
+}
+
+/// A bare `Nothing` has no default value. A tuple's default is built element by element, so one
+/// such element makes the whole tuple's default unavailable; the defaults of the other composites
+/// are empty containers or a literal NULL, which is why the recursion stops at them.
+static bool canSerializeDefault(const DataTypePtr & type)
+{
+    if (isNothing(type))
+        return false;
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+        return std::all_of(tuple_type->getElements().begin(), tuple_type->getElements().end(), canSerializeDefault);
+    return true;
+}
+
+/// Serializes the default value of `type` the way `CAST(String -> type)` parses it back.
+static QueryTreeNodePtr makeSerializedDefaultConstant(const DataTypePtr & type)
+{
+    auto column = type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+    WriteBufferFromOwnString buffer;
+    type->getDefaultSerialization()->serializeText(*column, 0, buffer, FormatSettings{});
+    return std::make_shared<ConstantNode>(buffer.str(), std::make_shared<DataTypeString>());
+}
+
+/// Wraps `comparison` so that a NULL `right_argument` yields the "set element is absent"
+/// answer instead of comparing the value substituted for it. The caller must resolve the node.
+static QueryTreeNodePtr guardNullRightArgument(
+    const QueryTreeNodePtr & right_argument,
+    const QueryTreeNodePtr & comparison,
+    bool is_not_in)
+{
+    auto is_null_fn = std::make_shared<FunctionNode>("isNull");
+    is_null_fn->getArguments().getNodes().push_back(right_argument);
+
+    auto absent = std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u});
+
+    auto if_fn = std::make_shared<FunctionNode>("if");
+    if_fn->getArguments().getNodes() = {std::move(is_null_fn), std::move(absent), comparison};
+    return if_fn;
 }
 
 /// converts tuple to array with proper type handling
@@ -2548,10 +2588,35 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         QueryTreeNodePtr right_argument = in_second_argument;
                         const auto & left_type = in_first_argument->getResultType();
                         const auto & right_type = in_second_argument_column->getColumnType();
+                        /// A NULL of a nullable string column is an absent set element: substituting the
+                        /// tuple's default keeps the cast to the non-`Nullable` tuple total whatever
+                        /// `short_circuit_function_evaluation` does, and the guard answers those rows so the
+                        /// substitute is never compared. `CAST(FixedString -> Tuple)` is unsupported for
+                        /// either nullability, hence `isString` rather than `isStringOrFixedString`.
+                        /// A type with no representable default keeps the plain cast below.
+                        const bool substitute_null = isString(removeNullable(removeLowCardinality(right_type)))
+                            && isNullableOrLowCardinalityNullable(right_type)
+                            && !isNullableOrLowCardinalityNullable(left_type)
+                            && canSerializeDefault(left_type);
+                        QueryTreeNodePtr compared_argument = right_argument;
+                        bool guard_null = false;
                         if (isStringOrFixedString(removeNullable(removeLowCardinality(right_type)))
                             && !tryGetLeastSupertype(DataTypes{left_type, right_type}))
-                            right_argument = castNodeToType(right_argument, left_type, scope);
-                        node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls);
+                        {
+                            if (substitute_null)
+                            {
+                                auto if_null_fn = std::make_shared<FunctionNode>("ifNull");
+                                if_null_fn->getArguments().getNodes()
+                                    = {right_argument, makeSerializedDefaultConstant(left_type)};
+                                compared_argument = if_null_fn;
+                                resolveFunction(compared_argument, scope);
+                                guard_null = true;
+                            }
+                            compared_argument = castNodeToType(compared_argument, left_type, scope);
+                        }
+                        node = buildScalarInComparison(fn_args[0], compared_argument, is_not_in, compare_nulls);
+                        if (guard_null)
+                            node = guardNullRightArgument(right_argument, node, is_not_in);
                         resolveFunction(node, scope);
                         return ProjectionNames{proj};
                     }
