@@ -42,7 +42,7 @@ jobs:
         uses: ./.github/actions/debug
       - name: Cherry pick
         run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
+          cd "$GITHUB_WORKSPACE/ci/tools"
           python3 cherry_pick.py
       - name: Cleanup
         if: always()

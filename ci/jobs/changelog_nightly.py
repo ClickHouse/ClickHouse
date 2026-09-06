@@ -4,7 +4,7 @@ Maintains one bot branch and one draft PR per release cycle
 (`auto/changelog-X.Y`, "Prepare changelog for X.Y"). Every day the job:
 
 1. Generates raw changelog entries for the pull requests merged into `master`
-   since the previous run, using `tests/ci/changelog.py` inside the
+   since the previous run, using `ci/tools/changelog.py` inside the
    `clickhouse/style-test` container (the same way `create_release.yml` runs
    it). The raw entries are inserted into `CHANGELOG.md` as a block delimited
    by HTML-comment markers, above the first released section, and committed.
@@ -318,7 +318,7 @@ def raw_prs_and_reverts(text):
     ones under a strict-retention category, and the ones whose bullet reads like
     a revert. Returns (all_prs, strict_prs, text_reverts).
 
-    The bullet is only a hint. `tests/ci/changelog.py` renders the author's own
+    The bullet is only a hint. `ci/tools/changelog.py` renders the author's own
     `Changelog entry` under the author's own `Changelog category`, so a revert
     can perfectly well arrive under `Improvement` reading "Disable X again" -
     nothing about the rendered line says revert. Revert-ness is therefore
@@ -1186,7 +1186,7 @@ def generate_raw_entries(version, from_ref, to_sha):
     # exports it to the docker CLI and the in-container shell expands it for
     # changelog.py's --gh-user-or-token.
     cmd = (
-        f"./tests/ci/changelog.py -v --jobs=5 "
+        f"./ci/tools/changelog.py -v --jobs=5 "
         f'--gh-user-or-token "$GH_TOKEN" '
         f"--from {shlex.quote(from_ref)} --output {shlex.quote(RAW_OUTPUT)} {to_sha}"
     )
@@ -1213,7 +1213,7 @@ def generate_raw_entries(version, from_ref, to_sha):
     message = (
         f"Update changelog for {version}: generate raw entries "
         f"({from_short}..{to_short})\n\n"
-        f"{entries} raw entries generated with tests/ci/changelog.py "
+        f"{entries} raw entries generated with ci/tools/changelog.py "
         f"by the NightlyChangelog CI job.\n\n"
         f"{STATE_TRAILER} {to_sha}\n"
     )

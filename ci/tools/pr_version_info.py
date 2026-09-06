@@ -123,7 +123,7 @@ RELEASE_BRANCH_RE = re.compile(r"^(?:release/)?\d+\.\d+$")
 # attributed to the original's `Backported to` list.
 BACKPORT_TITLE_RE = re.compile(r"^(?:Backport|Cherry pick) #(\d+) to ")
 
-# Mirrors tests/ci/pr_info.py:Labels -- a PR carrying any of these has (or is
+# Mirrors ci/tools/pr_info.py:Labels -- a PR carrying any of these has (or is
 # meant to have) backports, so it is worth scanning release branches for them.
 BACKPORT_LABELS = {
     "pr-backports-created",

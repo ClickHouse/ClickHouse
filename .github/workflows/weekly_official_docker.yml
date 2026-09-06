@@ -55,5 +55,5 @@ jobs:
           EOF
       - name: Update official docker repos
         run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
+          cd "$GITHUB_WORKSPACE/ci/tools"
           python3 official_docker_update.py -vv $DRY_RUN $SKIP_IMAGES $SKIP_DOCS

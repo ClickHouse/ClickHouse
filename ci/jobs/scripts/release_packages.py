@@ -155,7 +155,7 @@ def release_build_artifacts_ready(
     closed — a single missing object rejects the commit.
 
     `s3` must expose `list_prefix(prefix) -> iterable of keys` (e.g. the
-    `tests/ci` `S3Helper`); it is passed in so this module stays dependency-free.
+    `ci/tools` `S3Helper`); it is passed in so this module stays dependency-free.
     """
     prefix = s3_release_prefix(release)
     for job, expected_files in expected_s3_objects(version, with_signed_macos).items():

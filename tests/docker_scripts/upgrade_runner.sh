@@ -11,11 +11,11 @@ set -ex
 # we mount tests folder from repo to /usr/share
 ln -s /repo/ci/jobs/scripts/stress/stress.py /usr/bin/stress
 ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
-ln -s /repo/tests/ci/download_release_packages.py /usr/bin/download_release_packages
-ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
+ln -s /repo/ci/tools/download_release_packages.py /usr/bin/download_release_packages
+ln -s /repo/ci/tools/get_previous_release_tag.py /usr/bin/get_previous_release_tag
 
 # Stress tests and upgrade check uses similar code that was placed
-# in a separate bash library. See tests/ci/stress_tests.lib
+# in a separate bash library. See tests/docker_scripts/stress_tests.lib
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 

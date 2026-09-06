@@ -441,7 +441,7 @@ def main():
                 f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
                 f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
                 f" clickhouse/style-test:latest"
-                f" ./tests/ci/changelog.py -v --debug-helpers"
+                f" ./ci/tools/changelog.py -v --debug-helpers"
                 f' --gh-user-or-token "$GH_TOKEN"'
                 f" --jobs=5"
                 f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
