@@ -869,7 +869,14 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::REPLACE_PARTITION:
         {
             required_access.emplace_back(AccessType::SELECT, command.from_database, command.from_table);
-            required_access.emplace_back(AccessType::ALTER_DELETE | AccessType::INSERT, database, table);
+            /// `REPLACE PARTITION ... FROM` drops the data currently in the destination partition,
+            /// so it needs `ALTER DELETE` on top of `INSERT`. `ATTACH PARTITION ... FROM` is the same
+            /// command with `replace = false`: it only adds parts to the destination and never removes
+            /// anything, so `INSERT` alone is enough - the same privilege a plain `INSERT` would need.
+            if (command.replace)
+                required_access.emplace_back(AccessType::ALTER_DELETE | AccessType::INSERT, database, table);
+            else
+                required_access.emplace_back(AccessType::INSERT, database, table);
             break;
         }
         case ASTAlterCommand::FETCH_PARTITION:
