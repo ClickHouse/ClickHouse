@@ -370,4 +370,26 @@ ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
     SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
 SELECT 'C36', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
 
+-- An enclosing plain CTE must not be expanded into the recursive member of a nested same-named
+-- `WITH RECURSIVE` when the query is stored, so the view keeps building 1..3 (6) like the live
+-- query, both right away and after its definition is parsed again.
+SELECT 'C37', (WITH src AS (SELECT 99 AS id)
+    SELECT (WITH RECURSIVE src AS (SELECT 1 AS id UNION ALL SELECT id + 1 FROM src WHERE id < 3) SELECT sum(id) FROM src));
+CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v15 AS
+    WITH src AS (SELECT 99 AS id)
+    SELECT (WITH RECURSIVE src AS (SELECT 1 AS id UNION ALL SELECT id + 1 FROM src WHERE id < 3) SELECT sum(id) FROM src) AS s;
+SELECT 'W14', s FROM {CLICKHOUSE_DATABASE_1:Identifier}.v15;
+DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.v15;
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.v15;
+SELECT 'W15', s FROM {CLICKHOUSE_DATABASE_1:Identifier}.v15;
+
+-- The seed of the nested recursive CTE still reads the enclosing plain one (99), so the stored
+-- query builds 99..100 (199) like the live one.
+SELECT 'C38', (WITH src AS (SELECT 99 AS id)
+    SELECT (WITH RECURSIVE src AS (SELECT id FROM src UNION ALL SELECT id + 1 FROM src WHERE id < 100) SELECT sum(id) FROM src));
+CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v16 AS
+    WITH src AS (SELECT 99 AS id)
+    SELECT (WITH RECURSIVE src AS (SELECT id FROM src UNION ALL SELECT id + 1 FROM src WHERE id < 100) SELECT sum(id) FROM src) AS s;
+SELECT 'C39', s FROM {CLICKHOUSE_DATABASE_1:Identifier}.v16;
+
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

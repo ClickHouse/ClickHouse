@@ -40,8 +40,11 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
     {
         for (auto & child : with->children)
         {
-            visit(child, new_data ? *new_data : data);
             auto * ast_with_elem = child->as<ASTWithElement>();
+            if (ast.recursive_with && ast_with_elem)
+                visitRecursiveWithElement(*ast_with_elem, new_data ? *new_data : data);
+            else
+                visit(child, new_data ? *new_data : data);
             auto child_alias = child->tryGetAlias();
             if (ast_with_elem || !child_alias.empty())
             {
@@ -60,6 +63,32 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
         if (child != ast.with())
             visit(child, new_data ? *new_data : data);
     }
+}
+
+/// The recursive members of a recursive element, every `UNION` branch after the first, reference
+/// the element itself, so there its name must not be replaced by the body of a same-named element
+/// of an enclosing `SELECT`. The first branch is the seed, which the analyzer resolves like any
+/// other query, so an enclosing element stays visible in it.
+void ApplyWithSubqueryVisitor::visitRecursiveWithElement(ASTWithElement & with_element, const Data & data)
+{
+    auto * union_query = with_element.subquery && !with_element.subquery->children.empty()
+        ? with_element.subquery->children.front()->as<ASTSelectWithUnionQuery>()
+        : nullptr;
+    bool shadows = data.subqueries.contains(with_element.name) || data.literals.contains(with_element.name);
+    if (!union_query || !union_query->list_of_selects || union_query->list_of_selects->children.size() < 2 || !shadows)
+    {
+        visit(with_element.subquery, data);
+        return;
+    }
+
+    Data shadowed = data;
+    shadowed.subqueries.erase(with_element.name);
+    shadowed.literals.erase(with_element.name);
+
+    auto & branches = union_query->list_of_selects->children;
+    visit(branches.front(), data);
+    for (size_t i = 1; i < branches.size(); ++i)
+        visit(branches[i], shadowed);
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTSelectWithUnionQuery & ast, const Data & data)
