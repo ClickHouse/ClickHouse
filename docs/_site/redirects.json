@@ -2756,6 +2756,10 @@
     "source": "/engines/database-engines/backup"
   },
   {
+    "destination": "/reference/engines/database-engines/cluster",
+    "source": "/engines/database-engines/cluster"
+  },
+  {
     "destination": "/reference/engines/database-engines/datalake",
     "source": "/engines/database-engines/datalakecatalog"
   },

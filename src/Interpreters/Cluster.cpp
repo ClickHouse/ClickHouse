@@ -107,7 +107,8 @@ Cluster::Address::Address(
         const String & cluster_,
         const String & cluster_secret_,
         UInt32 shard_index_,
-        UInt32 replica_index_)
+        UInt32 replica_index_,
+        bool treat_local_port_as_remote)
     : cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , shard_index(shard_index_)
@@ -147,7 +148,12 @@ Cluster::Address::Address(
     stateless_worker_port = read_optional_port(".stateless_worker_port");
     streaming_exchange_port = read_optional_port(".streaming_exchange_port");
 
-    is_local = isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
+    /// In clickhouse-local, an address of a configured cluster is always a genuinely remote server:
+    /// the tool starts no TCP listener unless `SYSTEM START LISTEN` is used, yet it fills `tcp_port`
+    /// in with the default value regardless (see `LocalServer::processConfig`). The port a replica
+    /// inherits from the top-level `tcp_port` - the shape of the built-in `remote_servers.default`
+    /// cluster - therefore says nothing about this process, exactly like an explicit `<port>`.
+    is_local = !treat_local_port_as_remote && isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
 
     /// By default compression is disabled if address looks like localhost.
     /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.
@@ -435,7 +441,8 @@ Clusters::Impl Clusters::getContainer() const
 Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     const Settings & settings,
     const String & config_prefix_,
-    const String & cluster_name) : name(cluster_name)
+    const String & cluster_name,
+    bool treat_local_port_as_remote) : name(cluster_name)
 {
     auto config_prefix = config_prefix_ + "." + cluster_name;
 
@@ -489,7 +496,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
         {
             /// Shard without replicas.
             Addresses addresses;
-            addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1);
+            addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1, treat_local_port_as_remote);
             const auto & address = addresses.back();
 
             ShardInfo info;
@@ -552,7 +559,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                         cluster_name,
                         secret,
                         current_shard_num,
-                        current_replica_num);
+                        current_replica_num,
+                        treat_local_port_as_remote);
                     ++current_replica_num;
                 }
                 else
@@ -769,6 +777,27 @@ std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector
     return std::unique_ptr<Cluster>{ new Cluster(SubclusterTag{}, *this, indices) };
 }
 
+std::unique_ptr<Cluster> Cluster::tryGetClusterWithoutLocalReplicas(const Settings & settings) const
+{
+    /// The locality is judged by `ShardInfo` rather than by `Address::is_local` alone: a cluster
+    /// built with `treat_local_as_remote` keeps its addresses marked local while every shard is
+    /// effectively remote, and such a cluster needs no stripping.
+    bool has_local_replicas = false;
+    for (const auto & shard_info : shards_info)
+    {
+        if (!shard_info.isLocal())
+            continue;
+        if (!shard_info.hasRemoteConnections())
+            return nullptr;
+        has_local_replicas = true;
+    }
+
+    if (!has_local_replicas)
+        return nullptr;
+
+    return std::unique_ptr<Cluster>(new Cluster(RemoteReplicasTag{}, *this, settings));
+}
+
 namespace
 {
 
@@ -894,6 +923,47 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
 
     secret = from.secret;
     name = from.name;
+
+    initMisc();
+}
+
+
+Cluster::Cluster(Cluster::RemoteReplicasTag, const Cluster & from, const Settings & settings)
+{
+    if (from.addresses_with_failover.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster is empty");
+
+    secret = from.secret;
+    name = from.name;
+
+    UInt32 current_shard_num = 1;
+    for (size_t shard_index : collections::range(0, from.addresses_with_failover.size()))
+    {
+        const auto & from_shard = from.shards_info.at(shard_index);
+
+        /// `tryGetClusterWithoutLocalReplicas` guarantees that the source cluster does not treat its
+        /// local addresses as remote (such a cluster is returned as nullptr before this constructor
+        /// runs), so `Address::is_local` is exactly the effective locality here, and every shard
+        /// keeps at least one replica.
+        Addresses replicas;
+        for (const auto & address : from.addresses_with_failover[shard_index])
+        {
+            if (!address.is_local)
+                replicas.push_back(address);
+        }
+
+        addresses_with_failover.emplace_back(replicas);
+
+        addShard(
+            settings,
+            std::move(replicas),
+            /* treat_local_as_remote = */ false,
+            current_shard_num,
+            from_shard.name,
+            from_shard.weight,
+            from_shard.has_internal_replication);
+        ++current_shard_num;
+    }
 
     initMisc();
 }

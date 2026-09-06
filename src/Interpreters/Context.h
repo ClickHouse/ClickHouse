@@ -1733,6 +1733,7 @@ public:
 
     std::map<String, std::shared_ptr<Cluster>> getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
+    std::shared_ptr<Cluster> getCluster(const std::string & cluster_name, bool treat_local_port_as_remote) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
     void setClustersConfig(const ConfigurationPtr & config, bool enable_discovery = false, const String & config_name = "remote_servers");
     size_t getClustersVersion() const;
