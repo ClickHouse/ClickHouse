@@ -729,3 +729,139 @@ def test_session_log_certificate_far_future_validity():
         check_callback=lambda r: r.strip() not in ("", "0"),
     ).strip()
     assert result == "2126", result
+
+
+def test_x509_san_email_support():
+    instance.query("DROP USER IF EXISTS bob")
+
+    # Test native protocol with email SAN
+    assert (
+        execute_query_native(
+            instance, "SELECT currentUser()", user="alice", cert_name="client13"
+        )
+        == "alice\n"
+    )
+
+    # Test HTTPS protocol with email SAN
+    assert (
+        execute_query_https("SELECT currentUser()", user="alice", cert_name="client13")
+        == "alice\n"
+    )
+
+    # Verify system.users shows the email SAN correctly
+    assert (
+        instance.query(
+            "SELECT name, auth_type, auth_params FROM system.users WHERE name='alice'"
+        )
+        == 'alice\t[\'ssl_certificate\']\t[\'{"subject_alt_names":["EMAIL:alice@example.com"]}\']\n'
+    )
+
+    # Verify SHOW CREATE USER displays email SAN correctly
+    assert (
+        instance.query("SHOW CREATE USER alice")
+        == "CREATE USER alice IDENTIFIED WITH ssl_certificate SAN \\'EMAIL:alice@example.com\\'\n"
+    )
+
+    # Test creating a user with email SAN via SQL
+    instance.query(
+        "CREATE USER bob IDENTIFIED WITH ssl_certificate SAN 'EMAIL:alice@example.com'"
+    )
+    assert (
+        execute_query_https("SELECT currentUser()", user="bob", cert_name="client13")
+        == "bob\n"
+    )
+    assert (
+        instance.query("SHOW CREATE USER bob")
+        == "CREATE USER bob IDENTIFIED WITH ssl_certificate SAN \\'EMAIL:alice@example.com\\'\n"
+    )
+
+    instance.query("DROP USER IF EXISTS bob")
+
+
+def test_x509_san_email_no_wildcard():
+    # '*' is a legal character in an email address local part (RFC 5321), so EMAIL: SANs are
+    # matched exactly and a '*' is NEVER treated as a wildcard (unlike the Common Name and DNS:/URI:
+    # SANs). A user configured with 'EMAIL:*@example.com' must therefore match only a certificate
+    # whose email SAN is literally '*@example.com', and must NOT authenticate 'alice@example.com'.
+    instance.query("DROP USER IF EXISTS email_wildcard")
+    instance.query(
+        "CREATE USER email_wildcard IDENTIFIED WITH ssl_certificate SAN 'EMAIL:*@example.com'"
+    )
+    try:
+        # client14's certificate carries the literal 'EMAIL:*@example.com', which must match.
+        assert (
+            execute_query_native(
+                instance,
+                "SELECT currentUser()",
+                user="email_wildcard",
+                cert_name="client14",
+            )
+            == "email_wildcard\n"
+        )
+
+        # client13's certificate carries 'EMAIL:alice@example.com', which is not the literal
+        # pattern, so authentication must fail on both interfaces (no wildcard expansion).
+        with pytest.raises(Exception) as err:
+            execute_query_native(
+                instance,
+                "SELECT currentUser()",
+                user="email_wildcard",
+                cert_name="client13",
+            )
+        assert "AUTHENTICATION_FAILED" in str(err.value)
+        with pytest.raises(Exception) as err:
+            execute_query_https(
+                "SELECT currentUser()", user="email_wildcard", cert_name="client13"
+            )
+        assert "403" in str(err.value)
+    finally:
+        instance.query("DROP USER IF EXISTS email_wildcard")
+
+
+def test_x509_san_email_host_part_case():
+    # An 'EMAIL:' SAN is an rfc822Name (RFC 5280): the local part is case-sensitive, while the host
+    # part is a DNS name and is therefore compared case-insensitively. client13's certificate carries
+    # 'EMAIL:alice@example.com'.
+    instance.query("DROP USER IF EXISTS email_upper_host")
+    instance.query("DROP USER IF EXISTS email_upper_local")
+    instance.query(
+        "CREATE USER email_upper_host IDENTIFIED WITH ssl_certificate SAN 'EMAIL:alice@EXAMPLE.COM'"
+    )
+    instance.query(
+        "CREATE USER email_upper_local IDENTIFIED WITH ssl_certificate SAN 'EMAIL:ALICE@example.com'"
+    )
+    try:
+        # Only the host part differs in case, so the certificate must be accepted.
+        assert (
+            execute_query_native(
+                instance,
+                "SELECT currentUser()",
+                user="email_upper_host",
+                cert_name="client13",
+            )
+            == "email_upper_host\n"
+        )
+        assert (
+            execute_query_https(
+                "SELECT currentUser()", user="email_upper_host", cert_name="client13"
+            )
+            == "email_upper_host\n"
+        )
+
+        # The local part differs in case, so the certificate must be rejected.
+        with pytest.raises(Exception) as err:
+            execute_query_native(
+                instance,
+                "SELECT currentUser()",
+                user="email_upper_local",
+                cert_name="client13",
+            )
+        assert "AUTHENTICATION_FAILED" in str(err.value)
+        with pytest.raises(Exception) as err:
+            execute_query_https(
+                "SELECT currentUser()", user="email_upper_local", cert_name="client13"
+            )
+        assert "403" in str(err.value)
+    finally:
+        instance.query("DROP USER IF EXISTS email_upper_host")
+        instance.query("DROP USER IF EXISTS email_upper_local")

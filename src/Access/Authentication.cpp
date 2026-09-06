@@ -8,6 +8,7 @@
 #include <Common/Crypto/X509Certificate.h>
 #include <Common/Exception.h>
 #include <Common/SSHWrapper.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Poco/SHA1Engine.h>
 #include <Access/Common/OneTimePassword.h>
@@ -266,6 +267,21 @@ namespace
     }
 
 #if USE_SSL
+    /// RFC 5280 defines `subjectAltName` matching for an `rfc822Name` in terms of RFC 5321 mailbox
+    /// comparison: the local part is case-sensitive, while the host part is a DNS name and is
+    /// therefore compared case-insensitively. The subjects are stored with the "EMAIL:" type prefix.
+    bool matchesEmailSubject(std::string_view subject, std::string_view certificate_subject)
+    {
+        const auto subject_at = subject.rfind('@');
+        const auto certificate_at = certificate_subject.rfind('@');
+        if (subject_at == std::string_view::npos || certificate_at == std::string_view::npos)
+            return false;
+
+        /// The "EMAIL:" prefix and the local part must match exactly.
+        return subject.substr(0, subject_at) == certificate_subject.substr(0, certificate_at)
+            && equalsCaseInsensitive(subject.substr(subject_at + 1), certificate_subject.substr(certificate_at + 1));
+    }
+
     bool checkSSLCertificateAuthentication(
         const SSLCertificateCredentials * ssl_certificate_credentials,
         const AuthenticationData & authentication_method)
@@ -282,11 +298,27 @@ namespace
                 if (ssl_certificate_credentials->getSSLCertificateSubjects().at(type).contains(subject))
                     return true;
 
+                // An "EMAIL:" SAN is an `rfc822Name`: the local part is case-sensitive, the host part is not.
+                // The exact comparison above already covers an identical host part, so only the case-insensitive
+                // host-part comparison is left to do here.
+                if (type == X509Certificate::Subjects::Type::SAN && subject.starts_with("EMAIL:"))
+                {
+                    for (const auto & certificate_subject : ssl_certificate_credentials->getSSLCertificateSubjects().at(type))
+                    {
+                        if (certificate_subject.starts_with("EMAIL:") && matchesEmailSubject(subject, certificate_subject))
+                            return true;
+                    }
+                }
+
                 // Wildcard support (single '*' only): a '*' must match exactly one component.
-                // Certificate SAN subjects are stored with a type prefix ("DNS:" or "URI:"), so a
-                // wildcard SAN pattern must carry one of those prefixes to align with a candidate.
-                // An unprefixed SAN wildcard (e.g. a bare "*" or "*.corp.example.com") would let '*'
-                // absorb the candidate's type prefix and span DNS labels, so it matches nothing.
+                // Certificate SAN subjects are stored with a type prefix ("DNS:", "URI:", or
+                // "EMAIL:"), so a wildcard SAN pattern must carry a prefix that supports wildcards
+                // ("DNS:" or "URI:") to align with a candidate. An unprefixed SAN wildcard (e.g. a
+                // bare "*" or "*.corp.example.com") would let '*' absorb the candidate's type prefix
+                // and span components, so it matches nothing. "EMAIL:" SANs are never matched as a
+                // wildcard: '*' is a legal character in an email address (RFC 5321), so a pattern such
+                // as "EMAIL:*@example.com" matches only that literal address (with the host part
+                // compared case-insensitively, see above).
                 // A DNS label (a CN or a "DNS:" SAN) is one non-empty label with no '.' and no '/'.
                 // A "URI:" SAN keeps the original rule: only '/' is forbidden in the matched span,
                 // identical to the original slash-count guard, so "URI:" matching is never widened.
