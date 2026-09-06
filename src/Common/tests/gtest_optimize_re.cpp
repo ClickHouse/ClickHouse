@@ -29,8 +29,10 @@ TEST(OptimizeRE, analyze)
     test_f("[Ff]|XYZ", "", {"", "XYZ"});
     test_f("XYZ|[Ff]", "", {"XYZ", ""});
     test_f("XYZ|ABC|[Ff]", "", {"XYZ", "ABC", ""});
-    test_f("(?-s)bob", "bob", {}, false, true, true);
-    test_f("(?s)bob", "bob", {}, false, true, true);
+    /// A flag group is not a capture group, neither on its own nor when it scopes a group.
+    test_f("(?-s)bob", "bob", {}, false, false, true);
+    test_f("(?s)bob", "bob", {}, false, false, true);
+    test_f("(?i:bob)x", "", {}, false, false, false);
     test_f("(?ssss", "");
     test_f("[asdf]ss(?:ss)ss", "ssssss");
     test_f("abc(de)fg", "abcdefg", {}, false, true, true);
