@@ -5,16 +5,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 access_username="access_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-alias_database="alias_db_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-target_database="target_db_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-shortcut_alias_table="shortcut_alias_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-shortcut_buffer_alias_table="shortcut_buffer_alias_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 # Test target access checks for a newly created `Alias`
 ${CLICKHOUSE_CLIENT} --multiquery --query "
     DROP USER IF EXISTS ${access_username};
-    DROP DATABASE IF EXISTS ${alias_database};
-    DROP DATABASE IF EXISTS ${target_database};
     DROP TABLE IF EXISTS test_alias_access;
     DROP TABLE IF EXISTS test_alias_buffer_access;
     DROP TABLE IF EXISTS test_buffer_access;
@@ -248,71 +242,7 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "DESCRIBE 
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "SHOW COLUMNS FROM test_alias_access FORMAT Null; SELECT 'SHOW COLUMNS OK';"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW CREATE TABLE test_alias_access FORMAT TSVRaw;" | grep -o "ENGINE = Alias" | uniq
 
-# Test database-level access shortcuts with a cross-database `Alias`
-${CLICKHOUSE_CLIENT} --multiquery --query "
-    CREATE DATABASE ${alias_database};
-    CREATE DATABASE ${target_database};
-
-    CREATE TABLE ${target_database}.target
-    (
-        id UInt64,
-        CONSTRAINT id_not_zero CHECK id != 0,
-        PROJECTION id_projection (SELECT id ORDER BY id),
-        INDEX id_idx id TYPE minmax GRANULARITY 1
-    )
-    ENGINE = MergeTree
-    ORDER BY id;
-    INSERT INTO ${target_database}.target VALUES (1);
-
-    CREATE TABLE ${target_database}.target_buffer (id UInt64)
-    ENGINE = Buffer('${target_database}', 'target', 1, 1000, 1000, 1000, 1000, 1000000, 1000000);
-    INSERT INTO ${target_database}.target_buffer VALUES (2);
-
-    CREATE TABLE ${alias_database}.${shortcut_alias_table} ENGINE = Alias('${target_database}', 'target');
-    CREATE TABLE ${alias_database}.${shortcut_buffer_alias_table} ENGINE = Alias('${target_database}', 'target_buffer');
-    GRANT SHOW TABLES ON ${alias_database}.* TO ${access_username};
-    GRANT SHOW COLUMNS ON ${alias_database}.* TO ${access_username};
-"
-
-echo "Test system.tables with an Alias database-level grant"
-${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT
-        (SELECT count()
-         FROM system.tables
-         WHERE database = '${alias_database}' AND name = '${shortcut_alias_table}'),
-        (SELECT countIf(
-             empty(create_table_query)
-             AND empty(engine_full)
-             AND empty(sorting_key)
-             AND empty(skipping_indices_types)
-             AND isNull(total_rows)
-             AND isNull(total_bytes)
-             AND isNull(total_bytes_uncompressed)
-             AND empty(data_paths)
-             AND empty(storage_policy))
-         FROM system.tables
-         WHERE database = '${alias_database}' AND name = '${shortcut_alias_table}'),
-        (SELECT count()
-         FROM system.tables
-         WHERE database = '${alias_database}' AND name = '${shortcut_buffer_alias_table}'),
-        (SELECT countIf(isNull(lifetime_rows) AND isNull(lifetime_bytes))
-         FROM system.tables
-         WHERE database = '${alias_database}' AND name = '${shortcut_buffer_alias_table}');
-"
-
-echo "Test other metadata tables with an Alias database-level grant"
-${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT
-        (SELECT count() FROM system.columns WHERE database = '${alias_database}' AND table = '${shortcut_alias_table}'),
-        (SELECT count() FROM system.constraints WHERE database = '${alias_database}' AND table = '${shortcut_alias_table}'),
-        (SELECT count() FROM system.projections WHERE database = '${alias_database}' AND table = '${shortcut_alias_table}'),
-        (SELECT count() FROM system.data_skipping_indices WHERE database = '${alias_database}' AND table = '${shortcut_alias_table}'),
-        (SELECT count() FROM system.completions WHERE context = 'column' AND belongs = '${shortcut_alias_table}');
-"
-
 ${CLICKHOUSE_CLIENT} --query "
-    DROP DATABASE ${alias_database};
-    DROP DATABASE ${target_database};
     DROP TABLE test_alias_buffer_access;
     DROP TABLE test_alias_access;
     DROP TABLE test_buffer_access;

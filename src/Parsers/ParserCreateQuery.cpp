@@ -2021,7 +2021,7 @@ When enabled, tables are not fully loaded during database startup. Instead, a li
 CREATE DATABASE db_name ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 ```
 
-Applies to database engines that store table metadata on disk (e.g. `Atomic`, `Ordinary`). Views, materialized views, dictionaries, and tables backed by table functions are always loaded eagerly regardless of this setting.
+Applies to database engines that store table metadata on disk (e.g. `Atomic`, `Ordinary`). Views, materialized views, dictionaries, `Alias` tables, `TimeSeries` tables, and tables backed by table functions are always loaded eagerly regardless of this setting.
 
 **When to use:** This setting is useful for databases with a large number of tables (hundreds or thousands) where only a subset is actively queried. It reduces server startup time and memory usage by deferring the creation of table engine objects, scanning of data parts, and initialization of background threads until first access.
 
