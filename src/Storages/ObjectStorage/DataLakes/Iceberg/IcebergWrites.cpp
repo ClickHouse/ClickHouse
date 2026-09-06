@@ -451,15 +451,23 @@ void generateManifestFile(
     const std::vector<std::optional<Int32>> & data_file_sort_order_ids,
     const std::vector<DataFileEntryLineage> & per_file_entry_lineage,
     Poco::JSON::Object::Ptr schema_to_serialize,
+    const std::vector<std::vector<Field>> * per_file_partition_values,
     const std::vector<const DataFileStatistics *> * per_file_fresh_statistics)
 {
-    /// A throw, not a `chassert`: mis-pairing statistics with data files publishes metadata that is
-    /// wrong in the unsafe direction for external readers, and `chassert` compiles out of release builds.
+    /// A throw, not a `chassert`: mis-pairing statistics or partition tuples with data files publishes
+    /// metadata that is wrong in the unsafe direction for external readers, and `chassert` compiles out
+    /// of release builds.
     if (per_file_fresh_statistics && per_file_fresh_statistics->size() != data_file_names.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "per_file_fresh_statistics size does not match number of data files: {} vs {}",
             per_file_fresh_statistics->size(),
+            data_file_names.size());
+    if (per_file_partition_values && per_file_partition_values->size() != data_file_names.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "per_file_partition_values size does not match number of data files: {} vs {}",
+            per_file_partition_values->size(),
             data_file_names.size());
 
     chassert(
@@ -475,14 +483,35 @@ void generateManifestFile(
         per_file_entry_lineage.empty() || per_file_entry_lineage.size() == data_file_names.size(),
         "per_file_entry_lineage size does not match number of data files");
 
-    /// The value and type tuples must have exactly one entry per partition column;
-    if (partition_values.size() != partition_columns.size() || partition_types.size() != partition_columns.size())
+    /// The type tuple is indexed as partition_types[i] for i < partition_columns.size() below, so it must
+    /// have exactly one entry per partition column on every path.
+    if (partition_types.size() != partition_columns.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Iceberg manifest partition arity mismatch: {} partition columns but {} values and {} types",
+            "Iceberg manifest partition arity mismatch: {} partition columns but {} types",
             partition_columns.size(),
-            partition_values.size(),
             partition_types.size());
+    /// The shared value tuple is indexed the same way, except when per_file_partition_values is supplied
+    /// (OPTIMIZE): then partition_values is unused and each file's own tuple is read instead.
+    if (!per_file_partition_values && partition_values.size() != partition_columns.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Iceberg manifest partition arity mismatch: {} partition columns but {} values",
+            partition_columns.size(),
+            partition_values.size());
+    /// A per-file tuple carries whatever arity the spec in force when that file was written had, which
+    /// is not necessarily the arity of the spec chosen for this manifest, so each tuple is checked.
+    if (per_file_partition_values)
+        for (size_t file_idx = 0; file_idx < per_file_partition_values->size(); ++file_idx)
+            if ((*per_file_partition_values)[file_idx].size() != partition_columns.size())
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Iceberg manifest partition arity mismatch for data file {}: partition spec {} defines {} "
+                    "columns but the file's partition tuple has {} values",
+                    data_file_names[file_idx].serialize(),
+                    partition_spec_id,
+                    partition_columns.size(),
+                    (*per_file_partition_values)[file_idx].size());
 
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
@@ -562,6 +591,10 @@ void generateManifestFile(
         const DataFileStatistics * effective_statistics
             = per_file_fresh_statistics ? (*per_file_fresh_statistics)[file_idx]
                                         : (data_file_statistics ? &*data_file_statistics : nullptr);
+        /// Likewise `per_file_partition_values` (OPTIMIZE) gives each entry its own partition tuple,
+        /// overriding the shared `partition_values`.
+        const std::vector<Field> & effective_partition_values
+            = per_file_partition_values ? (*per_file_partition_values)[file_idx] : partition_values;
 
         /// Writes (field-id, value) pairs into the union-typed `field_name` array of the data_file record.
         auto set_fields = [&]<typename K, typename T, typename U>(
@@ -652,40 +685,40 @@ void generateManifestFile(
                 switch (removeNullable(partition_types[i])->getTypeId())
                 {
                     case TypeIndex::Decimal32:
-                        return makeDecimalFixedDatum<Decimal32>(partition_values[i], value_schema);
+                        return makeDecimalFixedDatum<Decimal32>(effective_partition_values[i], value_schema);
                     case TypeIndex::Decimal64:
-                        return makeDecimalFixedDatum<Decimal64>(partition_values[i], value_schema);
+                        return makeDecimalFixedDatum<Decimal64>(effective_partition_values[i], value_schema);
                     case TypeIndex::Decimal128:
-                        return makeDecimalFixedDatum<Decimal128>(partition_values[i], value_schema);
+                        return makeDecimalFixedDatum<Decimal128>(effective_partition_values[i], value_schema);
                     case TypeIndex::Decimal256:
-                        return makeDecimalFixedDatum<Decimal256>(partition_values[i], value_schema);
+                        return makeDecimalFixedDatum<Decimal256>(effective_partition_values[i], value_schema);
                     default:
                         break;
                 }
 
-                switch (partition_values[i].getType())
+                switch (effective_partition_values[i].getType())
                 {
                     case Field::Types::Int64:
                     case Field::Types::UInt64:
-                        return avro::GenericDatum(partition_values[i].safeGet<Int64>());
+                        return avro::GenericDatum(effective_partition_values[i].safeGet<Int64>());
                     case Field::Types::String:
-                        return avro::GenericDatum(partition_values[i].safeGet<String>());
+                        return avro::GenericDatum(effective_partition_values[i].safeGet<String>());
                     case Field::Types::Float64:
-                        return avro::GenericDatum(partition_values[i].safeGet<Float64>());
+                        return avro::GenericDatum(effective_partition_values[i].safeGet<Float64>());
                     case Field::Types::Decimal32:
-                        return avro::GenericDatum(partition_values[i].safeGet<Decimal32>().getValue());
+                        return avro::GenericDatum(effective_partition_values[i].safeGet<Decimal32>().getValue());
                     case Field::Types::Decimal64:
-                        return avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
+                        return avro::GenericDatum(effective_partition_values[i].safeGet<Decimal64>().getValue());
                     default:
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
                             "Unsupported type to write into avro file {}",
-                            partition_values[i].getType());
+                            effective_partition_values[i].getType());
                 }
             };
 
             const bool is_nullable_partition = partition_types[i]->isNullable();
-            const bool is_null_value = partition_values[i].getType() == Field::Types::Null;
+            const bool is_null_value = effective_partition_values[i].getType() == Field::Types::Null;
 
             if (is_nullable_partition)
             {
@@ -1406,6 +1439,7 @@ bool IcebergStorageSink::initializeMetadata()
                     /*data_file_sort_order_ids=*/{},
                     /*per_file_entry_lineage=*/{},
                     /*schema_to_serialize=*/nullptr,
+                    /*per_file_partition_values=*/nullptr,
                     &per_file_fresh_statistics);
                 buffer_manifest_entry->finalize();
                 auto size = buffer_manifest_entry->count();
