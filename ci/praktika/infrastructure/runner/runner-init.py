@@ -238,6 +238,10 @@ class Runner:
             self.collect_logs("configure")
             raise Exception(f"Too many errors ({self.total_errors})")
 
+        # Must stay above the macOS early return below: a host that boots still
+        # full has to refuse the next job, not just the one after it.
+        Runner.check_free_disk_space()
+
         # macOS runners run continuously without lifetime limits, so they exit
         # to pick up a newer init script instead of ageing out like Linux.
         if config.init_environment == Environment.MACOS:
@@ -445,12 +449,15 @@ class Runner:
             return
 
     @staticmethod
-    def check_post_run() -> None:
-        if config.init_environment == Environment.MACOS:
-            return
-        result = subprocess.run(["df", "/"], capture_output=True, text=True, check=True)
+    def check_free_disk_space() -> None:
+        # `-k` pins the unit to 1 KiB so `free_blocks_threshold` means the same
+        # everywhere: BSD `df` (macOS) reports 512-byte blocks by default, and
+        # GNU `df` switches to 512 under `POSIXLY_CORRECT` or `$BLOCKSIZE`.
+        result = subprocess.run(
+            ["df", "-k", "/"], capture_output=True, text=True, check=True
+        )
         if config.verbose:
-            log(f"df / output:\n{result.stdout}", "post-run")
+            log(f"df -k / output:\n{result.stdout}", "disk-space")
         last = result.stdout.splitlines()[-1].split()
 
         free_blocks = int(last[3])
@@ -462,6 +469,14 @@ class Runner:
             raise RuntimeError(
                 f"Out of disk space: {free_percent}% of free space on rootfs"
             )
+
+    @staticmethod
+    def check_post_run() -> None:
+        Runner.check_free_disk_space()
+
+        # Docker is not installed on the macOS runners
+        if config.init_environment == Environment.MACOS:
+            return
 
         run_bash(
             """
