@@ -66,7 +66,8 @@ void IDisk::copyFile( /// NOLINT
     const String & to_file_path,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook
+    const std::function<void()> & cancellation_hook,
+    bool sync
     )
 {
     LOG_DEBUG(getLogger("IDisk"), "Copying from {} (path: {}) {} to {} (path: {}) {}.",
@@ -76,6 +77,8 @@ void IDisk::copyFile( /// NOLINT
     auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
     copyData(*in, *out, cancellation_hook);
     out->finalize();
+    if (sync)
+        out->sync();
 }
 
 std::unique_ptr<ReadBufferFromFileBase> IDisk::readFile(

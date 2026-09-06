@@ -324,12 +324,14 @@ void DiskObjectStorage::copyFile( /// NOLINT
     const String & to_file_path,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook)
+    const std::function<void()> & cancellation_hook,
+    bool sync)
 {
     auto component_guard = Coordination::setCurrentComponent("DiskObjectStorage::copyFile");
     if (getDataSourceDescription() == to_disk.getDataSourceDescription())
     {
-        /// It may use s3-server-side copy
+        /// It may use s3-server-side copy. Remote object storage is durable once the copy
+        /// transaction commits, so the `sync` request is satisfied by the commit below.
         auto & to_disk_object_storage = dynamic_cast<DiskObjectStorage &>(to_disk);
         auto transaction = createObjectStorageTransactionToAnotherDisk(to_disk_object_storage);
         try
@@ -348,7 +350,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
     else
     {
         /// Copy through buffers
-        IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
+        IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook, sync);
     }
 }
 

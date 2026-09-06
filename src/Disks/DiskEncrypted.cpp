@@ -432,7 +432,8 @@ void DiskEncrypted::copyFile(
     const String & to_file_path,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook)
+    const std::function<void()> & cancellation_hook,
+    bool sync)
 {
     /// Check if we can copy the file without deciphering.
     if (isSameDiskType(*this, to_disk))
@@ -448,14 +449,14 @@ void DiskEncrypted::copyFile(
                 auto wrapped_from_path = wrappedPath(from_file_path);
                 auto to_delegate = to_disk_enc->delegate;
                 auto wrapped_to_path = to_disk_enc->wrappedPath(to_file_path);
-                delegate->copyFile(wrapped_from_path, *to_delegate, wrapped_to_path, read_settings, write_settings, cancellation_hook);
+                delegate->copyFile(wrapped_from_path, *to_delegate, wrapped_to_path, read_settings, write_settings, cancellation_hook, sync);
                 return;
             }
         }
     }
 
     /// Copy the file through buffers with deciphering.
-    IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
+    IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook, sync);
 }
 
 

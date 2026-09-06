@@ -190,7 +190,8 @@ public:
         const String & to_file_path,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings = {},
-        const std::function<void()> & cancellation_hook = {}
+        const std::function<void()> & cancellation_hook = {},
+        bool sync = false
         ) override;
 
     void waitBlobsCleanup();
