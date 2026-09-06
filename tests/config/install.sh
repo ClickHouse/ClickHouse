@@ -235,7 +235,6 @@ esac
 ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
 function is_sanitizer_build()
 {
     # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). Do not test for
@@ -243,6 +242,13 @@ function is_sanitizer_build()
     # vcall or cast without a sanitizer runtime, so symbolization runs at full speed.
     [ "$(clickhouse local --query "SELECT value LIKE '%-DSANITIZER%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
 }
+function is_memory_sanitizer_build()
+{
+    [ "$(clickhouse local --query "SELECT value LIKE '%-fsanitize=memory%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
+}
+if ! is_memory_sanitizer_build; then
+    ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
+fi
 if is_sanitizer_build; then
     ln -sf $SRC_PATH/config.d/trace_log_no_symbolize.xml $DEST_SERVER_PATH/config.d/
 fi

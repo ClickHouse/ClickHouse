@@ -1635,7 +1635,11 @@ std::optional<Settings> ClientBase::settingsWithoutCompatibilityDerived() const
     if (!settings.hasSettingsChangedByCompatibility())
         return {};
     Settings result = settings;
-    result.resetSettingsChangedByCompatibility();
+    /// Keep the derived values but clear their `changed` flags: `Connection::sendQuery` picks the
+    /// client-side network codec from the values (so `compatibility` rolls back the codec of the
+    /// compressed packets this client sends), while only changed settings are serialized (so the
+    /// server re-derives them from `compatibility` itself and honors its own constraints).
+    result.markSettingsChangedByCompatibilityAsUnchanged();
     return result;
 }
 
@@ -4046,6 +4050,10 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
     {
         std::string result;
 
+        /// Only the compression knobs: the rest of the session settings must not leak into this
+        /// client-issued helper query. See `networkCompressionSettings`.
+        const Settings compression_settings = networkCompressionSettings(client_context->getSettingsRef());
+
         /// This is a complete query exchange on the shared connection, so it follows the same
         /// resynchronization discipline as the regular queries: recover from a previous failed
         /// exchange first, arm the flag for the time of the exchange (so that a transport or
@@ -4064,7 +4072,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
                 {},  /// query_parameters
                 "",  /// query_id
                 QueryProcessingStage::Complete,
-                nullptr,  /// settings
+                &compression_settings,  /// settings (so the network codec honors `network_compression_method`)
                 nullptr,  /// client_info
                 false,    /// with_pending_data
                 {},       /// external_roles
@@ -4133,6 +4141,10 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
 {
     const NameToNameMap query_parameters_for_help{{"word", word}};
 
+    /// Only the compression knobs: the rest of the session settings must not leak into this
+    /// client-issued helper query. See `networkCompressionSettings`.
+    const Settings compression_settings = networkCompressionSettings(client_context->getSettingsRef());
+
     /// See the comment in `executeQueryForSingleString`: this exchange follows the same
     /// resynchronization discipline as the regular queries.
     if (connection_needs_resynchronization)
@@ -4146,7 +4158,7 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
             query_parameters_for_help,
             "", /// query_id
             QueryProcessingStage::Complete,
-            nullptr, /// settings
+            &compression_settings, /// settings (so the network codec honors `network_compression_method`)
             &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
             false, /// with_pending_data
             {}, /// external_roles
@@ -4787,7 +4799,7 @@ void ClientBase::runInteractive()
             if (connection_needs_resynchronization)
                 resynchronizeConnectionAfterError();
             connection_needs_resynchronization = true;
-            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), error_stream);
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), client_context->getSettingsRef(), error_stream);
             if (suggest->lastExchangeEndedInSync())
                 connection_needs_resynchronization = false;
         }
@@ -5014,7 +5026,7 @@ void ClientBase::runInteractive()
             if (connection_needs_resynchronization)
                 resynchronizeConnectionAfterError();
             connection_needs_resynchronization = true;
-            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), error_stream);
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), client_context->getSettingsRef(), error_stream);
             if (suggest->lastExchangeEndedInSync())
                 connection_needs_resynchronization = false;
         }
