@@ -273,6 +273,7 @@ def main():
     expected_page_names = documentation_page_names - {
         "histogram_metric_log",     # Deprecated `system.histogram_metric_log` table which no longer exists.
         "information_schema",       # Overview of a separate database.
+        "models",                   # Removed `system.models` table retained as a historical page.
         "overview",                 # System-tables overview, not a table page.
     }
     assert generated_page_names == expected_page_names
