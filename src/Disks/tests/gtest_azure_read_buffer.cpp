@@ -1503,4 +1503,107 @@ TEST(AzureMove, SourceOverwrittenBetweenCopyAndDelete)
     ASSERT_TRUE(outcome.deleted_generations.empty());
 }
 
+/// The reader has already been handed bytes 0..99 by a single response when the caller consumes
+/// 32 of them and then lowers the right bound to 40. The bytes 40..99 that the working buffer still
+/// holds are past the new bound and must not be delivered: the read must end at byte 40 exactly.
+TEST(AzureReadUntilPosition, BoundLoweredBelowBufferedBytes)
+{
+    auto buffer = makeFreshBuffer(/* max_response_size */ 100, /* blob_size */ 100);
+
+    std::string head(32, '\0');
+    ASSERT_EQ(buffer->read(head.data(), head.size()), static_cast<size_t>(32));
+    assertCountsUpFromZero(head);
+
+    buffer->setReadUntilPosition(40);
+
+    std::string tail;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(tail, *buffer));
+    ASSERT_EQ(tail.size(), static_cast<size_t>(8));
+    for (size_t i = 0; i < tail.size(); ++i)
+        ASSERT_EQ(static_cast<uint8_t>(tail[i]), static_cast<uint8_t>(32 + i)) << "at position " << 32 + i;
+    ASSERT_EQ(buffer->getPosition(), 40);
+}
+
+/// The right bound is raised while the reader still holds bytes from the response of the previous
+/// bound: the response answered the range 0..63, the caller consumes 32 bytes and asks to read
+/// until byte 80. The read must continue from byte 32, reopening the download under the new bound,
+/// and deliver exactly bytes 32..79.
+TEST(AzureReadUntilPosition, BoundRaisedAfterBufferedBytes)
+{
+    auto buffer = makeFreshBuffer(/* max_response_size */ 100, /* blob_size */ 100);
+    buffer->setReadUntilPosition(64);
+
+    std::string head(32, '\0');
+    ASSERT_EQ(buffer->read(head.data(), head.size()), static_cast<size_t>(32));
+    assertCountsUpFromZero(head);
+
+    buffer->setReadUntilPosition(80);
+
+    std::string tail;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(tail, *buffer));
+    ASSERT_EQ(tail.size(), static_cast<size_t>(48));
+    for (size_t i = 0; i < tail.size(); ++i)
+        ASSERT_EQ(static_cast<uint8_t>(tail[i]), static_cast<uint8_t>(32 + i)) << "at position " << 32 + i;
+    ASSERT_EQ(buffer->getPosition(), 80);
+}
+
+/// Setting the same right bound again is not a new logical read: nothing already buffered is
+/// dropped and the download is not reopened.
+TEST(AzureReadUntilPosition, SameBoundSetTwice)
+{
+    auto buffer = makeFreshBuffer(/* max_response_size */ 100, /* blob_size */ 100);
+    buffer->setReadUntilPosition(64);
+
+    std::string head(32, '\0');
+    ASSERT_EQ(buffer->read(head.data(), head.size()), static_cast<size_t>(32));
+    ASSERT_EQ(buffer->available(), static_cast<size_t>(32));
+
+    buffer->setReadUntilPosition(64);
+    ASSERT_EQ(buffer->available(), static_cast<size_t>(32));
+
+    std::string tail;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(tail, *buffer));
+    ASSERT_EQ(tail.size(), static_cast<size_t>(32));
+    ASSERT_EQ(buffer->getPosition(), 64);
+}
+
+/// A `StoredObject` of `bytes_size` 0 is a blob that the `LIST` or `HEAD` producing it reported as
+/// empty. That size is as trustworthy as any other locally known size, so the read set up by
+/// `AzureObjectStorage::readObject` must end at once, no matter how many bytes a misbehaving
+/// endpoint hands out for the object, both sequentially and through `readBigAt`.
+TEST(AzureReadWithoutRightBound, KnownEmptyObject)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        /* max_response_size */ 100, /* served_size */ 100, /* blob_size */ 100, /* send_etag */ true);
+    auto object_storage = objectStorageOver(transport);
+
+    DB::StoredObject empty_object("blob", /* local_path */ "", /* bytes_size */ 0);
+    auto buffer = object_storage->readObject(empty_object, DB::ReadSettings{});
+
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+    ASSERT_TRUE(data.empty());
+
+    char byte = 0;
+    ASSERT_EQ(buffer->readBigAt(&byte, 1, /* range_begin */ 0, /* progress_callback */ nullptr), static_cast<size_t>(0));
+}
+
+/// The same endpoint, read through a `StoredObject` whose size was never determined: only the
+/// `StoredObject::UnknownSize` sentinel means that the size is unknown, and then the endpoint decides.
+TEST(AzureReadWithoutRightBound, ObjectOfUnknownSize)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        /* max_response_size */ 100, /* served_size */ 100, /* blob_size */ 100, /* send_etag */ true);
+    auto object_storage = objectStorageOver(transport);
+
+    DB::StoredObject object("blob");
+    ASSERT_EQ(object.bytes_size, DB::StoredObject::UnknownSize);
+    auto buffer = object_storage->readObject(object, DB::ReadSettings{});
+
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
+}
+
 #endif

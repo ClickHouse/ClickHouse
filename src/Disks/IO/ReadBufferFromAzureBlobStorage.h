@@ -81,6 +81,10 @@ private:
     /// The offset just past the last byte of the data that the read is expected to deliver.
     size_t getEndOfData() const;
 
+    /// Drops the current response and the bytes buffered from it, so that the next read reopens
+    /// the download at the current position. Called when the right bound of the read changes.
+    void discardCurrentDownload();
+
     void setMetadataFromResponse(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details, size_t blob_size) const;
 
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;

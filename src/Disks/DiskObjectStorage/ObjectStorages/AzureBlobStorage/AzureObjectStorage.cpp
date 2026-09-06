@@ -263,9 +263,12 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         connection_params.getContainer(),
         /// `bytes_size` may be the `StoredObject::UnknownSize` sentinel for an object whose size
         /// was never determined; it is not a real size, so it must not become an end-of-file bound.
-        /// When it is a real size, it was obtained before the read started and is therefore
-        /// trustworthy, unlike anything the download response says about the object.
-        (object.bytes_size && object.bytes_size != StoredObject::UnknownSize) ? std::optional<size_t>(object.bytes_size) : std::nullopt,
+        /// Any other value, zero included, is a real size: it was obtained from the `LIST` or `HEAD`
+        /// that produced the `StoredObject` before the read started (every Azure carrier reports the
+        /// `BlobSize` of the listing or of the properties), and is therefore trustworthy, unlike
+        /// anything the download response says about the object. An empty blob in particular is
+        /// known to be empty, and no byte an endpoint hands out for it may be delivered.
+        object.bytes_size != StoredObject::UnknownSize ? std::optional<size_t>(object.bytes_size) : std::nullopt,
         /// Pin every request of this read to the generation of the blob seen at read setup, so an
         /// in-place overwrite cannot splice two generations into one logical read.
         object.etag);

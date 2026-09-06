@@ -151,19 +151,33 @@ void ReadBufferFromAzureBlobStorage::setReadUntilEnd()
     if (read_until_position)
     {
         read_until_position = 0;
-        if (initialized)
-        {
-            offset = getPosition();
-            resetWorkingBuffer();
-            initialized = false;
-        }
+        discardCurrentDownload();
     }
 }
 
 void ReadBufferFromAzureBlobStorage::setReadUntilPosition(size_t position)
 {
+    if (static_cast<off_t>(position) == read_until_position)
+        return;
+
     read_until_position = position;
-    initialized = false;
+    discardCurrentDownload();
+}
+
+void ReadBufferFromAzureBlobStorage::discardCurrentDownload()
+{
+    /// A change of the right bound starts a new logical read, the same way a seek does. The bytes
+    /// that the current response has already delivered past the new bound must not be handed out,
+    /// so the working buffer is dropped and the download is reopened at the current position under
+    /// the new bound; anything learnt about the object from the responses of the previous read does
+    /// not carry over either.
+    if (initialized)
+    {
+        offset = getPosition();
+        resetWorkingBuffer();
+        initialized = false;
+    }
+    reported_object_size = 0;
 }
 
 bool ReadBufferFromAzureBlobStorage::nextImpl()
