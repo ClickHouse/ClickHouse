@@ -1,3 +1,4 @@
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/TreeRewriter.h>
 
 #include <Parsers/ASTAlterQuery.h>
@@ -83,6 +84,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
@@ -255,6 +257,195 @@ static NameSet getRemovedStatistics(const StorageMetadataPtr & metadata_snapshot
     return removed_stats;
 }
 
+/// Which indices this mutation rebuilds the granules of, among those the part already holds. It
+/// answers from `commands` alone, because `MutationsInterpreter` is built downstream of this
+/// function; an index it cannot decide counts as carried over, which costs pruning but never records
+/// a column at a type a carried-over granule was not built from.
+static NameSet collectIndicesRebuiltByMutation(
+    const MergeTreeData::DataPartPtr & part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MutationCommands & commands,
+    bool suitable_for_ttl_optimization,
+    bool materialize_ttl_recalculate_only,
+    const ContextPtr & context)
+{
+    NameSet rebuilt;
+
+    bool rebuilds_every_index = std::ranges::any_of(
+        commands, [](const auto & command) { return command.affectsAllColumns(); });
+
+    /// `MutationsInterpreter::prepare` ignores the setting as soon as the same command set updates
+    /// or deletes rows, because then it rewrites the data anyway. Take the same decision here, or a
+    /// `MATERIALIZE TTL` next to an `UPDATE` would be read as leaving the granules alone.
+    if (std::ranges::any_of(commands, [](const auto & command)
+            { return command.type == MutationCommand::Type::UPDATE || command.type == MutationCommand::Type::DELETE; }))
+        materialize_ttl_recalculate_only = false;
+
+    /// Columns whose indices `MutationsInterpreter::prepare` rebuilds or drops outright, rather than
+    /// carrying their granules over: a column this mutation reads at a type the part does not have
+    /// (`MODIFY COLUMN`), and a column it clears (`CLEAR COLUMN`).
+    NameSet type_changed_columns;
+    NameSet cleared_columns;
+
+    /// Exactly the set `MutationsInterpreter` derives from the same commands. A wider one here would
+    /// claim a rebuild it does not perform.
+    NameSet updated_columns;
+    /// `MutationsInterpreter::prepare` recomputes MATERIALIZED columns only from the columns its
+    /// commands name, never from a column TTL target, so that subset seeds the closure below.
+    NameSet command_updated_columns;
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::Type::READ_COLUMN && command.read_for_patch
+            && command.column_name != RowExistsColumn::name)
+        {
+            updated_columns.insert(command.column_name);
+            command_updated_columns.insert(command.column_name);
+        }
+
+        if (auto alter = command.ast(); alter && alter->update_assignments)
+            for (const auto & child : alter->update_assignments->children)
+            {
+                const auto & assigned = child->as<ASTAssignment &>().column_name;
+                updated_columns.insert(assigned);
+                command_updated_columns.insert(assigned);
+            }
+
+        if (command.type == MutationCommand::Type::READ_COLUMN)
+        {
+            auto part_column = part->tryGetColumn(command.column_name);
+            if (part_column && command.data_type && !part_column->type->equals(*command.data_type))
+                type_changed_columns.insert(command.column_name);
+        }
+
+        if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear && part->tryGetColumn(command.column_name))
+            cleared_columns.insert(command.column_name);
+
+        if (command.type != MutationCommand::Type::MATERIALIZE_TTL
+            || materialize_ttl_recalculate_only
+            || suitable_for_ttl_optimization)
+            continue;
+
+        if (metadata_snapshot->hasRowsTTL()
+            || metadata_snapshot->hasAnyRowsWhereTTL()
+            || metadata_snapshot->hasAnyGroupByTTL())
+        {
+            rebuilds_every_index = true;
+            continue;
+        }
+
+        /// `MutationsInterpreter` marks each column that has a column TTL as a `TTL_TARGET`.
+        /// Its dependency calculation subsequently rebuilds skip indices that depend on them.
+        for (const auto & [column_name, _] : metadata_snapshot->getColumns().getColumnTTLs())
+            updated_columns.insert(column_name);
+    }
+
+    StorageInMemoryMetadata::HasDependencyCallback has_dependency =
+        [&](const String & name, ColumnDependency::Kind kind)
+    {
+        if (kind == ColumnDependency::PROJECTION)
+            return part->hasProjection(name);
+        if (kind == ColumnDependency::SKIP_INDEX)
+            return part->hasSecondaryIndex(name, metadata_snapshot);
+        return true;
+    };
+
+    /// `MutationsInterpreter` also rewrites MATERIALIZED columns that depend on a directly updated
+    /// column. Include that closure before asking for ordinary column dependencies: an index can be
+    /// rebuilt solely because it reads one of those MATERIALIZED columns.
+    if (!command_updated_columns.empty())
+    {
+        const auto & columns = metadata_snapshot->getColumns();
+
+        /// The same graph `MutationsInterpreter::prepare` walks, so a `MATERIALIZED` default reading
+        /// an `ALIAS` column is normalized here exactly as it is there. Spelling the analysis out
+        /// again would resolve the alias against the physical columns alone and throw
+        /// `UNKNOWN_IDENTIFIER` on a schema the interpreter accepts.
+        MaterializedColumnDependencies dependency_graph(columns, context);
+
+        std::unordered_map<String, NameSet> materialized_dependencies;
+        const auto & part_columns = part->getColumnsDescription();
+        for (const auto & column : columns)
+        {
+            if (!part_columns.has(column.name))
+                continue;
+
+            const auto * materialized = dependency_graph.findNode(column.name);
+
+            /// A column reading an EPHEMERAL one is never recomputed outside `INSERT`, so the
+            /// interpreter leaves its stored value alone and no index over it is rebuilt.
+            if (!materialized || materialized->reads_ephemeral)
+                continue;
+
+            materialized_dependencies.emplace(
+                column.name,
+                NameSet(materialized->dependencies.begin(), materialized->dependencies.end()));
+        }
+
+        NameSet reachable = command_updated_columns;
+        bool found_affected_materialized = true;
+        while (found_affected_materialized)
+        {
+            found_affected_materialized = false;
+            for (const auto & [column, dependencies] : materialized_dependencies)
+            {
+                if (reachable.contains(column)
+                    || !std::ranges::any_of(dependencies, [&](const auto & dependency) { return reachable.contains(dependency); }))
+                    continue;
+
+                reachable.insert(column);
+                updated_columns.insert(column);
+                found_affected_materialized = true;
+            }
+        }
+    }
+
+    /// An index is rebuilt when one of its columns is written. Beyond the columns the commands name,
+    /// that is the closure over the metadata's dependencies: a column whose TTL expression this
+    /// mutation updates is expired by it, and appears nowhere else.
+    NameSet changed_columns;
+    if (!updated_columns.empty())
+    {
+        for (const auto & dependency : getAllColumnDependencies(metadata_snapshot, updated_columns, has_dependency))
+            if (!dependency.isReadOnly())
+                changed_columns.insert(dependency.column_name);
+    }
+
+    const auto index_mode = (*part->storage.getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
+
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    {
+        if (!part->hasSecondaryIndex(index.name, metadata_snapshot))
+            continue;
+
+        if (rebuilds_every_index)
+        {
+            rebuilt.insert(index.name);
+            continue;
+        }
+
+        const auto & index_columns = index.expression->getRequiredColumns();
+
+        /// Neither an index over a cleared column nor one over a column whose type changes carries
+        /// its granules over; only the two modes that refuse the `ALTER` outright leave the latter
+        /// alone, and then no part is written at all.
+        if (std::ranges::any_of(index_columns, [&](const auto & column) { return cleared_columns.contains(column); })
+            || (std::ranges::any_of(index_columns, [&](const auto & column) { return type_changed_columns.contains(column); })
+                && (index_mode == AlterColumnSecondaryIndexMode::REBUILD
+                    || index_mode == AlterColumnSecondaryIndexMode::DROP
+                    || index.isImplicitlyCreated())))
+        {
+            rebuilt.insert(index.name);
+            continue;
+        }
+
+        if (std::ranges::any_of(index_columns, [&](const auto & column)
+                { return updated_columns.contains(column) || changed_columns.contains(column); }))
+            rebuilt.insert(index.name);
+    }
+
+    return rebuilt;
+}
+
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
 *   Other is just simple drop/renames, so they can be executed without interpreter.
@@ -267,7 +458,8 @@ static void splitAndModifyMutationCommands(
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
     bool suitable_for_ttl_optimization,
-    LoggerPtr log)
+    LoggerPtr log,
+    const ContextPtr & context)
 {
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
@@ -609,6 +801,10 @@ static void splitAndModifyMutationCommands(
     }
     else
     {
+        NameSet mutated_columns;
+        NameSet extra_columns_for_indices;
+        auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
+
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
@@ -627,7 +823,10 @@ static void splitAndModifyMutationCommands(
                 {
                     auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
                     if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                    {
                         for_interpreter.push_back(command);
+                        mutated_columns.emplace(command.column_name);
+                    }
                 }
 
                 /// Materialize column in case of complex data types like tuple can remove some nested columns
@@ -645,10 +844,37 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::APPLY_PATCHES)
             {
                 for_interpreter.push_back(command);
+
+                /// The new part must describe every column the index's granules were built from, or
+                /// `isPartTypeCompatible` has no type to compare against and refuses the index.
+                if (command.type == MutationCommand::Type::MATERIALIZE_INDEX)
+                {
+                    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+                    {
+                        if (index.name != command.index_name)
+                            continue;
+                        if (part->hasSecondaryIndex(index.name, metadata_snapshot))
+                            break;
+
+                        for (const auto & column : index.expression->getRequiredColumns())
+                        {
+                            auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                            if (column_in_storage && !part_columns.has(*column_in_storage))
+                                extra_columns_for_indices.emplace(*column_in_storage);
+                        }
+                        break;
+                    }
+                }
             }
             else if (command.type == MutationCommand::Type::UPDATE)
             {
                 for_interpreter.push_back(command);
+
+                if (auto alter = command.ast(); alter && alter->update_assignments)
+                {
+                    for (const auto & child : alter->update_assignments->children)
+                        mutated_columns.emplace(child->as<ASTAssignment &>().column_name);
+                }
 
                 /// Update column can change the set of substreams for column if it
                 /// changes serialization (for example from Sparse to not Sparse).
@@ -696,6 +922,57 @@ static void splitAndModifyMutationCommands(
                     for_file_renames.push_back(command);
                 }
             }
+        }
+
+        /// The column list belongs to the part, so a column recorded in it must carry a type that
+        /// matches the granules of every index on the part that reads it. An index whose granules
+        /// this mutation carries over unchanged keeps them under the type they were built from, so
+        /// a column such an index reads must stay absent.
+        if (!extra_columns_for_indices.empty())
+        {
+            NameSet indices_being_dropped;
+            for (const auto & command : commands)
+                if (command.type == MutationCommand::Type::DROP_INDEX)
+                    indices_being_dropped.insert(command.column_name);
+
+            auto rebuilt_indices = collectIndicesRebuiltByMutation(
+                part,
+                metadata_snapshot,
+                commands,
+                suitable_for_ttl_optimization,
+                (*part->storage.getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only],
+                context);
+
+            for (const auto & index : metadata_snapshot->getSecondaryIndices())
+            {
+                if (indices_being_dropped.contains(index.name) || rebuilt_indices.contains(index.name))
+                    continue;
+                if (!part->hasSecondaryIndex(index.name, metadata_snapshot))
+                    continue;
+
+                for (const auto & column : index.expression->getRequiredColumns())
+                {
+                    auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                    if (column_in_storage)
+                        extra_columns_for_indices.erase(*column_in_storage);
+                }
+            }
+        }
+
+        for (const auto & column_name : extra_columns_for_indices)
+        {
+            if (mutated_columns.contains(column_name))
+                continue;
+
+            auto data_type = metadata_snapshot->getColumns().getColumn(GetColumnsOptions::AllPhysical, column_name).type;
+
+            for_interpreter.push_back(
+                MutationCommand
+                {
+                    .type = MutationCommand::Type::READ_COLUMN,
+                    .column_name = column_name,
+                    .data_type = std::move(data_type),
+                });
         }
 
         /// We don't add renames from commands, instead we take them from rename_map.
@@ -4114,7 +4391,8 @@ bool MutateTask::prepare()
         ctx->for_interpreter,
         ctx->for_file_renames,
         suitable_for_ttl_optimization,
-        ctx->log);
+        ctx->log,
+        ctx->context);
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
 

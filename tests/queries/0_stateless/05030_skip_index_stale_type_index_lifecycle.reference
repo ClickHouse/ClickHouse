@@ -1,0 +1,32 @@
+-- 33. a sibling index rebuilt by MODIFY COLUMN does not keep the column absent
+1
+1
+1
+2
+1
+1
+0
+0
+64
+64
+-- 34. a sibling index rebuilt by CLEAR COLUMN does not keep the column absent
+1
+1
+1
+2
+1
+0
+0
+64
+64
+-- 35. materialize_ttl_recalculate_only is ignored next to an UPDATE, and so is it here
+1
+1
+1
+2
+1
+1
+0
+0
+64
+64
