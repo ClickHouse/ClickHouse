@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include <Backups/BackupIO_AzureBlobStorage.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
@@ -16,6 +17,7 @@
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 #include <IO/ReadHelpers.h>
+#include <IO/SharedThreadPools.h>
 
 #include <azure/core/http/raw_response.hpp>
 #include <azure/core/http/transport.hpp>
@@ -29,6 +31,7 @@ namespace DB::ErrorCodes
     extern const int UNEXPECTED_END_OF_FILE;
     extern const int HTTP_RANGE_NOT_SATISFIABLE;
     extern const int FILE_CHANGED_DURING_READ;
+    extern const int BACKUP_DAMAGED;
 }
 
 namespace
@@ -1604,6 +1607,156 @@ TEST(AzureReadWithoutRightBound, ObjectOfUnknownSize)
     ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
     ASSERT_EQ(data.size(), static_cast<size_t>(100));
     assertCountsUpFromZero(data);
+}
+
+namespace
+{
+/// The connection of a backup kept at the shared endpoint `transport`. The endpoint is addressed with
+/// a SAS token, so the client is built straight from the URL, with no account lookup and no attempt
+/// to create the container.
+DB::AzureBlobStorage::ConnectionParams backupConnectionOver(const std::shared_ptr<MisbehavingRangeTransport> & transport)
+{
+    DB::AzureBlobStorage::ConnectionParams params;
+    params.endpoint.storage_account_url = "http://azure.invalid";
+    params.endpoint.container_name = "container";
+    params.endpoint.sas_auth = "sv=2020-08-04";
+    params.endpoint.container_already_exists = true;
+    params.client_options.Retry.MaxRetries = 0;
+    params.client_options.Transport.Transport = transport;
+    return params;
+}
+
+/// A reader of the backup `backup` kept at the shared endpoint `transport`.
+std::unique_ptr<DB::BackupReaderAzureBlobStorage> backupReaderOver(const std::shared_ptr<MisbehavingRangeTransport> & transport)
+{
+    return std::make_unique<DB::BackupReaderAzureBlobStorage>(
+        backupConnectionOver(transport), /* blob_path */ "backup", /* allow_azure_native_copy */ false,
+        DB::ReadSettings{}, DB::WriteSettings{}, getContext().context);
+}
+
+/// A writer of the backup `backup` kept at the shared endpoint `transport`, with the native copy enabled.
+std::unique_ptr<DB::BackupWriterAzureBlobStorage> backupWriterOver(const std::shared_ptr<MisbehavingRangeTransport> & transport)
+{
+    /// The copies of the writer are scheduled on the backups pool, which the server initializes on startup.
+    DB::getBackupsIOThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+
+    return std::make_unique<DB::BackupWriterAzureBlobStorage>(
+        backupConnectionOver(transport), /* blob_path */ "backup", /* allow_azure_native_copy */ true,
+        DB::ReadSettings{}, DB::WriteSettings{}, getContext().context, /* attempt_to_create_container */ false);
+}
+
+
+}
+
+/// A blob of the backup is overwritten between the `HEAD` that selects its generation and the
+/// response that carries its bytes. A restore must not stitch the two generations together: the
+/// read is pinned to the generation the `HEAD` saw.
+TEST(AzureBackupReader, ReadPinnedToBlobGeneration)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = ETagBehaviour::second_generation, .honour_if_match = false});
+    auto reader = backupReaderOver(transport);
+
+    auto buffer = reader->readFile("file");
+    std::string data;
+    try
+    {
+        DB::readStringUntilEOF(data, *buffer);
+        FAIL() << "Expected an exception on a backup blob whose generation changed after it was selected";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    }
+}
+
+/// The blob is 100 bytes long according to the `HEAD`, but the endpoint keeps handing out bytes past
+/// that. The size the backup saw is the end of the file; the endpoint does not get to extend it.
+TEST(AzureBackupReader, ReadBoundedBySizeOfHead)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        /* max_response_size */ 40, /* served_size */ 200, /* blob_size */ 100, /* send_etag */ true);
+    auto reader = backupReaderOver(transport);
+
+    auto buffer = reader->readFile("file");
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
+}
+
+/// An unchanged backup blob is read whole through a reader pinned to it.
+TEST(AzureBackupReader, ReadUnchangedBlob)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        /* max_response_size */ 40, /* served_size */ 100, /* blob_size */ 100, /* send_etag */ true, /* reported_length */ std::nullopt,
+        /* ignore_range */ false, ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+    auto reader = backupReaderOver(transport);
+
+    auto buffer = reader->readFile("file");
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
+}
+
+/// A copy inside the backup (the writer deduplicating a file against one it already wrote) is
+/// pinned to the generation of the source that the `HEAD` before the copy saw.
+TEST(AzureBackupWriter, CopyInsideBackupPinnedToSourceGeneration)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+    auto writer = backupWriterOver(transport);
+
+    ASSERT_NO_THROW(writer->copyFile(/* destination */ "copy", /* source */ "file", /* size */ 100));
+
+    ASSERT_EQ(transport->nativelyCopiedGenerations(), (std::vector<std::string>{ETagBehaviour::first_generation}));
+    ASSERT_EQ(transport->sourceIfMatchHeaders(), (std::vector<std::string>{ETagBehaviour::first_generation}));
+}
+
+/// The source of a copy inside the backup is overwritten between the `HEAD` and the copy; the
+/// endpoint evaluates the source-side `If-Match`, so the copy is refused rather than copying the
+/// newer generation under the name of the older one.
+TEST(AzureBackupWriter, CopyInsideBackupRefusedOnChangedSource)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = ETagBehaviour::second_generation, .honour_if_match = true});
+    auto writer = backupWriterOver(transport);
+
+    try
+    {
+        writer->copyFile(/* destination */ "copy", /* source */ "file", /* size */ 100);
+        FAIL() << "Expected an exception on a copy of a backup blob overwritten after it was selected";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    }
+    ASSERT_TRUE(transport->nativelyCopiedGenerations().empty());
+}
+
+/// The blob is not the size the backup metadata recorded for it: it is not the blob the backup
+/// wrote, so no copy is attempted at all.
+TEST(AzureBackupWriter, CopyOfBlobOfAnotherSizeIsRefused)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, /* blob_size */ 100, /* send_etag */ true);
+    auto writer = backupWriterOver(transport);
+
+    try
+    {
+        writer->copyFile(/* destination */ "copy", /* source */ "file", /* size */ 99);
+        FAIL() << "Expected an exception on a backup blob whose size differs from the one the backup recorded";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::BACKUP_DAMAGED);
+    }
+    ASSERT_TRUE(transport->nativelyCopiedGenerations().empty());
+    ASSERT_TRUE(transport->uploadedData().empty());
 }
 
 #endif
