@@ -1,0 +1,18 @@
+100
+100
+100
+100
+100
+shapes are preserved
+16	String
+16	FixedString(16)
+10	1
+abc
+0
+the rest of the family
+100
+100
+1
+the argument bypasses common subexpression elimination
+1
+errors are still reported
