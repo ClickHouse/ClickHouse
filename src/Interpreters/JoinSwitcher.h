@@ -3,7 +3,6 @@
 #include <mutex>
 
 #include <Core/Block.h>
-#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 
@@ -17,15 +16,10 @@ namespace DB
 class JoinSwitcher : public IJoin
 {
 public:
-    JoinSwitcher(
-        std::shared_ptr<TableJoin> table_join_,
-        SharedHeader right_sample_block_,
-        bool any_take_last_row_,
-        const StatsCollectingParams & stats_collecting_params_ = {});
+    JoinSwitcher(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_);
 
     std::string getName() const override { return "JoinSwitcher"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
-    bool anyTakeLastRow() const override { return join->anyTakeLastRow(); }
 
     /// Add block of data from right hand of JOIN into current join object.
     /// If join-in-memory memory limit exceeded switches to join-on-disk and continue with it.
@@ -67,11 +61,6 @@ public:
         return join->alwaysReturnsEmptySet();
     }
 
-    StepAnalysisReport getAnalysisReport() const override
-    {
-        return join->getAnalysisReport();
-    }
-
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override
     {
@@ -88,18 +77,7 @@ public:
         return join->hasDelayedBlocks();
     }
 
-    /// May switch to PartialMergeJoin at runtime, which re-sorts left blocks by the join key.
-    /// The read-in-order decision is made at plan time (before any switch), so we must be
-    /// conservative and never claim to preserve the left stream order. See issue #110662.
-    bool preservesLeftBlockOrder() const override { return false; }
-
     void onBuildPhaseFinish() override { join->onBuildPhaseFinish(); }
-
-    bool hasPostBuildPhase() const override { return join->hasPostBuildPhase(); }
-
-    void runPostBuildPhase() override { join->runPostBuildPhase(); }
-
-    void setEnableLazyColumnsIndexing(bool value) override { join->setEnableLazyColumnsIndexing(value); }
 
 private:
     JoinPtr join;

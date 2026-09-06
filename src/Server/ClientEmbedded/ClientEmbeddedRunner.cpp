@@ -1,3 +1,5 @@
+#if defined(OS_LINUX)
+
 #include <Server/ClientEmbedded/ClientEmbeddedRunner.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -88,3 +90,5 @@ void ClientEmbeddedRunner::clientRoutine(NameToNameMap envs, String starting_que
 }
 
 }
+
+#endif

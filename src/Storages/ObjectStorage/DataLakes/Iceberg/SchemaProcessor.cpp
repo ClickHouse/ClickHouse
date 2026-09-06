@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -12,14 +11,11 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
-#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <base/types.h>
 #include <Common/SharedLockGuard.h>
-#include <Common/StringUtils.h>
 #include <base/scope_guard.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -48,7 +44,6 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
-extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 
@@ -76,10 +71,9 @@ void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String
     if (type_str == "list")
     {
         auto element_id = type->getValue<Int64>(Iceberg::f_element_id);
-        auto element_name = Nested::concatenateName(current_path, "element");
         if (type->isObject(Iceberg::f_element))
-            traverseComplexType(type->getObject(Iceberg::f_element), result, element_name);
-        result[element_name] = element_id;
+            traverseComplexType(type->getObject(Iceberg::f_element), result, current_path);
+        result[current_path] = element_id;
         return;
     }
     if (type_str == "struct")
@@ -95,85 +89,6 @@ void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String
             result[child_path] = field_id;
         }
         return;
-    }
-}
-
-/// Collects the paths whose Iceberg logical type is exactly `string` (both `string` and `binary`
-/// read as DataTypeString). `type` is a JSON string (primitive leaf) or object (complex type).
-void collectStringPaths(const Poco::Dynamic::Var & type, std::unordered_set<String> & result, const String & current_path)
-{
-    if (type.isString())
-    {
-        if (type.extract<String>() == Iceberg::f_string)
-            result.insert(current_path);
-        return;
-    }
-
-    const auto & type_object = type.extract<Poco::JSON::Object::Ptr>();
-    auto type_str = type_object->getValue<String>(Iceberg::f_type);
-    if (type_str == "map")
-    {
-        if (type_object->has(Iceberg::f_key))
-            collectStringPaths(type_object->get(Iceberg::f_key), result, Nested::concatenateName(current_path, "key"));
-        if (type_object->has(Iceberg::f_value))
-            collectStringPaths(type_object->get(Iceberg::f_value), result, Nested::concatenateName(current_path, "value"));
-    }
-    else if (type_str == "list")
-    {
-        if (type_object->has(Iceberg::f_element))
-            collectStringPaths(type_object->get(Iceberg::f_element), result, Nested::concatenateName(current_path, "element"));
-    }
-    else if (type_str == "struct")
-    {
-        auto fields = type_object->getArray(Iceberg::f_fields);
-        for (UInt32 i = 0; i < fields->size(); ++i)
-        {
-            auto field = fields->getObject(i);
-            auto child_path = Nested::concatenateName(current_path, field->getValue<String>(Iceberg::f_name));
-            if (field->has(Iceberg::f_type))
-                collectStringPaths(field->get(Iceberg::f_type), result, child_path);
-        }
-    }
-}
-
-/// Inserts current_path if optional, then recurses. `required` is current_path's own bit; children
-/// read theirs with getValue<bool> (throws on a missing mandatory flag, like the schema parser).
-/// A map key is always required per the Iceberg spec.
-void collectOptionalPaths(const Poco::Dynamic::Var & type, std::unordered_set<String> & result, const String & current_path, bool required)
-{
-    if (!required)
-        result.insert(current_path);
-
-    if (type.isString())
-        return;
-
-    // Mandatory members (key/value/element/type and the required flags) are read unconditionally so
-    // a malformed schema throws here, exactly as the schema parser does, rather than silently
-    // leaving a truly-optional path out of the set (which the writer would then emit as required).
-    const auto & type_object = type.extract<Poco::JSON::Object::Ptr>();
-    auto type_str = type_object->getValue<String>(Iceberg::f_type);
-    if (type_str == "map")
-    {
-        collectOptionalPaths(type_object->get(Iceberg::f_key), result, Nested::concatenateName(current_path, "key"), true);
-        collectOptionalPaths(
-            type_object->get(Iceberg::f_value), result, Nested::concatenateName(current_path, "value"),
-            type_object->getValue<bool>(Iceberg::f_value_required));
-    }
-    else if (type_str == "list")
-    {
-        collectOptionalPaths(
-            type_object->get(Iceberg::f_element), result, Nested::concatenateName(current_path, "element"),
-            type_object->getValue<bool>(Iceberg::f_element_required));
-    }
-    else if (type_str == "struct")
-    {
-        auto fields = type_object->getArray(Iceberg::f_fields);
-        for (UInt32 i = 0; i < fields->size(); ++i)
-        {
-            auto field = fields->getObject(i);
-            auto child_path = Nested::concatenateName(current_path, field->getValue<String>(Iceberg::f_name));
-            collectOptionalPaths(field->get(Iceberg::f_type), result, child_path, field->getValue<bool>(Iceberg::f_required));
-        }
     }
 }
 
@@ -197,192 +112,28 @@ bool equals(const T & first, const T & second)
     return first_string_stream.str() == second_string_stream.str();
 }
 
-
-bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second, const std::unordered_map<String, String> & type_mapping);
-
-/// Canonicalize spacing in an Iceberg primitive type string by removing ASCII whitespace that is
-/// only optional formatting around the delimiters '(', ')', '[', ']', ',' (and at the string edges).
-/// Whitespace embedded inside a token (e.g. between the digits of "decimal(2 0,0)") is preserved so
-/// that malformed spellings remain malformed and are still rejected by the parser.
-String canonicalizeTypeSpacing(const String & s)
+bool operator==(const Poco::JSON::Array & first, const Poco::JSON::Array & second)
 {
-    auto is_delimiter = [](char c) { return c == '(' || c == ')' || c == '[' || c == ']' || c == ','; };
-    String result;
-    result.reserve(s.size());
-    for (size_t i = 0; i < s.size(); ++i)
-    {
-        if (!isWhitespaceASCII(s[i]))
-        {
-            result.push_back(s[i]);
-            continue;
-        }
-        const char prev = result.empty() ? '\0' : result.back();
-        size_t j = i + 1;
-        while (j < s.size() && isWhitespaceASCII(s[j]))
-            ++j;
-        const char next = j < s.size() ? s[j] : '\0';
-        /// Drop whitespace only when it is next to a delimiter or at the start/end of the string;
-        /// keep it when it sits between two token characters.
-        const bool drop = prev == '\0' || next == '\0' || is_delimiter(prev) || is_delimiter(next);
-        if (!drop)
-            result.push_back(s[i]);
-    }
-    return result;
+    return equals(first, second);
 }
 
-/// Compare two Iceberg type descriptors for the same field. A type is either a primitive
-/// string ("long", "decimal(20, 0)", ...) or a nested object ("struct" with a fields array,
-/// or "list" / "map" wrappers whose element/key/value members are themselves types).
-/// Primitive type strings are whitespace-insensitive per the Iceberg spec, so recurse into
-/// list/map members instead of comparing the wrapper object textually.
-bool typesAreStructurallyIdentical(
-    const Poco::Dynamic::Var & first_in, const Poco::Dynamic::Var & second_in, const std::unordered_map<String, String> & type_mapping)
-{
-    Poco::Dynamic::Var first = first_in;
-    Poco::Dynamic::Var second = second_in;
-
-    /// Apply configured type aliases (e.g. geography -> binary) to string types.
-    /// Canonicalize spacing before the alias prefix match so leading/trailing whitespace does not
-    /// defeat it: " geography(C,A)" must map to the same alias as "geography(C, A)". Otherwise the
-    /// same schema-id serialized with one spelling that skips aliasing and another that maps to
-    /// "binary" would compare unequal and be wrongly rejected.
-    if (first.isString())
-    {
-        const String canon = canonicalizeTypeSpacing(first.toString());
-        first = canon;
-        for (const auto & [prefix, mapped] : type_mapping)
-            if (canon.starts_with(prefix))
-            {
-                first = mapped;
-                break;
-            }
-    }
-    if (second.isString())
-    {
-        const String canon = canonicalizeTypeSpacing(second.toString());
-        second = canon;
-        for (const auto & [prefix, mapped] : type_mapping)
-            if (canon.starts_with(prefix))
-            {
-                second = mapped;
-                break;
-            }
-    }
-
-    /// Primitive type strings: e.g. both "decimal(20,0)" and "decimal(20, 0)" denote the same
-    /// type. Different writers emit different spacing, so ignore ASCII whitespace.
-    if (first.isString() && second.isString())
-        return canonicalizeTypeSpacing(first.toString()) == canonicalizeTypeSpacing(second.toString());
-
-    const bool both_objects
-        = first.type() == typeid(Poco::JSON::Object::Ptr) && second.type() == typeid(Poco::JSON::Object::Ptr);
-    if (both_objects)
-    {
-        const auto & first_obj = first.extract<Poco::JSON::Object::Ptr>();
-        const auto & second_obj = second.extract<Poco::JSON::Object::Ptr>();
-
-        /// struct: compare nested field list recursively.
-        if (first_obj->isArray(f_fields) || second_obj->isArray(f_fields))
-            return schemasAreIdentical(*first_obj, *second_obj, type_mapping);
-
-        /// list / map wrappers: same member set, with the nested type members (element / key /
-        /// value) compared recursively so their primitive strings are whitespace-insensitive too,
-        /// and the remaining scalar members (ids, required flags) compared textually.
-        auto names_first = first_obj->getNames();
-        auto names_second = second_obj->getNames();
-        std::sort(names_first.begin(), names_first.end());
-        std::sort(names_second.begin(), names_second.end());
-        if (names_first != names_second)
-            return false;
-        for (const auto & name : names_first)
-        {
-            if (name == f_element || name == f_key || name == f_value)
-            {
-                if (!typesAreStructurallyIdentical(first_obj->get(name), second_obj->get(name), type_mapping))
-                    return false;
-            }
-            else
-            {
-                Poco::JSON::Object wrapper_first;
-                wrapper_first.set(name, first_obj->get(name));
-                Poco::JSON::Object wrapper_second;
-                wrapper_second.set(name, second_obj->get(name));
-                if (!equals(wrapper_first, wrapper_second))
-                    return false;
-            }
-        }
-        return true;
-    }
-
-    /// Mismatched shapes (string vs object) or scalar values: compare textually.
-    Poco::JSON::Object wrapper_first;
-    wrapper_first.set(f_type, first);
-    Poco::JSON::Object wrapper_second;
-    wrapper_second.set(f_type, second);
-    return equals(wrapper_first, wrapper_second);
-}
-
-bool schemaFieldsAreStructurallyIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second, const std::unordered_map<String, String> & type_mapping)
-{
-    static constexpr const char * structural_keys[] = {f_id, f_name, f_required, f_type};
-    for (const char * key : structural_keys)
-    {
-        const bool first_has = first.has(key);
-        const bool second_has = second.has(key);
-        if (first_has != second_has)
-            return false;
-        if (!first_has)
-            continue;
-
-        if (key == f_type)
-        {
-            if (!typesAreStructurallyIdentical(first.get(key), second.get(key), type_mapping))
-                return false;
-            continue;
-        }
-
-        Poco::JSON::Object wrapper_first;
-        wrapper_first.set(key, first.get(key));
-        Poco::JSON::Object wrapper_second;
-        wrapper_second.set(key, second.get(key));
-        if (!equals(wrapper_first, wrapper_second))
-            return false;
-    }
-    return true;
-}
-
-bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second, const std::unordered_map<String, String> & type_mapping)
+bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
 {
     if (!first.isArray(f_fields) || !second.isArray(f_fields))
         return false;
-    const auto first_fields = first.getArray(f_fields);
-    const auto second_fields = second.getArray(f_fields);
-    if (first_fields->size() != second_fields->size())
-        return false;
-    for (UInt32 i = 0; i != first_fields->size(); ++i)
-    {
-        const auto first_field = first_fields->getObject(i);
-        const auto second_field = second_fields->getObject(i);
-        if (!first_field || !second_field || !schemaFieldsAreStructurallyIdentical(*first_field, *second_field, type_mapping))
-            return false;
-    }
-    return true;
+    return *(first.getArray(f_fields)) == *(second.getArray(f_fields));
 }
 
 std::pair<size_t, size_t> parseDecimal(const String & type_name)
 {
     DB::ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
-    size_t precision = 0;
-    size_t scale = 0;
+    size_t precision;
+    size_t scale;
     readIntText(precision, buf);
     skipWhitespaceIfAny(buf);
     assertChar(',', buf);
     skipWhitespaceIfAny(buf);
-    /// readIntText (not tryReadIntText) so a missing scale ("decimal(20,)") is rejected instead of
-    /// silently read as 0. assertEOF then rejects trailing garbage (e.g. "decimal(20,0 0)", whose
-    /// inner whitespace survives canonicalization), mirroring the fixed[N] handling.
-    readIntText(scale, buf);
-    assertEOF(buf);
+    tryReadIntText(scale, buf);
     return {precision, scale};
 }
 
@@ -408,34 +159,12 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
         chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
-        std::unordered_map<String, String> type_mapping;
-        if (allow_geo_parser)
-        {
-            type_mapping[f_geography] = f_binary;
-            type_mapping[f_geometry] = f_binary;
-        }
-        /// A schema-id is immutable per the Iceberg spec: re-binding it to different fields is malformed metadata.
-        if (!schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Iceberg schema with schema-id {} is bound to two different schemas across metadata versions",
-                schema_id);
+        chassert(schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr));
     }
     else
     {
+        iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
         auto fields = schema_ptr->get(f_fields).extract<Poco::JSON::Array::Ptr>();
-        /// A field name is required per the Iceberg spec, and an empty column name is not representable in ClickHouse.
-        for (size_t i = 0; i != fields->size(); ++i)
-        {
-            auto field = fields->getObject(static_cast<UInt32>(i));
-            if (field->getValue<String>(f_name).empty())
-                throw Exception(
-                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                    "Iceberg schema with schema-id {} has a field with id {} whose name is empty",
-                    schema_id,
-                    field->getValue<Int32>(f_id));
-        }
-
         auto clickhouse_schema = std::make_shared<NamesAndTypesList>();
         String current_full_name{};
         for (size_t i = 0; i != fields->size(); ++i)
@@ -450,7 +179,6 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
             clickhouse_ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
         }
         clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
-        iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
     }
     current_schema_id = std::nullopt;
 }
@@ -499,13 +227,8 @@ NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 sche
     return fields;
 }
 
-DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, bool allow_geo_parser)
+DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
 {
-    /// Parameterized primitive type strings (decimal(P, S), fixed[N], geography(...)) can be
-    /// serialized with different inner whitespace across metadata files. Canonicalize by removing
-    /// ASCII whitespace so parsing accepts every spelling the whitespace-insensitive comparison does.
-    const String type_name = canonicalizeTypeSpacing(type_name_arg);
-
     if (type_name == f_boolean)
         return DataTypeFactory::instance().get("Bool");
     if (type_name == f_int)
@@ -524,32 +247,16 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
         return std::make_shared<DataTypeDateTime64>(6);
     if (type_name == f_timestamptz)
         return std::make_shared<DataTypeDateTime64>(6, "UTC");
-    if (type_name == f_timestamp_ns)
-        return std::make_shared<DataTypeDateTime64>(9);
-    if (type_name == f_timestamptz_ns)
-        return std::make_shared<DataTypeDateTime64>(9, "UTC");
     if (type_name == f_string || type_name == f_binary)
         return std::make_shared<DataTypeString>();
-
-    if (type_name.starts_with(f_geometry) || type_name.starts_with(f_geography))
-    {
-        if (allow_geo_parser)
-        {
-            return DataTypeFactory::instance().get("Geometry");
-        }
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using geometry/geography types is not allowed without enabled allow_experimental_geo_types_in_iceberg flag");
-    }
     if (type_name == f_uuid)
         return std::make_shared<DataTypeUUID>();
 
     if (type_name.starts_with("fixed[") && type_name.ends_with(']'))
     {
         ReadBufferFromString buf(std::string_view(type_name.begin() + 6, type_name.end() - 1));
-        size_t n = 0;
+        size_t n;
         readIntText(n, buf);
-        /// Reject trailing garbage such as embedded whitespace ("fixed[1 6]"): the canonicalized
-        /// form of a valid spelling has no characters left after the size.
-        assertEOF(buf);
         return std::make_shared<DataTypeFixedString>(n);
     }
 
@@ -566,9 +273,6 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
 DataTypePtr
 IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root)
 {
-    /// The schema comes from the table metadata and can be nested arbitrarily deeply.
-    checkStackSize();
-
     String type_name = type->getValue<String>(f_type);
     if (type_name == f_list)
     {
@@ -634,8 +338,8 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
     if (type.isString())
     {
         const String & type_name = type.extract<String>();
-        auto data_type = getSimpleType(type_name, allow_geo_parser);
-        return required || !data_type->canBeInsideNullable() ? data_type : makeNullable(data_type);
+        auto data_type = getSimpleType(type_name);
+        return required ? data_type : makeNullable(data_type);
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected 'type' field: {}", type.toString());
@@ -648,13 +352,8 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
 * decimal(P, S) -> decimal(P', S) where P' > P
 * This function checks if `old_type` and `new_type` satisfy to one of these conditions.
 **/
-bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_type_arg, const String & new_type_arg)
+bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_type, const String & new_type)
 {
-    /// Match the whitespace-insensitive rules of the comparison and the parser: a whitespace-only
-    /// difference in a parameterized type string denotes the identical type.
-    const String old_type = canonicalizeTypeSpacing(old_type_arg);
-    const String new_type = canonicalizeTypeSpacing(new_type_arg);
-
     bool allowed_type_conversion = (old_type == new_type);
     allowed_type_conversion |= (old_type == f_int) && (new_type == f_long);
     allowed_type_conversion |= (old_type == f_float) && (new_type == f_double);
@@ -700,17 +399,8 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                     || field->getObject(f_type)->getValue<std::string>(f_type) == "list"
                     || field->getObject(f_type)->getValue<std::string>(f_type) == "map"))
             {
-                if (!old_json->isObject(f_type))
-                {
-                    throw Exception(
-                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                        "Can't cast primitive type to the complex type, field id is {}, old schema id is {}, new schema id is {}",
-                        id,
-                        old_id,
-                        new_id);
-                }
                 auto old_type = getFieldType(old_json, "type", required);
-                auto transform = std::make_shared<EvolutionFunctionStruct>(DataTypes{type}, DataTypes{old_type}, old_json, field);
+                auto transform = std::make_shared<EvolutionFunctionStruct>(std::vector{type}, std::vector{old_type}, old_json, field);
                 old_node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
 
                 outputs.push_back(old_node);
@@ -720,8 +410,8 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 if (old_json->isObject(f_type) && !field->isObject(f_type))
                 {
                     throw Exception(
-                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                        "Can't cast complex type to the primitive type, field id is {}, old schema id is {}, new schema id is {}",
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Can't cast primitive type to the complex type, field id is {}, old schema id is {}, new schema id is {}",
                         id,
                         old_id,
                         new_id);
@@ -730,20 +420,9 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 String new_type = field->getValue<String>(f_type);
 
                 const ActionsDAG::Node * node = old_node;
-                /// Parameterized primitive types (decimal, geography, ...) can be serialized with
-                /// different spacing across metadata files, so compare ignoring ASCII whitespace:
-                /// a whitespace-only difference is the same type and needs only a rename, not a cast.
-                if (canonicalizeTypeSpacing(old_type) == canonicalizeTypeSpacing(new_type))
+                if (old_type == new_type)
                 {
-                    /// Nullability is carried by the separate `required` key, so equal type strings
-                    /// can still resolve to different types. Only relaxing required to optional is
-                    /// legal evolution; the reverse keeps the plain passthrough.
-                    const bool old_required = old_json->getValue<bool>(f_required);
-                    if (old_required && !required && !old_node->result_type->equals(*type))
-                    {
-                        node = &dag->addCast(*old_node, type, name, nullptr);
-                    }
-                    else if (old_json->getValue<String>(f_name) != name)
+                    if (old_json->getValue<String>(f_name) != name)
                     {
                         node = &dag->addAlias(*old_node, name);
                     }
@@ -760,7 +439,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
             if (!type->isNullable() && !field->isObject(f_type))
             {
                 throw Exception(
-                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    ErrorCodes::LOGICAL_ERROR,
                     "Cannot add a column with id {} with required values to the table during schema evolution. This is forbidden by "
                     "Iceberg format specification. Old schema id is {}, new "
                     "schema id is {}",
@@ -768,11 +447,9 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                     old_id,
                     new_id);
             }
-            auto default_type_column = type->createColumnConstWithDefaultValue(0);
-            const auto & constant = dag->addColumn(std::move(default_type_column), type, name);
-            /// Materialize so the column leaves the transform as a full column, not a ColumnConst,
-            /// like every other missing-column path (inplaceBlockConversions, IMergeTreeReader, ...).
-            outputs.push_back(&dag->materializeNode(constant));
+            ColumnPtr default_type_column = type->createColumnConstWithDefaultValue(0);
+            const auto & constant = dag->addColumn({default_type_column, type, name});
+            outputs.push_back(&constant);
         }
     }
     return dag;
@@ -820,7 +497,7 @@ void IcebergSchemaProcessor::registerSnapshotWithSchemaId(Int64 snapshot_id, Int
         if (old_id != schema_id)
         {
             throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                ErrorCodes::LOGICAL_ERROR,
                 "Snapshot with id {} already registered with schema id {}, trying to register with new schema id {}",
                 snapshot_id,
                 old_id,
@@ -850,7 +527,7 @@ std::optional<Int32> IcebergSchemaProcessor::tryGetSchemaIdForSnapshot(Int64 sna
 }
 
 
-std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickHouseTableSchemaById(Int32 id)
+std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSchemaById(Int32 id)
 {
     SharedLockGuard lock(mutex);
 
@@ -860,7 +537,7 @@ std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickHouseTableSch
     return it->second;
 }
 
-bool IcebergSchemaProcessor::hasClickHouseTableSchemaById(Int32 id) const
+bool IcebergSchemaProcessor::hasClickhouseTableSchemaById(Int32 id) const
 {
     SharedLockGuard lock(mutex);
 
@@ -882,31 +559,6 @@ std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::J
     return result;
 }
 
-std::unordered_set<String> IcebergSchemaProcessor::collectIcebergStringPaths(Poco::JSON::Array::Ptr schema)
-{
-    std::unordered_set<String> result;
-    for (UInt32 i = 0; i < schema->size(); ++i)
-    {
-        auto current_object = schema->getObject(i);
-        if (current_object->has(Iceberg::f_type))
-            collectStringPaths(current_object->get(Iceberg::f_type), result, current_object->getValue<String>(Iceberg::f_name));
-    }
-    return result;
-}
-
-std::unordered_set<String> IcebergSchemaProcessor::collectIcebergOptionalPaths(Poco::JSON::Array::Ptr schema)
-{
-    std::unordered_set<String> result;
-    for (UInt32 i = 0; i < schema->size(); ++i)
-    {
-        auto current_object = schema->getObject(i);
-        collectOptionalPaths(
-            current_object->get(Iceberg::f_type), result, current_object->getValue<String>(Iceberg::f_name),
-            current_object->getValue<bool>(Iceberg::f_required));
-    }
-    return result;
-}
-
 ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
 {
     auto schema = getIcebergTableSchemaById(id);
@@ -915,18 +567,13 @@ ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
     return createColumnMapper(schema);
 }
 
-ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields)
-{
-    auto column_mapper = std::make_shared<ColumnMapper>();
-    column_mapper->setStorageColumnEncoding(IcebergSchemaProcessor::traverseSchema(fields));
-    column_mapper->setIcebergStringPaths(IcebergSchemaProcessor::collectIcebergStringPaths(fields));
-    column_mapper->setIcebergOptionalPaths(IcebergSchemaProcessor::collectIcebergOptionalPaths(fields));
-    return column_mapper;
-}
-
 ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object)
 {
-    return createColumnMapperFromFields(schema_object->getArray(Iceberg::f_fields));
+    auto column_mapper = std::make_shared<ColumnMapper>();
+    std::unordered_map<String, Int64> column_name_to_parquet_field_id
+        = IcebergSchemaProcessor::traverseSchema(schema_object->getArray(Iceberg::f_fields));
+    column_mapper->setStorageColumnEncoding(std::move(column_name_to_parquet_field_id));
+    return column_mapper;
 }
 
 }

@@ -47,7 +47,7 @@ using FunctionDivide = BinaryArithmeticOverloadResolver<DivideFloatingImpl, Name
 REGISTER_FUNCTION(Divide)
 {
     FunctionDocumentation::Description description = R"(
-Calculates the quotient of two values `a` and `b`. The result type is always [Float64](/reference/data-types/float).
+Calculates the quotient of two values `a` and `b`. The result type is always [Float64](/sql-reference/data-types/float).
 Integer division is provided by the `intDiv` function.
 
 :::note

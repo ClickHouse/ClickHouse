@@ -41,70 +41,70 @@ void CassandraSource::insertValue(IColumn & column, ValueType type, const CassVa
     {
         case ValueType::vtUInt8:
         {
-            cass_int8_t value = 0;
+            cass_int8_t value;
             cass_value_get_int8(cass_value, &value);
             assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value));
             break;
         }
         case ValueType::vtUInt16:
         {
-            cass_int16_t value = 0;
+            cass_int16_t value;
             cass_value_get_int16(cass_value, &value);
             assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value));
             break;
         }
         case ValueType::vtUInt32:
         {
-            cass_int32_t value = 0;
+            cass_int32_t value;
             cass_value_get_int32(cass_value, &value);
             assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value));
             break;
         }
         case ValueType::vtUInt64:
         {
-            cass_int64_t value = 0;
+            cass_int64_t value;
             cass_value_get_int64(cass_value, &value);
             assert_cast<ColumnUInt64 &>(column).insertValue(static_cast<UInt64>(value));
             break;
         }
         case ValueType::vtInt8:
         {
-            cass_int8_t value = 0;
+            cass_int8_t value;
             cass_value_get_int8(cass_value, &value);
             assert_cast<ColumnInt8 &>(column).insertValue(value);
             break;
         }
         case ValueType::vtInt16:
         {
-            cass_int16_t value = 0;
+            cass_int16_t value;
             cass_value_get_int16(cass_value, &value);
             assert_cast<ColumnInt16 &>(column).insertValue(value);
             break;
         }
         case ValueType::vtInt32:
         {
-            cass_int32_t value = 0;
+            cass_int32_t value;
             cass_value_get_int32(cass_value, &value);
             assert_cast<ColumnInt32 &>(column).insertValue(value);
             break;
         }
         case ValueType::vtInt64:
         {
-            cass_int64_t value = 0;
+            cass_int64_t value;
             cass_value_get_int64(cass_value, &value);
             assert_cast<ColumnInt64 &>(column).insertValue(value);
             break;
         }
         case ValueType::vtFloat32:
         {
-            cass_float_t value = 0;
+            cass_float_t value;
             cass_value_get_float(cass_value, &value);
             assert_cast<ColumnFloat32 &>(column).insertValue(value);
             break;
         }
         case ValueType::vtFloat64:
         {
-            cass_double_t value = 0;
+            cass_double_t value;
             cass_value_get_double(cass_value, &value);
             assert_cast<ColumnFloat64 &>(column).insertValue(value);
             break;
@@ -114,21 +114,21 @@ void CassandraSource::insertValue(IColumn & column, ValueType type, const CassVa
         case ValueType::vtString:
         {
             const char * value = nullptr;
-            size_t value_length = 0;
+            size_t value_length;
             cass_value_get_string(cass_value, &value, &value_length);
             assert_cast<ColumnString &>(column).insertData(value, value_length);
             break;
         }
         case ValueType::vtDate:
         {
-            cass_uint32_t value = 0;
+            cass_uint32_t value;
             cass_value_get_uint32(cass_value, &value);
             assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value));
             break;
         }
         case ValueType::vtDateTime:
         {
-            cass_int64_t value = 0;
+            cass_int64_t value;
             cass_value_get_int64(cass_value, &value);
             assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value / 1000));
             break;
@@ -137,7 +137,7 @@ void CassandraSource::insertValue(IColumn & column, ValueType type, const CassVa
         {
             CassUuid value;
             cass_value_get_uuid(cass_value, &value);
-            std::array<char, CASS_UUID_STRING_LENGTH> uuid_str{};
+            std::array<char, CASS_UUID_STRING_LENGTH> uuid_str;
             cass_uuid_string(value, uuid_str.data());
             assert_cast<ColumnUUID &>(column).insert(parse<UUID>(uuid_str.data(), uuid_str.size()));
             break;
@@ -164,7 +164,7 @@ Chunk CassandraSource::generate()
     cassandraWaitAndCheck(result_future);
     CassResultPtr result = cass_future_get_result(result_future);
 
-    chassert(cass_result_column_count(result) == columns.size());
+    assert(cass_result_column_count(result) == columns.size());
 
     assertTypes(result);
 
@@ -196,7 +196,7 @@ Chunk CassandraSource::generate()
     }
 
     size_t num_rows = columns.front()->size();
-    chassert(cass_result_row_count(result) == num_rows);
+    assert(cass_result_row_count(result) == num_rows);
 
     return Chunk(std::move(columns), num_rows);
 }

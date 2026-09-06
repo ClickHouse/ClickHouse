@@ -230,7 +230,7 @@ void EphemeralLocksInAllPartitions::unlock()
     }
 
     for (auto & future : futures)
-        (void)future.get();
+        future.get();
 
     locks.clear();
     zookeeper = nullptr;

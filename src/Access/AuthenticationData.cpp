@@ -12,10 +12,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/LRUCache.h>
 
-#include <fmt/format.h>
-
-#include <algorithm>
-
 #include <boost/algorithm/hex.hpp>
 #include <Poco/SHA1Engine.h>
 
@@ -364,7 +360,7 @@ void AuthenticationData::addSSLCertificateSubject(X509Certificate::Subjects::Typ
 }
 #endif
 
-boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST(bool attach_mode) const
+boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 {
     auto node = make_intrusive<ASTAuthenticationData>();
     auto auth_type = getType();
@@ -473,52 +469,23 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST(bool attac
 
     if (valid_until)
     {
-        if (attach_mode)
-        {
-            /// The serialized entity is parsed back by another server (replicated access storage) or
-            /// after a restart (disk access storage), possibly under a different default time zone and
-            /// possibly by an older server version. The deadline is written as a Unix timestamp string,
-            /// which denotes the same instant regardless of the time zone, and which older versions parse
-            /// the same way (their datetime reader treats an all-digit string as a Unix timestamp),
-            /// whereas a datetime string would be reinterpreted in each server's own time zone. The value
-            /// is zero-padded to 10 digits because the datetime reader rejects a timestamp of fewer than
-            /// 5 digits as ambiguous.
-            ///
-            /// A pre-1970 (negative) deadline is normalized to the smallest expired instant (`1`) before
-            /// serialization. Older or downgraded servers cannot represent a pre-1970 instant and resolve
-            /// it to `0`, which is the "no expiration" sentinel, so serializing a negative deadline in a
-            /// datetime form would let an already-expired credential come back as non-expiring - a
-            /// fail-open downgrade. Every deadline in the past is equivalent (the credential is expired),
-            /// so this loses no meaningful information. Symmetrically, a deadline above
-            /// `MAX_VALID_UNTIL_TIME` would be displayed clamped on a positive-offset node (see the
-            /// constant's declaration), so it is clamped down - also fail-closed: the credential expires
-            /// earlier, never later. The query path already normalizes both ends (see
-            /// `getValidUntilFromAST`); these guards also fail-close an `AuthenticationData` object built
-            /// directly via `setValidUntil`, without going through query parsing.
-            node->setValidUntil(
-                make_intrusive<ASTLiteral>(fmt::format("{:010}", std::clamp<time_t>(valid_until, 1, MAX_VALID_UNTIL_TIME))));
-        }
-        else
-        {
-            /// For display (`SHOW CREATE USER`), format the deadline in the server time zone.
-            WriteBufferFromOwnString out;
-            writeDateTimeText(valid_until, out);
+        WriteBufferFromOwnString out;
+        writeDateTimeText(valid_until, out);
 
-            node->setValidUntil(make_intrusive<ASTLiteral>(out.str()));
-        }
+        node->valid_until = make_intrusive<ASTLiteral>(out.str());
     }
 
     return node;
 }
 
 
-AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now)
+AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate)
 {
     time_t valid_until = 0;
 
     if (query.valid_until)
     {
-        valid_until = getValidUntilFromAST(query.valid_until, context, query.valid_until_is_interval, now);
+        valid_until = getValidUntilFromAST(query.valid_until, context);
     }
 
     if (query.type && query.type == AuthenticationType::NO_PASSWORD)
@@ -531,7 +498,6 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
     if (query.type && query.type == AuthenticationType::NO_AUTHENTICATION)
     {
         AuthenticationData auth_data{AuthenticationType::NO_AUTHENTICATION};
-        auth_data.setValidUntil(valid_until);
         return auth_data;
     }
 
@@ -542,7 +508,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         AuthenticationData auth_data(*query.type);
         std::vector<SSHKey> keys;
 
-        size_t args_size = query.numPayloadChildren();
+        size_t args_size = query.children.size();
         for (size_t i = 0; i < args_size; ++i)
         {
             const auto & ssh_key = query.children[i]->as<ASTPublicSSHKey &>();
@@ -567,7 +533,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 #endif
     }
 
-    size_t args_size = query.numPayloadChildren();
+    size_t args_size = query.children.size();
     ASTs args(args_size);
     for (size_t i = 0; i < args_size; ++i)
         args[i] = evaluateConstantExpressionAsLiteral(query.children[i], context);
@@ -585,7 +551,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         String value = checkAndGetLiteralArgument<String>(args[0], "password");
 
-        AuthenticationType current_type = {};
+        AuthenticationType current_type;
 
         if (query.type)
             current_type = *query.type;

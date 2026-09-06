@@ -28,16 +28,6 @@ SerializationMapKeyValue::SerializationMapKeyValue(
 {
 }
 
-SerializationPtr SerializationMapKeyValue::create(
-    const SerializationPtr & value_serialization_,
-    const SerializationPtr & map_nested_serialization_,
-    MergeTreeMapSerializationVersion serialization_version_,
-    ColumnPtr key_,
-    const DataTypePtr & nested_type_)
-{
-    return std::shared_ptr<ISerialization>(new SerializationMapKeyValue(value_serialization_, map_nested_serialization_, serialization_version_, std::move(key_), nested_type_));
-}
-
 /// Deserialization state for reading a single key's value from a Map.
 /// For WITH_BUCKETS format, reads only one bucket (the one containing the requested key).
 struct DeserializeBinaryBulkStateMapKeyValue : public ISerialization::DeserializeBinaryBulkState
@@ -61,20 +51,6 @@ struct DeserializeBinaryBulkStateMapKeyValue : public ISerialization::Deserializ
         new_state->reading_info_state = reading_info_state ? reading_info_state->clone() : nullptr;
         new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
         return new_state;
-    }
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (nested_column)
-            callback(nested_column);
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (reading_info_state)
-            callback(reading_info_state);
-        if (nested_state)
-            callback(nested_state);
     }
 };
 

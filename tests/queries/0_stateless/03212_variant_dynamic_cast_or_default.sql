@@ -3,7 +3,6 @@ set use_variant_as_common_type = 1;
 set allow_experimental_dynamic_type = 1;
 set allow_suspicious_low_cardinality_types = 1;
 set session_timezone = 'UTC';
-set cast_string_to_date_time_mode = 'basic';
 
 select accurateCastOrDefault(variant, 'UInt32'), multiIf(number % 4 == 0, NULL, number % 4 == 1, number, number % 4 == 2, 'str_' || toString(number), range(number)) as variant from numbers(8);
 select accurateCastOrNull(variant, 'UInt32'), multiIf(number % 4 == 0, NULL, number % 4 == 1, number, number % 4 == 2, 'str_' || toString(number), range(number)) as variant from numbers(8);
@@ -12,9 +11,7 @@ select accurateCastOrDefault(dynamic, 'UInt32'), multiIf(number % 4 == 0, NULL, 
 select accurateCastOrNull(dynamic, 'UInt32'), multiIf(number % 4 == 0, NULL, number % 4 == 1, number, number % 4 == 2, 'str_' || toString(number), range(number))::Dynamic as dynamic from numbers(8);
 
 drop table if exists t;
--- Pin map_serialization_version to 'basic' to prevent non-deterministic Map key ordering
--- when randomized bucket settings route Map serialization through hash buckets.
-create table t (id UInt64 DEFAULT generateSerialID('03212_variant_seq'), d Dynamic) engine=MergeTree order by id settings map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
+create table t (id UInt64 DEFAULT generateSerialID('03212_variant_seq'), d Dynamic) engine=MergeTree order by id;
 
 -- Integer types: signed and unsigned integers (UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256)
 INSERT INTO t (d) VALUES (-128::Int8), (-127::Int8), (-1::Int8), (0::Int8), (1::Int8), (126::Int8), (127::Int8);
