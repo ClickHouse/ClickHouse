@@ -2,6 +2,7 @@
 -- `std::is_signed_v`, which is `false` for `Int128` because `Int128` is a class type. The compiled
 -- path then used unsigned instructions and disagreed with the interpreted path.
 -- https://github.com/ClickHouse/ClickHouse/issues/117614
+-- `lp`/`gp` reach Int128 by promotion (Int32 + UInt64), so `nativeCast` widens both operands first.
 
 SELECT 'Int128 JIT off' AS tag,
     bitNot(toInt128(c0)) AS x,
@@ -12,7 +13,10 @@ SELECT 'Int128 JIT off' AS tag,
     midpoint(x, materialize(toInt128(255))) AS mp,
     midpoint(x, materialize(toInt128(1))) AS mn,
     midpoint(bitAnd(x, materialize(toInt128(255))), materialize(toInt128(3))) AS mq,
-    avg2(x, materialize(toInt128(-1))) AS a2
+    avg2(x, materialize(toInt128(-1))) AS a2,
+    bitNot(toInt32(c0)) AS y,
+    least(y, toUInt64(c0)) AS lp,
+    greatest(y, toUInt64(c0)) AS gp
 FROM values('c0 UInt8', 7, 127, 230) ORDER BY c0
 SETTINGS compile_expressions = 0, min_count_to_compile_expression = 0;
 
@@ -25,7 +29,10 @@ SELECT 'Int128 JIT on' AS tag,
     midpoint(x, materialize(toInt128(255))) AS mp,
     midpoint(x, materialize(toInt128(1))) AS mn,
     midpoint(bitAnd(x, materialize(toInt128(255))), materialize(toInt128(3))) AS mq,
-    avg2(x, materialize(toInt128(-1))) AS a2
+    avg2(x, materialize(toInt128(-1))) AS a2,
+    bitNot(toInt32(c0)) AS y,
+    least(y, toUInt64(c0)) AS lp,
+    greatest(y, toUInt64(c0)) AS gp
 FROM values('c0 UInt8', 7, 127, 230) ORDER BY c0
 SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0;
 
@@ -65,6 +72,10 @@ SELECT avg2(bitNot(a), b)
 FROM values('a Int128, b Int128, sh UInt8, d Int64, e Int64', (7, 0, 3, 7, 0), (127, 0, 3, 127, 0), (230, 0, 3, 230, 0))
 SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05097_live_avg2' FORMAT Null;
 
+SELECT least(bitNot(f), u)
+FROM values('f Int32, u UInt64', (7, 0), (127, 0), (230, 0))
+SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05097_live_promoted' FORMAT Null;
+
 SELECT plus(bitNot(d), e)
 FROM values('a Int128, b Int128, sh UInt8, d Int64, e Int64', (7, 0, 3, 7, 0), (127, 0, 3, 127, 0), (230, 0, 3, 230, 0))
 SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05097_live_control' FORMAT Null;
@@ -89,4 +100,6 @@ SELECT
     (SELECT compiled FROM shapes WHERE log_comment = '05097_live_midpoint')
         = (SELECT compiled FROM shapes WHERE log_comment = '05097_live_control'),
     (SELECT compiled FROM shapes WHERE log_comment = '05097_live_avg2')
+        = (SELECT compiled FROM shapes WHERE log_comment = '05097_live_control'),
+    (SELECT compiled FROM shapes WHERE log_comment = '05097_live_promoted')
         = (SELECT compiled FROM shapes WHERE log_comment = '05097_live_control');
