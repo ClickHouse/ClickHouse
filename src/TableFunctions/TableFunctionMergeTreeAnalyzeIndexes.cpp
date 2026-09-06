@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/NamesAndTypes.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -45,37 +46,58 @@ namespace ErrorCodes
 
 /// Both `['a', 'b']` and `array('a', 'b')` are parsed as `_CAST(['a', 'b'], 'Array(String)')` with analyzer.
 /// While for non-analyzer there is no _CAST
-static Strings extractParts(const ASTPtr & argument, const ContextPtr & context)
+static std::optional<Strings> tryExtractParts(const ASTPtr & argument, const ContextPtr & context)
 {
     ASTPtr array = argument;
     if (const auto * func = array->as<ASTFunction>())
     {
-        if (func->name == "_CAST" && func->arguments) /// _CAST([], 'Array(String)')
+        if (func->name == "_CAST" && func->arguments && func->arguments->children.size() == 2) /// _CAST([], 'Array(String)')
             array = func->arguments->children.at(0);
         else if (func->name == "array") /// array(ExpressionList)
             array = func->arguments;
         else
-            array = ASTPtr();
+            return {};
     }
 
-    if (array)
+    if (!array)
+        return {};
+
+    if (const auto * literal = array->as<ASTLiteral>())
     {
-        if (const auto * literal = array->as<ASTLiteral>())
-        {
-            Strings result;
-            for (const auto & element : literal->value.safeGet<Array>())
-                result.push_back(element.safeGet<String>());
-            return result;
-        }
+        if (literal->value.getType() != Field::Types::Array)
+            return {};
 
-        if (const auto * expr_list = array->as<ASTExpressionList>())
+        Strings result;
+        for (const auto & element : literal->value.safeGet<Array>())
         {
-            Strings result;
-            for (const auto & element : expr_list->children)
-                result.push_back(evaluateConstantExpressionAsLiteral(element, context)->as<ASTLiteral &>().value.safeGet<String>());
-            return result;
+            if (element.getType() != Field::Types::String)
+                return {};
+            result.push_back(element.safeGet<String>());
         }
+        return result;
     }
+
+    if (const auto * expr_list = array->as<ASTExpressionList>())
+    {
+        Strings result;
+        for (const auto & element : expr_list->children)
+        {
+            ASTPtr element_literal = evaluateConstantExpressionAsLiteral(element, context);
+            const Field & field = element_literal->as<ASTLiteral &>().value;
+            if (field.getType() != Field::Types::String)
+                return {};
+            result.push_back(field.safeGet<String>());
+        }
+        return result;
+    }
+
+    return {};
+}
+
+static Strings extractParts(const ASTPtr & argument, const ContextPtr & context)
+{
+    if (auto parts = tryExtractParts(argument, context))
+        return std::move(*parts);
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parts must be an array of strings, got: {}", argument->formatForLogging());
 }
@@ -205,26 +227,64 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const 
     auto optimization = checkAndGetLiteralArgument<String>(args[start_index++], "extra_optimization");
     if (optimization == "vector_search_index_analysis")
     {
-        auto cast_node = args[start_index++]->children.at(0);
-        auto vector_search_args = evaluateConstantExpressionAsLiteral(cast_node->children.at(0), context)->as<ASTLiteral &>().value.safeGet<Array>();
+        const ASTPtr & args_array = args[start_index++];
+        /// Owns the literal that `args_field` and `vector_search_args` point into.
+        ASTPtr args_array_literal = evaluateConstantExpressionAsLiteral(args_array, context);
+        const Field & args_field = args_array_literal->as<ASTLiteral &>().value;
+        if (args_field.getType() != Field::Types::Array)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Argument 'args_array' of optimization 'vector_search_index_analysis' must be a constant expression "
+                "of type `Array`, got {} of type {}", args_array->formatForErrorMessage(), args_field.getTypeName());
+        const Array & vector_search_args = args_field.safeGet<Array>();
         if (vector_search_args.size() != 6)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "vector_search_index_analysis requires 6 arguments");
 
-        Array field_array = vector_search_args[3].safeGet<Array>();
-        VectorWithMemoryTracking<Float64> reference_vector;
-        for (const auto & field_array_value : field_array)
+        auto get_string = [&](size_t index, std::string_view element_name)
         {
-            Float64 float64 = field_array_value.safeGet<Float64>();
-            reference_vector.push_back(float64);
+            const Field & element = vector_search_args[index];
+            if (element.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Element {} ({}) of argument 'args_array' of optimization 'vector_search_index_analysis' "
+                    "must be of type `String`, got type {}", index, element_name, element.getTypeName());
+            return element.safeGet<String>();
+        };
+
+        /// A `Field` stores a boolean as an integer, so the flags accept the same types as the limit.
+        auto get_integer = [&](size_t index, std::string_view element_name)
+        {
+            const Field & element = vector_search_args[index];
+            Field::Types::Which type = element.getType();
+            if (type != Field::Types::UInt64 && type != Field::Types::Int64 && type != Field::Types::Bool)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Element {} ({}) of argument 'args_array' of optimization 'vector_search_index_analysis' "
+                    "must be of an integer type, got type {}", index, element_name, element.getTypeName());
+            return element.safeGet<UInt64>();
+        };
+
+        const Field & reference_vector_field = vector_search_args[3];
+        if (reference_vector_field.getType() != Field::Types::Array)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Element 3 (search vector) of argument 'args_array' of optimization 'vector_search_index_analysis' "
+                "must be of type `Array`, got type {}", reference_vector_field.getTypeName());
+
+        VectorWithMemoryTracking<Float64> reference_vector;
+        for (const auto & field_array_value : reference_vector_field.safeGet<Array>())
+        {
+            Field::Types::Which type = field_array_value.getType();
+            if (type != Field::Types::Float64 && type != Field::Types::UInt64 && type != Field::Types::Int64)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Element 3 (search vector) of argument 'args_array' of optimization 'vector_search_index_analysis' "
+                    "must be an array of numbers, got an element of type {}", field_array_value.getTypeName());
+            reference_vector.push_back(applyVisitor(FieldVisitorConvertToNumber<Float64>(), field_array_value));
         }
 
-        vector_search_parameters = VectorSearchParameters{vector_search_args[0].safeGet<String>(), /// column
-            vector_search_args[1].safeGet<String>(), /// distance function
-            vector_search_args[2].safeGet<UInt64>(), /// limit
+        vector_search_parameters = VectorSearchParameters{get_string(0, "column"),
+            get_string(1, "distance function"),
+            get_integer(2, "limit"),
             reference_vector, /// search vector
-            static_cast<bool>(vector_search_args[4].safeGet<bool>()), /// additional filters
-            static_cast<bool>(vector_search_args[5].safeGet<bool>())}; /// return distances
+            static_cast<bool>(get_integer(4, "additional filters")),
+            static_cast<bool>(get_integer(5, "return distances"))};
     }
     else
     {
