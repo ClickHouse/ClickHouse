@@ -27,7 +27,9 @@ public:
         SharedHeader header_,
         Params params_,
         const FormatSettings & format_settings_,
-        bool yield_strings_);
+        bool yield_strings_,
+        bool with_names_ = false,
+        bool with_types_ = false);
 
     String getName() const override { return "JSONEachRowRowInputFormat"; }
     void resetParser() override;
@@ -80,6 +82,10 @@ private:
     std::vector<std::pair<std::string_view, size_t>> prev_positions;
 
     bool yield_strings;
+    bool with_names;
+    bool with_types;
+
+    void validateTypesFromHeader(const std::vector<String> & column_names, const std::vector<String> & type_names);
 
 protected:
     virtual bool checkEndOfData(bool is_first_row);
@@ -102,7 +108,9 @@ protected:
 class JSONEachRowSchemaReader : public IRowWithNamesSchemaReader
 {
 public:
-    JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+    JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, bool with_names_ = false, bool with_types_ = false);
+
+    NamesAndTypesList readSchema() override;
 
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
@@ -110,6 +118,8 @@ private:
     void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
     void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
+    bool with_names;
+    bool with_types;
     bool first_row = true;
     bool data_in_square_brackets = false;
     JSONInferenceInfo inference_info;

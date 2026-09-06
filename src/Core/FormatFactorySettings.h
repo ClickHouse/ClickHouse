@@ -120,7 +120,9 @@ Supported formats:
 - [CSVWithNamesAndTypes](/reference/formats/CSV/CSVWithNamesAndTypes)
 - [TabSeparatedWithNamesAndTypes](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes)
 - [JSONCompactEachRowWithNamesAndTypes](/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes)
+- [JSONEachRowWithNamesAndTypes](/reference/formats/JSON/JSONEachRowWithNamesAndTypes)
 - [JSONCompactStringsEachRowWithNamesAndTypes](/reference/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes)
+- [JSONStringsEachRowWithNamesAndTypes](/reference/formats/JSON/JSONStringsEachRowWithNamesAndTypes)
 - [RowBinaryWithNamesAndTypes](/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)
 - [CustomSeparatedWithNamesAndTypes](/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)
 
