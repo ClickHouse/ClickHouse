@@ -22,6 +22,7 @@ namespace DB
  * format_version - parquet format version, always 1.0 or 2.6
  * total_uncompressed_size - total bytes size of the data, calculated as the sum of total_uncompressed_size from all row groups
  * total_compressed_size - total compressed bytes size of the data, calculated as the sum of total_compressed_size from all row groups
+ * key_value_metadata - the map with custom key-value metadata from the file (empty if the file doesn't contain any key-value metadata)
  * columns - the list of columns metadata with the next structure:
  *     name - column name
  *     path - column path (differs from name for nested column)
@@ -70,6 +71,7 @@ private:
         is_stopped = 1;
     }
 
+    void fillKeyValueMetadata(const std::shared_ptr<parquet::FileMetaData> & metadata, MutableColumnPtr & column);
     void fillColumnsMetadata(const std::shared_ptr<parquet::FileMetaData> & metadata, MutableColumnPtr & column);
     void fillRowGroupsMetadata(const std::shared_ptr<parquet::FileMetaData> & metadata, MutableColumnPtr & column);
     void fillColumnChunksMetadata(const std::unique_ptr<parquet::RowGroupMetaData> & row_group_metadata, IColumn & column);
