@@ -1216,15 +1216,13 @@ void MergeTreeData::checkProperties(
                         const IndexDescription * old_index = nullptr;
                         /// The create path and the projection recursion pass the same metadata object as both
                         /// arguments, so an index found there is the one being declared and nothing can be inherited.
+                        /// Definitions are not compared: `RENAME COLUMN` rewrites an index's AST without redeclaring it.
                         if (&old_metadata != &new_metadata)
                             for (const auto & candidate : old_metadata.secondary_indices)
                                 if (candidate.name == index.name)
                                     old_index = &candidate;
 
-                        const bool inherited = old_index && old_index->definition_ast && index.definition_ast
-                            && old_index->definition_ast->getTreeHash(/*ignore_aliases=*/true)
-                                == index.definition_ast->getTreeHash(/*ignore_aliases=*/true)
-                            && tryEvaluateIndexExpression(*old_index);
+                        const bool inherited = old_index && tryEvaluateIndexExpression(*old_index);
 
                         if (!inherited)
                             std::rethrow_exception(failure);

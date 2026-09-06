@@ -36,9 +36,16 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO ${ORD}.g VALUES ('b', 2, 0)" < /dev/null
 $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE ${ORD}.g FINAL" && echo 'merge ok'
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM ${ORD}.g"
 
-echo 'D6 redeclaring the index under its own name is not inherited'
+echo 'D6 an already-unevaluable index of the same name is not re-checked'
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE ${ORD}.g2 (c0 String, c1 Int8, INDEX i0 c0 = c1 TYPE set(0)) ENGINE = MergeTree ORDER BY c1"
-$CLICKHOUSE_CLIENT -q "ALTER TABLE ${ORD}.g2 DROP INDEX i0, ADD INDEX i0 c0 = c1 TYPE minmax" 2>&1 | grep -c 'NO_COMMON_TYPE'
+$CLICKHOUSE_CLIENT -q "ALTER TABLE ${ORD}.g2 DROP INDEX i0, ADD INDEX i0 c0 = c1 TYPE minmax" && echo ok
+$CLICKHOUSE_CLIENT -q "SELECT type FROM system.data_skipping_indices WHERE database = '${ORD}' AND table = 'g2' AND name = 'i0'"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE ${ORD}.g2 ADD COLUMN x UInt8" && echo ok
+
+echo 'D7 renaming a column the index references is still allowed'
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE ${ORD}.g3 (c0 String, c1 Int8, INDEX i0 c0 = c1 TYPE set(0)) ENGINE = MergeTree ORDER BY c1"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE ${ORD}.g3 RENAME COLUMN c0 TO c2" && echo ok
+$CLICKHOUSE_CLIENT -q "SELECT expr FROM system.data_skipping_indices WHERE database = '${ORD}' AND table = 'g3' AND name = 'i0'"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE ${ORD}.g3 DROP INDEX i0" && echo ok
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${ORD} SYNC"

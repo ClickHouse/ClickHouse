@@ -12,6 +12,11 @@ D5 dropping it repairs the table
 ok
 merge ok
 2
-D6 redeclaring the index under its own name is not inherited
-1
+D6 an already-unevaluable index of the same name is not re-checked
+ok
+minmax
+ok
+D7 renaming a column the index references is still allowed
+ok
+c2 = c1
 ok
