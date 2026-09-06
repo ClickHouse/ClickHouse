@@ -50,6 +50,7 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -910,6 +911,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, create.as_table);
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
+
+        /// An `Alias` reports its target's metadata, so copying that metadata requires the privilege on the
+        /// target that describing the target requires.
+        if (const auto * alias = as_storage->as<StorageAlias>();
+            alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
+                            StorageID{as_database_name, create.as_table}.getNameForLogs());
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
