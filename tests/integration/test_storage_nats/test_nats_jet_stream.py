@@ -1440,7 +1440,20 @@ def _wait_for_ack_pending(expected, consumer_name = "test_consumer", time_limit_
             consumer_name, num_ack_pending, expected))
 
 
-def test_nats_jet_stream_skipped_broken_message_is_not_redelivered_after_reconnect(nats_cluster):
+# The recovery keys on two things, and the two restarts below reach one each: a hard kill answers
+# nothing, so only the reconnect count reports it, while a graceful shutdown answers the parked pull
+# request and the client closes the subscription in response. What the recovery does with the
+# messages the consumer holds - and with the ones `nats_skip_broken_messages` passed over - has to
+# be the same on both, and the closed-subscription case is the one where it acknowledges or hands
+# back messages through a subscription the client has already marked closed.
+BROKER_RESTARTS = [
+    pytest.param(nats_helpers.hard_kill_nats, id = "hard_kill"),
+    pytest.param(nats_helpers.kill_nats, id = "graceful_restart"),
+]
+
+
+@pytest.mark.parametrize("kill", BROKER_RESTARTS)
+def test_nats_jet_stream_skipped_broken_message_is_not_redelivered_after_reconnect(nats_cluster, kill):
     # A cycle that has emitted no rows is not a cycle that has consumed nothing:
     # `nats_skip_broken_messages` makes a message that yields no rows an ordinary outcome, and
     # `consume` takes the message before it is parsed. Reconnect recovery hands back to the broker
@@ -1486,7 +1499,7 @@ def test_nats_jet_stream_skipped_broken_message_is_not_redelivered_after_reconne
         cluster, "test_stream", "test_subject", [json.dumps({"key": "not a number", "value": "neither"})]))
     _wait_for_ack_pending(1)
 
-    _restart_nats(nats_cluster, kill = nats_helpers.hard_kill_nats)
+    _restart_nats(nats_cluster, kill = kill)
 
     # The restart lands inside the same cycle, while the skipped message is still held: the wait
     # above read that state off the broker, and the flush interval is far longer than the restart
@@ -1512,7 +1525,8 @@ def test_nats_jet_stream_skipped_broken_message_is_not_redelivered_after_reconne
         "{} deliveries for two messages".format(consumer_seq))
 
 
-def test_nats_jet_stream_direct_select_resumes_after_skipped_broken_message(nats_cluster):
+@pytest.mark.parametrize("kill", BROKER_RESTARTS)
+def test_nats_jet_stream_direct_select_resumes_after_skipped_broken_message(nats_cluster, kill):
     # A direct `SELECT` owns its consumer for the whole query, so the query itself has to notice a
     # reconnect and replace the stale pull subscription. A message it passed over because of
     # `nats_skip_broken_messages` must not stand in the way of that: nothing is waiting for it to
@@ -1556,7 +1570,7 @@ def test_nats_jet_stream_direct_select_resumes_after_skipped_broken_message(nats
     )
     _wait_for_ack_pending(1)
 
-    _restart_nats(nats_cluster, kill = nats_helpers.hard_kill_nats)
+    _restart_nats(nats_cluster, kill = kill)
 
     asyncio.run(publish_messages(cluster, "test_stream", "test_subject", [json.dumps({"key": 42, "value": 42})]))
     assert TSV(select.get_answer()) == TSV("42")
