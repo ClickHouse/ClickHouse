@@ -563,6 +563,8 @@ public:
 
     bool isMergeTree() const override { return true; }
 
+    bool supportsBernoulliSampling() const override { return true; }
+
     bool supportsPrewhere() const override { return true; }
 
     /// The contract is std::nullopt here, so this only matters when a wrapper (`Merge`,

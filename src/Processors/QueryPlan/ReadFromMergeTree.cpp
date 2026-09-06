@@ -64,6 +64,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
+#include <Storages/MergeTree/BernoulliGranuleFilter.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
@@ -74,6 +75,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
@@ -2023,6 +2025,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     part.part_starting_offset_in_query,
                     std::move(ranges_to_get_from_part),
                     part.read_hints);
+                /// The Bernoulli sampling filter is per-part read state (like `read_hints`) and must
+                /// survive splitting a part across streams, otherwise the sample is silently dropped.
+                new_parts.back().bernoulli_filter = part.bernoulli_filter;
             }
 
             split_parts_and_ranges.emplace_back(std::move(new_parts));
@@ -2420,6 +2425,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     part_it->part_starting_offset_in_query,
                     part_it->ranges,
                     part_it->read_hints);
+                /// Carry the per-part Bernoulli sampling filter through the FINAL reconstruction,
+                /// otherwise `FINAL SAMPLE` reaches the readers without it and returns unsampled rows.
+                new_parts.back().bernoulli_filter = part_it->bernoulli_filter;
                 current_ranges_marks += part_it->getMarksCount();
             }
 
@@ -3390,7 +3398,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         metadata_snapshot->getColumns().getAllPhysical(),
         res_parts,
         indexes->key_condition,
-        data,
         metadata_snapshot,
         context_,
         log);
@@ -3591,8 +3598,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         std::optional<size_t> condition_hash;
         if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal()
                 && !vector_search_parameters.has_value() /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
-                && !result.sampling.use_sampling)        /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
+                && !result.sampling.use_sampling         /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
                                                          /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
+                && !result.sampling.use_bernoulli_sampling) /// Same for Bernoulli sampling: keep sampled reads out of the cache entirely.
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
@@ -4187,7 +4195,7 @@ ReadFromMergeTree::AnalysisResult & ReadFromMergeTree::getAnalysisResultImpl() c
 
 bool ReadFromMergeTree::isQueryWithSampling() const
 {
-    if (context->getSettingsRef()[Setting::parallel_replicas_count] > 1 && data.supportsSampling())
+    if (context->getSettingsRef()[Setting::parallel_replicas_count] > 1 && storage_snapshot->metadata->hasSamplingKey())
         return true;
 
     if (query_info.table_expression_modifiers)
@@ -4954,7 +4962,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
     /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
-    if (result.sampling.use_sampling)
+    /// Bernoulli sampling must be excluded the same way: it drops rows inside the reader before the WHERE
+    /// `FilterTransform` runs, so a mark could be cached as non-matching after only its sampled subset was
+    /// inspected, making a later non-SAMPLE query with the same predicate skip rows it should return.
+    /// (Consulting the cache stays sound for sampled reads: entries are written only by unsampled reads and
+    /// assert "no row of this mark matches the predicate", which holds for any sampled subset as well.)
+    if (result.sampling.use_sampling || result.sampling.use_bernoulli_sampling)
         reader_settings.use_query_condition_cache = false;
 
     if (filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
@@ -5192,6 +5205,24 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             std::move(projection_index_read_desc.read_ranges),
             std::move(index_read_result_pool),
             std::move(part_remaining_marks));
+    }
+
+    /// Pre-compute per-part Bernoulli filters before distributing work to threads.
+    /// This ensures thread-count-independent determinism: the same seed always
+    /// produces the same sampled rows regardless of max_threads.
+    if (result.sampling.use_bernoulli_sampling)
+    {
+        UInt64 base_seed = *result.sampling.bernoulli_seed;
+
+        for (auto & part_with_ranges : result.parts_with_ranges)
+        {
+            UInt64 part_seed = intHash64(base_seed ^ part_with_ranges.part_index_in_query);
+            part_with_ranges.bernoulli_filter = BernoulliGranuleFilter::build(
+                *part_with_ranges.data_part->index_granularity,
+                part_with_ranges.data_part->rows_count,
+                result.sampling.bernoulli_probability,
+                part_seed);
+        }
     }
 
     Pipe pipe;

@@ -1,0 +1,6 @@
+random seed is shared with a remote read
+1
+the same holds for two remote reads
+1
+an explicit seed is still honoured across the same pair of reads
+1

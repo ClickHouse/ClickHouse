@@ -291,7 +291,6 @@ public:
         NamesAndTypesList available_real_columns,
         const RangesInDataParts & parts,
         ConditionTemplate<KeyCondition>::Ptr & key_condition,
-        const MergeTreeData & data,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         LoggerPtr log);

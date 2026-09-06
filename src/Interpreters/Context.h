@@ -621,6 +621,10 @@ protected:
     /// field and does not propagate through settings copies (e.g. getSQLSecurityOverriddenContext),
     /// so view-inner queries on the same node are unaffected.
     bool positional_arguments_already_resolved = false;
+
+    /// Lazily generated once for every query context when Bernoulli sampling uses seed zero.
+    mutable std::optional<UInt64> bernoulli_sample_seed;
+
     /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
@@ -1430,6 +1434,8 @@ public:
     ContextMutablePtr getQueryContext() const;
     bool hasQueryContext() const { return !query_context.expired(); }
     bool isInternalSubquery() const;
+
+    UInt64 getBernoulliSampleSeed() const;
 
     ContextMutablePtr getSessionContext() const;
     bool hasSessionContext() const { return !session_context.expired(); }

@@ -133,6 +133,9 @@ public:
     /// Returns true if the storage supports queries with the SAMPLE section.
     virtual bool supportsSampling() const;
 
+    /// Returns true if the storage supports experimental Bernoulli sampling without a SAMPLE BY key.
+    virtual bool supportsBernoulliSampling() const { return false; }
+
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
 
