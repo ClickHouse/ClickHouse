@@ -844,6 +844,26 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     for (const auto & part : parts)
     {
+        /// While a `RENAME COLUMN` is still a pending metadata mutation, reads apply the rename on the
+        /// fly, but the part's statistics are stored under the names the columns have on disk. An
+        /// estimate looked up by the queried name then describes a different column's data, so a part
+        /// whose read renames anything is not prunable. Renames are metadata mutations and appear in
+        /// neither `hasDataMutations` nor `getAllUpdatedColumns`, so the gate above does not see them.
+        if (mutations_snapshot && mutations_snapshot->hasMetadataMutations())
+        {
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+            );
+
+            if (!alter_conversions->getRenameMap().empty())
+            {
+                res_parts.push_back(part);
+                continue;
+            }
+        }
+
         auto estimates = part.data_part->getEstimates();
         try
         {
