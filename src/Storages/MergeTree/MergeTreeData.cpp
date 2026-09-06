@@ -2575,7 +2575,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     const String & part_name,
     const DiskPtr & part_disk_ptr,
     MergeTreeDataPartState to_state,
-    DB::SharedMutex & part_loading_mutex)
+    DB::SharedMutex & part_loading_mutex,
+    bool retry_not_found)
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::loadDataPart");
     LOG_TRACE(log, "Loading {} part {} from disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
@@ -2624,6 +2625,17 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
             fs::path(getFullPathOnDisk(part_disk_ptr)) / part_name, part_size_str);
     };
 
+    /// A single not-found cannot distinguish a momentary blip from a really deleted object,
+    /// so retry while attempts remain. Active only: the other states' callers already handle
+    /// a throw their own way (`loadOutdatedDataParts` terminates the server).
+    auto should_rethrow = [&](std::exception_ptr exception_ptr)
+    {
+        if (isRetryableException(exception_ptr))
+            return true;
+
+        return retry_not_found && to_state == DataPartState::Active && isObjectStorageNotFoundException(exception_ptr);
+    };
+
     try
     {
         res.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings(), PartDirIntent::OpenExisting)
@@ -2635,7 +2647,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     {
         /// Don't count the part as broken if there was a retryalbe error
         /// during loading, such as "not enough memory" or network error.
-        if (isRetryableException(std::current_exception()))
+        if (should_rethrow(std::current_exception()))
             throw;
 
         LOG_DEBUG(log, "Failed to load data part {} with exception: {}", part_name, getExceptionMessage(std::current_exception(), false));
@@ -2651,7 +2663,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     {
         /// Don't count the part as broken if there was a retryalbe error
         /// during loading, such as "not enough memory" or network error.
-        if (isRetryableException(std::current_exception()))
+        if (should_rethrow(std::current_exception()))
             throw;
 
         mark_broken();
@@ -2736,11 +2748,15 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     {
         try
         {
-            return loadDataPart(part_info, part_name, part_disk_ptr, to_state, part_loading_mutex);
+            /// The final attempt has nothing left to absorb a not-found, so loadDataPart's
+            /// part-reading catches settle it there instead of rethrowing into this loop.
+            bool retry_not_found = try_no + 1 < max_tries;
+            return loadDataPart(part_info, part_name, part_disk_ptr, to_state, part_loading_mutex, retry_not_found);
         }
         catch (...)
         {
-            if (isRetryableException(std::current_exception()))
+            if (isRetryableException(std::current_exception())
+                || (to_state == DataPartState::Active && isObjectStorageNotFoundException(std::current_exception())))
                 handle_exception(std::current_exception(),try_no);
             else
                 throw;
