@@ -1,0 +1,51 @@
+inner/any non-leftmost: reads from remote replicas
+0
+inner/any non-leftmost under a left leftmost join: reads from remote replicas
+0
+array join then inner/any: reads from remote replicas
+0
+array join then all/inner: reads from remote replicas
+1
+array join then full: reads from remote replicas
+0
+array join then all/right: reads from remote replicas
+1
+array join then any/right: reads from remote replicas
+0
+array join then semi/right: reads from remote replicas
+0
+array join then anti/right: reads from remote replicas
+0
+array join then right-any (legacy any): reads from remote replicas
+0
+all/inner only: reads from remote replicas
+1
+all/left only: reads from remote replicas
+1
+comma join rewritten to all/inner: reads from remote replicas
+1
+single table: reads from remote replicas
+1
+two-way inner/any: reads from remote replicas
+0
+left/any non-leftmost: reads from remote replicas
+1
+left/semi non-leftmost: reads from remote replicas
+1
+asof/inner non-leftmost: reads from remote replicas
+0
+paste non-leftmost: reads from remote replicas
+0
+two-way paste: reads from remote replicas
+0
+inner/any non-leftmost: rows
+2	2	7
+inner/any non-leftmost under a left leftmost join: row count
+1
+all/inner non-leftmost on a constant: rows
+2	2	7
+2	2	8
+array join then full: rows
+0	0	3
+1	1	0
+2	1	2
