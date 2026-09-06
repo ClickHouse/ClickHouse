@@ -13,6 +13,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
@@ -33,10 +35,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_QUERY;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int TOO_DEEP_RECURSION;
+    extern const int CANNOT_PTHREAD_ATTR;
 }
 
 MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_)
@@ -962,6 +969,59 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
 }
 
 
+/// True for the errors that are not a statement about the constant, so must not be answered by
+/// disabling the index. The complement (not representable, not comparable, ...) is open-ended
+/// because the target type raises its own codes, hence the exclusion form.
+static bool indexDecisionErrorMustPropagate(int code)
+{
+    return code == ErrorCodes::LOGICAL_ERROR || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+        || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY || code == ErrorCodes::TOO_DEEP_RECURSION
+        || code == ErrorCodes::CANNOT_PTHREAD_ATTR || code == ErrorCodes::QUERY_WAS_CANCELLED;
+}
+
+
+/// True when an absent `key` can still satisfy `map[key] = const`, i.e. the granule must not be
+/// pruned, and conservatively true when the comparison cannot be evaluated. Runs the real `equals`
+/// so the answer uses the engine's own semantics. NULL is not a match: it is true for neither
+/// `equals` nor `notEquals`.
+static bool mapElementDefaultCanMatchConstant(
+    const ContextPtr & context,
+    const DataTypePtr & map_value_type,
+    const DataTypePtr & const_type,
+    const Field & const_value)
+{
+    if (!map_value_type)
+        return true;
+
+    try
+    {
+        ColumnsWithTypeAndName arguments{
+            {map_value_type->createColumnConstWithDefaultValue(1), map_value_type, "default"},
+            {const_type->createColumnConst(1, const_value), const_type, "const"},
+        };
+
+        auto equals_resolver = FunctionFactory::instance().get("equals", context);
+        auto equals_func = equals_resolver->build(arguments);
+        auto result = equals_func->execute(arguments, equals_func->getResultType(), 1, /* dry_run = */ false);
+
+        Field result_field;
+        result->get(0, result_field);
+        /// A NULL comparison result (a Nullable value type has a NULL default) is not true, so an
+        /// absent key satisfies neither `equals` nor `notEquals` and the granule may be pruned.
+        if (result_field.isNull())
+            return false;
+        return result_field.safeGet<UInt64>() != 0;
+    }
+    catch (const Exception & e)
+    {
+        /// The default and the constant are not comparable: be conservative and do not prune.
+        if (indexDecisionErrorMustPropagate(e.code()))
+            throw;
+        return true;
+    }
+}
+
+
 bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -1193,13 +1253,14 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     {
         if (auto map_info = tryResolveMapInfoFromNode(key_node, header))
         {
-            /** It is important to ignore keys like column_map['Key'] = '' because if the key does not exist in the map
-              * we return the default value for arrayElement.
-              *
-              * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where the map key does not exist.
+            /** arrayElement returns the map value type default when the key is absent, so a granule
+              * that lacks the key still matches when `default = const` holds. The check must use the
+              * map value type and runtime equality semantics (see mapElementDefaultCanMatchConstant),
+              * not a byte-wise comparison against the constant's own type default.
               */
-            if (value_field == value_type->getDefault())
+            const auto * key_dag_node = key_node.getDAGNode();
+            const DataTypePtr map_value_type = key_dag_node ? key_dag_node->result_type : nullptr;
+            if (mapElementDefaultCanMatchConstant(getContext(), map_value_type, value_type, value_field))
                 return false;
 
             size_t position = 0;
@@ -1213,7 +1274,34 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             else if (map_info->has_values_index)
             {
                 position = map_info->values_index_position;
-                const_value = value_field;
+
+                const auto values_index_value_type
+                    = BloomFilter::getPrimitiveType(header.getByPosition(position).type);
+
+                /// An indexed String or FixedString is hashable only against a constant storing the
+                /// same representation, so skip the index (scan) otherwise rather than prune a
+                /// matching granule. Wrappers do not change what is stored and are ignored.
+                const auto value_primitive_type = BloomFilter::getPrimitiveType(value_type);
+                if (isStringOrFixedString(values_index_value_type)
+                    && !value_primitive_type->equals(*values_index_value_type))
+                    return false;
+
+                /// `hashWithField` reads the Field as the indexed type, so normalize the constant
+                /// first. Not representable there means no single hash describes it, reported either
+                /// as Null or as a throw.
+                try
+                {
+                    const_value = convertFieldToType(value_field, *values_index_value_type, value_type.get());
+                }
+                catch (const Exception & e)
+                {
+                    if (indexDecisionErrorMustPropagate(e.code()))
+                        throw;
+                    return false;
+                }
+
+                if (const_value.isNull())
+                    return false;
             }
             else
             {
