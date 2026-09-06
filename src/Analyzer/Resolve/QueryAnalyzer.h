@@ -165,7 +165,17 @@ private:
 
     static void checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope);
 
-    static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
+    /// Result of collecting GROUP BY ALL key expressions from a SELECT sub-expression.
+    /// `referenced_lambdas` holds the lambda nodes whose parameters are referenced by the collected
+    /// sub-expression and are not yet bound (i.e. the binding lambda has not been left). While it is
+    /// non-empty the sub-expression is not a valid GROUP BY key.
+    struct MaxOrdinaryExpressionsResult
+    {
+        bool has_aggregate = false;
+        std::unordered_set<const IQueryTreeNode *> referenced_lambdas;
+        UInt64 pushed_children = 0;
+    };
+    static MaxOrdinaryExpressionsResult recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
 
     static void expandGroupByAll(QueryNode & query_tree_node_typed);
 
