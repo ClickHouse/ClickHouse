@@ -902,6 +902,10 @@
              however you can change this behaviour by setting this to true -->
         <table_engines_require_grant>false</table_engines_require_grant>
 
+        <!-- Whether SET ROLE is refused when the session or the query is readonly.
+             By default this setting is false. -->
+        <readonly_restricts_set_role>false</readonly_restricts_set_role>
+
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     </access_control_improvements>
