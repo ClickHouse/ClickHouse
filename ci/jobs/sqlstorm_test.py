@@ -302,7 +302,11 @@ def main():
             # Without the credentials `setup_log_cluster.sh` creates no `_sender` table,
             # so leaving the export unconfigured is a supported state.
             try:
-                ch.create_log_export_config()
+                # A failed copy of the `ci_logs_sender` user config is reported by
+                # return value, not by raising.
+                if not ch.create_log_export_config():
+                    print("WARNING: Failed to configure log export")
+                    info.add_workflow_warning("Failed to configure log export")
             except SecretFetchFailed as e:
                 print(f"WARNING: Failed to configure log export: {e}")
                 info.add_workflow_warning(f"Failed to configure log export: {e}")
