@@ -79,23 +79,38 @@ bool isNegatingFunction(std::string_view name)
         || name == "globalNotNullIn";
 }
 
+/// A set-membership test is not a comparison: it matches `NaN` bit-exactly, so `NaN` can satisfy it
+/// without any negation (`SELECT nan IN (nan)` is `1`).
+bool isSetMembershipFunction(std::string_view name)
+{
+    return name == "in"
+        || name == "globalIn"
+        || name == "nullIn"
+        || name == "globalNullIn";
+}
+
 bool isFloatingPointColumn(const DataTypePtr & type)
 {
     return type && isFloat(removeLowCardinalityAndNullable(type));
 }
 
-/// Collect floating-point columns that appear anywhere beneath a negating function in the original
-/// (non-inverted) filter tree.
+/// Collect floating-point columns that appear anywhere beneath a negating or set-membership function
+/// in the original (non-inverted) filter tree.
 ///
 /// `MinMax`/`Basic` statistics compute min/max via `IColumn::getExtremes`, which deliberately skips
 /// `NaN`. So the stored range excludes `NaN`, yet `NaN` sorts after `+inf` and satisfies negated
 /// predicates such as `NOT (f < c)` or `f <> c`. Pruning a part by that range would then drop rows
 /// that actually match. Statistics-based pruning is therefore disabled for such columns; the range
-/// analysis stays sound for every other (non-negated) predicate, where `NaN` cannot match anyway.
+/// analysis stays sound for a plain comparison, where `NaN` cannot match anyway.
 ///
-/// The traversal is intentionally conservative: once under a negation it stays under it for the whole
-/// subtree, so a column may be excluded even where an even number of negations would cancel out.
-/// Excluding a column only forgoes a pruning opportunity, never correctness.
+/// A positive `IN` needs the same treatment, because it is a set-membership test rather than a
+/// comparison and does match `NaN` (`SELECT nan IN (nan)` is `1`). Whether the set actually holds a
+/// `NaN` is not known here - it may come from a subquery - so any floating-point column compared
+/// against a set is excluded.
+///
+/// The traversal is intentionally conservative: once under such a function it stays under it for the
+/// whole subtree, so a column may be excluded even where an even number of negations would cancel
+/// out. Excluding a column only forgoes a pruning opportunity, never correctness.
 void collectFloatColumnsUnderNegation(
     const ActionsDAG::Node & node,
     bool under_negation,
@@ -116,7 +131,8 @@ void collectFloatColumnsUnderNegation(
 
     const bool child_under_negation = under_negation
         || (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
-            && isNegatingFunction(node.function_base->getName()));
+            && (isNegatingFunction(node.function_base->getName())
+                || isSetMembershipFunction(node.function_base->getName())));
 
     for (const auto * child : node.children)
         collectFloatColumnsUnderNegation(*child, child_under_negation, unsafe_columns, visited_under_negation, visited);

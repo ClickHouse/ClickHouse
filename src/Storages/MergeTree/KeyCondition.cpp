@@ -2686,6 +2686,77 @@ static bool tryPrepareSetColumnsForIndex(
     return true;
 }
 
+namespace
+{
+
+bool fieldContainsNaN(const Field & field)
+{
+    if (field.isNaN())
+        return true;
+
+    if (field.getType() == Field::Types::Tuple)
+    {
+        for (const auto & element : field.safeGet<Tuple>())
+            if (fieldContainsNaN(element))
+                return true;
+    }
+
+    if (field.getType() == Field::Types::Array)
+    {
+        for (const auto & element : field.safeGet<Array>())
+            if (fieldContainsNaN(element))
+                return true;
+    }
+
+    return false;
+}
+
+bool typeContainsFloat(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    if (isFloat(removeLowCardinalityAndNullable(type)))
+        return true;
+
+    bool has_float = false;
+    type->forEachChild([&](const IDataType & child)
+    {
+        if (!has_float && WhichDataType(child).isFloat())
+            has_float = true;
+    });
+    return has_float;
+}
+
+/** `IN` matches `NaN` bit-exactly - `SELECT nan IN (nan)` is `1` - but every range-based index check
+  * works with ranges produced by `IColumn::getExtremes`, which deliberately skips `NaN`. A part or
+  * granule that holds `NaN` next to finite values therefore gets a `NaN`-free range, the set-vs-range
+  * intersection finds no overlap, and it is pruned even though row-wise evaluation of the same filter
+  * matches the `NaN` rows. The set atom serves every index at once, so it has to be declined outright;
+  * `has` declines floating-point arrays for a closely related mismatch.
+  */
+bool setElementsContainNaN(const Columns & set_columns, const DataTypes & key_types)
+{
+    if (std::none_of(key_types.begin(), key_types.end(), typeContainsFloat))
+        return false;
+
+    for (const auto & column : set_columns)
+    {
+        const size_t size = column->size();
+        for (size_t i = 0; i < size; ++i)
+        {
+            Field field;
+            column->get(i, field);
+            if (fieldContainsNaN(field))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+}
+
 bool KeyCondition::tryPrepareSetIndexForIn(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
@@ -2759,6 +2830,9 @@ bool KeyCondition::tryPrepareSetIndexForIn(
 
     if (!tryPrepareSetColumnsForIndex(
             set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count))
+        return false;
+
+    if (setElementsContainNaN(set_columns, data_types))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));

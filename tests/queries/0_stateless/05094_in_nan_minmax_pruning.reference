@@ -1,0 +1,22 @@
+1	0
+statistics part pruning
+13
+13
+13
+1013
+1013
+13
+99987
+0
+minmax skip index
+13
+13
+13
+100000
+99987
+a NaN-free set still prunes
+2
+1
+an integer key is unaffected
+2
+1
