@@ -7,6 +7,8 @@
 #include <IO/S3/URI.h>
 #include <IO/S3/ProviderType.h>
 
+#include <Common/StringUtils.h>
+
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/s3/model/HeadObjectRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
@@ -29,10 +31,18 @@
 
 #include <base/defines.h>
 
+#include <string_view>
+
 namespace DB::S3
 {
 
 namespace Model = Aws::S3::Model;
+
+inline bool isCreateOnlyHeader(std::string_view header_name)
+{
+    return (header_name.size() >= 11 && equalsCaseInsensitive(header_name.substr(0, 11), "x-amz-meta-"))
+        || equalsCaseInsensitive(header_name, "x-amz-server-side-encryption");
+}
 
 /// Used only for S3Express
 namespace RequestChecksum
@@ -178,6 +188,18 @@ class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMul
 {
 public:
     void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
+
+    void setRequiresFullWriteIdentity() { requires_full_write_identity = true; }
+    bool requiresFullWriteIdentity() const { return requires_full_write_identity; }
+
+    void setExpectedContentType(Aws::String value) { expected_content_type = std::move(value); }
+    const std::optional<Aws::String> & getExpectedContentType() const { return expected_content_type; }
+
+private:
+    /// Multipart completion does not carry attributes set by CreateMultipartUpload. If any were
+    /// requested, an ETag comparison alone cannot prove that the object belongs to this write.
+    bool requires_full_write_identity = false;
+    std::optional<Aws::String> expected_content_type;
 };
 
 using CreateMultipartUploadRequest = ExtendedRequest<Model::CreateMultipartUploadRequest>;

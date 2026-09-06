@@ -8,6 +8,7 @@
 
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/S3/Requests.h>
+#include <Common/StringUtils.h>
 
 #include <algorithm>
 #include <functional>
@@ -605,7 +606,10 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 // At this point in the stack trace, request has already been signed and any `x-amz-*` extra headers was already added
                 // to the canonical headers list. Therefore, we should not add them again to the request.
                 // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
-                if (!header_name.starts_with("x-amz-"))
+                /// Header names are accepted case-preserved on the `headers(...)` and storage
+                /// configuration surfaces, while the canonical list is built case-insensitively,
+                /// so the test that decides whether the header was already signed must be too.
+                if (!(header_name.size() >= 6 && equalsCaseInsensitive(std::string_view(header_name).substr(0, 6), "x-amz-")))
                 {
                     poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
                 }

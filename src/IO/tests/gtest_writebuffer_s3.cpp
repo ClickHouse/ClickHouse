@@ -82,6 +82,28 @@ private:
     size_t counter = 0;
 };
 
+/// S3 ETags: md5 hex for a single part, md5(concat(binary part md5s)) + "-" + count for a multipart
+/// object. Both arrive quoted, and the SDK keeps the quotes.
+inline std::string quotedMD5Hex(const std::string & data)
+{
+    return "\"" + Aws::Utils::HashingUtils::HexEncode(Aws::Utils::HashingUtils::CalculateMD5(data)) + "\"";
+}
+
+inline std::string quotedMultipartETag(const std::vector<std::string> & parts)
+{
+    std::string concatenated_digests;
+    for (const auto & part : parts)
+    {
+        const auto digest = Aws::Utils::HashingUtils::CalculateMD5(part);
+        concatenated_digests.append(reinterpret_cast<const char *>(digest.GetUnderlyingData()), digest.GetLength());
+    }
+
+    return fmt::format(
+        "\"{}-{}\"",
+        Aws::Utils::HashingUtils::HexEncode(Aws::Utils::HashingUtils::CalculateMD5(concatenated_digests)),
+        parts.size());
+}
+
 class BucketMemStore
 {
 public:
@@ -95,6 +117,8 @@ public:
 
 
     std::map<Key, Data> objects;
+    std::map<Key, ETag> object_etags;
+    std::map<Key, std::string> object_content_types;
     /// Custom object metadata (`x-amz-meta-*`), stored alongside the object and served by HeadObject.
     std::map<Key, Metadata> object_metadata;
     std::map<MPU_ID, MPUPartsInProgress> multiPartUploads;
@@ -115,15 +139,21 @@ public:
 
     std::string UploadPart(const std::string & upload_id, const std::string & part)
     {
-        auto etag = sequencer.next_id();
+        auto etag = quotedMD5Hex(part);
         auto & parts = multiPartUploads.at(upload_id);
-        parts.emplace(etag, part);
+        parts.insert_or_assign(etag, part);
         return etag;
     }
 
-    void PutObject(const std::string & key, const std::string & data, const Metadata & metadata = {})
+    void PutObject(
+        const std::string & key,
+        const std::string & data,
+        const Metadata & metadata = {},
+        const std::string & content_type = "binary/octet-stream")
     {
         objects[key] = data;
+        object_etags[key] = quotedMD5Hex(data);
+        object_content_types[key] = content_type;
         object_metadata[key] = metadata;
     }
 
@@ -142,6 +172,8 @@ public:
             file_data << part_data;
         }
 
+        object_etags[key] = quotedMultipartETag(completedParts);
+        object_content_types[key] = "binary/octet-stream";
         CompletedPartUploads.emplace_back(upload_id, std::move(completedParts));
         objects[key] = file_data.str();
         if (auto it = multiPartUploadMetadata.find(upload_id); it != multiPartUploadMetadata.end())
@@ -254,12 +286,12 @@ struct InjectionModel
 
 struct Client : DB::S3::Client
 {
-    explicit Client(std::shared_ptr<S3MemStrore> mock_s3_store)
+    explicit Client(std::shared_ptr<S3MemStrore> mock_s3_store, DB::HTTPHeaderEntries extra_headers = {})
         : DB::S3::Client(
             100,
             DB::S3::ServerSideEncryptionKMSConfig(),
             std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
-            GetClientConfiguration(),
+            GetClientConfiguration(std::move(extra_headers)),
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
             DB::S3::ClientSettings{
                 .use_virtual_addressing = true,
@@ -270,14 +302,14 @@ struct Client : DB::S3::Client
         , store(mock_s3_store)
     {}
 
-    static std::shared_ptr<Client> CreateClient(String bucket = "mock-s3-bucket")
+    static std::shared_ptr<Client> CreateClient(String bucket = "mock-s3-bucket", DB::HTTPHeaderEntries extra_headers = {})
     {
         auto s3store = std::make_shared<S3MemStrore>();
         s3store->CreateBucket(bucket);
-        return std::make_shared<Client>(s3store);
+        return std::make_shared<Client>(s3store, std::move(extra_headers));
     }
 
-    static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration()
+    static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration(DB::HTTPHeaderEntries extra_headers = {})
     {
         DB::RemoteHostFilter remote_host_filter;
         auto configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
@@ -296,6 +328,7 @@ struct Client : DB::S3::Client
         /// that here -- otherwise chassert(client_configuration.retryStrategy) in Client::doRequest
         /// aborts every request in debug/sanitizer builds.
         configuration.retryStrategy = std::make_shared<DB::S3::Client::RetryStrategy>(configuration.retry_strategy);
+        configuration.extra_headers = std::move(extra_headers);
         return configuration;
     }
 
@@ -373,6 +406,8 @@ struct Client : DB::S3::Client
         Aws::S3::Model::HeadObjectOutcome outcome;
         Aws::S3::Model::HeadObjectResult result(outcome.GetResultWithOwnership());
         result.SetContentLength(obj.length());
+        result.SetETag(bStore.object_etags[request.GetKey()]);
+        result.SetContentType(bStore.object_content_types[request.GetKey()]);
         if (auto it = bStore.object_metadata.find(request.GetKey()); it != bStore.object_metadata.end())
         {
             Aws::Map<Aws::String, Aws::String> metadata;
@@ -583,6 +618,41 @@ struct CompleteMPUInvalidPartOnceIngection : InjectionModel
 
     size_t fail_times;
     size_t calls = 0;
+};
+
+/// Answers NoSuchUpload while letting the store apply the completion, reproducing a completion whose
+/// response was lost: the object at the key is the one this part list describes.
+struct CompleteMultipartUploadNoSuchUploadAfterCompletingIngection : InjectionModel
+{
+    explicit CompleteMultipartUploadNoSuchUploadAfterCompletingIngection(std::shared_ptr<S3MemStrore> store_) : store(std::move(store_)) {}
+
+    std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
+    {
+        if (calls++ == 0)
+        {
+            std::vector<std::string> etags;
+            for (const auto & part : request.GetMultipartUpload().GetParts())
+                etags.push_back(part.GetETag());
+            store->GetBucketStore(request.GetBucket()).CompleteMPU(request.GetKey(), request.GetUploadId(), etags);
+        }
+
+        return Aws::Client::AWSError<Aws::S3::S3Errors>(
+            Aws::S3::S3Errors::NO_SUCH_UPLOAD, "NoSuchUpload", "The specified upload does not exist.", false);
+    }
+
+    std::shared_ptr<S3MemStrore> store;
+    size_t calls = 0;
+};
+
+/// Answers NoSuchUpload without completing anything, reproducing a genuinely aborted upload. Whatever
+/// object the key already holds belongs to a different write.
+struct CompleteMultipartUploadNoSuchUploadIngection : InjectionModel
+{
+    std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(const Aws::S3::Model::CompleteMultipartUploadRequest & /*request*/) override
+    {
+        return Aws::Client::AWSError<Aws::S3::S3Errors>(
+            Aws::S3::S3Errors::NO_SUCH_UPLOAD, "NoSuchUpload", "The specified upload does not exist.", false);
+    }
 };
 
 /// `PreconditionFailed` as the SDK actually produces it: 412 carries an <Code>PreconditionFailed</Code>
@@ -1544,6 +1614,146 @@ TEST_P(SyncAsync, CompleteMPURetriesInvalidPart) {
     EXPECT_EQ(bStore.objects["complete_mpu_invalid_part_retry"].size(), 1u);
 }
 
+/// A completion whose response was lost leaves the upload completed, so the retry's NoSuchUpload must
+/// still be absorbed: the object at the key carries the ETag this part list implies.
+TEST_P(SyncAsync, CompleteMultipartUploadAbsorbsNoSuchUploadForOwnObject) {
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    auto buffer = getWriteBuffer("complete_multipart_upload_absorb_own_object");
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["complete_multipart_upload_absorb_own_object"], "A");
+    EXPECT_EQ(client->counters.headObject, 1u);
+}
+
+/// A matching ETag does not prove the create-time metadata was committed. The replay recovery
+/// must therefore remain fail-closed whenever the multipart upload has attributes outside its
+/// completed part list.
+TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadWhenWriteHasMetadata) {
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    EXPECT_THROW({
+        auto buffer = getWriteBuffer(
+            "complete_multipart_upload_with_metadata",
+            WriteSettings{},
+            ObjectAttributes{{"write-id", "new"}});
+        buffer->write('A');
+
+        getAsyncPolicy().setAutoExecute(true);
+        buffer->finalize();
+    }, DB::S3Exception);
+
+    EXPECT_EQ(client->counters.headObject, 0u);
+}
+
+/// Extra headers are not represented by the completed part list, so an ETag alone cannot prove
+/// that a recovered completion created the requested object.
+TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadWhenWriteHasExtraHeader)
+{
+    client = MockS3::Client::CreateClient(bucket, {{"X-Write-Id", "new"}});
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    EXPECT_THROW({
+        auto buffer = getWriteBuffer("complete_multipart_upload_with_extra_header");
+        buffer->write('A');
+
+        getAsyncPolicy().setAutoExecute(true);
+        buffer->finalize();
+    }, DB::S3Exception);
+
+    EXPECT_EQ(client->counters.headObject, 0u);
+}
+
+/// Transport and billing headers such as `x-amz-request-payer` are sent on every request but do not
+/// change which object a successful completion produces, so they must not disable the replay recovery.
+TEST_P(SyncAsync, CompleteMultipartUploadAbsorbsNoSuchUploadWithRequestPayerHeader)
+{
+    client = MockS3::Client::CreateClient(
+        bucket, {{"x-amz-request-payer", "requester"}, {"X-Amz-Expected-Bucket-Owner", "123456789012"}});
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    auto buffer = getWriteBuffer("complete_multipart_upload_request_payer");
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["complete_multipart_upload_request_payer"], "A");
+    EXPECT_EQ(client->counters.headObject, 1u);
+}
+
+/// A genuinely aborted upload also answers NoSuchUpload, but the key holds an unrelated earlier
+/// object. Acknowledging it would report a write that never stored any of its data.
+TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadForForeignObject) {
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    bStore.PutObject("complete_multipart_upload_foreign_object", "OLD");
+
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadIngection>());
+
+    EXPECT_THROW({
+        try {
+            auto buffer = getWriteBuffer("complete_multipart_upload_foreign_object");
+            buffer->write('A');
+
+            getAsyncPolicy().setAutoExecute(true);
+            buffer->finalize();
+        }
+        catch(const DB::Exception & e)
+        {
+            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
+            EXPECT_THAT(e.what(), testing::HasSubstr("The specified upload does not exist."));
+            throw;
+        }
+      }, DB::S3Exception);
+
+    EXPECT_EQ(bStore.objects["complete_multipart_upload_foreign_object"], "OLD");
+}
+
+/// An ETag also does not identify the content type that `CreateMultipartUpload` committed. A foreign
+/// object with the same multipart payload but a different content type must not make recovery succeed.
+TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadForForeignObjectWithDifferentContentType)
+{
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    bStore.PutObject("complete_multipart_upload_foreign_content_type", "A", /*metadata=*/ {}, "text/plain");
+    bStore.object_etags["complete_multipart_upload_foreign_content_type"] = MockS3::quotedMultipartETag({"A"});
+
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadIngection>());
+
+    EXPECT_THROW({
+        auto buffer = getWriteBuffer("complete_multipart_upload_foreign_content_type");
+        buffer->write('A');
+
+        getAsyncPolicy().setAutoExecute(true);
+        buffer->finalize();
+    }, DB::S3Exception);
+
+    EXPECT_EQ(client->counters.headObject, 1u);
+    EXPECT_EQ(bStore.object_content_types["complete_multipart_upload_foreign_content_type"], "text/plain");
+}
+
 /// The same transient MinIO `InvalidPart` on CompleteMultipartUpload must also be retried by the
 /// copyDataToS3File / copyS3File helper path (UploadHelper::completeMultipartUpload), which backs
 /// MinIO-backed backups and DiskObjectStorage server-side copies. Injects `InvalidPart` on the first
@@ -1587,6 +1797,120 @@ TEST_F(WBS3Test, CopyDataToS3FileRetriesInvalidPart) {
 
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["copy_data_invalid_part_retry"].size(), payload.size());
+}
+
+/// The `NoSuchUpload` recovery lives in the shared `Client::CompleteMultipartUpload`, but `copyS3File`
+/// supplies its own identity inputs for it: the expected content type and the fail-closed gate for a
+/// write whose create-time attributes the completion cannot prove. Drive `copyDataToS3File` through
+/// `NoSuchUpload` so those lines cannot regress while the write-buffer suite stays green.
+class CopyS3FileCompletionRecoveryTest : public WBS3Test
+{
+protected:
+    static constexpr std::string_view payload = "copy_completion_recovery_payload";
+
+    void runCopy(const String & key, std::optional<ObjectAttributes> object_metadata = std::nullopt)
+    {
+        getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force multipart
+        getSettings()[Setting::s3_check_objects_after_upload] = false;
+
+        S3::S3RequestSettings request_settings;
+        request_settings.updateFromSettings(settings, /* if_changed */ true, /* validate_settings */ false);
+
+        client->resetCounters();
+
+        auto create_read_buffer = []() -> std::unique_ptr<SeekableReadBuffer>
+        {
+            return std::make_unique<ReadBufferFromOwnString>(String(payload));
+        };
+
+        /// Empty schedule => the multipart upload (and completion) runs synchronously on this thread.
+        copyDataToS3File(
+            create_read_buffer,
+            /* offset= */ 0,
+            /* size= */ payload.size(),
+            client,
+            bucket,
+            key,
+            request_settings,
+            /* blob_storage_log= */ nullptr,
+            /* schedule= */ {},
+            object_metadata);
+    }
+};
+
+/// A completion whose response was lost leaves the copy's own object at the key, so the retry's
+/// `NoSuchUpload` must still be absorbed on this path too.
+TEST_F(CopyS3FileCompletionRecoveryTest, AbsorbsNoSuchUploadForOwnObject)
+{
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    runCopy("copy_completion_recovery_own_object");
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["copy_completion_recovery_own_object"], payload);
+    EXPECT_EQ(client->counters.headObject, 1u);
+}
+
+/// The transport/billing exemption must hold on the copy path too: `x-amz-request-payer` does not
+/// change the created object, so a lost completion response is still recoverable.
+TEST_F(CopyS3FileCompletionRecoveryTest, AbsorbsNoSuchUploadWithRequestPayerHeader)
+{
+    client = MockS3::Client::CreateClient(bucket, {{"x-amz-request-payer", "requester"}});
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    runCopy("copy_completion_recovery_request_payer");
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["copy_completion_recovery_request_payer"], payload);
+    EXPECT_EQ(client->counters.headObject, 1u);
+}
+
+/// A genuinely aborted copy also answers `NoSuchUpload`, but the unrelated object at the key is not
+/// its result. Absorbing it would acknowledge a copy that stored nothing.
+TEST_F(CopyS3FileCompletionRecoveryTest, ReportsNoSuchUploadForForeignObject)
+{
+    auto & bStore = client->store->GetBucketStore(bucket);
+    bStore.PutObject("copy_completion_recovery_foreign_object", "OLD");
+
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadIngection>());
+
+    EXPECT_THROW(runCopy("copy_completion_recovery_foreign_object"), DB::S3Exception);
+
+    EXPECT_EQ(bStore.objects["copy_completion_recovery_foreign_object"], "OLD");
+}
+
+/// The payload alone does not identify the object: a foreign object may carry the very same multipart
+/// ETag and a different content type, which is what `setExpectedContentType` on this path rejects.
+TEST_F(CopyS3FileCompletionRecoveryTest, ReportsNoSuchUploadForForeignObjectWithDifferentContentType)
+{
+    const String key = "copy_completion_recovery_foreign_content_type";
+
+    /// A first, undisturbed copy leaves exactly the ETag the second copy's part list implies.
+    runCopy(key);
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    ASSERT_EQ(bStore.objects[key], payload);
+    bStore.object_content_types[key] = "text/plain";
+
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadIngection>());
+
+    EXPECT_THROW(runCopy(key), DB::S3Exception);
+
+    EXPECT_EQ(client->counters.headObject, 1u);
+    EXPECT_EQ(bStore.object_content_types[key], "text/plain");
+}
+
+/// Object metadata is committed by `CreateMultipartUpload` and is invisible to the completion, so a
+/// copy that requests it must fail closed instead of trusting a matching payload.
+TEST_F(CopyS3FileCompletionRecoveryTest, ReportsNoSuchUploadWhenCopyHasMetadata)
+{
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    EXPECT_THROW(
+        runCopy("copy_completion_recovery_with_metadata", ObjectAttributes{{"write-id", "new"}}),
+        DB::S3Exception);
+
+    EXPECT_EQ(client->counters.headObject, 0u);
 }
 
 /// copyS3File routing between whole-object CopyObject and ranged UploadPartCopy. A small copy would take

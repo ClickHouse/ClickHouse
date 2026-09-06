@@ -34,6 +34,7 @@
 #include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -201,7 +202,7 @@ void addAdditionalAMZHeadersToCanonicalHeadersList(
 {
     for (const auto & [name, value] : extra_headers)
     {
-        if (name.starts_with("x-amz-"))
+        if (name.size() >= 6 && equalsCaseInsensitive(name.substr(0, 6), "x-amz-"))
         {
             request.SetAdditionalCustomHeaderValue(name, value);
         }
@@ -216,6 +217,62 @@ void incrementProfileEvents(ProfileEvents::Event read_event, ProfileEvents::Even
     else
         ProfileEvents::increment(write_event);
 }
+
+/// S3 ETags are transported with the surrounding double quotes, and the SDK stores the header verbatim.
+std::string_view unquoteETag(std::string_view etag)
+{
+    if (etag.size() >= 2 && etag.front() == '"' && etag.back() == '"')
+        return etag.substr(1, etag.size() - 2);
+    return etag;
+}
+
+bool isMD5Hex(std::string_view s)
+{
+    return s.size() == 32 && std::all_of(s.begin(), s.end(), [](char c) { return isHexDigit(c); });
+}
+
+/// The ETag of a multipart object is md5(concat(binary md5 of every part)) + "-" + part count.
+/// Nullopt when the parts do not carry plain MD5 ETags: SSE-KMS and non-default checksum algorithms
+/// change the shape, and then the value is not derivable.
+std::optional<std::string> expectedMultipartETag(const Aws::S3::Model::CompletedMultipartUpload & multipart_upload)
+{
+    const auto & parts = multipart_upload.GetParts();
+    if (parts.empty())
+        return {};
+
+    std::string concatenated_digests;
+    concatenated_digests.reserve(parts.size() * 16);
+
+    for (const auto & part : parts)
+    {
+        const auto part_etag = unquoteETag(part.GetETag());
+        if (!isMD5Hex(part_etag))
+            return {};
+
+        const auto digest = Aws::Utils::HashingUtils::HexDecode(std::string(part_etag));
+        concatenated_digests.append(reinterpret_cast<const char *>(digest.GetUnderlyingData()), digest.GetLength());
+    }
+
+    return fmt::format(
+        "{}-{}",
+        Aws::Utils::HashingUtils::HexEncode(Aws::Utils::HashingUtils::CalculateMD5(concatenated_digests)),
+        parts.size());
+}
+}
+
+bool Client::hasExtraHeadersRequiringFullWriteIdentity() const
+{
+    /// Extra headers can affect the requested write but are not represented by the completed
+    /// part list. Do not recover a lost completion response unless its identity is fully known.
+    /// Headers that only affect transport or billing are exempt: they must be sent on every
+    /// request but do not change which object a successful completion produces.
+    for (const auto & header : client_configuration.extra_headers)
+    {
+        if (!equalsCaseInsensitive(header.name, "x-amz-request-payer")
+            && !equalsCaseInsensitive(header.name, "x-amz-expected-bucket-owner"))
+            return true;
+    }
+    return false;
 }
 
 std::unique_ptr<Client> Client::create(
@@ -560,8 +617,9 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     /// condition was meant to reject. Leave the error for the caller, which can verify authorship.
     const bool is_conditional = request.IfNoneMatchHasBeenSet() || request.IfMatchHasBeenSet();
 
-    if (!outcome.IsSuccess()
+    if (!request.requiresFullWriteIdentity()
         && !is_conditional
+        && !outcome.IsSuccess()
         && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
     {
         auto check_request = HeadObjectRequest()
@@ -569,10 +627,30 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
                                  .WithKey(key);
         auto check_outcome = HeadObject(check_request);
 
-        /// if the key exists, than MultipartUpload has been completed at some of the retries
-        /// rewrite outcome with success status
-        if (check_outcome.IsSuccess())
+        /// The upload may have been completed by an earlier attempt whose response was lost. An object at
+        /// the key proves that only if it is the object this part list describes: any other object there
+        /// belongs to a different write, and accepting it would acknowledge rows that were never stored.
+        const auto expected_etag = expectedMultipartETag(request.GetMultipartUpload());
+        const auto & expected_content_type = request.getExpectedContentType();
+        if (check_outcome.IsSuccess() && expected_etag
+            && unquoteETag(check_outcome.GetResult().GetETag()) == *expected_etag
+            && (!expected_content_type || check_outcome.GetResult().GetContentType() == *expected_content_type))
+        {
             outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
+        }
+        else
+        {
+            LOG_INFO(
+                log,
+                "Multipart upload was not completed and the key does not hold its result, reporting the error. "
+                "Key: {}, Bucket: {}, Expected ETag: {}, ETag at key: {}, Expected Content-Type: {}, Content-Type at key: {}",
+                key,
+                bucket,
+                expected_etag.value_or("<not derivable>"),
+                check_outcome.IsSuccess() ? check_outcome.GetResult().GetETag() : "<no object>",
+                expected_content_type.value_or("<not checked>"),
+                check_outcome.IsSuccess() ? check_outcome.GetResult().GetContentType() : "<no object>");
+        }
     }
 
     if (outcome.IsSuccess() && provider_type == ProviderType::GCS && client_settings.gcs_issue_compose_request)
