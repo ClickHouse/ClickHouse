@@ -208,6 +208,7 @@ static struct InitFiu
     REGULAR(keeper_shutdown_delay_before_queue_check) \
     REGULAR(keeper_shutdown_throw_after_flag) \
     REGULAR(lazy_pipe_fds_fail_close) \
+    REGULAR(vector_similarity_index_slow_add) \
     REGULAR(claim_inject_stale_part_dir) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \

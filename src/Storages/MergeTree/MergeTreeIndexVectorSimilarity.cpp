@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -23,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
+#include <base/sleep.h>
 
 #include <cmath>
 #include <ranges>
@@ -58,6 +60,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int FORMAT_VERSION_TOO_OLD;
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_DATA;
@@ -66,6 +69,11 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace FailPoints
+{
+    extern const char vector_similarity_index_slow_add[];
 }
 
 namespace
@@ -359,8 +367,18 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
         if (column_array_offsets[row + 1] - column_array_offsets[row] != dimensions)
             throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
 
+    /// Hoisted out of the per-row lambda below: resolving the global context per row would be measurable on this hot loop.
+    ContextPtr global_context = Context::getGlobalContextInstance();
+
+    /// Resolved once, on the calling thread: the build pool workers inherit this thread's group.
+    const bool is_background_operation = []
+    {
+        auto query_context = CurrentThread::tryGetQueryContext();
+        return query_context && query_context->isBackgroundContext();
+    }();
+
     /// Reserving space is mandatory
-    size_t max_thread_pool_size = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
+    size_t max_thread_pool_size = global_context->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
     if (max_thread_pool_size == 0)
         max_thread_pool_size = getNumberOfCPUCoresToUse();
     unum::usearch::index_limits_t limits(roundUpToPowerOfTwoOrZero(index->size() + rows), max_thread_pool_size);
@@ -368,7 +386,7 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
 
     /// Vector index creation is slooooow. Add the new rows in parallel. The threadpool is global to avoid oversubscription when multiple
     /// indexes are build simultaneously (e.g. multiple merges run at the same time).
-    auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
+    auto & thread_pool = global_context->getBuildVectorSimilarityIndexThreadPool();
 
     /// The lambda must be declared before the runner so that during stack unwinding
     /// the runner is destroyed first (waits for all tasks) and the lambda is destroyed second.
@@ -381,9 +399,18 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
             if (auto query_status = query_context->getProcessListElementSafe())
                 query_status->throwIfKilled();
 
+        /// A background merge or mutation has no process list element, so the check above cannot reach it.
+        /// Background only: shutdown flushes the async insert queue and Buffer tables after setting the
+        /// flag, and those writes must still be allowed to finish.
+        if (is_background_operation && global_context->isShutdownCalled())
+            throw Exception(ErrorCodes::ABORTED, "Cancelled building vector similarity index because the server is shutting down");
+
         const typename Column::ValueType & value = column_array_data_float_data[column_array_offsets[row - 1]];
 
         checkVectorIsSane(&value, dimensions, scalar_kind, ErrorCodes::INCORRECT_DATA, "indexed vector");
+
+        /// Makes one `add` slow enough for tests to observe cancellation mid-build.
+        fiu_do_on(FailPoints::vector_similarity_index_slow_add, { sleepForMilliseconds(50); });
 
         unum::usearch::index_dense_t::add_result_t result;
 

@@ -1986,6 +1986,10 @@ public:
     bool isServerCompletelyStarted() const;
     void setServerCompletelyStarted();
 
+    /// True once global shutdown has begun. Lock-free: safe to poll from a long-running
+    /// background task, including while shutdown itself holds the shared mutex.
+    bool isShutdownCalled() const;
+
     AsynchronousInsertQueue * tryGetAsynchronousInsertQueue() const;
     void setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr);
 

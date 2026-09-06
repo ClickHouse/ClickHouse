@@ -8396,6 +8396,13 @@ bool Context::isServerCompletelyStarted() const
     return shared->is_server_completely_started;
 }
 
+bool Context::isShutdownCalled() const
+{
+    /// No lock: the flag is an atomic set once at the start of shutdown, so a relaxed load is
+    /// sufficient and a locking accessor would only contend with shutdown's own critical sections.
+    return shared->shutdown_called.load(std::memory_order_relaxed);
+}
+
 void Context::setServerCompletelyStarted()
 {
     {
