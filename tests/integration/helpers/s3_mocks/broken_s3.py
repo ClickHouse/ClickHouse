@@ -70,6 +70,9 @@ class MockControl:
     def setup_at_listing(self, **kwargs):
         self.setup_action("at_listing", **kwargs)
 
+    def setup_at_object_get(self, **kwargs):
+        self.setup_action("at_object_get", **kwargs)
+
     def setup_at_create_multi_part_upload(self, **kwargs):
         self.setup_action("at_create_multi_part_upload", **kwargs)
 
@@ -434,6 +437,7 @@ class _ServerRuntime:
         self.slow_get = None
         self.fake_multipart_upload = None
         self.at_create_multi_part_upload = None
+        self.at_object_get = None
 
     def register_fake_upload(self, upload_id, key):
         with self.lock:
@@ -456,6 +460,7 @@ class _ServerRuntime:
             self.fake_multipart_upload = None
             self.at_create_multi_part_upload = None
             self.at_listing = None
+            self.at_object_get = None
 
 
 _runtime = _ServerRuntime()
@@ -651,6 +656,14 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.log_message("set at_listing %s", _runtime.at_listing)
             return self._ok()
 
+        if path[1] == "at_object_get":
+            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+            _runtime.at_object_get = _ServerRuntime.CountAfter.from_cgi_params(
+                _runtime.lock, params
+            )
+            self.log_message("set at_object_get %s", _runtime.at_object_get)
+            return self._ok()
+
         if path[1] == "reset":
             _runtime.reset()
             self.log_message("reset")
@@ -672,6 +685,11 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if is_listing and _runtime.at_listing is not None:
             if _runtime.at_listing.has_effect():
                 return _runtime.at_listing.inject_error(self)
+
+        if not is_listing and _runtime.at_object_get is not None:
+            if _runtime.at_object_get.has_effect():
+                self.log_message("get at_object_get %s", _runtime.at_object_get)
+                return _runtime.at_object_get.inject_error(self)
 
         if not is_listing and _runtime.slow_get is not None:
             timeout = _runtime.slow_get.get_timeout()
