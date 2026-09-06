@@ -1456,6 +1456,16 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
     }
 }
 
+ActionsDAG cloneDAGForIndexAnalysisNames(const ActionsDAG::NodeRawConstPtrs & outputs, const ContextPtr & context)
+{
+    ActionsDAG cloned;
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> inputs_mapping;
+    for (const auto * output : outputs)
+        cloned.getOutputs().push_back(
+            &cloneDAGWithInversionPushDown(*output, cloned, inputs_mapping, context, /*need_inversion=*/ false, /*boolean_context=*/ false));
+    return cloned;
+}
+
 ActionsDAGWithInversionPushDown::ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context, bool boolean_context)
 {
     if (!predicate_)
@@ -1481,7 +1491,8 @@ KeyCondition::KeyCondition(
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
     bool skip_analysis_,
-    bool require_ready_sets_)
+    bool require_ready_sets_,
+    const AlternativeKeyExpressionPtr & alternative_key_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
@@ -1492,6 +1503,36 @@ KeyCondition::KeyCondition(
     {
         key_columns.try_emplace(name, key_index);
         ++key_index;
+    }
+
+    /// Additionally match key columns by the names their expressions get after the query
+    /// analyzer's rewrite passes. Register them after the original names so an alternative
+    /// name never shadows an original one.
+    if (alternative_key_ && alternative_key_->column_names.size() == key_column_names_.size())
+    {
+        auto register_alternative_name = [&](const String & alternative_name, size_t i)
+        {
+            if (alternative_name.empty() || alternative_name == key_column_names_[i])
+                return;
+            if (key_columns.try_emplace(alternative_name, i).second)
+                alternative_to_original_key_column_name.emplace(alternative_name, key_column_names_[i]);
+        };
+
+        for (size_t i = 0; i < alternative_key_->column_names.size(); ++i)
+            register_alternative_name(alternative_key_->column_names[i], i);
+
+        /// The alternative expression's DAG output names can differ from the canonical
+        /// index-analysis names above (e.g. in the representation of constants); the walks over
+        /// the alternative key expression look its outputs up in `key_columns` by these names.
+        if (alternative_key_->expression)
+        {
+            const auto & outputs = alternative_key_->expression->getActionsDAG().getOutputs();
+            if (outputs.size() == key_column_names_.size())
+            {
+                for (size_t i = 0; i < outputs.size(); ++i)
+                    register_alternative_name(outputs[i]->result_name, i);
+            }
+        }
     }
 
     /// Skip any analysis. Toggled by the `use_primary_key` setting. This is useful for catching bugs
@@ -1506,9 +1547,19 @@ KeyCondition::KeyCondition(
         return;
     }
 
+    ExpressionActionsPtr alternative_key_expr = alternative_key_ ? alternative_key_->expression : nullptr;
+
+    NameSet key_subexpr_names = getAllSubexpressionNames(*key_expr_);
+    if (alternative_key_expr)
+    {
+        NameSet alternative_subexpr_names = getAllSubexpressionNames(*alternative_key_expr);
+        key_subexpr_names.insert(alternative_subexpr_names.begin(), alternative_subexpr_names.end());
+    }
+
     auto info = BuildInfo {
         .key_expr = key_expr_,
-        .key_subexpr_names = getAllSubexpressionNames(*key_expr_),
+        .alternative_key_expr = std::move(alternative_key_expr),
+        .key_subexpr_names = std::move(key_subexpr_names),
         .require_ready_sets = require_ready_sets_};
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
@@ -1538,8 +1589,11 @@ KeyCondition::KeyCondition(
     ContextPtr context,
     const KeyDescription & key_description,
     bool single_point_,
-    bool skip_analysis_)
-    : KeyCondition(filter_dag, context, key_description.column_names, key_description.expression, single_point_, skip_analysis_)
+    bool skip_analysis_,
+    const AlternativeKeyExpressionPtr & alternative_key)
+    : KeyCondition(
+        filter_dag, context, key_description.column_names, key_description.expression, single_point_, skip_analysis_,
+        /*require_ready_sets_=*/ false, alternative_key)
 {
     key_order = KeyOrder(key_description.reverse_flags);
 }
@@ -2029,8 +2083,23 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
     DataTypePtr & out_key_column_type,
     DeterministicKeyTransformDag & out) const
 {
-    const auto & dag = info.key_expr->getActionsDAG();
-    const auto & sample_block = info.key_expr->getSampleBlock();
+    if (extractDeterministicFunctionsDagFromKeyExpr(*info.key_expr, expr_name, out_key_column_num, out_key_column_type, out))
+        return true;
+
+    /// The filter expression can be in the analyzer-rewritten form: search the alternative key expression too.
+    return info.alternative_key_expr
+        && extractDeterministicFunctionsDagFromKeyExpr(*info.alternative_key_expr, expr_name, out_key_column_num, out_key_column_type, out);
+}
+
+bool KeyCondition::extractDeterministicFunctionsDagFromKeyExpr(
+    const ExpressionActions & key_expr,
+    const String & expr_name,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_column_type,
+    DeterministicKeyTransformDag & out) const
+{
+    const auto & dag = key_expr.getActionsDAG();
+    const auto & sample_block = key_expr.getSampleBlock();
 
     std::vector<const ActionsDAG::Node *> expr_nodes;
     for (const auto & node : dag.getNodes())
@@ -3080,6 +3149,12 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     return true;
 }
 
+const String & KeyCondition::originalKeyColumnName(const String & name) const
+{
+    auto it = alternative_to_original_key_column_name.find(name);
+    return it != alternative_to_original_key_column_name.end() ? it->second : name;
+}
+
 bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
@@ -3100,7 +3175,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     if (key_columns.end() != it)
     {
         out_key_column_num = it->second;
-        out_key_column_type = sample_block.getByName(name).type;
+        /// The sample block contains the key columns under their original names.
+        out_key_column_type = sample_block.getByName(originalKeyColumnName(name)).type;
         return true;
     }
 
@@ -3234,9 +3310,32 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
 {
     out_chain_is_positive = true;
 
-    const auto & sample_block = info.key_expr->getSampleBlock();
+    if (extractMonotonicFunctionsChainFromKeyExpr(
+            context, *info.key_expr, expr_name, out_key_column_num, out_key_column_type, out_functions_chain, out_chain_is_positive, always_monotonic))
+        return true;
 
-    for (const auto & node : info.key_expr->getNodes())
+    /// The filter expression can be in the analyzer-rewritten form: search the alternative key expression too.
+    return info.alternative_key_expr
+        && extractMonotonicFunctionsChainFromKeyExpr(
+            context, *info.alternative_key_expr, expr_name, out_key_column_num, out_key_column_type, out_functions_chain, out_chain_is_positive, always_monotonic);
+}
+
+bool KeyCondition::extractMonotonicFunctionsChainFromKeyExpr(
+    ContextPtr context,
+    const ExpressionActions & key_expr,
+    const String & expr_name,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_column_type,
+    MonotonicFunctionsChain & out_functions_chain,
+    bool & out_chain_is_positive,
+    const std::function<bool(const IFunctionBase &, const IDataType &)> & always_monotonic) const
+{
+    /// A failed attempt can leave a partially extracted chain (e.g. the datetime-parsing bailout below).
+    out_functions_chain.clear();
+
+    const auto & sample_block = key_expr.getSampleBlock();
+
+    for (const auto & node : key_expr.getNodes())
     {
         auto it = key_columns.find(node.result_name);
         if (it != key_columns.end())
@@ -3826,7 +3925,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     return false;
 
                 const auto * tuple_type = typeid_cast<const DataTypeTuple *>(
-                    info.key_expr->getSampleBlock().getByName(name).type.get());
+                    info.key_expr->getSampleBlock().getByName(originalKeyColumnName(name)).type.get());
                 if (!tuple_type || tuple_type->getElements().size() != 2
                     || !isNativeNumber(tuple_type->getElements()[0])
                     || !isNativeNumber(tuple_type->getElements()[1]))
@@ -4601,7 +4700,13 @@ KeyCondition::Description KeyCondition::getDescription() const
     std::vector<bool> is_key_used(num_key_columns, false);
 
     for (const auto & key : key_columns)
+    {
+        /// A key column can also be registered under alternative names (the names the query
+        /// analyzer's rewrite passes give its expression); describe it by the original name.
+        if (alternative_to_original_key_column_name.contains(key.first))
+            continue;
         key_names[key.second] = key.first;
+    }
 
     WriteBufferFromOwnString buf;
 
