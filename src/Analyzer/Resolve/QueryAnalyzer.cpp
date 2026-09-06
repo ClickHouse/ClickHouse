@@ -6578,6 +6578,19 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 "Empty list of columns in projection. In scope {}",
                 scope.scope_node->formatASTForErrorMessage());
     }
+    else if (query_node_typed.isGroupByAll())
+    {
+        /// GROUP BY ALL keys must be registered as nullable_group_by_keys before the projection is resolved: expand
+        /// them from a throwaway resolution, then restore the unresolved projection so it is resolved once below,
+        /// after registration. Re-resolving in place would keep the subqueries, which resolveQuery skips as resolved.
+        auto unresolved_projection = query_node_typed.getProjectionNode()->clone();
+        auto saved_subquery_counter = subquery_counter;
+        resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+        expandGroupByAll(query_node_typed);
+        query_node_typed.getProjectionNode() = std::move(unresolved_projection);
+        /// The discarded resolution must not consume _subquery_N projection names.
+        subquery_counter = saved_subquery_counter;
+    }
 
     if (auto & prewhere_node = query_node_typed.getPrewhere())
     {
