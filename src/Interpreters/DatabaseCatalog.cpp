@@ -2080,6 +2080,41 @@ void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const St
     check(loading_dependencies);
 }
 
+/// `RENAME DATABASE` re-keys every table of the database under the new name (see `updateDatabaseName`),
+/// which can merge a renamed table into a node that other tables already reference by the future name -
+/// the simplest case being a table `db.t = Alias(<new name>, t)` accepted at `CREATE` because the target
+/// database did not exist yet, and thus becoming a self-reference. Such a cycle in the server-wide
+/// dependency graph then makes every later DDL statement that adds a dependency edge fail with
+/// `INFINITE_LOOP`, anywhere on the server, and the database stops being listable after a restart.
+/// The check applies the rename to a copy of the graph and refuses the rename if it becomes cyclic, the
+/// same way `RENAME TABLE` and `EXCHANGE TABLES` do for a single table.
+void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependencies(
+    const String & old_database_name, const String & new_database_name, const Strings & tables_in_database)
+{
+    std::lock_guard lock{databases_mutex};
+
+    auto check = [&](const TablesDependencyGraph & dependencies)
+    {
+        TablesDependencyGraph after_rename = dependencies;
+        for (const auto & table_name : tables_in_database)
+        {
+            auto old_dependencies = after_rename.removeDependencies(StorageID{old_database_name, table_name}, /* remove_isolated_tables= */ true);
+            after_rename.addDependencies(StorageID{new_database_name, table_name}, old_dependencies);
+        }
+
+        if (after_rename.hasCyclicDependencies())
+            throw Exception(
+                ErrorCodes::INFINITE_LOOP,
+                "Cannot rename database {} to {}, because it will lead to cyclic dependencies: {}",
+                backQuoteIfNeed(old_database_name),
+                backQuoteIfNeed(new_database_name),
+                after_rename.describeCyclicDependencies());
+    };
+
+    check(referential_dependencies);
+    check(loading_dependencies);
+}
+
 void DatabaseCatalog::cleanupStoreDirectoryTask()
 {
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
