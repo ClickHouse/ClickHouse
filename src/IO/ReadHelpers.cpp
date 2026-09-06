@@ -1888,6 +1888,27 @@ template void readTimeTextFallback<void, true>(time_t &, ReadBuffer &, const Dat
 template bool readTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
 template bool readTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
 
+/// Skips the `("...")` part of a mongodb-shell-style `ISODate("...")` / `new ISODate("...")` value,
+/// assuming the `ISODate(` (or `new ISODate(`) prefix was already consumed.
+template <typename ReturnType>
+ReturnType skipJSONISODateArgument(ReadBuffer & buf, const FormatSettings::JSON & settings)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    NullOutput sink;
+    if constexpr (throw_exception)
+        readJSONStringInto(sink, buf, settings);
+    else if (!tryReadJSONStringInto(sink, buf, settings))
+        return ReturnType(false);
+
+    if constexpr (throw_exception)
+        assertChar(')', buf);
+    else if (!checkChar(')', buf))
+        return ReturnType(false);
+
+    return ReturnType(true);
+}
+
 template <typename ReturnType>
 ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings, size_t current_depth)
 {
@@ -1930,12 +1951,36 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
             return ReturnType(false);
         }
     }
-    else if (*buf.position() == 'n') /// skip null
+    else if (*buf.position() == 'n') /// skip null or, as mongodb shell syntax, new ISODate("...")
+    {
+        /// "null" and "new ISODate(" share the leading 'n', consume it once and match the rest.
+        ++buf.position();
+        if (checkString("ew ISODate(", buf))
+        {
+            if constexpr (throw_exception)
+                skipJSONISODateArgument<ReturnType>(buf, settings);
+            else if (!skipJSONISODateArgument<ReturnType>(buf, settings))
+                return ReturnType(false);
+        }
+        else if constexpr (throw_exception)
+            assertString("ull", buf);
+        else if (!checkString("ull", buf))
+            return ReturnType(false);
+    }
+    else if (*buf.position() == 'I') /// skip ISODate("...")  -- not valid JSON, but mongodb shell syntax
     {
         if constexpr (throw_exception)
-            assertString("null", buf);
-        else if (!checkString("null", buf))
-            return ReturnType(false);
+        {
+            assertString("ISODate(", buf);
+            skipJSONISODateArgument<ReturnType>(buf, settings);
+        }
+        else
+        {
+            if (!checkString("ISODate(", buf))
+                return ReturnType(false);
+            if (!skipJSONISODateArgument<ReturnType>(buf, settings))
+                return ReturnType(false);
+        }
     }
     else if (*buf.position() == 't') /// skip true
     {
