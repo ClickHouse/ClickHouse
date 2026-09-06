@@ -2460,6 +2460,31 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     if (transformed_value.isNaN())
         return false;
 
+    /// IEEE equality does not distinguish `-0.0` from `+0.0`, but a key transform can: `toString(-0.0)` is
+    /// `'-0'`, and `reinterpretAsUInt64(-0.0)` is not zero. An equality on the transformed key then covers
+    /// only one of the two zeros, while the original predicate matches both, so the granules holding the
+    /// other zero would be skipped (and, for `notEquals`, counted without being filtered). Keep the rewrite
+    /// only when the constant does not reach the transform as a zero, or both zeros reach the same value.
+    if (isFloat(removeNullable(removeLowCardinality(dag.input_type))))
+    {
+        const DataTypePtr zeros_type = removeNullable(removeLowCardinality(dag.input_type));
+        auto zeros_column = zeros_type->createColumn();
+        zeros_column->insert(Float64(0.0));
+        zeros_column->insert(Float64(-0.0));
+
+        ColumnPtr transformed_zeros_column;
+        DataTypePtr transformed_zeros_type;
+        if (!applyDeterministicDagToColumn(
+                std::move(zeros_column), zeros_type, expr_name, dag, transformed_zeros_column, transformed_zeros_type))
+            return false;
+
+        const Field positive_zero = (*transformed_zeros_column)[0];
+        const Field negative_zero = (*transformed_zeros_column)[1];
+
+        if (positive_zero != negative_zero && (transformed_value == positive_zero || transformed_value == negative_zero))
+            return false;
+    }
+
     out_value = transformed_value;
     out_type = transformed_const_type;
     return true;
