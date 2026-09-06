@@ -62,6 +62,8 @@ jobs:
             #   not actual tests — always treated as infrastructure failure), or
             # - it never reached its main "Run" step (failed during checkout/setup), or
             # - the "Run" step was skipped, or
+            # - the "Run" step produced no conclusion at all (GitHub finalized the job
+            #   while its main step was still unreported), or
             # - the "Run" step failed almost immediately (under 2 minutes), indicating
             #   a setup/download issue (e.g. missing S3 credentials) rather than a real
             #   test failure
@@ -72,6 +74,7 @@ jobs:
                 [.steps[] | select(.name == "Run")] |
                 if length == 0 then true
                 elif .[0].conclusion == "skipped" then true
+                elif .[0].conclusion == null then true
                 elif .[0].conclusion == "failure" then
                   ((.[0].completed_at | fromdateiso8601) -
                    (.[0].started_at | fromdateiso8601)) < 120
