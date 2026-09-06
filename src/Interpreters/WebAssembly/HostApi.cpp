@@ -3,6 +3,7 @@
 #include <Interpreters/WebAssembly/WasmEngine.h>
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -13,6 +14,11 @@ namespace DB::ErrorCodes
 {
     extern const int WASM_ERROR;
     extern const int RESOURCE_NOT_FOUND;
+}
+
+namespace DB::FailPoints
+{
+    extern const char wasm_guest_pause[];
 }
 
 namespace DB::WebAssembly
@@ -119,6 +125,11 @@ std::string decodeAssemblyScriptString(WasmCompartment * compartment, WasmPtr pt
         message, file_name, line_number, column_number);
 }
 
+void wasmExportGuestPause(WasmCompartment *)
+{
+    FailPointInjection::pauseFailPoint(FailPoints::wasm_guest_pause);
+}
+
 }
 
 template <typename>
@@ -199,6 +210,9 @@ WasmHostFunction getHostFunction(std::string_view function_name)
         /// (memory allocation, bounds checks, etc). Linked only when the module
         /// declares `(import "env" "abort" (func ...))`, so non-AS modules are unaffected.
         makeHostFunction("abort", wasmExportAssemblyScriptAbort),
+        /// Called by the WASM test module faulty.wasm's infinite_loop_signal function.
+        /// Fire the wasm_guest_pause failpoint to prove guest code actually started executing.
+        makeHostFunction("_wasm_signal_ready", wasmExportGuestPause),
     };
 
     for (const auto & function : exported_functions)

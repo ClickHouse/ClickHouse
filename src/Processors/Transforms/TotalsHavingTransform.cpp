@@ -5,13 +5,25 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnsCommon.h>
 
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char totals_having_transform_before_expression_pause[];
+    extern const char totals_having_transform_pause[];
+    extern const char totals_having_transform_totals_pause[];
+    extern const char totals_having_transform_totals_start_pause[];
+    extern const char totals_having_transform_totals_before_expression_pause[];
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -150,6 +162,19 @@ void TotalsHavingTransform::work()
         ISimpleTransform::work();
 }
 
+void TotalsHavingTransform::onCancel() noexcept
+{
+    ISimpleTransform::onCancel();
+    if (expression)
+    {
+        for (const auto & node : expression->getNodes())
+        {
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+                node.function->cancelExecution();
+        }
+    }
+}
+
 void TotalsHavingTransform::transform(Chunk & chunk)
 {
     /// Block with values not included in `max_rows_to_group_by`. We'll postpone it.
@@ -193,7 +218,26 @@ void TotalsHavingTransform::transform(Chunk & chunk)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Having clause cannot contain arrayJoin");
         }
 
-        expression->execute(finalized_block, num_rows);
+        FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_before_expression_pause);
+
+        if (isCancelled())
+        {
+            stopReading();
+            chunk.clear();
+            return;
+        }
+
+        expression->execute(finalized_block, num_rows, false, false, &getCancellationFlag());
+
+        FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_pause);
+
+        if (isCancelled())
+        {
+            stopReading();
+            chunk.clear();
+            return;
+        }
+
         ColumnPtr filter_column_ptr = finalized_block.getByPosition(filter_column_pos).column;
         if (remove_filter)
             finalized_block.erase(filter_column_name);
@@ -280,6 +324,20 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
 
 void TotalsHavingTransform::prepareTotals()
 {
+    FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_totals_start_pause);
+
+    if (isCancelled())
+    {
+        /// The main stream was already cancelled and the result is discarded anyway, so none of the
+        /// totals work below has to be done: no merging of `overflow_aggregates`, no finalization of
+        /// aggregate states, and no evaluation of the `HAVING` expression for the totals row.
+        /// Install an empty chunk matching the totals port header, so that `prepare` pushes it and
+        /// finishes instead of scheduling this method again.
+        totals = Chunk(getTotalsPort().getHeader().cloneEmptyColumns(), 0);
+        total_prepared = true;
+        return;
+    }
+
     /// If totals_mode == AFTER_HAVING_AUTO, you need to decide whether to add aggregates to TOTALS for strings,
     /// not passed max_rows_to_group_by.
     if (overflow_aggregates)
@@ -294,11 +352,50 @@ void TotalsHavingTransform::prepareTotals()
     totals = Chunk(std::move(current_totals), 1);
     finalizeChunk(totals, aggregates_mask);
 
+    if (isCancelled())
+    {
+        /// Cancellation could have arrived after the entry check, while the overflow aggregates were
+        /// being merged and the totals row finalized. The result is discarded anyway, so do not start
+        /// evaluating the `HAVING` expression for the totals row; replace the totals with an empty
+        /// chunk matching the totals port header (the finalized chunk still has the pre-expression
+        /// structure), and mark the totals as prepared.
+        totals = Chunk(getTotalsPort().getHeader().cloneEmptyColumns(), 0);
+        total_prepared = true;
+        return;
+    }
+
     if (expression)
     {
         size_t num_rows = totals.getNumRows();
         auto block = finalized_header.cloneWithColumns(totals.detachColumns());
-        expression->execute(block, num_rows);
+
+        FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_totals_before_expression_pause);
+
+        if (isCancelled())
+        {
+            /// The query was cancelled after the preceding guard and before evaluating the
+            /// totals-row `HAVING` expression. Do not start a new expression action; its
+            /// cancellation callback is checked only after each action completes.
+            totals = Chunk(getTotalsPort().getHeader().cloneEmptyColumns(), 0);
+            total_prepared = true;
+            return;
+        }
+
+        expression->execute(block, num_rows, false, false, &getCancellationFlag());
+
+        FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_totals_pause);
+
+        if (isCancelled())
+        {
+            /// The query is being cancelled and the result is discarded anyway.
+            /// The columns of `totals` are already detached into `block`, so put an empty chunk
+            /// matching the totals port header in its place, and mark the totals as prepared,
+            /// so that `prepare` does not schedule this method again.
+            totals = Chunk(getTotalsPort().getHeader().cloneEmptyColumns(), 0);
+            total_prepared = true;
+            return;
+        }
+
         if (remove_filter)
             block.erase(filter_column_name);
         /// Note: after expression totals may have several rows if `arrayJoin` was used in expression.

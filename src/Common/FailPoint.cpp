@@ -368,13 +368,34 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
+    PAUSEABLE_ONCE(filter_transform_before_expression_pause) \
+    PAUSEABLE_ONCE(filter_transform_pause) \
+    PAUSEABLE_ONCE(expression_transform_before_expression_pause) \
+    PAUSEABLE_ONCE(expression_transform_pause) \
+    PAUSEABLE_ONCE(converting_transform_before_expression_pause) \
+    PAUSEABLE_ONCE(converting_transform_pause) \
+    PAUSEABLE_ONCE(check_constraints_transform_before_expression_pause) \
+    PAUSEABLE_ONCE(check_constraints_transform_pause) \
+    PAUSEABLE_ONCE(adding_defaults_transform_before_expression_pause) \
+    PAUSEABLE_ONCE(adding_defaults_transform_before_execute_pause) \
+    PAUSEABLE_ONCE(adding_defaults_transform_pause) \
+    PAUSEABLE_ONCE(query_condition_cache_part_switch_pause) \
+    PAUSEABLE_ONCE(query_condition_cache_final_flush_pause) \
+    PAUSEABLE_ONCE(filter_sorted_stream_by_range_pause) \
+    PAUSEABLE_ONCE(filter_sorted_stream_by_range_fallback_pause) \
+    PAUSEABLE_ONCE(totals_having_transform_before_expression_pause) \
+    PAUSEABLE_ONCE(totals_having_transform_pause) \
+    PAUSEABLE_ONCE(totals_having_transform_totals_pause) \
+    PAUSEABLE_ONCE(totals_having_transform_totals_start_pause) \
+    PAUSEABLE_ONCE(totals_having_transform_totals_before_expression_pause) \
     PAUSEABLE_ONCE(aggregating_in_order_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(mysql_output_format_mid_loop_pause) \
     PAUSEABLE_ONCE(postgresql_output_format_mid_loop_pause) \
     ONCE(hash_join_throw_after_data_release) \
     REGULAR(smt_force_takeover_predicate_true) \
     REGULAR(smt_takeover_fake_hardware_error_after_set) \
-    PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas)
+    PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas) \
+    PAUSEABLE(wasm_guest_pause)
 
 namespace FailPoints
 {

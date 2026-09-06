@@ -1,11 +1,13 @@
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Common/FailPoint.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
@@ -32,6 +34,13 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char adding_defaults_transform_before_expression_pause[];
+    extern const char adding_defaults_transform_pause[];
+    extern const char adding_defaults_transform_before_execute_pause[];
+}
 
 namespace ErrorCodes
 {
@@ -148,6 +157,27 @@ AddingDefaultsTransform::AddingDefaultsTransform(
     , input_format(input_format_)
     , context(context_)
 {
+}
+
+
+void AddingDefaultsTransform::onCancel() noexcept
+{
+    ISimpleTransform::onCancel();
+
+    ExpressionActionsPtr actions;
+    {
+        std::lock_guard lock(current_actions_mutex);
+        actions = current_actions;
+    }
+
+    if (!actions)
+        return;
+
+    for (const auto & node : actions->getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+            node.function->cancelExecution();
+    }
 }
 
 
@@ -272,7 +302,48 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
             auto actions = std::make_shared<ExpressionActions>(
                 ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag)),
                 ExpressionActionsSettings(context, CompileExpressions::yes), true);
-            actions->execute(evaluate_block);
+
+            /// Publish the actions before anything can observe the cancellation, so that a
+            /// concurrent `onCancel` can always forward `cancelExecution` into a function that is
+            /// about to run or already running. Publishing after the check below would leave a
+            /// window where `onCancel` sees no actions and the evaluation still starts one action.
+            {
+                std::lock_guard lock(current_actions_mutex);
+                current_actions = actions;
+            }
+
+            FailPointInjection::pauseFailPoint(FailPoints::adding_defaults_transform_before_expression_pause);
+
+            /// The task can be dispatched before the query is cancelled and start running after it:
+            /// skip the whole default evaluation instead of running one action of it.
+            if (isCancelled())
+            {
+                {
+                    std::lock_guard lock(current_actions_mutex);
+                    current_actions.reset();
+                }
+                chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
+                return;
+            }
+
+            /// The cancellation can also land between the check above and the evaluation. The
+            /// actions are already published, so `onCancel` reaches the running function.
+            FailPointInjection::pauseFailPoint(FailPoints::adding_defaults_transform_before_execute_pause);
+
+            actions->execute(evaluate_block, false, false, &getCancellationFlag());
+
+            {
+                std::lock_guard lock(current_actions_mutex);
+                current_actions.reset();
+            }
+
+            FailPointInjection::pauseFailPoint(FailPoints::adding_defaults_transform_pause);
+
+            if (isCancelled())
+            {
+                chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
+                return;
+            }
         }
 
         /// Mix the computed defaults back into res
