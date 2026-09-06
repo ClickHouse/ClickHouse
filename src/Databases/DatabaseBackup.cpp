@@ -58,8 +58,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
@@ -464,21 +462,16 @@ ASTPtr DatabaseBackup::getCreateQueryFromMetadata(const String & table_name, boo
 
 ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
 {
-    const auto & settings = getContext()->getSettingsRef();
-
     /// The locator must stay a nested function: a string literal is opaque to secret masking, which
     /// then has to hide the whole argument, and this text is what the metadata file keeps.
     const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
         backQuoteIfNeed(database_name), quoteString(config.database_name), config.backup_info.toString());
 
+    /// Parsed without size, depth or backtrack limits, as a definition read back from storage is: this
+    /// is a rendering of an AST that parsed once already, under the limits of whichever session wrote
+    /// it, and applying this context's limits to it would throw instead of showing the database.
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser,
-        query.data(),
-        query.data() + query.size(),
-        "",
-        0,
-        settings[Setting::max_parser_depth],
-        settings[Setting::max_parser_backtracks]);
+    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0, 0);
 
     if (!comment.empty())
     {
