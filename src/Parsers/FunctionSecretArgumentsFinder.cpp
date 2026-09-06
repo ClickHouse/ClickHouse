@@ -1462,9 +1462,12 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageBackupSecretArguments()
             const auto argument_function = function->arguments->at(i)->getFunction();
             if (argument_function && argument_function->name() == "equals")
             {
-                /// A key this rule cannot read hides which credential the override carries.
+                /// A key this rule cannot read hides which credential the override carries; a value that
+                /// is no plain literal or identifier can nest one (`headers('Authorization' = '...')`).
                 if (argument_function->arguments && argument_function->arguments->size() == 2
-                    && tryGetStringFromArgument(*argument_function->arguments->at(0), nullptr))
+                    && tryGetStringFromArgument(*argument_function->arguments->at(0), nullptr)
+                    && (tryGetStringFromArgument(*argument_function->arguments->at(1), nullptr)
+                        || argument_function->arguments->at(1)->tryGetLiteralText(nullptr)))
                     continue;
                 maskEveryArgument();
                 return;

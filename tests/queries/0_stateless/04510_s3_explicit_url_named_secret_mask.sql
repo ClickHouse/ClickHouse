@@ -301,6 +301,14 @@ BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
                  equals('account_key', 'SEKRIT_AZNCEQ3', 'surplus')); -- { serverError BAD_ARGUMENTS }
 
+-- A readable key does not make the override readable: the destination evaluates its value as a constant
+-- expression, so a value that is no plain literal or identifier can nest a credential of its own and is
+-- formatted verbatim before that evaluation rejects it, as the S3 form above already is for such a value.
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 container = headers('Authorization' = 'SEKRIT_AZNCHDR')); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
+                 blob_path = concat('SEKRIT_AZNCPATHEXPR', '/b.zip')); -- { serverError BAD_ARGUMENTS }
+
 -- connection_string and storage_account_url are mutually exclusive, and the destination reads at most
 -- one of them, so an override it never reads holds whatever was written there. The last statement is
 -- the control: a key that carries no credential stays visible however often it is repeated.
