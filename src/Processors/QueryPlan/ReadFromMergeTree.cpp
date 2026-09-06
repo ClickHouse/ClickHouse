@@ -3804,6 +3804,11 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
             || !context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]))
         return false;
 
+    /// The prefix indexes this snapshot's sorting key, and a clone of its expression list is resized
+    /// to `prefix_size`, which appends null `ASTPtr` children when the prefix is longer than the key.
+    if (prefix_size > storage_snapshot->metadata->getSortingKey().column_names.size())
+        return false;
+
     /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order
     /// re-entering after ORDER BY) can strand a too-narrow virtual row conversion. The first,
     /// conversion-building request may legitimately be narrower than prefix_size (fixed middle key,
