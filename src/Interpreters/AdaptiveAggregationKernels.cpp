@@ -1446,18 +1446,50 @@ size_t Aggregator::adaptivePressurePartBytes() const
     return std::max(params.max_bytes_before_external_group_by / 8, adaptive_pressure_min_part_bytes);
 }
 
-size_t Aggregator::adaptivePressurePartRecords() const
+/// The hash-table cell of the drain table's variant: what one record occupies in the table's
+/// buffer, before the buffer's slack. A `UInt64` key is a 16-byte cell, the fixed `keys128` and
+/// `keys256` variants 24 and 40 bytes, a string key with its saved hash 32 - a bound derived
+/// from any one of them would be wrong for the others, so it is read from the variant the drains
+/// actually build. The drain tables are always the two-level twin of the shared method.
+static size_t adaptiveDrainCellBytes(AggregatedDataVariants::Type type)
+{
+    switch (type)
+    {
+#define M(NAME) \
+        case AggregatedDataVariants::Type::NAME: \
+            return sizeof(typename decltype(AggregatedDataVariants::NAME)::element_type::Data::cell_type);
+
+        APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
+
+        default:
+            throw Exception(
+                ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive drain path.");
+    }
+}
+
+/// The bytes one drained record costs in the destination table: its cell in the hash-table
+/// buffer, which the grower keeps at most half full (`HashTableGrower::maxFill`), so two cells
+/// per record; and its aggregate states in the arena. Variable-width key bytes and the staged
+/// payload are charged by the caller from the batch itself (see `stagedChunkBytes`).
+size_t Aggregator::adaptiveDrainRecordBytes(AggregatedDataVariants::Type type) const
+{
+    return 2 * adaptiveDrainCellBytes(type) + total_size_of_aggregate_states;
+}
+
+size_t Aggregator::adaptivePressurePartRecords(AggregatedDataVariants::Type type) const
 {
     const size_t part_bytes = adaptivePressurePartBytes();
     if (part_bytes == std::numeric_limits<size_t>::max())
         return adaptive_pressure_spill_min_keys;
 
-    /// The records whose bookkeeping and states alone fill a part. Their key bytes are not
-    /// known where this is used, so for wide keys this overestimates and the detach's reading
-    /// of the built table's real `allocatedBytes` is what stops the overshoot. Never below one
+    /// The records whose cells and states alone fill a part. Their variable-width key bytes
+    /// are not known where this is used, so for wide string keys this overestimates and the
+    /// byte-side claim beside it (`estimateAdaptiveDrainBytes`) and the detach's reading of
+    /// the built table's real `allocatedBytes` are what stop the overshoot. Never below one
     /// record per bucket, so that a batch stays worth its bucket-major pass however wide the
-    /// states are.
-    const size_t per_record_bytes = sizeof(UInt64) * 4 + total_size_of_aggregate_states;
+    /// keys or the states are.
+    const size_t per_record_bytes = adaptiveDrainRecordBytes(type);
     return std::clamp(part_bytes / per_record_bytes, ADAPTIVE_AGGREGATION_NUM_BUCKETS, adaptive_pressure_spill_min_keys);
 }
 
@@ -1472,9 +1504,9 @@ size_t Aggregator::adaptivePressureDetachedBytesBudget() const
     return std::min(adaptive_pressure_detached_bytes_budget, std::max(params.max_bytes_before_external_group_by / 2, 2 * part_bytes));
 }
 
-size_t Aggregator::estimateAdaptiveDrainBytes(size_t records, size_t staged_bytes) const
+size_t Aggregator::estimateAdaptiveDrainBytes(AggregatedDataVariants::Type type, size_t records, size_t staged_bytes) const
 {
-    const size_t per_record_bytes = sizeof(UInt64) * 4 + total_size_of_aggregate_states;
+    const size_t per_record_bytes = adaptiveDrainRecordBytes(type);
     size_t estimated_bytes = 0;
     if (common::mulOverflow(records, per_record_bytes, estimated_bytes)
         || common::addOverflow(estimated_bytes, staged_bytes, estimated_bytes))
@@ -1486,6 +1518,10 @@ size_t Aggregator::estimateAdaptiveDrainBytes(size_t records, size_t staged_byte
 /// returns: the staged keys, and the staged payload beside them - the run lengths of a
 /// count-only chunk, or the argument columns a general-aggregate chunk gathered at publish,
 /// whose variable-width values can outweigh everything the drained table itself will cost.
+/// Variable-width keys are counted twice, because a pressure-time drain copies them into the
+/// table's arena while the chunk still holds the staged bytes, so both copies are resident when
+/// the drain returns; a fixed-size key lives in the table's cell, which the per-record charge
+/// of `Aggregator::adaptiveDrainRecordBytes` already covers.
 /// The bytes the calling thread holds as its own memory tracker counts them, with the untracked
 /// tail flushed so that two readings around a piece of work bound what it allocated and kept.
 /// Unlike a table's `allocatedBytes`, which sums its arenas and hash-table buffers, this sees
@@ -1521,8 +1557,10 @@ static AggregatedDataVariantsPtr detachSharedDrainTable(AdaptiveAggregationSessi
 
 static size_t stagedChunkBytes(const StagedChunk & chunk)
 {
-    size_t bytes = chunk.keys.routing_hashes.allocated_bytes() + chunk.keys.key_bytes.allocated_bytes()
-        + chunk.keys.key_offsets.allocated_bytes();
+    const size_t key_bytes = chunk.keys.key_bytes.allocated_bytes();
+    size_t bytes = chunk.keys.routing_hashes.allocated_bytes() + key_bytes + chunk.keys.key_offsets.allocated_bytes();
+    if (!chunk.keys.fixed_key_size)
+        bytes += key_bytes;
 
     if (const auto * counts = std::get_if<StagedChunk::CountPayload>(&chunk.payload))
         return bytes + counts->multiplicities.allocated_bytes();
@@ -1623,7 +1661,8 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
     PaddedPODArray<AggregateDataPtr> places_scratch;
 
     const size_t part_bytes = adaptivePressurePartBytes();
-    const size_t part_records = adaptivePressurePartRecords();
+    const AggregatedDataVariants::Type drain_type = shared.early_drain_variants->type;
+    const size_t part_records = adaptivePressurePartRecords(drain_type);
 
     size_t drained_records = 0;
     size_t begin = 0;
@@ -1664,7 +1703,7 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
             batch_records += chunks[end]->keys.size();
             batch_staged_bytes += stagedChunkBytes(*chunks[end]);
             if (batch_records >= batch_target
-                || estimateAdaptiveDrainBytes(batch_records, batch_staged_bytes) >= batch_bytes_target)
+                || estimateAdaptiveDrainBytes(drain_type, batch_records, batch_staged_bytes) >= batch_bytes_target)
             {
                 ++end;
                 break;
@@ -1726,6 +1765,7 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
         /// estimate alone does not see. A batch that reached either bound is a part of its
         /// own, which is what tells the two regimes below apart; a batch that merely ran out
         /// of chunks is the tail.
+        routing_type = shared.early_drain_variants->type;
         bool batch_is_full = false;
         size_t batch_staged_bytes = 0;
         size_t split = 0;
@@ -1734,7 +1774,7 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
             batch_records += chunks[split]->keys.size();
             batch_staged_bytes += stagedChunkBytes(*chunks[split]);
             if (batch_records >= adaptive_pressure_spill_min_keys
-                || estimateAdaptiveDrainBytes(batch_records, batch_staged_bytes) >= part_bytes)
+                || estimateAdaptiveDrainBytes(routing_type, batch_records, batch_staged_bytes) >= part_bytes)
             {
                 batch_is_full = true;
                 ++split;
@@ -1787,11 +1827,9 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
             return;
         }
 
-        routing_type = shared.early_drain_variants->type;
-
         /// Saturating rather than wrapping, and a request larger than the whole budget is
         /// granted when it is alone, so an absurd estimate cannot deadlock the valve.
-        estimated_bytes = estimateAdaptiveDrainBytes(batch_records, batch_staged_bytes);
+        estimated_bytes = estimateAdaptiveDrainBytes(routing_type, batch_records, batch_staged_bytes);
     }
 
     /// The budget is claimed with the coordinator lock released, so a producer that must wait

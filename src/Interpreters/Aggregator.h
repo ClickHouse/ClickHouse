@@ -347,15 +347,18 @@ public:
     /// residue the tails share and the writes in flight - is sized from that threshold instead
     /// of from an absolute constant, or the valve costs more memory than it sheds. Without a
     /// threshold to size against, the part bound is unlimited and the absolute ceilings stand.
+    /// The per-record charge is read from the drain table's variant, because the hash cell
+    /// of a `keys128` or `keys256` table is not that of a `UInt64` or a string key.
     size_t adaptivePressurePartBytes() const;
-    size_t adaptivePressurePartRecords() const;
+    size_t adaptiveDrainRecordBytes(AggregatedDataVariants::Type type) const;
+    size_t adaptivePressurePartRecords(AggregatedDataVariants::Type type) const;
     size_t adaptivePressureDetachedBytesBudget() const;
 
-    /// The bytes a claimed batch is expected to occupy once drained: the per-record
-    /// bookkeeping and aggregate states of the destination table, plus the batch's own staged
-    /// bytes, which stay resident beside that table until the drain returns. Saturating,
-    /// because an absurd product only means "ask for the whole budget".
-    size_t estimateAdaptiveDrainBytes(size_t records, size_t staged_bytes) const;
+    /// The bytes a claimed batch is expected to occupy once drained into a table of the given
+    /// variant: the per-record cells and aggregate states of the destination table, plus the
+    /// batch's own staged bytes, which stay resident beside that table until the drain
+    /// returns. Saturating, because an absurd product only means "ask for the whole budget".
+    size_t estimateAdaptiveDrainBytes(AggregatedDataVariants::Type type, size_t records, size_t staged_bytes) const;
 
     /// For a producer back on the baseline path, which cannot free the shared drain table by
     /// flushing its own: writes that table out regardless of the part floor, then returns query
