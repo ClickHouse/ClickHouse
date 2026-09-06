@@ -92,7 +92,7 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
                     {
                         auto database = args.at("database").get<std::string>();
                         auto table = args.at("table").get<std::string>();
-                        return successResult(hooks->execute_internal(
+                        return successResult(hooks->execute_internal_masking_secrets(
                             "SHOW CREATE TABLE " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table), {}));
                     });
             });

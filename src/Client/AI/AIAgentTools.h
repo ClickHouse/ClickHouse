@@ -36,6 +36,12 @@ struct AIAgentHooks
     /// as tab-separated text with a header line. Throws on error.
     InternalQueryExecutor execute_internal;
 
+    /// The same, for a query whose result can render the credentials of an external-engine table
+    /// (`SHOW CREATE`): the display of secrets is turned off for it. Only such a query uses this
+    /// hook - turning the display off is a setting change, and a session that rejects it must not
+    /// lose the tools that cannot render a secret in the first place.
+    InternalQueryExecutor execute_internal_masking_secrets;
+
     /// Execute a query internally and return the first cell of the result raw and unescaped
     /// (for free-form text with its own newlines, e.g. a pre-rendered documentation blob).
     ScalarQueryExecutor execute_scalar;

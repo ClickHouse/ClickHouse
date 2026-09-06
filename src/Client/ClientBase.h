@@ -218,6 +218,12 @@ protected:
     /// the result as tab-separated text with a header line. Throws on error.
     String executeInternalQueryForAI(const String & query, const NameToNameMap & params);
 
+    /// The same, for a query whose result can render the credentials of an external-engine table
+    /// (`SHOW CREATE`): the display of secrets is turned off for it, which the other internal
+    /// queries must not pay for - it is a setting change, and a session that rejects it would
+    /// then fail a harmless schema or documentation lookup as well.
+    String executeInternalQueryForAIMaskingSecrets(const String & query, const NameToNameMap & params);
+
     /// Execute a query internally for the AI agent and return the first cell of the result as
     /// unescaped text (empty when no rows). For free-form values with their own newlines.
     String executeScalarQueryForAI(const String & query, const NameToNameMap & params);
@@ -338,7 +344,10 @@ private:
     /// result (used by `processHelpCommand` and by the tools of the AI agent). The query bypasses
     /// the normal output path, so it neither prints anything nor disturbs the visible query state.
     /// `from_ai_agent` marks the query in the query log as one the AI agent ran on its own.
-    Block fetchInternalQueryResult(const String & query, const NameToNameMap & params, bool from_ai_agent = false);
+    /// `needs_secret_masking` turns off the display of secrets for the query, for the queries
+    /// whose result can render them.
+    Block fetchInternalQueryResult(
+        const String & query, const NameToNameMap & params, bool from_ai_agent = false, bool needs_secret_masking = false);
 
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
@@ -623,6 +632,10 @@ protected:
     /// client, unlike the settings of the handshake, so the value of `readonly` - and with it the
     /// promise that the marker was accepted - cannot be proven any more.
     bool ai_query_log_access_permanently_disabled = false;
+    /// Whether the server accepts a `log_comment` change in this session, asked once. A settings
+    /// profile can make that one setting `const` while leaving the session otherwise writable,
+    /// which the `readonly` setting does not show.
+    std::optional<bool> ai_query_log_marker_writable;
     /// The line reader of the interactive loop while it is running, so the queries the agent runs
     /// can be added to its history like typed ones. Not owned; cleared when the loop returns.
     LineReader * ai_line_reader = nullptr;

@@ -4076,6 +4076,8 @@ void ClientBase::initAIAgent()
 
     AIAgentHooks hooks;
     hooks.execute_internal = [this](const String & query, const NameToNameMap & params) { return executeInternalQueryForAI(query, params); };
+    hooks.execute_internal_masking_secrets
+        = [this](const String & query, const NameToNameMap & params) { return executeInternalQueryForAIMaskingSecrets(query, params); };
     hooks.execute_scalar = [this](const String & query, const NameToNameMap & params) { return executeScalarQueryForAI(query, params); };
     hooks.run_visible = [this](const String & query, bool readonly, bool allow_schema_access)
     {
@@ -4249,6 +4251,15 @@ String ClientBase::executeInternalQueryForAI(const String & query, const NameToN
         throw Exception(ErrorCodes::NETWORK_ERROR, "Not connected to a server");
 
     const Block result = fetchInternalQueryResult(query, params, /*from_ai_agent=*/ true);
+    return formatBlockAsTextForAI(result);
+}
+
+String ClientBase::executeInternalQueryForAIMaskingSecrets(const String & query, const NameToNameMap & params)
+{
+    if (!connection)
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Not connected to a server");
+
+    const Block result = fetchInternalQueryResult(query, params, /*from_ai_agent=*/ true, /*needs_secret_masking=*/ true);
     return formatBlockAsTextForAI(result);
 }
 
@@ -4606,6 +4617,37 @@ bool ClientBase::aiQueryLogMarkerAllowed()
         ai_query_log_access_permanently_disabled = true;
         return false;
     }
+
+    /// `readonly` is not the only way a session can reject the marker: a settings profile can make
+    /// `log_comment` alone `const` and leave everything else writable. Attaching the marker then
+    /// fails every query of the agent - a schema probe, a documentation lookup, a read-only query -
+    /// over a tag that nothing depends on once `read_query_log` is gone with it. So the marker gets
+    /// a capability of its own, and the server is asked what it is instead of it being inferred
+    /// from `readonly`. The answer belongs to the settings profile of the user, so it is asked
+    /// once; the one thing that can replace that profile unseen - a `SET profile` - disables the
+    /// marker for good anyway. The question itself is the one query of the agent that goes to the
+    /// server unmarked: it is asking whether marking works.
+    if (!ai_query_log_marker_writable.has_value())
+    {
+        /// Without a server there is no query log to mark, and nothing to ask. The question is
+        /// left unanswered rather than answered wrongly, so it is asked again once connected.
+        if (!connection)
+            return false;
+
+        const Block probe = materializeBlock(fetchInternalQueryResult(
+            "SELECT readonly FROM system.settings WHERE name = 'log_comment'", {}, /*from_ai_agent=*/ false));
+        /// An answer that is not a plain "the current user can change it" is taken for a no: the
+        /// marker is optional, and offering `read_query_log` on top of a guess would report the
+        /// activity of the agent itself back as the history of the user.
+        ai_query_log_marker_writable
+            = probe.rows() == 1 && probe.columns() == 1 && probe.getByPosition(0).column->getUInt(0) == 0;
+    }
+
+    if (!*ai_query_log_marker_writable)
+    {
+        ai_query_log_access_permanently_disabled = true;
+        return false;
+    }
     return true;
 }
 
@@ -4798,7 +4840,8 @@ void ClientBase::recordParseErrorForAIContext(std::string_view query, const Stri
 }
 #endif
 
-Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNameMap & params, [[maybe_unused]] bool from_ai_agent)
+Block ClientBase::fetchInternalQueryResult(
+    const String & query, const NameToNameMap & params, [[maybe_unused]] bool from_ai_agent, [[maybe_unused]] bool needs_secret_masking)
 {
     /// The server-side settings profile is applied lazily. Internal queries can be the first
     /// query in a session, so read the effective dialect and `readonly` only after applying it.
@@ -4840,14 +4883,18 @@ Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNam
         settings_to_send->set("log_comment", String(AI_AGENT_LOG_COMMENT));
     }
 
-    /// The results of the internal queries of the agent (`show_create_table` among them) are sent
-    /// to the AI provider without the user seeing them, so the secrets of external-engine table
-    /// definitions are masked even if the session enabled their display. Only an enabled setting is
-    /// turned off: it is `IMPORTANT`, so a server that predates it answers `UNKNOWN_SETTING` rather
-    /// than ignoring it, and the agent must not break against such a server just to re-send the
-    /// value the session already has. A session that does display secrets is talking to a server
-    /// that knows the setting, and under `readonly = 1` the query then fails instead of leaking.
-    if (from_ai_agent && client_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+    /// The result of an internal query of the agent that renders a table definition
+    /// (`show_create_table`) is sent to the AI provider without the user seeing it, so the secrets
+    /// of an external-engine table are masked even if the session enabled their display. Only that
+    /// query pays for it: the setting change is one more thing the session can reject, and a
+    /// profile that does reject it must not take `list_databases`, `list_tables`,
+    /// `consult_documentation` and `read_query_log` down with it - none of them can render a
+    /// secret in the first place. Only an enabled setting is turned off: it is `IMPORTANT`, so a
+    /// server that predates it answers `UNKNOWN_SETTING` rather than ignoring it, and the agent
+    /// must not break against such a server just to re-send the value the session already has. A
+    /// session that does display secrets is talking to a server that knows the setting, and under
+    /// `readonly = 1` the query then fails instead of leaking.
+    if (needs_secret_masking && client_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
     {
         if (!settings_to_send)
             settings_to_send.emplace();
