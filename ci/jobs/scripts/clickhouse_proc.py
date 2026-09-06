@@ -589,7 +589,12 @@ class ClickHouseProc:
         )
 
     def prepare_stateful_data(
-        self, with_s3_storage, is_db_replicated, build_type=None, step_timeout=None
+        self,
+        with_s3_storage,
+        is_db_replicated,
+        build_type=None,
+        step_timeout=None,
+        stop_thread_fuzzer=False,
     ):
         """`step_timeout` bounds each statement, in seconds; None means unbounded."""
         self.stateful_setup_error = None
@@ -622,6 +627,10 @@ set -o pipefail
 trap 'rc=$?; echo "prepare_stateful_data: command [$BASH_COMMAND] at line $LINENO failed with exit $rc" >&2' ERR
 
 MAX_EXECUTION_TIME=1800
+
+if [[ "$STOP_THREAD_FUZZER" == "1" ]]; then
+    $PREP_TIMEOUT clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
+fi
 
 $PREP_TIMEOUT clickhouse-client --query "SHOW DATABASES"
 $PREP_TIMEOUT clickhouse-client --query "CREATE DATABASE datasets"
@@ -660,10 +669,15 @@ $PREP_TIMEOUT clickhouse-client --query "CREATE TABLE test.hits_parquet (Title S
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM test"
 $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.hits"
 $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
+
+if [[ "$STOP_THREAD_FUZZER" == "1" ]]; then
+    $PREP_TIMEOUT clickhouse-client --query "SYSTEM START THREAD FUZZER"
+fi
 """
         command = (
             f"PREP_TIMEOUT={shlex.quote(self.prep_timeout_prefix(step_timeout))}\n"
             f"MAX_INSERT_THREADS={max_insert_threads}\n"
+            f"STOP_THREAD_FUZZER={1 if stop_thread_fuzzer else 0}\n"
         ) + command
         if with_s3_storage:
             command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
