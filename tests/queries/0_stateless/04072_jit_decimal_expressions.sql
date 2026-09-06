@@ -34,6 +34,7 @@ SELECT toFloat32(d32), toFloat64(d64) FROM test_jit_dec_expr ORDER BY d32;
 SELECT 'Test integer to Decimal conversions';
 SELECT toDecimal32(i64, 2), toDecimal64(i64, 4) FROM test_jit_dec_expr ORDER BY i64;
 
+-- The `Float ->` direction is evaluated by the interpreter: see #117442.
 SELECT 'Test float to Decimal conversions';
 SELECT toDecimal64(f64, 4) FROM test_jit_dec_expr ORDER BY f64;
 
