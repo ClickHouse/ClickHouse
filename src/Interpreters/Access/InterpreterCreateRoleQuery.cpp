@@ -2,6 +2,7 @@
 #include <Interpreters/Access/InterpreterCreateRoleQuery.h>
 
 #include <Access/AccessControl.h>
+#include <Access/Common/AccessFlags.h>
 #include <Access/Role.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -49,7 +50,14 @@ BlockIO InterpreterCreateRoleQuery::execute()
 
     auto & access_control = getContext()->getAccessControl();
 
-    const auto access_type = query.alter ? AccessType::ALTER_ROLE : AccessType::CREATE_ROLE;
+    /// `CREATE ROLE OR REPLACE` throws away the privileges granted to an existing role of the same name,
+    /// so it is a drop followed by a create and requires the privileges of both. `DROP ROLE` is required
+    /// whether or not the role currently exists, mirroring `REPLACE TABLE`, so that the check does not
+    /// reveal which roles exist either.
+    AccessFlags access_type = query.alter ? AccessType::ALTER_ROLE : AccessType::CREATE_ROLE;
+    if (query.or_replace)
+        access_type |= AccessType::DROP_ROLE;
+
     for (const auto & name : query.names)
         getContext()->checkAccess(access_type, name);
 
