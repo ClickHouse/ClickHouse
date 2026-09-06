@@ -1,0 +1,6 @@
+--- index_granularity of non-adaptive parts is what sizes the tasks
+1
+10000
+--- index_granularity_bytes is what sizes the tasks of a byte-based threshold
+1
+10000

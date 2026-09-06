@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/BorrowedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
@@ -121,7 +122,14 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
 
     const auto * loaded_part_info = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
     if (!loaded_part_info)
+    {
+        /// A borrowed part is read without the metadata that the constant virtual columns are made of,
+        /// and its reader is never asked for them.
+        if (typeid_cast<const BorrowedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get()))
+            return;
+
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Filling of virtual columns is supported only for LoadedMergeTreeDataPartInfoForReader");
+    }
 
     const auto & data_part = loaded_part_info->getDataPart();
     const auto & storage_columns = storage_snapshot->metadata->columns;

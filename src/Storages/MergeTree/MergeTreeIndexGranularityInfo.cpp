@@ -134,6 +134,13 @@ MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeSett
 {
 }
 
+MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(MarkType mark_type_, size_t fixed_index_granularity_, size_t index_granularity_bytes_)
+    : mark_type(mark_type_)
+    , fixed_index_granularity(fixed_index_granularity_)
+    , index_granularity_bytes(index_granularity_bytes_)
+{
+}
+
 void MergeTreeIndexGranularityInfo::changeGranularityIfRequired(const IDataPartStorage & data_part_storage)
 {
     auto mrk_type = getMarksTypeFromFilesystem(data_part_storage);

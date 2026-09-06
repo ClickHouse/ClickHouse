@@ -73,7 +73,11 @@ public:
         BackoffSettings() : min_read_latency_ms(0) {}
     };
 
-private:
+protected:
+    /// Intended task size in marks for the given part. Pools that fill `per_part_infos` up front read it
+    /// from there; a pool that builds its task infos lazily can supply the value without them.
+    virtual size_t getMinMarksPerTask(size_t part_idx) const { return per_part_infos[part_idx]->min_marks_per_task; }
+
     void fillPerThreadInfo(size_t threads, size_t sum_marks);
 
     mutable std::mutex mutex;

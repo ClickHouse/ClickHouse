@@ -53,6 +53,10 @@ public:
 
     MergeTreeIndexGranularityInfo(const MergeTreeSettings & storage_settings, MarkType mark_type_);
 
+    /// For a part read without the owning table's settings (see `StorageMergeTreeParts`),
+    /// where the granularity is supplied by the caller instead.
+    MergeTreeIndexGranularityInfo(MarkType mark_type_, size_t fixed_index_granularity_, size_t index_granularity_bytes_);
+
     void changeGranularityIfRequired(const IDataPartStorage & data_part_storage);
 
     String getMarksFilePath(const String & path_prefix) const
