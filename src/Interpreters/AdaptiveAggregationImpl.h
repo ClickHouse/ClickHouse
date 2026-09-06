@@ -277,6 +277,10 @@ struct AdaptiveAggregationSession
     /// records into it early (see `drainStagedChunksUnderMemoryPressure`); it joins the merge
     /// set when it holds data.
     AggregatedDataVariantsPtr early_drain_variants;
+    /// The variant of `early_drain_variants` and of every table the drains build, fixed at
+    /// initialization: the sweeps replace the table but never its type, and a producer reads
+    /// this to size its chunks at publication without taking the coordinator lock.
+    AggregatedDataVariants::Type drain_type = AggregatedDataVariants::Type::EMPTY;
     /// What the drains into `early_drain_variants` were seen to allocate, as the sweeping
     /// threads' memory trackers count them, summed since the table was last replaced. The
     /// table's `allocatedBytes` sums its arenas and hash-table buffers; the heap that states

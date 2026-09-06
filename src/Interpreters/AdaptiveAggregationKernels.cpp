@@ -1571,6 +1571,141 @@ static size_t stagedChunkBytes(const StagedChunk & chunk)
     return bytes;
 }
 
+/// The staged footprint of the records [begin, end) of a chunk, charged the way `stagedChunkBytes`
+/// charges a whole chunk but by size rather than allocation, a slice having no allocation of its
+/// own: the routing hashes, the key bytes (twice for variable-width keys, for the arena copy a
+/// drain makes beside them) and their offsets, then the payload - the run lengths, or the
+/// argument columns prorated by records, since their values are gathered in the chunk's record
+/// order but their bytes are not indexed by it. Keys route by hash, so the buckets share the
+/// argument bytes about evenly and the proration is close.
+static size_t stagedRecordRangeBytes(const StagedChunk & chunk, size_t begin, size_t end)
+{
+    const size_t records = end - begin;
+    const size_t key_bytes = chunk.keys.keyByteOffsetAt(end) - chunk.keys.keyByteOffsetAt(begin);
+    size_t bytes = records * sizeof(UInt64) + key_bytes;
+    if (!chunk.keys.fixed_key_size)
+        bytes += key_bytes + (records + 1) * sizeof(UInt64);
+
+    if (chunk.countsOnly())
+        return bytes + records * sizeof(UInt32);
+
+    const size_t total_records = chunk.keys.size();
+    for (const auto & column : std::get<StagedChunk::AggregatePayload>(chunk.payload).argument_columns)
+        if (column)
+            bytes += static_cast<size_t>(static_cast<UInt128>(column->byteSize()) * records / total_records);
+    return bytes;
+}
+
+/// The records of the buckets [bucket_begin, bucket_end) of a chunk as a chunk of their own. A
+/// bucket range is a contiguous slice of every staged array, so the piece is a plain copy of
+/// that slice with the offsets rebased; buckets outside the range come out empty.
+static MutableStagedChunkPtr sliceStagedChunk(const StagedChunk & source, size_t bucket_begin, size_t bucket_end)
+{
+    const auto & src = source.keys;
+    const size_t begin = src.bucket_offsets[bucket_begin];
+    const size_t end = src.bucket_offsets[bucket_end];
+    const size_t records = end - begin;
+
+    /// Reserved exactly: the claim charges a chunk by its allocation (`stagedChunkBytes`), and
+    /// the pieces were sized by their bytes, so a power-of-two rounding of the arrays would make
+    /// a piece look up to twice its size to the claim and stop it a piece early.
+    auto piece = std::make_shared<StagedChunk>();
+    auto & keys = piece->keys;
+    keys.fixed_key_size = src.fixed_key_size;
+    keys.routing_hashes.reserve_exact(records);
+    keys.routing_hashes.insert(src.routing_hashes.begin() + begin, src.routing_hashes.begin() + end);
+
+    const size_t byte_begin = src.keyByteOffsetAt(begin);
+    const size_t byte_end = src.keyByteOffsetAt(end);
+    keys.key_bytes.reserve_exact(byte_end - byte_begin);
+    keys.key_bytes.insert(src.key_bytes.begin() + byte_begin, src.key_bytes.begin() + byte_end);
+    if (!src.fixed_key_size)
+    {
+        keys.key_offsets.reserve_exact(records + 1);
+        for (size_t i = begin; i <= end; ++i)
+            keys.key_offsets.push_back(src.key_offsets[i] - byte_begin);
+    }
+
+    for (size_t b = 0; b <= ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
+        keys.bucket_offsets[b] = static_cast<UInt32>(std::clamp<size_t>(src.bucket_offsets[b], begin, end) - begin);
+
+    if (const auto * counts = std::get_if<StagedChunk::CountPayload>(&source.payload))
+    {
+        auto & multiplicities = piece->payload.emplace<StagedChunk::CountPayload>().multiplicities;
+        multiplicities.reserve_exact(records);
+        multiplicities.insert(counts->multiplicities.begin() + begin, counts->multiplicities.begin() + end);
+    }
+    else
+    {
+        const auto & columns = std::get<StagedChunk::AggregatePayload>(source.payload).argument_columns;
+        auto & argument_columns = piece->payload.emplace<StagedChunk::AggregatePayload>().argument_columns;
+        argument_columns.reserve(columns.size());
+        for (const auto & column : columns)
+            argument_columns.push_back(column ? column->cut(begin, records) : nullptr);
+    }
+    return piece;
+}
+
+std::vector<MutableStagedChunkPtr> Aggregator::splitStagedChunkAtPartBound(
+    const AdaptiveAggregationSession & shared, const StagedChunk & chunk) const
+{
+    /// The claims of the drains (`drainStagedChunksUnderMemoryPressure`, `drainStagedChunksAtFinish`)
+    /// stop between chunks, so their bound holds at the granularity of a chunk: a batch overshoots
+    /// the part by up to the last chunk it took, and a chunk that is alone over the part would be
+    /// claimed whole, its drain building the over-budget table the bound exists to prevent,
+    /// admitted by the budget as an oversized request that is alone. So a chunk is published at
+    /// no more than half a part, which caps the overshoot at half a part too. The seal keeps
+    /// coalesced chunks at a few megabytes, under half the part floor for ordinary states, so
+    /// only a chunk that carries one consumed block of wide keys or wide arguments, or a large
+    /// block, or records with wide states, comes out over it; such a chunk is cut here, along
+    /// bucket boundaries, into the fewest pieces the bound admits. A single bucket over the
+    /// bound - a two-hundred-and-fifty-sixth of one block - goes out as it is.
+    const size_t part_bytes = adaptivePressurePartBytes();
+    if (part_bytes == std::numeric_limits<size_t>::max())
+        return {};
+    const size_t chunk_bound = part_bytes / 2;
+
+    /// The whole chunk is charged as the claim would charge it, by its allocation, so a chunk
+    /// the claim would take alone as a full batch is the chunk that is cut.
+    const auto type = shared.drain_type;
+    const size_t records = chunk.keys.size();
+    if (estimateAdaptiveDrainBytes(type, records, stagedChunkBytes(chunk)) <= chunk_bound)
+        return {};
+
+    std::vector<std::pair<size_t, size_t>> ranges;
+    size_t range_begin = 0;
+    size_t range_records = 0;
+    size_t range_bytes = 0;
+    for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
+    {
+        const size_t bucket_records = chunk.keys.recordsForBucket(b);
+        if (!bucket_records)
+            continue;
+
+        const size_t bucket_bytes = stagedRecordRangeBytes(chunk, chunk.keys.bucket_offsets[b], chunk.keys.bucket_offsets[b + 1]);
+        if (range_records
+            && estimateAdaptiveDrainBytes(type, range_records + bucket_records, range_bytes + bucket_bytes) > chunk_bound)
+        {
+            ranges.emplace_back(range_begin, b);
+            range_begin = b;
+            range_records = 0;
+            range_bytes = 0;
+        }
+        range_records += bucket_records;
+        range_bytes += bucket_bytes;
+    }
+    ranges.emplace_back(range_begin, ADAPTIVE_AGGREGATION_NUM_BUCKETS);
+
+    if (ranges.size() == 1)
+        return {};
+
+    std::vector<MutableStagedChunkPtr> pieces;
+    pieces.reserve(ranges.size());
+    for (const auto & [bucket_begin, bucket_end] : ranges)
+        pieces.push_back(sliceStagedChunk(chunk, bucket_begin, bucket_end));
+    return pieces;
+}
+
 AggregatedDataVariantsPtr Aggregator::createAdaptiveDrainTable(AggregatedDataVariants::Type type) const
 {
     auto table = std::make_shared<AggregatedDataVariants>();
@@ -1733,6 +1868,19 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
 {
     PaddedPODArray<AggregateDataPtr> places_scratch;
 
+    /// A sweep sheds until the query is back under the threshold or the backlog is down to a
+    /// tail, one part at a time. One claim per sweep would not do: a sweep runs once per consumed
+    /// block, a block can publish more than a part of chunks (a wide block is cut into pieces of
+    /// half a part each, see `splitStagedChunkAtPartBound`), and the difference would stay in the
+    /// backlog and grow with every block.
+    while (drainStagedChunksBatchUnderMemoryPressure(shared, places_scratch))
+    {
+    }
+}
+
+bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
+    AdaptiveAggregationSession & shared, PaddedPODArray<AggregateDataPtr> & places_scratch) const
+{
     const size_t part_bytes = adaptivePressurePartBytes();
 
     /// The coordinator lock is held only to claim work: a batch of chunks carrying about one
@@ -1748,11 +1896,11 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
     {
         std::unique_lock sweep_lock(shared.pressure_sweep_mutex);
         if (getCurrentQueryMemoryUsage() < static_cast<Int64>(params.max_bytes_before_external_group_by))
-            return;
+            return false;
 
         auto chunks = shared.backlog.takeAllForPressureDrain();
         if (chunks.empty())
-            return;
+            return false;
 
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureSweeps);
 
@@ -1824,7 +1972,7 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
             sweep_lock.unlock();
             if (detached_shared)
                 spillDetachedAdaptiveTable(shared, *detached_shared);
-            return;
+            return false;
         }
 
         /// Saturating rather than wrapping, and a request larger than the whole budget is
@@ -1841,7 +1989,7 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
     {
         for (auto & chunk : batch)
             shared.backlog.requeue(chunk);
-        return;
+        return false;
     }
 
     auto local = createAdaptiveDrainTable(routing_type);
@@ -1871,6 +2019,9 @@ void Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession
 
     if (drained_records)
         spillDetachedAdaptiveTable(shared, *local);
+
+    /// A full batch was shed; whether the backlog holds another is for the next claim to see.
+    return !shared.cancelled.load(std::memory_order_relaxed);
 }
 
 std::optional<Int64> Aggregator::releaseAdaptiveDrainResidue(AdaptiveAggregationSession & shared) const

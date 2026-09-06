@@ -327,13 +327,20 @@ public:
     /// time the last finisher assembles the merge.
     void flushPendingChunks(AdaptiveAggregationProducer & adaptive) const;
 
-    /// The production-time memory valve: claims a batch of staged chunks bounded in records
-    /// and in bytes under the sweep lock, drains it into a producer-local table outside the
-    /// lock, and writes that table through the ordinary external machinery; a tail too small
-    /// for a part accumulates in the session's shared table instead. Producers over the
-    /// trigger block on the claim deliberately - pausing production is the backpressure that
-    /// makes the bound hold.
+    /// The production-time memory valve: claims batches of staged chunks bounded in records
+    /// and in bytes under the sweep lock, drains each into a producer-local table outside the
+    /// lock, and writes that table through the ordinary external machinery, until the query is
+    /// back under the threshold or only a tail too small for a part is left, which accumulates
+    /// in the session's shared table instead. Producers over the trigger block on the claim
+    /// deliberately - pausing production is the backpressure that makes the bound hold.
     void drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSession & shared) const;
+
+    /// One claim of the sweep: a full batch drained into a producer-local table and written,
+    /// after which it returns true so the sweep claims again; or the tail drained into the
+    /// shared table, nothing to claim, the query under the threshold, or a declined
+    /// reservation, after which it returns false and the sweep ends.
+    bool drainStagedChunksBatchUnderMemoryPressure(
+        AdaptiveAggregationSession & shared, PaddedPODArray<AggregateDataPtr> & places_scratch) const;
 
     /// The finish drain: converts everything still enqueued into disk-mergeable form when the
     /// merge goes external, spilling at the part bound as it goes, and throws if anything
@@ -809,10 +816,19 @@ private:
         const std::vector<MutableStagedChunkPtr> & minis,
         StagedChunk & chunk) const;
 
-    /// The single publication point: finishes the chunk (builds its preparation in place,
-    /// checks the structural invariants in debug builds) and hands it over as immutable to
-    /// the session's backlog.
+    /// The single publication point: checks the structural invariants in debug builds, cuts
+    /// the chunk at the part bound if it is over it, and enqueues the result.
     void publishStagedChunk(AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const;
+
+    /// Finishes one chunk (builds its preparation in place) and hands it over as immutable to
+    /// the session's backlog.
+    void enqueueStagedChunk(AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const;
+
+    /// Cuts a chunk whose drain is estimated over `adaptivePressurePartBytes` into pieces
+    /// along bucket boundaries, each estimated within the bound where a single bucket allows;
+    /// empty when the chunk fits as it is, so no copy is made in the common case.
+    std::vector<MutableStagedChunkPtr> splitStagedChunkAtPartBound(
+        const AdaptiveAggregationSession & shared, const StagedChunk & chunk) const;
 
     /// Builds the staged chunk's shared preparation: the aggregate-function instructions over
     /// its argument columns, in the chunk's own stable storage.
