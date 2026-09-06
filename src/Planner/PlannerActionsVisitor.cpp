@@ -1204,6 +1204,25 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         it->addInputColumnIfNecessary(function_node_name, function_node.getResultType());
 
     auto subquery_argument = function_node.getArguments().getNodes().front();
+
+    /// The same correlated EXISTS subquery can be referenced multiple times in one filter, e.g. after
+    /// convert_query_to_cnf rewrites `exists(q) OR (a AND b AND c)` into `(exists(q) OR a) AND ... ` and
+    /// CNF::toQueryTree clones the `exists(q)` node into each conjunct. Such clones share one
+    /// action_node_name, so registering each would decorrelate into several joins all emitting that
+    /// same-named column and break HashJoin's column bookkeeping. Register the subquery only once
+    /// (the input column above is already deduplicated). Mirrors the scalar path in visitQuery.
+    /// The dedup key compares the subquery body (isEqual), not just the name: the name is derived
+    /// from the subquery's unique __tableN alias so distinct subqueries already get distinct names,
+    /// but requiring body equality keeps the dedup from ever merging two structurally-different
+    /// subqueries should that alias-uniqueness invariant ever weaken.
+    for (const auto & existing : correlated_subtrees.subqueries)
+    {
+        if (existing.action_node_name == function_node_name
+            && existing.kind == CorrelatedSubqueryKind::EXISTS
+            && existing.query_tree->isEqual(*subquery_argument))
+            return { function_node_name, Levels(exists_function_level) };
+    }
+
     auto * query_node = subquery_argument->as<QueryNode>();
     auto * union_node = subquery_argument->as<UnionNode>();
     chassert(query_node != nullptr || union_node != nullptr);
@@ -1217,7 +1236,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
 
     correlated_subtrees.subqueries.emplace_back(
-        function_node.getArguments().getNodes().front(),
+        subquery_argument,
         CorrelatedSubqueryKind::EXISTS,
         function_node_name,
         std::move(correlated_column_identifiers));
@@ -1418,10 +1437,13 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     /// The same correlated subquery can be referenced multiple times in the projection,
     /// for example when `untuple` expands into multiple `tupleElement` calls sharing
-    /// the same argument.
+    /// the same argument. Compare the subquery body (isEqual) in addition to the name so
+    /// the dedup can never merge two structurally-different subqueries (see visitExistsFunction).
     for (const auto & existing : correlated_subtrees.subqueries)
     {
-        if (existing.action_node_name == correlated_subquery_name)
+        if (existing.action_node_name == correlated_subquery_name
+            && existing.kind == CorrelatedSubqueryKind::SCALAR
+            && existing.query_tree->isEqual(*node))
             return {correlated_subquery_name, levels};
     }
 
