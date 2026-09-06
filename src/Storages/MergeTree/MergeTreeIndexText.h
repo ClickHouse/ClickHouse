@@ -593,6 +593,7 @@ public:
     bool isTextIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
+    MergeTreeIndexSubstreams getPotentialSubstreams() const override;
     using IMergeTreeIndex::getPhysicalFormat;
     MergeTreeIndexFormat getPhysicalFormat(
         const MergeTreeDataPartChecksums & checksums,
