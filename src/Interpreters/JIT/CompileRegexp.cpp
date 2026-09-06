@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <Common/Exception.h>
+#include <Common/isValidUTF8.h>
 #include <Common/ProfileEvents.h>
 #include <Common/RegexpJIT/RegexpProgram.h>
 #include <Common/SipHash.h>
@@ -713,6 +714,10 @@ RegexpJITMatcher getRegexpJITMatcher(
     ParseFlags flags;
     flags.case_insensitive = case_insensitive;
     flags.dot_all = dot_all;
+    /// `OptimizedRegularExpression` builds RE2 in UTF-8 mode and only falls back to Latin-1 when the
+    /// *pattern* itself is not valid UTF-8, so that is exactly when the byte-wise program is equivalent
+    /// to RE2 for every construct. See `applyQuantifier` in `RegexpProgram.cpp`.
+    flags.utf8 = UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(pattern.data()), pattern.size());
 
     auto program = tryCompileToProgram(pattern, flags);
     if (!program)
