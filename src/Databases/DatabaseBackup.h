@@ -34,6 +34,11 @@ public:
     /// definition found in a backup is created.
     static void parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context);
 
+    /// Older servers persisted the locator as a string literal, a form nothing can open. Returns the
+    /// function form such an argument holds, and any other argument unchanged; a string that does not
+    /// decode is rejected without quoting it, because it carries credentials.
+    static ASTPtr normalizeLegacyLocator(const ASTPtr & locator);
+
     String getEngineName() const override { return "Backup"; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }

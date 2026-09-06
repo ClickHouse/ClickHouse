@@ -1,16 +1,14 @@
 #include <Backups/BackupMetadataFinder.h>
-#include <Backups/BackupInfo.h>
 #include <Backups/BackupSettings.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/IBackup.h>
+#include <Databases/DatabaseBackup.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/insertAtEnd.h>
@@ -33,7 +31,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BACKUP_ENTRY_NOT_FOUND;
-extern const int BAD_ARGUMENTS;
 extern const int CANNOT_RESTORE_TABLE;
 extern const int CANNOT_RESTORE_DATABASE;
 }
@@ -41,8 +38,8 @@ extern const int CANNOT_RESTORE_DATABASE;
 namespace
 {
 
-/// Older servers stored a `Backup` database's locator as a string literal. Parse it back into the
-/// function form, the only form the engine can open and secret masking can see into.
+/// A definition read from a backup may hold the locator in the string form an older server persisted.
+/// The engine cannot open that form, and the definition comparison below compares the two textually.
 void normalizeLegacyBackupDatabaseLocator(const ASTPtr & create_database_query)
 {
     auto * create = create_database_query->as<ASTCreateQuery>();
@@ -53,32 +50,7 @@ void normalizeLegacyBackupDatabaseLocator(const ASTPtr & create_database_query)
     if (engine->name != "Backup" || !engine->arguments || engine->arguments->children.size() != 2)
         return;
 
-    const auto * locator = engine->arguments->children[1]->as<ASTLiteral>();
-    if (!locator || locator->value.getType() != Field::Types::Which::String)
-        return;
-
-    ASTPtr parsed;
-    try
-    {
-        /// `BackupInfo::toAST` stamps the `BACKUP_NAME` kind, which renders a key-value argument as
-        /// `equals(k, v)`, so a node built that way would not compare equal to a live definition.
-        ParserIdentifierWithOptionalParameters locator_parser;
-        parsed = parseQuery(
-            locator_parser,
-            locator->value.safeGet<String>(),
-            0,
-            DBMS_DEFAULT_MAX_PARSER_DEPTH,
-            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-        BackupInfo::fromAST(*parsed);
-    }
-    catch (...)
-    {
-        /// A locator that does not decode opens nothing, and leaving it would skip the source access
-        /// check, which only runs for a function argument.
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse the locator of a Backup database stored in the backup");
-    }
-
-    engine->arguments->children[1] = parsed;
+    engine->arguments->children[1] = DatabaseBackup::normalizeLegacyLocator(engine->arguments->children[1]);
 }
 
 }
