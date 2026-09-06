@@ -169,6 +169,7 @@ namespace FailPoints
     extern const char atomic_populate_pause_before_subscription[];
     extern const char atomic_populate_pause_after_view_publication[];
     extern const char atomic_populate_pause_before_source_guard[];
+    extern const char attach_from_path_pause_before_relocation[];
 }
 
 namespace ErrorCodes
@@ -2583,12 +2584,25 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
+    /// IStorage::rename must run under the exclusive table lock, and here the table becomes
+    /// resolvable as soon as createTable publishes it, so the lock is taken before that.
+    TableExclusiveLockHolder attach_from_lock;
+    if (from_path)
+        attach_from_lock
+            = res->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 
     /// Move table data to the proper place. Wo do not move data earlier to avoid situations
     /// when data directory moved, but table has not been created due to some error.
     if (from_path)
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::attach_from_path_pause_before_relocation);
         res->rename(actual_data_path, {create.getDatabase(), create.getTable(), create.uuid});
+    }
+    /// startup() is not part of the rename contract, and holding the lock across it would change
+    /// behaviour for every engine reaching this path.
+    attach_from_lock.release();
 
     /// We must call "startup" and "shutdown" while holding DDLGuard.
     /// Because otherwise method "shutdown" (from InterpreterDropQuery) can be called before startup

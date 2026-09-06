@@ -71,6 +71,7 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands &, ContextPtr) override;
     void drop() override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
     void alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder &) override;
 
     bool optimize(
@@ -138,10 +139,18 @@ private:
     RocksDBPtr rocksdb_ptr TSA_GUARDED_BY(rocksdb_ptr_mx);
 
     mutable SharedMutex rocksdb_ptr_mx;
+    /// Set when a rename left the table without a usable handle: the data is on disk
+    /// but this object cannot serve it. Reads must refuse rather than report zero rows.
+    bool handle_unusable TSA_GUARDED_BY(rocksdb_ptr_mx) = false;
+    /// True when the directory was derived from the table's location instead of being given
+    /// explicitly in the engine arguments. Only such a directory may be moved on rename.
+    const bool implicit_path;
     String rocksdb_dir;
     Int32 ttl;
     bool read_only;
 
     void initDB() TSA_NO_THREAD_SAFETY_ANALYSIS;
+    /// initDB() plus a fault-injection point that only rename() can trip.
+    void initDBForRename() TSA_NO_THREAD_SAFETY_ANALYSIS;
 };
 }

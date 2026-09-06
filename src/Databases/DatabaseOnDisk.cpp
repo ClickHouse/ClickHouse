@@ -586,6 +586,13 @@ void DatabaseOnDisk::renameTable(
         /// Better diagnostics.
         throw Exception{Exception::CreateFromPocoTag{}, e};
     }
+    catch (...)
+    {
+        /// std::filesystem_error is not a Poco::Exception, and the storage hooks above may throw it.
+        setDetachedTableNotInUseForce(prev_uuid);
+        attachTable(local_context, table_name, table, table_data_relative_path);
+        throw;
+    }
 
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
     to_database.createTable(local_context, to_table_name, table, attach_query);
