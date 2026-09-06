@@ -17,8 +17,10 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <base/defines.h>
 #include <base/scope_guard.h>
+#include <base/sleep.h>
 #include <fmt/format.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/TransactionID.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/logger_useful.h>
@@ -26,6 +28,11 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char transaction_slow_resolve_removal_csn[];
+}
 
 static constexpr size_t MAX_RETRIES = 20;
 
@@ -437,6 +444,10 @@ std::optional<bool> VersionMetadata::updateCSNIfNeeded(VersionInfo & current_inf
         {
             LOG_TRACE(
                 log, "Object {} does not have removal_csn, try to get it from removal_tid {}", getObjectName(), current_info.removal_tid);
+
+            /// In production this lookup is a Keeper round-trip, long enough for a concurrent
+            /// rollback to land inside it. Locally it is sub-millisecond, so widen it.
+            fiu_do_on(FailPoints::transaction_slow_resolve_removal_csn, { sleepForMilliseconds(2000); });
 
             auto csn_of_removal_tid = tryGetCSN(current_info.removal_tid);
 

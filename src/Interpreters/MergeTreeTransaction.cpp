@@ -45,6 +45,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char transaction_after_commit_pause[];
+    extern const char transaction_rollback_pause_after_mark[];
     extern const char transaction_rollback_reset_removal_tid_fail[];
 }
 
@@ -490,6 +491,9 @@ MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
     /// Wake any `waitStateChange` waiter (see the `notify` note in `afterCommit`).
     csn.notify_all();
 
+    /// The transaction reads as rolled back, but no removal stamp is cleared yet.
+    FailPointInjection::pauseFailPoint(FailPoints::transaction_rollback_pause_after_mark);
+
     /// It's not a problem if server crash at this point
     /// because on startup we will see that TID is not committed and will simply discard these changes.
 
@@ -585,8 +589,6 @@ MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
         /// Clear removal_tid so we needn't tell never-committed TIDs apart from long-committed ones.
         /// The fingerprint gates the clear on still owning the lock.
         bool removal_tid_cleared = true;
-        /// Our clear landed, so the removal was still ours to undo.
-        bool removal_undone = false;
         /// A peer removed the part for good, so there is nothing left to restore.
         bool part_gone = false;
         try
@@ -595,7 +597,7 @@ MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
             {
                 throw Exception(ErrorCodes::ABORTED, "Injected failure of resetRemovalTID during rollback");
             });
-            removal_undone = part->version->resetRemovalTID(entry.acquired);
+            part->version->resetRemovalTID(entry.acquired);
         }
         catch (const Exception & e)
         {
@@ -613,12 +615,11 @@ MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
             removal_tid_cleared = false;
         }
 
-        /// Restore only a removal still ours: either our clear landed, or it threw and left both our
-        /// stamp and our lock in place. A clear that quietly did nothing means a peer owns the removal
-        /// now — its `removal_tid` looks the same as a cleared one, so only the outcome tells them apart.
+        /// Decide from the record, not from the clear above: a mutate task of this transaction can
+        /// blank a rolled-back stamp first, which makes the clear do nothing on a part still ours.
         const auto & info = part->version->getInfo();
         if (!part_gone && info.creation_tid != tid && info.removal_csn == Tx::UnknownCSN
-            && (removal_undone || !removal_tid_cleared))
+            && (info.removal_tid.isEmpty() || info.removal_tid == tid))
         {
             try
             {

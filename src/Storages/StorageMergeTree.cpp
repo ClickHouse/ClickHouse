@@ -1383,6 +1383,20 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
                     result.latest_fail_error_code_name = ErrorCodes::getName(ErrorCodes::PART_IS_LOCKED);
                     result.latest_fail_time = time(nullptr);
                 }
+
+                LOG_DEBUG(
+                    log,
+                    "Mutation {} of {} waits on part {} (data_version {} < {}), state {}, removal_tid {}, "
+                    "lock hash {}, fail reason {}",
+                    mutation_entry.file_name,
+                    mutation_entry.tid,
+                    data_part->name,
+                    data_version,
+                    mutation_version,
+                    data_part->stateString(),
+                    data_part->version->getInfo().removal_tid,
+                    part_locked,
+                    result.latest_fail_reason.empty() ? "none, still waiting" : result.latest_fail_reason);
             }
 
             return result;
