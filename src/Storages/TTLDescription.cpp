@@ -1410,6 +1410,13 @@ TTLDescription TTLDescription::getTTLFromAST(
 
     auto ttl_ast = result.expression_ast->clone();
     auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context, &result.expression_source_columns).expression;
+
+    /// `arrayJoin` is the one action that changes the number of rows, while every consumer of the TTL
+    /// column indexes it positionally against the block: a row would be judged by another row's
+    /// timestamp, or - when an array is empty and the column ends up shorter than the block - by a read
+    /// past the end of it. Existing metadata still loads, so a table created before this check attaches.
+    if (validation_mode != TTLValidationMode::Attach && expression->hasArrayJoin())
+        throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL expression cannot contain array joins");
     result.expression_columns = expression->getRequiredColumnsWithTypes();
 
     result.result_column = expression->getSampleBlock().safeGetByPosition(0).name;

@@ -216,6 +216,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ACCESS_DENIED;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace ActionLocks
@@ -281,12 +282,21 @@ ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, Con
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 
-void checkShardingKeyExistsAndIsNumeric(const ASTPtr & sharding_key_ast, ContextPtr context, const NamesAndTypesList & columns)
+void checkShardingKeyExistsAndIsNumeric(
+    const ASTPtr & sharding_key_ast, ContextPtr context, const NamesAndTypesList & columns, bool loading_from_existing_metadata)
 {
     if (!sharding_key_ast)
         return;
 
     auto sharding_expr = buildShardingKeyExpression(sharding_key_ast, context, columns, true);
+
+    /// `arrayJoin` is the one action that changes the number of rows, while the shard selector built from
+    /// the sharding key is applied positionally to the block being inserted: the insert either fails with
+    /// "Size of selector ... doesn't match size of column" or, when the sizes happen to agree, routes rows
+    /// by an unrelated row's array element. Existing metadata still loads.
+    if (!loading_from_existing_metadata && sharding_expr->hasArrayJoin())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sharding expression cannot contain array joins");
+
     const Block & block = sharding_expr->getSampleBlock();
 
     if (block.columns() != 1)
@@ -474,7 +484,8 @@ StorageDistributed::StorageDistributed(
     if (sharding_key_)
     {
         /// Check that sharding_key exists in the table and has numeric type.
-        checkShardingKeyExistsAndIsNumeric(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical());
+        checkShardingKeyExistsAndIsNumeric(
+            sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), isLoadingFromExistingMetadata(mode));
         sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
         /// Building the expression analyzes (and may rewrite) the sharding key: e.g. the analyzer const-folds
@@ -1582,7 +1593,8 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     commands.apply(new_metadata, local_context);
-    checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
+    checkShardingKeyExistsAndIsNumeric(
+        sharding_key, local_context, new_metadata.columns.getAllPhysical(), /*loading_from_existing_metadata=*/ false);
 }
 
 void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
