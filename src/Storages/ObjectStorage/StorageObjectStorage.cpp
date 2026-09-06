@@ -817,18 +817,14 @@ SinkToStoragePtr StorageObjectStorage::write(
 
     if (configuration->partition_strategy)
     {
+        /// The partitioned sink derives its own per-partition name and is not covered by the allocator below.
         return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
     }
 
-    auto paths = configuration->getPaths();
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
-    {
-        paths.push_back({*new_key});
-    }
-    configuration->setPaths(paths);
+    const auto write_path = configuration->allocatePathForWrite(*object_storage, settings);
 
     return std::make_shared<StorageObjectStorageSink>(
-        paths.back().path,
+        write_path.path,
         object_storage,
         format_settings,
         sample_block,

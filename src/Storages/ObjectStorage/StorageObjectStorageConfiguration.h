@@ -18,6 +18,8 @@
 #include <optional>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
+#include <Common/SharedMutex.h>
+#include <mutex>
 
 namespace DB
 {
@@ -123,8 +125,17 @@ public:
      * This list is used to determine the next file name and the set of files that shall be read from remote storage.
      * This is not ideal, there are much better ways to implement reads and writes. It should be eventually removed
      */
-    virtual const Paths & getPaths() const = 0;
-    virtual void setPaths(const Paths & paths) = 0;
+    /// The list is shared by every query on the table, so access goes through these wrappers.
+    /// Returned by value: a reference into the list would outlive the lock that protects it.
+    Paths getPaths() const;
+    void setPaths(const Paths & paths);
+
+    /// Appends the next file name for a write and returns the path to write to, atomically with
+    /// respect to concurrent writers: the name is derived from the list under `path_allocation_mutex`,
+    /// so two writers cannot derive the same one.
+    Path allocatePathForWrite(
+        const IObjectStorage & object_storage,
+        const StorageObjectStorageQuerySettings & settings);
 
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
@@ -377,6 +388,11 @@ public:
     String url_overridden_by_base_setting;
 
 protected:
+    /// Path list storage. Only ever called with `paths_mutex` held, or before the configuration is
+    /// shared with any query. Subclasses override these, never the locking wrappers above.
+    virtual const Paths & getPathsImpl() const = 0;
+    virtual void setPathsImpl(const Paths & paths) = 0;
+
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
@@ -394,6 +410,14 @@ private:
     // Path used for reading, by default it is the same as `getRawPath`
     // When using `partition_strategy=hive`, a recursive reading pattern will be appended `'table_root/**.parquet'
     Path read_path;
+
+    /// Guards the path list. Never held while acquiring another lock, and never across remote I/O.
+    mutable SharedMutex paths_mutex;
+    /// Taken by writers only, around the whole allocate-derive-publish sequence. Acquired before
+    /// `paths_mutex`, which is the only ordering between the two.
+    std::mutex path_allocation_mutex;
+    /// The lowest sequence number no write has taken yet. Guarded by `path_allocation_mutex`.
+    size_t next_write_sequence = 0;
 };
 
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;

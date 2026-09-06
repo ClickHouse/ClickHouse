@@ -4,8 +4,11 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Interpreters/Context.h>
+#include <IO/ReadHelpers.h>
 #include <Common/logger_useful.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
@@ -32,6 +35,33 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsFileLikeEngineDefaultPartitionStrategy file_like_engine_default_partition_strategy;
+}
+
+namespace
+{
+
+/// `checkAndGetNewFileOnInsertIfNeeded` renders `<stem>.<sequence><extension>`, where the stem and
+/// the extension are the two halves of the base key. Returns nothing if `allocated_key` does not
+/// have that shape with respect to `base_key`.
+std::optional<size_t> parseAllocatedSequence(const String & base_key, const String & allocated_key)
+{
+    const auto extension_pos = base_key.find_first_of('.');
+    const String stem = base_key.substr(0, extension_pos) + ".";
+    const String extension = extension_pos == String::npos ? "" : base_key.substr(extension_pos);
+
+    if (allocated_key.size() <= stem.size() + extension.size() || !allocated_key.starts_with(stem)
+        || !allocated_key.ends_with(extension))
+        return {};
+
+    const std::string_view sequence_str
+        = std::string_view(allocated_key).substr(stem.size(), allocated_key.size() - stem.size() - extension.size());
+
+    size_t sequence = 0;
+    if (!tryParse<size_t>(sequence, sequence_str))
+        return {};
+    return sequence;
+}
+
 }
 
 void StorageObjectStorageConfiguration::update( ///NOLINT
@@ -182,17 +212,56 @@ String StorageObjectStorageConfiguration::computeSchemaHash(const ColumnsDescrip
     return getSipHash128AsHexString(hash);
 }
 
+StorageObjectStorageConfiguration::Paths StorageObjectStorageConfiguration::getPaths() const
+{
+    SharedLockGuard lock(paths_mutex);
+    return getPathsImpl();
+}
+
+void StorageObjectStorageConfiguration::setPaths(const Paths & paths)
+{
+    std::lock_guard lock(paths_mutex);
+    setPathsImpl(paths);
+}
+
+StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::allocatePathForWrite(
+    const IObjectStorage & object_storage,
+    const StorageObjectStorageQuerySettings & settings)
+{
+    std::lock_guard allocation_lock(path_allocation_mutex);
+
+    auto paths = getPaths();
+    /// By value: appending below would invalidate a reference into the list.
+    const String base_key = paths.front().path;
+    /// The probe walks past names that exist remotely without being listed here, so the list length
+    /// alone can hand the same name to the next writer. The cursor remembers where it stopped.
+    const size_t sequence_number = std::max(paths.size(), next_write_sequence);
+    /// The probes below are remote requests, so `paths_mutex` must not be held across them.
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(object_storage, *this, settings, base_key, sequence_number))
+    {
+        /// A name that does not parse leaves the cursor at the list length, which is the behaviour
+        /// of a table whose list is not drifted.
+        if (const auto allocated = parseAllocatedSequence(base_key, *new_key))
+            next_write_sequence = *allocated + 1;
+        paths.push_back({*new_key});
+        setPaths(paths);
+    }
+    return paths.back();
+}
+
 void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
 {
     schema_hash = hash;
     boost::replace_all(read_path.path, SCHEMA_HASH_WILDCARD, schema_hash);
 
-    if (getPaths().size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one path when setting schema hash, got {}", getPaths().size());
+    /// Called from the storage constructor, before the configuration is shared with any query,
+    /// so the unlocked internals are used directly.
+    if (getPathsImpl().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one path when setting schema hash, got {}", getPathsImpl().size());
     auto path = getRawPath();
     boost::replace_all(path.path, SCHEMA_HASH_WILDCARD, schema_hash);
     setRawPath(path);
-    setPaths({path});
+    setPathsImpl({path});
 }
 
 void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
