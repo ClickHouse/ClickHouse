@@ -16,10 +16,10 @@ import os
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.database_disk import read_metadata
 from helpers.test_tools import assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-DATA_DIR = "/var/lib/clickhouse"
 POSITIONAL_XML = "/etc/clickhouse-server/users.d/positional.xml"
 POSITIONAL = {"enable_positional_arguments_for_projections": 1}
 
@@ -50,13 +50,20 @@ def active_projection_parts(table):
 
 
 def declarations_on_disk(table):
-    """How many projections the table's stored statement declares. The file holds one per line."""
-    path = node.query(
+    """How many projections the table's stored statement declares.
+
+    The statement lives on the database disk, which is not always the node's own filesystem, so it
+    is read through `clickhouse disks`. A path that holds nothing reads back as an empty string at
+    exit code 0, and counting projections in that would be vacuous, so it is rejected first.
+    """
+    metadata_path = node.query(
         f"SELECT metadata_path FROM system.tables WHERE database = 'dl' AND name = '{table}'"
     ).strip()
-    return node.exec_in_container(
-        ["bash", "-c", f"grep -c 'PROJECTION ' {os.path.join(DATA_DIR, path)} || true"]
-    ).strip()
+    statement = read_metadata(node, metadata_path)
+    assert (
+        "ATTACH TABLE" in statement
+    ), f"read no stored statement for `{table}` from {metadata_path!r}: {statement!r}"
+    return statement.count("PROJECTION ")
 
 
 def part_types(table):
@@ -218,7 +225,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert "projection pp is declared but could not be analyzed" in error
     assert "DROP PROJECTION" in error
     assert "PROJECTION" in node.query("SHOW CREATE TABLE dl.t")
-    assert declarations_on_disk("t") == "1"
+    assert declarations_on_disk("t") == 1
 
     # A mutation is not a metadata `ALTER`, so it is not refused. Nothing knows whether `pp`'s
     # materialized data still matches the rows it rewrites, so that data must be left out of the new
@@ -248,7 +255,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     )
     assert event_value("MutationSomePartColumns") == some_before + 1
     assert event_value("MutationAllPartColumns") == all_before
-    assert declarations_on_disk("t4") == "1"
+    assert declarations_on_disk("t4") == 1
     assert projections("t4") == "0"
 
     error = node.query_and_get_error(
@@ -286,7 +293,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     # still declared in the statement this ALTER rewrote.
     node.query("ALTER TABLE dl.t2 DROP PROJECTION pp")
     assert "PROJECTION qq" in node.query("SHOW CREATE TABLE dl.t2")
-    assert declarations_on_disk("t2") == "1"
+    assert declarations_on_disk("t2") == 1
 
     # The same exemption on a Compact part, whose mutation rewrites every column instead.
     node.query("ALTER TABLE dl.t2 CLEAR PROJECTION qq")
