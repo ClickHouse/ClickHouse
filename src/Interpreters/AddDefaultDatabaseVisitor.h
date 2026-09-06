@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/SettingsChanges.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
@@ -22,7 +23,10 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
 #include <Poco/String.h>
+#include <deque>
+#include <optional>
 #include <set>
+#include <utility>
 
 namespace DB
 {
@@ -38,20 +42,7 @@ public:
         ContextPtr context_,
         const String & database_name_,
         bool only_replace_current_database_function_ = false,
-        bool only_replace_in_join_ = false)
-        : context(context_)
-        , database_name(database_name_)
-        , only_replace_current_database_function(only_replace_current_database_function_)
-        , only_replace_in_join(only_replace_in_join_)
-    {
-        if (!context->isGlobalContext())
-        {
-            for (const auto & [table_name, _ /* storage */] : context->getExternalTables())
-            {
-                external_tables.insert(table_name);
-            }
-        }
-    }
+        bool only_replace_in_join_ = false);
 
     void visitDDL(ASTPtr & ast) const
     {
@@ -72,6 +63,16 @@ public:
 
     void visit(ASTPtr & ast) const
     {
+        /// A non-recursive `WITH` reference may already be a copy of its body tagged with the
+        /// element's name, and that name is not in scope inside the copy.
+        std::optional<MaskedAlias> masked_alias;
+        if (const auto * subquery = ast->as<ASTSubquery>(); subquery && !subquery->cte_name.empty())
+        {
+            if (Scope * scope = findScopeDeclaring(subquery->cte_name);
+                scope && scope->plain.contains(subquery->cte_name))
+                masked_alias.emplace(*scope, subquery->cte_name);
+        }
+
         if (!tryVisit<ASTSelectQuery>(ast) &&
             !tryVisit<ASTSelectWithUnionQuery>(ast) &&
             !tryVisit<ASTFunction>(ast) &&
@@ -123,11 +124,77 @@ private:
 
     const String database_name;
     std::set<String> external_tables;
-    mutable std::unordered_set<String> with_aliases;
     mutable std::unordered_set<String> expression_aliases;
+
+    /// The `WITH` aliases declared by one `SELECT`, split by whether the `WITH` is recursive.
+    struct Scope
+    {
+        /// `enable_global_with_statement` in effect at this `SELECT`.
+        bool inherit_from_outer = true;
+        /// The settings in effect at this `SELECT`. A nested `SETTINGS` clause is applied on top of
+        /// these, as the query tree does, so an inner clause sees what the enclosing ones left.
+        ContextPtr settings_context;
+        std::unordered_set<String> recursive;
+        std::unordered_set<String> plain;
+    };
+
+    /// Innermost last. A `deque` keeps references valid while inner scopes are pushed and popped.
+    mutable std::deque<Scope> scopes;
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
+
+    struct WithAliasesScope
+    {
+        WithAliasesScope(std::deque<Scope> & scopes_, ContextPtr settings_context, bool inherit_from_outer)
+            : scopes(scopes_)
+        {
+            Scope & scope = scopes.emplace_back();
+            scope.settings_context = std::move(settings_context);
+            scope.inherit_from_outer = inherit_from_outer;
+        }
+        ~WithAliasesScope() { scopes.pop_back(); }
+
+        std::deque<Scope> & scopes;
+    };
+
+    /// Detaches the binding for the object's lifetime. The node is moved out and back, so the
+    /// destructor allocates nothing.
+    struct MaskedAlias
+    {
+        MaskedAlias(Scope & scope_, const String & name_) : scope(scope_), node(scope_.plain.extract(name_)) { }
+        ~MaskedAlias() { scope.plain.insert(std::move(node)); }
+
+        MaskedAlias(const MaskedAlias &) = delete;
+        MaskedAlias & operator=(const MaskedAlias &) = delete;
+
+        Scope & scope;
+        std::unordered_set<String>::node_type node;
+    };
+
+    static void appendSettings(SettingsChanges & changes, const ASTSelectQuery & select);
+
+    /// The settings in effect at `select`, and whether a plain `WITH` alias of an enclosing
+    /// `SELECT` is visible in it.
+    std::pair<ContextPtr, bool> scopeSettings(const ASTSelectQuery & select) const;
+
+    /// The scope whose binding of `name` is in effect, or nullptr when it is not an alias.
+    Scope * findScopeDeclaring(const String & name) const
+    {
+        bool plain_visible = true;
+        for (auto it = scopes.rbegin(); it != scopes.rend(); ++it)
+        {
+            /// A recursive name is visible in its own definition, which is a nested `SELECT`.
+            if (it->recursive.contains(name))
+                return &*it;
+            if (plain_visible && it->plain.contains(name))
+                return &*it;
+            /// A plain name of an enclosing `SELECT` reaches this one only when every scope in
+            /// between inherits.
+            plain_visible = plain_visible && it->inherit_from_outer;
+        }
+        return nullptr;
+    }
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {
@@ -142,12 +209,10 @@ private:
 
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
-        if (select.recursive_with)
-            for (const auto & child : select.with()->children)
-            {
-                if (typeid_cast<ASTWithElement *>(child.get()))
-                    with_aliases.insert(child->as<ASTWithElement>()->name);
-            }
+        /// An alias is visible only inside the subtree of the `SELECT` that declares it.
+        auto [settings_context, inherit] = scopeSettings(select);
+        WithAliasesScope with_aliases_scope(scopes, std::move(settings_context), inherit);
+        Scope & scope = scopes.back();
 
         /// The right argument of IN may refer to an alias of an expression defined elsewhere
         /// in the query, possibly after the point of use - then it is not a table name.
@@ -159,10 +224,33 @@ private:
         for (const auto & child : select.children)
             collectAliases(child);
 
+        const ASTPtr with = select.with();
+        if (with)
+        {
+            /// A recursive alias is visible inside its own definition, a plain one is not.
+            for (auto & child : with->children)
+            {
+                if (!select.recursive_with)
+                    visit(child);
+                if (typeid_cast<ASTWithElement *>(child.get()))
+                {
+                    const auto & name = child->as<ASTWithElement>()->name;
+                    if (select.recursive_with)
+                        scope.recursive.insert(name);
+                    else
+                        scope.plain.insert(name);
+                }
+            }
+        }
+
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
 
-        visitChildren(select);
+        for (auto & child : select.children)
+        {
+            if (select.recursive_with || child != with)
+                visit(child);
+        }
 
         expression_aliases = std::move(enclosing_query_aliases);
     }
@@ -298,8 +386,8 @@ private:
         /// There is temporary table with such name, should not be rewritten.
         if (external_tables.contains(identifier.shortName()))
             return;
-        /// This is WITH RECURSIVE alias.
-        if (with_aliases.contains(identifier.name()))
+        /// This is a `WITH` alias in scope here.
+        if (findScopeDeclaring(identifier.name()))
             return;
 
         auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());
