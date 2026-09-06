@@ -436,6 +436,14 @@ bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
     /// tie-break into the heap on the remaining sort columns), matching `__topKFilter`.
     const Range & range = *row_group.top_k_sort_column_range;
     const Field & boundary = tracker.getDirection() == 1 ? range.left : range.right;
+    /// `decodeField` leaves a bound at the `Range` infinity sentinel when the statistic cannot be
+    /// turned into a usable value (`NaN`, a rescale overflow, a signed/unsigned mismatch, ...).
+    /// Those sentinels are `Null`-typed `Field`s, and `TopKThresholdTracker` compares any `Null` as
+    /// SQL `NULL` - ordered by `nulls_direction` - not as an infinity, so an unbounded side would
+    /// read as "beyond the threshold" and skip a row group that may hold the best rows. An
+    /// unbounded side can never prove exclusion.
+    if (boundary.isNull())
+        return false;
     return !tracker.isValueInsideThreshold(boundary);
 }
 
