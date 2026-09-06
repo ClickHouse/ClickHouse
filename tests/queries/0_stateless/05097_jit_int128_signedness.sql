@@ -10,6 +10,8 @@ SELECT 'Int128 JIT off' AS tag,
     bitShiftRight(x, materialize(toUInt8(3))) AS s,
     midpoint(x, materialize(toInt128(-1))) AS m,
     midpoint(x, materialize(toInt128(255))) AS mp,
+    midpoint(x, materialize(toInt128(1))) AS mn,
+    midpoint(bitAnd(x, materialize(toInt128(255))), materialize(toInt128(3))) AS mq,
     avg2(x, materialize(toInt128(-1))) AS a2
 FROM values('c0 UInt8', 7, 127, 230) ORDER BY c0
 SETTINGS compile_expressions = 0, min_count_to_compile_expression = 0;
@@ -21,6 +23,8 @@ SELECT 'Int128 JIT on' AS tag,
     bitShiftRight(x, materialize(toUInt8(3))) AS s,
     midpoint(x, materialize(toInt128(-1))) AS m,
     midpoint(x, materialize(toInt128(255))) AS mp,
+    midpoint(x, materialize(toInt128(1))) AS mn,
+    midpoint(bitAnd(x, materialize(toInt128(255))), materialize(toInt128(3))) AS mq,
     avg2(x, materialize(toInt128(-1))) AS a2
 FROM values('c0 UInt8', 7, 127, 230) ORDER BY c0
 SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0;
