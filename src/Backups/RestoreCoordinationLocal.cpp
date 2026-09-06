@@ -56,6 +56,21 @@ bool RestoreCoordinationLocal::acquireInsertingDataForKeeperMap(const String & r
     return acquired_data_in_keeper_map_tables.emplace(root_zk_path).second;
 }
 
+void RestoreCoordinationLocal::addRocksDBTable(const String & rocksdb_dir, const String & election_id)
+{
+    std::lock_guard lock{mutex};
+    auto [it, inserted] = rocksdb_data_owner.emplace(rocksdb_dir, election_id);
+    if (!inserted && election_id > it->second)
+        it->second = election_id;
+}
+
+String RestoreCoordinationLocal::getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const
+{
+    std::lock_guard lock{mutex};
+    auto it = rocksdb_data_owner.find(rocksdb_dir);
+    return it != rocksdb_data_owner.end() ? it->second : String{};
+}
+
 void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_query)
 {
     String query_str = create_query.formatWithSecretsOneLine();

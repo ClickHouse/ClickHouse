@@ -219,6 +219,7 @@ void BackupCoordinationOnCluster::createRootNodes()
         zk->createIfNotExists(zookeeper_path + "/repl_access", "");
         zk->createIfNotExists(zookeeper_path + "/repl_sql_objects", "");
         zk->createIfNotExists(zookeeper_path + "/keeper_map_tables", "");
+        zk->createIfNotExists(zookeeper_path + "/rocksdb_tables", "");
         zk->createIfNotExists(zookeeper_path + "/file_infos", "");
         zk->createIfNotExists(zookeeper_path + "/writing_files", "");
     });
@@ -751,6 +752,101 @@ String BackupCoordinationOnCluster::getKeeperMapDataPath(const String & table_zo
     std::lock_guard lock(keeper_map_tables_mutex);
     prepareKeeperMapTables();
     return keeper_map_tables->getDataPath(table_zookeeper_root_path);
+}
+
+void BackupCoordinationOnCluster::addRocksDBTable(const String & rocksdb_dir, const String & election_id, const String & data_path_in_backup)
+{
+    {
+        std::lock_guard lock{rocksdb_tables_mutex};
+        if (rocksdb_tables)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "addRocksDBTable() must not be called after preparing");
+    }
+
+    /// rocksdb_dir is a host-local filesystem path, so two different hosts may pass the same string for
+    /// distinct physical directories. Scope the coordination path by a per-host-qualified directory node
+    /// so those are never wrongly de-duplicated, and so identical local table names on different hosts do
+    /// not collide on the election_id child. Tables sharing one directory are always on the same host, so
+    /// this keeps them grouped for owner election. Mirrors the restore-side structure in
+    /// RestoreCoordinationOnCluster::addRocksDBTable.
+    auto dir_key = escapeForFileName(fmt::format("{}\n{}", current_host, rocksdb_dir));
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::addRocksDBTable");
+    auto holder = with_retries.createRetriesControlHolder("addRocksDBTable");
+    holder.retries_ctl.retryLoop(
+    [&, &zk = holder.faulty_zookeeper]()
+    {
+        with_retries.renewZooKeeper(zk);
+        String dir_path = zookeeper_path + "/rocksdb_tables/" + dir_key;
+        zk->createIfNotExists(dir_path, "");
+        String path = dir_path + "/" + escapeForFileName(election_id);
+        if (auto res = zk->tryCreate(path, data_path_in_backup, zkutil::CreateMode::Persistent);
+            res != Coordination::Error::ZOK && res != Coordination::Error::ZNODEEXISTS)
+            throw zkutil::KeeperException(res);
+    });
+}
+
+void BackupCoordinationOnCluster::prepareRocksDBTables() const
+{
+    if (rocksdb_tables)
+        return;
+
+    std::vector<std::pair<std::string, BackupCoordinationKeeperMapTables::KeeperMapTableInfo>> rocksdb_table_infos;
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::prepareRocksDBTables");
+    auto holder = with_retries.createRetriesControlHolder("prepareRocksDBTables");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+    {
+        rocksdb_table_infos.clear();
+
+        with_retries.renewZooKeeper(zk);
+
+        fs::path tables_path = fs::path(zookeeper_path) / "rocksdb_tables";
+
+        /// Two-level tree: rocksdb_tables/<escaped host-qualified dir>/<escaped election_id>, payload =
+        /// data_path_in_backup. The dir node groups all tables sharing one host-local directory; the
+        /// election_id child with the greatest value owns the shared data (see BackupCoordinationKeeperMapTables).
+        for (const auto & escaped_dir_key : zk->getChildren(tables_path))
+        {
+            auto qualified_dir = unescapeForFileName(escaped_dir_key);
+            fs::path dir_path = tables_path / escaped_dir_key;
+
+            auto election_children = zk->getChildren(dir_path);
+            std::vector<std::string> election_paths;
+            election_paths.reserve(election_children.size());
+            for (const auto & child : election_children)
+                election_paths.push_back(dir_path / child);
+
+            auto election_info = zk->get(election_paths);
+            for (size_t i = 0; i < election_info.size(); ++i)
+            {
+                if (election_info[i].error != Coordination::Error::ZOK)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path in Keeper {} is unexpectedly missing", election_paths[i]);
+
+                rocksdb_table_infos.emplace_back(
+                    qualified_dir,
+                    BackupCoordinationKeeperMapTables::KeeperMapTableInfo{
+                        .table_id = unescapeForFileName(fs::path(election_paths[i]).filename()),
+                        .data_path_in_backup = election_info[i].data});
+            }
+        }
+    });
+
+    rocksdb_tables.emplace();
+    for (const auto & [qualified_dir, table_info] : rocksdb_table_infos)
+        rocksdb_tables->addTable(qualified_dir, table_info.table_id, table_info.data_path_in_backup);
+}
+
+String BackupCoordinationOnCluster::getRocksDBDataPath(const String & rocksdb_dir) const
+{
+    std::lock_guard lock(rocksdb_tables_mutex);
+    prepareRocksDBTables();
+    return rocksdb_tables->getDataPath(fmt::format("{}\n{}", current_host, rocksdb_dir));
+}
+
+String BackupCoordinationOnCluster::getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const
+{
+    std::lock_guard lock(rocksdb_tables_mutex);
+    prepareRocksDBTables();
+    return rocksdb_tables->getTableId(fmt::format("{}\n{}", current_host, rocksdb_dir));
 }
 
 

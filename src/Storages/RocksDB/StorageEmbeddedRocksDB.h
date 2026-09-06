@@ -23,6 +23,8 @@ namespace DB
 {
 
 class Context;
+class IBackup;
+using BackupPtr = std::shared_ptr<const IBackup>;
 
 /// Wrapper for rocksdb storage.
 /// Operates with rocksdb data structures via rocksdb API (holds pointer to rocksdb::DB inside for that).
@@ -34,6 +36,7 @@ class StorageEmbeddedRocksDB final : public StorageWithCommonVirtualColumns, pub
     friend class EmbeddedRocksDBSink;
     friend class EmbeddedRocksDBBulkSink;
     friend class ReadFromEmbeddedRocksDB;
+    friend class EmbeddedRocksDBBackup;
 
     static VirtualColumnsDescription createVirtuals();
 
@@ -119,12 +122,28 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
 
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void finalizeRestoreFromBackup() override;
+
     const RocksDBSettings & getSettings() const { return *storage_settings.get(); }
 
     void setSettings(std::unique_ptr<RocksDBSettings> && settings_) { storage_settings.set(std::move(settings_)); }
 
 private:
     SinkToStoragePtr getSink(ContextPtr context, const StorageMetadataPtr & metadata_snapshot);
+
+    /// Identifier used to elect a single owner among tables sharing one rocksdb_dir for backup/restore.
+    String backupElectionId() const;
+
+    /// Canonical description of the on-disk byte layout (physical columns in order + primary-key order).
+    /// Restore rejects a backup whose fingerprint differs, so raw bytes are never replayed into a table
+    /// whose schema would decode them incorrectly.
+    String backupSchemaFingerprint() const;
+
+    /// Runs (only on the elected owner) the read_only / non-empty checks and then replays the shared data.
+    void restoreDataOwner(const BackupPtr & backup, const String & data_path_in_backup, bool allow_non_empty_tables);
+    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
 
     LoggerPtr log;
 

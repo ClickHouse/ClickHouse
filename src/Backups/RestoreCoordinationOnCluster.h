@@ -65,6 +65,9 @@ public:
     /// The function returns false if data for this specific root path is already being restored by another table.
     bool acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id) override;
 
+    void addRocksDBTable(const String & rocksdb_dir, const String & election_id) override;
+    String getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const override;
+
     /// Generates a new UUID for a table. The same UUID must be used for a replicated table on each replica,
     /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).
     void generateUUIDForTable(ASTCreateQuery & create_query) override;

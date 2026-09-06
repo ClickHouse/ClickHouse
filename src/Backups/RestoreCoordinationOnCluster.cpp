@@ -67,6 +67,7 @@ void RestoreCoordinationOnCluster::createRootNodes()
             zk->createIfNotExists(zookeeper_path + "/repl_access_storages_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/repl_sql_objects_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/keeper_map_tables", "");
+            zk->createIfNotExists(zookeeper_path + "/rocksdb_tables", "");
             zk->createIfNotExists(zookeeper_path + "/table_uuids", "");
 
             zk->createIfNotExists(zookeeper_path + "/shared_databases_acquired", "");
@@ -308,6 +309,51 @@ bool RestoreCoordinationOnCluster::acquireInsertingDataForKeeperMap(const String
                 zkutil::KeeperException::fromPath(code, restore_lock_path);
         });
     return lock_acquired;
+}
+
+void RestoreCoordinationOnCluster::addRocksDBTable(const String & rocksdb_dir, const String & election_id)
+{
+    /// rocksdb_dir is a host-local filesystem path, so qualify the key with current_host: the same string
+    /// on two hosts denotes distinct physical directories, while tables sharing one directory are always
+    /// co-located on the same host. Each registration creates a child node named by its election_id; the
+    /// owner is the child with the greatest election_id (see getRocksDBDataOwnerElectionId).
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::addRocksDBTable");
+    auto holder = with_retries.createRetriesControlHolder("addRocksDBTable");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zk);
+            auto dir_key = escapeForFileName(current_host + "\n" + rocksdb_dir);
+            std::string dir_path = fs::path(zookeeper_path) / "rocksdb_tables" / dir_key;
+            zk->createIfNotExists(dir_path, "");
+            std::string election_path = fs::path(dir_path) / escapeForFileName(election_id);
+            auto code = zk->tryCreate(election_path, "", zkutil::CreateMode::Persistent);
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+                throw zkutil::KeeperException::fromPath(code, election_path);
+        });
+}
+
+String RestoreCoordinationOnCluster::getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const
+{
+    String max_election_id;
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::getRocksDBDataOwnerElectionId");
+    auto holder = with_retries.createRetriesControlHolder("getRocksDBDataOwnerElectionId");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zk);
+            auto dir_key = escapeForFileName(current_host + "\n" + rocksdb_dir);
+            std::string dir_path = fs::path(zookeeper_path) / "rocksdb_tables" / dir_key;
+            auto children = zk->getChildren(dir_path);
+            max_election_id.clear();
+            for (const auto & child : children)
+            {
+                auto child_election_id = unescapeForFileName(child);
+                if (child_election_id > max_election_id)
+                    max_election_id = child_election_id;
+            }
+        });
+    return max_election_id;
 }
 
 void RestoreCoordinationOnCluster::generateUUIDForTable(ASTCreateQuery & create_query)

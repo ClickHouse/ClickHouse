@@ -103,6 +103,24 @@ String BackupCoordinationLocal::getKeeperMapDataPath(const String & table_zookee
     return keeper_map_tables.getDataPath(table_zookeeper_root_path);
 }
 
+void BackupCoordinationLocal::addRocksDBTable(const String & rocksdb_dir, const String & election_id, const String & data_path_in_backup)
+{
+    std::lock_guard lock(rocksdb_tables_mutex);
+    rocksdb_tables.addTable(rocksdb_dir, election_id, data_path_in_backup);
+}
+
+String BackupCoordinationLocal::getRocksDBDataPath(const String & rocksdb_dir) const
+{
+    std::lock_guard lock(rocksdb_tables_mutex);
+    return rocksdb_tables.getDataPath(rocksdb_dir);
+}
+
+String BackupCoordinationLocal::getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const
+{
+    std::lock_guard lock(rocksdb_tables_mutex);
+    return rocksdb_tables.getTableId(rocksdb_dir);
+}
+
 
 void BackupCoordinationLocal::addFileInfos(BackupFileInfos && file_infos_)
 {

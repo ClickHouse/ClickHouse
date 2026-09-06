@@ -33,6 +33,21 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromAppendOnlyFile.h>
+#include <Backups/BackupEntryFromMemory.h>
+#include <Backups/BackupEntryReference.h>
+#include <Backups/IBackup.h>
+#include <Backups/IBackupCoordination.h>
+#include <Backups/IBackupEntriesLazyBatch.h>
+#include <Backups/IRestoreCoordination.h>
+#include <Backups/RestorerFromBackup.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+
 #include <Core/Settings.h>
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -68,6 +83,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool optimize_trivial_approximate_count_query;
+extern const SettingsUInt64 max_compress_block_size;
 }
 
 namespace RocksDBSetting
@@ -78,6 +94,7 @@ extern const RocksDBSettingsBool optimize_for_bulk_insert;
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int CANNOT_RESTORE_TABLE;
 extern const int LOGICAL_ERROR;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ROCKSDB_ERROR;
@@ -461,6 +478,405 @@ bool StorageEmbeddedRocksDB::optimize(
     if (!status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Compaction failed: {}", status.ToString());
     return true;
+}
+
+/// Single file holding all key-value pairs of the table as (raw key, raw value) length-prefixed
+/// binary records. RocksDB already stores keys/values as raw serialized strings, so no
+/// (de)serialization is required - we copy the bytes verbatim.
+///
+/// The scan and the restore write both go through GetRootDB(): for a ttl > 0 table rocksdb_ptr is
+/// a DBWithTTL whose iterator strips the trailing 4-byte creation timestamp and whose Write()
+/// appends a fresh one, which would reset every row's expiration on restore. GetRootDB() gives the
+/// underlying DB, so the timestamp suffix is copied verbatim in both directions and the original
+/// expiration state is preserved. For a non-ttl table GetRootDB() is the DB itself, so the bytes
+/// are identical to a plain scan/write.
+static constexpr std::string_view rocksdb_backup_data_filename = "data.bin";
+
+/// Small companion file recording the source table's ttl argument. The backed-up value bytes are
+/// ttl-format-dependent (a ttl > 0 table is a DBWithTTL whose values carry a trailing 4-byte creation
+/// timestamp; a ttl = 0 table has none), and even between two ttl > 0 tables the ttl sets each row's
+/// expiration window. Restore compares this against the target table's ttl and rejects a mismatch, so the
+/// RESTORE ... AS <writable_table> / allow_different_table_def path (which skips RestorerFromBackup's
+/// create-query compatibility check) cannot silently replay incompatible bytes or shift every row's expiry.
+static constexpr std::string_view rocksdb_backup_ttl_filename = "ttl.txt";
+
+/// Flush the restore WriteBatch once it reaches this many bytes so a large backup does not require a
+/// full in-RAM copy of the table (EmbeddedRocksDB is an on-disk engine).
+static constexpr size_t rocksdb_restore_batch_flush_bytes = 64 * 1024 * 1024;
+
+/// Lazily dumps all key-value pairs of a RocksDB table into a single compressed backup entry.
+class EmbeddedRocksDBBackup : public IBackupEntriesLazyBatch, boost::noncopyable
+{
+public:
+    EmbeddedRocksDBBackup(
+        std::shared_ptr<const StorageEmbeddedRocksDB> storage_,
+        const String & data_path_in_backup,
+        TemporaryDataOnDiskScopePtr tmp_data_)
+        : storage(std::move(storage_))
+        , tmp_data(std::move(tmp_data_))
+    {
+        file_path = fs::path(data_path_in_backup) / rocksdb_backup_data_filename;
+    }
+
+private:
+    size_t getSize() const override { return 1; }
+
+    const String & getName(size_t i) const override
+    {
+        chassert(i == 0);
+        return file_path;
+    }
+
+    BackupEntries generate() override
+    {
+        auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
+
+        {
+            /// A shared lock keeps the rocksdb handle alive for the whole scan without blocking
+            /// concurrent inserts (they take a shared lock too); it only excludes drop/truncate.
+            /// The iterator reads from an implicit snapshot, so the dump is consistent.
+            SharedLockGuard lock(storage->rocksdb_ptr_mx);
+            if (!storage->rocksdb_ptr)
+                throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
+
+            /// GetRootDB() bypasses the DBWithTTL wrapper so raw values keep their TTL timestamp suffix.
+            std::unique_ptr<rocksdb::Iterator> iterator(storage->rocksdb_ptr->GetRootDB()->NewIterator(rocksdb::ReadOptions()));
+            for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next())
+            {
+                writeStringBinary(iterator->key().ToStringView(), *data_out);
+                writeStringBinary(iterator->value().ToStringView(), *data_out);
+            }
+
+            if (!iterator->status().ok())
+                throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB iterator error: {}", iterator->status().ToString());
+        }
+
+        data_out->finishWriting();
+        return {{file_path, std::make_shared<BackupEntryFromAppendOnlyFile>(std::move(data_out))}};
+    }
+
+    std::shared_ptr<const StorageEmbeddedRocksDB> storage;
+    TemporaryDataOnDiskScopePtr tmp_data;
+    String file_path;
+};
+
+/// Election id used to pick a single owner among tables sharing one rocksdb_dir. A writable table (there
+/// is at most one, enforced by RocksDB's LOCK) always sorts above every read_only table (the leading
+/// "1_rw"/"0_ro" tag dominates the comparison), so it is elected when present. Its handle also sees the
+/// freshest data (including the unflushed memtable), which is what the backup must capture. The
+/// fully-qualified table name keeps ids unique across distinct tables: unlike the storage uuid it is never
+/// Nil for Ordinary-database tables (InterpreterCreateQuery clears the uuid there), so two unrelated
+/// EmbeddedRocksDB tables never collide on one election znode.
+String StorageEmbeddedRocksDB::backupElectionId() const
+{
+    return fmt::format("{}_{}", read_only ? "0_ro" : "1_rw", getStorageID().getFullTableName());
+}
+
+/// Canonical fingerprint of the on-disk byte layout. restoreDataImpl() replays raw serialized (key, value)
+/// bytes verbatim, and fillColumns() later decodes them with the TARGET table's metadata: the key bytes are
+/// the primary-key columns serialized in primary-key order, the value bytes are the remaining physical columns
+/// serialized in physical order. So the bytes are only interpretable by a table with the same physical column
+/// types in the same order and the same primary-key column set/order. A same-ttl target that differs in
+/// PK/value column types or ordering would decode the bytes into a wrong (unreadable or silently incorrect)
+/// table, and the RESTORE ... AS <writable_table> / allow_different_table_def workaround skips
+/// RestorerFromBackup's create-query compatibility check, so this fingerprint is what catches it. Table name and
+/// the read_only flag are intentionally excluded: neither affects the byte layout, and RESTORE ... AS restores
+/// into a differently-named (and writable) table on purpose.
+String StorageEmbeddedRocksDB::backupSchemaFingerprint() const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto sample_block = metadata_snapshot->getSampleBlock();
+
+    WriteBufferFromOwnString out;
+    out << "key:";
+    for (size_t i = 0; i < primary_key_pos.size(); ++i)
+    {
+        const auto & col = sample_block.getByPosition(primary_key_pos[i]);
+        if (i)
+            out << ',';
+        out << col.name << ' ' << col.type->getName();
+    }
+    out << "\nvalue:";
+    for (size_t i = 0; i < value_column_pos.size(); ++i)
+    {
+        const auto & col = sample_block.getByPosition(value_column_pos[i]);
+        if (i)
+            out << ',';
+        out << col.name << ' ' << col.type->getName();
+    }
+    return out.str();
+}
+
+/// Companion file recording backupSchemaFingerprint(). Restore compares it against the target table's own
+/// fingerprint and rejects a mismatch before replaying any bytes, so a same-ttl but structurally-different
+/// target cannot silently decode the raw bytes into wrong data.
+static constexpr std::string_view rocksdb_backup_schema_filename = "schema.txt";
+
+/// The single-owner optimization (siblings reference the owner's data instead of dumping their own) is safe
+/// only when the elected owner is the writable table: its live handle sees the freshest shared data, so its
+/// one dump represents every sibling. An all-read_only group has no such common live view (each read_only
+/// handle is an independent snapshot that may diverge), so those tables must not collapse onto one dump.
+/// election_id encodes writability in its leading tag, so a writable owner's id starts with "1_rw_".
+static bool isWritableElectionId(const String & election_id)
+{
+    return election_id.starts_with("1_rw_");
+}
+
+void StorageEmbeddedRocksDB::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
+{
+    /// Several tables (one writable plus any number of read_only) may share a single rocksdb_dir. Register
+    /// this table so a writable owner backs up the shared RocksDB once and its read_only siblings only
+    /// reference it. This avoids dumping the same directory multiple times from independent snapshots on
+    /// different handles, whose contents could diverge if writes race between the dumps.
+    auto coordination = backup_entries_collector.getBackupCoordination();
+    coordination->addRocksDBTable(rocksdb_dir, backupElectionId(), data_path_in_backup);
+
+    /// Runs after all tables have registered, so getRocksDBDataPath()/getRocksDBDataOwnerElectionId() see
+    /// the whole group.
+    auto post_collecting_task = [coordination, &backup_entries_collector, my_data_path_in_backup = data_path_in_backup, this]
+    {
+        /// Record this table's ttl and schema fingerprint so restore can reject an incompatible target: the
+        /// value bytes are ttl-format-dependent, and the raw key/value bytes are only decodable by a table with
+        /// the same physical-column layout. Both are per-table constants, so every table writes its own tiny
+        /// ttl.txt / schema.txt even when it references a sibling's data.bin.
+        backup_entries_collector.addBackupEntries(
+            {{fs::path(my_data_path_in_backup) / rocksdb_backup_ttl_filename,
+              std::make_shared<BackupEntryFromMemory>(toString(ttl))},
+             {fs::path(my_data_path_in_backup) / rocksdb_backup_schema_filename,
+              std::make_shared<BackupEntryFromMemory>(backupSchemaFingerprint())}});
+
+        auto owner_election_id = coordination->getRocksDBDataOwnerElectionId(rocksdb_dir);
+        auto owner_data_path = coordination->getRocksDBDataPath(rocksdb_dir);
+
+        /// Reference the owner's data.bin instead of dumping again ONLY when the owner is the writable table
+        /// (its live handle holds the freshest shared data). In an all-read_only group there is no common live
+        /// view, so every table dumps its own snapshot rather than collapsing onto one that may not match.
+        if (isWritableElectionId(owner_election_id) && owner_data_path != my_data_path_in_backup)
+        {
+            String source_path = fs::path(my_data_path_in_backup) / rocksdb_backup_data_filename;
+            String target_path = fs::path(owner_data_path) / rocksdb_backup_data_filename;
+            backup_entries_collector.addBackupEntries({{source_path, std::make_shared<BackupEntryReference>(std::move(target_path))}});
+            return;
+        }
+
+        TemporaryDataOnDiskSettings tmp_data_settings;
+        auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
+        tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
+        auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
+
+        backup_entries_collector.addBackupEntries(
+            std::make_shared<EmbeddedRocksDBBackup>(
+                std::static_pointer_cast<const StorageEmbeddedRocksDB>(shared_from_this()), my_data_path_in_backup, std::move(tmp_data))
+                ->getBackupEntries());
+    };
+
+    backup_entries_collector.addPostTask(post_collecting_task);
+}
+
+/// backupData() always writes data.bin (holding zero records for an empty table). Peeking at the
+/// first record tells whether the backup actually carries any rows.
+static bool backupHasRows(const BackupPtr & backup, const String & data_file)
+{
+    CompressedReadBufferFromFile compressed_in{backup->readFile(data_file)};
+    return !compressed_in.eof();
+}
+
+void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
+{
+    auto backup = restorer.getBackup();
+
+    /// backupData() always writes data.bin, even for an empty table, so a data restore reaching here with
+    /// no data.bin cannot be an "empty table" case. It means one of: (a) the backup was made with
+    /// structure_only = true (metadata only, no data) and should be restored the same way, with
+    /// SETTINGS structure_only = true; (b) the backup predates EmbeddedRocksDB backing up its data
+    /// (see https://github.com/ClickHouse/ClickHouse/issues/109213); or (c) the backup is corrupted.
+    /// Restoring it as data would silently recreate an empty table, so fail closed instead.
+    String data_file = fs::path(data_path_in_backup) / rocksdb_backup_data_filename;
+    if (!backup->fileExists(data_file))
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Backup of table {} has no RocksDB data file {}. If this backup was created with structure_only = true, "
+            "restore it with SETTINGS structure_only = true. Otherwise it predates EmbeddedRocksDB backing up its data "
+            "(see https://github.com/ClickHouse/ClickHouse/issues/109213) or is corrupted; restoring its data would "
+            "silently produce an empty table",
+            getStorageID().getNameForLogs(), data_file);
+
+    /// The backed-up value bytes are ttl-format-dependent: a ttl > 0 source is a DBWithTTL whose values
+    /// carry a trailing 4-byte creation timestamp (backed up verbatim) while a ttl = 0 source has none, and
+    /// two ttl > 0 tables interpret those timestamps against their own ttl window. Restoring across a ttl
+    /// mismatch would replay incompatible bytes or silently shift every row's expiration. Enforce it here
+    /// because the RESTORE ... AS <writable_table> / allow_different_table_def workaround for read_only
+    /// tables skips RestorerFromBackup's create-query compatibility check, so nothing else catches it.
+    String ttl_file = fs::path(data_path_in_backup) / rocksdb_backup_ttl_filename;
+    if (backup->fileExists(ttl_file))
+    {
+        String backup_ttl_str;
+        readStringUntilEOF(backup_ttl_str, *backup->readFile(ttl_file));
+        Int32 backup_ttl = parse<Int32>(backup_ttl_str);
+        if (backup_ttl != ttl)
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "Cannot restore EmbeddedRocksDB table {}: backup was taken from a table with ttl = {} but the "
+                "target table has ttl = {}. The stored value bytes are ttl-format-dependent, so restore requires "
+                "a matching ttl. Create the target table with ttl = {} and restore again",
+                getStorageID().getNameForLogs(), backup_ttl, ttl, backup_ttl);
+    }
+
+    /// The raw key/value bytes are only decodable by a table with the same physical-column layout (key = PK
+    /// columns in PK order, value = the remaining physical columns in physical order). A same-ttl target that
+    /// differs in column types or ordering would silently decode the bytes into wrong data. Reject a mismatch
+    /// before replaying anything; this is what guards the RESTORE ... AS <writable_table> /
+    /// allow_different_table_def path, which skips RestorerFromBackup's create-query compatibility check.
+    String schema_file = fs::path(data_path_in_backup) / rocksdb_backup_schema_filename;
+    if (backup->fileExists(schema_file))
+    {
+        String backup_schema;
+        readStringUntilEOF(backup_schema, *backup->readFile(schema_file));
+        String target_schema = backupSchemaFingerprint();
+        if (backup_schema != target_schema)
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "Cannot restore EmbeddedRocksDB table {}: the backup's column layout does not match the target "
+                "table. The stored bytes are decoded with the target table's schema, so restore requires an "
+                "identical physical-column layout and primary key. Backup layout [{}] but target layout [{}]. "
+                "Create the target table with a matching schema and restore again",
+                getStorageID().getNameForLogs(), backup_schema, target_schema);
+    }
+
+    /// Several tables (one writable plus any number of read_only) may share a single rocksdb_dir. When a
+    /// writable table shares the directory it is the single owner that replays the shared RocksDB (a read_only
+    /// handle rejects Write()), so a {rw, ro} pair restores through the writable table and the read_only
+    /// sibling contributes no data restore. An all-read_only group has no writable owner and no common live
+    /// view, so each read_only table restores its own backup independently.
+    auto restore_coordination = restorer.getRestoreCoordination();
+    restore_coordination->addRocksDBTable(rocksdb_dir, backupElectionId());
+
+    /// The ownership decision and all writes run inside the data restore task, which executes after every
+    /// table has registered (insertDataToTables() waits for all restoreDataFromBackup() calls before the
+    /// data restore tasks run), so getRocksDBDataOwnerElectionId() sees the full set of siblings.
+    restorer.addDataRestoreTask(
+        [storage = std::static_pointer_cast<StorageEmbeddedRocksDB>(shared_from_this()),
+         backup,
+         data_path_in_backup,
+         restore_coordination,
+         my_election_id = backupElectionId(),
+         allow_non_empty_tables = restorer.isNonEmptyTableAllowed()]
+        {
+            auto owner_election_id = restore_coordination->getRocksDBDataOwnerElectionId(storage->rocksdb_dir);
+            /// Skip only when a writable owner (which will replay for the whole group) is some other table.
+            /// If the owner is not writable (all-read_only group) every table replays its own backup, so a
+            /// non-empty read_only backup still hits the read_only rejection in restoreDataOwner().
+            if (isWritableElectionId(owner_election_id) && owner_election_id != my_election_id)
+                return;
+            storage->restoreDataOwner(backup, data_path_in_backup, allow_non_empty_tables);
+        });
+}
+
+void StorageEmbeddedRocksDB::finalizeRestoreFromBackup()
+{
+    /// A read_only handle snapshots the RocksDB directory at open time. When tables share one rocksdb_dir,
+    /// the read_only sibling's handle was opened during createAndCheckTables(), before the writable owner
+    /// replayed the rows in a data restore task, so it still serves the pre-restore snapshot. finalizeTables()
+    /// runs after every data restore task has completed, so reopen the read_only handle here to observe the
+    /// restored data (the writable owner needs no reopen: it wrote through its own live handle).
+    if (!read_only)
+        return;
+
+    std::lock_guard lock(rocksdb_ptr_mx);
+    if (rocksdb_ptr)
+    {
+        rocksdb_ptr->Close();
+        rocksdb_ptr = nullptr;
+    }
+    initDB();
+}
+
+void StorageEmbeddedRocksDB::restoreDataOwner(const BackupPtr & backup, const String & data_path_in_backup, bool allow_non_empty_tables)
+{
+    String data_file = fs::path(data_path_in_backup) / rocksdb_backup_data_filename;
+
+    /// A read_only table opens its handle with OpenForReadOnly()/DBWithTTL::Open(..., read_only) over an
+    /// externally-managed directory and rejects the Write() a data restore issues. If this read_only table
+    /// is the elected owner (no writable sibling exists) and the backup carries rows, reject up front with a
+    /// clear error instead of failing later with an opaque RocksDB write error. An empty backup writes
+    /// nothing, so it is still allowed (subject to the non-empty-table guard below).
+    bool backup_has_rows = backupHasRows(backup, data_file);
+    if (read_only && backup_has_rows)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore data into read_only EmbeddedRocksDB table {}. To restore the data, create a writable "
+            "EmbeddedRocksDB table with the same schema and ttl, then run RESTORE ... AS <writable_table> "
+            "SETTINGS allow_different_table_def = 1",
+            getStorageID().getNameForLogs());
+
+    /// Unless allow_non_empty_tables is set, restoring into a table that already holds rows is rejected.
+    /// This guard applies to read_only tables too: an empty backup must not silently "succeed" and leave
+    /// the stale rows of a pre-populated external directory in place.
+    if (!allow_non_empty_tables)
+    {
+        bool empty = false;
+        {
+            SharedLockGuard lock(rocksdb_ptr_mx);
+            if (!rocksdb_ptr)
+                throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
+            std::unique_ptr<rocksdb::Iterator> iterator(rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
+            iterator->SeekToFirst();
+            empty = !iterator->Valid();
+            if (!iterator->status().ok())
+                throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB iterator error: {}", iterator->status().ToString());
+        }
+        if (!empty)
+            RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
+    }
+
+    /// An empty backup has no rows to write; the metadata restore that recreated the table is all that
+    /// is needed (this is also what makes an empty read_only backup restorable).
+    if (!backup_has_rows)
+        return;
+
+    restoreDataImpl(backup, data_path_in_backup);
+}
+
+void StorageEmbeddedRocksDB::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup)
+{
+    String data_file = fs::path(data_path_in_backup) / rocksdb_backup_data_filename;
+    if (!backup->fileExists(data_file))
+        throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file);
+
+    CompressedReadBufferFromFile compressed_in{backup->readFile(data_file)};
+
+    rocksdb::WriteBatch batch;
+
+    /// GetRootDB() bypasses the DBWithTTL wrapper so the raw TTL timestamp suffix is written verbatim.
+    const auto flush_batch = [&]
+    {
+        SharedLockGuard lock(rocksdb_ptr_mx);
+        if (!rocksdb_ptr)
+            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
+        auto status = rocksdb_ptr->GetRootDB()->Write(rocksdb::WriteOptions(), &batch);
+        if (!status.ok())
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+        batch.Clear();
+    };
+
+    String key;
+    String value;
+    while (!compressed_in.eof())
+    {
+        readStringBinary(key, compressed_in);
+        readStringBinary(value, compressed_in);
+
+        auto status = batch.Put(key, value);
+        if (!status.ok())
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+
+        /// Flush periodically so restoring a large table does not buffer the whole batch in RAM.
+        if (batch.GetDataSize() >= rocksdb_restore_batch_flush_bytes)
+            flush_batch();
+    }
+
+    if (batch.Count() > 0)
+        flush_batch();
 }
 
 static_assert(rocksdb::DEBUG_LEVEL == 0);

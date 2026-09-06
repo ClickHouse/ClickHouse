@@ -61,6 +61,10 @@ public:
     void addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup) override;
     String getKeeperMapDataPath(const String & table_zookeeper_root_path) const override;
 
+    void addRocksDBTable(const String & rocksdb_dir, const String & election_id, const String & data_path_in_backup) override;
+    String getRocksDBDataPath(const String & rocksdb_dir) const override;
+    String getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const override;
+
     void addFileInfos(BackupFileInfos && file_infos) override;
     const BackupFileInfos & getFileInfos() const override;
     void forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const override;
@@ -77,6 +81,7 @@ private:
     BackupCoordinationReplicatedSQLObjects replicated_sql_objects TSA_GUARDED_BY(replicated_sql_objects_mutex);
     BackupCoordinationFileInfos file_infos TSA_GUARDED_BY(file_infos_mutex);
     BackupCoordinationKeeperMapTables keeper_map_tables TSA_GUARDED_BY(keeper_map_tables_mutex);
+    BackupCoordinationKeeperMapTables rocksdb_tables TSA_GUARDED_BY(rocksdb_tables_mutex);
     std::unordered_set<size_t> writing_files TSA_GUARDED_BY(writing_files_mutex);
 
     mutable std::mutex replicated_tables_mutex;
@@ -85,6 +90,7 @@ private:
     mutable std::mutex file_infos_mutex;
     mutable std::mutex writing_files_mutex;
     mutable std::mutex keeper_map_tables_mutex;
+    mutable std::mutex rocksdb_tables_mutex;
 
     std::atomic<bool> is_finished = false;
     std::atomic<bool> is_error_set = false;
