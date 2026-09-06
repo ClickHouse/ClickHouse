@@ -767,6 +767,57 @@ def clickhouse_execute_json(
 # Should we capture client's stacktraces via SIGTSTP
 CAPTURE_CLIENT_STACKTRACE = False
 
+# How long `kill_process_group` lets a sanitized build print its report before
+# killing the group.
+SANITIZER_REPORT_GRACE_SECONDS = 60
+
+
+def client_stacktrace_delay_seconds():
+    return 0.5 if RELEASE_NON_SANITIZED else 10
+
+
+def worker_cleanup_grace_seconds():
+    """The diagnostic sleeps of ONE `kill_process_group` invocation, which a parent
+    must allow before it kills a worker mid-cleanup. Not a bound on the whole
+    cleanup: the client stacktrace collection that follows those sleeps is not
+    counted, nor is the 0.1s between that call's SIGTERM and SIGKILL, and a worker
+    holding children in more than one process group pays these sleeps per group."""
+    grace = SANITIZER_REPORT_GRACE_SECONDS if SANITIZED else 0
+    if CAPTURE_CLIENT_STACKTRACE:
+        grace += client_stacktrace_delay_seconds()
+    return grace
+
+
+# Allowance for the parts of the cleanup that do not sleep, and the floor under
+# every single wait.
+WORKER_STOP_MARGIN_SECONDS = 10
+
+
+def terminate_workers(processes):
+    """SIGTERM every worker, then wait for them to finish `kill_process_group`
+    before SIGKILLing the stragglers. The wait must outlast the sleeps of a single
+    such invocation, or a worker is killed part-way through it and leaves its own
+    children alive and its sanitizer report unfinished. It is not a bound on a
+    worker holding children in several process groups: `cleanup_child_processes`
+    then sleeps once per group, and the later groups are still cut short, though
+    never earlier than the flat 10s wait this replaced.
+
+    Workers clean up concurrently, so the grace is one deadline for all of them
+    rather than a budget each, but no wait ever drops below the margin, which
+    covers a worker that was slow to start its cleanup. Every wait stays bounded,
+    so a wedged worker cannot hang the run."""
+    for p in processes:
+        if p.is_alive():
+            p.terminate()
+    deadline = monotonic() + worker_cleanup_grace_seconds() + WORKER_STOP_MARGIN_SECONDS
+    for p in processes:
+        p.join(timeout=max(deadline - monotonic(), WORKER_STOP_MARGIN_SECONDS))
+        if p.is_alive():
+            print(f"Force killing process {p.name} (pid {p.pid})")
+            p.kill()
+    for p in processes:
+        p.join(timeout=5)
+
 
 def kill_process_group(pgid, fatal_log):
     try:
@@ -775,8 +826,10 @@ def kill_process_group(pgid, fatal_log):
             print(
                 '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
             )
-            print("Wait 60 seconds to let sanitizers print the report...")
-            sleep(60)
+            print(
+                f"Wait {SANITIZER_REPORT_GRACE_SECONDS} seconds to let sanitizers print the report..."
+            )
+            sleep(SANITIZER_REPORT_GRACE_SECONDS)
 
         print(f"Killing process group {pgid}")
         print(f"Processes in process group {pgid}:")
@@ -787,7 +840,7 @@ def kill_process_group(pgid, fatal_log):
         if CAPTURE_CLIENT_STACKTRACE:
             # Let's try to dump stacktrace in client (useful to catch issues there)
             os.killpg(pgid, signal.SIGTSTP)
-            stacktrace_delay = 0.5 if RELEASE_NON_SANITIZED else 10
+            stacktrace_delay = client_stacktrace_delay_seconds()
             print(f"Wait {stacktrace_delay} seconds for clickhouse utilities to handle SIGTSTP...")
             sleep(stacktrace_delay)
 
@@ -6103,17 +6156,7 @@ def do_run_tests(
                     print("Stopping tests, terminating all processes...")
                     # Wait briefly for test results to be written
                     sleep(5)
-                    for p in processes:
-                        if p.is_alive():
-                            p.terminate()
-                    # Wait for processes to exit, then force-kill stragglers
-                    for p in processes:
-                        p.join(timeout=10)
-                        if p.is_alive():
-                            print(f"Force killing process {p.name} (pid {p.pid})")
-                            p.kill()
-                    for p in processes:
-                        p.join(timeout=5)
+                    terminate_workers(processes)
                 finally:
                     signal.signal(signal.SIGTERM, old_sigterm_handler)
                 raise_stop_from_carrier(stop_exit_code)
