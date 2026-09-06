@@ -1,5 +1,6 @@
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlerFromAST.h>
 
+#include <Interpreters/QueryKindUnderReadonly.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -80,76 +81,17 @@ std::vector<const IAST *> getExecutedStatements(const IAST & query)
     return result;
 }
 
-/// Whether executing a query of this kind can modify data or server state and therefore requires the handler to
-/// accept a mutating HTTP method. This mirrors the `readonly` enforcement in `ContextAccess`: the HTTP execution
-/// path enables `readonly` for every non-mutating (safe) method, so a mutating query served only over such methods
-/// would always be rejected at invocation time. The switch is exhaustive on purpose - adding a new `QueryKind`
-/// forces an explicit decision here.
-bool queryKindRequiresMutatingMethod(IAST::QueryKind kind)
-{
-    switch (kind)
-    {
-        /// Read-only: allowed to run under `readonly`, so it can be served over a safe method such as `GET`.
-        case IAST::QueryKind::None: /// Unclassified queries have no known write; treat them as read-only.
-        case IAST::QueryKind::Select:
-        case IAST::QueryKind::Show:
-        case IAST::QueryKind::Exists:
-        case IAST::QueryKind::Describe:
-        case IAST::QueryKind::Explain:
-        case IAST::QueryKind::Check:
-        /// Session- and transaction-mutating statements (`USE`, `SET` / `SET ROLE`, `BEGIN` / `COMMIT` / `ROLLBACK` /
-        /// `SET TRANSACTION SNAPSHOT`) run under `readonly = 2` - the mode the HTTP execution path sets for safe
-        /// methods such as `GET` - so this readonly-mirror predicate reports them as runnable over a safe method.
-        /// Their session-visible side effects are fenced off separately by `queryKindHasSideEffectsUnderReadonly`,
-        /// which requires *every* method of such a handler to be a mutating one.
-        case IAST::QueryKind::Use:
-        case IAST::QueryKind::Set:
-        case IAST::QueryKind::Begin:
-        case IAST::QueryKind::Commit:
-        case IAST::QueryKind::Rollback:
-        case IAST::QueryKind::SetTransactionSnapshot:
-        /// BACKUP and RESTORE run under `readonly = 2` - the mode the HTTP execution path sets for safe methods
-        /// such as `GET` - because `BackupsWorker` rejects them only under the strict, user-set `readonly = 1`.
-        /// So this readonly-mirror predicate reports them as runnable over a safe method; their durable side
-        /// effects are fenced off separately by `queryKindHasSideEffectsUnderReadonly`, which requires *every*
-        /// method of such a handler to be a mutating one.
-        case IAST::QueryKind::Backup:
-        case IAST::QueryKind::Restore:
-            return false;
-
-        /// Mutating: rejected under `readonly`, so it needs a write-capable HTTP method.
-        case IAST::QueryKind::Insert:
-        case IAST::QueryKind::Delete:
-        case IAST::QueryKind::Update:
-        case IAST::QueryKind::Create:
-        case IAST::QueryKind::Drop:
-        case IAST::QueryKind::Undrop:
-        case IAST::QueryKind::Rename:
-        case IAST::QueryKind::Optimize:
-        case IAST::QueryKind::Alter:
-        case IAST::QueryKind::Grant:
-        case IAST::QueryKind::Revoke:
-        case IAST::QueryKind::Move:
-        case IAST::QueryKind::System:
-        case IAST::QueryKind::KillQuery:
-        case IAST::QueryKind::ExternalDDL:
-        case IAST::QueryKind::AsyncInsertFlush:
-        /// A `PARALLEL WITH` query is looked through by `collectExecutedStatements`, so the fences never classify
-        /// the wrapper itself; the entry stays here (and conservatively mutating) for exhaustiveness.
-        case IAST::QueryKind::ParallelWithQuery:
-        case IAST::QueryKind::Copy:
-        case IAST::QueryKind::Snapshot:
-            return true;
-    }
-}
-
-/// Whether the concrete query requires the handler to accept a mutating HTTP method. This refines
-/// `queryKindRequiresMutatingMethod` for the `Create` kind: `CREATE TEMPORARY TABLE` / `CREATE TEMPORARY VIEW`
-/// need only the `CREATE_TEMPORARY_TABLE` access flag, which `ContextAccess` still allows under `readonly = 2`
-/// (the mode a safe HTTP method such as `GET` sets); they are rejected only under `readonly = 1`. So a temporary
-/// -object create is runnable over `GET` and must not require a mutating method here. Its session-visible side
-/// effects are fenced off separately by `queryHasSideEffectsUnderReadonly`, which requires *every* method of
-/// such a handler to be a mutating one.
+/// Whether the concrete query requires the handler to accept a mutating HTTP method. A query rejected under
+/// `readonly` (`isQueryKindRejectedUnderReadonly`) does: the HTTP execution path enables `readonly` for every
+/// non-mutating (safe) method, so such a query served only over safe methods would always be rejected at
+/// invocation time.
+///
+/// This refines the kind-level predicate for the `Create` kind: `CREATE TEMPORARY TABLE` / `CREATE TEMPORARY
+/// VIEW` need only the `CREATE_TEMPORARY_TABLE` access flag, which `ContextAccess` still allows under
+/// `readonly = 2` (the mode a safe HTTP method such as `GET` sets); they are rejected only under `readonly = 1`.
+/// So a temporary-object create is runnable over `GET` and must not require a mutating method here. Its
+/// session-visible side effects are fenced off separately by `queryHasSideEffectsUnderReadonly`, which requires
+/// *every* method of such a handler to be a mutating one.
 bool statementRequiresMutatingMethod(const IAST & statement)
 {
     if (const auto * create = statement.as<ASTCreateQuery>(); create && create->isTemporary())
@@ -161,7 +103,7 @@ bool statementRequiresMutatingMethod(const IAST & statement)
     /// form is additionally fenced off by `statementHasSideEffectsUnderReadonly`.
     if (statement.as<ASTExecuteAsQuery>())
         return true;
-    return queryKindRequiresMutatingMethod(statement.getQueryKind());
+    return isQueryKindRejectedUnderReadonly(statement.getQueryKind());
 }
 
 /// Whether the handler's query requires a mutating HTTP method: it does if any of the statements it executes does
@@ -210,37 +152,6 @@ bool queryWrapsBodyConsumingStatement(const IAST & query)
     const auto statements = getExecutedStatements(query);
     return std::any_of(statements.begin(), statements.end(),
         [&](const IAST * statement) { return statement != &query && queryConsumesRequestBody(*statement); });
-}
-
-/// Whether `readonly = 2` (the mode the HTTP execution path sets for safe methods such as `GET`) still lets a
-/// query of this kind produce side effects. Two groups:
-/// - `BACKUP` writes an archive to disk or object storage and `RESTORE` writes data into tables, yet
-///   `BackupsWorker` rejects them only under the strict, user-set `readonly = 1`.
-/// - Session- and transaction-mutating statements: `SET` changes session settings (allowed under `readonly = 2`,
-///   which forbids only changing `readonly` itself), `SET ROLE` changes the active roles, `USE` changes the
-///   session database, and `BEGIN` / `COMMIT` / `ROLLBACK` / `SET TRANSACTION SNAPSHOT` mutate the current
-///   transaction - none of which `readonly` blocks. When the client uses `session_id`, these effects persist
-///   across requests, so a `GET` could invisibly commit a transaction or alter session state.
-/// The runtime `readonly` enforcement cannot fence any of these off. HTTP requires safe methods to be
-/// side-effect-free: `GET` is expected to have no effects, and a handler declared for `GET` is also served for
-/// `HEAD` (see `HTTPHandlerFactory`), where the suppressed response body would hide the effect entirely. Such
-/// queries therefore must not be reachable over safe methods at all.
-bool queryKindHasSideEffectsUnderReadonly(IAST::QueryKind kind)
-{
-    switch (kind)
-    {
-        case IAST::QueryKind::Backup:
-        case IAST::QueryKind::Restore:
-        case IAST::QueryKind::Set:
-        case IAST::QueryKind::Use:
-        case IAST::QueryKind::Begin:
-        case IAST::QueryKind::Commit:
-        case IAST::QueryKind::Rollback:
-        case IAST::QueryKind::SetTransactionSnapshot:
-            return true;
-        default:
-            return false;
-    }
 }
 
 /// Whether the query can mutate an *existing* session temporary table when run under `readonly = 2` (the mode

@@ -126,7 +126,13 @@ BlockIO InterpreterExecuteAsQuery::execute()
     {
         /// EXECUTE AS <user> <subquery>
         auto subquery_context = impersonateQueryContext(getContext(), target_user_name);
-        return executeQuery(query.subquery->formatWithSecretsOneLine(), subquery_context, QueryFlags{ .internal = true }).second;
+        return executeQuery(
+            query.subquery->formatWithSecretsOneLine(),
+            subquery_context,
+            QueryFlags{
+                .internal = true,
+                .parse_server_owned_query_without_limits = getContext()->shouldParseServerOwnedQueryWithoutLimits(),
+            }).second;
     }
     else
     {

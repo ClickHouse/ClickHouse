@@ -588,7 +588,18 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             query_scope = QueryScope::create(query_context);
 
         NullWriteBuffer nullwb;
-        executeQuery(istr, nullwb, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
+        /// A server-owned handler query lifts the parser limits by sending `max_parser_depth = 0` /
+        /// `max_parser_backtracks = 0` with the entry settings (see `executeQueryImpl`), which
+        /// `makeQueryContext` has applied to `query_context` clamped to this host's constraints.
+        /// Ordinary distributed DDL therefore keeps this host's parser limits.
+        executeQuery(
+            istr,
+            nullwb,
+            query_context,
+            {},
+            QueryFlags{
+                .internal = internal,
+                .distributed_backup_restore = task.entry.is_backup_restore });
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
