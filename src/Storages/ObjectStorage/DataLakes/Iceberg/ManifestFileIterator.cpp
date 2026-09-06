@@ -137,8 +137,8 @@ namespace
         }
         else
         {
-            /// A fixed-width column ignores the declared length: `ColumnVector` and `ColumnDecimal` read past the payload,
-            /// `ColumnFixedString` zero fills it. A wider bound still decodes to the value the writer stored.
+            /// A bound narrower than the column decodes to a value the writer never stored: `ColumnVector` and
+            /// `ColumnDecimal` read `sizeof(value)` bytes past the payload, `ColumnFixedString` zero fills the rest.
             if (column->isFixedAndContiguous() && str.length() < column->sizeOfValueIfFixed())
                 return std::nullopt;
 
