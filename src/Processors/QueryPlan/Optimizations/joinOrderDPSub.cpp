@@ -53,6 +53,9 @@ private:
     std::optional<UInt64> estimateCardinality(
         std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const;
 
+    std::optional<UInt64> boundCardinality(
+        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, JoinKind join_kind) const;
+
     /// Native-mask counterparts used exclusively by the DPsub acceptor.
     void initDPsubScratch();
     std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
@@ -102,6 +105,12 @@ std::optional<UInt64> DPSubJoinOrderOptimizer::estimateCardinality(
     std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const
 {
     return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind);
+}
+
+std::optional<UInt64> DPSubJoinOrderOptimizer::boundCardinality(
+    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, JoinKind join_kind) const
+{
+    return boundJoinRows(left_rows, right_rows, join_kind);
 }
 
 void DPSubJoinOrderOptimizer::initDPsubScratch()
@@ -315,7 +324,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
 {
     auto& entry = dptable[S];
     if (!entry.left && !entry.right)
-        return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats);
+        return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats, entry.estimated_rows_upper);
 
     JoinOperator join_operator(entry.kind, JoinStrictness::All, JoinLocality::Unspecified);
     /// A filter predicate applied at an outer join step must not go to the ON clause, where it
@@ -373,6 +382,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         Bitvector left{0};
         Bitvector right{0};
         std::optional<UInt64> estimated_rows = {};
+        std::optional<UInt64> estimated_rows_upper = {};
         std::unordered_map<String, ColumnStats> column_stats = {};
         double cost{.0};
         double sel{.0};

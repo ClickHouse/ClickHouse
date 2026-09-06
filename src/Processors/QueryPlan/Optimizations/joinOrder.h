@@ -39,6 +39,9 @@ struct DPJoinEntry
 
     double cost = 0.0;
     std::optional<UInt64> estimated_rows = {};
+    /// Sound upper bound on the row count, set where no point estimate could be derived.
+    /// Unset means "no bound known"; a set value is always >= the true row count.
+    std::optional<UInt64> estimated_rows_upper = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     /// For join nodes
@@ -49,7 +52,10 @@ struct DPJoinEntry
     int relation_id = -1;
 
     /// Constructor for a leaf node (base relation)
-    DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_ = {});
+    DPJoinEntry(size_t id,
+                std::optional<UInt64> rows,
+                std::unordered_map<String, ColumnStats> column_stats_ = {},
+                std::optional<UInt64> rows_upper = {});
 
     /// Constructor for a join node
     DPJoinEntry(DPJoinEntryPtr lhs,
@@ -67,6 +73,11 @@ struct DPJoinEntry
 struct RelationStats
 {
     std::optional<UInt64> estimated_rows = {};
+    /// Sound upper bound on the row count, available even when no point estimate is.
+    /// Unset means "no bound known"; a set value is always >= the true row count.
+    std::optional<UInt64> estimated_rows_upper = {};
+    /// `estimated_rows` is known to be <= the true row count. False unless proven.
+    bool estimated_rows_is_lower_bound = false;
     std::optional<Float64> avg_row_bytes = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
 

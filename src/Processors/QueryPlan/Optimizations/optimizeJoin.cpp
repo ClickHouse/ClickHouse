@@ -284,6 +284,12 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
 
     aggregation_stats.estimated_rows = total_number_of_distinct_values;
 
+    /// Only a keyed aggregation with no row-adding mode is bounded by its input: a keyless one
+    /// emits a row even on empty input, grouping sets run one aggregation per set, and
+    /// `overflow_row` appends a row.
+    if (!aggregator_params.keys.empty() && !aggregating_step.isGroupingSets() && !aggregator_params.overflow_row)
+        aggregation_stats.estimated_rows_upper = input_stats.estimated_rows_upper;
+
     return aggregation_stats;
 }
 
@@ -380,12 +386,36 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         }
         bool has_filter = filter || reading->getPrewhereInfo();
 
+        /// `selected_rows` counts the rows the reader will scan (post-index ranges). Filters not
+        /// resolvable by the index only remove rows afterwards, so it bounds the result from above
+        /// even when it is too coarse to serve as a point estimate.
         /// If any conditions are pushed down to storage but not used in the index,
         /// we cannot precisely estimate the row count
         if (has_filter && !is_filtered_by_index)
-            return RelationStats{.estimated_rows = {}, .table_name = table_display_name, .imprecise_estimate = true, .source = RowEstimateSource::NoStatistics};
+            return RelationStats{
+                .estimated_rows = {},
+                .estimated_rows_upper = analyzed_result->selected_rows,
+                .table_name = table_display_name,
+                .imprecise_estimate = true,
+                .source = RowEstimateSource::NoStatistics};
 
-        return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name, .imprecise_estimate = true, .source = RowEstimateSource::PrimaryIndex};
+        /// `selected_rows` counts physical rows in the selected ranges, so it is the exact row count
+        /// only when nothing drops rows afterwards: no filter, SAMPLE or FINAL, and no mutation
+        /// applied while reading (a lightweight delete or patch part filters at read time).
+        const auto & mutations = reading->getMutationsSnapshot();
+        const bool mutations_can_remove_rows = mutations
+            && (mutations->hasLightweightDeletedMask() || mutations->hasDataMutations() || mutations->hasPatchParts());
+        const bool no_row_removal_after_read = !has_filter && !reading->getRowLevelFilter()
+            && !reading->getDeferredRowLevelFilter() && !reading->isQueryWithSampling()
+            && !reading->isQueryWithFinal() && !mutations_can_remove_rows;
+
+        return RelationStats{
+            .estimated_rows = analyzed_result->selected_rows,
+            .estimated_rows_upper = analyzed_result->selected_rows,
+            .estimated_rows_is_lower_bound = no_row_removal_after_read,
+            .table_name = table_display_name,
+            .imprecise_estimate = true,
+            .source = RowEstimateSource::PrimaryIndex};
     }
 
     if (typeid_cast<const ReadFromObjectStorageStep *>(step))
@@ -395,7 +425,12 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
-        return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
+        /// `totalRows` is a live counter while the step reads a fixed snapshot, so a concurrent
+        /// insert can push it above the number of rows actually read: not a lower bound.
+        return RelationStats{
+            .estimated_rows = estimated_rows,
+            .table_name = table_display_name,
+            .source = RowEstimateSource::Statistics};
     }
 
     /// We cannot do typeid_cast<const ReadFromSystemOneStep *>(step)
@@ -404,7 +439,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (step->getName() == "ReadFromSystemOne")
     {
         /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
-        return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
+        return RelationStats{
+            .estimated_rows = 1,
+            .estimated_rows_upper = 1,
+            .estimated_rows_is_lower_bound = true,
+            .table_name = "system.one"};
     }
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
@@ -419,8 +458,13 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         auto estimated = estimateReadRowsCount(*node.children.front(), filter);
         auto limit = limit_step->getLimit();
+        /// The child may emit fewer rows than the limit, so this is not a lower bound.
+        estimated.estimated_rows_is_lower_bound = false;
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
+        /// WITH TIES can emit more rows than `limit`, so only a plain LIMIT bounds the output by it.
+        if (!limit_step->withTies() && (!estimated.estimated_rows_upper || estimated.estimated_rows_upper > limit))
+            estimated.estimated_rows_upper = limit;
         return estimated;
     }
 
@@ -436,6 +480,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
         auto stats = estimateReadRowsCount(*node.children.front(), predicate);
+        /// An ARRAY JOIN in the filter's actions multiplies rows, so the child's bound no longer holds.
+        if (dag.hasArrayJoin())
+            stats.estimated_rows_upper.reset();
+        /// A child that ignores the predicate still counts the rows this filter will drop.
+        stats.estimated_rows_is_lower_bound = false;
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
@@ -463,6 +512,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
         if (sorting_step->getLimit())
         {
+            stats.estimated_rows_is_lower_bound = false;
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
                 stats.estimated_rows = sorting_step->getLimit();
         }
@@ -477,7 +527,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter);
+    {
+        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        /// `preserves_number_of_rows` does not mean "cannot add rows": `TotalsHavingStep` declares
+        /// it yet emits an extra row for WITH TOTALS. Only the step kinds above propagate the bound.
+        stats.estimated_rows_upper.reset();
+        stats.estimated_rows_is_lower_bound = false;
+        return stats;
+    }
 
     return {};
 }
@@ -789,10 +846,17 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
         && (!stats.estimated_rows || num_rows_from_cache.value() < stats.estimated_rows.value()))
     {
         /// A measured row count beats statistics: take the minimum and mark it a precise cache value.
+        /// The count comes from an earlier execution, so it can sit below the current row count:
+        /// precise about what was observed, but not a lower bound on what will be read now.
         stats.estimated_rows = num_rows_from_cache;
+        stats.estimated_rows_is_lower_bound = false;
         stats.imprecise_estimate = false;
         stats.source = RowEstimateSource::HashTableCache;
     }
+
+    /// Keep the pair consistent: the point estimate must never exceed the bound.
+    if (stats.estimated_rows && stats.estimated_rows_upper && *stats.estimated_rows > *stats.estimated_rows_upper)
+        stats.estimated_rows_upper = stats.estimated_rows;
 
     if (!label.empty())
         stats.table_name = label;
@@ -1070,7 +1134,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             .name = rel.table_name.empty() ? fmt::format("R{}", i) : rel.table_name,
             .estimated_rows = rel.estimated_rows,
             .source = rel.source,
-            .imprecise_estimate = rel.imprecise_estimate};
+            .imprecise_estimate = rel.imprecise_estimate,
+            .estimated_rows_is_lower_bound = rel.estimated_rows_is_lower_bound};
 
         if (isMissingStatisticsSource(rel.source))
             relations_without_statistics.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
@@ -1204,10 +1269,19 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             auto lhs_estimation = entry->left->estimated_rows;
             auto rhs_estimation = entry->right->estimated_rows;
 
+            /// Without a left point estimate, fall back to its upper bound. Sound only against a
+            /// right estimate that is a lower bound, giving
+            /// `left_actual <= lhs_upper < rhs_estimation <= right_actual`.
+            auto lhs_for_swap = lhs_estimation ? lhs_estimation : entry->left->estimated_rows_upper;
+            bool right_is_lower_bound = false;
+            if (auto it = relation_infos.find(right_rels); it != relation_infos.end())
+                right_is_lower_bound = it->second.estimated_rows_is_lower_bound;
+
             bool swap_on_sizes = optimization_settings.join_swap_table.has_value()
                 ? optimization_settings.join_swap_table.value()
-                : entry->join_method == JoinMethod::Hash && lhs_estimation && rhs_estimation
-                    && lhs_estimation.value() < rhs_estimation.value();
+                : entry->join_method == JoinMethod::Hash && lhs_for_swap && rhs_estimation
+                    && (lhs_estimation || right_is_lower_bound)
+                    && lhs_for_swap.value() < rhs_estimation.value();
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
 

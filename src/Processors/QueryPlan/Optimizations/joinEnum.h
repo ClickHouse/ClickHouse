@@ -116,11 +116,13 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::initDPTable(TDPTable & dp_tab
 
         dp_table[left_mask].neighbor |= right_mask;
         dp_table[left_mask].estimated_rows = query_graph.relation_stats[relations[0]].estimated_rows;
+        dp_table[left_mask].estimated_rows_upper = query_graph.relation_stats[relations[0]].estimated_rows_upper;
         dp_table[left_mask].sel = 1.0; // selectivity of a base relation is trivially 1.0
         dp_table[left_mask].column_stats = query_graph.relation_stats[relations[0]].column_stats;
 
         dp_table[right_mask].neighbor |= left_mask;
         dp_table[right_mask].estimated_rows = query_graph.relation_stats[relations[1]].estimated_rows;
+        dp_table[right_mask].estimated_rows_upper = query_graph.relation_stats[relations[1]].estimated_rows_upper;
         dp_table[right_mask].sel = 1.0; // selectivity of a base relation is trivially 1.0
         dp_table[right_mask].column_stats = query_graph.relation_stats[relations[1]].column_stats;
     }

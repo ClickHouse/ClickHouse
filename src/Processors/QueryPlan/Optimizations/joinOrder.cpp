@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
 #include <Common/CurrentThread.h>
 
 #include <algorithm>
@@ -38,10 +39,14 @@ LoggerPtr getJoinOrderOptimizerLogger()
     return log;
 }
 
-DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_)
+DPJoinEntry::DPJoinEntry(size_t id,
+        std::optional<UInt64> rows,
+        std::unordered_map<String, ColumnStats> column_stats_,
+        std::optional<UInt64> rows_upper)
     : relations()
     , cost(0.0)
     , estimated_rows(rows)
+    , estimated_rows_upper(rows_upper)
     , column_stats(std::move(column_stats_))
     , relation_id(static_cast<int>(id))
 {
@@ -62,6 +67,9 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)
 {
+    /// A missing child bound yields a missing parent bound.
+    estimated_rows_upper = boundJoinRows(left->estimated_rows_upper, right->estimated_rows_upper, join_operator.kind);
+
     /// Merge column stats from both children, then update NDVs for equi-join key columns.
     column_stats = left->column_stats;
     column_stats.insert(right->column_stats.begin(), right->column_stats.end());
