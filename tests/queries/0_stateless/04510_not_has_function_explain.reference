@@ -446,3 +446,53 @@ SELECT count() FROM test_mono_container_key WHERE t = CAST(tuple(['a']), 'Tuple(
 SELECT count() FROM test_mono_container_key WHERE t = tuple(['a']);
 1
 DROP TABLE test_mono_container_key;
+-- A String element does not equal an Enum key under `has`, even though the accurate cast maps it to
+-- the label of the same name. Do not turn this into a primary-key set atom, or the granule holding
+-- the row with that label would be pruned away under `notHas`.
+DROP TABLE IF EXISTS test_not_has_enum;
+CREATE TABLE test_not_has_enum (x Enum8('a' = 1, 'b' = 2, 'c' = 3, 'd' = 4, 'e' = 5, 'f' = 6, 'g' = 7, 'h' = 8))
+ENGINE = MergeTree
+ORDER BY x
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_not_has_enum SELECT toInt8(number + 1) FROM numbers(8);
+SELECT count() FROM test_not_has_enum WHERE has(['c'], x) SETTINGS optimize_rewrite_has_to_in = 0;
+0
+SELECT count() FROM test_not_has_enum WHERE has(['c'], x) SETTINGS optimize_rewrite_has_to_in = 0, use_primary_key = 0;
+0
+SELECT count() FROM test_not_has_enum WHERE notHas(['c'], x) SETTINGS optimize_rewrite_has_to_in = 0;
+8
+SELECT count() FROM test_not_has_enum WHERE notHas(['c'], x) SETTINGS optimize_rewrite_has_to_in = 0, use_primary_key = 0;
+8
+SELECT count() FROM test_not_has_enum WHERE NOT has(['c'], x) SETTINGS optimize_rewrite_has_to_in = 0;
+8
+SELECT count() FROM test_not_has_enum WHERE NOT has(['c'], x) SETTINGS optimize_rewrite_has_to_in = 0, use_primary_key = 0;
+8
+SET optimize_rewrite_has_to_in = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT x FROM test_not_has_enum WHERE has(['c'], x)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+Condition: true
+Granules: 8/8
+-- A numeric element, on the other hand, is compared numerically by `has` just like the set index
+-- compares it (see `00674_has_array_enum`), so an Enum key keeps its exact set atom and still prunes.
+SELECT count() FROM test_not_has_enum WHERE has([3], x) SETTINGS optimize_rewrite_has_to_in = 0;
+1
+SELECT count() FROM test_not_has_enum WHERE has([3], x) SETTINGS optimize_rewrite_has_to_in = 0, use_primary_key = 0;
+1
+SELECT count() FROM test_not_has_enum WHERE notHas([3], x) SETTINGS optimize_rewrite_has_to_in = 0;
+7
+SELECT count() FROM test_not_has_enum WHERE notHas([3], x) SETTINGS optimize_rewrite_has_to_in = 0, use_primary_key = 0;
+7
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT x FROM test_not_has_enum WHERE has([3], x)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+Condition: (x in 1-element set)
+Granules: 2/8
+SET optimize_rewrite_has_to_in = 1;
+-- A code with no declared label matches nothing, and the accurate cast drops it from the set, so
+-- both forms stay correct.
+SELECT count() FROM test_not_has_enum WHERE has([100], x) SETTINGS optimize_rewrite_has_to_in = 0;
+0
+SELECT count() FROM test_not_has_enum WHERE has([100], x) SETTINGS optimize_rewrite_has_to_in = 0, use_primary_key = 0;
+0
+SELECT count() FROM test_not_has_enum WHERE notHas([100], x) SETTINGS optimize_rewrite_has_to_in = 0;
+8
+SELECT count() FROM test_not_has_enum WHERE notHas([100], x) SETTINGS optimize_rewrite_has_to_in = 0, use_primary_key = 0;
+8
+DROP TABLE test_not_has_enum;
