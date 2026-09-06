@@ -141,6 +141,23 @@ struct QueryPlanOptimizationSettings
     bool distributed_plan_prefer_replicas_over_workers = false; /// Use ReadFromMergeTree with catalog access over ReadFromMergeTreeAtWorker
     bool exact_rows_before_limit = false; /// LIMIT must read its input to the end so rows_before_limit_at_least is exact
 
+    /// Sort limits and spill thresholds of the query this plan belongs to. A sort added during
+    /// optimization must take them from here, because a subquery is planned while the thread still
+    /// carries the enclosing query's context. `max_bytes_ratio_before_external_sort` is a raw ratio:
+    /// resolving it against available memory can reject the value, so that stays with the sort.
+    UInt64 sort_max_block_size = 0;
+    SizeLimits sort_size_limits;
+    UInt64 max_bytes_before_remerge_sort = 0;
+    float remerge_sort_lowered_memory_bytes_ratio = 0;
+    double max_bytes_ratio_before_external_sort = 0.;
+    UInt64 max_bytes_before_external_sort = 0;
+    UInt64 min_free_disk_space_for_temporary_data = 0;
+    UInt64 prefer_external_sort_block_bytes = 0;
+    bool read_in_order_use_virtual_row_per_block = false;
+    bool read_in_order_use_buffering = false;
+    String temporary_files_codec;
+    UInt64 temporary_files_buffer_size = 0;
+
     /// ------------------------------------------------------
 
     /// Other settings related to plan-level optimizations

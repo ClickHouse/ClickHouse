@@ -151,6 +151,21 @@ namespace Setting
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool parallel_replicas_plan_based;
+    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_rows_to_sort;
+    extern const SettingsUInt64 max_bytes_to_sort;
+    extern const SettingsOverflowMode sort_overflow_mode;
+    extern const SettingsUInt64 max_bytes_before_remerge_sort;
+    extern const SettingsFloat remerge_sort_lowered_memory_bytes_ratio;
+    extern const SettingsDouble max_bytes_ratio_before_external_sort;
+    extern const SettingsUInt64 max_bytes_before_external_sort;
+    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const SettingsUInt64 prefer_external_sort_block_bytes;
+    extern const SettingsBool read_in_order_use_virtual_row;
+    extern const SettingsBool read_in_order_use_virtual_row_per_block;
+    extern const SettingsBool read_in_order_use_buffering;
+    extern const SettingsString temporary_files_codec;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace ServerSetting
@@ -319,6 +334,20 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_aggregation_memory_efficient = from[Setting::distributed_aggregation_memory_efficient];
     distributed_plan_prefer_replicas_over_workers = from[Setting::distributed_plan_prefer_replicas_over_workers];
     exact_rows_before_limit = from[Setting::exact_rows_before_limit];
+
+    sort_max_block_size = from[Setting::max_block_size];
+    sort_size_limits = SizeLimits(from[Setting::max_rows_to_sort], from[Setting::max_bytes_to_sort], from[Setting::sort_overflow_mode]);
+    max_bytes_before_remerge_sort = from[Setting::max_bytes_before_remerge_sort];
+    remerge_sort_lowered_memory_bytes_ratio = from[Setting::remerge_sort_lowered_memory_bytes_ratio];
+    max_bytes_ratio_before_external_sort = from[Setting::max_bytes_ratio_before_external_sort];
+    max_bytes_before_external_sort = from[Setting::max_bytes_before_external_sort];
+    min_free_disk_space_for_temporary_data = from[Setting::min_free_disk_space_for_temporary_data];
+    prefer_external_sort_block_bytes = from[Setting::prefer_external_sort_block_bytes];
+    read_in_order_use_virtual_row_per_block
+        = from[Setting::read_in_order_use_virtual_row] && from[Setting::read_in_order_use_virtual_row_per_block];
+    read_in_order_use_buffering = from[Setting::read_in_order_use_buffering];
+    temporary_files_codec = from[Setting::temporary_files_codec];
+    temporary_files_buffer_size = from[Setting::temporary_files_buffer_size];
 
     enable_cascades_optimizer = from[Setting::enable_cascades_optimizer];
     cascades_aggregation_pushdown = from[Setting::cascades_aggregation_pushdown];

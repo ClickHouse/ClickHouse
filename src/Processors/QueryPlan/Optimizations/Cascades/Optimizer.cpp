@@ -65,15 +65,35 @@ static OptimizerStatisticsPtr createOptimizerStatistics(const ContextPtr & query
     return createEmptyStatistics();
 }
 
+SortingStep::Settings makeSortSettings(const QueryPlanOptimizationSettings & optimization_settings)
+{
+    SortingStep::Settings sort_settings(optimization_settings.sort_max_block_size);
+    sort_settings.size_limits = optimization_settings.sort_size_limits;
+    sort_settings.max_bytes_before_remerge = optimization_settings.max_bytes_before_remerge_sort;
+    sort_settings.remerge_lowered_memory_bytes_ratio = optimization_settings.remerge_sort_lowered_memory_bytes_ratio;
+    sort_settings.max_bytes_ratio_before_external_sort = optimization_settings.max_bytes_ratio_before_external_sort;
+    sort_settings.max_bytes_in_block_before_external_sort = optimization_settings.max_bytes_before_external_sort;
+    sort_settings.max_bytes_in_query_before_external_sort
+        = SortingStep::Settings::maxBytesInQueryBeforeExternalSort(optimization_settings.max_bytes_ratio_before_external_sort);
+    sort_settings.min_free_disk_space = optimization_settings.min_free_disk_space_for_temporary_data;
+    sort_settings.max_block_bytes = optimization_settings.prefer_external_sort_block_bytes;
+    sort_settings.read_in_order_use_virtual_row_per_block = optimization_settings.read_in_order_use_virtual_row_per_block;
+    sort_settings.read_in_order_use_buffering = optimization_settings.read_in_order_use_buffering;
+    sort_settings.temporary_files_codec = optimization_settings.temporary_files_codec;
+    sort_settings.temporary_files_buffer_size = optimization_settings.temporary_files_buffer_size;
+    return sort_settings;
+}
+
 /// Collects what the search needs: the cluster size (the query is rejected when it is
 /// unknown), the cost model, and the query settings the rules honor.
 static OptimizerContext buildContext(const ContextPtr & query_context, const QueryPlanOptimizationSettings & optimization_settings)
 {
     OptimizerContext context;
 
-    /// Seed the sort settings from the query so any sort added by `SortingEnforcer` keeps the query's
-    /// size limits and spill thresholds instead of arbitrary defaults.
-    context.sort_settings = SortingStep::Settings(query_context->getSettingsRef());
+    /// Seed the sort settings from the plan, so a sort added by `SortingEnforcer` keeps the limits
+    /// and spill thresholds of the query the plan belongs to. The thread's query context is the
+    /// enclosing query's while a subquery is planned, so it would carry a different scope's limits.
+    context.sort_settings = makeSortSettings(optimization_settings);
 
     /// Parameter takes priority (for testing or to limit parallelism); otherwise use the same worker
     /// source as the distributed executor.
