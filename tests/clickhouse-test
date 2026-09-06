@@ -6883,9 +6883,6 @@ ORDER BY (test_name, callee_offset)
             clickhouse_execute(args, "SYSTEM SET COVERAGE TEST ''")
         except Exception as e:
             print("Cannot flush final coverage: ", str(e))
-        cov_rows = int(clickhouse_execute(args, "SELECT count() FROM system.coverage_log FINAL") or 0)
-        cov_tests = int(clickhouse_execute(args, "SELECT uniq(test_name) FROM system.coverage_log FINAL") or 0)
-        print(f"system.coverage_log: {cov_rows} rows, {cov_tests} distinct tests")
         try:
             ic_rows = int(
                 clickhouse_execute(
