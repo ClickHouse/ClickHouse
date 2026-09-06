@@ -30,6 +30,9 @@ public:
 
     ActionLock getCleanupLock() { return cleanup_blocker.cancel(); }
 
+    /// While blocked, `run()` returns without calling `iterate()`, so nothing is cleaned up.
+    bool isCleanupBlocked() const { return cleanup_blocker.isCancelled(); }
+
 protected:
     MergeTreeData & data;
 

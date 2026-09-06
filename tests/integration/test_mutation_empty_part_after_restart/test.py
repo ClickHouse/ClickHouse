@@ -37,6 +37,10 @@ def arm(table):
     `DETACH PART` replaces the part with an empty one covering the same block range, so that empty
     part keeps the column list from before the rename. `old_parts_lifetime` keeps it on disk once
     cleanup outdates it, and dropping the rename entry leaves nothing to map its `b` to `d`.
+
+    `sleep_before_loading_outdated_parts_ms` holds the post-restart window open: empty parts are not
+    removed until outdated parts have loaded, so without it the removal can win the race against
+    mutation scheduling and the scenario would not arm at all.
     """
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
     node.query(
@@ -44,7 +48,7 @@ def arm(table):
         CREATE TABLE {table} (a String, b String, c String MATERIALIZED concat(a, '!'))
         ENGINE = MergeTree ORDER BY a
         SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
-                 old_parts_lifetime = 10000
+                 old_parts_lifetime = 10000, sleep_before_loading_outdated_parts_ms = 15000
         """
     )
     node.query(f"INSERT INTO {table} VALUES ('x', 'y')")
@@ -82,7 +86,7 @@ def arm(table):
     assert pending == "1", f"the replayed mutation is gone\n{state(table)}"
 
 
-def poll(query, expected, timeout=90):
+def poll(query, expected, timeout=120):
     deadline = time.monotonic() + timeout
     result = None
     while time.monotonic() < deadline:
@@ -103,6 +107,16 @@ def test_mutation_of_empty_part_after_restart(started_cluster):
     node.query("ALTER TABLE t_wedge_kept MODIFY SETTING remove_empty_parts = 0")
 
     node.restart_clickhouse()
+
+    # The restart revives the empty part as Active while mutation scheduling is already running.
+    # Asserting that here, inside the window the pinned sleep holds open, keeps a run where the
+    # part was never revived from passing without having tested anything.
+    assert poll(
+        "SELECT active FROM system.parts WHERE database = currentDatabase() "
+        "AND table = 't_wedge' AND name = 'all_1_1_1'",
+        "1",
+        timeout=10,
+    ), f"the empty part was not revived as active by the restart\n{state('t_wedge')}"
 
     assert poll(
         "SELECT countIf(is_done = 0) = 0 AND countIf(latest_fail_reason != '') = 0 "
@@ -142,3 +156,33 @@ def test_mutation_of_empty_part_after_restart(started_cluster):
 
     node.query("DROP TABLE t_wedge SYNC")
     node.query("DROP TABLE t_wedge_kept SYNC")
+
+
+def test_mutation_of_empty_part_with_cleanup_stopped(started_cluster):
+    table = "t_stop_cleanup"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(f"CREATE TABLE {table} (a UInt64) ENGINE = MergeTree ORDER BY a")
+    # Stopped before the empty part is made, so that nothing can remove it in between.
+    node.query(f"SYSTEM STOP CLEANUP {table}")
+    try:
+        node.query(f"INSERT INTO {table} VALUES (1)")
+        node.query(f"ALTER TABLE {table} DELETE WHERE 1 SETTINGS mutations_sync = 1")
+
+        empty_parts = node.query(
+            "SELECT count() FROM system.parts WHERE database = currentDatabase() "
+            f"AND table = '{table}' AND active AND rows = 0"
+        ).strip()
+        assert empty_parts == "1", f"no empty part to mutate\n{state(table)}"
+
+        # Not `mutations_sync = 1`: while cleanup is stopped nothing will remove this part, so a
+        # mutation that is skipped instead of run never finishes and the query would never return.
+        node.query(f"ALTER TABLE {table} DELETE WHERE a = 1")
+        assert poll(
+            "SELECT countIf(is_done = 0) = 0 FROM system.mutations "
+            f"WHERE database = currentDatabase() AND table = '{table}'",
+            "1",
+            timeout=60,
+        ), f"the mutation was skipped while cleanup could not run\n{state(table)}"
+    finally:
+        node.query(f"SYSTEM START CLEANUP {table}")
+        node.query(f"DROP TABLE {table} SYNC")
