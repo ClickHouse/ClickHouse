@@ -155,6 +155,30 @@ void MergeSortingTransform::consume(Chunk chunk)
     }
 }
 
+ProcessorMemoryStats MergeSortingTransform::getMemoryStats() const
+{
+    /// Only the chunks accumulated while consuming can be written out.
+    if (stage != Stage::Consume || chunks.empty() || description.empty() || !tmp_data)
+        return {};
+
+    ProcessorMemoryStats res;
+    res.spillable_memory_bytes = sum_bytes_in_blocks;
+    /// One merged block is alive while it is being written
+    if (sum_rows_in_blocks)
+        res.need_reserved_memory_bytes = sum_bytes_in_blocks / sum_rows_in_blocks * max_merged_block_size;
+    return res;
+}
+
+size_t MergeSortingTransform::spill(size_t /*at_least_bytes*/)
+{
+    size_t bytes = getMemoryStats().spillable_memory_bytes;
+    if (!bytes)
+        return 0;
+
+    dumpToTemporaryFile();
+    return bytes;
+}
+
 void MergeSortingTransform::dumpToTemporaryFile()
 {
     if (!tmp_data)
