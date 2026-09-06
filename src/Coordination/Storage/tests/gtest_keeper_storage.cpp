@@ -1,3 +1,7 @@
+#include "config.h"
+
+#if USE_NURAFT
+
 #include <gtest/gtest.h>
 
 #include <Coordination/Storage/BackgroundWork.h>
@@ -774,3 +778,5 @@ TEST(KeeperStorage, WriteThrottling)
     storage.recalculateWriteThrottling();
     EXPECT_EQ(storage.write_throttling_us.load(), 0u);
 }
+
+#endif
