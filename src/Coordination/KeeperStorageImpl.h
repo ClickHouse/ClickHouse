@@ -20,18 +20,19 @@ public:
     KeeperResponsesForSessions processLocalRequests(
         const KeeperRequestsForSessions & requests,
         bool check_acl) override;
-    KeeperDigest preprocessRequest(
+    std::optional<KeeperDigest> preprocessBatch(const KeeperRequestBatch & batch, bool check_acl) override;
+    KeeperResponsesForSessions processOneRequest(
+        const Coordination::ZooKeeperRequestPtr & request,
+        int64_t session_id,
+        std::optional<int64_t> new_last_zxid,
+        bool produce_response) override;
+
+    /// Returns false if the request was rejected and rolled back.
+    bool preprocessOneRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
         int64_t time,
-        int64_t new_last_zxid,
-        bool check_acl,
-        std::optional<KeeperDigest> digest,
-        int64_t log_idx) override;
-    KeeperResponsesForSessions processRequest(
-        const Coordination::ZooKeeperRequestPtr & request,
-        int64_t session_id,
-        std::optional<int64_t> new_last_zxid) override;
+        bool check_acl);
 
     /// Helper that uses getUncommittedNode, prepareRemoveNodeWithoutUpdatingParent, and
     /// prepareUpdateNodeStat to remove the given set of ephemeral nodes and update their parents'

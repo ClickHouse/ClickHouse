@@ -80,12 +80,52 @@ struct KeeperRequestForSession
     int64_t session_id{};
     int64_t time{0};
     Coordination::ZooKeeperRequestPtr request;
-    int64_t zxid{0};
-    std::optional<KeeperDigest> digest {};
-    int64_t log_idx{0};
     bool use_xid_64{false};
 };
 using KeeperRequestsForSessions = std::vector<KeeperRequestForSession>;
+
+struct KeeperRequestBatch
+{
+    std::vector<KeeperRequestForSession> requests;
+    /// Which server's Keeper[Request]Dispatcher produced this batch. That dispatcher owns the
+    /// sessions of all requests in the batch, so only that server produces responses to these
+    /// requests when committing this batch (see produce_responses in KeeperStateMachine::commit).
+    /// -1 if unknown (e.g. if parsed from log entry in old format); then all servers produce
+    /// responses, and the ones that don't own the session discard them in their response threads.
+    /// (TODO: the per-request-type `process` functions still construct the response object even
+    ///  when it won't be used, because response construction is interleaved with applying the
+    ///  committed deltas; skipping that too would require changing every `process` overload.)
+    int32_t dispatcher_server_id{-1};
+    /// Lower bound on last committed log entry idx. Used on startup.
+    /// (This doesn't particularly need to be stored in each log entry; a single latest commit point
+    ///  persisted by each server would suffice. But it's easier and probably more efficient to
+    ///  piggy-back to log entries.)
+    /// TODO: Use this to avoid the localLogsPreprocessed() dance on startup: read last local log
+    ///       entry, take committed_log_idx from it, preprocess+commit entries up to it, preprocess
+    ///       entries after it.
+    int64_t committed_log_idx{0};
+    /// Zxid of the first request; request i has zxid `first_zxid + i`. 0 means the leader hasn't
+    /// assigned zxids to this batch yet. (Requests that don't create storage transactions, like
+    /// `SessionID`, still occupy a zxid slot in the batch; those zxids are simply unused.)
+    int64_t first_zxid{0};
+    /// Digest of the storage state after preprocessing the whole batch. Assigned by the leader
+    /// together with `first_zxid`. NO_DIGEST if disabled or not calculated yet.
+    KeeperDigest digest{};
+    /// Index of the log entry containing this batch. 0 if not known (yet). Not serialized.
+    int64_t log_idx{0};
+
+    int64_t getZxid(size_t request_idx) const { return first_zxid == 0 ? 0 : first_zxid + static_cast<int64_t>(request_idx); }
+    int64_t getLastZxid() const { return getZxid(requests.size() - 1); }
+
+    std::string toString() const;
+};
+using KeeperRequestBatchPtr = std::shared_ptr<KeeperRequestBatch>;
+
+bool checkDigest(const KeeperDigest & first, const KeeperDigest & second);
+
+/// If `batch.digest` and `actual` are comparable (same version, not NO_DIGEST) but different,
+/// logs an error and crashes.
+void assertDigest(const KeeperRequestBatch & batch, const KeeperDigest & actual, const char * operation);
 
 inline static constexpr std::string_view tmp_keeper_file_prefix = "tmp_";
 

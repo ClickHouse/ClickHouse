@@ -574,10 +574,10 @@ int64_t KeeperStorage::getZXID() const
 
 int64_t KeeperStorage::getNextZXIDLocked() const
 {
-    if (uncommitted_transactions.empty())
+    if (uncommitted_batches.empty())
         return zxid + 1;
 
-    return uncommitted_transactions.back().zxid + 1;
+    return uncommitted_batches.back().last_zxid + 1;
 }
 
 int64_t KeeperStorage::getNextZXID() const
@@ -589,7 +589,95 @@ int64_t KeeperStorage::getNextZXID() const
 uint64_t KeeperStorage::getLastUncommittedLogIdx() const
 {
     std::lock_guard lock(transaction_mutex);
-    return uncommitted_transactions.empty() ? 0 : uncommitted_transactions.back().log_idx;
+    return uncommitted_batches.empty() ? 0 : uncommitted_batches.back().log_idx;
+}
+
+KeeperDigest KeeperStorage::preprocessRequest(
+    const Coordination::ZooKeeperRequestPtr & request,
+    int64_t session_id,
+    int64_t time,
+    int64_t new_last_zxid,
+    bool check_acl,
+    int64_t log_idx)
+{
+    KeeperRequestBatch batch;
+    batch.requests.push_back(KeeperRequestForSession{.session_id = session_id, .time = time, .request = request});
+    batch.first_zxid = new_last_zxid;
+    batch.log_idx = log_idx;
+
+    auto digest = preprocessBatch(batch, check_acl);
+    if (!digest)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot preprocess request in finalized storage");
+    return *digest;
+}
+
+void KeeperStorage::endProcessBatch(const KeeperRequestBatch & batch)
+{
+    uint64_t preprocessed_digest = 0;
+    {
+        std::lock_guard lock(transaction_mutex);
+
+        if (uncommitted_batches.empty())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Trying to commit a batch (ZXIDs [{}, {}]) which was not preprocessed",
+                batch.first_zxid, batch.getLastZxid());
+
+        const auto & front_batch = uncommitted_batches.front();
+        if (front_batch.first_zxid != batch.first_zxid || front_batch.last_zxid != batch.getLastZxid())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Trying to commit unexpected batch: ZXIDs [{}, {}], expected: [{}, {}]",
+                batch.first_zxid, batch.getLastZxid(), front_batch.first_zxid, front_batch.last_zxid);
+
+        if (keeper_context->digestEnabled())
+            /// This is extra unexpected to fail as these two digests should already have been
+            /// checked on current server when preprocessing this batch.
+            assertDigest(batch, front_batch.nodes_digest, "committing (checking against preprocess result)");
+
+        preprocessed_digest = front_batch.nodes_digest.value;
+    }
+
+    if (keeper_context->digestEnabled())
+    {
+        /// (If the log entry carries no digest, e.g. it came from a server with digests disabled,
+        ///  fall back to the digest we calculated when preprocessing the batch ourselves.)
+        uint64_t new_digest = batch.digest.version == KeeperDigestVersion::NO_DIGEST ? preprocessed_digest : batch.digest.value;
+
+        /// Publish the committed digest before popping the batch: preprocessing of the next batch
+        /// (on another thread) seeds its digest from the uncommitted digest, which falls back to the
+        /// committed one when the uncommitted batch list is empty.
+        std::lock_guard lock(storage_mutex);
+
+        if (keeper_context->digestEnabledOnCommit())
+        {
+            assertDigest(batch, {KEEPER_CURRENT_DIGEST_VERSION, nodes_digest}, "committing");
+        }
+        else
+        {
+            nodes_digest = new_digest;
+        }
+    }
+
+    {
+        std::lock_guard lock(transaction_mutex);
+        uncommitted_batches.pop_front();
+    }
+}
+
+KeeperResponsesForSessions KeeperStorage::processRequest(
+    const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid)
+{
+    if (!new_last_zxid)
+        return processOneRequest(request, session_id, new_last_zxid, /*produce_response=*/true);
+
+    KeeperRequestBatch batch;
+    batch.requests.push_back(KeeperRequestForSession{.session_id = session_id, .request = request});
+    batch.first_zxid = *new_last_zxid;
+
+    auto responses = processOneRequest(request, session_id, new_last_zxid, /*produce_response=*/true);
+    endProcessBatch(batch);
+    return responses;
 }
 
 Coordination::Error KeeperStorage::commit(KeeperStorage::DeltaRange deltas)
@@ -782,30 +870,41 @@ bool KeeperStorage::isFinalized() const
     return finalized;
 }
 
-void KeeperStorage::rollbackRequest(int64_t rollback_zxid, bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS
+void KeeperStorage::rollbackBatch(const KeeperRequestBatch & batch, bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    if (allow_missing && (uncommitted_transactions.empty() || uncommitted_transactions.back().zxid < rollback_zxid))
+    if (allow_missing && (uncommitted_batches.empty() || uncommitted_batches.back().last_zxid < batch.first_zxid))
         return;
 
-    if (uncommitted_transactions.empty() || uncommitted_transactions.back().zxid != rollback_zxid)
+    if (uncommitted_batches.empty() || batch.first_zxid != uncommitted_batches.back().first_zxid
+        || batch.getLastZxid() != uncommitted_batches.back().last_zxid)
     {
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Trying to rollback invalid ZXID ({}). It should be the last preprocessed.", rollback_zxid);
+            ErrorCodes::LOGICAL_ERROR, "Trying to rollback batch that doesn't match the last preprocessed batch (rollback zxid [{}, {}], preprocessed [{}, {}]).", batch.first_zxid, batch.getLastZxid(), uncommitted_batches.back().first_zxid, uncommitted_batches.back().last_zxid);
     }
 
     // if an exception occurs during rollback, the best option is to terminate because we can end up in an inconsistent state
     // we block memory tracking so we can avoid terminating if we're rolling back because of memory limit
     LockMemoryExceptionInThread blocker{VariableContext::Global};
-    try
+
+    for (size_t i = batch.requests.size(); i > 0; --i)
     {
-        uncommitted_transactions.pop_back();
-        uncommitted_state.rollback(rollback_zxid);
+        const auto op_num = batch.requests[i - 1].request->getOpNum();
+        /// These don't create storage transactions, nothing to roll back.
+        if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
+            continue;
+
+        try
+        {
+            uncommitted_state.rollback(batch.getZxid(i - 1));
+        }
+        catch (...)
+        {
+            LOG_FATAL(getLogger("KeeperStorage"), "Failed to rollback log. Terminating to avoid inconsistencies");
+            std::terminate();
+        }
     }
-    catch (...)
-    {
-        LOG_FATAL(getLogger("KeeperStorage"), "Failed to rollback log. Terminating to avoid inconsistencies");
-        std::terminate();
-    }
+
+    uncommitted_batches.pop_back();
 }
 
 KeeperDigest KeeperStorage::getNodesDigest(bool committed, bool lock_transaction_mutex) const TSA_NO_THREAD_SAFETY_ANALYSIS
@@ -823,7 +922,7 @@ KeeperDigest KeeperStorage::getNodesDigest(bool committed, bool lock_transaction
     if (lock_transaction_mutex)
         transaction_lock.lock();
 
-    if (uncommitted_transactions.empty())
+    if (uncommitted_batches.empty())
     {
         if (lock_transaction_mutex)
             transaction_lock.unlock();
@@ -831,7 +930,7 @@ KeeperDigest KeeperStorage::getNodesDigest(bool committed, bool lock_transaction
         return {KEEPER_CURRENT_DIGEST_VERSION, nodes_digest};
     }
 
-    return uncommitted_transactions.back().nodes_digest;
+    return uncommitted_batches.back().nodes_digest;
 }
 
 /// Allocate new session id with the specified timeouts
@@ -1111,17 +1210,6 @@ uint64_t KeeperStorage::getTotalWatchesCount() const
 #endif
 
     return total_watches_count;
-}
-
-bool KeeperStorage::checkDigest(const KeeperDigest & first, const KeeperDigest & second)
-{
-    if (first.version != second.version)
-        return true;
-
-    if (first.version == KeeperDigestVersion::NO_DIGEST)
-        return true;
-
-    return first.value == second.value;
 }
 
 UInt64 KeeperStorage::WatchInfoHash::operator()(WatchInfo info) const

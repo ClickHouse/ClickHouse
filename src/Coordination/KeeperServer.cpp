@@ -98,7 +98,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 nuraft_max_uncommitted_log_entries;
     extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
     extern const CoordinationSettingsMilliseconds nuraft_snapshot_sync_ctx_timeout_ms;
-    extern const CoordinationSettingsBool use_new_dispatcher;
+    extern const CoordinationSettingsBool use_batched_log_entries;
 }
 
 namespace ErrorCodes
@@ -849,10 +849,9 @@ void KeeperServer::putLocalReadRequests(const KeeperRequestsForSessions & reques
 
 RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions & requests_for_sessions)
 {
-    std::vector<nuraft::ptr<nuraft::buffer>> entries;
-    entries.reserve(requests_for_sessions.size());
-    for (const auto & request_for_session : requests_for_sessions)
-        entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(request_for_session));
+    KeeperRequestBatch batch;
+    batch.requests = requests_for_sessions;
+    auto entries = KeeperStateMachine::serializeRequestBatch(batch, keeper_context->getCoordinationSettings()[CoordinationSetting::use_batched_log_entries]);
 
     return raft_instance->append_entries(entries);
 }
@@ -1101,9 +1100,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     ///       prepare+commit entries up to that point, and prepare entries above.
     ///       Then in commit callback skip processing the entries that were already processed at startup.
     ///       Remove localLogsPreprocessed and the whole dance.
-    ///       The serialization format change can be piggy-backed to the planned change
-    ///       where nuraft log entry would represent a whole batch of keeper requests
-    ///       instead of one request (for performance and easier flow control).
     if (!keeper_context->localLogsPreprocessed())
     {
         const auto preprocess_logs = [&]
@@ -1219,7 +1215,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
         try
         {
-            state_machine->parseRequest(entry->get_buf(), /*final=*/false);
+            state_machine->parseRequestBatch(entry->get_buf(), /*final=*/false);
         }
         catch (...)
         {
@@ -1242,27 +1238,29 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
 
                 chassert(entry->get_val_type() == nuraft::app_log);
-                auto next_zxid = state_machine->getNextZxid();
 
                 auto entry_buf = entry->get_buf_ptr();
 
                 KeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version = {};
-                size_t request_end_position = 0;
-                auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version, &request_end_position);
-                request_for_session->zxid = next_zxid;
-                auto digest_after_preprocessing = state_machine->preprocess(*request_for_session, /*lock_mutex=*/ true);
+                size_t patched_fields_offset = 0;
+                auto batch = state_machine->parseRequestBatch(*entry_buf, /*final=*/false, &serialization_version, &patched_fields_offset);
+
+                /// Take a run of consecutive zxids for the batch; request i gets zxid first_zxid + i.
+                batch->first_zxid = state_machine->getNextZxid();
+                auto digest_after_preprocessing = state_machine->preprocessBatch(*batch, /*lock_mutex=*/ true);
                 if (!digest_after_preprocessing)
                     return nuraft::cb_func::ReturnCode::ReturnNull;
 
-                request_for_session->digest = *digest_after_preprocessing;
+                batch->digest = *digest_after_preprocessing;
+                batch->committed_log_idx = static_cast<int64_t>(state_machine->last_commit_index());
 
                 /// older versions of Keeper can send logs that are missing some fields
                 size_t bytes_missing = 0;
                 if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
-                    bytes_missing += sizeof(request_for_session->time);
+                    bytes_missing += sizeof(int64_t) /*time*/;
 
                 if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_ZXID_DIGEST)
-                    bytes_missing += sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
+                    bytes_missing += sizeof(int64_t) /*zxid*/ + sizeof(uint8_t) /*digest version*/ + sizeof(uint64_t) /*digest value*/;
 
                 if (bytes_missing != 0)
                 {
@@ -1272,27 +1270,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                     entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), entry_buf, entry->get_val_type());
                 }
 
-                size_t write_buffer_header_size = sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version)
-                    + sizeof(request_for_session->digest->value);
-
-                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
-                    write_buffer_header_size += sizeof(request_for_session->time);
-                else
-                    request_end_position += sizeof(request_for_session->time);
-
-                auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf->data_begin() + request_end_position);
-
-                WriteBufferFromPointer write_buf(buffer_start, write_buffer_header_size);
-
-                if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
-                    writeIntBinary(request_for_session->time, write_buf);
-
-                writeIntBinary(request_for_session->zxid, write_buf);
-                writeIntBinary(static_cast<uint8_t>(request_for_session->digest->version), write_buf);
-                if (request_for_session->digest->version != KeeperDigestVersion::NO_DIGEST)
-                    writeIntBinary(request_for_session->digest->value, write_buf);
-
-                write_buf.finalize();
+                KeeperStateMachine::patchSerializedRequestBatch(*entry_buf, serialization_version, patched_fields_offset, *batch);
 
                 return nuraft::cb_func::ReturnCode::Ok;
             }
@@ -1310,8 +1288,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 chassert(entry->get_val_type() == nuraft::app_log);
 
                 auto & entry_buf = entry->get_buf();
-                auto request_for_session = state_machine->parseRequest(entry_buf, true);
-                state_machine->rollbackRequest(*request_for_session, true);
+                auto batch = state_machine->parseRequestBatch(entry_buf, true);
+                state_machine->rollbackRequestBatch(*batch, true);
                 return nuraft::cb_func::ReturnCode::Ok;
             }
             default:

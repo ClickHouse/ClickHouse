@@ -28,6 +28,52 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
 }
 
+bool checkDigest(const KeeperDigest & first, const KeeperDigest & second)
+{
+    if (first.version != second.version)
+        return true;
+
+    if (first.version == KeeperDigestVersion::NO_DIGEST)
+        return true;
+
+    return first.value == second.value;
+}
+
+void assertDigest(const KeeperRequestBatch & batch, const KeeperDigest & actual, const char * operation)
+{
+    if (!checkDigest(batch.digest, actual))
+    {
+        LOG_FATAL(
+            getLogger("KeeperStateMachine"),
+            "Digest for nodes is not matching after {} request batch at log index {}.\nExpected digest - {}, actual digest - {} "
+            "(digest {}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
+            operation,
+            batch.log_idx,
+            batch.digest.value,
+            actual.value,
+            batch.digest.version,
+            batch.toString());
+        std::terminate();
+    }
+}
+
+std::string KeeperRequestBatch::toString() const
+{
+    std::string res = fmt::format("batch of {} request(s), first zxid {}, log idx {}", requests.size(), first_zxid, log_idx);
+    for (size_t i = 0; i < requests.size(); ++i)
+    {
+        const auto & request_for_session = requests[i];
+        res += fmt::format(
+            "\nrequest #{}: zxid {}, session id {}, op '{}'\n{}",
+            i,
+            getZxid(i),
+            request_for_session.session_id,
+            Coordination::opNumToString(request_for_session.request->getOpNum()),
+            request_for_session.request->toString());
+    }
+    return res;
+}
+
 bool isLocalDisk(const IDisk & disk)
 {
     return dynamic_cast<const DiskLocal *>(&disk) != nullptr;
