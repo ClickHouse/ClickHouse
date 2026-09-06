@@ -386,17 +386,6 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 {
     auto context = getContext();
 
-    /// One-shot: capture, then clear on the context, so the flag cannot leak into the
-    /// dependent-view or delegating-storage (e.g. TimeSeries) child inserts built below, which
-    /// must still account their own writes.
-    const bool skip_insert_counting = context->getSkipInsertCounting();
-    if (skip_insert_counting)
-    {
-        auto mutable_context = Context::createCopy(context);
-        mutable_context->setSkipInsertCounting(false);
-        context = mutable_context;
-    }
-
     // disable parallel replicas for inserts if enabled
     // the insert can trigger update for dependent materialized views
     // using parallel replicas in this context is unnecessary
@@ -456,22 +445,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
-        /// The context's process-list element is intentionally left untouched, so the storage
-        /// sinks still honor KILL QUERY / max_execution_time. Read the captured one-shot flag,
-        /// not the context, which was already cleared so child inserts account their own writes.
-        auto counting = std::make_shared<CountingTransform>(
-            in_header,
-            skip_insert_counting ? nullptr : context->getQuota(),
-            context->getNormalizedQueryHash());
-        if (skip_insert_counting)
-        {
-            counting->disableProfileEventsCounting();
-        }
-        else
-        {
-            counting->setProcessListElement(context->getProcessListElement());
-            counting->setProgressCallback(context->getProgressCallback());
-        }
+        auto counting = std::make_shared<CountingTransform>(in_header, context->getQuota(), context->getNormalizedQueryHash());
+        counting->setProcessListElement(context->getProcessListElement());
+        counting->setProgressCallback(context->getProgressCallback());
 
         return counting;
     });
@@ -787,17 +763,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 {
     auto context = getContext();
 
-    /// One-shot: capture, then clear on the context, so the flag cannot leak into the
-    /// dependent-view or delegating-storage (e.g. TimeSeries) child inserts built below, which
-    /// must still account their own writes.
-    const bool skip_insert_counting = context->getSkipInsertCounting();
-    if (skip_insert_counting)
-    {
-        auto mutable_context = Context::createCopy(context);
-        mutable_context->setSkipInsertCounting(false);
-        context = mutable_context;
-    }
-
     // disable parallel replicas for inserts if enabled
     // the insert can trigger update for dependent materialized views
     // using parallel replicas in this context is unnecessary
@@ -989,17 +954,14 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
             settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
 
     {
-        /// The context's process-list element is intentionally left untouched, so the storage
-        /// sinks still honor KILL QUERY / max_execution_time. Read the captured one-shot flag,
-        /// not the context, which was already cleared so child inserts account their own writes.
+        /// Built even when accounting is skipped: this is the pipeline's head, and `pipeline_input`
+        /// is left unset if no head transform is added at all.
         auto counting = std::make_shared<CountingTransform>(
             insert_header,
-            skip_insert_counting ? nullptr : context->getQuota(),
+            skip_write_accounting ? nullptr : context->getQuota(),
             context->getNormalizedQueryHash());
-        if (skip_insert_counting)
-        {
+        if (skip_write_accounting)
             counting->disableProfileEventsCounting();
-        }
         else
         {
             counting->setProcessListElement(context->getProcessListElement());

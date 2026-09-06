@@ -37,8 +37,8 @@ public:
     }
 
     /// Disable the global InsertedRows / InsertedBytes profile-event increments for this transform.
-    /// Used for a nested insert whose rows are already accounted by an outer pipeline (e.g. a
-    /// distributed INSERT counting a block before dispatching it to local shards).
+    /// Used for the nested insert of a transparent forwarder (a distributed INSERT's local shard, an
+    /// INSERT through an Alias table), whose rows an outer pipeline already accounted for the query.
     void disableProfileEventsCounting()
     {
         count_profile_events = false;

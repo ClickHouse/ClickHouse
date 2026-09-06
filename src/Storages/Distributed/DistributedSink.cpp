@@ -535,11 +535,6 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 /// Forward user settings
                 job.local_context = Context::createCopy(context);
 
-                /// The top-level CountingTransform of this distributed INSERT already accounts
-                /// these rows. The process-list element deliberately stays on the context, so the
-                /// local sink still honors KILL QUERY / max_execution_time.
-                job.local_context->setSkipInsertCounting(true);
-
                 /// Copying of the query AST is required to avoid race,
                 /// in case of INSERT into multiple local shards.
                 ///
@@ -555,6 +550,10 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /* no_squash= */ false,
                     /* no_destination= */ false,
                     /* async_insert_= */ false);
+
+                /// The top-level CountingTransform of this distributed INSERT already counted these rows.
+                interp.setSkipWriteAccounting(true);
+
                 auto block_io = interp.execute();
 
                 job.pipeline = std::move(block_io.pipeline);
@@ -873,18 +872,16 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 
     try
     {
-        /// Already accounted by the top-level CountingTransform, as in runWritingJob; the
-        /// process-list element stays so the local sink still honors KILL QUERY / deadlines.
-        auto local_context = Context::createCopy(context);
-        local_context->setSkipInsertCounting(true);
-
         InterpreterInsertQuery interp(
             query_ast,
-            local_context,
+            context,
             allow_materialized,
             /* no_squash= */ false,
             /* no_destination= */ false,
             /* async_insert_= */ false);
+
+        /// Already counted by the top-level CountingTransform, as in runWritingJob.
+        interp.setSkipWriteAccounting(true);
 
         auto block_io = interp.execute();
         PushingPipelineExecutor executor(block_io.pipeline);

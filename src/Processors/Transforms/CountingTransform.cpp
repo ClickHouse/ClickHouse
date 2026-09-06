@@ -25,10 +25,8 @@ void CountingTransform::onConsume(Chunk chunk)
 
     Progress local_progress{WriteProgress(chunk.getNumRows(), written_bytes)};
 
-    /// When these rows are already accounted by an outer pipeline (a distributed INSERT counting
-    /// the block before dispatching it to local shards), the nested transform must not re-charge
-    /// the global InsertedRows / InsertedBytes profile events either, otherwise
-    /// system.query_log ProfileEvent_InsertedRows / _InsertedBytes get doubled for the local write.
+    /// These are global counters, so a nested insert whose rows an outer pipeline already accounted
+    /// must not re-charge them: system.query_log ProfileEvent_InsertedRows / _InsertedBytes double.
     if (count_profile_events)
     {
         ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.written_rows);
