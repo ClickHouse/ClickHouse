@@ -2964,6 +2964,8 @@ class TestCase:
         self.runs_count = 0
         # Set by `process_result_impl`; read by `retry_matcher_input`.
         self.debug_log_retry_substitution = None
+        # Set by `process_result_impl`; reported by `process_result`.
+        self.wrapper_stderr_report = ""
 
         has_no_random_settings_tag = self.tags and "no-random-settings" in self.tags
         has_no_random_merge_tree_settings_tag = (
@@ -3486,6 +3488,21 @@ class TestCase:
             debug_log_for_retry = trim_for_log(
                 retry_header + ":\n" + bash_body + expect_body + "\n", 100
             )
+        # The wrapping shell's own stderr (see the `Popen` in `run_single_test`). Read here,
+        # before the OK path below removes it, but appended by `process_result`, which runs
+        # after the retry check: a job-status line quotes the whole command, so entries as
+        # generic as `No such file or directory` would retry a deterministic failure.
+        self.wrapper_stderr_report = ""
+        self.wrapper_stderr_file = f"{self.stderr_file}-wrapper"
+        if (
+            os.path.exists(self.wrapper_stderr_file)
+            and os.path.getsize(self.wrapper_stderr_file) > 0
+        ):
+            with open(self.wrapper_stderr_file, "rb") as stream:
+                wrapper_text = str(stream.read(), errors="replace", encoding="utf-8")
+            self.wrapper_stderr_report = trim_for_log(
+                self.wrapper_stderr_file + ":\n" + wrapper_text + "\n", 100
+            )
         self.debug_log_retry_substitution = (
             (debug_log, debug_log_for_retry) if debug_log != debug_log_for_retry else None
         )
@@ -3769,6 +3786,8 @@ class TestCase:
             os.remove(self.stdout_file)
         if os.path.exists(self.stderr_file):
             os.remove(self.stderr_file)
+        if os.path.exists(self.wrapper_stderr_file):
+            os.remove(self.wrapper_stderr_file)
         for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
             os.remove(path)
         if os.path.exists(self.testcase_args.debug_log_file):
@@ -3789,6 +3808,10 @@ class TestCase:
             description_full += f"\nReason: {result.reason.value} "
 
         description_full += result.description
+
+        # After the retry check in `run`, so the wrapping shell's job-status lines are
+        # reported without reaching the matcher; see where this is set.
+        description_full += getattr(self, "wrapper_stderr_report", "")
 
         description_full += "\n"
 
@@ -3821,6 +3844,12 @@ class TestCase:
         # Ensure that we start with empty files
         for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
             os.remove(path)
+        # The wrapping shell's own stderr; see the `Popen` below. Removed, not emptied,
+        # like the traces below, so a retry is not reported the previous attempt's lines;
+        # `Popen` recreates it for append.
+        self.wrapper_stderr_file = f"{self.stderr_file}-wrapper"
+        if os.path.exists(self.wrapper_stderr_file):
+            os.remove(self.wrapper_stderr_file)
         # Same reason, for the expect trace: `exp_internal -f` opens for append, and since the
         # bash xtrace no longer shares this path nothing else truncates it. Removing (not
         # emptying) it matters - the report block above keys on existence alone, so an empty file
@@ -3913,8 +3942,27 @@ class TestCase:
             cgroup_name = f"clickhouse-test-{os.getpid()}"
             preexec_fn = setup_cgroup_with_memory_limit_cb(cgroup_name, self.memory_limit)
 
+        # A test escaping into its own session must not keep our fd1/fd2 open: under CI
+        # they are the write end of a `clickhouse-test | ts | tee` pipeline, which then
+        # never sees EOF. `pattern` redirects the test's own output, so only the wrapping
+        # shell writes here, and its stderr must not share the test's `2>` target: that
+        # file is truncated by the test's redirect and is read back as the verdict.
         # pylint:disable-next=consider-using-with; TODO: fix
-        proc = Popen(command, shell=True, executable=BASH, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
+        wrapper_stderr = open(self.wrapper_stderr_file, "ab", buffering=0)
+        try:
+            # pylint:disable-next=consider-using-with; TODO: fix
+            proc = Popen(
+                command,
+                shell=True,
+                executable=BASH,
+                env=tests_env,
+                start_new_session=True,
+                preexec_fn=preexec_fn,
+                stdout=subprocess.DEVNULL,
+                stderr=wrapper_stderr,
+            )
+        finally:
+            wrapper_stderr.close()
         # proc.pid == PGID after start_new_session=True; write it atomically so
         # `clickhouse-test --cleanup` can find it even if we are killed with SIGKILL.
         _gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
@@ -3932,10 +3980,23 @@ class TestCase:
 
         total_time = (datetime.now() - start_time).total_seconds()
 
+        # `Popen` creates the wrapper's file whether or not the shell writes to it, and the
+        # cleanup on the OK path runs only for a passing test, so drop an empty one here or
+        # every non-passing test leaks a file into the suite's tmp dir.
+        if (
+            os.path.exists(self.wrapper_stderr_file)
+            and os.path.getsize(self.wrapper_stderr_file) == 0
+        ):
+            os.remove(self.wrapper_stderr_file)
+
         # Normalize randomized database names in stdout, stderr files.
         replace_in_file(self.stdout_file, database, "default")
         if args.hide_db_name:
             replace_in_file(self.stderr_file, database, "default")
+            # The wrapper's file too: its job-status lines quote the command, which
+            # carries `--database=`.
+            if os.path.exists(self.wrapper_stderr_file):
+                replace_in_file(self.wrapper_stderr_file, database, "default")
         if args.replicated_database:
             replace_in_file(self.stdout_file, "/auto_{shard}", "")
             replace_in_file(self.stdout_file, "auto_{replica}", "")
