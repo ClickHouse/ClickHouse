@@ -196,3 +196,29 @@ diff \
     <("${LOCAL[@]}" "${ON[@]}" --query "${stat_query}") \
     <("${LOCAL[@]}" "${OFF[@]}" --query "${stat_query}") \
     && echo "OK"
+
+echo "-- a tuple-element sort key whose storage parent carries a DEFAULT. The reading step answers"
+echo "-- from the very ColumnsDescription that AddingDefaultsTransform is built from, so a name it"
+echo "-- reports as free of a default expression is by construction one the transform cannot"
+echo "-- rewrite: here the subcolumn description carries no default, and correspondingly the"
+echo "-- parent's DEFAULT is never applied (the null t.a rows read back as 0, not as k)"
+"${LOCAL[@]}" --query "
+    INSERT INTO FUNCTION file('${DIR}/tup.parquet', Parquet)
+    SELECT number AS k, tuple(if(number % 2 = 0, NULL, number), number)::Tuple(a Nullable(UInt64), b UInt64) AS t
+    FROM numbers(100000)
+    SETTINGS output_format_parquet_row_group_size = 1000000, engine_file_truncate_on_insert = 1;
+"
+tuple_structure="k UInt64, t Tuple(a UInt64, b UInt64) DEFAULT (k, k)"
+tuple_queries=(
+    "SELECT k, t.a FROM file('${DIR}/tup.parquet', Parquet, '${tuple_structure}') ORDER BY t.a DESC, k LIMIT 3 SETTINGS input_format_null_as_default = 1"
+    "SELECT k, t.a FROM file('${DIR}/tup.parquet', Parquet, '${tuple_structure}') ORDER BY t.a, k LIMIT 3 SETTINGS input_format_null_as_default = 1"
+    "SELECT k, t.a, t.b FROM file('${DIR}/tup.parquet', Parquet, '${tuple_structure}') ORDER BY t.a, k LIMIT 3 SETTINGS input_format_null_as_default = 1"
+    "SELECT k, t, t.a FROM file('${DIR}/tup.parquet', Parquet, '${tuple_structure}') ORDER BY t.a DESC, k LIMIT 3 SETTINGS input_format_null_as_default = 1"
+)
+for query in "${tuple_queries[@]}"; do
+    "${LOCAL[@]}" "${ON[@]}" --query "${query}"
+    diff \
+        <("${LOCAL[@]}" "${ON[@]}" --query "${query}") \
+        <("${LOCAL[@]}" "${OFF[@]}" --query "${query}") \
+        && echo "OK"
+done

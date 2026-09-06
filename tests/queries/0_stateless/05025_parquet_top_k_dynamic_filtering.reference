@@ -73,3 +73,24 @@ OK
 6
 1000
 OK
+-- a tuple-element sort key whose storage parent carries a DEFAULT. The reading step answers
+-- from the very ColumnsDescription that AddingDefaultsTransform is built from, so a name it
+-- reports as free of a default expression is by construction one the transform cannot
+-- rewrite: here the subcolumn description carries no default, and correspondingly the
+-- parent's DEFAULT is never applied (the null t.a rows read back as 0, not as k)
+99999	99999
+99997	99997
+99995	99995
+OK
+0	0
+2	0
+4	0
+OK
+0	0	0
+2	0	2
+4	0	4
+OK
+99999	(99999,99999)	99999
+99997	(99997,99997)	99997
+99995	(99995,99995)	99995
+OK
