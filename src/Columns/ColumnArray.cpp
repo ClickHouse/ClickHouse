@@ -445,6 +445,14 @@ void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t
     const ColumnArray & src = assert_cast<const ColumnArray &>(src_);
     const size_t source_size = src.sizeAt(position);
 
+    auto & offsets_data = getOffsets();
+    const size_t old_rows = offsets_data.size();
+    if (length > std::numeric_limits<size_t>::max() - old_rows)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many rows in array column: {} + {}", old_rows, length);
+
+    const size_t new_rows = old_rows + length;
+    const size_t old_offset = offsets_data.back();
+
     /// The nested bulk path is not guaranteed to be safe when source and destination share
     /// the same nested column. In particular, ColumnString::insertManyFrom caches a pointer
     /// before resizing its chars buffer, so an append that reallocates would read a stale pointer.
@@ -455,14 +463,6 @@ void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t
             insertFrom(src_, position);
         return;
     }
-
-    auto & offsets_data = getOffsets();
-    const size_t old_rows = offsets_data.size();
-    if (length > std::numeric_limits<size_t>::max() - old_rows)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many rows in array column: {} + {}", old_rows, length);
-
-    const size_t new_rows = old_rows + length;
-    const size_t old_offset = offsets_data.back();
 
     /// Repeating an array with two or more elements requires interleaving the nested values,
     /// which cannot be expressed by one insertManyFrom call on the nested column.

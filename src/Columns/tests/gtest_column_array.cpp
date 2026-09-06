@@ -253,6 +253,17 @@ TEST(ColumnArray, InsertManyFromRejectsRowCountOverflow)
     EXPECT_EQ(destination->getData().size(), 0);
 }
 
+TEST(ColumnArray, InsertManyFromRejectsRowCountOverflowForSelfAlias)
+{
+    auto column = createArray({42}, {1});
+
+    EXPECT_THROW(column->insertManyFrom(*column, 0, std::numeric_limits<size_t>::max()), Exception);
+    EXPECT_EQ(column->size(), 1);
+    EXPECT_EQ(column->getData().size(), 1);
+    EXPECT_EQ(column->getOffsets().back(), 1);
+    EXPECT_EQ(column->getData().getUInt(0), 42);
+}
+
 TEST(ColumnArray, InsertManyFromSelfString)
 {
     auto data = ColumnString::create();
