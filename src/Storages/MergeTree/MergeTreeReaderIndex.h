@@ -24,6 +24,7 @@ public:
 
     size_t readRows(
         size_t from_mark,
+        size_t current_range_last_mark,
         bool continue_reading,
         size_t max_rows_to_read,
         MutableColumns & res_columns) override;

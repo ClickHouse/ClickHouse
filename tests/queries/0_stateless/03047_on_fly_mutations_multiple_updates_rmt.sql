@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS t_lightweight_mut_5;
 SET apply_mutations_on_fly = 1;
 SET enable_filesystem_cache = 0;
 SET read_through_distributed_cache=0;
+SET use_columns_cache = 0;
 
 CREATE TABLE t_lightweight_mut_5 (id UInt64, s1 String, s2 String)
 ENGINE = ReplicatedMergeTree('/clickhouse/zktest/tables/{database}/t_lightweight_mut_1', '1') ORDER BY id

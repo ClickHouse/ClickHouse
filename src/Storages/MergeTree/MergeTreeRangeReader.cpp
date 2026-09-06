@@ -166,8 +166,10 @@ void MergeTreeRangeReader::filterBlock(Block & block, const FilterWithCachedCoun
 
 MergeTreeRangeReader::DelayedStream::DelayedStream(
     size_t from_mark,
+    size_t current_range_last_mark_,
     IMergeTreeReader * merge_tree_reader_)
         : current_mark(from_mark), current_offset(0), num_delayed_rows(0)
+        , current_range_last_mark(current_range_last_mark_)
         , merge_tree_reader(merge_tree_reader_)
         , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
         , continue_reading(false), is_finished(false)
@@ -185,7 +187,7 @@ size_t MergeTreeRangeReader::DelayedStream::readRows(MutableColumns & columns, s
     if (num_rows)
     {
         size_t rows_read = merge_tree_reader->readRows(
-            current_mark, continue_reading, num_rows, columns);
+            current_mark, current_range_last_mark, continue_reading, num_rows, columns);
         continue_reading = true;
 
         /// Zero rows_read maybe either because reading has finished
@@ -263,7 +265,7 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(MutableColumns & columns)
 MergeTreeRangeReader::Stream::Stream(size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader_)
     : merge_tree_reader(merge_tree_reader_)
     , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
-    , stream(from_mark, merge_tree_reader)
+    , stream(from_mark, to_mark, merge_tree_reader)
     , current_mark(from_mark)
     , current_mark_index_granularity(index_granularity->getMarkRows(from_mark))
     , offset_after_current_mark(0)

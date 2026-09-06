@@ -29,6 +29,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     const StorageSnapshotPtr & storage_snapshot_,
     const MergeTreeSettingsPtr & storage_settings_,
     UncompressedCache * uncompressed_cache_,
+    ColumnsCache * columns_cache_,
     MarkCache * mark_cache_,
     DeserializationPrefixesCache * deserialization_prefixes_cache_,
     MarkRanges mark_ranges_,
@@ -43,6 +44,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         storage_snapshot_,
         storage_settings_,
         uncompressed_cache_,
+        columns_cache_,
         mark_cache_,
         mark_ranges_,
         settings_,
@@ -200,7 +202,7 @@ void MergeTreeReaderCompact::readData(
     size_t from_mark,
     size_t column_size_before_reading,
     MergeTreeReaderStream & stream,
-    std::unordered_map<String, ColumnPtr> & columns_cache,
+    std::unordered_map<String, ColumnPtr> & output_columns_cache,
     std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
     ISerialization::SubstreamsCache * substreams_cache)
 {
@@ -262,8 +264,8 @@ void MergeTreeReaderCompact::readData(
             };
         }
 
-        auto it = columns_cache.find(name);
-        if (it != columns_cache.end() && it->second != nullptr)
+        auto it = output_columns_cache.find(name);
+        if (it != output_columns_cache.end() && it->second != nullptr)
         {
             /// The same physical column was already read for another requested column in this granule
             /// (e.g. shared Nested offsets). Copy only the newly-read rows from it instead of re-reading.
@@ -309,7 +311,7 @@ void MergeTreeReaderCompact::readData(
 
         /// Cache the just-read column so other requested columns mapping to the same physical column in this
         /// granule (e.g. shared Nested offsets) can copy from it. The cache lives only for the current granule.
-        columns_cache[name] = column.getPtr();
+        output_columns_cache[name] = column.getPtr();
 
         size_t read_rows_in_column = column.size() - column_size_before_reading;
         if (read_rows_in_column != rows_to_read)
