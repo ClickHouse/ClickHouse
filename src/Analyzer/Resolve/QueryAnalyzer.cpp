@@ -1957,8 +1957,12 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 
                 matched_column_node->as<ColumnNode &>().setColumnType(using_column_type);
                 correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
+                /// Register the undo entry on the query scope whose join tree the type came from, the same
+                /// scope every join-state read above already uses. A matcher in a lambda body resolves
+                /// through a fresh child scope, and the PREWHERE rollback only consults the query scope,
+                /// so an entry left on the child scope would never be applied.
                 if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
-                    scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
+                    nearest_query_scope->join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
             }
         }
     }
@@ -2297,7 +2301,12 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
               *
               * Example: SELECT id FROM test_table_1 AS t1 INNER JOIN test_table_2 AS t2 USING (id);
               */
-            if (scope.allow_resolve_from_using && !table_expression_in_resolve_process && join_node->isUsingJoinExpression())
+            /// The flag lives on the query scope whose join tree is expanded here, not on the current
+            /// scope: a matcher in a lambda body (`arrayMap(x -> *, ...)`) resolves through a fresh
+            /// child scope that does not inherit the flag, so it would see the default `true` and
+            /// substitute the merged USING key even inside PREWHERE, where the physical read still
+            /// supplies the table's own column.
+            if (nearest_query_scope->allow_resolve_from_using && !table_expression_in_resolve_process && join_node->isUsingJoinExpression())
             {
                 auto & join_using_list = join_node->getJoinExpression()->as<ListNode &>();
 
