@@ -55,6 +55,11 @@ public:
         return delegate->tryCommit(options);
     }
 
+    void setSyncMetadata(bool sync) override
+    {
+        delegate->setSyncMetadata(sync);
+    }
+
     void writeStringToFile(const std::string & path, const std::string & data) override
     {
         delegate->writeStringToFile(wrappedPath(path), data);
@@ -190,6 +195,8 @@ public:
     }
 
     MetadataStorageType getType() const override { return delegate->getType(); }
+
+    void syncMetadataFile(const std::string & path) override { delegate->syncMetadataFile(wrappedPath(path)); }
 
     /// Metadata on disk for an empty file can store empty list of blobs and size=0
     bool supportsEmptyFilesWithoutBlobs() const override { return delegate->supportsEmptyFilesWithoutBlobs(); }

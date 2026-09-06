@@ -404,11 +404,38 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             disk_tx->commit();
     };
 
+    /// A synced write buffer also needs the metadata file committing this path to its blobs synced.
+    /// An autocommit write has already committed that file when the buffer reports the intent;
+    /// every other write records it later, in commit, so the two take different routes.
+    auto sync_metadata_callback = [disk_tx = shared_from_this(), path, autocommit]()
+    {
+        if (autocommit)
+            disk_tx->syncCommittedMetadataFile(path);
+        else
+            disk_tx->requestMetadataFileSync();
+    };
+
     /// Defer the inline-vs-blob decision until the size is known (see `WriteBufferInlineOrBlob`).
     const size_t max_inline_bytes
         = (mode == WriteMode::Rewrite && metadata_storage->supportsInlineData()) ? settings.inline_file_max_bytes : 0;
     return std::make_unique<WriteBufferInlineOrBlob>(
-        path, max_inline_bytes, create_blob_if_empty, std::move(create_blob_buffer), std::move(create_metadata_callback), buf_size);
+        path,
+        max_inline_bytes,
+        create_blob_if_empty,
+        std::move(create_blob_buffer),
+        std::move(create_metadata_callback),
+        std::move(sync_metadata_callback),
+        buf_size);
+}
+
+void DiskObjectStorageTransaction::requestMetadataFileSync()
+{
+    sync_metadata.store(true, std::memory_order_relaxed);
+}
+
+void DiskObjectStorageTransaction::syncCommittedMetadataFile(const std::string & path)
+{
+    metadata_storage->syncMetadataFile(path);
 }
 
 void DiskObjectStorageTransaction::recordBlobReplication(const StoredObject & object, const Locations & missing_locations)
@@ -609,6 +636,9 @@ void MultipleDisksObjectStorageTransaction::copyFile(const std::string & from_fi
 void DiskObjectStorageTransaction::commit()
 {
     auto component_guard = Coordination::setCurrentComponent("DiskObjectStorageTransaction::commit");
+    /// Before the replay loop: that is where the operations writing the metadata files are built,
+    /// so they can only observe the intent if it is published first.
+    metadata_transaction->setSyncMetadata(sync_metadata.load(std::memory_order_relaxed));
     chassert(operations_to_execute.empty() || !metadata_storage->appliesOperationsEagerly());
     for (size_t i = 0; i < operations_to_execute.size(); ++i)
     {
@@ -653,6 +683,7 @@ void DiskObjectStorageTransaction::commit()
 
 TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const TransactionCommitOptionsVariant & options)
 {
+    metadata_transaction->setSyncMetadata(sync_metadata.load(std::memory_order_relaxed));
     chassert(operations_to_execute.empty() || !metadata_storage->appliesOperationsEagerly());
     for (size_t i = 0; i < operations_to_execute.size(); ++i)
     {
