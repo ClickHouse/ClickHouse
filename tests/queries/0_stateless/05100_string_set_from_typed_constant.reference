@@ -1,0 +1,24 @@
+the text of the value is what the set holds
+1	0
+1
+1	1
+1
+1	1
+1	1
+and the values table function renders the same text as CAST
+2020-01-01
+2020-01-01
+00000000-0000-0000-0000-000000000001
+1.2.3.4
+1
+over a table, where the set filters rows
+2020-01-01
+1.2.3.4
+1.2.3.4
+18262
+zz
+a String constant is unchanged
+18262
+1	0
+an Enum constant keeps the name, as it already did
+1	0
