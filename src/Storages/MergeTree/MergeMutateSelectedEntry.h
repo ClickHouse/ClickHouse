@@ -3,6 +3,8 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MutationCommands.h>
 
+#include <base/scope_guard.h>
+
 namespace DB
 {
 
@@ -47,6 +49,9 @@ struct MergeMutateSelectedEntry
     MergeTreeTransactionPtr txn;
     Strings mutation_ids; /// List of mutation version strings being applied
     bool finalized{false};
+    /// Releases the TTL merge slot booked in `MergeList` for this entry if the merge is abandoned
+    /// before its `MergeListEntry` is created. Disarmed once that entry takes over the accounting.
+    scope_guard ttl_merge_booking;
     MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
                              MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR,
                              Strings mutation_ids_ = {})
