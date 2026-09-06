@@ -25,6 +25,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <base/getThreadId.h>
@@ -101,6 +102,7 @@ namespace ProfileEvents
 
 namespace DB::Setting
 {
+    extern const SettingsBool allow_experimental_geo_types_in_iceberg;
     extern const SettingsUInt64 iceberg_metadata_staleness_ms;
     extern const SettingsUInt64 output_format_compression_level;
 }
@@ -108,6 +110,8 @@ namespace DB::Setting
 /// Hard to imagine a hint file larger than 10 MB
 static constexpr size_t MAX_HINT_FILE_SIZE = 10 * 1024 * 1024;
 static constexpr auto MAX_TRANSACTION_RETRIES = 1000;
+/// A contended hint must not turn into MAX_TRANSACTION_RETRIES rounds of probing the target.
+static constexpr size_t MAX_HINT_PUBLISH_ATTEMPTS = 3;
 
 static constexpr size_t MAX_LIST_RETRIES = 5;
 
@@ -325,50 +329,20 @@ void writeMessageToFile(
     }
 }
 
-bool writeMetadataFileAndVersionHint(
-    const IcebergPathResolver & resolver,
-    const GeneratedMetadataFileWithInfo & metadata_file_info,
-    const std::string & metadata_file_content,
-    const IcebergPathFromMetadata & version_hint_path,
-    DB::ObjectStoragePtr object_storage,
-    DB::ContextPtr context,
-    bool try_write_version_hint)
+/// Once any writer has created `version-hint.text`, every subsequent writer must keep it in sync,
+/// otherwise readers with `iceberg_use_version_hint = 1` observe stale data when a writer that does
+/// not have the setting enabled advances the table.
+static void convergeVersionHint(
+    const std::string & storage_version_hint_path,
+    Int32 target_version,
+    const DB::ObjectStoragePtr & object_storage,
+    const DB::ContextPtr & context,
+    bool try_write_version_hint,
+    const std::function<bool()> & can_publish_target = {})
 {
-    auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
-    auto storage_version_hint_path = resolver.resolve(version_hint_path);
-    try
-    {
-        if (object_storage->exists(StoredObject(storage_metadata_path)))
-            return false;
-
-        Iceberg::writeMessageToFile(
-            metadata_file_content,
-            storage_metadata_path,
-            object_storage,
-            context,
-            /* write-if-none-match */ "*",
-            "",
-            metadata_file_info.compression_method);
-    }
-    catch (const Exception & e)
-    {
-        /// A backend that cannot express the commit's compare-and-swap will never be able to, so
-        /// reporting a lost race would make the caller retry an operation that can never succeed.
-        /// Propagate instead; every other failure (including a genuinely lost CAS) stays retryable.
-        if (e.code() == ErrorCodes::UNSUPPORTED_METHOD)
-            throw;
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
-    }
-
-    /// Once any writer has created `version-hint.text`, every subsequent writer must keep it in
-    /// sync, otherwise readers with `iceberg_use_version_hint = 1` observe stale data when a
-    /// writer that does not have the setting enabled advances the table.
+    /// The objects `can_publish_target` probes are mutable, so its verdict is only valid for the
+    /// write that immediately follows it.
+    size_t publish_attempts = 0;
     size_t i = 0;
     while (i < MAX_TRANSACTION_RETRIES)
     {
@@ -402,13 +376,21 @@ bool writeMetadataFileAndVersionHint(
                 old_version = getMetadataFileAndVersion(version_hint_value).version;
             }
         }
-        if (old_version < metadata_file_info.version)
+        if (old_version < target_version)
         {
+            if (can_publish_target)
+            {
+                if (publish_attempts >= MAX_HINT_PUBLISH_ATTEMPTS)
+                    break;
+                ++publish_attempts;
+                if (!can_publish_target())
+                    break;
+            }
             try
             {
                 /// Write just the version number for Spark/spec compatibility.
                 Iceberg::writeMessageToFile(
-                    std::to_string(metadata_file_info.version),
+                    std::to_string(target_version),
                     storage_version_hint_path,
                     object_storage,
                     context,
@@ -427,6 +409,248 @@ bool writeMetadataFileAndVersionHint(
         }
         ++i;
     }
+}
+
+/// Followable = a reader of this document's current snapshot gets through its manifest list and
+/// finds every object it would then open.
+static bool isMetadataSnapshotFollowable(
+    const Poco::JSON::Object::Ptr & metadata_object,
+    const IcebergPathResolver & resolver,
+    CompressionMethod compression_method,
+    const DB::ObjectStoragePtr & object_storage,
+    const DB::ContextPtr & context)
+{
+    auto log = getLogger("IcebergVersionHintConvergence");
+
+    /// The read path parses the document's own schema before it looks for a snapshot, so a
+    /// document that cannot be parsed at all is refused here without examining one either.
+    auto schema_processor = std::make_shared<IcebergSchemaProcessor>(
+        context->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg]);
+    try
+    {
+        IcebergMetadata::parseTableSchema(metadata_object, *schema_processor, log);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
+
+    if (!metadata_object->has(f_current_snapshot_id) || metadata_object->isNull(f_current_snapshot_id))
+        return true;
+    /// `-1` is how a table with no data records "no snapshot" (see `createInitialMetadataFile`).
+    Int64 current_snapshot_id = metadata_object->getValue<Int64>(f_current_snapshot_id);
+    if (current_snapshot_id < 0)
+        return true;
+
+    if (!metadata_object->has(f_snapshots))
+    {
+        LOG_DEBUG(log, "Metadata document has a current snapshot {} but no '{}'", current_snapshot_id, f_snapshots);
+        return false;
+    }
+    auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
+    for (UInt32 i = 0; i < snapshots->size(); ++i)
+    {
+        auto snapshot = snapshots->getObject(i);
+        if (snapshot->getValue<Int64>(f_metadata_snapshot_id) != current_snapshot_id)
+            continue;
+        if (!snapshot->has(f_manifest_list))
+        {
+            LOG_DEBUG(log, "Snapshot {} has no '{}'", current_snapshot_id, f_manifest_list);
+            return false;
+        }
+        /// Constructing a snapshot requires this, so a reader throws before it opens any object.
+        if (!snapshot->has(f_schema_id))
+        {
+            LOG_DEBUG(log, "Snapshot {} has no '{}'", current_snapshot_id, f_schema_id);
+            return false;
+        }
+        auto manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(f_manifest_list));
+        auto resolved_manifest_list_path = resolver.resolve(manifest_list_path);
+        if (!object_storage->exists(StoredObject(resolved_manifest_list_path)))
+        {
+            LOG_DEBUG(log, "Manifest list {} of snapshot {} is missing", resolved_manifest_list_path, current_snapshot_id);
+            return false;
+        }
+
+        try
+        {
+            Int32 snapshot_schema_id = snapshot->getValue<Int32>(f_schema_id);
+
+            /// `metadata_cache = nullptr` keeps this probe from publishing the document's
+            /// manifests to other readers, which also makes the `table_uuid` those cache keys
+            /// are built from unreachable.
+            auto probe_components = PersistentTableComponents{
+                .schema_processor = schema_processor,
+                .metadata_cache = nullptr,
+                .format_version = metadata_object->getValue<Int32>(f_format_version),
+                .table_location = resolver.getTableLocation(),
+                .metadata_compression_method = compression_method,
+                .table_path = resolver.getTableRoot(),
+                .table_uuid = std::nullopt,
+                .path_resolver = resolver,
+            };
+
+            /// Registers every schema and snapshot binding the manifests resolve against, with the
+            /// same requirements the read path applies to each one, including the history.
+            if (!IcebergMetadata::registerMetadataSchemasAndSnapshots(
+                    metadata_object, current_snapshot_id, probe_components.schema_processor))
+            {
+                LOG_DEBUG(log, "Current snapshot {} is absent from the document's own '{}'", current_snapshot_id, f_snapshots);
+                return false;
+            }
+
+            auto manifest_list_entries
+                = getManifestList(object_storage, probe_components, context, manifest_list_path, log);
+
+            for (const auto & manifest_file : manifest_list_entries)
+            {
+                auto resolved_manifest_path = resolver.resolve(manifest_file.manifest_file_path);
+                if (!object_storage->exists(StoredObject(resolved_manifest_path)))
+                {
+                    LOG_DEBUG(log, "Manifest {} named by {} is missing", resolved_manifest_path, resolved_manifest_list_path);
+                    return false;
+                }
+
+                /// A carried-forward manifest keeps its original adder id, so only the ones this
+                /// snapshot added name files it wrote itself.
+                if (manifest_file.added_snapshot_id != current_snapshot_id)
+                    continue;
+
+                auto entries = getManifestFileEntriesHandle(
+                    object_storage, probe_components, context, log, manifest_file, snapshot_schema_id);
+
+                for (auto content : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
+                {
+                    for (const auto & entry : entries.getFilesWithoutDeleted(content))
+                    {
+                        /// An EXISTING row names a file an ancestor wrote, which this commit does
+                        /// not own and a compaction carries forward for the whole live table.
+                        if (entry->parsed_entry->status != ManifestEntryStatus::ADDED)
+                            continue;
+                        auto resolved_file_path = resolver.resolve(entry->parsed_entry->file_path_key);
+                        if (!object_storage->exists(StoredObject(resolved_file_path)))
+                        {
+                            LOG_DEBUG(log, "File {} named by {} is missing", resolved_file_path, resolved_manifest_path);
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+        catch (...)
+        {
+            /// What cannot be read here is what a reader could not read either.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            return false;
+        }
+    }
+    LOG_DEBUG(log, "Current snapshot {} is absent from the document's own '{}'", current_snapshot_id, f_snapshots);
+    return false;
+}
+
+/// The target metadata file already exists, so a hint naming an earlier version is behind. The
+/// target existing does not authorize publishing it: only a reader being able to follow it does.
+/// Always returns `false`, so the caller still sees a lost race.
+static bool convergeVersionHintForLostRace(
+    const std::string & storage_metadata_path,
+    const std::string & storage_version_hint_path,
+    const IcebergPathResolver & resolver,
+    Int32 target_version,
+    CompressionMethod compression_method,
+    const DB::ObjectStoragePtr & object_storage,
+    const DB::ContextPtr & context,
+    bool try_write_version_hint)
+{
+    try
+    {
+        /// Reached only where the hint would otherwise be written, so no read happens when the hint
+        /// is absent, already current, or ahead.
+        auto can_publish_target = [&]
+        {
+            /// `metadata_cache = nullptr`: a probe must not publish this document to other readers.
+            auto metadata_object = getMetadataJSONObject(
+                storage_metadata_path,
+                object_storage,
+                /* metadata_cache */ nullptr,
+                context,
+                getLogger("IcebergVersionHintConvergence"),
+                compression_method,
+                /* table_uuid */ std::nullopt);
+
+            if (!metadata_object)
+                return false;
+
+            return isMetadataSnapshotFollowable(metadata_object, resolver, compression_method, object_storage, context);
+        };
+
+        convergeVersionHint(
+            storage_version_hint_path,
+            target_version,
+            object_storage,
+            context,
+            try_write_version_hint,
+            can_publish_target);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+    return false;
+}
+
+bool writeMetadataFileAndVersionHint(
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    const std::string & metadata_file_content,
+    const IcebergPathFromMetadata & version_hint_path,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context,
+    bool try_write_version_hint)
+{
+    auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
+    auto storage_version_hint_path = resolver.resolve(version_hint_path);
+    try
+    {
+        if (object_storage->exists(StoredObject(storage_metadata_path)))
+            return convergeVersionHintForLostRace(
+                storage_metadata_path,
+                storage_version_hint_path,
+                resolver,
+                metadata_file_info.version,
+                metadata_file_info.compression_method,
+                object_storage,
+                context,
+                try_write_version_hint);
+
+        Iceberg::writeMessageToFile(
+            metadata_file_content,
+            storage_metadata_path,
+            object_storage,
+            context,
+            /* write-if-none-match */ "*",
+            "",
+            metadata_file_info.compression_method);
+    }
+    catch (const Exception & e)
+    {
+        /// A backend that cannot express the commit's compare-and-swap will never be able to, so
+        /// reporting a lost race would make the caller retry an operation that can never succeed.
+        /// Propagate instead; every other failure (including a genuinely lost CAS) stays retryable.
+        if (e.code() == ErrorCodes::UNSUPPORTED_METHOD)
+            throw;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
+
+    convergeVersionHint(
+        storage_version_hint_path, metadata_file_info.version, object_storage, context, try_write_version_hint);
 
     return true;
 }
