@@ -79,6 +79,37 @@ struct CountEqualAction
 /// How to perform the search depending on the arguments data types.
 namespace Impl
 {
+/// FixedString array elements, addressed by element index.
+struct FixedStringElements
+{
+    const UInt8 * chars;
+    size_t n;
+};
+
+/// A String or FixedString needle, addressed by row of the second argument.
+/// Rows are delimited by `offsets` when it is set, and are `stride` bytes apart otherwise; a
+/// constant needle keeps stride 0, so every row reads the single stored value.
+struct StringLikeNeedle
+{
+    const UInt8 * chars = nullptr;
+    const ColumnString::Offsets * offsets = nullptr;
+    size_t fixed_size = 0;
+    size_t stride = 0;
+
+    std::pair<const UInt8 *, size_t> bytesAt(size_t row) const
+    {
+        if (offsets)
+            return {chars + (*offsets)[row - 1], (*offsets)[row] - (*offsets)[row - 1]};
+        return {chars + row * stride, fixed_size};
+    }
+};
+
+/// Marks a needle that is compared zero-padded. No `lessOrEqual` overload accepts such a needle, so
+/// excluding it from the binary search below keeps `lowerBound` instantiable only where an ordering
+/// comparison exists.
+template <typename T> constexpr bool is_zero_padded_needle_v = false;
+template <> inline constexpr bool is_zero_padded_needle_v<StringLikeNeedle> = true;
+
 template <
     typename ConcreteAction,
     bool RightArgIsConstant = false,
@@ -160,6 +191,14 @@ private:
     static bool compare(const Array & arr, const Field& rhs, size_t pos, size_t)
     {
         return accurateEquals(arr[pos], rhs);
+    }
+
+    /// A FixedString element and a String/FixedString needle of a different width are equal when the
+    /// shorter one padded with zero bytes equals the longer one, which is what `=` compares.
+    static bool compare(const FixedStringElements & left, const StringLikeNeedle & right, size_t i, size_t row)
+    {
+        const auto [needle, needle_size] = right.bytesAt(RightArgIsConstant ? 0 : row);
+        return memequalSmallLikeZeroPaddedAllowOverflow15(left.chars + i * left.n, left.n, needle, needle_size);
     }
 
     static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
@@ -286,10 +325,11 @@ private:
         /** Use binary search if the following conditions are met.
           *   1. The array type is not nullable. (Case = 1)
           *   2. Target is not a column or an array.
+          *   3. An ordering comparison exists for the target.
           */
         if constexpr (
             std::is_same_v<ConcreteAction, IndexOfAssumeSorted> && !std::is_same_v<Target, PaddedPODArray<Result>>
-            && !std::is_same_v<Target, IColumn> && Case == 1)
+            && !std::is_same_v<Target, IColumn> && !is_zero_padded_needle_v<Target> && Case == 1)
         {
             return lowerBound(data, target, array_size, current_offset);
         }
@@ -1155,7 +1195,7 @@ private:
 
         const auto * left = checkAndGetColumn<ColumnString>(&array->getData());
         if (!left)
-            return nullptr;
+            return executeFixedStringLeft(arguments, *array);
 
         const auto & right = *arguments[1].column;
         const auto [null_map_data, null_map_item] = getNullMaps(arguments);
@@ -1206,6 +1246,71 @@ private:
         {
             return nullptr;
         }
+
+        return result;
+    }
+
+    /// A FixedString element belongs on the string path, not the generic one: the least supertype of
+    /// FixedString(N) and String is String, and casting the element to it drops its zero padding.
+    static ColumnPtr executeFixedStringLeft(const ColumnsWithTypeAndName & arguments, const ColumnArray & array)
+    {
+        const auto * left = checkAndGetColumn<ColumnFixedString>(&array.getData());
+        if (!left)
+            return nullptr;
+
+        const auto & right = *arguments[1].column;
+        const auto [null_map_data, null_map_item] = getNullMaps(arguments);
+
+        Impl::StringLikeNeedle needle;
+        const auto * item_arg_const = checkAndGetColumn<ColumnConst>(&right);
+
+        if (item_arg_const)
+        {
+            /// executeNothing already answered a constant NULL needle, so what remains holds a value.
+            const IColumn * unwrapped = &item_arg_const->getDataColumn();
+            if (const auto * needle_nullable = checkAndGetColumn<ColumnNullable>(unwrapped))
+                unwrapped = &needle_nullable->getNestedColumn();
+            const auto & needle_data = *unwrapped;
+
+            if (const auto * item_const_string = checkAndGetColumn<ColumnString>(&needle_data))
+            {
+                needle.chars = item_const_string->getChars().data();
+                needle.fixed_size = item_const_string->getDataAt(0).size();
+            }
+            else if (const auto * item_const_fixedstring = checkAndGetColumn<ColumnFixedString>(&needle_data))
+            {
+                needle.chars = item_const_fixedstring->getChars().data();
+                needle.fixed_size = item_const_fixedstring->getN();
+            }
+            else
+                return nullptr;
+        }
+        else if (const auto * item_arg_vector = checkAndGetColumn<ColumnString>(&right))
+        {
+            needle.chars = item_arg_vector->getChars().data();
+            needle.offsets = &item_arg_vector->getOffsets();
+        }
+        else if (const auto * item_arg_fixedvector = checkAndGetColumn<ColumnFixedString>(&right))
+        {
+            needle.chars = item_arg_fixedvector->getChars().data();
+            needle.fixed_size = item_arg_fixedvector->getN();
+            needle.stride = item_arg_fixedvector->getN();
+        }
+        else
+        {
+            return nullptr;
+        }
+
+        auto result = ResultColumnType::create();
+        const Impl::FixedStringElements elements{left->getChars().data(), left->getN()};
+
+        /// A constant needle is stored once, so every row must read row 0 of it.
+        if (item_arg_const)
+            Impl::Main<ConcreteAction, true>::vector(
+                elements, array.getOffsets(), needle, result->getData(), null_map_data, null_map_item);
+        else
+            Impl::Main<ConcreteAction>::vector(
+                elements, array.getOffsets(), needle, result->getData(), null_map_data, null_map_item);
 
         return result;
     }

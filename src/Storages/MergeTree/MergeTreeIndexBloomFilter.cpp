@@ -773,13 +773,13 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 }
 
 
-/// The array-search functions coerce the constant with CAST before comparing it to the elements:
-/// `hasAny`/`hasAll`, and `has`/`indexOf` over a `FixedString` element, cast both sides to the least
-/// supertype (hasAllAny.h, arrayIndex.h `executeGeneric`), and `has`/`indexOf` over a `LowCardinality`
-/// element cast the constant straight to the dictionary type (LowCardinalityExecutionHelpers.h
-/// `dictionaryIndexForConstant`). A CAST of `FixedString` to `String` strips the trailing zero
-/// padding, while `convertFieldToType` keeps it, so the index hashed a value the function never
-/// compares and wrongly pruned granules.
+/// The array-search functions match a constant against the elements in one of two ways. `has`/`indexOf`
+/// over a plain `FixedString` element compare it zero-padded to the element width (arrayIndex.h
+/// `executeFixedStringLeft`). The others coerce it with CAST first: `hasAny`/`hasAll` to the least
+/// supertype (hasAllAny.h), and over a `LowCardinality` element straight to the dictionary type
+/// (LowCardinalityExecutionHelpers.h `dictionaryIndexForConstant`). A CAST of `FixedString` to `String`
+/// strips the trailing zero padding, while `convertFieldToType` keeps it, so the index hashed a value
+/// the function never compares and wrongly pruned granules.
 ///
 /// Replicate that coercion at the `Field` level: strip the padding of a `FixedString` constant, then
 /// re-pad it to the width of the element type, which is the stored form of every element the function
