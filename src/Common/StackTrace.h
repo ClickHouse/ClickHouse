@@ -120,6 +120,29 @@ public:
         std::function<void(const Frame &)> callback,
         bool fatal);
 
+    /// Which address space `ResolvedAddress::address` is in. An offset alone does not identify an
+    /// instruction: the offset ranges of the main executable and of the loaded libraries overlap.
+    enum class AddressKind
+    {
+        MainObject,     /// Offset inside the main executable.
+        OtherObject,    /// Offset inside the loaded object named by `object`.
+        UnknownMapping, /// No loaded object contains the address, so it is the runtime address.
+        Unsupported,    /// The platform keeps runtime addresses, so it is the argument unchanged.
+    };
+
+    struct ResolvedAddress
+    {
+        const void * address = nullptr;
+        /// Owned by the `SymbolIndex` singleton, whose object list is built once and never resized.
+        /// Empty unless `kind` is `OtherObject`.
+        std::string_view object;
+        AddressKind kind = AddressKind::Unsupported;
+    };
+
+    /// Converts a runtime instruction address into the ASLR-independent representation that the
+    /// symbolized trace lines use, so that it can be fed to `addr2line` or `llvm-symbolizer`.
+    static ResolvedAddress resolveAddress(const void * virtual_addr);
+
     void toStringEveryLine(std::function<void(std::string_view)> callback) const;
     static void toStringEveryLine(const FramePointers & frame_pointers, std::function<void(std::string_view)> callback);
     static void toStringEveryLine(void ** frame_pointers_raw, size_t offset, size_t size, std::function<void(std::string_view)> callback);

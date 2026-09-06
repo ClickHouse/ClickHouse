@@ -576,6 +576,28 @@ void SignalListener::onTerminate(std::string_view message, UInt32 thread_num) co
     }
 }
 
+/// Prints an instruction address in the same representation as the symbolized lines below it, so that
+/// the two are comparable and the printed value survives ASLR of a position-independent executable.
+static void writeResolvedAddress(const void * addr, WriteBuffer & out)
+{
+    const auto resolved = StackTrace::resolveAddress(addr);
+    writePointerHex(resolved.address, out);
+
+    switch (resolved.kind)
+    {
+        case StackTrace::AddressKind::OtherObject:
+            writeString(" in ", out);
+            writeString(resolved.object, out);
+            break;
+        case StackTrace::AddressKind::UnknownMapping:
+            writeString(" in <unknown>", out);
+            break;
+        case StackTrace::AddressKind::MainObject:
+        case StackTrace::AddressKind::Unsupported:
+            break;
+    }
+}
+
 void SignalListener::onFault(
     int sig,
     const siginfo_t & info,
@@ -625,7 +647,7 @@ try
         for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
         {
             writeChar(' ', bare_stacktrace);
-            writePointerHex(stack_trace.getFramePointers()[i], bare_stacktrace);
+            writeResolvedAddress(stack_trace.getFramePointers()[i], bare_stacktrace);
         }
 
         LOG_FATAL(log, fmt::runtime(bare_stacktrace.str()));
@@ -688,7 +710,7 @@ try
                                 [&bare_stacktrace](const void * ptr)
                                 {
                                     writeChar(' ', bare_stacktrace);
-                                    writePointerHex(ptr, bare_stacktrace);
+                                    writeResolvedAddress(ptr, bare_stacktrace);
                                 }
                 );
 
