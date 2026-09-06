@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 
+#include <ranges>
+
 namespace DB
 {
 
@@ -45,6 +47,25 @@ public:
     /// Column was dropped by a pending mutation (data in part is stale).
     /// `name` is the name the column has in the part, not in the current metadata.
     bool isColumnDropped(const std::string & name, bool share_nested_offsets = true) const;
+
+    /// Whether the pending rename of `new_name` still has to be applied when reading a part whose
+    /// columns are given by `part_has_column`. It does not when the part already stores the new name
+    /// and no other pending rename takes that name as its source: such a part was written after the
+    /// rename was carried out (a merge does that while keeping the sources' data version, which is
+    /// what decides pendingness), so mapping back would look for a file that is not there. The
+    /// second condition matters because a freed name can be handed to another column, as in
+    /// `RENAME A TO C, RENAME B TO A`, where a part's `A` holds what is now `C`.
+    template <typename HasColumn>
+    bool needApplyRename(const std::string & new_name, HasColumn && part_has_column) const
+    {
+        if (part_has_column(getColumnOldName(new_name)))
+            return true;
+
+        if (!part_has_column(new_name))
+            return true;
+
+        return std::ranges::any_of(rename_map, [&](const RenamePair & entry) { return entry.rename_from == new_name; });
+    }
 
     static bool isSupportedDataMutation(MutationCommand::Type type);
     static bool isSupportedAlterMutation(MutationCommand::Type type);
