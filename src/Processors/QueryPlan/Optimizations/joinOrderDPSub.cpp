@@ -327,11 +327,9 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
         /// side while `buildPhysicalPlan` keeps the child order).
         if (forward && mirrored)
         {
-            if (subset_of(op.left_relations, left_mask))
-                mirrored = false;
-            else if (subset_of(op.left_relations, right_mask))
+            if (subset_of(op.left_relations, right_mask))
                 forward = false;
-            else
+            else if (!subset_of(op.left_relations, left_mask))
                 return std::nullopt;
         }
 
