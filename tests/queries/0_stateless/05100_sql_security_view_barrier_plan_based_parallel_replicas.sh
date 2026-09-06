@@ -20,6 +20,10 @@ db=${CLICKHOUSE_DATABASE}
 invoker="user05100_${CLICKHOUSE_DATABASE}_$RANDOM"
 definer="definer05100_${CLICKHOUSE_DATABASE}_$RANDOM"
 
+# The row policies are created after the views (see 04909). The test servers run with
+# `throw_on_unmatched_row_policies`: once the source table has a row policy, every user who reads it
+# directly needs a matching policy, and the invoker reads it directly through the `INVOKER` control,
+# so the invoker gets a pass-through policy. The definer's policy is the one that hides rows.
 ${CLICKHOUSE_CLIENT} <<EOSQL
 CREATE TABLE $db.pb_pr_secrets (owner String, secret String) ENGINE = MergeTree ORDER BY owner;
 INSERT INTO $db.pb_pr_secrets SELECT 'visible_owner', 'visible_' || toString(number) FROM numbers(3);
@@ -30,9 +34,6 @@ CREATE USER $definer;
 GRANT SELECT ON $db.pb_pr_secrets TO $definer;
 GRANT SELECT ON $db.pb_pr_secrets TO $invoker;
 GRANT CREATE TEMPORARY TABLE ON *.* TO $invoker;
-
-CREATE ROW POLICY ${definer}_source_policy ON $db.pb_pr_secrets
-FOR SELECT USING owner = 'visible_owner' TO $definer;
 
 CREATE VIEW $db.pb_pr_definer_view DEFINER = $definer SQL SECURITY DEFINER
 AS SELECT owner, secret FROM $db.pb_pr_secrets;
@@ -46,6 +47,11 @@ AS SELECT owner, secret FROM $db.pb_pr_secrets;
 GRANT SELECT ON $db.pb_pr_definer_view TO $invoker;
 GRANT SELECT ON $db.pb_pr_none_view TO $invoker;
 GRANT SELECT ON $db.pb_pr_invoker_view TO $invoker;
+
+CREATE ROW POLICY ${definer}_source_policy ON $db.pb_pr_secrets
+FOR SELECT USING owner = 'visible_owner' TO $definer;
+CREATE ROW POLICY ${invoker}_source_policy ON $db.pb_pr_secrets
+FOR SELECT USING 1 TO $invoker;
 EOSQL
 
 PR_SETTINGS="--enable_analyzer 1 --enable_parallel_replicas 1 --max_parallel_replicas 3 \
@@ -76,7 +82,7 @@ done
 echo "--- control: pb_pr_invoker_view ---"
 echo "remote reads in the plan: $(remote_read_count "SELECT owner, secret FROM $db.pb_pr_invoker_view WHERE secret != ''")"
 
-${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${definer}_source_policy ON $db.pb_pr_secrets"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${definer}_source_policy, ${invoker}_source_policy ON $db.pb_pr_secrets"
 ${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.pb_pr_definer_view, $db.pb_pr_none_view, $db.pb_pr_invoker_view"
 ${CLICKHOUSE_CLIENT} --query "DROP USER $invoker, $definer"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.pb_pr_secrets"
