@@ -681,6 +681,14 @@ bool MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(const Para
     return false;
 }
 
+MergeTreeData::IMutationsSnapshot::Params
+MergeTreeData::IMutationsSnapshot::resolveParams(const Params & params, const MutationCounters & counters)
+{
+    auto res = params;
+    res.need_alter_mutations |= params.need_alter_mutations_if_pending && counters.num_alter > 0;
+    return res;
+}
+
 MergeTreeData::MutationsSnapshotBase::MutationsSnapshotBase(Params params_, MutationCounters counters_, DataPartsVector patches_)
     : params(std::move(params_))
     , counters(std::move(counters_))
@@ -13428,6 +13436,10 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
         .max_mutation_versions = query_context->getPartitionIdToMaxBlock(getStorageID().uuid),
         .need_data_mutations = apply_mutations_on_fly,
         .need_alter_mutations = apply_mutations_on_fly || apply_patch_parts,
+        /// A pending ALTER MODIFY COLUMN must reach skip-index analysis, which excludes indexes
+        /// whose on-disk type is no longer compatible. Requesting it only when one is pending
+        /// keeps the empty-snapshot fast path for every other read.
+        .need_alter_mutations_if_pending = true,
         .need_patch_parts = apply_patch_parts,
         .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
     };
