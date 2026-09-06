@@ -13,10 +13,22 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Common/quoteString.h>
 #include <Common/logger_useful.h>
+
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/FieldVisitorToString.h>
 
 namespace DB
 {
@@ -24,6 +36,233 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// Renders a type name taking syntax from `cached` and aggregate-function versions from `live`. Only
+/// `cached` remembers spellings such as `Nested(...)`; only `live` carries the negotiated versions.
+/// Returns nullopt when no version below `cached` needs correcting, leaving the caller on `getName()`.
+/// `inside_simple_aggregate_function`: a version-0 leaf must be printed explicitly there, since the alias
+/// rebuilds it by parsing the name back. `emit_version_token`: false for a peer with no version grammar.
+std::optional<String> renderTypeNameWithLiveVersions(
+    const DataTypePtr & cached, const DataTypePtr & live, bool inside_simple_aggregate_function, bool emit_version_token);
+
+/// Picks a child's rendered name, or its plain one when that child needed no correction.
+/// `std::optional::value_or(fallback->getName())` would build the fallback name unconditionally, and
+/// `getName()` on a nested type is a recursive string build, so the choice is made lazily here.
+String renderedOrName(std::optional<String> && rendered, const DataTypePtr & fallback)
+{
+    if (rendered)
+        return std::move(*rendered);
+    return fallback->getName();
+}
+
+/// Renders the argument as a `SimpleAggregateFunction(...)`/`Nested(...)`/container name, or falls back
+/// to `cached->getName()` when this subtree needs no correction.
+String renderOrGetName(const DataTypePtr & cached, const DataTypePtr & live, bool emit_version_token)
+{
+    if (auto rendered = renderTypeNameWithLiveVersions(
+            cached, live, /*inside_simple_aggregate_function=*/false, emit_version_token))
+        return *rendered;
+    return cached->getName();
+}
+
+std::optional<String> renderTypeNameWithLiveVersions(
+    const DataTypePtr & cached, const DataTypePtr & live, bool inside_simple_aggregate_function, bool emit_version_token)
+{
+    if (!cached || !live)
+        return {};
+
+    /// Customizations are matched BEFORE the plain types they are installed on: at the top of a
+    /// `SimpleAggregateFunction` the cached and live pointers are the same object, so a version
+    /// comparison there is trivially equal and only the customization's own cached vector diverges.
+    if (const auto * simple_agg = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(cached->getCustomName()))
+    {
+        const auto & arguments = simple_agg->getArgumentsDataTypes();
+        /// The customization's cached vector and the storage type are the same shape by construction
+        /// (`create()` derives the storage type from `argument_types[0]`), so pair element 0 with `live`.
+        /// A multi-argument form cannot pair 1:1 with the storage type, so fall back to `getName()`.
+        if (arguments.size() != 1)
+            return {};
+
+        auto rendered_argument = renderTypeNameWithLiveVersions(
+            arguments[0], live, /*inside_simple_aggregate_function=*/true, emit_version_token);
+        if (!rendered_argument)
+            return {};
+
+        WriteBufferFromOwnString stream;
+        stream << "SimpleAggregateFunction(" << simple_agg->getFunctionName();
+        const auto & parameters = simple_agg->getParameters();
+        if (!parameters.empty())
+        {
+            stream << "(";
+            for (size_t i = 0; i < parameters.size(); ++i)
+            {
+                if (i)
+                    stream << ", ";
+                stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+            }
+            stream << ")";
+        }
+        stream << ", " << *rendered_argument << ")";
+        return stream.str();
+    }
+
+    /// `Nested(...)` keeps its own spelling in a customization; recurse into the elements so it survives.
+    if (const auto * nested = typeid_cast<const DataTypeNestedCustomName *>(cached->getCustomName()))
+    {
+        const auto * live_array = typeid_cast<const DataTypeArray *>(live.get());
+        const auto * live_tuple = live_array ? typeid_cast<const DataTypeTuple *>(live_array->getNestedType().get()) : nullptr;
+        const auto & elements = nested->getElements();
+        if (!live_tuple || live_tuple->getElements().size() != elements.size())
+            return {};
+
+        /// Keep the per-element results optional until a sibling is known to have changed: materializing
+        /// the fallback `getName()` eagerly would pay a recursive string build for every element of every
+        /// unchanged type, since `value_or`'s argument is evaluated even when the optional is engaged.
+        std::vector<std::optional<String>> rendered(elements.size());
+        bool changed = false;
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            rendered[i] = renderTypeNameWithLiveVersions(
+                elements[i], live_tuple->getElements()[i], inside_simple_aggregate_function, emit_version_token);
+            changed |= rendered[i].has_value();
+        }
+        if (!changed)
+            return {};
+
+        WriteBufferFromOwnString stream;
+        stream << "Nested(";
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            if (i)
+                stream << ", ";
+            stream << backQuoteIfNeed(nested->getNames()[i]) << ' ' << renderedOrName(std::move(rendered[i]), elements[i]);
+        }
+        stream << ")";
+        return stream.str();
+    }
+
+    /// Any other customization (geometry names, ...) cannot contain a versioned leaf that the transport
+    /// assigns to, so leaving it to `getName()` is both correct and byte-identical.
+    if (cached->getCustomName())
+        return {};
+
+    /// A versioned `AggregateFunction` leaf: the only place a version is emitted. Re-render exactly when
+    /// the version a reader would derive from the cached spelling differs from the live one.
+    if (const auto * cached_agg = typeid_cast<const DataTypeAggregateFunction *>(cached.get()))
+    {
+        const auto * live_agg = typeid_cast<const DataTypeAggregateFunction *>(live.get());
+        if (!live_agg || !cached_agg->isVersioned())
+            return {};
+
+        const size_t live_version = live_agg->getVersion();
+        size_t advertised_version = cached_agg->getVersion();
+        /// Under the alias a reader re-derives this leaf by parsing the printed name, where an omitted
+        /// version reads as the default. Outside one it derives the version from the revision instead.
+        if (inside_simple_aggregate_function && advertised_version == 0)
+            advertised_version = cached_agg->getFunction()->getDefaultVersion();
+        if (advertised_version == live_version)
+            return {};
+
+        static const String prefix = "AggregateFunction(";
+        /// Not `const`: the early return below moves it out, and `performance-no-automatic-move`
+        /// (clang-tidy) rejects returning a `const` local because constness prevents the move.
+        String without_version = cached_agg->getNameWithoutVersion();
+
+        /// Such a peer's type parser rejects a leading literal, so the leaf keeps the versionless
+        /// spelling. Still rendered rather than nullopt: a sibling may need the syntax half.
+        if (!emit_version_token)
+            return without_version;
+
+        /// Splice the live version into the cached spelling: the cached argument types are kept verbatim
+        /// because the version walker treats an `AggregateFunction` as a leaf and never descends into them.
+        if (!without_version.starts_with(prefix))
+            return {};
+
+        WriteBufferFromOwnString stream;
+        stream << prefix << live_version << ", " << std::string_view(without_version).substr(prefix.size());
+        return stream.str();
+    }
+
+    /// Descend the containers `setVersionToAggregateFunctions` itself descends, and only those.
+    /// `Variant` is deliberately excluded: its walker treats it as an opaque leaf, so a live leaf below a
+    /// `Variant` never receives a transport-assigned version and rendering it would invent a value.
+    if (const auto * cached_nullable = typeid_cast<const DataTypeNullable *>(cached.get()))
+    {
+        const auto * live_nullable = typeid_cast<const DataTypeNullable *>(live.get());
+        if (!live_nullable)
+            return {};
+        if (auto nested = renderTypeNameWithLiveVersions(
+                cached_nullable->getNestedType(), live_nullable->getNestedType(), inside_simple_aggregate_function, emit_version_token))
+            return "Nullable(" + *nested + ")";
+        return {};
+    }
+
+    if (const auto * cached_array = typeid_cast<const DataTypeArray *>(cached.get()))
+    {
+        const auto * live_array = typeid_cast<const DataTypeArray *>(live.get());
+        if (!live_array)
+            return {};
+        if (auto nested = renderTypeNameWithLiveVersions(
+                cached_array->getNestedType(), live_array->getNestedType(), inside_simple_aggregate_function, emit_version_token))
+            return "Array(" + *nested + ")";
+        return {};
+    }
+
+    if (const auto * cached_tuple = typeid_cast<const DataTypeTuple *>(cached.get()))
+    {
+        const auto * live_tuple = typeid_cast<const DataTypeTuple *>(live.get());
+        const auto & elements = cached_tuple->getElements();
+        if (!live_tuple || live_tuple->getElements().size() != elements.size())
+            return {};
+
+        /// Optional until a sibling changed, for the same reason as in the `Nested` branch above.
+        std::vector<std::optional<String>> rendered(elements.size());
+        bool changed = false;
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            rendered[i] = renderTypeNameWithLiveVersions(
+                elements[i], live_tuple->getElements()[i], inside_simple_aggregate_function, emit_version_token);
+            changed |= rendered[i].has_value();
+        }
+        if (!changed)
+            return {};
+
+        WriteBufferFromOwnString stream;
+        stream << "Tuple(";
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            if (i)
+                stream << ", ";
+            if (cached_tuple->hasExplicitNames())
+                stream << backQuoteIfNeed(cached_tuple->getElementNames()[i]) << ' ';
+            stream << renderedOrName(std::move(rendered[i]), elements[i]);
+        }
+        stream << ")";
+        return stream.str();
+    }
+
+    if (const auto * cached_map = typeid_cast<const DataTypeMap *>(cached.get()))
+    {
+        const auto * live_map = typeid_cast<const DataTypeMap *>(live.get());
+        if (!live_map)
+            return {};
+        auto key = renderTypeNameWithLiveVersions(
+            cached_map->getKeyType(), live_map->getKeyType(), inside_simple_aggregate_function, emit_version_token);
+        auto value = renderTypeNameWithLiveVersions(
+            cached_map->getValueType(), live_map->getValueType(), inside_simple_aggregate_function, emit_version_token);
+        if (!key && !value)
+            return {};
+        return "Map(" + renderedOrName(std::move(key), cached_map->getKeyType()) + ", "
+            + renderedOrName(std::move(value), cached_map->getValueType()) + ")";
+    }
+
+    return {};
+}
+
 }
 
 
@@ -194,6 +433,22 @@ size_t NativeWriter::write(const Block & block)
         bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
         setVersionToAggregateFunctions(column.type, /* if_empty= */ client_revision == 0, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
 
+        /// Whether the announced type string may carry an `AggregateFunction(<version>, ...)` token. The
+        /// leading `client_revision &&` keeps revision `0` out of the branch: only a non-zero revision
+        /// below the threshold is a peer that cannot parse the token.
+        const bool emit_version_token
+            = !(client_revision && client_revision < DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING);
+
+        /// One rendering shared by the stream header and the index header, so the two cannot disagree.
+        /// Lazy: a binary-encoded header without an index needs no textual name at all.
+        std::optional<String> rendered_type_name;
+        auto renderTypeName = [&]() -> const String &
+        {
+            if (!rendered_type_name)
+                rendered_type_name = renderOrGetName(column.type, column.type, emit_version_token);
+            return *rendered_type_name;
+        };
+
         /// Type
         if (format_settings && format_settings->native.encode_types_in_binary_format)
         {
@@ -201,7 +456,7 @@ size_t NativeWriter::write(const Block & block)
         }
         else
         {
-            String type_name = column.type->getName();
+            String type_name = renderTypeName();
 
             /// For compatibility, we will not send explicit timezone parameter in DateTime data type
             ///  to older clients, that cannot understand it.
@@ -232,7 +487,7 @@ size_t NativeWriter::write(const Block & block)
         if (index)
         {
             index_block.columns[i].name = column.name;
-            index_block.columns[i].type = column.type->getName();
+            index_block.columns[i].type = renderTypeName();
             index_block.columns[i].location.offset_in_compressed_file = mark.offset_in_compressed_file;
             index_block.columns[i].location.offset_in_decompressed_block = mark.offset_in_decompressed_block;
         }
