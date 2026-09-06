@@ -17,6 +17,8 @@ struct ConnectionsCredentials
     std::optional<bool> secure;
     std::optional<std::string> user;
     std::optional<std::string> password;
+    std::optional<std::string> ssh_key_file;
+    std::optional<std::string> ssh_key_passphrase;
     std::optional<std::string> database;
     std::optional<std::string> history_file;
     std::optional<UInt32> history_max_entries;

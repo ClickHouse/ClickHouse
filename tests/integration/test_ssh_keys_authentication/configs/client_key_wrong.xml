@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<config>
+    <connections_credentials>
+        <connection>
+            <name>localhost</name>
+            <user>lucy</user>
+            <ssh_key_file from_env="TEST_SSH_KEY_FILE"/>
+            <ssh_key_passphrase>wrong</ssh_key_passphrase>
+        </connection>
+    </connections_credentials>
+</config>
