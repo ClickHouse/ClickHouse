@@ -383,6 +383,11 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     WASM_PARSER = "wasm_parser"
     ARM_FUZZERS = "arm_fuzzers"
     AMD_CFI = "amd_cfi"
+    # amd_cfi + ENABLE_BUZZHOUSE, used only by the WeeklyCFI BuzzHouse lane:
+    # BuzzHouse compiles extra sources into clickhouse-client/dbms, which would
+    # change the whole-program ThinLTO graph of the release-profile CFI canary
+    # binary if it were enabled in the shared amd_cfi build.
+    AMD_CFI_BUZZHOUSE = "amd_cfi_buzzhouse"
 
 
 class JobNames:
@@ -532,6 +537,7 @@ class ArtifactNames:
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
     CH_AMD_CFI = "CH_AMD_CFI"
+    CH_AMD_CFI_BUZZHOUSE = "CH_AMD_CFI_BUZZHOUSE"
 
     CLICKHOUSE_PGO_PROFILE_AMD = "CLICKHOUSE_PGO_PROFILE_AMD"
     CLICKHOUSE_PGO_PROFILE_ARM = "CLICKHOUSE_PGO_PROFILE_ARM"
@@ -638,6 +644,7 @@ class ArtifactConfigs:
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
             ArtifactNames.CH_AMD_CFI,
+            ArtifactNames.CH_AMD_CFI_BUZZHOUSE,
         ]
     )
     clickhouse_darwin_plain_binaries = Artifact.Config(

@@ -5731,6 +5731,11 @@ class BuildFlags:
     MEMORY = "msan"
     WITH_COVERAGE = "with-coverage"
     WITH_COVERAGE_DEPTH = "with-coverage-depth"
+    # CFI is not in SANITIZERS: it has near-zero runtime overhead, so tests
+    # tagged no-sanitizers (which guard against instrumentation slowness or
+    # interceptor effects) must still run in the CFI build. Use the no-cfi tag
+    # to skip a test there.
+    CFI = "cfi"
     SANITIZERS = [THREAD, ADDRESS, UNDEFINED, MEMORY]
     DEBUG = "debug"
     RELEASE = "release"
@@ -5767,6 +5772,11 @@ def collect_build_flags(args):
             if flag is not None:
                 result.append(flag)
         SANITIZED = bool(result)
+
+    # The regex above stops at the hyphen of "-fsanitize=cfi-vcall,...", so CFI
+    # never lands in SANITIZED and needs its own check.
+    if b"-fsanitize=cfi" in value:
+        result.append(BuildFlags.CFI)
 
     # WITH_COVERAGE / WITH_COVERAGE_DEPTH have dedicated rows in system.build_options;
     # do not rely on CXX_FLAGS which uses FULL_CXX_FLAGS_NORMALIZED and may not include them.

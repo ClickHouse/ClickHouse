@@ -456,6 +456,15 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
             timeout=4 * 3600,
         ),
+        # Separate binary for the BuzzHouse lane only: ENABLE_BUZZHOUSE changes
+        # the whole-program ThinLTO graph, and the other WeeklyCFI jobs must
+        # test the release-profile CFI binary unchanged.
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_CFI_BUZZHOUSE,
+            provides=[ArtifactNames.CH_AMD_CFI_BUZZHOUSE],
+            runs_on=RunnerLabels.ARM_LARGE,
+            timeout=4 * 3600,
+        ),
     )
     cfi_integration_jobs = common_integration_test_job_config.parametrize(
         *[
@@ -472,6 +481,20 @@ class JobConfigs:
         Job.ParamSet(
             parameter="amd_cfi",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.CH_AMD_CFI],
+        ),
+    )
+    # Same parallel/sequential split as the amd_debug stateless lanes. Tests
+    # that cannot pass in the CFI (ThinLTO) build carry the no-cfi tag.
+    cfi_stateless_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_cfi, parallel",
+            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            requires=[ArtifactNames.CH_AMD_CFI],
+        ),
+        Job.ParamSet(
+            parameter="amd_cfi, sequential",
+            runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_CFI],
         ),
     )
@@ -1481,7 +1504,7 @@ class JobConfigs:
             requires=[ArtifactNames.DEB_ARM_RELEASE],
         ),
     )
-    ast_fuzzer_jobs = Job.Config(
+    _common_ast_fuzzer_job_config = Job.Config(
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()
         command='python3 ./ci/jobs/ast_fuzzer_job.py "{PARAMETER}"',
@@ -1502,7 +1525,8 @@ class JobConfigs:
                 "./ci/docker/fuzzer",
             ],
         ),
-    ).parametrize(
+    )
+    ast_fuzzer_jobs = _common_ast_fuzzer_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_debug",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
@@ -1565,7 +1589,7 @@ class JobConfigs:
         ),
 
     )
-    buzz_fuzzer_jobs = Job.Config(
+    _common_buzz_fuzzer_job_config = Job.Config(
         name=JobNames.BUZZHOUSE,
         runs_on=[],  # from parametrize()
         command="python3 ./ci/jobs/buzzhouse_job.py",
@@ -1587,7 +1611,8 @@ class JobConfigs:
                 "./ci/docker/fuzzer",
             ],
         ),
-    ).parametrize(
+    )
+    buzz_fuzzer_jobs = _common_buzz_fuzzer_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_debug",
             runs_on=RunnerLabels.AMD_MEDIUM,
@@ -1607,6 +1632,24 @@ class JobConfigs:
             parameter="amd_msan",
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_MSAN],
+        ),
+    )
+    # Fuzzer lanes for the WeeklyCFI workflow. Fuzzers assert only on crashes,
+    # never on exact query output, so the ThinLTO+CFI build profile cannot
+    # produce false positives there, and fuzzing reaches virtual-call
+    # combinations the curated suites never exercise.
+    cfi_ast_fuzzer_job = _common_ast_fuzzer_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_cfi",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.CH_AMD_CFI],
+        ),
+    )
+    cfi_buzz_fuzzer_job = _common_buzz_fuzzer_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_cfi_buzzhouse",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_CFI_BUZZHOUSE],
         ),
     )
     performance_comparison_with_master_head_jobs = Job.Config(
