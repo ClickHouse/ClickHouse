@@ -100,6 +100,41 @@ private:
     SignaturePtr signature;
 };
 
+/// Answers a question such as "is every function here deterministic?" for a whole `ActionsDAG`,
+/// including the lambdas inside it. A lambda is only as deterministic as its body: a
+/// non-deterministic call that depends on a lambda argument stays inside the lambda's own
+/// `ActionsDAG` - only a nullary one is hoisted into the outer DAG - so a caller that walks the outer
+/// DAG alone cannot see it. The plan-time join conversions ask this question before they
+/// constant-fold a filter.
+///
+/// A lambda that captures no columns has no arguments, so it is folded into a `COLUMN` node holding a
+/// `ColumnFunction`, and the `FUNCTION` loop never sees it; ask that captured function too. It
+/// answers for its own inner DAG - and, recursively, for the lambdas nested in it.
+template <typename Predicate>
+bool dagFunctionsSatisfy(const ActionsDAG & dag, Predicate && predicate)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && !predicate(*node.function_base))
+            return false;
+
+        if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
+        {
+            const IColumn * column = node.column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                column = &column_const->getDataColumn();
+
+            if (const auto * column_function = typeid_cast<const ColumnFunction *>(column))
+            {
+                const auto & function = column_function->getFunction();
+                if (function && !predicate(*function))
+                    return false;
+            }
+        }
+    }
+    return true;
+}
+
 /// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
 class FunctionExpression final : public IFunctionBase
 {
@@ -139,6 +174,16 @@ public:
 
     const LambdaCapture & getCapture() const { return *capture; }
     const ActionsDAG & getAcionsDAG() const { return expression_actions->getActionsDAG(); }
+
+    bool isDeterministic() const override
+    {
+        return dagFunctionsSatisfy(getAcionsDAG(), [](const IFunctionBase & f) { return f.isDeterministic(); });
+    }
+
+    bool isDeterministicInScopeOfQuery() const override
+    {
+        return dagFunctionsSatisfy(getAcionsDAG(), [](const IFunctionBase & f) { return f.isDeterministicInScopeOfQuery(); });
+    }
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
@@ -290,6 +335,16 @@ public:
             }
         }
         return true;
+    }
+
+    bool isDeterministic() const override
+    {
+        return dagFunctionsSatisfy(getAcionsDAG(), [](const IFunctionBase & f) { return f.isDeterministic(); });
+    }
+
+    bool isDeterministicInScopeOfQuery() const override
+    {
+        return dagFunctionsSatisfy(getAcionsDAG(), [](const IFunctionBase & f) { return f.isDeterministicInScopeOfQuery(); });
     }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
