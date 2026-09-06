@@ -888,10 +888,14 @@ bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
     return rewrite;
 }
 
+/// `out_replacement_storage`, when given, receives the storage that stands in for the remote table.
+/// A storage outlives the query tree and, unlike a node pointer, is carried over by `cloneImpl`, so
+/// it stays a valid way to find the replacement table expression after the tree has been cloned.
 QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     const StorageSnapshotPtr & distributed_storage_snapshot,
     const StorageID & remote_storage_id,
-    const ASTPtr & remote_table_function)
+    const ASTPtr & remote_table_function,
+    StoragePtr * out_replacement_storage = nullptr)
 {
     auto & planner_context = query_info.planner_context;
     const auto & query_context = planner_context->getQueryContext();
@@ -958,6 +962,14 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
+    if (out_replacement_storage)
+    {
+        if (const auto * table_node = replacement_table_expression->as<TableNode>())
+            *out_replacement_storage = table_node->getStorage();
+        else if (const auto * table_function_node = replacement_table_expression->as<TableFunctionNode>())
+            *out_replacement_storage = table_function_node->getStorage();
+    }
+
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
     inlineAliasColumns(query_tree_to_modify);
 
@@ -976,6 +988,34 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     }
 
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
+}
+
+/// Identifier-to-name map for the table expression standing for `storage`, from the context that
+/// analyzed `query_tree`. Only its own columns may be renamed: the rest belong to a joined or
+/// external table, whose columns the caller expects as identifiers. Matched by storage, not address.
+std::unordered_map<std::string, std::string> collectColumnIdentifierToColumnName(
+    const QueryTreeNodePtr & query_tree, const IStorage & storage, const PlannerContext & planner_context)
+{
+    for (const auto & table_expression :
+         extractTableExpressions(static_pointer_cast<ITableExpressionNode>(query_tree), /*add_array_join*/ false, /*recursive*/ true))
+    {
+        StoragePtr table_expression_storage;
+        if (const auto * table_node = table_expression->as<TableNode>())
+            table_expression_storage = table_node->getStorage();
+        else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
+            table_expression_storage = table_function_node->getStorage();
+
+        if (table_expression_storage.get() != &storage)
+            continue;
+
+        if (const auto * table_expression_data = planner_context.getTableExpressionDataOrNull(table_expression))
+        {
+            const auto & identifier_to_name = table_expression_data->getColumnIdentifierToColumnName();
+            return {identifier_to_name.begin(), identifier_to_name.end()};
+        }
+    }
+
+    return {};
 }
 
 }
@@ -1011,17 +1051,29 @@ void StorageDistributed::read(
 
     SelectQueryInfo modified_query_info = query_info;
 
+    /// At `FetchColumns` the plan's header carries analyzer column identifiers; see below.
+    std::unordered_map<std::string, std::string> identifier_to_name;
+
     const auto & settings = local_context->getSettingsRef();
 
     if (settings[Setting::allow_experimental_analyzer])
     {
         StorageID remote_storage_id = StorageID{remote_database, remote_table};
 
+        StoragePtr replacement_storage;
         auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
             query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
             remote_storage_id,
-            remote_table_function_ptr);
-        Block block = *InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
+            remote_table_function_ptr,
+            &replacement_storage);
+        /// The map has to come from the context that produced this header: `buildQueryTreeForShard` renumbers
+        /// the `__tableN` aliases from 1, so the outer planner's map holds different identifiers.
+        auto [sample_block, distributed_planner_context] = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(
+            query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
+        Block block = *sample_block;
+        if (processed_stage == QueryProcessingStage::FetchColumns && replacement_storage)
+            identifier_to_name
+                = collectColumnIdentifierToColumnName(query_tree_distributed, *replacement_storage, *distributed_planner_context);
         /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
           * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
           */
@@ -1093,6 +1145,37 @@ void StorageDistributed::read(
     /// (e.g., every shard had a missing table with no remote replicas).
     if (!query_plan.isInitialized())
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No available shards to query");
+
+    /// `IStorage::read` at `FetchColumns` must return column names, but the header above went through the
+    /// planner's name-to-identifier rename, so alias the identifiers back. An output the map does not
+    /// resolve is left alone: it is a column of some other table expression, a joined one being the case.
+    if (!identifier_to_name.empty())
+    {
+        ActionsDAG rename_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+        ActionsDAG::NodeRawConstPtrs outputs;
+        outputs.reserve(rename_dag.getOutputs().size());
+        bool renamed_any = false;
+
+        for (const auto * output : rename_dag.getOutputs())
+        {
+            auto it = identifier_to_name.find(output->result_name);
+            if (it == identifier_to_name.end() || it->second == output->result_name)
+            {
+                outputs.push_back(output);
+                continue;
+            }
+            outputs.push_back(&rename_dag.addAlias(*output, it->second));
+            renamed_any = true;
+        }
+
+        if (renamed_any)
+        {
+            rename_dag.getOutputs() = std::move(outputs);
+            auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(rename_dag));
+            rename_step->setStepDescription("Change column identifiers to column names");
+            query_plan.addStep(std::move(rename_step));
+        }
+    }
 }
 
 

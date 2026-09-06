@@ -2846,6 +2846,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         ActionsDAG rename_actions_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
         ActionsDAG::NodeRawConstPtrs updated_actions_dag_outputs;
 
+        /// `storage` above is scoped to the branch that read the table expression, so look it up again.
+        const auto * table_expression_storage = table_node ? table_node->getStorage().get()
+            : (table_function_node ? table_function_node->getStorage().get() : nullptr);
+
         for (auto & output_node : rename_actions_dag.getOutputs())
         {
             if (select_query_options.ignore_rename_columns)
@@ -2865,15 +2869,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 const auto * column_identifier = table_expression_data.getColumnIdentifierOrNull(output_node->result_name);
                 if (!column_identifier)
                 {
-                    /// This is needed only for distributed over distributed case with plan serialization as well.
-                    /// StorageDistributed::read apparently returns column identifiers instead of column names for
-                    /// to_stage == QueryProcessingStage::FetchColumns (unlike other storages, which do not aware about identifiers).
-                    /// So, we do not rename but just pass names as is.
-                    ///
-                    /// Overall, IStorage::read    -> FetchColumns returns normal column names (except Distributed, which is inconsistent)
-                    /// Interpreter::getQueryPlan  -> FetchColumns returns identifiers (why?) and this the reason for the bug ^ in Distributed
-                    /// Hopefully there is no other case when we read from Distributed up to FetchColumns.
-                    if (table_node && table_node->getStorage()->isRemote() && select_query_options.to_stage == QueryProcessingStage::FetchColumns)
+                    /// A remote read at FetchColumns can also return columns outside this table expression's
+                    /// schema, joined columns from the right-hand table being the case. They have no identifier
+                    /// here, so pass them through as is rather than dropping them.
+                    if (table_expression_storage && table_expression_storage->isRemote()
+                        && select_query_options.to_stage == QueryProcessingStage::FetchColumns)
                         updated_actions_dag_outputs.push_back(output_node);
                 }
                 else
