@@ -26,6 +26,7 @@
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 #include <Interpreters/castColumn.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromStringWithMemoryTracking.h>
 
@@ -68,6 +69,7 @@ extern const SettingsUInt64 webassembly_udf_max_fuel;
 extern const SettingsUInt64 webassembly_udf_max_memory;
 extern const SettingsUInt64 webassembly_udf_max_input_block_size;
 extern const SettingsUInt64 webassembly_udf_max_instances;
+extern const SettingsFloat webassembly_udf_input_split_memory_ratio;
 }
 
 namespace ErrorCodes
@@ -107,6 +109,12 @@ public:
     {
         checkSignature();
     }
+
+    /// Arguments and the result cross the boundary as WebAssembly values, so guest memory is
+    /// never touched.
+    bool requiresGuestLinearMemory() const override { return false; }
+
+    bool serializesInputBlockToGuestMemory() const override { return false; }
 
     void checkSignature() const
     {
@@ -253,6 +261,12 @@ public:
     {
         checkSignature();
     }
+
+    /// The input block is serialized into a buffer the guest allocates, and the result read
+    /// back from guest memory.
+    bool requiresGuestLinearMemory() const override { return true; }
+
+    bool serializesInputBlockToGuestMemory() const override { return true; }
 
     void checkFunction(const WasmFunctionDeclaration & expected) const
     {
@@ -482,6 +496,17 @@ public:
               getWasmModuleConfig(context, user_defined_function->getSettings().getFuelMode()),
               interrupt_source.get_token())
     {
+        const size_t configured_memory_limit = context->getSettingsRef()[Setting::webassembly_udf_max_memory];
+        if (configured_memory_limit != 0)
+            module_memory_limit = configured_memory_limit;
+        serialization_format = user_defined_function->getSettings().getValue("serialization_format").safeGet<String>();
+    }
+
+    /// Bytes a serialized block carries besides its rows: `BuffersWriter` prefixes the payloads
+    /// with a `UInt64` column count, a `UInt64` row count and one `UInt64` size per column.
+    size_t blockFramingBytes(size_t num_columns) const
+    {
+        return serialization_format == "Buffers" ? sizeof(UInt64) * (2 + num_columns) : 0;
     }
 
     String getName() const override { return function_name; }
@@ -541,6 +566,20 @@ public:
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
+        /// Memory grows in whole pages and the limiter refuses a growth crossing the cap, so a
+        /// `webassembly_udf_max_memory` below one page leaves the guest unable to hold anything.
+        /// Checked here rather than at instantiation, which does not know the ABI and would also
+        /// reject a function that never touches the memory.
+        /// An empty block allocates nothing in the guest, so a memory it could never use does not
+        /// make the call impossible.
+        if (input_rows_count > 0 && module_memory_limit && *module_memory_limit < WebAssembly::WASM_PAGE_SIZE
+            && user_defined_function->requiresGuestLinearMemory())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "WebAssembly memory limit is {} bytes, which is less than a single {} byte page",
+                *module_memory_limit,
+                WebAssembly::WASM_PAGE_SIZE);
+
         auto compartment_entry = compartment_pool.acquire();
         auto * compartment_ptr = &(*compartment_entry);
         try
@@ -574,32 +613,191 @@ public:
     }
 
 private:
+    /// The size one call's serialized input is grown up to, empty when the input is not split by
+    /// its size. A batch is never taken below a single row: splitting only decides how many rows
+    /// share a call, so a row too large for the guest's memory fails inside its allocator, and no
+    /// budget can rescue it.
+    std::optional<size_t> getInputBudget(WebAssembly::WasmCompartment * compartment, size_t fixed_block_size) const
+    {
+        /// Read before the range is checked, because a value out of range is only rejected where
+        /// a batch size is actually decided, but a zero has to be honoured everywhere.
+        const Float64 memory_ratio = static_cast<Float64>(context->getSettingsRef()[Setting::webassembly_udf_input_split_memory_ratio].value);
+
+        /// A zero budget is the opt-out: with no part of the memory set aside for a call's input
+        /// there is nothing to size a batch against, so a zero `webassembly_udf_max_input_block_size`
+        /// keeps its original meaning of one call per pipeline block.
+        if (memory_ratio == 0.0)
+            return {};
+
+        /// An ABI that ships no serialized input block into guest memory has no size for the
+        /// memory to bound and nothing to measure - neither one passing its arguments as
+        /// WebAssembly values, whose compartment may well hold nothing at all because a module
+        /// declaring `memory 0 0` stays callable this way, nor `ASSEMBLYSCRIPT`, which builds one
+        /// object per row and would otherwise be bounded by a `serialization_format` it ignores.
+        if (!user_defined_function->serializesInputBlockToGuestMemory())
+            return {};
+
+        /// An explicit block size caps the rows per call instead of splitting by size.
+        if (fixed_block_size > 0)
+            return {};
+
+        /// The ratio only sizes a batch past this point, so an out-of-range value is only rejected
+        /// past this point: a query that pins the rows per call never uses it and must not be
+        /// failed by it.
+        if (!(memory_ratio > 0.0 && memory_ratio <= 1.0))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `webassembly_udf_input_split_memory_ratio` must be at least 0 and at most 1, got {}", memory_ratio);
+
+        /// Budget a batch against a fraction of the memory the module starts with, leaving the
+        /// rest for its own working set beside the input buffer. The declared initial size is
+        /// what the basis must be: the current size moves with `memory.grow` and never shrinks,
+        /// and compartments are pooled, so a basis taken from it would depend on which instance a
+        /// worker picked up and on what earlier blocks made it grow. Identical blocks would then
+        /// reach the guest in different batches, which it observes through the row count.
+        ///
+        /// The ceiling is no basis either, even though it is stable: a guest allocator usually
+        /// serves the input out of a heap far smaller than the maximum the memory may reach, so
+        /// budgeting against the ceiling proposes batches the guest cannot allocate.
+        ///
+        /// A module declared as `memory 0 N` starts with no pages, so the initial size alone
+        /// would be zero and would disable splitting; such a memory falls back to the ceiling,
+        /// which the guest can still grow into and which is equally the same for every instance.
+        const std::optional<size_t> initial_memory = compartment->getInitialLinearMemorySize();
+        const std::optional<size_t> budget_basis = initial_memory.value_or(0) > 0 ? initial_memory : compartment->getMaxLinearMemorySize();
+        if (!budget_basis)
+            return {};
+        return static_cast<size_t>(static_cast<Float64>(*budget_basis) * memory_ratio);
+    }
+
+    /// Measure the wire instead of predicting it: write each row through the real output format
+    /// into a `NullWriteBuffer` and read the byte count off it. Delimiters, keys, enum labels and
+    /// the configured tokens are all counted, because the serializer writes them.
+    ///
+    /// Reports the payload of a row alone: a block-framing format writes its framing on every
+    /// `write`, and the measurement writes one row at a time, so the framing would otherwise be
+    /// charged to each row instead of once to the call that carries them.
+    template <typename OnRow>
+    void measureRows(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, OnRow && on_row) const
+    {
+        /// A function without arguments is handed no input buffer at all, so there is nothing to
+        /// measure and nothing for the size of an input to decide.
+        if (arguments.empty())
+            return;
+
+        /// Cut each row out of the original arguments instead of materializing the whole block
+        /// first: a wide `ColumnConst` argument would otherwise be expanded to one copy per row
+        /// on the host, which is the very input the splitting below exists to rescue.
+        auto header = getArgumentsBlock(arguments, 0, 0);
+        NullWriteBuffer measure_buf;
+        auto measure_out = context->getOutputFormat(serialization_format, measure_buf, header.cloneEmpty());
+        const size_t framing_per_write = blockFramingBytes(header.columns());
+
+        size_t written_before = 0;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            measure_out->write(getArgumentsBlock(arguments, row, 1));
+
+            const size_t written_after = measure_buf.count();
+            on_row(row, written_after - written_before - framing_per_write);
+            written_before = written_after;
+        }
+    }
+
+    /// What one call's stream costs beyond its rows: the framing a block format writes on every
+    /// `write`, plus whatever the format wraps the rows in once - `JSONEachRow` under
+    /// `output_format_json_array_of_rows` brackets them, for instance. The wrapping is measured
+    /// rather than modelled, by finalizing an empty stream through the real format.
+    ///
+    /// The per-row measurement runs one long-lived stream, so it charges the opening bracket to
+    /// its first row and every later row a separator instead of that bracket. Counting the whole
+    /// wrapping again here therefore overstates a call by the few bytes of an opening bracket,
+    /// which only ever moves a batch boundary one row earlier. An input is never understated,
+    /// which is what the batching budget relies on.
+    size_t perCallOverheadBytes(const ColumnsWithTypeAndName & arguments) const
+    {
+        const size_t framing = blockFramingBytes(arguments.size());
+        if (arguments.empty())
+            return framing;
+
+        NullWriteBuffer overhead_buf;
+        auto overhead_out = context->getOutputFormat(serialization_format, overhead_buf, getArgumentsBlock(arguments, 0, 0));
+        overhead_out->finalize();
+        return framing + overhead_buf.count();
+    }
+
+    void appendBatchResult(MutableColumnPtr & result_column, MutableColumnPtr batch_column) const
+    {
+        if (!result_column->structureEquals(*batch_column))
+            throw Exception(
+                ErrorCodes::WASM_ERROR,
+                "Different column types in result blocks: {} and {}",
+                result_column->dumpStructure(),
+                batch_column->dumpStructure());
+
+        if (result_column->empty())
+            result_column = std::move(batch_column);
+        else
+            result_column->insertRangeFrom(*batch_column, 0, batch_column->size());
+    }
+
     ColumnPtr execute(WebAssembly::WasmCompartment * compartment, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
+        /// A module whose linear memory is bounded at zero bytes can hold no input at all, whatever
+        /// the batching is. This is reported before any measurement, because a function without
+        /// arguments has no row to attribute the failure to and would otherwise fail inside the
+        /// guest allocator.
+        if (input_rows_count > 0 && user_defined_function->requiresGuestLinearMemory()
+            && compartment->getMaxLinearMemorySize() == 0)
+            throw Exception(ErrorCodes::WASM_ERROR,
+                "The maximum linear memory of the module is 0 bytes, so it cannot hold the input of the function");
+
         MutableColumnPtr result_column = user_defined_function->getResultType()->createColumn();
-        size_t block_size = context->getSettingsRef()[Setting::webassembly_udf_max_input_block_size];
-        if (block_size == 0)
-            block_size = input_rows_count;
 
-        for (size_t start_idx = 0; start_idx < input_rows_count; start_idx += block_size)
+        const size_t fixed_block_size = context->getSettingsRef()[Setting::webassembly_udf_max_input_block_size];
+        const std::optional<size_t> budget = getInputBudget(compartment, fixed_block_size);
+
+        size_t batch_start = 0;
+        auto flush_batch = [&](size_t end_idx)
         {
-            size_t current_block_size = std::min(block_size, input_rows_count - start_idx);
-            auto current_input_block = getArgumentsBlock(arguments, start_idx, current_block_size);
+            if (end_idx <= batch_start)
+                return;
+            const size_t batch_size = end_idx - batch_start;
+            auto block = getArgumentsBlock(arguments, batch_start, batch_size);
             auto stop_token = interrupt_source.get_token();
-            auto current_column = user_defined_function->executeOnBlock(compartment, current_input_block, context, current_block_size, stop_token);
+            appendBatchResult(result_column, user_defined_function->executeOnBlock(compartment, block, context, batch_size, stop_token));
+            batch_start = end_idx;
+        };
 
-            if (!result_column->structureEquals(*current_column))
-                throw Exception(
-                    ErrorCodes::WASM_ERROR,
-                    "Different column types in result blocks: {} and {}",
-                    result_column->dumpStructure(),
-                    current_column->dumpStructure());
+        if (budget)
+        {
+            /// What a call costs beyond its rows, which no per-row measurement sees.
+            const size_t block_framing_bytes = perCallOverheadBytes(arguments);
 
-            if (result_column->empty())
-                result_column = std::move(current_column);
-            else
-                result_column->insertRangeFrom(*current_column, 0, current_column->size());
+            /// Flush before the next row would cross the budget. A stride derived from the
+            /// average row size cannot bound a skewed block: one huge row among many tiny ones
+            /// would still share a call with its neighbours.
+            ///
+            /// A row that is itself past the budget is still passed on its own: the split stops
+            /// at one row per call, and whether the guest can hold that row is for its allocator
+            /// to say.
+            size_t running_bytes = 0;
+            measureRows(arguments, input_rows_count, [&](size_t row, size_t row_bytes)
+            {
+                if (row > batch_start && running_bytes + row_bytes + block_framing_bytes > *budget)
+                {
+                    flush_batch(row);
+                    running_bytes = 0;
+                }
+                running_bytes += row_bytes;
+            });
         }
+        else if (fixed_block_size > 0)
+        {
+            for (size_t row = fixed_block_size; row < input_rows_count; row += fixed_block_size)
+                flush_batch(row);
+        }
+
+        flush_batch(input_rows_count);
         return result_column;
     }
 
@@ -609,7 +807,9 @@ private:
         Block arguments_block;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            ColumnPtr column = arguments[i].column->convertToFullColumnIfConst()->cut(start_idx, length);
+            /// Cut first, materialize second: `ColumnConst::cut` is O(1), while materializing
+            /// the whole block first would make the per-row measurement O(rows^2).
+            ColumnPtr column = arguments[i].column->cut(start_idx, length)->convertToFullColumnIfConst();
             String column_name = i < argument_names.size() && !argument_names[i].empty() ? argument_names[i] : arguments[i].name;
             /// Cast to the declared type so serialization uses the correct width.
             /// Without this, e.g. Int8 passed to an Int32 parameter would be serialized
@@ -627,6 +827,11 @@ private:
     String function_name;
     Strings argument_names;
     ContextPtr context;
+
+    String serialization_format;
+
+    /// Configured `webassembly_udf_max_memory` in bytes, empty when the host caps nothing.
+    std::optional<size_t> module_memory_limit;
 
     mutable StopSource interrupt_source;
     mutable WasmCompartmentPool compartment_pool;

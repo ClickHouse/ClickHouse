@@ -272,7 +272,9 @@ For each input block, ClickHouse:
 4. Reads the result buffer: it must contain exactly one column with exactly the same number of rows, serialized in the same format. For formats with named fields, such as `JSONEachRow`, the result column must be named `result`.
 5. Calls `clickhouse_destroy_buffer` on both the input buffer (if any) and the result buffer handles. The guest code must not free the result buffer itself, and must not return the input handle as the result — it would then be destroyed twice.
 
-The function is invoked once per input block: a large query is split into several blocks by the query pipeline (the maximum number of rows per call can additionally be capped with the `webassembly_udf_max_input_block_size` setting), so the row count passed on each call is the size of that block, not of the whole query.
+The function is invoked once per input block: a large query is split into several blocks by the query pipeline, so the row count passed on each call is the size of that block, not of the whole query.
+
+A pipeline block can still be too wide for the module's linear memory, so it is divided further. By default `webassembly_udf_input_split_memory_ratio` splits it dynamically: ClickHouse measures the serialized rows and starts a new call before the input would grow past that fraction of the guest's linear memory, so the row count varies with the data. A non-zero `webassembly_udf_max_input_block_size` replaces this with a fixed cap of that many rows per call, and a ratio of `0` passes the whole block in one call. A call is never taken below one row, so a row too large for the module's memory on its own still fails inside the guest.
 
 <Note>
 The exact bytes inside the buffers are defined by the chosen format, and the guest code must decode and encode them itself. In particular, for `String` values:
@@ -500,7 +502,9 @@ The following query-level settings control WebAssembly UDF execution:
 
 - `webassembly_udf_max_memory` — Memory limit in bytes per WebAssembly UDF instance.
 
-- `webassembly_udf_max_input_block_size` — Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 to process all rows at once.
+- `webassembly_udf_max_input_block_size` — Maximum number of rows passed to a WebAssembly UDF in a single block, for every ABI. Set to 0 to let `webassembly_udf_input_split_memory_ratio` size the calls of an `ABI BUFFERED_V1` function; other ABIs then receive the whole pipeline block.
+
+- `webassembly_udf_input_split_memory_ratio` — The fraction of the linear memory a module declares it starts with (of its memory ceiling, for a module that starts with no pages) that one call's input may occupy. Used to split the blocks of an `ABI BUFFERED_V1` function when `webassembly_udf_max_input_block_size` is 0; other ABIs carry no serialized input block and ignore it. Default: `0.5`, leaving the rest of the memory to the guest's own working set — a ratio close to 1 can still fail inside the guest's allocator. Set to 0, or set `compatibility` to a version before 26.9, to pass the whole pipeline block in one call. Must be at least 0 and at most 1.
 
 - `webassembly_udf_max_instances` — Maximum number of WebAssembly UDF instances that can run in parallel per function.
 
