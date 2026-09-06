@@ -93,6 +93,17 @@ private:
   */
 DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const DataTypePtr & right_type);
 
+/** Removes the `Nullable` wrappers of the elements of a Tuple, recursively. Returns other types unchanged.
+  *
+  * The target of a JOIN key conversion must not have Nullable elements: `accurateCastOrNull` reports an
+  * inexact conversion of a Nullable element by a NULL in place of it, while a non-Nullable element is
+  * reported by a NULL of the whole Tuple. The merge algorithms compare the nested Tuples, where a NULL
+  * element is equal to a NULL element, and they cannot do otherwise: their inputs are sorted by the key,
+  * and a key that is NULL only in a nested element is not ordered to the edge of a block the way a
+  * top-level NULL is.
+  */
+DataTypePtr removeNullableInsideTuple(const DataTypePtr & type);
+
 bool canBecomeNullable(const DataTypePtr & type);
 DataTypePtr convertTypeToNullable(const DataTypePtr & type);
 void convertColumnToNullable(ColumnWithTypeAndName & column);
