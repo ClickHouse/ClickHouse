@@ -1,0 +1,157 @@
+DROP TABLE IF EXISTS t_106533;
+
+CREATE TABLE t_106533 (c0 Int32) ENGINE = MergeTree() ORDER BY c0 PARTITION BY c0;
+INSERT INTO t_106533 VALUES (1), (-1);
+
+-- The metamorphic pair from issue #106533: a single HAVING with the predicate inside an OR
+-- (the predicate stays compound and is not pushed down) versus the same predicate split across
+-- the branches of an INTERSECT (each branch's HAVING-NOT pushes down to partition pruning).
+-- Before the fix, partition pruning rewrote `not(sqrt(c0) > 10)` into `sqrt(c0) <= 10`. With
+-- `c0 = -1` the partition value `sqrt(-1)` is NaN, which is not in `(-Inf, 10]`, so the
+-- partition was incorrectly pruned and the second query returned an empty result. The two
+-- queries must agree.
+
+SELECT c0 FROM t_106533 GROUP BY c0
+HAVING NOT ((SUM(c0) > 0) OR (sqrt(c0) > 10))
+SETTINGS aggregate_functions_null_for_empty = 1, enable_optimize_predicate_expression = 0;
+
+SELECT c0 FROM t_106533 GROUP BY c0
+HAVING NOT (SUM(c0) > 0)
+INTERSECT DISTINCT
+SELECT c0 FROM t_106533 GROUP BY c0
+HAVING NOT (sqrt(c0) > 10)
+SETTINGS aggregate_functions_null_for_empty = 1, enable_optimize_predicate_expression = 0;
+
+-- Direct probe: the partition for c0 = -1 must NOT be pruned by `not(sqrt(c0) > 10)`.
+-- IEEE-754 says `not(NaN > 10) = not(false) = true`, so both rows pass.
+
+SELECT count() FROM t_106533 WHERE NOT (sqrt(c0) > 10);
+
+DROP TABLE t_106533;
+
+-- Float column: a non-constant Float operand can be NaN, so the inversion must be skipped.
+-- Insert a NaN row alongside finite values; `not(f > 5)` must keep NaN, while `f <= 5` drops it.
+-- Granularity 2 isolates the NaN in the granule the folded range excludes. With one granule the
+-- row filter alone produces these counts, so neither arm could detect the rewrite being applied.
+
+DROP TABLE IF EXISTS t_106533_float;
+
+CREATE TABLE t_106533_float (f Float64) ENGINE = MergeTree() ORDER BY f
+SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_106533_float VALUES (1.0), (2.5), (10.0), (cast(0/0 AS Float64));
+
+SELECT count() FROM t_106533_float WHERE NOT (f > 5);
+SELECT count() FROM t_106533_float WHERE f <= 5;
+
+DROP TABLE t_106533_float;
+
+-- Decimal cannot be NaN, so the inverse rewrite must still apply. The count is the same either way,
+-- so the rendered condition is what pins it: a guard over-broad enough to block the fold for every
+-- numeric type would leave pruning correct and only grow the plans.
+-- Both count shortcuts have to stay off in the EXPLAIN. The filter covers the whole partition key, so
+-- either one answers the count from partition metadata, and a plan with no read step renders no
+-- Indexes section for the condition to appear in.
+
+DROP TABLE IF EXISTS t_106533_dec;
+
+CREATE TABLE t_106533_dec (d Decimal(10, 2)) ENGINE = MergeTree() ORDER BY d PARTITION BY d;
+INSERT INTO t_106533_dec VALUES (1.0), (10.0), (100.0);
+
+SELECT count() FROM t_106533_dec WHERE NOT (d > 5) SETTINGS optimize_use_projections = 0;
+SELECT countIf(explain LIKE '%Condition: (d in (-Inf%')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_dec WHERE NOT (d > 5)
+      SETTINGS optimize_use_projections = 0, optimize_trivial_count_query = 0);
+
+DROP TABLE t_106533_dec;
+
+-- Part-level minmax index (built from the partition-key columns, no explicit secondary index).
+-- It is aggregated with getExtremes too, so a part mixing finite floats with NaN stores a finite
+-- [min, max] that hides the NaN. use_skip_indexes = 0 also disables part-level minmax pruning, so it is
+-- the unindexed oracle.
+
+DROP TABLE IF EXISTS t_106533_partlevel;
+
+CREATE TABLE t_106533_partlevel (id UInt64, val Nullable(Float64))
+ENGINE = MergeTree PARTITION BY isNull(val) ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO t_106533_partlevel VALUES (1, 1.0), (2, nan), (3, 3.0);
+
+SELECT count() FROM t_106533_partlevel WHERE NOT ((val >= 0.) AND (val <= 3.));
+SELECT count() FROM t_106533_partlevel WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0;
+
+-- A positive range is decided by intersection alone, which a hidden NaN cannot make true, so the mixed
+-- part is pruned for val > 500 as an all-finite one would be.
+SELECT count() FROM t_106533_partlevel WHERE val > 500;
+SELECT count() FROM t_106533_partlevel WHERE val > 500 SETTINGS use_skip_indexes = 0;
+SELECT countIf(explain LIKE '%Parts: 0/1%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_partlevel WHERE val > 500);
+
+-- The part-level bound is also read as a semantic extremum: _minmax_count_projection answers
+-- min()/max() straight out of it without reading any data. The pair answers the same when the
+-- projection is not selected at all, so assert the optimized arm really goes through it.
+SELECT max(val), min(val) FROM t_106533_partlevel
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+SELECT max(val), min(val) FROM t_106533_partlevel SETTINGS optimize_use_implicit_projections = 0;
+SELECT countIf(explain LIKE '%_minmax_count_projection%')
+FROM (EXPLAIN SELECT max(val), min(val) FROM t_106533_partlevel
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1);
+
+DROP TABLE t_106533_partlevel;
+
+-- An all-finite part is still pruned for a range no value satisfies. A separate single-part table keeps
+-- this merge-stable (the Min-Max prunes the only part, so EXPLAIN shows Parts: 0/1).
+
+DROP TABLE IF EXISTS t_106533_partlevel_finite;
+
+CREATE TABLE t_106533_partlevel_finite (id UInt64, val Nullable(Float64))
+ENGINE = MergeTree PARTITION BY isNull(val) ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO t_106533_partlevel_finite VALUES (1, 100.0), (2, 150.0), (3, 200.0);
+
+SELECT count() FROM t_106533_partlevel_finite WHERE val > 500;
+SELECT count() FROM t_106533_partlevel_finite WHERE val > 500 SETTINGS use_skip_indexes = 0;
+SELECT countIf(explain LIKE '%Parts: 0/1%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_partlevel_finite WHERE val > 500);
+
+DROP TABLE t_106533_partlevel_finite;
+
+-- Sparse float column: the rule keys off the column's type, so a sparse representation is covered like
+-- any other. use_statistics_for_part_pruning = 0 isolates the part-level minmax from the auto-statistics
+-- pruner, which use_skip_indexes = 0 does not disable.
+
+DROP TABLE IF EXISTS t_106533_sparse;
+
+CREATE TABLE t_106533_sparse (id UInt64, val Float64)
+ENGINE = MergeTree PARTITION BY (val > 1e30) ORDER BY id
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_106533_sparse SELECT number, 0. FROM numbers(1000);
+INSERT INTO t_106533_sparse VALUES (2000, 3.0), (2001, nan);
+OPTIMIZE TABLE t_106533_sparse FINAL;
+
+SELECT count() FROM t_106533_sparse WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_statistics_for_part_pruning = 0;
+SELECT count() FROM t_106533_sparse WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_skip_indexes = 0, use_statistics_for_part_pruning = 0;
+SELECT countIf(explain LIKE '%Parts: 1/1%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_106533_sparse WHERE NOT ((val >= 0.) AND (val <= 3.)) SETTINGS use_statistics_for_part_pruning = 0);
+
+DROP TABLE t_106533_sparse;
+
+-- A column that is both a primary-key column and a partition-minmax column: mark-range analysis can be
+-- given the part's minmax bound as that column's universe for the key columns after the mark's own
+-- prefix. A bound that hides a NaN is not a universe, so such a column has to fall back to the whole
+-- one. Only use_partition_minmax_for_primary_key_pruning reaches this path, and only when the trailing
+-- key column is the NaN-hiding one, so `val` is second in ORDER BY and a granule holds two ids.
+
+DROP TABLE IF EXISTS t_106533_pk_minmax;
+
+CREATE TABLE t_106533_pk_minmax (id UInt64, val Float64)
+ENGINE = MergeTree PARTITION BY (val > 1e30) ORDER BY (id, val)
+SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_106533_pk_minmax VALUES (1, 1.0), (1, nan), (2, 2.0), (2, 3.0), (3, 1.5), (3, 2.5);
+
+-- The query condition cache is keyed on the condition, not on the settings, so the second arm would
+-- otherwise reuse the first arm's granule verdict and stop being an independent oracle.
+SELECT count() FROM t_106533_pk_minmax WHERE NOT ((val >= 0.) AND (val <= 3.))
+SETTINGS use_skip_indexes = 0, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0;
+SELECT count() FROM t_106533_pk_minmax WHERE NOT ((val >= 0.) AND (val <= 3.))
+SETTINGS use_skip_indexes = 0, use_statistics_for_part_pruning = 0, use_query_condition_cache = 0, use_partition_minmax_for_primary_key_pruning = 0;
+
+DROP TABLE t_106533_pk_minmax;
