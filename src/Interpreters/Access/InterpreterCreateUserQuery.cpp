@@ -5,6 +5,7 @@
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 
 #include <Access/AccessControl.h>
+#include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Access/ReplicatedAccessStorage.h>
 #include <Access/User.h>
@@ -245,8 +246,17 @@ BlockIO InterpreterCreateUserQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
 
+    /// `CREATE USER OR REPLACE` overwrites an existing user - its authentication methods, its granted
+    /// roles and its settings - so it is a drop followed by a create and requires the privileges of both.
+    /// With `CREATE USER` alone its holder could reset the password of any user, including a privileged
+    /// one, and then log in as that user. `DROP USER` is required whether or not the user currently
+    /// exists, mirroring `REPLACE TABLE`, so that the check does not reveal which users exist either.
+    AccessFlags required_access = query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER;
+    if (query.or_replace)
+        required_access |= AccessType::DROP_USER;
+
     for (const auto & name : query.names->toStrings())
-        access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER, name);
+        access->checkAccess(required_access, name);
 
     if (query.new_name && !query.alter)
         access->checkAccess(AccessType::CREATE_USER, *query.new_name);
@@ -296,6 +306,10 @@ BlockIO InterpreterCreateUserQuery::execute()
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
     {
+        /// Changing which roles activate by default for a user is role administration, which a session
+        /// limited by an authentication method's GRANTS clause must not do (the ALTER path is otherwise
+        /// authorized with plain ALTER_USER and does not go through the admin-option check below).
+        access->checkCanAdministerDefaultRoles();
         default_roles_from_query = RolesOrUsersSet{*query.default_roles, access_control};
         if (!query.alter && !default_roles_from_query->all)
         {
@@ -325,6 +339,14 @@ BlockIO InterpreterCreateUserQuery::execute()
         /// and rewrite the AST to an absolute, explicit-`UTC` `VALID UNTIL` literal before distributing it.
         auto cluster_query_ptr = updated_query_ptr->clone();
         auto & cluster_query = cluster_query_ptr->as<ASTCreateUserQuery &>();
+
+        /// Bind bare-table grants of the authentication methods (e.g. `GRANTS (SELECT ON t1)`) to the current
+        /// database of the initiator before shipping the query, so that every node persists the same limit.
+        /// `AddDefaultDatabaseVisitor` does not rewrite `ASTAuthenticationData::grants` (they are stored outside
+        /// the AST children), and the current database of a DDL worker is not the initiator's, so otherwise each
+        /// node would rebind bare-table grants to a different database.
+        for (auto & authentication_method_ast : cluster_query.authentication_methods)
+            authentication_method_ast->grants.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
         auto rewrite_deadline = [](IAST & owner, ASTPtr & valid_until, bool & is_interval, time_t deadline)
         {

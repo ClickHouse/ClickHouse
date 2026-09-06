@@ -89,9 +89,13 @@ Filter column: and(notEquals(__table1.y, 0_UInt8), minus(__table1.y, 4_UInt8))
 6	7
 7	8
 9	10
+> filter is split, one part is filtered before ARRAY JOIN
+ARRAY JOIN x
+Element filter column: and(notEquals(y, 2), notEquals(x, 0))
+Filter column: notEquals(y, 2)
 > (analyzer) filter is split, one part is filtered before ARRAY JOIN
-Filter column: and(notEquals(__table2.y, 2_UInt8), notEquals(__array_join_exp_1, 0_UInt8))
 ARRAY JOIN __array_join_exp_1
+Element filter column: and(notEquals(__table2.y, 2_UInt8), notEquals(__array_join_exp_1, 0_UInt8))
 Filter column: notEquals(__table2.y, 2_UInt8)
 1	3
 > (analyzer) filter is pushed down before Distinct
