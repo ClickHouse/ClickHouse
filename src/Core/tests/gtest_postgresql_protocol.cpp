@@ -509,6 +509,59 @@ TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
         EXPECT_NO_THROW(manager.attachBindQuery(std::move(msg)));
         EXPECT_EQ(manager.getStatmentFromBind(), "SELECT 1");
     }
+
+    /// Two format codes with no values: the predicate keys on the value count, so the codes
+    /// describe nothing and the message is accepted.
+    {
+        std::string payload;
+        payload.push_back('\0'); /// empty portal name
+        payload.push_back('\0'); /// empty statement name
+        putInt16(payload, 2); /// two parameter format codes
+        putInt16(payload, 1); /// binary
+        putInt16(payload, 1); /// binary
+        putInt16(payload, 0); /// zero parameter values
+        putInt16(payload, 0); /// no result format codes
+        std::string bytes = framePayload(std::move(payload));
+        bytes.push_back('X'); /// trailing marker: must remain unread after deserialize
+
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        auto msg = std::make_unique<Messaging::BindQuery>();
+        EXPECT_NO_THROW(msg->deserialize(in));
+        EXPECT_FALSE(msg->has_binary_format_param);
+        char marker = 0;
+        in.readStrict(&marker, 1);
+        EXPECT_EQ(marker, 'X');
+
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        ASTPreparedStatement statement;
+        statement.function_name = "";
+        statement.function_body = "SELECT 1";
+        manager.addStatement(&statement);
+        EXPECT_NO_THROW(manager.attachBindQuery(std::move(msg)));
+    }
+
+    /// A binary format code over a protocol NULL is still refused: the flag keys on the presence
+    /// of a value, not on whether that value carries bytes.
+    {
+        std::string payload;
+        payload.push_back('\0'); /// empty portal name
+        payload.push_back('\0'); /// empty statement name
+        putInt16(payload, 1); /// one parameter format code
+        putInt16(payload, 1); /// binary
+        putInt16(payload, 1); /// one parameter value
+        putInt32(payload, -1); /// NULL: no value bytes follow
+        putInt16(payload, 0); /// no result format codes
+        std::string bytes = framePayload(std::move(payload));
+
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        Messaging::BindQuery msg;
+        EXPECT_NO_THROW(msg.deserialize(in));
+        EXPECT_TRUE(msg.has_binary_format_param);
+        ASSERT_EQ(msg.parameters.size(), 1u);
+        EXPECT_FALSE(msg.parameters[0].has_value());
+
+        EXPECT_TRUE(deserializeThenAttach(bytes));
+    }
 }
 
 TEST(PostgreSQLProtocol, BindConsumesResultFormatCodesAndKeepsStreamAligned)
