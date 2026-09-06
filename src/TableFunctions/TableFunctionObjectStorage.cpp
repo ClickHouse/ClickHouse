@@ -1957,24 +1957,17 @@ value: 993
 
 ### Compaction {#iceberg-writes-compaction}
 
-ClickHouse supports compaction iceberg table. Currently, it can merge position delete files into data files while updating metadata. Previous snapshot IDs and timestamps remain unchanged, so the time-travel feature can still be used with the same values.
+Data compaction (merging position delete files into data files) is not implemented in the open-source build: `OPTIMIZE TABLE` on an Iceberg table reports `NOT_IMPLEMENTED` there. It does not publish the rewritten generation atomically, so which generation a reader resolves is undefined.
 
-How to use it:
+Manifest compaction consolidates a table's manifest files. It requires Iceberg format version 2: version 1 and version 3 tables are rejected.
 
 ```sql
 SET allow_experimental_iceberg_compaction = 1
 
-OPTIMIZE TABLE iceberg_writes_example;
-
-SELECT *
-FROM iceberg_writes_example
-FORMAT VERTICAL;
-
-Row 1:
-──────
-x: Ivanov
-y: 993
+OPTIMIZE TABLE iceberg_writes_example MANIFEST;
 ```
+
+To reclaim files, use [`expire_snapshots`](#iceberg-expire-snapshots). It requires format version 2, and rejects tables backed by a transactional catalog.
 
 ### Expire Snapshots {#iceberg-expire-snapshots}
 
@@ -2096,6 +2089,7 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 
 <Note>
 - Only Iceberg format version 2 tables are supported (v1 snapshots do not guarantee `manifest-list`, which is required to safely identify files for cleanup)
+- Tables backed by a transactional catalog are rejected with `NOT_IMPLEMENTED`
 - The current snapshot is always preserved, even if it is older than the specified timestamp
 - Requires the `allow_insert_into_iceberg` setting to be enabled
 - Requires the `allow_experimental_expire_snapshots` setting to be enabled
@@ -2178,6 +2172,7 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 
 <Note>
 - **Requires Iceberg format version 2 (or higher).** Version 1 tables are rejected because they lack `manifest-list` pointers in snapshots, which are needed to safely determine the reachable file set. Running the command on a v1 table returns a `BAD_ARGUMENTS` error.
+- The reachable set is resolved through `version-hint.text`, so a hint left behind by another writer can classify committed files as orphans.
 - Requires both `allow_insert_into_iceberg` and `allow_iceberg_remove_orphan_files` settings to be enabled
 - It is recommended to run `expire_snapshots` before `remove_orphan_files` so that files uniquely referenced by expired snapshots are cleaned up first
 - Use `dry_run = 1` to preview orphan files before deletion
