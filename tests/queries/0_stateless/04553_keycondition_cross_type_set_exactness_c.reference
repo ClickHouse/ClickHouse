@@ -1,0 +1,56 @@
+--- has(): reachable cross-type, governed by the same predicate ---
+has UInt64/Int32 result	1
+has UInt64/Int32 prunes	1
+has UInt64/Int64 -1 result	1
+has UInt64/UInt8 mixed result	1
+--- consumers of exactness ---
+numbers exact range	3
+Nullable key	1
+minmax on non-PK column	1
+transform_null_in=1	1
+transform_null_in=1 prunes	1
+--- results still correct for pairs that now lose pruning ---
+loses pruning UInt64/String 1	1	1
+loses pruning UInt64/Float64 1.5	1	1
+loses pruning UInt64/DateTime	1
+--- unchanged: identical-type float atoms (separate defect, not this fix) ---
+float signed zero subquery	0
+float signed zero literal	0
+float32 signed zero	0
+float NaN payloads	0
+float tuple key	0
+--- v21 H1: composite has() through the UNPACKING path ---
+H1 composite has unpacked	1
+H1 composite Field compare	0
+H1 scalar Field compare	1
+H1 cross-signedness has declines	0
+H1 same-type has result	1
+H1 same-type has prunes	1
+H1 width-only has result	1
+H1 width-only has prunes	1
+H1 composite IN result	1
+H1 composite IN prunes	1
+H1 scalar has result	1	1
+H1 scalar has prunes	1
+H1 scalar NOT has prunes	1
+H1 composite key expr scalar has prunes	1
+--- v18 B1: a custom name over an integer must not skip the conversion-target check ---
+B1 Bool element over toString key	1
+B1 toString(Bool) differs	1
+B1 no key transform	1
+B1 UInt8 twin prunes	1
+B1 UInt8 twin result	1
+B1 scalar notEquals unchanged	1
+--- v17 Z1/Z1b: a fast-path CAST that is injective on the key but collapses the element ---
+Z1 UInt32 key cast to UInt64	1
+Z1b UInt64 key cast to String	1
+--- v17 Z2: a non-injective key transform still over-prunes the POSITIVE direction ---
+Z2 non-injective key, positive IN	1
+Z2 negative direction control	1
+Z3 collapsing transform both directions	1	1
+--- v15: the set-transforming DAG carrier, and the fast-path spelling that is not one ---
+DAG carrier toString(k)	1
+DAG ::String twin prunes	1
+--- v14 has()/composite carriers: the same predicate fixes has() too ---
+G-has UInt64/Decimal64(1)	1
+V-has Int64/Decimal(10,2)	1

@@ -1,0 +1,48 @@
+--- under-approximating carriers (IN over-prunes a live partition) ---
+N IPv4/UInt32 16909060	1	1
+N no longer an empty set	1
+O String/FixedString(3) NUL-padded	1	1
+Q LowCardinality(String)/UInt8 1	1	1
+W UInt64/Date	1	1
+X Int64/Date	1	1
+AA UInt8/Bool true	1	1
+AC Date32/Date	1	1
+N6 Decimal(20,4)/Decimal(10,2) 1.00	1	1
+P8 UUID/UInt128 1	1	1
+P8 no longer an empty set	1
+--- arm 1: identical types stay exact (no conversion runs) ---
+arm1 String/String	1
+arm1 String/String prunes	1
+arm1 Date/Date	1
+arm1 Date/Date prunes	1
+arm1 DateTime/DateTime	1
+arm1 DateTime/DateTime prunes	1
+arm1 Decimal/Decimal 1.23	1
+arm1 Decimal/Decimal prunes	1
+arm1 DateTime64(3)/DateTime64(3)	1
+arm1 DateTime64/DateTime64 prunes	1
+arm1 UUID/UUID	1
+arm1 UUID/UUID prunes	1
+arm1 IPv4/IPv4	1
+arm1 IPv4/IPv4 prunes	1
+arm1 FixedString/FixedString	1
+arm1 FixedString/FixedString prunes	1
+arm1 Enum8/Enum8	1
+arm1 Enum8/Enum8 prunes	1
+arm1 Bool/Bool	1
+arm1 Bool/Bool prunes	1
+--- arm 1: nested LowCardinality composites must keep pruning ---
+arm1 Tuple(LC(UInt32),UInt32) result	1
+arm1 Tuple(LC(UInt32),UInt32) prunes	1
+arm1 Tuple(LC(String),UInt32) result	1
+arm1 Tuple(LC(String),UInt32) prunes	1
+--- arm 2: integer collapse regions stay exact (accurate cast is strict) ---
+collapse UInt8/UInt64 257	2
+collapse UInt8/Int64 -1	2
+collapse UInt8/UInt128 1 prunes	1
+collapse Int64/UInt64 max	2
+collapse Int64/Int32 -1	2
+collapse Int32/Int64 -2147483649	2
+collapse UInt256/UInt64 1	1
+collapse UInt256/UInt64 1 prunes	1
+collapse Int256/Int32 -1	2

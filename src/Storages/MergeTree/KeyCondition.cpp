@@ -32,13 +32,21 @@
 #include <Common/MortonUtils.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNothing.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsCommon.h>
 #include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -2141,16 +2149,25 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 /// - DAG `p -> CAST(p, 'UInt8')`:
 ///   input:  `['123']`  type `String`
 ///   output: `[123]`  type `UInt8`
+///
+/// `out_conversion_target`, when given, reports the type the pre-DAG conversion targeted, or null when
+/// no conversion ran. Which route runs depends on the data, so it cannot be derived from the DAG shape.
 static bool applyDeterministicDagToColumn(
     const ColumnPtr & in_column,
     const DataTypePtr & in_type,
     const String & input_name,
     const DeterministicKeyTransformDag & dag,
     ColumnPtr & out_column,
-    DataTypePtr & out_type)
+    DataTypePtr & out_type,
+    DataTypePtr * out_conversion_target = nullptr)
 {
     ColumnPtr input_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     DataTypePtr input_type = removeLowCardinality(in_type);
+
+    /// Compare by name, not by `equals`: `equals` ignores custom names, and a custom name changes the
+    /// DAG output (`toString(true)` is `'true'`, not `'1'`). The fast path below refines this.
+    if (out_conversion_target)
+        *out_conversion_target = input_type->getName() == dag.input_type->getName() ? nullptr : dag.input_type;
 
     /// This is the final check for the output column after DAG execution:
     /// - materialize output column (Const/LowCardinality)
@@ -2270,10 +2287,18 @@ static bool applyDeterministicDagToColumn(
             out_column = input_column;
             out_type = input_type;
 
-            if (!input_type->equals(*cast_result_type) && !cast_without_nulls(out_column, out_type, cast_result_type))
+            const bool conversion_runs = !input_type->equals(*cast_result_type);
+            if (conversion_runs && !cast_without_nulls(out_column, out_type, cast_result_type))
                 return false;
 
-            return finalize_output_column_and_type(out_column, out_type);
+            if (!finalize_output_column_and_type(out_column, out_type))
+                return false;
+
+            /// This path converts to the CAST's own result type, not to `dag.input_type`. Assign
+            /// unconditionally, otherwise the coarser value set above would survive.
+            if (out_conversion_target)
+                *out_conversion_target = conversion_runs ? cast_result_type : nullptr;
+            return true;
         };
 
         if (try_apply_direct_cast_fast_path())
@@ -2527,13 +2552,214 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
     }
 }
 
+/// `equals` ignores custom names, but a custom name installs its own cast wrapper, so `equals`-equal
+/// types are interchangeable only when they also agree on custom names. Recurses, because a difference
+/// can be nested: `Tuple(Bool)` vs `Tuple(UInt8)`.
+///
+/// Requires the two trees to already have the same shape and child order, which both callers guarantee.
+/// A plain `Nullable` node is skipped: a one-sided wrapper is admitted upstream and would otherwise make
+/// the signatures differ in length. A custom-named `Nullable` is still noted.
+static bool setIndexTypesAgreeOnCustomNames(const IDataType & left, const IDataType & right)
+{
+    auto custom_name_signature = [](const IDataType & type)
+    {
+        Strings out;
+        /// An empty entry for "no custom name" so a custom name can never alias a plain type's name.
+        auto note = [&](const IDataType & nested)
+        {
+            if (nested.hasCustomName())
+                out.push_back(nested.getName());
+            else if (!WhichDataType(nested).isNullable())
+                out.emplace_back();
+        };
+        note(type);
+        type.forEachChild(note);
+        return out;
+    };
+
+    return custom_name_signature(left) == custom_name_signature(right);
+}
+
+/// `forEachChild` order corresponds between two `equals`-equal types for every container except
+/// `DataTypeObject`, which iterates an `unordered_map`. Fail closed on it. Not a live path today
+/// (`KeyDescription` rejects `Object` in a key), so this only guards the assumption above.
+static bool setIndexTypeTreeHasStableChildOrder(const IDataType & type)
+{
+    if (isObject(type))
+        return false;
+
+    bool stable = true;
+    type.forEachChild([&](const IDataType & nested)
+    {
+        if (isObject(nested))
+            stable = false;
+    });
+    return stable;
+}
+
+/// Whether two types are indistinguishable to a `Field`-level equality, which is what a composite `has`
+/// uses: `FieldVisitorAccurateEquals` has no container arm, so a composite is compared as one `Field`,
+/// and `Field::TypeToEnum` collapses native integer widths per signedness while the 128/256-bit tags stay
+/// distinct. So the tolerance here is narrower than the scalar path's, which is governed by the
+/// preparation cast instead; the two must not be unified. `Decimal`/`DateTime64`/`Time64` are excluded
+/// because their preparation cast truncates rather than nulling.
+///
+/// `one_sided_nullable_is_enough` selects how strict the `Nullable` arm is; see that arm.
+static bool setIndexTypesHaveSameFieldRepresentation(
+    const IDataType & left, const IDataType & right, bool one_sided_nullable_is_enough)
+{
+    const WhichDataType left_which(left);
+    const WhichDataType right_which(right);
+
+    /// Tuple field names must agree even though the runtime ignores them, because the preparation cast
+    /// maps fields by name and so reorders or zeroes the values. That mapping only happens when both
+    /// sides have explicit names; otherwise the cast is positional, so compare names only then.
+    if (left_which.isTuple() && right_which.isTuple())
+    {
+        const auto & left_tuple = assert_cast<const DataTypeTuple &>(left);
+        const auto & right_tuple = assert_cast<const DataTypeTuple &>(right);
+
+        if (left_tuple.hasExplicitNames() && right_tuple.hasExplicitNames()
+            && left_tuple.getElementNames() != right_tuple.getElementNames())
+            return false;
+
+        const auto & left_elements = left_tuple.getElements();
+        const auto & right_elements = right_tuple.getElements();
+        if (left_elements.size() != right_elements.size())
+            return false;
+
+        for (size_t i = 0; i < left_elements.size(); ++i)
+            if (!setIndexTypesHaveSameFieldRepresentation(
+                    *left_elements[i], *right_elements[i], one_sided_nullable_is_enough))
+                return false;
+        return true;
+    }
+
+    /// Clear the one-sided tolerance below a container, so it reaches only through `Tuple` nodes: the
+    /// whole-composite cast aggregates nulls at the top level only, so under an `Array`/`Map` there is no
+    /// mechanism behind it. Declining also keeps such a pair away from that cast, which would reject a
+    /// nested `Array`/`Map` outright and fail the query.
+    if (left_which.isArray() && right_which.isArray())
+        return setIndexTypesHaveSameFieldRepresentation(
+            *assert_cast<const DataTypeArray &>(left).getNestedType(),
+            *assert_cast<const DataTypeArray &>(right).getNestedType(),
+            /*one_sided_nullable_is_enough=*/false);
+
+    /// A `Map` is an `Array(Tuple(key, value))` underneath, so its one nested type covers both halves.
+    if (left_which.isMap() && right_which.isMap())
+        return setIndexTypesHaveSameFieldRepresentation(
+            *assert_cast<const DataTypeMap &>(left).getNestedType(),
+            *assert_cast<const DataTypeMap &>(right).getNestedType(),
+            /*one_sided_nullable_is_enough=*/false);
+
+    /// A `Nullable` wrapper is invisible to a `Field`, so a wrapper on both sides can always be recursed
+    /// through. A one-sided wrapper depends on which conversion runs, hence the flag: the packed shape
+    /// casts the whole composite, so a NULL element nulls the tuple and its set row is filtered out; the
+    /// unpacked shape converts per scalar after stripping `Nullable`, so a source NULL becomes the type
+    /// default and enters the set as a real value the runtime never matches.
+    if (left_which.isNullable() && right_which.isNullable())
+        return setIndexTypesHaveSameFieldRepresentation(
+            *assert_cast<const DataTypeNullable &>(left).getNestedType(),
+            *assert_cast<const DataTypeNullable &>(right).getNestedType(),
+            one_sided_nullable_is_enough);
+    if (left_which.isNullable() || right_which.isNullable())
+    {
+        if (!one_sided_nullable_is_enough)
+            return false;
+        if (left_which.isNullable())
+            return setIndexTypesHaveSameFieldRepresentation(
+                *assert_cast<const DataTypeNullable &>(left).getNestedType(), right, one_sided_nullable_is_enough);
+        return setIndexTypesHaveSameFieldRepresentation(
+            left, *assert_cast<const DataTypeNullable &>(right).getNestedType(), one_sided_nullable_is_enough);
+    }
+
+    /// Native integer widths share one `Field` variant per signedness. Everything wider keeps its own.
+    if (left_which.isNativeUInt() && right_which.isNativeUInt())
+        return true;
+    if (left_which.isNativeInt() && right_which.isNativeInt())
+        return true;
+
+    return left.equals(right);
+}
+
+/// The types a `Dynamic` column holds, or nullopt when they cannot be established: the shared variant
+/// stores binary-serialized values of arbitrary types, so its presence leaves them unknown. An empty
+/// result means every row is NULL, which constrains no conversion.
+static std::optional<DataTypes> getDynamicVariantsInUse(const IColumn & column)
+{
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(&column))
+        return getDynamicVariantsInUse(column_const->getDataColumn());
+
+    const auto * column_dynamic = typeid_cast<const ColumnDynamic *>(&column);
+    if (!column_dynamic)
+        return {};
+
+    const auto * variant_type = typeid_cast<const DataTypeVariant *>(column_dynamic->getVariantInfo().variant_type.get());
+    if (!variant_type)
+        return {};
+
+    /// `DataTypeVariant` sorts its variants by name, so this list is indexed by global discriminator.
+    const auto & variants = variant_type->getVariants();
+    const auto & variant_column = column_dynamic->getVariantColumn();
+    const auto shared_discriminator = column_dynamic->getSharedVariantDiscriminator();
+
+    DataTypes types_in_use;
+    for (size_t row = 0; row < variant_column.size(); ++row)
+    {
+        const auto discriminator = variant_column.globalDiscriminatorAt(row);
+        /// A NULL row holds no value to convert; the null filtering downstream owns it.
+        if (discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+            continue;
+        if (discriminator == shared_discriminator || discriminator >= variants.size())
+            return {};
+        types_in_use.push_back(variants[discriminator]);
+    }
+    return types_in_use;
+}
+
+/// Index preparation casts the set values into the key type, while runtime membership casts the key into
+/// the set type. An atom is an exact image of the predicate only when both directions preserve equality,
+/// which holds in two cases: `equals`-equal types that also agree on custom names (no cast runs, or it
+/// runs between representations the type system declares interchangeable), and two plain integers (an
+/// accurate cast yields NULL instead of truncating). Everything else fails closed, floats included.
+///
+/// `composite_field_identity_is_enough` widens the composite case for `has`, which casts nothing at
+/// runtime; `IN` cannot use it, because a narrowing composite throws there instead of nulling.
+static bool setIndexConversionPreservesEquality(
+    const DataTypePtr & key_type, const DataTypePtr & set_element_type, bool composite_field_identity_is_enough)
+{
+    /// `LowCardinality` has to be stripped from nested types too, otherwise identical composites differ.
+    const auto key = removeNullable(recursiveRemoveLowCardinality(key_type));
+    const auto set = removeNullable(recursiveRemoveLowCardinality(set_element_type));
+
+    if (key->equals(*set) && setIndexTypeTreeHasStableChildOrder(*key) && setIndexTypesAgreeOnCustomNames(*key, *set))
+        return true;
+
+    /// The packed shape, where the whole composite is cast: see the helper's `Nullable` arm for why a
+    /// one-sided wrapper is safe here.
+    if (composite_field_identity_is_enough
+        && setIndexTypesHaveSameFieldRepresentation(*key, *set, /*one_sided_nullable_is_enough=*/true)
+        && setIndexTypeTreeHasStableChildOrder(*key) && setIndexTypesAgreeOnCustomNames(*key, *set))
+        return true;
+
+    const WhichDataType key_which(key);
+    const WhichDataType set_which(set);
+
+    const bool both_integers = (key_which.isInt() || key_which.isUInt()) && (set_which.isInt() || set_which.isUInt());
+
+    /// A custom name over an integer (`Bool`) installs a cast wrapper that clamps nonzero values to 1,
+    /// so the conversion is not injective.
+    return both_integers && !key->hasCustomName() && !set->hasCustomName();
+}
+
 static bool tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
     const DataTypes & data_types,
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    size_t args_count)
+    size_t args_count,
+    bool composite_field_identity_is_enough)
 {
     Columns new_columns;
     DataTypes new_types;
@@ -2586,6 +2812,7 @@ static bool tryPrepareSetColumnsForIndex(
         {
             ColumnPtr transformed_set_column;
             DataTypePtr transformed_set_type;
+            DataTypePtr pre_transform_conversion_target;
             const auto & set_transforming_dag = *set_transforming_dags[indexes_mapping_index];
             if (!applyDeterministicDagToColumn(
                     set_column,
@@ -2593,12 +2820,40 @@ static bool tryPrepareSetColumnsForIndex(
                     set_transforming_dag.input_name,
                     set_transforming_dag,
                     transformed_set_column,
-                    transformed_set_type))
+                    transformed_set_type,
+                    &pre_transform_conversion_target))
+                return false;
+
+            /// The transform's own conversion can collapse two values into one without producing a NULL,
+            /// and the post-transform pair below cannot see it: by then both types are what the key
+            /// expression produced. So check the original element against what that conversion targeted.
+            if (pre_transform_conversion_target
+                && !setIndexConversionPreservesEquality(
+                    pre_transform_conversion_target, set_element_type, composite_field_identity_is_enough))
                 return false;
 
             set_column = transformed_set_column;
             set_element_type = transformed_set_type;
         }
+
+        /// `Dynamic` is judged by the types it holds, not by itself: it declares nothing about its values,
+        /// and each stored type converts on its own terms. All of them must preserve equality.
+        ///
+        /// Only for `has`, which compares `Field`s. `IN` casts the key into the declared `Dynamic`, which
+        /// keeps the key's own concrete type, so a stored type that merely converts losslessly still
+        /// compares unequal there: `Dynamic(UInt8(1))` does not equal `Dynamic(UInt64(1))`.
+        if (composite_field_identity_is_enough
+            && isDynamic(removeNullable(recursiveRemoveLowCardinality(set_element_type))))
+        {
+            const auto variants_in_use = getDynamicVariantsInUse(*set_column);
+            if (!variants_in_use)
+                return false;
+            for (const auto & variant : *variants_in_use)
+                if (!setIndexConversionPreservesEquality(key_column_type, variant, composite_field_identity_is_enough))
+                    return false;
+        }
+        else if (!setIndexConversionPreservesEquality(key_column_type, set_element_type, composite_field_identity_is_enough))
+            return false;
 
         if (canBeSafelyCast(set_element_type, key_column_type))
         {
@@ -2757,8 +3012,10 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         }
     }
 
+    /// `IN` casts the key into the set type at runtime, so a narrowing composite throws instead of nulling.
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count,
+            /*composite_field_identity_is_enough=*/false))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
@@ -2787,6 +3044,134 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         out.relaxed = true;
 
     return true;
+}
+
+/// Whether `column` is known to hold no NULL anywhere inside it. Returns false when that cannot be
+/// established, so callers fail closed on an unrecognized layout. The unpacked composite shape needs
+/// this because its hazard is an actual source NULL, not the `Nullable` type.
+static bool setIndexConstantHasNoNulls(const IColumn & column)
+{
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(&column))
+        return setIndexConstantHasNoNulls(column_const->getDataColumn());
+
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(&column))
+    {
+        const NullMap & null_map = column_nullable->getNullMapData();
+        if (memoryIsZero(null_map.data(), 0, null_map.size()))
+            return setIndexConstantHasNoNulls(column_nullable->getNestedColumn());
+        return false;
+    }
+
+    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(&column))
+    {
+        for (size_t i = 0; i < column_tuple->tupleSize(); ++i)
+            if (!setIndexConstantHasNoNulls(column_tuple->getColumn(i)))
+                return false;
+        return true;
+    }
+
+    if (const auto * column_array = typeid_cast<const ColumnArray *>(&column))
+        return setIndexConstantHasNoNulls(column_array->getData());
+
+    if (const auto * column_map = typeid_cast<const ColumnMap *>(&column))
+        return setIndexConstantHasNoNulls(column_map->getNestedColumn());
+
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
+    {
+        /// The dictionary can hold an unreferenced NULL slot, so inspect the materialized values.
+        if (!column_low_cardinality->nestedIsNullable())
+            return true;
+        return setIndexConstantHasNoNulls(*column_low_cardinality->convertToFullColumn());
+    }
+
+    /// `Nothing` is the all-NULL case, so fail closed even though it reports `canBeInsideNullable`.
+    if (typeid_cast<const ColumnNothing *>(&column))
+        return false;
+
+    /// An ordinary scalar leaf holds no NULL of its own; it would need a wrapping `ColumnNullable`,
+    /// consumed above. `Variant`/`Dynamic` carry a NULL discriminator inline and fail closed here.
+    /// Not `isNullable()`: it forwards through wrappers, which would invert this contract.
+    return column.canBeInsideNullable();
+}
+
+/// A composite `has` element is compared as one `Field`, so the per-column checks in
+/// `tryPrepareSetColumnsForIndex`, which see the unpacked scalars, are not enough: the left expression
+/// must also have the same type, in the sense `setIndexTypesHaveSameFieldRepresentation` decides.
+/// `equals` is accepted too, since what it treats as interchangeable (a time zone, a decimal's
+/// precision) is not represented in a `Field`. A scalar element is left to the per-column checks.
+///
+/// Declines when the types differ, when the left type cannot be reconstructed, or when the key
+/// expression transforms, because then `data_types` holds the transformed type rather than the left one.
+static bool compositeHasArgumentsHaveSameType(
+    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
+    const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
+    const DataTypes & data_types,
+    size_t key_args_count,
+    const DataTypePtr & array_element_type,
+    const IColumn & array_elements)
+{
+    auto normalize = [](const DataTypePtr & type) { return removeNullable(recursiveRemoveLowCardinality(type)); };
+
+    const auto element_type = normalize(array_element_type);
+    const WhichDataType element_which(element_type);
+    if (!element_which.isTuple() && !element_which.isArray() && !element_which.isMap())
+        return true;
+
+    for (const auto & dag : set_transforming_dags)
+        if (dag.has_value())
+            return false;
+
+    DataTypePtr left_type;
+    /// `element_type` itself, except on the unpacked branch, where the outer tuple attributes of the two
+    /// sides are not comparable; see there.
+    DataTypePtr right_type = element_type;
+    /// Set per branch, because the two shapes convert differently; see the `Nullable` arm of
+    /// `setIndexTypesHaveSameFieldRepresentation`.
+    bool one_sided_nullable_is_enough = false;
+    if (key_args_count == 1)
+    {
+        /// A packed tuple/array column: `data_types` holds that one key column's type directly.
+        one_sided_nullable_is_enough = true;
+        if (set_transforming_dags.size() != 1)
+            return false;
+        left_type = normalize(data_types.front());
+    }
+    else
+    {
+        /// An unpacked tuple expression. Reconstruct its type from the per-position mapping; a missing
+        /// or twice-claimed position means the type is unknown, so fail closed.
+        DataTypes elements(key_args_count);
+        for (size_t i = 0; i < indexes_mapping.size(); ++i)
+        {
+            const size_t tuple_index = indexes_mapping[i].tuple_index;
+            if (tuple_index >= key_args_count || elements[tuple_index])
+                return false;
+            elements[tuple_index] = normalize(data_types[i]);
+        }
+        for (const auto & element : elements)
+            if (!element)
+                return false;
+        left_type = std::make_shared<DataTypeTuple>(elements);
+
+        /// No outer tuple cast runs on this path: the element is unpacked positionally, and runtime `has`
+        /// compares `Field`s, which carry no names. So rebuild the element's outer layer with the same
+        /// unnamed ctor, otherwise the synthesized placeholder names and absent custom name would decline
+        /// every custom-named element. Nested elements stay untouched, where a name difference does
+        /// matter: there the per-scalar cast is name-mapped and zeroes the value. Any other element shape
+        /// cannot match a synthesized tuple anyway, so it declines against `element_type` unchanged.
+        if (const auto * element_tuple = typeid_cast<const DataTypeTuple *>(element_type.get());
+            element_tuple && element_tuple->getElements().size() == key_args_count)
+            right_type = std::make_shared<DataTypeTuple>(element_tuple->getElements());
+
+        /// A NULL-free constant has no source-NULL row, so the per-scalar conversion is value-preserving
+        /// and a one-sided wrapper is safe after all. The inspection fails closed.
+        one_sided_nullable_is_enough = setIndexConstantHasNoNulls(array_elements);
+    }
+
+    return (left_type->equals(*right_type)
+            || setIndexTypesHaveSameFieldRepresentation(*left_type, *right_type, one_sided_nullable_is_enough))
+        && setIndexTypeTreeHasStableChildOrder(*left_type)
+        && setIndexTypesAgreeOnCustomNames(*left_type, *right_type);
 }
 
 bool KeyCondition::tryPrepareSetIndexForHas(
@@ -2860,8 +3245,15 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     Columns set_columns = {array_elements};
     DataTypes set_types = {array_nested_type};
 
+    if (!compositeHasArgumentsHaveSameType(
+            indexes_mapping, set_transforming_dags, data_types, key_args_count, array_nested_type, *array_elements))
+        return false;
+
+    /// `has` casts nothing at runtime, so a composite pair only has to be indistinguishable to the
+    /// `Field` comparison; no cast exists to throw.
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count,
+            /*composite_field_identity_is_enough=*/true))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));

@@ -1,0 +1,94 @@
+--- 12x12 integer cross product: every pair stays exact ---
+arm2 Int16/UInt8	1	1
+arm2 Int16/UInt16	1	1
+arm2 Int16/UInt32	1	1
+arm2 Int16/UInt64	1	1
+arm2 Int16/UInt128	1	1
+arm2 Int16/UInt256	1	1
+arm2 Int16/Int8	1	1
+arm2 Int16/Int16	1	1
+arm2 Int16/Int32	1	1
+arm2 Int16/Int64	1	1
+arm2 Int16/Int128	1	1
+arm2 Int16/Int256	1	1
+arm2 Int32/UInt8	1	1
+arm2 Int32/UInt16	1	1
+arm2 Int32/UInt32	1	1
+arm2 Int32/UInt64	1	1
+arm2 Int32/UInt128	1	1
+arm2 Int32/UInt256	1	1
+arm2 Int32/Int8	1	1
+arm2 Int32/Int16	1	1
+arm2 Int32/Int32	1	1
+arm2 Int32/Int64	1	1
+arm2 Int32/Int128	1	1
+arm2 Int32/Int256	1	1
+arm2 Int64/UInt8	1	1
+arm2 Int64/UInt16	1	1
+arm2 Int64/UInt32	1	1
+arm2 Int64/UInt64	1	1
+arm2 Int64/UInt128	1	1
+arm2 Int64/UInt256	1	1
+arm2 Int64/Int8	1	1
+arm2 Int64/Int16	1	1
+arm2 Int64/Int32	1	1
+arm2 Int64/Int64	1	1
+arm2 Int64/Int128	1	1
+arm2 Int64/Int256	1	1
+arm2 Int128/UInt8	1	1
+arm2 Int128/UInt16	1	1
+arm2 Int128/UInt32	1	1
+arm2 Int128/UInt64	1	1
+arm2 Int128/UInt128	1	1
+arm2 Int128/UInt256	1	1
+arm2 Int128/Int8	1	1
+arm2 Int128/Int16	1	1
+arm2 Int128/Int32	1	1
+arm2 Int128/Int64	1	1
+arm2 Int128/Int128	1	1
+arm2 Int128/Int256	1	1
+arm2 Int256/UInt8	1	1
+arm2 Int256/UInt16	1	1
+arm2 Int256/UInt32	1	1
+arm2 Int256/UInt64	1	1
+arm2 Int256/UInt128	1	1
+arm2 Int256/UInt256	1	1
+arm2 Int256/Int8	1	1
+arm2 Int256/Int16	1	1
+arm2 Int256/Int32	1	1
+arm2 Int256/Int64	1	1
+arm2 Int256/Int128	1	1
+arm2 Int256/Int256	1	1
+--- attribute axis: parameters that `equals` treats as interchangeable stay exact ---
+attr DateTime(UTC)/DateTime prunes	1
+attr DateTime(UTC)/DateTime	1	1
+attr DateTime(UTC)/DateTime(Asia/Istanbul) prunes	1
+attr DateTime(UTC)/DateTime(Asia/Istanbul)	1	1
+attr DateTime64(3,UTC)/DateTime64(3) prunes	1
+attr DateTime64(3,UTC)/DateTime64(3)	1	1
+attr DateTime64(3,UTC)/DateTime64(6) declines	1
+attr Decimal(10,2)/Decimal(18,2) prunes	1
+attr Decimal(10,2)/Decimal(18,2)	1	1
+attr Decimal(10,2)/Decimal(20,2) declines	1
+attr Time64(3)/Time64(3) prunes	1
+attr Time64(3)/Time64(6) declines	1
+attr Bool/UInt8 declines	1
+attr UInt8/Bool declines	1
+attr UInt8/Bool	1	1
+attr Tuple(Bool,UInt8)/Tuple(UInt8,UInt8) declines	1
+attr Tuple(Bool,UInt8)/Tuple(UInt8,UInt8)	1
+dyn UInt64/Dynamic(UInt8) IN declines	1
+dyn UInt64/Dynamic(UInt8) IN	1	1
+dyn UInt64/Dynamic(UInt8) has prunes	1
+dyn UInt64/Dynamic(UInt8) notHas prunes	1
+dyn UInt64/Dynamic(UInt8) has	1	1
+dyn String/Dynamic(Float64) has declines	1
+dyn String/Dynamic(Float64) has reads all	1
+dyn String/Dynamic(Float64) has	1	1
+dyn String/Dynamic(String) has prunes	1
+dyn String/Dynamic(String) has	1	1
+dyn String/Dynamic(String,Float64) has declines	1
+dyn String/Dynamic(String,Float64) has	1
+var String/Variant(String,UInt8) IN declines	1
+var String/Variant(String,UInt8) IN	1	1
+var String/String IN prunes	1

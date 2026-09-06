@@ -1,0 +1,55 @@
+--- composite has() over TWO key columns: the one shape where the composite rule decides ---
+S2C signedness has declines	0
+S2C signedness has	1
+--- composite has() over a TRANSFORMING key expression: the left type is not reconstructible ---
+CTN transforming key NOT has	1
+CTN transforming key NOT has declines	0
+CTP plain key NOT has keeps pruning	1
+CTP plain key NOT has	1
+--- composite has(): the attribute axis, pinned per direction ---
+attr Tuple(DateTime(UTC))/Tuple(DateTime) has keeps pruning	1
+attr Tuple(DateTime(UTC))/Tuple(DateTime) has	1
+attr Tuple(DateTime(UTC))/Tuple(DateTime) NOT has keeps pruning	1
+attr Tuple(DateTime(UTC))/Tuple(DateTime) NOT has	1
+attr Tuple(Bool)/Tuple(UInt8) has declines	0
+attr Tuple(Bool)/Tuple(UInt8) has	1
+width Tuple(UInt64,UInt64)/Tuple(UInt128,UInt128) has declines	0
+width Tuple(UInt64,UInt64)/Tuple(UInt128,UInt128) has	1
+--- named tuples: the cast maps fields by name, so the pair must decline ---
+named tuple result	1
+named tuple declines	0
+--- the same names over an UNPACKED tuple expression: only the OUTER layer stops discriminating ---
+unpacked named tuple has keeps pruning	1
+unpacked named tuple has	1
+unpacked named tuple NOT has keeps pruning	1
+unpacked named tuple NOT has	1
+unpacked Point has declines on float	1
+unpacked Point has	1
+unpacked nested name differs declines	0
+unpacked nested name differs	1
+unpacked nested name matches keeps pruning	1
+unpacked nested name matches	1
+packed named key differing outer name declines	0
+packed named key differing outer name	1
+packed named key matching outer name keeps atom	1
+packed named key matching outer name	1
+--- composite IN over a narrowing element: pruning is withdrawn, matching the oracle ---
+D1 widening direction	1
+D1 scalar narrowing at default settings	1
+--- integer composites: pruning is withdrawn for IN, results stay correct ---
+grid P UInt8/UInt8	1	1
+grid P UInt8/UInt16	1	1
+grid P UInt8/UInt32	1	1
+grid P UInt8/UInt64	1	1
+grid P UInt8/Int8	1	1
+grid P UInt8/Int16	1	1
+grid P UInt8/Int32	1	1
+grid P UInt8/Int64	1	1
+grid P UInt16/UInt8	1	1
+grid P UInt16/UInt16	1	1
+grid P UInt16/UInt32	1	1
+grid P UInt16/UInt64	1	1
+grid P UInt16/Int8	1	1
+grid P UInt16/Int16	1	1
+grid P UInt16/Int32	1	1
+grid P UInt16/Int64	1	1

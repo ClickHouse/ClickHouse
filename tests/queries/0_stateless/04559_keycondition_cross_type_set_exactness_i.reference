@@ -1,0 +1,74 @@
+--- integer composites: pruning is withdrawn for IN, results stay correct ---
+grid N UInt32/UInt8	1	1
+grid N UInt32/UInt16	1	1
+grid N UInt32/UInt32	1	1
+grid N UInt32/UInt64	1	1
+grid N UInt32/Int8	1	1
+grid N UInt32/Int16	1	1
+grid N UInt32/Int32	1	1
+grid N UInt32/Int64	1	1
+grid N UInt64/UInt8	1	1
+grid N UInt64/UInt16	1	1
+grid N UInt64/UInt32	1	1
+grid N UInt64/UInt64	1	1
+grid N UInt64/Int8	1	1
+grid N UInt64/Int16	1	1
+grid N UInt64/Int32	1	1
+grid N UInt64/Int64	1	1
+grid N Int8/UInt8	1	1
+grid N Int8/UInt16	1	1
+grid N Int8/UInt32	1	1
+grid N Int8/UInt64	1	1
+grid N Int8/Int8	1	1
+grid N Int8/Int16	1	1
+grid N Int8/Int32	1	1
+grid N Int8/Int64	1	1
+grid N Int16/UInt8	1	1
+grid N Int16/UInt16	1	1
+grid N Int16/UInt32	1	1
+grid N Int16/UInt64	1	1
+grid N Int16/Int8	1	1
+grid N Int16/Int16	1	1
+grid N Int16/Int32	1	1
+grid N Int16/Int64	1	1
+grid N Int32/UInt8	1	1
+grid N Int32/UInt16	1	1
+grid N Int32/UInt32	1	1
+grid N Int32/UInt64	1	1
+grid N Int32/Int8	1	1
+grid N Int32/Int16	1	1
+grid N Int32/Int32	1	1
+grid N Int32/Int64	1	1
+grid N Int64/UInt8	1	1
+grid N Int64/UInt16	1	1
+grid N Int64/UInt32	1	1
+grid N Int64/UInt64	1	1
+grid N Int64/Int8	1	1
+grid N Int64/Int16	1	1
+grid N Int64/Int32	1	1
+grid N Int64/Int64	1	1
+--- 12x12 integer cross product: every pair stays exact ---
+arm2 UInt8/UInt8	1	1
+arm2 UInt8/UInt16	1	1
+arm2 UInt8/UInt32	1	1
+arm2 UInt8/UInt64	1	1
+arm2 UInt8/UInt128	1	1
+arm2 UInt8/UInt256	1	1
+arm2 UInt8/Int8	1	1
+arm2 UInt8/Int16	1	1
+arm2 UInt8/Int32	1	1
+arm2 UInt8/Int64	1	1
+arm2 UInt8/Int128	1	1
+arm2 UInt8/Int256	1	1
+arm2 UInt16/UInt8	1	1
+arm2 UInt16/UInt16	1	1
+arm2 UInt16/UInt32	1	1
+arm2 UInt16/UInt64	1	1
+arm2 UInt16/UInt128	1	1
+arm2 UInt16/UInt256	1	1
+arm2 UInt16/Int8	1	1
+arm2 UInt16/Int16	1	1
+arm2 UInt16/Int32	1	1
+arm2 UInt16/Int64	1	1
+arm2 UInt16/Int128	1	1
+arm2 UInt16/Int256	1	1

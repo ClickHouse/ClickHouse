@@ -1,0 +1,27 @@
+--- attribute axis: parameters that `equals` treats as interchangeable stay exact ---
+attr Tuple(UInt8,UInt8)/Tuple(Bool,UInt8) declines	1
+attr Tuple(UInt8,UInt8)/Tuple(Bool,UInt8)	1
+--- an actual NULL in a nullable set element (the cross-type cast rewrites it to the nested default) ---
+null-elem NOT IN stays exact	1
+null-elem NOT IN	1
+null-elem identity keeps pruning	1
+null-elem identity	1	1
+--- the lossy conversion path, not the element type, is what forfeits exactness ---
+lossy mixed array NOT has declines	0
+lossy mixed array NOT has	1	1
+lossy cross-type array NOT has declines	0
+lossy cross-type array NOT has	1	1
+safe identity actual NULL keeps pruning	1
+safe identity actual NULL IN keeps pruning	1
+safe identity actual NULL	1	1
+safe cross-type NOT IN keeps pruning	1
+safe cross-type NOT IN	1
+safe cross-type array NOT has keeps pruning	1
+safe cross-type array NOT has	1
+safe nullable tuple keeps pruning	1
+safe nullable tuple	1
+--- a nested container under the key type: the target must be rejected, not thrown on ---
+nested Array narrowing	1	1	1
+nested Array same width keeps atom	1
+nested Array same width	1
+nested Map narrowing	1	1

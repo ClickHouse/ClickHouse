@@ -1,0 +1,26 @@
+--- superset carriers (NOT IN over-prunes a live partition) ---
+A UInt64/String 01	1	1
+A Nullable element	1
+E Decimal(10,2)/String 1.001	1	1
+G UInt64/Decimal64(1) 1.5	1	1
+K Date/String 2024-1-1	1	1
+K Nullable element	1
+L UUID/uppercase String	1	1
+M Enum8/String 1	1	1
+P (UInt64,UInt64)/(String,String)	1	1
+R Decimal(10,2)/Decimal(20,4) 1.0010	1	1
+S Decimal(10,2)/Decimal(10,4) 1.0010	1	1
+T DateTime64(3)/DateTime64(6)	1	1
+U DateTime/DateTime64(3)	1	1
+V Int64/Decimal(10,2) 1.50	1	1
+Y UInt8/Enum16 a=257	1	1
+Z DateTime64(2)/Decimal(10,2) 1.50	1	1
+AB Date/Date32 1969-12-31	1	1
+--- under-approximating carriers (IN over-prunes a live partition) ---
+D String/UInt8 1	1	1
+D Nullable element	1
+F DateTime64(6)/DateTime64(3)	1	1
+F Nullable element	1
+H Decimal(20,0)/Float32 16777216	1	1
+I Decimal(20,0)/Float64 9007199254740992	1	1
+J DateTime/Date	1	1
