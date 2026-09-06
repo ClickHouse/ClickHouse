@@ -23,7 +23,6 @@
 #include <Common/logger_useful.h>
 
 #if USE_ROCKSDB
-#include <rocksdb/sst_file_reader.h>
 #include <rocksdb/status.h>
 #include <rocksdb/table_properties.h>
 #endif
@@ -43,7 +42,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
-    extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNIQUE_KEY_DENSE_INDEX_UNREADABLE;
 }
@@ -61,37 +59,32 @@ namespace Setting
 namespace
 {
 
-/// Half-written staging file left by an interrupted `SSTIndexWriter::finalizeToStorage`
-/// (mirrors its private `FILE_NAME + ".tmp"` staging name).
-const std::string SST_STAGING_FILE_NAME = std::string(SSTIndexWriter::FILE_NAME) + ".tmp";
-
 #if USE_ROCKSDB
 /// Outcome of validating an existing `unique_key_index.sst`.
 enum class DenseIndexSSTStatus
 {
     Valid,      /// opens, checksums verify, entry count matches the part → trust it
-    Corrupt,    /// genuine damage (corruption status or wrong entry count) → remove + rebuild
+    Corrupt,    /// damage that survives the size check (bad block / stale index) → remove + rebuild
     Transient,  /// could not determine (I/O error / exception) → leave file, fail the load
 };
 
-/// Validate an existing `unique_key_index.sst`. Presence is not trust: the SST
-/// carries no `checksums.txt` entry. `num_entries == rows_count` holds because
-/// `SSTIndexWriter` does one `Put` per row and rejects Nullable UK columns, so an
-/// entry-count mismatch flags a block-boundary truncation that still checksum-
-/// verifies. `reason` is filled for the log/exception message.
-DenseIndexSSTStatus classifyDenseIndexSST(const String & sst_path, UInt64 expected_rows, String & reason)
+/// Validate an existing `unique_key_index.sst`. Presence is not trust.
+/// A missing or wrongly-sized file never reaches here: the SST is recorded in
+/// `checksums.txt`, so `checkConsistencyBase` rejects the part first. What is
+/// left for this function is damage that keeps the size intact - flipped bytes
+/// inside a block, or a stale index that still checksum-verifies.
+/// `num_entries == rows_count` holds because `SSTIndexWriter` does one `Put` per
+/// row and rejects Nullable UK columns, so an entry-count mismatch flags exactly
+/// that stale case.
+/// `reason` is filled for the log/exception message.
+DenseIndexSSTStatus classifyDenseIndexSST(
+    const DataPartStoragePtr & storage, UInt64 expected_rows, const ReadSettings & read_settings, String & reason)
 {
     try
     {
-        auto opened = tryOpenSSTReaderFromPath(sst_path);
-        if (!opened.status.ok())
-        {
-            reason = "open failed: " + opened.status.ToString();
-            return opened.status.IsCorruption() ? DenseIndexSSTStatus::Corrupt : DenseIndexSSTStatus::Transient;
-        }
-        auto & reader = *opened.reader;
+        auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, read_settings);
 
-        auto verify_status = reader.VerifyChecksum();
+        auto verify_status = reader->verifyChecksum();
         if (!verify_status.ok())
         {
             reason = "checksum verify failed: " + verify_status.ToString();
@@ -100,7 +93,7 @@ DenseIndexSSTStatus classifyDenseIndexSST(const String & sst_path, UInt64 expect
 
         /// Table properties are read during `Open`; after a successful open +
         /// verify they are populated without an extra read.
-        auto props = reader.GetTableProperties();
+        auto props = reader->getProperties();
         if (!props)
         {
             reason = "table properties unavailable after open";
@@ -114,6 +107,11 @@ DenseIndexSSTStatus classifyDenseIndexSST(const String & sst_path, UInt64 expect
         }
         return DenseIndexSSTStatus::Valid;
     }
+    catch (const Exception & e)
+    {
+        reason = "exception: " + e.message();
+        return e.code() == ErrorCodes::CORRUPTED_DATA ? DenseIndexSSTStatus::Corrupt : DenseIndexSSTStatus::Transient;
+    }
     catch (...)
     {
         reason = "exception: " + getCurrentExceptionMessage(/*with_stacktrace=*/false);
@@ -125,85 +123,9 @@ DenseIndexSSTStatus classifyDenseIndexSST(const String & sst_path, UInt64 expect
 }
 
 
-void UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
-    IDataPartStorage & storage,
-    const StorageMetadataPtr & metadata_snapshot,
-    const Block & block,
-    const IColumn::Permutation * permutation,
-    UInt64 max_encoded_size,
-    ContextPtr context)
-{
-    /// Caller (`MergeTreeDataWriter`) ensures the table has a UNIQUE KEY.
-    /// `SSTIndexWriter` accounts for `UniqueKeySSTWriteMicroseconds` itself, and
-    /// throws SUPPORT_IS_DISABLED without RocksDB: a UNIQUE KEY INSERT that cannot
-    /// build the dense index fails closed rather than publishing a part with no
-    /// `unique_key_index.sst`.
-    ///
-    /// The SST must be a standalone file: every reader (load-time validation and
-    /// the probe) opens it by raw filesystem path via RocksDB. On packed part
-    /// storage `writeFile` would silently bury it inside the archive and every
-    /// subsequent load of the part would fail — fail the INSERT loudly instead.
-    /// (`MergeTreeDataWriter` forces Full storage for UNIQUE KEY parts.)
-    if (storage.getType() != MergeTreeDataPartStorageType::Full)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "UNIQUE KEY dense index requires full part storage, got part storage type {}",
-            storage.getType().toString());
-    SSTIndexWriter::write(
-        storage,
-        block,
-        metadata_snapshot->getUniqueKeyColumns(),
-        metadata_snapshot->getSortingKeyColumns(),
-        metadata_snapshot->getSortingKeyReverseFlags(),
-        permutation,
-        max_encoded_size,
-        context);
-}
-
-
 /// ============================================================================
-/// Per-storage load lifecycle — orphan sweep + load-time rebuild over parts.
+/// Per-storage load lifecycle - load-time rebuild over parts.
 /// ============================================================================
-
-void UniqueKeyDenseIndexOps::sweepOrphans(const DataPartsLock & /*part_lock*/)
-{
-    /// SST-side sweep only. Delete-bitmap recovery + version GC live in
-    /// the txn commit/recovery protocol, not here.
-    auto & log = data.log;
-    auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), /*bypass_metadata_cache=*/false);
-    const bool table_has_uk = metadata_snapshot && metadata_snapshot->hasUniqueKey();
-
-    size_t removed_stray_ssts = 0;
-    size_t removed_tmp_ssts = 0;
-
-    for (const auto & part : data.data_parts_by_info)
-    {
-        if (part->getState() != MergeTreeData::DataPartState::Active)
-            continue;
-
-        auto & storage = const_cast<IMergeTreeDataPart &>(*part).getDataPartStorage();
-
-        if (!table_has_uk && storage.existsFile(SSTIndexWriter::FILE_NAME))
-        {
-            LOG_WARNING(log, "loadDataParts: removing stray '{}' from part '{}' (table has no UNIQUE KEY)",
-                        SSTIndexWriter::FILE_NAME, part->name);
-            storage.removeFileIfExists(SSTIndexWriter::FILE_NAME);
-            ++removed_stray_ssts;
-        }
-
-        if (storage.existsFile(SST_STAGING_FILE_NAME))
-        {
-            LOG_WARNING(log, "loadDataParts: removing half-written '{}' from part '{}'",
-                        SST_STAGING_FILE_NAME, part->name);
-            storage.removeFileIfExists(SST_STAGING_FILE_NAME);
-            ++removed_tmp_ssts;
-        }
-    }
-
-    if (removed_stray_ssts || removed_tmp_ssts)
-        LOG_INFO(log, "loadDataParts: unique-key SST sweep removed {} stray + {} half-written file(s)",
-                 removed_stray_ssts, removed_tmp_ssts);
-}
-
 
 void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bool storage_is_writable) const
 {
@@ -223,19 +145,24 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
     if (storage.existsFile(SSTIndexWriter::FILE_NAME))
     {
 #if USE_ROCKSDB
-        /// An existing SST is not trusted on presence alone (it carries no
-        /// checksums.txt entry). Validate it and branch on the outcome.
+        /// An existing SST is not trusted on presence alone: validate the RocksDB
+        /// block checksums and the entry count, then branch on the outcome.
+        ///
+        /// The SST is recorded in `checksums.txt`, so a missing or wrongly-sized
+        /// file has already failed `checkConsistencyBase` and the part was
+        /// detached as broken before reaching this point. Only size-preserving
+        /// damage is left to detect here.
         ///
         /// Cost: `classifyDenseIndexSST` runs `VerifyChecksum`, which re-reads
         /// every block, so this is O(index-size) per part on every load / ATTACH
-        /// — the inherent price of the corruption guarantee for this experimental
+        /// - the inherent price of the corruption guarantee for this experimental
         /// feature.
         /// TODO(unique-key): skip re-verification for a known-good SST via a
         /// validity/generation marker written alongside it, so an unchanged file
         /// loads without a full re-read.
         String reason;
         switch (classifyDenseIndexSST(
-            storage.getFullPath() + "/" + SSTIndexWriter::FILE_NAME, part->rows_count, reason))
+            part->getDataPartStoragePtr(), part->rows_count, data.getContext()->getReadSettings(), reason))
         {
             case DenseIndexSSTStatus::Valid:
                 return;
@@ -270,8 +197,10 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
 #endif
     }
 
-    /// From here on a rebuild (a write) is required. On readonly storage fail
-    /// the load closed — the part must not activate without a probeable index,
+    /// Rebuild path, reached only by a part with no SST checksum entry (a
+    /// missing file on a part that has one is already rejected by
+    /// `checkConsistencyBase`). A rebuild is a write: on readonly storage fail
+    /// the load closed - the part must not activate without a probeable index,
     /// and detaching (a rename) is not possible either.
     if (!storage_is_writable)
         throw Exception(ErrorCodes::UNIQUE_KEY_DENSE_INDEX_UNREADABLE,
@@ -303,9 +232,26 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
                 part->name, part->rows_count);
 
         const UInt64 rows = accumulated.rows();
+        /// Densify the accumulated UK columns: chunk columns are densified in
+        /// `readUniqueKeyColumns`, but the accumulator is cloned from the
+        /// pipeline header, which may carry a `ColumnSparse`, so the merged
+        /// column can still be sparse. `ColumnSparse` has no comparable
+        /// serialization for the SST encoding. No-op for already dense columns.
+        for (size_t col = 0; col < accumulated.columns(); ++col)
+        {
+            auto & column = accumulated.getByPosition(col);
+            column.column = column.column->convertToFullColumnIfSparse();
+        }
+
         /// `unique_key_max_encoded_size` is an INSERT-time ingestion policy (a
         /// check-only bound in `encodeBlock`); the rebuild re-encodes rows the
         /// server already accepted at INSERT, so no cap applies here.
+        ///
+        /// `SSTIndexWriter::write` commits in one step: it records the file in
+        /// `part->checksums` (overwriting the stale entry of the removed corrupt
+        /// SST) and finalizes + fsyncs it inline before `writeChecksums` below -
+        /// the SST must be durable before its checksum is, or a crash would
+        /// reintroduce the missing-SST inconsistency the rebuild fixes.
         SSTIndexWriter::write(
             storage,
             accumulated,
@@ -314,7 +260,13 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
             metadata_snapshot->getSortingKeyReverseFlags(),
             /*permutation=*/nullptr,
             /*max_encoded_size=*/std::numeric_limits<UInt64>::max(),
+            part->checksums,
+            /*fsync=*/true,
             data.getContext());
+
+        part->writeChecksums(part->checksums, data.getContext()->getWriteSettings());
+        part->setBytesOnDisk(part->checksums.getTotalSizeOnDisk());
+        part->setBytesUncompressedOnDisk(part->checksums.getTotalSizeUncompressedOnDisk());
 
         const UInt64 elapsed_us = rebuild_watch.elapsedMicroseconds();
         ProfileEvents::increment(ProfileEvents::UniqueKeyLoadTimeSSTRebuildCount);
@@ -344,13 +296,6 @@ void UniqueKeyDenseIndexOps::onPartAttach(MutableDataPartPtr & part) const
 {
     if (!part)
         return;
-    auto & storage = part->getDataPartStorage();
-    if (storage.existsFile(SST_STAGING_FILE_NAME))
-    {
-        LOG_WARNING(data.log, "onPartAttach: removing half-written `{}` from part {}",
-                    SST_STAGING_FILE_NAME, part->name);
-        storage.removeFileIfExists(SST_STAGING_FILE_NAME);
-    }
     /// Attach paths write (the part was just moved/created), so the storage is
     /// writable by construction.
     ensureValidDenseIndex(part, /*storage_is_writable=*/true);
@@ -409,7 +354,14 @@ Block UniqueKeyDenseIndexOps::readUniqueKeyColumns(
         if (chunk.rows() == 0)
             continue;
         for (size_t c = 0; c < chunk.columns(); ++c)
-            accum_columns[c]->insertRangeFrom(*chunk.getByPosition(c).column, 0, chunk.rows());
+        {
+            /// Chunk columns may arrive sparsely serialized; inserting them into
+            /// the dense accumulator would fail, and `ColumnSparse` has no
+            /// comparable serialization for the SST encoding either. No-op for
+            /// already dense columns.
+            auto chunk_column = chunk.getByPosition(c).column->convertToFullColumnIfSparse();
+            accum_columns[c]->insertRangeFrom(*chunk_column, 0, chunk.rows());
+        }
     }
 
     Block accumulated = pipeline_header.cloneEmpty();

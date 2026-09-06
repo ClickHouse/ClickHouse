@@ -1788,10 +1788,8 @@ protected:
 
     MergeTreePartsMover parts_mover;
 
-    /// UNIQUE KEY — sidecar lifecycle helper (orphan sweep + load-time SST
-    /// rebuild). Constructed unconditionally; methods are no-ops on non-UK
-    /// tables. The sweep also clears stray SSTs left on tables that used to
-    /// have UK metadata.
+    /// UNIQUE KEY - sidecar lifecycle helper (load-time SST rebuild).
+    /// Constructed unconditionally; methods are no-ops on non-UK tables.
     std::unique_ptr<UniqueKeyDenseIndexOps> unique_key_dense_index_ops;
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree

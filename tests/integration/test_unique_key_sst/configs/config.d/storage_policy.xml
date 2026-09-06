@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_disk>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <persistent_removal_log>true</persistent_removal_log>
+            </s3_disk>
+        </disks>
+        <policies>
+            <!-- Extends the built-in `default` policy so a UNIQUE KEY table can
+                 be switched to S3 via `MODIFY SETTING storage_policy`. This is
+                 the only supported route: UK tables reject `ALTER ... PARTITION`
+                 (so no `MOVE PARTITION`), and `MODIFY SETTING disk` resolves to
+                 a single-disk temp policy that fails checkCompatibleWith.
+                 The policy therefore must (a) keep a `default` volume/disk so
+                 checkCompatibleWith accepts it, and (b) put the S3 volume first
+                 so *new* inserts land on S3. `move_factor = 0` disables
+                 background moves. -->
+            <s3_extending>
+                <volumes>
+                    <s3>
+                        <disk>s3_disk</disk>
+                    </s3>
+                    <default>
+                        <disk>default</disk>
+                    </default>
+                </volumes>
+                <move_factor>0.0</move_factor>
+            </s3_extending>
+        </policies>
+    </storage_configuration>
+</clickhouse>
