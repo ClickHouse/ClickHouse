@@ -1335,6 +1335,14 @@ try
             " 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 #endif
 
+#if defined(MEMORY_SANITIZER)
+    /// The TraceCollector itself stays enabled: the memory profiler, `trace_profile_events` and
+    /// `SYSTEM INSTRUMENT` all feed it from ordinary code rather than from a signal handler.
+    LOG_INFO(log, "The sampling Query Profiler is disabled under Memory Sanitizer, because a profiler signal"
+        " delivered to a thread that is printing a sanitizer report aborts the process and truncates the"
+        " report. See QUERY_PROFILER_SUPPORTED in Common/QueryProfiler.h.");
+#endif
+
     // Settings validation for page cache. Ensure that page_cache_max_size is > page_cache_min_size.
     // Otherwise, crash might happen during cache resizing in src/Common/PageCache.cpp::autoResize
     size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
