@@ -129,8 +129,29 @@
 
 let add_http_cors_header = (location.protocol != 'file:');
 
+/// The address of the server that served this page: the default connection, also used when a host
+/// hands a connection over without a `url` (see `applyConnectionFromHost`).
+///
+/// The path of that address belongs to the endpoint rather than being decoration: it is sent
+/// verbatim with every request, and a reverse proxy can expose the server as
+/// `https://proxy.example/clickhouse/`, in which case this page is served as
+/// `https://proxy.example/clickhouse/merges` while `https://proxy.example/` is an unrelated site.
+/// Defaulting to `location.origin` would aim every query at that unrelated root. The built-in pages
+/// are attached as non-strict paths (`attachNonStrictPath` in `HTTPHandlerFactory`), so the served
+/// URL may carry a suffix - `/merges/`, `/merges?user=x` - and the prefix is therefore taken as
+/// everything up to and including the last `/` before the route name.
+function defaultServerAddress() {
+    if (location.protocol == 'file:') return 'http://localhost:8123/';
+    const url = new URL(location.href);
+    url.search = '';
+    url.hash = '';
+    const route = url.pathname.lastIndexOf('/merges');
+    if (route != -1) url.pathname = url.pathname.slice(0, route + 1);
+    return url.href;
+}
+
 if (!document.getElementById('url').value) {
-    document.getElementById('url').value = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
+    document.getElementById('url').value = defaultServerAddress();
 }
 
 if (!document.getElementById('user').value) {
@@ -326,7 +347,13 @@ async function load() {
     const user = document.getElementById('user').value;
     const password = document.getElementById('password').value;
 
-    let url = `${host}?default_format=JSONEachRow&enable_http_compression=1`
+    // The configured address can already carry a query string - `?database=db`, or a proxy route
+    // selecting a cluster or a namespace - both when the user types it into the server URL field and
+    // when a host page hands it over. Start the parameters below with `&` in that case instead of a
+    // second `?`, exactly like `play.html` and `docs.html`: a second `?` is not a separator, so
+    // `default_format` would be folded into the value of the last existing parameter and the
+    // response would not be JSON.
+    let url = `${host}${host.indexOf('?') >= 0 ? '&' : '?'}default_format=JSONEachRow&enable_http_compression=1`
 
     if (add_http_cors_header) {
         // For debug purposes, you may set add_http_cors_header from the browser console
@@ -433,6 +460,58 @@ function playClick(volume) {
     source.buffer = myArrayBuffer;
     source.connect(audioCtx.destination);
     source.start();
+}
+
+/// The connection over `postMessage`.
+///
+/// When this page is opened from another built-in web UI page or embedded in an iframe, the host
+/// hands the connection over in a message instead of the query string, because a password in a URL
+/// leaks into browser history, referrer headers, server access logs and proxy logs. This page
+/// announces itself with `clickhouse-hello` and the host answers with `clickhouse-credentials`;
+/// see `play.html`, which documents the protocol and implements the other side of it.
+
+/// Origins allowed to hand a connection to this page: its own origin - one built-in page opening
+/// another, the way `/play` opens `/docs` - and the ClickHouse Cloud consoles, which embed these
+/// pages in an iframe. The list is exact rather than a domain suffix: every Cloud service endpoint
+/// is a `*.clickhouse.cloud` host serving content of its owner's choosing, and a trusted host can
+/// aim this page at a server of its own through `url`, which the user may then type their
+/// credentials into believing it is still their own service.
+const TRUSTED_HOST_ORIGINS = [
+    'https://console.clickhouse.cloud',
+    'https://console.clickhouse-staging.com',
+    'https://clickhouse.com',
+];
+function isTrustedHostOrigin(origin) {
+    /// A browser-supplied `event.origin` is normalized (lower case, default port omitted), so the
+    /// origins above can be compared literally.
+    return origin === window.location.origin || TRUSTED_HOST_ORIGINS.includes(origin);
+}
+
+/// Adopt a connection handed over by the host page. Filling the inputs is all that is needed:
+/// `load` reads them when the animation is started, and nothing is queried before that.
+///
+/// `url` is optional and defaults to the one already configured; the credentials are always
+/// replaced wholesale, so that none of them can outlive the connection they belong to.
+function applyConnectionFromHost(data) {
+    if (data.url !== undefined) document.getElementById('url').value = data.url;
+    document.getElementById('user').value = data.user || '';
+    document.getElementById('password').value = data.password || '';
+}
+
+{
+    /// The window that opened this page, or the one embedding it; a page has at most one host.
+    const host_window = window.opener || (window.parent !== window ? window.parent : null);
+    if (host_window) {
+        window.addEventListener('message', event => {
+            if (event.source !== host_window) return;
+            if (!isTrustedHostOrigin(event.origin)) return;
+            if (!event.data || event.data.type !== 'clickhouse-credentials') return;
+            applyConnectionFromHost(event.data);
+        });
+        /// Broadcast, because the host's location cannot be read cross-origin. The message carries
+        /// no secrets - only the fact that this page exists, which the host knows already.
+        host_window.postMessage({type: 'clickhouse-hello'}, '*');
+    }
 }
 
 </script>

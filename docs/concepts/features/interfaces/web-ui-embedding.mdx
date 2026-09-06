@@ -1,0 +1,92 @@
+---
+description: 'How the built-in web UI pages receive their connection from a page that embeds or opens them, over `postMessage`'
+sidebarTitle: 'Web UI Embedding'
+slug: /interfaces/web-ui-embedding
+title: 'Web UI Embedding'
+doc_type: 'reference'
+sidebar: false
+---
+
+Every ClickHouse HTTP port serves a set of self-contained web UI pages: [`/play`](/concepts/features/interfaces/web-sql), [`/docs`](/concepts/features/interfaces/documentation-search), `/dashboard`, `/schema`, `/merges`, `/jemalloc`, `/processors-profile` and `/binary`. Each of them queries a ClickHouse server of its own choosing; all but `/binary` offer editable server URL, user and password fields for it.
+
+A page that is embedded in an `iframe`, or opened from another page, can be handed that connection instead of asking for it: the embedding page sends the server URL, the user and the password in a `postMessage` message. This is what keeps the password out of the URL, where it would end up in browser history, `Referer` headers, server access logs and proxy logs. The pages still accept `user` — and, for compatibility, `password` — as query parameters, but a URL is a poor place for a secret, and the handover means a password never has to be put in one.
+
+## The exchange {#the-exchange}
+
+The embedded (or opened) page speaks first, as soon as it is able to apply a connection:
+
+```javascript
+{type: 'clickhouse-hello'}
+```
+
+The host answers with the connection:
+
+```javascript
+{type: 'clickhouse-credentials', url: 'https://example.com:8443/', user: 'alice', password: '...'}
+```
+
+`url` is optional and defaults to the server the page already points at, so a host that embeds a page served by the very server it wants queried can send the credentials alone. Before anything is handed over, that server is the address the page itself was served from, including the path prefix: a page served as `https://proxy.example/clickhouse/play` defaults to `https://proxy.example/clickhouse/`, not to `https://proxy.example/`, so a path-routed reverse proxy works with the credentials alone as well. The credentials, in contrast, are always applied in full: a `user` or `password` the message omits is cleared, so credentials never outlive the connection they belong to and cannot be attached to a different server named by a later message.
+
+A `url` may carry a query string of its own — a default `database`, or a proxy route selecting a cluster or a namespace — and it is preserved: the page appends its own request parameters to it, rather than starting a second query string that would fold the first of them into the value of the last parameter of the endpoint.
+
+The page has to speak first because a host that opened it with `window.open` cannot tell when its document became ready — cross-origin `load` events are not observable. The announcement is broadcast with the `'*'` target origin, because the page cannot read its host's location either; it carries no secrets, only the fact that the page exists, which the host knows already.
+
+## Embedding example {#embedding-example}
+
+```html
+<iframe id="play" src="https://example.com:8443/play"></iframe>
+<script>
+const connection = {url: 'https://example.com:8443/', user: 'alice', password: 'secret'};
+window.addEventListener('message', (event) => {
+    /// Answer this iframe only, and only its readiness announcement.
+    if (event.source !== document.getElementById('play').contentWindow) return;
+    if (!event.data || event.data.type !== 'clickhouse-hello') return;
+    /// An exact target origin, never '*': the credentials must reach that origin only.
+    event.source.postMessage({type: 'clickhouse-credentials', ...connection}, event.origin);
+});
+</script>
+```
+
+A host may send `clickhouse-credentials` again at any later time — when the user switches to a different service, for example. The page adopts the new connection and reloads against it.
+
+## Which hosts are trusted {#trusted-hosts}
+
+A page adopts a connection only when the message comes from the window that opened or embeds it, and only when that window's origin is one of:
+
+- the page's own origin — one built-in page opening another, the way `/play` opens `/docs`;
+- `https://console.clickhouse.cloud`;
+- `https://console.clickhouse-staging.com`;
+- `https://clickhouse.com`.
+
+Messages from any other window or origin are ignored, including messages from a sibling `iframe` at the page's own origin. A trusted host can aim the page at a server of its own through `url`, and the user may then enter their credentials believing the page still talks to their own service, so the list has to be short.
+
+That is also why the entries are exact origins rather than domain suffixes such as `*.clickhouse.cloud`: every ClickHouse Cloud service endpoint is a host under that domain, and a service endpoint serves whatever content its owner chooses.
+
+<Note>
+The list is not configurable, unlike the web terminal's `webterminal_allowed_origins` setting. Embedding these pages from another origin still works — the embedded page simply asks for its connection interactively, or takes a `user` from its URL.
+</Note>
+
+## What a page does with a new connection {#adopting-a-connection}
+
+Each page adopts the connection and then redoes what it had already loaded with the previous one, so the handover also works when it arrives after the page started querying. A page that queries only on demand simply keeps the new connection for its next query:
+
+| Page                  | On adopting a connection                                                            |
+|-----------------------|-------------------------------------------------------------------------------------|
+| `/play`               | Re-checks the server and probes the credentials                                     |
+| `/docs`               | Rebuilds the documented-name cache and re-runs the search currently displayed        |
+| `/dashboard`          | Reloads the charts, re-running the dashboard search when no charts are displayed yet |
+| `/schema`             | Reloads the schema graph                                                             |
+| `/merges`             | Fills the fields; the animation reads them when it is started                        |
+| `/jemalloc`           | Reloads the allocator statistics                                                     |
+| `/processors-profile` | Reloads the list of queries                                                          |
+| `/binary`             | Drops the cached tiles and redraws the map                                           |
+
+## Opening `/docs` from `/play` {#docs-from-play}
+
+The Documentation icon in the `/play` sidebar uses this handover. A plain click opens `/docs` on the server `/play` is currently pointed at and hands the whole connection over, so the documentation search runs against that server as the same user without the password ever appearing in a URL.
+
+A middle click, or the platform's new-tab modifier click, keeps the browser's own new-tab handling instead. Such a window has no link back to `/play`, so it opens with the `user` from the link and no password, and the connection fields can be completed by hand.
+
+## The web terminal {#web-terminal}
+
+[`/webterminal`](/concepts/features/interfaces/web-terminal) implements an older variant of the same exchange — `webterminal-hello` and `webterminal-credentials` — because its credentials go into the established WebSocket connection rather than into a query string. `/play` embeds it with that protocol.

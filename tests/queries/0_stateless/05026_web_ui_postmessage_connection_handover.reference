@@ -1,0 +1,12 @@
+play announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
+docs announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
+dashboard announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
+merges announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
+schema announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
+jemalloc announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
+processors-profile announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
+binary announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed credentials=replaced
+webterminal handshake=yes accepts=yes origins=exact ws_route=prefixed ws_query=preserved
+play docs_relay=yes direct_docs_opener=no relay_trust_guard=yes relay_ordering_guard=yes
+play terminal_route=prefixed terminal_query=preserved credential_store=endpoint derived_url_userinfo=stripped
+schema credential_store=endpoint credential_retrieval=endpoint

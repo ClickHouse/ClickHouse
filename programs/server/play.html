@@ -7740,6 +7740,38 @@ let restoring_connection_from_history = false;
 const current_url = new URL(window.location);
 const opened_locally = location.protocol == 'file:';
 
+/// The address of the server that served this page: the default connection when neither the query
+/// string, nor the history entry, nor a `postMessage` handover names one.
+///
+/// The path of that address belongs to the endpoint rather than being decoration: `postImpl` sends it
+/// verbatim, and a reverse proxy can expose the server as `https://proxy.example/clickhouse/`, in which
+/// case this page is served as `https://proxy.example/clickhouse/play` while `https://proxy.example/`
+/// is an unrelated site. Defaulting to `location.origin` would aim every query at that unrelated root.
+/// The built-in pages are attached as non-strict paths (`attachNonStrictPath` in `HTTPHandlerFactory`),
+/// so the served URL may carry a suffix - `/play/`, `/play?user=x` - and the prefix is therefore taken
+/// as everything up to and including the last `/` before the route name.
+/// Remove a `user:password@` userinfo from a URL that is about to be exposed - as a link `href`, an
+/// iframe `src`, or a query parameter naming another page. The configured server address may carry
+/// one (the browser strips it from the address bar, but the field accepts it), and every place that
+/// serializes such a URL would leak the password into browser history, referrer headers and access
+/// logs. Credentials reach the derived pages over `postMessage` instead.
+function stripURLCredentials(url)
+{
+    url.username = '';
+    url.password = '';
+    return url;
+}
+
+function defaultServerAddress() {
+    if (opened_locally) return 'http://localhost:8123/';
+    const url = new URL(location.href);
+    url.search = '';
+    url.hash = '';
+    const route = url.pathname.lastIndexOf('/play');
+    if (route != -1) url.pathname = url.pathname.slice(0, route + 1);
+    return url.href;
+}
+
 /// Run query instantly after page is loaded if the run parameter is present.
 /// An immutable load-time fact: whether THIS page load was asked to auto-run. Whether the deferred
 /// startup auto-run actually fires is decided by `reconcileStartup`, and whether a WRITTEN history
@@ -7838,11 +7870,9 @@ if (url_elem.value == '') {
     const server_address = current_url.searchParams.get('url');
     if (server_address) {
         url_elem.value = server_address;
-    } else if (!opened_locally) {
-        /// Substitute the address of the server where the page is served.
-        url_elem.value = location.origin;
     } else {
-        url_elem.value = 'http://localhost:8123/';
+        /// Substitute the address of the server where the page is served.
+        url_elem.value = defaultServerAddress();
     }
 }
 
@@ -7865,9 +7895,18 @@ if (pass_from_url) {
     }
 }
 
+/// The health check probes the configured endpoint itself, not just its origin: `postImpl` sends the
+/// path of `url_elem.value` verbatim, so a path-routed deployment (a reverse proxy exposing the server
+/// as e.g. `https://proxy.example/clickhouse/`) answers queries under that prefix while the origin root
+/// belongs to something else entirely. Probing the origin there would paint a working server as dead -
+/// and, since a successful ping is what arms `checkCredentials`, would also skip the credentials probe
+/// after a connection handover (see `applyConnectionFromHost`). Any query string already present in the
+/// configured address is preserved, because it selects the endpoint as well (see `sameServerAddress`).
 async function ping(url) {
     try {
-        let response = await fetch(new URL(url).origin + "?query", { method: 'OPTIONS', headers: { 'Authorization': 'never' } });
+        const target = new URL(url, location.href);
+        target.search = target.search ? target.search + '&query' : '?query';
+        let response = await fetch(target.href, { method: 'OPTIONS', headers: { 'Authorization': 'never' } });
         return response.ok;
     } catch (e) {
         return false;
@@ -7913,14 +7952,33 @@ checkURL(true);
 /// the page's own origin when `/play` is opened locally (`file://`) or pointed at a remote server.
 /// Resolve the Documentation link against that configured server (like `getTerminalURL` does for the Web
 /// Terminal) instead of leaving it hardcoded to `/docs`, and keep it in sync as the URL input changes.
+/// The path of the configured address is a prefix of the endpoint, not something to discard: a server
+/// exposed as `https://proxy.example/clickhouse/` serves its documentation at
+/// `https://proxy.example/clickhouse/docs`, so `docs` is appended to that path instead of resolving a
+/// root-absolute `/docs`. Any query string of the configured address is dropped: it selects the query
+/// endpoint (see `sameServerAddress`) and means nothing to the documentation page, which takes only the
+/// parameters added below.
 /// The non-empty Play username is carried over as a `user` query parameter so the docs page connects as
 /// the same user instead of falling back to the server default user. The password is intentionally
 /// omitted (it would leak in the URL).
+/// Any `user:password@` userinfo of the configured address is removed as well: this URL is written into
+/// the `href` of a link, into the `docs_relay` parameter of the relay page, and into an iframe `src`, so
+/// keeping it would put the password back into browser history, referrers and access logs - the leak the
+/// whole handover exists to remove.
+function docsURL() {
+    const url = new URL(url_elem.value, location.href);
+    url.search = '';
+    url.hash = '';
+    stripURLCredentials(url);
+    url.pathname = url.pathname.replace(/\/?$/, '/') + 'docs';
+    return url;
+}
+
 {
     const docs_icon = document.getElementById('docs-icon');
     function updateDocsURL() {
         try {
-            const url = new URL('/docs', url_elem.value);
+            const url = docsURL();
             if (user_elem.value) url.searchParams.set('user', user_elem.value);
             docs_icon.href = url.href;
         } catch (e) {
@@ -7938,6 +7996,62 @@ checkURL(true);
     docs_icon.addEventListener('pointerdown', updateDocsURL);
     docs_icon.addEventListener('click', updateDocsURL);
     updateDocsURL();
+
+    /// The relay windows opened below. Each entry owns the connection tuple that was active at
+    /// the moment it was opened; a later edit in this `/play` page must never send its credentials
+    /// to a docs page opened for the old server.
+    let docs_windows = [];
+
+    /// A plain click opens a same-origin relay instead of the configured docs page directly when
+    /// that docs page accepts credentials from this page's origin. The relay displays docs in an
+    /// iframe and hands over the password there. Thus an arbitrary configured docs server never
+    /// receives a live `window.opener` to this `/play` page, while the password still never
+    /// appears in a URL. A target outside the exact trusted-origin list keeps the anchor's native
+    /// `noopener` path (connecting as `?user=` with no password), as do modified and middle clicks.
+    docs_icon.addEventListener('click', (event) => {
+        if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        let origin;
+        try {
+            origin = new URL(docs_icon.href).origin;
+        } catch (e) {
+            return; /// Unparsable configured URL: leave the navigation to the anchor.
+        }
+        if (!isTrustedHostOrigin(origin)) return;
+        const relay_url = new URL(window.location.pathname, window.location.href);
+        relay_url.searchParams.set('docs_relay', docs_icon.href);
+        const win = window.open(relay_url.href, '_blank');
+        if (!win) return;
+        event.preventDefault();
+        docs_windows = docs_windows.filter(entry => !entry.win.closed);
+        docs_windows.push({
+            win,
+            origin: window.location.origin,
+            docs_url: docs_icon.href,
+            docs_origin: origin,
+            connection: {
+                url: url_elem.value,
+                user: user_elem.value,
+                password: password_elem.value,
+            },
+        });
+    });
+
+    /// Give a relay the tuple it was created for once it is ready. The message is restricted to
+    /// that same-origin relay; it subsequently accepts a hello only from the docs iframe at its
+    /// recorded origin.
+    window.addEventListener('message', (event) => {
+        if (!event.data || event.data.type !== 'clickhouse-docs-relay-ready') return;
+        for (const entry of docs_windows) {
+            if (event.source === entry.win && event.origin === entry.origin) {
+                entry.win.postMessage({
+                    type: 'clickhouse-docs-relay-credentials',
+                    docs_url: entry.docs_url,
+                    docs_origin: entry.docs_origin,
+                    ...entry.connection,
+                }, entry.origin);
+            }
+        }
+    });
 }
 
 /// `quiet` runs a background panel-maintenance query without touching the main result pane:
@@ -9593,6 +9707,151 @@ password_elem.addEventListener('input', onCredentialInput);
 /// call above never reaches this before the counter exists.)
 /// Shares `onCredentialInput`'s handling, including its `isTrusted` gate on `connection_edited`.
 url_elem.addEventListener('input', onCredentialInput);
+
+
+/// The connection over `postMessage`.
+///
+/// Every built-in web UI page (`/play`, `/docs`, `/dashboard`, `/merges`, `/schema`, `/jemalloc`,
+/// `/processors-profile`, `/binary`) can be handed its connection - server URL, user and password
+/// - by the page that opened or embedded it, instead of taking it from its own query string. A
+/// password in a URL leaks into browser history, referrer headers, server access logs and proxy
+/// logs, so a URL carries at most a `user` and the password travels only in a message.
+/// `/webterminal` implements an older variant of the same exchange, where the credentials then go
+/// into the WebSocket rather than into a query string.
+///
+/// The exchange is two messages:
+///
+///     page -> host   {type: 'clickhouse-hello'}
+///     host -> page   {type: 'clickhouse-credentials', url, user, password}
+///
+/// The page announces itself as soon as it can apply a connection, and the host answers. The page
+/// has to speak first because a host that opened it with `window.open` cannot tell when its
+/// document became ready (cross-origin `load` events are not observable). The announcement is
+/// broadcast to `'*'`, because the host's location cannot be read cross-origin either; it carries
+/// no secrets - only the fact that this page exists, which the host knows already.
+///
+/// The answer is accepted only from the window that opened or embeds this page, and only from a
+/// trusted origin, so that the credentials the user works with cannot be aimed at a server chosen
+/// by a hostile page. Outbound, credentials are always sent with an exact target origin, never
+/// `'*'`.
+
+/// Hand the current connection to a page opened from, or embedded in, this one.
+function sendConnectionToHostedPage(target_window, target_origin) {
+    target_window.postMessage({
+        type: 'clickhouse-credentials',
+        url: url_elem.value,
+        user: user_elem.value,
+        password: password_elem.value,
+    }, target_origin);
+}
+
+/// Origins allowed to hand a connection to this page: its own origin - one built-in page opening
+/// another, the way `/play` opens `/docs` - and the ClickHouse Cloud consoles, which embed these
+/// pages in an iframe. The list is exact rather than a domain suffix: every Cloud service endpoint
+/// is a `*.clickhouse.cloud` host serving content of its owner's choosing, and a trusted host can
+/// aim this page at a server of its own through `url`, which the user may then type their
+/// credentials into believing it is still their own service.
+const TRUSTED_HOST_ORIGINS = [
+    'https://console.clickhouse.cloud',
+    'https://console.clickhouse-staging.com',
+    'https://clickhouse.com',
+];
+function isTrustedHostOrigin(origin) {
+    /// A browser-supplied `event.origin` is normalized (lower case, default port omitted), so the
+    /// origins above can be compared literally.
+    return origin === window.location.origin || TRUSTED_HOST_ORIGINS.includes(origin);
+}
+
+/// Adopt a connection handed over by the host page.
+///
+/// `url` is optional and defaults to the one already configured, so a host embedding a page served
+/// by the very server it wants queried can send the credentials alone. The credentials themselves
+/// are always replaced wholesale: keeping a user or password the message did not carry would attach
+/// the credentials of one connection - possibly ones the browser's password manager filled in for
+/// this page's origin - to another server the message names through `url`.
+function applyConnectionFromHost(data) {
+    if (data.url !== undefined) url_elem.value = data.url;
+    user_elem.value = data.user || '';
+    password_elem.value = data.password || '';
+    /// Assigning `.value` fires no listeners, so replay synthetic `input` events exactly as
+    /// `onpopstate` does when a Back/Forward restores a different connection: everything that
+    /// tracks the connection (`checkURL`, `updateDocsURL`, `resetCredentialsStatus`,
+    /// `resetConnectionScopedState`) then runs as it would for a typed edit. Being untrusted,
+    /// they do not arm `connection_edited` - this is not a user edit - so the host-supplied
+    /// tuple, which is complete the moment it arrives, is committed here instead of waiting for
+    /// focus to leave the connection surface.
+    [url_elem, user_elem, password_elem].forEach(el => el.dispatchEvent(new Event('input')));
+    commitConnection();
+}
+
+{
+    /// The window that opened this page, or the one embedding it; a page has at most one host.
+    const host_window = window.opener || (window.parent !== window ? window.parent : null);
+    if (host_window) {
+        window.addEventListener('message', (event) => {
+            if (event.source !== host_window) return;
+            if (!isTrustedHostOrigin(event.origin)) return;
+            if (!event.data || event.data.type !== 'clickhouse-credentials') return;
+            applyConnectionFromHost(event.data);
+        });
+        host_window.postMessage({type: 'clickhouse-hello'}, '*');
+    }
+}
+
+/// A docs relay is opened by the Documentation button above. It is deliberately a separate,
+/// same-origin browsing context: the remote docs page lives in its iframe and therefore has no
+/// `window.opener` relationship with the connection-bearing `/play` page. The relay receives its
+/// immutable connection tuple from that opener, then forwards it only after the iframe at the
+/// configured origin says hello.
+{
+    const docs_relay_target = new URLSearchParams(window.location.search).get('docs_relay');
+    if (docs_relay_target) {
+        let docs_url;
+        try {
+            docs_url = new URL(docs_relay_target);
+        } catch (e) {
+            docs_url = null;
+        }
+
+        const relay_opener = window.opener;
+        if (docs_url && relay_opener) {
+            let credentials = null;
+            let docs_frame_ready = false;
+            const docs_frame = document.createElement('iframe');
+            docs_frame.src = docs_url.href;
+            docs_frame.referrerPolicy = 'no-referrer';
+            docs_frame.style.cssText = 'border: 0; height: 100vh; width: 100vw;';
+
+            function sendRelayCredentials() {
+                if (!credentials || !docs_frame_ready) return;
+                docs_frame.contentWindow.postMessage({
+                    type: 'clickhouse-credentials',
+                    url: credentials.url,
+                    user: credentials.user,
+                    password: credentials.password,
+                }, docs_url.origin);
+            }
+
+            window.addEventListener('message', (event) => {
+                if (event.source === relay_opener && event.origin === window.location.origin
+                    && event.data && event.data.type === 'clickhouse-docs-relay-credentials'
+                    && event.data.docs_url === docs_url.href && event.data.docs_origin === docs_url.origin) {
+                    credentials = event.data;
+                    sendRelayCredentials();
+                    return;
+                }
+                if (event.source === docs_frame.contentWindow && event.origin === docs_url.origin
+                    && event.data && event.data.type === 'clickhouse-hello') {
+                    docs_frame_ready = true;
+                    sendRelayCredentials();
+                }
+            });
+
+            document.body.replaceChildren(docs_frame);
+            relay_opener.postMessage({type: 'clickhouse-docs-relay-ready'}, window.location.origin);
+        }
+    }
+}
 
 
 function queryToColor(str) {
@@ -13884,7 +14143,7 @@ function buildHistoryParams(params, tabName, fromRun, colorModes, pinnedColumns,
     /// `fromRun` is the caller's FULL decision (`writeHistoryEntry`'s `stamp_run`: the raw
     /// `fromRun`, the connection-divergence check and the tab's own `runnableUrl` policy).
     if (fromRun) out.push('run=1');
-    if (server_address != location.origin) out.push('url=' + encodeURIComponent(server_address));
+    if (!sameServerAddress(server_address, defaultServerAddress())) out.push('url=' + encodeURIComponent(server_address));
     /// The selected database is a connection-scoped setting (like `user`/`url`): carry it so a
     /// shared or reloaded link resolves unqualified table names against the same database, and an
     /// auto-run `run=1` link reproduces the run instead of hitting the server default database.
@@ -14424,8 +14683,7 @@ window.onpopstate = function(event) {
     /// live connection inputs stay on whatever server/user was active before the Back/Forward,
     /// and a Run launched from this "restored" entry would execute against the wrong target.
     const popped_url = new URL(location.href);
-    const target_server = popped_url.searchParams.get('url')
-        || (opened_locally ? 'http://localhost:8123/' : location.origin);
+    const target_server = popped_url.searchParams.get('url') || defaultServerAddress();
     const target_user = popped_url.searchParams.get('user') || '';
     if (url_elem.value !== target_server || user_elem.value !== target_user) {
         url_elem.value = target_server;
@@ -14992,8 +15250,30 @@ async function cancel()
     progressEl.clear();
 }
 
+/// The configured server is exactly the endpoint this page was served from - the only case where a
+/// credential may be persisted by the browser (see `storeCredentials`).
+/// The whole endpoint identity is compared, not just the origin: this page treats the path prefix and
+/// the query string of the address as part of the endpoint everywhere else (`sameServerAddress`,
+/// `defaultServerAddress`), and a path-routed proxy serves unrelated backends under one origin, so
+/// `https://proxy.example/a/` and `https://proxy.example/b/` are different servers whose logins must
+/// not be interchangeable.
+function isOwnServerTarget(value) {
+    return sameServerAddress(value, defaultServerAddress());
+}
+
+/// Browser Credential Management API: remember the entered credentials so the browser can offer to
+/// save them and later autofill them.
+///
+/// Persist only when the configured server is the endpoint this page was served from, the same rule
+/// `schema.html` follows. A `PasswordCredential` is scoped to the page origin, not to the server named
+/// in the URL input - its `name` field is a display label, not an isolation key. A trusted host can hand
+/// this page a connection to a different server (`applyConnectionFromHost`), so storing the login it sent
+/// would let the browser autofill it on a later plain visit to this page, where the connection defaults
+/// back to the server that served it (`defaultServerAddress`) and the next Run would send the other
+/// server's login to this one. The origin alone is not enough: on a path-routed proxy a handed-over
+/// `https://proxy.example/b/` shares the origin of a page served from `https://proxy.example/a/play`.
 function storeCredentials() {
-    if (password_elem.value) {
+    if (password_elem.value && isOwnServerTarget(url_elem.value)) {
         const cred = new PasswordCredential({
             id: user_elem.value,
             password: password_elem.value,
@@ -19237,20 +19517,40 @@ document.getElementById('download-button').addEventListener('click', async funct
     let terminalOrigin = null;
     const MIN_TERMINAL_HEIGHT = 20;
 
-    /// The `/webterminal` endpoint lives on the ClickHouse server addressed by `url_elem.value`,
+    /// The Web Terminal endpoint lives on the ClickHouse server addressed by `url_elem.value`,
     /// which may differ from the page's own origin when the page is opened locally with `?url=...`.
-    /// Resolve both the availability probe and the iframe `src` against the same configured server URL.
+    /// Resolve the availability probe, the iframe `src` and the new-tab `href` against the same
+    /// configured server URL.
+    /// The path of that address is a prefix of the endpoint rather than decoration, exactly as in
+    /// `docsURL`: a server exposed as `https://proxy.example/clickhouse/` serves its terminal at
+    /// `https://proxy.example/clickhouse/webterminal`, while `https://proxy.example/webterminal`
+    /// belongs to an unrelated site. So `webterminal` is appended to the configured path instead of
+    /// resolving a root-absolute route. The query string of the configured address is part of the
+    /// endpoint too (see `sameServerAddress`): a proxy route can select a cluster or a namespace with
+    /// `?cluster=a`, and a terminal that dropped it would authenticate against the proxy's default
+    /// backend instead of the server selected here. It is therefore carried over, and
+    /// `webterminal.html` passes it on to the WebSocket endpoint it dials.
+    /// The `user` and `password` parameters are the exception: they are credentials rather than
+    /// routing, `webterminal.html` reads `user` from its own URL (which would stop the embedded
+    /// terminal from waiting for the credentials sent over `postMessage`), and a password must never
+    /// travel in a URL. Any `user:password@` userinfo is removed for the same reason.
     /// Returns `null` if the configured URL cannot be parsed, so the caller can treat the terminal
     /// as unavailable instead of letting the exception abort `play.html` initialization.
     function getTerminalURL() {
         try {
-            return new URL('/webterminal', url_elem.value).href;
+            const url = new URL(url_elem.value, location.href);
+            url.hash = '';
+            stripURLCredentials(url);
+            url.searchParams.delete('user');
+            url.searchParams.delete('password');
+            url.pathname = url.pathname.replace(/\/?$/, '/') + 'webterminal';
+            return url.href;
         } catch (e) {
             return null;
         }
     }
 
-    /// Keep the icon's `href` pointing at the current `/webterminal` URL, so that a native
+    /// Keep the icon's `href` pointing at the current Web Terminal URL, so that a native
     /// middle-click, Shift+click, or the platform's new-tab modifier click (Cmd+click on
     /// macOS, Ctrl+click elsewhere) opens the right address even after the user edits the
     /// server URL. The `href` is removed when the URL is currently unparsable: an empty `href`
@@ -19276,7 +19576,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         }
     }
 
-    /// Hide the terminal icon if /webterminal is not available (gated by allow_experimental_webterminal).
+    /// Hide the terminal icon if the Web Terminal is not available (gated by `allow_experimental_webterminal`).
     terminalIcon.style.display = 'none';
     const terminalProbeURL = getTerminalURL();
     if (terminalProbeURL) {

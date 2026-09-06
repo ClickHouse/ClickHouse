@@ -33,7 +33,7 @@ const PAGE_ORIGIN = 'http://127.0.0.1:8123';
 /// A host page origin the page must trust (see `isTrustedParentOrigin`).
 const HOST_ORIGIN = 'https://console.clickhouse.cloud';
 
-function makeContext({ embedded, search }) {
+function makeContext({ embedded, search, pathname }) {
     /// Everything the page writes to the terminal, in order.
     const writes = [];
     /// Every `WebSocket` the page created, in order. Nothing here is connected implicitly:
@@ -99,6 +99,10 @@ function makeContext({ embedded, search }) {
             protocol: 'http:',
             host: '127.0.0.1:8123',
             origin: PAGE_ORIGIN,
+            /// The route the page was served from. It is not decoration: the page derives its
+            /// WebSocket endpoint from it (`getWebSocketURL`), so a path-routed reverse proxy
+            /// prefix has to survive into the connection.
+            pathname: pathname || '/webterminal',
             search: search || '',
         },
         addEventListener(type, callback) {
@@ -345,6 +349,32 @@ function runScenarios(js) {
         const parent = loadPage(js, { embedded: true, search: '' });
         sendCredentials(parent, 'alice', 'secret', { origin: PAGE_ORIGIN });
         check(s, 'accepts credentials from a same-origin parent', parent.sockets.length === 1, parent.sockets.length);
+    }
+
+    /// Contract 8: the WebSocket endpoint is the route this page was served from, and behind a
+    /// path-routed reverse proxy that route carries both a path prefix and the query parameters
+    /// selecting the backend (`?cluster=a`). `play.html` opens the terminal at the address it is
+    /// itself configured with, so dropping either would authenticate against an unrelated site or
+    /// against the proxy's default backend instead of the selected one. The page's own `user` and
+    /// `password` parameters are credentials rather than routing and must not be forwarded.
+    {
+        const s = 'proxied-endpoint';
+        const env = loadPage(js, {
+            embedded: false,
+            pathname: '/clickhouse/webterminal',
+            search: '?cluster=a&user=carol&password=leaked',
+        });
+        check(s, 'connects at startup', env.sockets.length === 1, env.sockets.length);
+        check(s, 'keeps the path prefix and the routing parameters, and drops the credentials',
+            env.sockets[0].url === 'ws://127.0.0.1:8123/clickhouse/webterminal?cluster=a',
+            env.sockets[0].url);
+
+        /// The route is cut at its LAST occurrence, because the page is attached with
+        /// `attachNonStrictPath` and is therefore also served under a suffixed path.
+        const suffixed = loadPage(js, { embedded: false, pathname: '/clickhouse/webterminal/', search: '' });
+        check(s, 'cuts a suffixed route at the route name',
+            suffixed.sockets[0].url === 'ws://127.0.0.1:8123/clickhouse/webterminal',
+            suffixed.sockets[0].url);
     }
 }
 

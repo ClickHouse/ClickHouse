@@ -681,16 +681,36 @@
 const $ = id => document.getElementById(id);
 
 /// Connection defaults, mirroring `play.html`: the URL, user, and password can all be
-/// supplied in the query string; otherwise the URL falls back to this server's origin
-/// (or localhost when the page is opened from disk).
+/// supplied in the query string; otherwise the URL falls back to the address this page
+/// was served from (or localhost when the page is opened from disk).
 const currentUrl = new URL(window.location);
 const openedLocally = location.protocol === 'file:';
+
+/// The address of the server that served this page: the default connection, also used when a host
+/// hands a connection over without a `url` (see `applyConnectionFromHost`).
+///
+/// The path of that address belongs to the endpoint rather than being decoration: it is sent
+/// verbatim with every request, and a reverse proxy can expose the server as
+/// `https://proxy.example/clickhouse/`, in which case this page is served as
+/// `https://proxy.example/clickhouse/schema` while `https://proxy.example/` is an unrelated site.
+/// Defaulting to `location.origin` would aim every query at that unrelated root. The built-in pages
+/// are attached as non-strict paths (`attachNonStrictPath` in `HTTPHandlerFactory`), so the served
+/// URL may carry a suffix - `/schema/`, `/schema?user=x` - and the prefix is therefore taken as
+/// everything up to and including the last `/` before the route name.
+function defaultServerAddress() {
+    if (location.protocol == 'file:') return 'http://localhost:8123/';
+    const url = new URL(location.href);
+    url.search = '';
+    url.hash = '';
+    const route = url.pathname.lastIndexOf('/schema');
+    if (route != -1) url.pathname = url.pathname.slice(0, route + 1);
+    return url.href;
+}
 
 if (!$('url').value) {
     const serverAddress = currentUrl.searchParams.get('url');
     if (serverAddress) $('url').value = serverAddress;
-    else if (!openedLocally) $('url').value = location.origin;
-    else $('url').value = 'http://localhost:8123/';
+    else $('url').value = defaultServerAddress();
 }
 
 const userFromUrl = currentUrl.searchParams.get('user');
@@ -713,17 +733,16 @@ if (passFromUrl) {
 /// can offer to save and later autofill them — same as `play.html`. Guarded because
 /// `PasswordCredential` exists only in Chromium-based browsers.
 ///
-/// Persist only for a same-origin target. `PasswordCredential` is scoped to the page origin,
-/// not to the backend named in `#url` (its `name` field is a display label, not an isolation
-/// key). Storing a cross-origin login here would let the browser autofill it on a later plain
-/// visit; because the page then auto-loads the same-origin default (`isSameOriginTarget` at the
-/// bottom of the script), those remembered credentials would be POSTed to this page's own server
-/// instead of the cross-origin one they belong to. `play.html` can store unconditionally because
-/// it never auto-contacts a server on open; `/schema` does, so it must not persist a credential
-/// that its own auto-load could later misdirect. This is the same `isSameOriginTarget` invariant
-/// that already gates the page-load auto-load and the paste probe.
+/// Persist only when the configured server is the endpoint this page was served from
+/// (`isOwnServerTarget`). `PasswordCredential` is scoped to the page origin, not to the backend
+/// named in `#url` (its `name` field is a display label, not an isolation key). Storing another
+/// server's login here would let the browser autofill it on a later plain visit; because the page
+/// then auto-loads its own default endpoint, those remembered credentials would be POSTed to this
+/// page's own server instead of the one they belong to. The origin alone is not a fine enough gate:
+/// on a path-routed proxy `https://proxy.example/b/` and a page served from
+/// `https://proxy.example/a/schema` share it while being different servers.
 function storeCredentials() {
-    if (window.PasswordCredential && $('password').value && isSameOriginTarget($('url').value)) {
+    if (window.PasswordCredential && $('password').value && isOwnServerTarget($('url').value)) {
         try {
             navigator.credentials.store(new PasswordCredential({
                 id: $('user').value,
@@ -880,7 +899,15 @@ async function chQuery(query, conn) {
     /// `conn` binds the request to a connection captured by `connectionSnapshot` so a whole
     /// load batch targets one server even if the fields change mid-load; without it we read
     /// the live fields, as the single-shot credential probe does.
-    const host = (conn ? conn.url : $('url').value).replace(/\/+$/, '');
+    const address = conn ? conn.url : $('url').value;
+    /// The configured address can already carry a query string - `?database=db`, or a proxy route
+    /// selecting a cluster or a namespace - both when it comes from `?url=` or the server URL field,
+    /// and when a host page hands it over. Extend it with `&` in that case instead of appending a
+    /// second `?`, exactly like `play.html` and `docs.html`: a second `?` is not a separator, so
+    /// `default_format` would be folded into the value of the last existing parameter and the
+    /// response would not be JSON. Without a query string the address is a bare endpoint, so it
+    /// gets the root path and a `?`.
+    const endpoint = address.indexOf('?') >= 0 ? address + '&' : address.replace(/\/+$/, '') + '/?';
     const user = conn ? conn.user : $('user').value;
     const password = conn ? conn.password : $('password').value;
     const params = new URLSearchParams();
@@ -893,7 +920,7 @@ async function chQuery(query, conn) {
     if (user) params.set('user', user);
     if (password) params.set('password', password);
 
-    const resp = await fetch(host + '/?' + params.toString(), {
+    const resp = await fetch(endpoint + params.toString(), {
         method: 'POST',
         body: query,
         headers: { 'Authorization': 'never' },
@@ -2208,6 +2235,28 @@ function isSameOriginTarget(value) {
         return false;
     }
 }
+
+/// The configured server is exactly the endpoint this page was served from (`defaultServerAddress`),
+/// scheme, host, path prefix and query string included. This is the gate for everything that hands a
+/// credential to the browser's password manager, which keys a `PasswordCredential` by page origin
+/// only. The origin alone is too coarse there: a path-routed reverse proxy serves unrelated backends
+/// under one origin, so a handed-over `https://proxy.example/b/` would otherwise have its login
+/// remembered for a page served from `https://proxy.example/a/schema` and autofilled on a later plain
+/// visit, which auto-loads `https://proxy.example/a/`. The path is compared verbatim except for the
+/// root, where the URL parser already yields `/` for both `origin` and `origin/`.
+function isOwnServerTarget(value) {
+    try {
+        const target = new URL(value, window.location.href);
+        const own = new URL(defaultServerAddress());
+        const rootNormalized = (p) => (p === '/' || p === '') ? '/' : p;
+        return target.protocol === own.protocol
+            && target.host === own.host
+            && rootNormalized(target.pathname) === rootNormalized(own.pathname)
+            && target.search === own.search;
+    } catch (e) {
+        return false;
+    }
+}
 /// Auto-load the same-origin default on open. First give the browser a chance to supply a
 /// remembered same-origin login: `storeCredentials` saves one via the Credential Management API,
 /// but that stored credential is only surfaced through `navigator.credentials.get` — the bare
@@ -2221,7 +2270,11 @@ function isSameOriginTarget(value) {
 /// because it never auto-contacts a server on open).
 async function autoLoadOnOpen() {
     if (openedLocally || !isSameOriginTarget($('url').value)) return;
-    if (window.PasswordCredential && !$('user').value && !$('password').value) {
+    /// Retrieving a remembered login is gated on the full endpoint identity, not merely on the
+    /// same origin the auto-load above accepts: the password manager keys its entry by page origin,
+    /// so on a path-routed proxy the entry saved for `https://proxy.example/a/` would be filled in
+    /// for a `?url=https://proxy.example/b/` visit and sent to that other backend.
+    if (window.PasswordCredential && isOwnServerTarget($('url').value) && !$('user').value && !$('password').value) {
         /// `navigator.credentials.get` is async, so the same-origin target and empty fields checked
         /// above can change while it is pending: the user could paste a cross-origin URL into `#url`
         /// or start typing their own credentials. Filling the saved same-origin login and then
@@ -2244,6 +2297,66 @@ async function autoLoadOnOpen() {
     loadAll();
 }
 autoLoadOnOpen();
+
+/// The connection over `postMessage`.
+///
+/// When this page is opened from another built-in web UI page or embedded in an iframe, the host
+/// hands the connection over in a message instead of the query string, because a password in a URL
+/// leaks into browser history, referrer headers, server access logs and proxy logs. This page
+/// announces itself with `clickhouse-hello` and the host answers with `clickhouse-credentials`;
+/// see `play.html`, which documents the protocol and implements the other side of it.
+
+/// Origins allowed to hand a connection to this page: its own origin - one built-in page opening
+/// another, the way `/play` opens `/docs` - and the ClickHouse Cloud consoles, which embed these
+/// pages in an iframe. The list is exact rather than a domain suffix: every Cloud service endpoint
+/// is a `*.clickhouse.cloud` host serving content of its owner's choosing, and a trusted host can
+/// aim this page at a server of its own through `url`, which the user may then type their
+/// credentials into believing it is still their own service.
+const TRUSTED_HOST_ORIGINS = [
+    'https://console.clickhouse.cloud',
+    'https://console.clickhouse-staging.com',
+    'https://clickhouse.com',
+];
+function isTrustedHostOrigin(origin) {
+    /// A browser-supplied `event.origin` is normalized (lower case, default port omitted), so the
+    /// origins above can be compared literally.
+    return origin === window.location.origin || TRUSTED_HOST_ORIGINS.includes(origin);
+}
+
+/// Adopt a connection handed over by the host page and load the graph against it. Assigning
+/// `.value` fires no listeners, so the `input` events are replayed to drop the credential status
+/// left over from the previous connection, exactly as a typed edit does.
+///
+/// The `isSameOriginTarget` gate of `autoLoadOnOpen` does not apply to this load: that gate exists
+/// because credentials the browser's password manager filled in for this page's own origin must not
+/// be sent to a `?url=...` target chosen by whoever opened the page, whereas here the credentials
+/// arrive from a trusted host together with the server they belong to - `url` is optional and
+/// defaults to the one already configured, while the credentials are always replaced wholesale, so
+/// none of them can outlive the connection they belong to. `loadAll` is generation-guarded, so it
+/// may start while the load from `autoLoadOnOpen` is still in flight.
+function applyConnectionFromHost(data) {
+    if (data.url !== undefined) $('url').value = data.url;
+    $('user').value = data.user || '';
+    $('password').value = data.password || '';
+    for (const id of ['url', 'user', 'password']) $(id).dispatchEvent(new Event('input'));
+    loadAll();
+}
+
+{
+    /// The window that opened this page, or the one embedding it; a page has at most one host.
+    const host_window = window.opener || (window.parent !== window ? window.parent : null);
+    if (host_window) {
+        window.addEventListener('message', event => {
+            if (event.source !== host_window) return;
+            if (!isTrustedHostOrigin(event.origin)) return;
+            if (!event.data || event.data.type !== 'clickhouse-credentials') return;
+            applyConnectionFromHost(event.data);
+        });
+        /// Broadcast, because the host's location cannot be read cross-origin. The message carries
+        /// no secrets - only the fact that this page exists, which the host knows already.
+        host_window.postMessage({type: 'clickhouse-hello'}, '*');
+    }
+}
 </script>
 </body>
 </html>

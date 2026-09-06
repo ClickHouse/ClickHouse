@@ -57,9 +57,30 @@
         let password = '';
         let add_http_cors_header = true;
 
+        /// The address of the server that served this page: the default connection, also used when a host
+        /// hands a connection over without a `url` (see `applyConnectionFromHost`).
+        ///
+        /// The path of that address belongs to the endpoint rather than being decoration: it is sent
+        /// verbatim with every request, and a reverse proxy can expose the server as
+        /// `https://proxy.example/clickhouse/`, in which case this page is served as
+        /// `https://proxy.example/clickhouse/binary` while `https://proxy.example/` is an unrelated site.
+        /// Defaulting to `location.origin` would aim every query at that unrelated root. The built-in pages
+        /// are attached as non-strict paths (`attachNonStrictPath` in `HTTPHandlerFactory`), so the served
+        /// URL may carry a suffix - `/binary/`, `/binary?user=x` - and the prefix is therefore taken as
+        /// everything up to and including the last `/` before the route name.
+        function defaultServerAddress() {
+            if (location.protocol == 'file:') return 'http://localhost:8123/';
+            const url = new URL(location.href);
+            url.search = '';
+            url.hash = '';
+            const route = url.pathname.lastIndexOf('/binary');
+            if (route != -1) url.pathname = url.pathname.slice(0, route + 1);
+            return url.href;
+        }
+
         /// If it is hosted on server, assume that it is the address of ClickHouse.
         if (location.protocol != 'file:') {
-            host = location.origin;
+            host = defaultServerAddress();
             add_http_cors_header = false;
         }
 
@@ -70,18 +91,31 @@
             if (params.has('password')) { password = params.get('password'); }
         }
 
-        let url = `${host}?allow_introspection_functions=1`;
+        function buildURL() {
+            /// The configured address can already carry a query string - `?database=db`, or a proxy
+            /// route selecting a cluster or a namespace - both when it comes from `?host=` and when a
+            /// host page hands it over. Start the parameters below with `&` in that case instead of a
+            /// second `?`, exactly like `play.html` and `docs.html`: a second `?` is not a separator,
+            /// so `allow_introspection_functions` would be folded into the value of the last existing
+            /// parameter and the request would go to a different endpoint than the one configured.
+            const separator = host.indexOf('?') >= 0 ? '&' : '?';
+            let result = `${host}${separator}allow_introspection_functions=1`;
 
-        if (add_http_cors_header) {
-            url += '&add_http_cors_header=1';
+            if (add_http_cors_header) {
+                result += '&add_http_cors_header=1';
+            }
+
+            if (user) {
+                result += `&user=${encodeURIComponent(user)}`;
+            }
+            if (password) {
+                result += `&password=${encodeURIComponent(password)}`;
+            }
+
+            return result;
         }
 
-        if (user) {
-            url += `&user=${encodeURIComponent(user)}`;
-        }
-        if (password) {
-            url += `&password=${encodeURIComponent(password)}`;
-        }
+        let url = buildURL();
 
         let map = L.map('space', {
             crs: L.CRS.Simple,
@@ -91,8 +125,12 @@
         });
 
         let cached_tiles = {};
+        /// Every request captures this value. A connection handover increments it, so late
+        /// responses from the former server cannot populate the new cache or repaint the map.
+        let connection_generation = 0;
 
         async function render(coords, tile) {
+            const generation = connection_generation;
             const sql = `
                 WITH
                     bitShiftLeft(1::UInt64, 5 - {z:UInt8})::UInt64 AS zoom_factor,
@@ -130,8 +168,11 @@
 
                 const response = await fetch(request_url, { method: 'POST', body: sql });
 
+                if (generation != connection_generation) return;
+
                 if (!response.ok) {
                     const text = await response.text();
+                    if (generation != connection_generation) return;
                     let err = document.getElementById('error');
                     err.textContent = text;
                     err.style.display = 'block';
@@ -139,8 +180,11 @@
                 }
 
                 buf = await response.arrayBuffer();
+                if (generation != connection_generation) return;
                 cached_tiles[key] = buf;
             }
+
+            if (generation != connection_generation) return;
 
             let ctx = tile.getContext('2d');
             let image = ctx.createImageData(1024, 1024);
@@ -276,6 +320,7 @@
         }
 
         function showPopup(x, y) {
+            const generation = connection_generation;
             let addr_int = hilbertEncode(x, y) / 2n;
 
             current_requested_addr = addr_int;
@@ -292,7 +337,7 @@
                     let name = o.rows ? o.data[0].name : 'nothing';
                     let line = o.rows ? o.data[0].line : '';
 
-                    if (addr_int == current_requested_addr) {
+                    if (generation == connection_generation && addr_int == current_requested_addr) {
                         popup.setContent(`<p><b>${addr_hex}</b></p><p>${name}</p><p>${line}</p>`);
                     }
                 }));
@@ -312,6 +357,78 @@
         });
 
         map.on('moveend', e => updateHistory());
+
+        /// The connection over `postMessage`.
+        ///
+        /// When this page is opened from another built-in web UI page or embedded in an iframe, the
+        /// host hands the connection over in a message instead of the query string, because a
+        /// password in a URL leaks into browser history, referrer headers, server access logs and
+        /// proxy logs. This page announces itself with `clickhouse-hello` and the host answers with
+        /// `clickhouse-credentials`; see `play.html`, which documents the protocol and implements
+        /// the other side of it.
+
+        /// Origins allowed to hand a connection to this page: its own origin - one built-in page opening
+        /// another, the way `/play` opens `/docs` - and the ClickHouse Cloud consoles, which embed these
+        /// pages in an iframe. The list is exact rather than a domain suffix: every Cloud service endpoint
+        /// is a `*.clickhouse.cloud` host serving content of its owner's choosing, and a trusted host can
+        /// aim this page at a server of its own through `url`, which the user may then type their
+        /// credentials into believing it is still their own service.
+        const TRUSTED_HOST_ORIGINS = [
+            'https://console.clickhouse.cloud',
+            'https://console.clickhouse-staging.com',
+            'https://clickhouse.com',
+        ];
+        function isTrustedHostOrigin(origin) {
+            /// A browser-supplied `event.origin` is normalized (lower case, default port omitted), so the
+            /// origins above can be compared literally.
+            return origin === window.location.origin || TRUSTED_HOST_ORIGINS.includes(origin);
+        }
+
+        /// Adopt a connection handed over by the host page and redraw the map from the new server.
+        /// The cached tiles belong to the previous server's binary, so they are dropped.
+        ///
+        /// `url` is optional and defaults to the one already configured; the credentials are always
+        /// replaced wholesale, so that none of them can outlive the connection they belong to.
+        function applyConnectionFromHost(data) {
+            ++connection_generation;
+            if (data.url !== undefined) {
+                host = data.url;
+                /// The handed-over server may be a different origin than this page's, and the
+                /// server adds `Access-Control-Allow-Origin` to its responses only when asked to.
+                add_http_cors_header = true;
+            }
+            user = data.user || '';
+            password = data.password || '';
+            url = buildURL();
+            cached_tiles = {};
+            layer.redraw();
+            /// A symbol popup that already rendered keeps showing the former server's binary: the
+            /// generation checks above only stop a *late* response from repainting, they do nothing to
+            /// content that arrived in time. Re-request it under the new connection, so the page never
+            /// shows one server's map together with another server's symbol. The coordinates are the
+            /// user's selection and stay as they are; `showPopup` repaints the address immediately and
+            /// fills in the symbol when the new server answers.
+            if (popup.isOpen()) {
+                const position = latLngToPixel(popup.getLatLng());
+                showPopup(position.x, position.y);
+            }
+        }
+
+        {
+            /// The window that opened this page, or the one embedding it; a page has at most one host.
+            const host_window = window.opener || (window.parent !== window ? window.parent : null);
+            if (host_window) {
+                window.addEventListener('message', event => {
+                    if (event.source !== host_window) return;
+                    if (!isTrustedHostOrigin(event.origin)) return;
+                    if (!event.data || event.data.type !== 'clickhouse-credentials') return;
+                    applyConnectionFromHost(event.data);
+                });
+                /// Broadcast, because the host's location cannot be read cross-origin. The message
+                /// carries no secrets - only the fact that this page exists, which the host knows.
+                host_window.postMessage({type: 'clickhouse-hello'}, '*');
+            }
+        }
     </script>
 </body>
 </html>
