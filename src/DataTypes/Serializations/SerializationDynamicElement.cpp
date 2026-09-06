@@ -270,7 +270,9 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         /// Extract nested subcolumn if needed.
         if (!nested_subcolumn.empty() && !is_null_map_subcolumn)
         {
-            auto subcolumn = result_type->getSubcolumn(nested_subcolumn, variant_column->getPtr());
+            /// nested_subcolumn was resolved at the array level of the enclosing path, which is
+            /// still on settings.path here. It must be re-resolved at the same level.
+            auto subcolumn = result_type->getSubcolumn(nested_subcolumn, variant_column->getPtr(), getArrayLevel(settings.path));
             result_column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
         }
     }

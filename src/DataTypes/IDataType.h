@@ -99,8 +99,11 @@ public:
     DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name) const;
     DataTypePtr getSubcolumnType(std::string_view subcolumn_name) const;
 
-    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
-    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
+    /// initial_array_level is the array nesting depth the name was resolved at. Level-dependent
+    /// names ("sizeN") denote a different subcolumn at each level, so re-resolving a name that was
+    /// resolved below Array wrappers requires passing that depth.
+    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, size_t initial_array_level = 0) const;
+    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column, size_t initial_array_level = 0) const;
 
     SerializationPtr getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 

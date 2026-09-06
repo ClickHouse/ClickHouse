@@ -287,7 +287,9 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
         /// Extract subcolumn from Dynamic column if needed.
         if (!path_subcolumn.empty())
         {
-            auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, dynamic_column.getPtr());
+            /// path_subcolumn was resolved at the array level of the enclosing path, which is still
+            /// on settings.path here. It must be re-resolved at the same level.
+            auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, dynamic_column.getPtr(), getArrayLevel(settings.path));
             column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
         }
     }
@@ -330,7 +332,7 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
                 /// If subcolumn is requested, extract it from the path data.
                 else
                 {
-                    auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, path_data_it->second);
+                    auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, path_data_it->second, getArrayLevel(settings.path));
                     column.insertRangeFrom(*subcolumn, structure_granule.offset, structure_granule.limit);
                 }
             }
