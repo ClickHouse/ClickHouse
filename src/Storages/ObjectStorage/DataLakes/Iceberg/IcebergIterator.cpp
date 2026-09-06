@@ -136,8 +136,8 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
         data_object_,
         [](const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs)
         {
-            return std::tie(*lhs->common_partition_specification, lhs->parsed_entry->partition_key_value)
-                < std::tie(*rhs->common_partition_specification, rhs->parsed_entry->partition_key_value);
+            return std::tie(*lhs->common_partition_specification, lhs->normalized_partition_key_value)
+                < std::tie(*rhs->common_partition_specification, rhs->normalized_partition_key_value);
         });
     if (beg_it - deletes_objects.begin() > end_it - deletes_objects.begin())
     {

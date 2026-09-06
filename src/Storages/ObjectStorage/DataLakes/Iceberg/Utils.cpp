@@ -1615,10 +1615,99 @@ void forEachAvroEntry(
         callback(datum);
 }
 
+namespace
+{
+
+/// Iceberg keeps a decimal partition value as an Avro `fixed`: the unscaled value in two's-complement
+/// big-endian form, using the minimum number of bytes. ClickHouse reads such a `fixed` as a `String`,
+/// so restore the decimal here. Accumulate into the unsigned counterpart, pre-filled with the sign
+/// bits, so that the sign extension comes out of the shifts themselves.
+template <typename DecimalType>
+Field decodePartitionDecimal(const String & bytes, const IDataType & type)
+{
+    using NativeType = typename DecimalType::NativeType;
+    using UnsignedType = make_unsigned_t<NativeType>;
+
+    if (bytes.empty() || bytes.size() > sizeof(NativeType))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg partition value of a decimal column is {} bytes long, which does not fit into {} bytes of {}",
+            bytes.size(),
+            sizeof(NativeType),
+            type.getName());
+
+    UnsignedType unscaled_value = (bytes[0] & 0x80) ? ~UnsignedType(0) : UnsignedType(0);
+    for (const auto byte : bytes)
+        unscaled_value = (unscaled_value << 8) | static_cast<UInt8>(byte);
+
+    return DecimalField<DecimalType>(static_cast<NativeType>(unscaled_value), getDecimalScale(type));
+}
+
+Field decodePartitionDecimalByType(const String & bytes, const IDataType & type)
+{
+    if (checkDecimal<Decimal32>(type))
+        return decodePartitionDecimal<Decimal32>(bytes, type);
+    if (checkDecimal<Decimal64>(type))
+        return decodePartitionDecimal<Decimal64>(bytes, type);
+    if (checkDecimal<Decimal128>(type))
+        return decodePartitionDecimal<Decimal128>(bytes, type);
+    if (checkDecimal<Decimal256>(type))
+        return decodePartitionDecimal<Decimal256>(bytes, type);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected decimal type {} of an Iceberg partition column", type.getName());
+}
+
+}
+
+Field normalizePartitionValue(const Field & value, const DataTypePtr & type)
+{
+    const auto & value_type = removeNullable(type);
+
+    /// ClickHouse used to write a timestamp partition value as a simple long in Avro.
+    if (value.getType() == Field::Types::Int64 && WhichDataType(value_type).isDateTime64())
+        return DecimalField<Decimal64>(value.safeGet<Int64>(), getDecimalScale(*value_type));
+
+    if (value.getType() == Field::Types::String && WhichDataType(value_type).isDecimal())
+        return decodePartitionDecimalByType(value.safeGet<String>(), *value_type);
+
+    return value;
+}
+
+DB::Row normalizePartitionKeyValue(
+    const DB::Row & partition_key_value,
+    const PartitionSpecification & partition_specification,
+    const IcebergSchemaProcessor & schema_processor,
+    Int32 schema_id)
+{
+    DB::Row result = partition_key_value;
+
+    for (const auto & partition_field : partition_specification)
+    {
+        /// Only these transforms keep the type of the source column, so only for them the ClickHouse
+        /// type of the source column tells how the stored partition value has to be interpreted.
+        /// A `bucket`, `year`, `month`, `day` or `hour` value is an integer of its own, unrelated to
+        /// the type of the source column, and must be left alone.
+        const auto transform_name = Poco::toLower(partition_field.transform_name);
+        if (transform_name != "identity" && !transform_name.starts_with("truncate"))
+            continue;
+
+        if (partition_field.tuple_index < 0 || static_cast<size_t>(partition_field.tuple_index) >= result.size())
+            continue;
+
+        const auto name_and_type = schema_processor.tryGetFieldCharacteristics(schema_id, partition_field.source_id);
+        if (!name_and_type.has_value())
+            continue;
+
+        auto & value = result[partition_field.tuple_index];
+        value = normalizePartitionValue(value, name_and_type->type);
+    }
+
+    return result;
+}
+
 PartitionColumnValues getIdentityPartitionColumnValues(
     const ProcessedManifestFileEntry & manifest_file_entry, const IcebergSchemaProcessor & schema_processor)
 {
-    const auto & partition_key_value = manifest_file_entry.parsed_entry->partition_key_value;
+    const auto & partition_key_value = manifest_file_entry.normalized_partition_key_value;
     if (partition_key_value.empty())
         return {};
 
@@ -1636,7 +1725,8 @@ PartitionColumnValues getIdentityPartitionColumnValues(
         if (!name_and_type.has_value())
             continue;
 
-        Field value = convertFieldToTypeOrThrow(partition_key_value[partition_field.tuple_index], *name_and_type->type);
+        Field value = convertFieldToTypeOrThrow(
+            normalizePartitionValue(partition_key_value[partition_field.tuple_index], name_and_type->type), *name_and_type->type);
         if (value.isNull())
             continue;
 

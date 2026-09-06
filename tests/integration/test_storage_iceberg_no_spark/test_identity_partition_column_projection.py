@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import io
+import json
 import uuid
 from datetime import date, datetime
 
@@ -91,6 +92,127 @@ def drop_column_from_data_file(started_cluster, s3_uri, column):
     started_cluster.minio_client.put_object(
         bucket, key, io.BytesIO(payload), len(payload)
     )
+
+
+def table_object_names(started_cluster, table_name, suffix):
+    """Names of the objects of the table `table_name` in Minio whose name ends with `suffix`."""
+    prefix = f"var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/"
+    names = [
+        object.object_name
+        for object in started_cluster.minio_client.list_objects(
+            started_cluster.minio_bucket, prefix, recursive=True
+        )
+        if object.object_name.endswith(suffix)
+    ]
+    assert names, f"no {suffix} object under {prefix}"
+    return names
+
+
+def read_avro_long(data, pos):
+    shift = 0
+    result = 0
+    while True:
+        byte = data[pos]
+        pos += 1
+        result |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            break
+        shift += 7
+    return (result >> 1) ^ -(result & 1), pos
+
+
+def write_avro_long(value):
+    value = (value << 1) ^ (value >> 63)
+    result = bytearray()
+    while True:
+        byte = value & 0x7F
+        value >>= 7
+        if not value:
+            result.append(byte)
+            return bytes(result)
+        result.append(byte | 0x80)
+
+
+def read_avro_map_of_bytes(data, pos):
+    result = {}
+    while True:
+        count, pos = read_avro_long(data, pos)
+        if count == 0:
+            return result, pos
+        if count < 0:
+            count = -count
+            _, pos = read_avro_long(data, pos)  # size of the block in bytes
+        for _ in range(count):
+            length, pos = read_avro_long(data, pos)
+            key = data[pos : pos + length].decode()
+            pos += length
+            length, pos = read_avro_long(data, pos)
+            result[key] = data[pos : pos + length]
+            pos += length
+
+
+def write_avro_map_of_bytes(values):
+    result = bytearray(write_avro_long(len(values)))
+    for key, value in values.items():
+        key = key.encode()
+        result += write_avro_long(len(key)) + key
+        result += write_avro_long(len(value)) + value
+    return bytes(result + write_avro_long(0))
+
+
+def strip_partition_logical_types(started_cluster, s3_uri):
+    """Drop the `logicalType` annotations of the partition fields from the Avro schema in the header
+    of the manifest file at `s3_uri`, and return the number of annotations dropped. An annotated
+    value has the same binary encoding as a raw one, so only the header is rewritten and the data
+    blocks are kept byte for byte: the file keeps the same values, now in their raw encoding.
+    """
+    assert s3_uri.startswith("s3://"), s3_uri
+    bucket, key = s3_uri[len("s3://") :].split("/", 1)
+
+    response = started_cluster.minio_client.get_object(bucket, key)
+    try:
+        content = response.read()
+    finally:
+        response.close()
+        response.release_conn()
+
+    assert content[:4] == b"Obj\x01", s3_uri
+    metadata, pos = read_avro_map_of_bytes(content, 4)
+    blocks = content[pos:]  # the sync marker and the data blocks
+
+    schema = json.loads(metadata["avro.schema"])
+    stripped = 0
+
+    def strip(node):
+        nonlocal stripped
+        if isinstance(node, list):
+            for child in node:
+                strip(child)
+        elif isinstance(node, dict):
+            if isinstance(node.get("logicalType"), str):
+                del node["logicalType"]
+                node.pop("precision", None)
+                node.pop("scale", None)
+                stripped += 1
+            for child in node.get("fields", []):
+                strip(child.get("type"))
+
+    for field in schema.get("fields", []):
+        if field["name"] != "data_file":
+            continue
+        for data_file_field in field["type"]["fields"]:
+            if data_file_field["name"] == "partition":
+                strip(data_file_field["type"])
+
+    if stripped == 0:
+        return 0
+
+    metadata["avro.schema"] = json.dumps(schema).encode()
+    payload = b"Obj\x01" + write_avro_map_of_bytes(metadata) + blocks
+    started_cluster.minio_client.put_object(
+        bucket, key, io.BytesIO(payload), len(payload)
+    )
+    return stripped
 
 
 def test_identity_partition_column_not_stored_in_data_files(
@@ -634,3 +756,182 @@ def test_identity_partition_column_renamed_after_write(started_cluster_iceberg_n
         ).strip()
         == "1\n3"
     )
+
+
+def test_identity_partition_decimal_column_written_by_clickhouse(
+    started_cluster_iceberg_no_spark,
+):
+    """A decimal identity partition value lives in the manifest as an Avro `fixed` holding the
+    two's-complement unscaled value. Reading it back must reconstruct the decimal, so that the
+    value projected for a data file that does not store the partition column is exact."""
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    bucket = started_cluster_iceberg_no_spark.minio_bucket
+    table_name = "test_identity_partition_decimal_ch_" + get_uuid_str()
+
+    create_iceberg_table(
+        "s3",
+        instance,
+        table_name,
+        started_cluster_iceberg_no_spark,
+        "(id Int64, small Decimal(7, 2), wide Decimal(38, 10))",
+        format_version=2,
+        partition_by="(small, wide)",
+    )
+    instance.query(
+        f"INSERT INTO {table_name} VALUES "
+        f"(1, 1.50, 9999999999999999999999999999.9999999999), "
+        f"(2, -3.25, -1.0000000001)",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    prefix = f"var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/"
+    data_files = [
+        object.object_name
+        for object in started_cluster_iceberg_no_spark.minio_client.list_objects(
+            bucket, prefix, recursive=True
+        )
+        if object.object_name.endswith(".parquet")
+    ]
+    assert len(data_files) == 2
+    for key in data_files:
+        for column in ["small", "wide"]:
+            drop_column_from_data_file(
+                started_cluster_iceberg_no_spark, f"s3://{bucket}/{key}", column
+            )
+
+    table_function = get_creation_expression(
+        "s3", table_name, started_cluster_iceberg_no_spark, table_function=True
+    )
+    assert (
+        instance.query(
+            f"SELECT id, small, wide FROM {table_function} ORDER BY id",
+            settings={"output_format_decimal_trailing_zeros": 1},
+        ).strip()
+        == "1\t1.50\t9999999999999999999999999999.9999999999\n"
+        "2\t-3.25\t-1.0000000001"
+    )
+    for move_to_prewhere in [0, 1]:
+        assert (
+            instance.query(
+                f"SELECT id FROM {table_function} WHERE small < 0 ORDER BY id",
+                settings={"optimize_move_to_prewhere": move_to_prewhere},
+            ).strip()
+            == "2"
+        ), move_to_prewhere
+
+
+def test_identity_partition_datetime64_column_written_by_clickhouse(
+    started_cluster_iceberg_no_spark,
+):
+    """ClickHouse writes a `DateTime64` identity partition value into the manifest as a plain Avro
+    `long` of microseconds, without the `timestamp-micros` annotation. Reading it back must
+    reconstruct the timestamp for a data file that does not store the partition column, instead of
+    treating the microseconds as a whole number of seconds."""
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    bucket = started_cluster_iceberg_no_spark.minio_bucket
+    table_name = "test_identity_partition_datetime64_ch_" + get_uuid_str()
+
+    create_iceberg_table(
+        "s3",
+        instance,
+        table_name,
+        started_cluster_iceberg_no_spark,
+        "(id Int64, ts DateTime64(6))",
+        format_version=2,
+        partition_by="ts",
+    )
+    instance.query(
+        f"INSERT INTO {table_name} VALUES "
+        f"(1, '2020-01-01 00:00:00.123456'), "
+        f"(2, '2021-02-03 04:05:06.000001')",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    for key in table_object_names(
+        started_cluster_iceberg_no_spark, table_name, ".parquet"
+    ):
+        drop_column_from_data_file(
+            started_cluster_iceberg_no_spark, f"s3://{bucket}/{key}", "ts"
+        )
+
+    table_function = get_creation_expression(
+        "s3", table_name, started_cluster_iceberg_no_spark, table_function=True
+    )
+    assert (
+        instance.query(f"SELECT id, ts FROM {table_function} ORDER BY id").strip()
+        == "1\t2020-01-01 00:00:00.123456\n2\t2021-02-03 04:05:06.000001"
+    )
+    for move_to_prewhere in [0, 1]:
+        assert (
+            instance.query(
+                f"SELECT id FROM {table_function} WHERE ts > '2021-01-01' ORDER BY id",
+                settings={"optimize_move_to_prewhere": move_to_prewhere},
+            ).strip()
+            == "2"
+        ), move_to_prewhere
+
+
+def test_identity_partition_decimal_stored_as_raw_fixed(
+    started_cluster_iceberg_no_spark,
+):
+    """The Iceberg spec keeps a decimal partition value as an Avro `fixed` of the two's-complement
+    unscaled value. A writer is free not to annotate that `fixed` with the `decimal` logical type,
+    and then the value arrives as raw bytes. Strip the annotations from the manifests written by
+    ClickHouse to get exactly such a table, and check that it is still read correctly.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    bucket = started_cluster_iceberg_no_spark.minio_bucket
+    table_name = "test_identity_partition_raw_fixed_" + get_uuid_str()
+
+    create_iceberg_table(
+        "s3",
+        instance,
+        table_name,
+        started_cluster_iceberg_no_spark,
+        "(id Int64, small Decimal(7, 2), wide Decimal(38, 10))",
+        format_version=2,
+        partition_by="(small, wide)",
+    )
+    instance.query(
+        f"INSERT INTO {table_name} VALUES "
+        f"(1, 1.50, 9999999999999999999999999999.9999999999), "
+        f"(2, -3.25, -1.0000000001)",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    for key in table_object_names(
+        started_cluster_iceberg_no_spark, table_name, ".parquet"
+    ):
+        for column in ["small", "wide"]:
+            drop_column_from_data_file(
+                started_cluster_iceberg_no_spark, f"s3://{bucket}/{key}", column
+            )
+
+    stripped_manifests = 0
+    for key in table_object_names(
+        started_cluster_iceberg_no_spark, table_name, ".avro"
+    ):
+        stripped_manifests += strip_partition_logical_types(
+            started_cluster_iceberg_no_spark, f"s3://{bucket}/{key}"
+        )
+    assert stripped_manifests > 0
+
+    table_function = get_creation_expression(
+        "s3", table_name, started_cluster_iceberg_no_spark, table_function=True
+    )
+    assert (
+        instance.query(
+            f"SELECT id, small, wide FROM {table_function} ORDER BY id",
+            settings={"output_format_decimal_trailing_zeros": 1},
+        ).strip()
+        == "1\t1.50\t9999999999999999999999999999.9999999999\n"
+        "2\t-3.25\t-1.0000000001"
+    )
+    for move_to_prewhere in [0, 1]:
+        assert (
+            instance.query(
+                f"SELECT id FROM {table_function} WHERE small < 0 ORDER BY id",
+                settings={"optimize_move_to_prewhere": move_to_prewhere},
+            ).strip()
+            == "2"
+        ), move_to_prewhere

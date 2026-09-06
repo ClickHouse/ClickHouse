@@ -150,6 +150,21 @@ void forEachAvroEntry(
     const String & logger_name,
     std::function<void(const avro::GenericDatum &)> callback);
 
+/// Iceberg stores some partition values in a form that does not directly correspond to the ClickHouse
+/// type of the partition column: a decimal is an Avro `fixed` holding the two's-complement big-endian
+/// unscaled value, and older ClickHouse versions wrote a `DateTime64` partition value as a plain `long`.
+/// Bring such a value to the column type; any other value is returned unchanged.
+DB::Field normalizePartitionValue(const DB::Field & value, const DB::DataTypePtr & type);
+
+/// Apply `normalizePartitionValue` to every value of a manifest partition tuple whose transform keeps
+/// the type of the source column, so that the rest of the code compares, groups and formats partition
+/// values in one representation, independently of how a particular manifest encoded them.
+DB::Row normalizePartitionKeyValue(
+    const DB::Row & partition_key_value,
+    const PartitionSpecification & partition_specification,
+    const IcebergSchemaProcessor & schema_processor,
+    Int32 schema_id);
+
 using PartitionColumnValues = std::vector<std::pair<String, DB::Field>>;
 
 PartitionColumnValues getIdentityPartitionColumnValues(

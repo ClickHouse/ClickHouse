@@ -66,7 +66,7 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
           data_manifest_file_entry_->sequence_number,
           data_manifest_file_entry_->parsed_entry->file_format,
           /* manifest_file */ data_manifest_file_entry_->manifest_file_path,
-          /* partition_id */ Iceberg::computePartitionId(data_manifest_file_entry_->parsed_entry->partition_key_value),
+          /* partition_id */ Iceberg::computePartitionId(data_manifest_file_entry_->normalized_partition_key_value),
           /* position_deletes_objects */ {},
           /* equality_deletes_objects */ {},
           data_manifest_file_entry_->parsed_entry->record_count,

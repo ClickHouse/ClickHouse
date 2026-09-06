@@ -611,6 +611,12 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     auto entry = std::make_shared<ProcessedManifestFileEntry>(
         parsed_entry, common_partition_specification, resolved_sequence_number, resolved_schema_id);
 
+    /// Decode the partition values once, against the schema of the manifest that wrote them, so that
+    /// pruning, identity-column projection, delete matching, compaction and `system.iceberg_files` all
+    /// see the same value regardless of how this particular manifest encoded it.
+    entry->normalized_partition_key_value = normalizePartitionKeyValue(
+        parsed_entry->partition_key_value, *common_partition_specification, *schema_processor_ptr, manifest_schema_id);
+
     if (parsed_entry->parsed_first_row_id.has_value())
         entry->first_row_id = parsed_entry->parsed_first_row_id;
     else if (!entry_first_row_ids.empty())
