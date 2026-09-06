@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/System/extractTablesFilter.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
@@ -420,6 +421,7 @@ private:
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
     std::optional<ActionsDAG> virtual_columns_filter;
+    IDatabase::FilterByNameFunction table_name_filter;
 };
 
 void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -437,6 +439,8 @@ void ReadFromSystemColumns::applyFilters(ActionDAGNodes added_filter_nodes)
         /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
         if (virtual_columns_filter)
             VirtualColumnUtils::buildSetsForDAG(*virtual_columns_filter, context);
+
+        table_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "table", context);
     }
 }
 
@@ -529,7 +533,10 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
             else
             {
                 const DatabasePtr & database = databases.at(database_name);
-                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                /// Enumerating a table means resolving its storage, so let the database skip the
+                /// names the query cannot ask for instead of walking everything it holds.
+                auto iterator = database->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
+                for (; iterator->isValid(); iterator->next())
                 {
                     if (const auto & table = iterator->table())
                     {

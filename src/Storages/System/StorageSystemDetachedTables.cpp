@@ -18,6 +18,7 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/System/StorageSystemTables.h>
+#include <Storages/System/extractTablesFilter.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
 
@@ -88,7 +89,10 @@ protected:
             {
                 try
                 {
-                    detached_tables_it = database->getDetachedTablesIterator(context, {}, false);
+                    /// The names that survived `getFilteredTables` are exactly the ones this
+                    /// source can emit, so hand them to the database as the enumeration filter.
+                    detached_tables_it = database->getDetachedTablesIterator(
+                        context, [this](const String & name) { return detached_tables.contains(name); }, false);
                 }
                 catch (const Exception & e)
                 {
@@ -259,7 +263,8 @@ void ReadFromSystemDetachedTables::applyFilters(ActionDAGNodes added_filter_node
         predicate = filter_actions_dag->getOutputs().at(0);
 
     filtered_databases_column = detail::getFilteredDatabases(predicate, context);
-    filtered_tables_column = detail::getFilteredTables(predicate, filtered_databases_column, context, true);
+    filtered_tables_column = detail::getFilteredTables(
+        predicate, filtered_databases_column, context, true, extractTablesFilter(predicate, "table", context));
 }
 
 void ReadFromSystemDetachedTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

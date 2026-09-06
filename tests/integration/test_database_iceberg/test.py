@@ -397,6 +397,24 @@ def test_namespace_filter_pushdown(started_cluster):
         one_table,
     )
 
+    # `IN` pushdown: an `IN` list scopes to the namespaces of its names, exactly like the
+    # equality it generalizes. Both names here live in the target namespace, so the sibling
+    # must still be left alone.
+    in_list = ", ".join(f"'{namespace_1}.{t}'" for t in namespace_1_tables)
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name IN ({in_list}) ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        expected_ns1,
+    )
+
+    # The same through a disjunction, which the analyzer keeps as an `OR` of equalities.
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        f"AND (name = '{namespace_1}.{namespace_1_tables[0]}' OR name = '{namespace_1}.{namespace_1_tables[1]}') ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        expected_ns1,
+    )
+
 
 def test_check_database(started_cluster):
     node = started_cluster.instances["node1"]

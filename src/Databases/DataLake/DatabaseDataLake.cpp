@@ -153,16 +153,21 @@ constexpr auto ONELAKE_STORAGE_AUTH_SCOPE = "https://storage.azure.com/.default"
 /// `TableNameFilter` so the catalog can restrict which namespaces it lists.
 DataLake::TableNameFilter toCatalogTableNameFilter(const TablesFilter & tables_filter)
 {
+    DataLake::TableNameFilter filter;
     switch (tables_filter.kind)
     {
         case TablesFilter::Kind::None:
-            return {DataLake::TableNameFilter::Kind::All, {}};
-        case TablesFilter::Kind::Equals:
-            return {DataLake::TableNameFilter::Kind::Equals, tables_filter.pattern};
+            break;
+        case TablesFilter::Kind::In:
+            filter.kind = DataLake::TableNameFilter::Kind::In;
+            filter.values.assign(tables_filter.names->begin(), tables_filter.names->end());
+            break;
         case TablesFilter::Kind::Like:
-            return {DataLake::TableNameFilter::Kind::Like, tables_filter.pattern};
+            filter.kind = DataLake::TableNameFilter::Kind::Like;
+            filter.value = tables_filter.pattern;
+            break;
     }
-    return {DataLake::TableNameFilter::Kind::All, {}};
+    return filter;
 }
 
 }
@@ -1063,12 +1068,16 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
 
     /// Skip tables ClickHouse cannot read (Delta/raw files in mixed catalogs like Glue/Unity)
     /// and apply the name filter once, matching getLightweightTablesIterator (SHOW TABLES).
+    /// The catalog listing is scoped by namespace at best, so drop the names the query cannot
+    /// ask for here too - each surviving name costs a per-table metadata fetch below.
+    const auto keep_table_name = combineFilters(filter_by_table_name, tables_filter);
+
     DB::Names iceberg_tables;
     for (const auto & catalog_table : catalog_tables)
     {
         if (!catalog_table.is_readable)
             continue;
-        if (filter_by_table_name && !filter_by_table_name(catalog_table.name))
+        if (keep_table_name && !keep_table_name(catalog_table.name))
             continue;
         iceberg_tables.push_back(catalog_table.name);
     }
@@ -1210,13 +1219,15 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
+    const auto keep_table_name = combineFilters(filter_by_table_name, tables_filter);
+
     for (const auto & catalog_table : catalog_tables)
     {
         /// Skip tables ClickHouse cannot read, so SHOW TABLES stays consistent with the
         /// full getTablesIterator path without a per-table metadata fetch.
         if (!catalog_table.is_readable)
             continue;
-        if (filter_by_table_name && !filter_by_table_name(catalog_table.name))
+        if (keep_table_name && !keep_table_name(catalog_table.name))
             continue;
         result.emplace_back(catalog_table.name);
     }

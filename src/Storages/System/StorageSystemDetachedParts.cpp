@@ -327,6 +327,7 @@ protected:
     std::shared_ptr<StorageSystemDetachedParts> storage;
     std::vector<UInt8> columns_mask;
 
+    std::optional<ActionsDAG> filter_by_database;
     std::optional<ActionsDAG> filter;
     const size_t max_block_size;
     const size_t num_streams;
@@ -342,6 +343,13 @@ void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes
 
         Block block;
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "database"));
+
+        /// Same as for `system.parts`: the condition on `database` alone decides which databases
+        /// are worth enumerating at all, so it is applied before their tables are listed.
+        filter_by_database = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
+        if (filter_by_database)
+            VirtualColumnUtils::buildSetsForDAG(*filter_by_database, context);
+
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "table"));
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), "engine"));
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUInt8>(), "active"));
@@ -379,7 +387,7 @@ void StorageSystemDetachedParts::readImpl(
 
 void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto state = std::make_shared<SourceState>(StoragesInfoStream({}, std::move(filter), context));
+    auto state = std::make_shared<SourceState>(StoragesInfoStream(std::move(filter_by_database), std::move(filter), context));
 
     Pipe pipe;
 

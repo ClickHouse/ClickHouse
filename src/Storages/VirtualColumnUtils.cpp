@@ -846,26 +846,13 @@ void filterBlockWithPredicate(
         filterBlockWithExpression(buildFilterExpression(std::move(*dag), context), block);
 }
 
-std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit)
+std::optional<Strings> extractConstantStringValues(
+    const ActionsDAG::Node * predicate, const ActionsDAG::Node * column_node, const ContextPtr & context, size_t limit)
 {
-    if (!filter_dag)
-        return {};
-    if (filter_dag->getOutputs().size() != 1)
+    if (!predicate || !column_node)
         return {};
 
-    const ActionsDAG::Node * path_node = nullptr;
-    for (const auto * input : filter_dag->getInputs())
-    {
-        if (input->result_name == "_path")
-        {
-            path_node = input;
-            break;
-        }
-    }
-    if (!path_node)
-        return {};
-
-    auto variants = evaluateExpressionOverConstantCondition(filter_dag->getOutputs().at(0), {path_node}, context, limit);
+    auto variants = evaluateExpressionOverConstantCondition(predicate, {column_node}, context, limit);
 
     if (!variants)
         return {};
@@ -883,10 +870,70 @@ std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag
 
         const auto & column = block.at(0).column;
         for (size_t i = 0; i < column->size(); ++i)
-            result.push_back((*column)[i].safeGet<String>());
+        {
+            Field field = (*column)[i];
+            /// A NULL variant (`col IN (NULL, 'a')` over a Nullable column) never matches a
+            /// String value, so dropping it keeps the result a valid over-approximation.
+            if (field.isNull())
+                continue;
+            result.push_back(field.safeGet<String>());
+        }
     }
 
     return result;
+}
+
+std::optional<Strings> extractConstantStringValuesForColumn(
+    const ActionsDAG::Node * predicate, const String & column_name, const ContextPtr & context, size_t limit)
+{
+    if (!predicate)
+        return {};
+
+    /// Find the input the column is read through. Looking inside the predicate rather than at
+    /// the whole DAG's inputs is equivalent - an input the predicate does not use constrains
+    /// nothing - and lets the caller pass a bare predicate node.
+    const ActionsDAG::Node * column_node = nullptr;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(predicate);
+    while (!nodes.empty() && !column_node)
+    {
+        const auto * node = nodes.top();
+        nodes.pop();
+        if (!visited.insert(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::INPUT && node->result_name == column_name)
+        {
+            column_node = node;
+            break;
+        }
+
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+
+    return extractConstantStringValues(predicate, column_node, context, limit);
+}
+
+std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit)
+{
+    if (!filter_dag)
+        return {};
+    if (filter_dag->getOutputs().size() != 1)
+        return {};
+
+    const ActionsDAG::Node * path_node = nullptr;
+    for (const auto * input : filter_dag->getInputs())
+    {
+        if (input->result_name == "_path")
+        {
+            path_node = input;
+            break;
+        }
+    }
+
+    return extractConstantStringValues(filter_dag->getOutputs().at(0), path_node, context, limit);
 }
 
 DataPartsVector filterDataPartsWithExpression(

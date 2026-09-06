@@ -166,18 +166,21 @@ using CatalogTables = std::vector<CatalogTable>;
 /// by `DatabaseDataLake`) so the catalog can restrict which namespaces it lists.
 struct TableNameFilter
 {
-    /// Equals (`name = 'ns.table'`) and Like (`name LIKE 'ns.%'`) prune to specific
-    /// namespaces; All lists the whole catalog (fallback when we can't prune).
+    /// In (`name = 'ns.table'` or `name IN ('ns.a', 'other.b')`) and Like
+    /// (`name LIKE 'ns.%'`) prune to specific namespaces; All lists the whole catalog
+    /// (fallback when we can't prune).
     enum class Kind
     {
         All,
-        Equals,
+        In,
         Like,
     };
 
     Kind kind = Kind::All;
-    /// `Equals`: the literal value (e.g. `ns.table`). `Like`: the pattern (e.g. `ns.%`).
+    /// `Like`: the pattern (e.g. `ns.%`).
     std::string value;
+    /// `In`: the full table names the query can ask for (e.g. `ns.a`, `other.b`).
+    std::vector<std::string> values;
 };
 
 
