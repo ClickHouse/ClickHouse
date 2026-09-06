@@ -1003,6 +1003,45 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
+/// A function that opts out of constant folding may do context-dependent work (an access check, a remote
+/// call) before it looks at the row count, and the expression here was analyzed with the context of the user
+/// running the DDL rather than the storage's, so probing such an expression could answer a different question.
+static bool indexExpressionMayBeProbed(const IndexDescription & index)
+{
+    if (!index.expression)
+        return false;
+
+    for (const auto & node : index.expression->getActionsDAG().getNodes())
+        if (node.type == ActionsDAG::ActionType::FUNCTION
+            && (!node.function_base || !node.function_base->isSuitableForConstantFolding()))
+            return false;
+
+    return true;
+}
+
+static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & index)
+{
+    if (!indexExpressionMayBeProbed(index))
+        return {};
+
+    try
+    {
+        Block header;
+        for (const auto & column : index.expression->getRequiredColumnsWithTypes())
+            header.insert({column.type->createColumn(), column.type, column.name});
+
+        /// The same dry run a merge performs: it rebuilds this expression's AST under the storage
+        /// context and hands the result to `ExpressionTransform::transformHeader`, which is this call.
+        index.expression->getActionsDAG().updateHeader(header);
+    }
+    catch (...)
+    {
+        return std::current_exception();
+    }
+
+    return {};
+}
+
 void MergeTreeData::checkProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
@@ -1169,6 +1208,29 @@ void MergeTreeData::checkProperties(
                 if (!attach && !allow_minmax_index_for_json)
                     checkMinMaxIndexForJSON(index);
                 MergeTreeIndexFactory::instance().validate(index, attach, *getSettings());
+
+                /// An index the server generates from a setting is not the user's declaration, so it
+                /// must not be the reason a statement is refused; `addImplicitIndicesForColumn` drops
+                /// one it cannot validate instead of failing the statement.
+                if (!attach && !index.isImplicitlyCreated())
+                {
+                    if (auto failure = tryEvaluateIndexExpression(index))
+                    {
+                        const IndexDescription * old_index = nullptr;
+                        /// The create path and the projection recursion pass the same metadata object as both
+                        /// arguments, so an index found there is the one being declared and nothing can be inherited.
+                        /// Definitions are not compared: `RENAME COLUMN` rewrites an index's AST without redeclaring it.
+                        if (&old_metadata != &new_metadata)
+                            for (const auto & candidate : old_metadata.secondary_indices)
+                                if (candidate.name == index.name)
+                                    old_index = &candidate;
+
+                        const bool inherited = old_index && tryEvaluateIndexExpression(*old_index);
+
+                        if (!inherited)
+                            std::rethrow_exception(failure);
+                    }
+                }
             }
             catch (Exception & e)
             {
