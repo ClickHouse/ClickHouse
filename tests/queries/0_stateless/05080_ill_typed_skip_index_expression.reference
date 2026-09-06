@@ -15,3 +15,6 @@ F an expression containing a function that opts out of constant folding is not p
 1
 G LowCardinality alone is probed, a Nullable operand is not
 2
+H an index the server generates itself never fails a user statement
+1
+1

@@ -1209,7 +1209,10 @@ void MergeTreeData::checkProperties(
                     checkMinMaxIndexForJSON(index);
                 MergeTreeIndexFactory::instance().validate(index, attach, *getSettings());
 
-                if (!attach)
+                /// An index the server generates from a setting is not the user's declaration, so it
+                /// must not be the reason a statement is refused; `addImplicitIndicesForColumn` drops
+                /// one it cannot validate instead of failing the statement.
+                if (!attach && !index.isImplicitlyCreated())
                 {
                     if (auto failure = tryEvaluateIndexExpression(index))
                     {

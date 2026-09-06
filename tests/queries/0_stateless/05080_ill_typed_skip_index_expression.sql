@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS t_unfoldable;
 DROP TABLE IF EXISTS t_lc;
 DROP TABLE IF EXISTS t_nullable;
 DROP TABLE IF EXISTS t_lc_nullable;
+DROP TABLE IF EXISTS t_implicit;
 
 SELECT 'A CREATE TABLE declaring an index expression that cannot be evaluated';
 CREATE TABLE t_create (c0 String, c1 Int8, INDEX i0 c0 = c1 TYPE set(0)) ENGINE = MergeTree ORDER BY c1; -- { serverError NO_COMMON_TYPE }
@@ -69,6 +70,16 @@ CREATE TABLE t_nullable (c0 Nullable(String), c1 Int8, INDEX i0 c0 = c1 TYPE set
 CREATE TABLE t_lc_nullable (c0 LowCardinality(Nullable(String)), c1 Int8, INDEX i0 c0 = c1 TYPE set(0)) ENGINE = MergeTree ORDER BY c1;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name IN ('t_nullable', 't_lc_nullable');
 
+SELECT 'H an index the server generates itself never fails a user statement';
+CREATE TABLE t_implicit (c0 String, c1 Int8, a UInt8 ALIAS c0 = c1) ENGINE = MergeTree ORDER BY c1
+    SETTINGS add_minmax_index_for_numeric_columns = 1;
+SELECT count() FROM system.data_skipping_indices
+WHERE database = currentDatabase() AND table = 't_implicit' AND name = 'auto_minmax_index_a';
+ALTER TABLE t_implicit RENAME COLUMN a TO b;
+SELECT count() FROM system.data_skipping_indices
+WHERE database = currentDatabase() AND table = 't_implicit' AND name = 'auto_minmax_index_b';
+ALTER TABLE t_implicit ADD INDEX i0 c0 = c1 TYPE set(0); -- { serverError NO_COMMON_TYPE }
+
 DROP TABLE t_alter;
 DROP TABLE t_modify;
 DROP TABLE t_plain;
@@ -78,3 +89,4 @@ DROP TABLE t_wrapped;
 DROP TABLE t_unfoldable;
 DROP TABLE t_nullable;
 DROP TABLE t_lc_nullable;
+DROP TABLE t_implicit;
