@@ -244,8 +244,9 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
 # registry/network/mirror *failure* signatures. None of these strings appear in
 # normal `--progress=plain` output (unlike progress text such as "resolve image
 # config"), so a real Dockerfile/build error (RUN/COPY/package install) still fails
-# fast on the first attempt. The count is bounded by the job budget below.
-BUILDX_RETRIES = 2
+# fast on the first attempt. `BUILDX_RETRY_DEADLINE` below, not this count, is what
+# decides how long further attempts remain eligible to start.
+BUILDX_RETRIES = 4
 BUILDX_RETRY_ERRORS = [
     # Docker registry (docker.io / registry-1.docker.io)
     "failed to do request",
@@ -461,14 +462,22 @@ BUILDX_JOB_RESERVE = 3600
 # `timeout 0` runs unbounded (measured: rc 0 after the full command), so a deadline that
 # has passed must never reach `timeout` as 0. Clamp to a floor that still expires.
 BUILDX_TIMEOUT_FLOOR = 60
+# Only attempts that run to their bound price the job envelope; a registry error fails in
+# about a second. So this, not `BUILDX_RETRIES`, is what `buildx_timeout` divides by.
+BUILDX_EXPENSIVE_ATTEMPTS = 2
+# Seconds after the first retryable failure past which no further attempt is started; an
+# attempt already running still gets its whole bound. Expiries stay bounded by
+# `BUILDX_EXPENSIVE_ATTEMPTS` while this is <= `BUILDX_TIMEOUT_FLOOR` + 6.
+BUILDX_RETRY_DEADLINE = 30
 
 
 def buildx_timeout(elapsed: float = 0.0, job_timeout: int = 0) -> int:
     """Per-invocation bound, shrunk so the whole job stays inside its own cap."""
     if not job_timeout:
         return BUILDX_TIMEOUT
-    # One invocation may retry, so it costs up to BUILDX_RETRIES * (bound + kill-after).
-    attempts = max(BUILDX_RETRIES, 2)
+    # One invocation may expire more than once, costing up to that many times
+    # (bound + kill-after).
+    attempts = max(BUILDX_EXPENSIVE_ATTEMPTS, 2)
     budget = (job_timeout - BUILDX_JOB_RESERVE - elapsed) / attempts
     return max(BUILDX_TIMEOUT_FLOOR, min(BUILDX_TIMEOUT, int(budget)))
 
@@ -643,6 +652,7 @@ def build_and_push_image(
                 command=with_timeout(cmd, buildx_timeout(sw.duration, job_timeout)),
                 retries=BUILDX_RETRIES,
                 retry_errors=BUILDX_RETRY_ERRORS,
+                retry_deadline=BUILDX_RETRY_DEADLINE,
             )
             if build_result.is_ok() or not should_try_next_mirror(build_result.info):
                 if not build_result.is_ok() and not terminal_build_failure(
@@ -689,6 +699,7 @@ def build_and_push_image(
                 command=with_timeout(cmd, buildx_timeout(sw.duration, job_timeout)),
                 retries=BUILDX_RETRIES,
                 retry_errors=BUILDX_RETRY_ERRORS,
+                retry_deadline=BUILDX_RETRY_DEADLINE,
             )
         )
         if not result[-1].is_ok():
@@ -704,7 +715,10 @@ def build_and_push_image(
 def test_docker_library(test_results) -> None:
     """we test our images vs the official docker library repository to track integrity"""
     arch = "amd64" if Utils.is_amd() else "arm64"
-    check_images = [tr.name for tr in test_results if tr.name.endswith(f"-{arch}")]
+    # An image whose build failed does not exist, so testing it only reports that.
+    check_images = [
+        tr.name for tr in test_results if tr.name.endswith(f"-{arch}") and tr.is_ok()
+    ]
     if not check_images:
         return
     test_name = "docker library image test"

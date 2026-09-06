@@ -920,6 +920,7 @@ class Result(MetaClasses.Serializable):
         command_kwargs=None,
         retries=1,
         retry_errors: Union[List[str], str] = "",
+        retry_deadline=None,
         env=None,
     ):
         """
@@ -936,6 +937,11 @@ class Result(MetaClasses.Serializable):
         :param command_kwargs: Keyword arguments for the callable command.
         :param retries: The number of times to retry the command if it fails.
         :param retry_errors: The errors to retry on. Support for shell command(s) only.
+        :param retry_deadline: Seconds after the first retryable failure past which no further
+            attempt is started. An attempt already running is not interrupted, so the ladder can
+            outlast this by one attempt's own bound. Bounds a class whose per-attempt cost varies,
+            which an attempt count cannot. Shell command(s) only. `None` keeps the count as the
+            only bound.
         :param env: Optional environment dict for shell commands (e.g. the job
             python env so PYTHONPATH carries the checkout root for `ci.*` imports).
         :return: Result object with status and optional log file.
@@ -999,6 +1005,7 @@ class Result(MetaClasses.Serializable):
                         log_file=log_file,
                         retries=retries,
                         retry_errors=retry_errors,
+                        retry_deadline=retry_deadline,
                         env=env,
                     )
                     if with_info or (with_info_on_failure and exit_code != 0):

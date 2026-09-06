@@ -328,6 +328,7 @@ class Shell:
         retries=1,
         retry_errors: Union[List[str], str] = "",
         on_retry=None,
+        retry_deadline=None,
         **kwargs,
     ):
         if retry_errors and retries < 2:
@@ -348,6 +349,32 @@ class Shell:
         proc = None
         err_output = []
         delay = 1
+        # Anchored at the first retryable failure rather than at command start: an
+        # attempt may legitimately run for its whole per-attempt bound before failing.
+        ladder_start = None
+        pending_notice = None
+        deadline_cancelled = False
+
+        def _another_attempt_follows(next_delay):
+            if retry >= retries - 1:
+                return False
+            if retry_deadline is None or ladder_start is None:
+                return True
+            return time.monotonic() - ladder_start + next_delay < retry_deadline
+
+        def _announce(matched, attempt):
+            # A reporting failure must never fail the command the retry is rescuing.
+            try:
+                on_retry(matched, attempt, retries - 1)
+            except Exception as e:  # noqa: BLE001
+                print(f"WARNING: on_retry callback failed, ex [{e}]")
+
+        def _deadline_passed():
+            return (
+                retry_deadline is not None
+                and ladder_start is not None
+                and time.monotonic() - ladder_start >= retry_deadline
+            )
 
         for retry in range(retries):
 
@@ -356,6 +383,14 @@ class Shell:
                 if verbose:
                     print(f"Retrying in {delay}s...")
                 time.sleep(delay)
+                # Last thing before the attempt: `time.sleep` may return late.
+                if _deadline_passed():
+                    if verbose:
+                        print(
+                            f"Retry deadline of {retry_deadline}s reached, stopping retries"
+                        )
+                    deadline_cancelled = True
+                    break
 
             try:
                 with open(log_file, "w") as log_fp:
@@ -424,6 +459,12 @@ class Shell:
                         # descendant it must still reach keeps this call blocked.
                         finished.set()
 
+                if pending_notice is not None:
+                    # Only past here is a deadline-cancellable retry certain to have run,
+                    # and the child is already reaped, so caller code cannot strand it.
+                    _announce(pending_notice, retry)
+                    pending_notice = None
+
                 if proc.returncode == 0:
                     return 0
 
@@ -433,7 +474,16 @@ class Shell:
                     )
 
                 if not retry_errors:
-                    continue  # No retry errors specified, just retry on any failure
+                    # No retry errors specified, just retry on any failure
+                    if retry_deadline is not None and ladder_start is None:
+                        ladder_start = time.monotonic()
+                    if not _another_attempt_follows(min(2 * delay, 60)):
+                        if verbose and retry < retries - 1:
+                            print(
+                                f"Retry deadline of {retry_deadline}s reached, stopping retries"
+                            )
+                        break
+                    continue
 
                 if not any(
                     err in err_line for err_line in err_output for err in retry_errors
@@ -454,42 +504,65 @@ class Shell:
                     print(
                         f"Retryable error [{matched}] found, retry {retry+1}/{retries}"
                     )
-                if on_retry and retry < retries - 1:
-                    # Only where another attempt actually follows: the last iteration
-                    # matches too, but nothing is retried after it. Never lets a
-                    # reporting failure fail the command the retry is rescuing.
-                    try:
-                        on_retry(matched, retry + 1, retries - 1)
-                    except Exception as e:  # noqa: BLE001
-                        print(f"WARNING: on_retry callback failed, ex [{e}]")
+                if retry_deadline is not None and ladder_start is None:
+                    ladder_start = time.monotonic()
+                if not _another_attempt_follows(min(2 * delay, 60)):
+                    if verbose and retry < retries - 1:
+                        print(
+                            f"Retry deadline of {retry_deadline}s reached, stopping retries"
+                        )
+                    break
+                if on_retry:
+                    # Deferral is part of the deadline: without one, the attempt this
+                    # announces cannot be cancelled, so announce it where it always was.
+                    if retry_deadline is None:
+                        _announce(matched, retry + 1)
+                    else:
+                        pending_notice = matched
             except Exception as e:
+                if retry_deadline is not None and ladder_start is None:
+                    ladder_start = time.monotonic()
+                # An exception announces nothing.
+                pending_notice = None
+                terminal = not _another_attempt_follows(min(2 * delay, 60))
                 if verbose:
                     if retries == 1:
                         print(f"ERROR: exception {e}")
                     else:
                         print(f"Retry {retry+1}/{retries}: exception {e}")
-                        if retry == retries - 1:
+                        if terminal and retry < retries - 1:
+                            print(
+                                f"Retry deadline of {retry_deadline}s reached, stopping retries"
+                            )
+                        elif terminal:
                             print("ERROR: Final attempt failed, no more retries left.")
                 if proc:
                     proc.kill()
-                if retry == retries - 1:
+                if terminal:
                     if strict:
                         raise
                     else:
                         return 1  # Return non-zero for failure
 
+        # There is no exit code when every attempt failed before `Popen` (a log-file or
+        # spawn error); 1 is what the exception path returns for that.
+        returncode = 1 if proc is None else proc.returncode
+
         if verbose:
+            # A deadline cancellation happens before `Popen`, so that iteration counts an
+            # attempt that never ran; the exit code is still the last one that did.
+            attempts = retry if deadline_cancelled else retry + 1
             print(
-                f"ERROR: command failed after {retry+1}/{retries} attempt(s), exit code: {proc.returncode}"
+                f"ERROR: command failed after {attempts}/{retries} attempt(s), exit code: {returncode}"
             )
 
         if strict:
             err = "\n   ".join(err_output).strip()
             raise RuntimeError(
-                f"command failed, exit code {proc.returncode},\nstderr:\n>>>\n{err}\n<<<"
+                f"command failed, exit code {returncode},\nstderr:\n>>>\n{err}\n<<<"
             )
 
-        return proc.returncode
+        return returncode
 
     @classmethod
     def run_async(
