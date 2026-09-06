@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+
+import gzip
+import os
+import socket
+import sys
+import threading
+import traceback
+import urllib.error
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+
+def is_ipv6(host):
+    try:
+        socket.inet_aton(host)
+        return False
+    except:
+        return True
+
+
+def get_local_port(host, ipv6):
+    family = socket.AF_INET6 if ipv6 else socket.AF_INET
+    with socket.socket(family) as fd:
+        fd.bind((host, 0))
+        return fd.getsockname()[1]
+
+
+CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "localhost")
+CLICKHOUSE_PORT_HTTP = os.environ.get("CLICKHOUSE_PORT_HTTP", "8123")
+
+#####################################################################################
+# This test starts an HTTP server that redirects the dictionary source to a second
+# location serving the actual data, and checks that an HTTP dictionary follows the
+# redirect only when the `max_http_get_redirects` setting allows it.
+#####################################################################################
+
+# Resolve CLICKHOUSE_HOST to a numeric IP (is_ipv6 needs one); getaddrinfo keeps IPv4 and IPv6
+# working and is portable, unlike `hostname -i` which is a Linux-only flag (fails on macOS/BSD).
+HTTP_SERVER_HOST = socket.getaddrinfo(
+    os.environ.get("CLICKHOUSE_HOST", "127.0.0.1"), None
+)[0][4][0]
+IS_IPV6 = is_ipv6(HTTP_SERVER_HOST)
+HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST, IS_IPV6)
+
+HTTP_SERVER_ADDRESS = (HTTP_SERVER_HOST, HTTP_SERVER_PORT)
+if IS_IPV6:
+    HTTP_SERVER_URL_STR = f"http://[{HTTP_SERVER_ADDRESS[0]}]:{HTTP_SERVER_ADDRESS[1]}"
+else:
+    HTTP_SERVER_URL_STR = f"http://{HTTP_SERVER_ADDRESS[0]}:{HTTP_SERVER_ADDRESS[1]}"
+
+CSV_DATA = "1,first\n2,second\n"
+
+
+def get_ch_answer(query):
+    url = os.environ.get(
+        "CLICKHOUSE_URL",
+        "http://{host}:{port}".format(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT_HTTP),
+    )
+    try:
+        return urllib.request.urlopen(url, data=query.encode()).read().decode()
+    except urllib.error.HTTPError as e:
+        # ClickHouse returns the exception text in the body with a non-2xx code.
+        return e.read().decode()
+
+
+class HttpProcessor(BaseHTTPRequestHandler):
+    def do_POST(self):
+        # Selective loads (`loadIds` / `loadKeys`, used by `cache` layouts) send the requested keys in
+        # the body of a `POST` request. A `303 See Other` must be followed with a bodyless `GET`.
+        content_length = int(self.headers.get("Content-Length") or 0)
+        if content_length:
+            self.rfile.read(content_length)
+        elif self.headers.get("Transfer-Encoding") == "chunked":
+            while True:
+                size = int(self.rfile.readline().strip() or "0", 16)
+                self.rfile.read(size + 2)
+                if size == 0:
+                    break
+
+        if self.path.startswith("/lookup_see_other"):
+            self.send_response(303)
+            self.send_header("Location", HTTP_SERVER_URL_STR + "/lookup_result")
+            self.end_headers()
+        else:
+            # `/lookup_result` may be requested only with `GET`, like a signed download URL.
+            self.send_response(405)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    def do_GET(self):
+        if self.path.startswith("/lookup_result"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv")
+            self.send_header("Content-Length", str(len(CSV_DATA.encode())))
+            self.end_headers()
+            self.wfile.write(CSV_DATA.encode())
+        elif self.path.startswith("/redirect_relative"):
+            # A relative reference without a leading slash and with a query string. It must be
+            # resolved against the URI of this response per RFC 3986:
+            # `/redirect_relative` + `relative_target?sig=abc123` -> `/relative_target?sig=abc123`.
+            self.send_response(302)
+            self.send_header("Location", "relative_target?sig=abc123")
+            self.end_headers()
+        elif self.path == "/relative_target?sig=abc123":
+            # Requires the exact resolved path and the full query string, like a signed URL.
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv")
+            self.send_header("Content-Length", str(len(CSV_DATA.encode())))
+            self.end_headers()
+            self.wfile.write(CSV_DATA.encode())
+        elif self.path.startswith("/redirect_gz"):
+            self.send_response(302)
+            self.send_header("Location", HTTP_SERVER_URL_STR + "/data.csv.gz")
+            self.end_headers()
+        elif self.path.startswith("/redirect"):
+            self.send_response(302)
+            self.send_header("Location", HTTP_SERVER_URL_STR + "/data.csv")
+            self.end_headers()
+        elif self.path.startswith("/source.csv.gz"):
+            # The inverse pattern: a source URL with a compression suffix redirects to an opaque
+            # signed URL without any suffix.
+            self.send_response(302)
+            self.send_header("Location", HTTP_SERVER_URL_STR + "/signed-token")
+            self.end_headers()
+        elif self.path.startswith("/signed-token"):
+            # The opaque redirect target serves the gzip object without `Content-Encoding` and
+            # without a compression suffix, so the client can detect the compression only from
+            # the suffix of the original (pre-redirect) source URL.
+            gz_data = gzip.compress(CSV_DATA.encode())
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(gz_data)))
+            self.end_headers()
+            self.wfile.write(gz_data)
+        elif self.path.startswith("/data.csv.gz"):
+            # The compressed object is served without `Content-Encoding`, so the client has to
+            # detect the compression from the extension of the URL it was redirected to.
+            gz_data = gzip.compress(CSV_DATA.encode())
+            self.send_response(200)
+            self.send_header("Content-Type", "application/gzip")
+            self.send_header("Content-Length", str(len(gz_data)))
+            self.end_headers()
+            self.wfile.write(gz_data)
+        elif self.path.startswith("/data.csv"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv")
+            self.send_header("Content-Length", str(len(CSV_DATA.encode())))
+            self.end_headers()
+            self.wfile.write(CSV_DATA.encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, *args):
+        return
+
+
+class HTTPServerV6(ThreadingHTTPServer):
+    address_family = socket.AF_INET6
+
+
+def start_server():
+    if IS_IPV6:
+        httpd = HTTPServerV6(HTTP_SERVER_ADDRESS, HttpProcessor)
+    else:
+        httpd = ThreadingHTTPServer(HTTP_SERVER_ADDRESS, HttpProcessor)
+    t = threading.Thread(target=httpd.serve_forever)
+    t.daemon = True
+    return httpd, t
+
+
+def create_dictionary(
+    name, max_redirects, endpoint="/redirect", layout="HASHED()", lifetime="0"
+):
+    get_ch_answer("DROP DICTIONARY IF EXISTS {}".format(name))
+    get_ch_answer(
+        """CREATE DICTIONARY {name} (id UInt64, value String)
+        PRIMARY KEY id
+        SOURCE(HTTP(url '{url}' format 'CSV'))
+        LAYOUT({layout})
+        LIFETIME({lifetime})
+        SETTINGS(max_http_get_redirects = {max_redirects})""".format(
+            name=name,
+            url=HTTP_SERVER_URL_STR + endpoint,
+            layout=layout,
+            lifetime=lifetime,
+            max_redirects=max_redirects,
+        )
+    )
+
+
+def main():
+    httpd, t = start_server()
+    t.start()
+
+    # Without allowed redirects the source must refuse to follow the 302.
+    create_dictionary("dict_04498_no_redirects", 0)
+    answer = get_ch_answer("SELECT * FROM dict_04498_no_redirects ORDER BY id")
+    print("no redirects:", "TOO_MANY_REDIRECTS" in answer)
+
+    # With redirects allowed the source must follow the 302 and load the data.
+    create_dictionary("dict_04498_with_redirects", 5)
+    answer = get_ch_answer("SELECT * FROM dict_04498_with_redirects ORDER BY id")
+    print("with redirects:")
+    sys.stdout.write(answer)
+
+    # A redirect may lead to an object with a different extension; the compression method must be
+    # detected from the final (post-redirect) URL, not from the URL of the dictionary source.
+    create_dictionary("dict_04498_redirect_gz", 5, endpoint="/redirect_gz")
+    answer = get_ch_answer("SELECT * FROM dict_04498_redirect_gz ORDER BY id")
+    print("redirect to gzip:")
+    sys.stdout.write(answer)
+
+    # The inverse pattern: a source URL with a compression suffix (`/source.csv.gz`) redirects to an
+    # opaque signed URL without a suffix and without `Content-Encoding`; the compression method must
+    # fall back to the suffix of the original source URL.
+    create_dictionary("dict_04498_gz_to_opaque", 5, endpoint="/source.csv.gz")
+    answer = get_ch_answer("SELECT * FROM dict_04498_gz_to_opaque ORDER BY id")
+    print("gzip source redirected to opaque url:")
+    sys.stdout.write(answer)
+
+    # A relative `Location` (no leading slash, carrying a query string) must be resolved against
+    # the URI of the redirecting response per RFC 3986, keeping the query string intact (the
+    # target here serves data only for the exact resolved path and query, like a signed URL).
+    create_dictionary("dict_04498_relative_redirect", 5, endpoint="/redirect_relative")
+    answer = get_ch_answer("SELECT * FROM dict_04498_relative_redirect ORDER BY id")
+    print("relative redirect with query string:")
+    sys.stdout.write(answer)
+
+    # A `cache` layout loads keys selectively with a `POST` request carrying the requested keys in the
+    # body. A `303 See Other` answer must be followed with a bodyless `GET` (the target here rejects
+    # anything but `GET` with `405`, like a signed download URL).
+    create_dictionary(
+        "dict_04498_cache_see_other",
+        5,
+        endpoint="/lookup_see_other",
+        layout="CACHE(SIZE_IN_CELLS 100)",
+        lifetime="MIN 100 MAX 200",
+    )
+    answer = get_ch_answer(
+        "SELECT dictGet('dict_04498_cache_see_other', 'value', toUInt64(2))"
+    )
+    print("cache dictionary with 303 See Other:")
+    sys.stdout.write(answer)
+
+    get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_no_redirects")
+    get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_with_redirects")
+    get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_redirect_gz")
+    get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_gz_to_opaque")
+    get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_relative_redirect")
+    get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_cache_see_other")
+
+    httpd.shutdown()
+    t.join()
+    print("PASSED")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        traceback.print_tb(exc_traceback, file=sys.stderr)
+        print(exc_value, file=sys.stderr)
+        sys.stderr.flush()
+        os._exit(1)

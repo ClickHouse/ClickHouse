@@ -1,0 +1,16 @@
+no redirects: True
+with redirects:
+1	first
+2	second
+redirect to gzip:
+1	first
+2	second
+gzip source redirected to opaque url:
+1	first
+2	second
+relative redirect with query string:
+1	first
+2	second
+cache dictionary with 303 See Other:
+second
+PASSED
