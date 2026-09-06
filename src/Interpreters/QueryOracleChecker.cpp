@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -928,6 +929,119 @@ bool referencesDistributedTableAnywhere(const ASTPtr & ast, const ContextPtr & c
     }
     for (const auto & child : ast->children)
         if (referencesDistributedTableAnywhere(child, context))
+            return true;
+    return false;
+}
+
+constexpr size_t MAX_DEFINITION_SCREEN_DEPTH = 8;
+
+/// A query names relations and columns; reading them evaluates the definitions
+/// stored behind those names. A view's body and an `ALIAS` column's expression
+/// are re-evaluated on every read, so each of the oracle's reads of one name can
+/// observe a different value: `now()` inside a view body drifts exactly as a
+/// written-out `now()` would, yet the query's own AST holds only an
+/// `ASTTableIdentifier` and the checks above never see it.
+///
+/// Screen those definitions with the same predicates that screen the query
+/// text, so that the verdict does not depend on whether a construct is spelled
+/// inline or hidden behind a name: a view over `numbers(10)` is then skipped
+/// exactly as an inline `FROM numbers(10)` is, and no separate policy exists
+/// for the hidden spelling. A view reading another view recurses; the depth cap
+/// bounds a chain closed into a cycle by `CREATE OR REPLACE`. Unresolvable
+/// metadata fails closed, as in `referencesDistributedTableAnywhere`.
+bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr & context, size_t depth = 0)
+{
+    if (!ast)
+        return false;
+    if (depth > MAX_DEFINITION_SCREEN_DEPTH)
+        return true;
+
+    if (const auto * table_id = ast->as<ASTTableIdentifier>())
+    {
+        try
+        {
+            /// Resolve the name as a read resolves it: a temporary view lives in the session
+            /// namespace, not a database, and a `{name:Identifier}` placeholder has no name
+            /// until substitution. A name that does not resolve cannot be proven safe.
+            const StorageID resolved = context->tryResolveStorageID(StorageID{table_id->getDatabaseName(), table_id->shortName()});
+            if (!resolved)
+                return true;
+
+            if (auto storage = DatabaseCatalog::instance().tryGetTable(resolved, context))
+            {
+                /// An engine that returns rows it does not store evaluates a definition that
+                /// is neither in this AST nor in its own metadata, so its engine name does
+                /// not say what a read of it evaluates.
+                if (storage->readsFromOtherTables())
+                    return true;
+
+                auto metadata = storage->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
+                ASTs definitions;
+
+                /// `isView()` is also true for `MaterializedView`, whose read goes
+                /// to the target table rather than to its stored `SELECT`, so its
+                /// body is not a read-time carrier. Match the engine name instead.
+                if (storage->getName() == "View")
+                {
+                    /// `hasSelectQuery()` tests `select_query`, which `StorageView`
+                    /// never sets; `inner_query` is what `readImpl` evaluates.
+                    const auto & inner_query = metadata->getSelectQuery().inner_query;
+                    if (!inner_query)
+                        return true;
+                    definitions.push_back(inner_query);
+                }
+
+                for (const auto & column : metadata->getColumns())
+                    if (column.default_desc.kind == ColumnDefaultKind::Alias && column.default_desc.expression)
+                        definitions.push_back(column.default_desc.expression);
+
+                for (const auto & definition : definitions)
+                    if (hasNonDeterministicFunctionsImpl(definition, context)
+                        || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase())
+                        || referencesDistributedTableAnywhere(definition, context)
+                        || referencesUnscreenedDefinitionAnywhere(definition, context, depth + 1))
+                        return true;
+            }
+        }
+        catch (...)
+        {
+            /// Ok: fail closed. A name or metadata we cannot read cannot be proven safe, so
+            /// skip the query rather than risk a false oracle mismatch. Deliberately not
+            /// logged: this runs per-AST-node on a hot path.
+            return true;
+        }
+    }
+
+    /// `IN t` names a table and means `IN (SELECT * FROM t)`, as do argument 0 of `joinGet`
+    /// and of `dictGet`. Those operands are still plain `ASTIdentifier`s here, because the
+    /// rewrite to `ASTTableIdentifier` happens during analysis, after this check runs.
+    if (const auto * func = ast->as<ASTFunction>())
+    {
+        std::optional<size_t> table_argument_pos;
+        if (functionIsInOrGlobalInOperator(func->name))
+            table_argument_pos = 1;
+        else if (functionIsJoinGet(func->name) || functionIsDictGet(func->name))
+            table_argument_pos = 0;
+
+        if (table_argument_pos && func->arguments && func->arguments->children.size() > *table_argument_pos)
+        {
+            if (const auto * identifier = func->arguments->children[*table_argument_pos]->as<ASTIdentifier>())
+            {
+                /// A name that cannot be read as a table name, such as a `{name:Identifier}`
+                /// placeholder before substitution, cannot be proven safe either.
+                const ASTPtr table_id = identifier->createTable();
+                if (!table_id)
+                    return true;
+
+                /// An operand naming an alias or a CTE needs no exclusion: it resolves to no storage, which the branch above passes over.
+                if (referencesUnscreenedDefinitionAnywhere(table_id, context, depth))
+                    return true;
+            }
+        }
+    }
+
+    for (const auto & child : ast->children)
+        if (referencesUnscreenedDefinitionAnywhere(child, context, depth))
             return true;
     return false;
 }
@@ -2526,6 +2640,15 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (referencesDistributedTableAnywhere(query_ast, context))
     {
         LOG_TRACE(logger, "Oracle skip: query reads from a Distributed table");
+        return false;
+    }
+
+    /// A view body and an `ALIAS` column expression are evaluated on every read,
+    /// so a construct rejected when written in the query must be rejected when a
+    /// name hides it too, or the oracle's reads observe different values.
+    if (referencesUnscreenedDefinitionAnywhere(query_ast, context))
+    {
+        LOG_TRACE(logger, "Oracle skip: query reads a stored definition the gates reject");
         return false;
     }
 

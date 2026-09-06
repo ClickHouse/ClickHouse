@@ -1,0 +1,10 @@
+view over a non-deterministic definition: oracle skipped
+view over a deterministic definition: oracle ran
+view over a view over a non-deterministic definition: oracle skipped
+view over a system table: oracle skipped
+temporary view over a non-deterministic definition: oracle skipped
+Alias engine over a non-deterministic definition: oracle skipped
+ALIAS column with a non-deterministic expression: oracle skipped
+ALIAS column with a deterministic expression: oracle ran
+IN over a non-deterministic definition: oracle skipped
+IN over a deterministic definition: oracle ran
