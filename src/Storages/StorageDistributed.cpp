@@ -86,6 +86,7 @@
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
+#include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 
@@ -1929,6 +1930,11 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     if (!query_info.filter_actions_dag)
         return nullptr;
 
+    /// See skipUnusedShards: an unready subquery-backed set in the sharding key would throw
+    /// "Not-ready Set" when the expression is executed on constant values. Query all shards instead.
+    if (shardingKeyExpressionContainsNotReadySet(sharding_key_expr))
+        return nullptr;
+
     size_t limit = local_context->getSettingsRef()[Setting::optimize_skip_unused_shards_limit];
     if (!limit || limit > SSIZE_MAX)
     {
@@ -1971,6 +1977,12 @@ ClusterPtr StorageDistributed::skipUnusedShards(
 {
     if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         return skipUnusedShardsWithAnalyzer(cluster, query_info, storage_snapshot, local_context);
+
+    /// A sharding key with an unready subquery-backed set cannot be constant-folded per value:
+    /// evaluateExpressionOverConstantCondition executes it and hits FunctionIn with an unbuilt set
+    /// (LOGICAL_ERROR "Not-ready Set"). Skip the optimization and query all shards.
+    if (shardingKeyExpressionContainsNotReadySet(sharding_key_expr))
+        return nullptr;
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
     if (!select.prewhere() && !select.where())
