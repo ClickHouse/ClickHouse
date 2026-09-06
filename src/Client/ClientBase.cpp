@@ -201,6 +201,16 @@ namespace ProfileEvents
 {
     extern const Event UserTimeMicroseconds;
     extern const Event SystemTimeMicroseconds;
+    extern const Event OSReadBytes;
+    extern const Event OSWriteBytes;
+    extern const Event ReadBufferFromS3Bytes;
+    extern const Event WriteBufferFromS3Bytes;
+    extern const Event ReadBufferFromAzureBytes;
+    extern const Event WriteBufferFromAzureBytes;
+    extern const Event ReadWriteBufferFromHTTPBytes;
+    extern const Event WriteBufferFromHTTPBytes;
+    extern const Event NetworkReceiveBytes;
+    extern const Event NetworkSendBytes;
 }
 
 namespace
@@ -2130,6 +2140,16 @@ void ClientBase::onProfileEvents(Block & block)
 
         std::string_view user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
         std::string_view system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+        std::string_view os_read_bytes_name = ProfileEvents::getName(ProfileEvents::OSReadBytes);
+        std::string_view os_write_bytes_name = ProfileEvents::getName(ProfileEvents::OSWriteBytes);
+        std::string_view s3_read_bytes_name = ProfileEvents::getName(ProfileEvents::ReadBufferFromS3Bytes);
+        std::string_view s3_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromS3Bytes);
+        std::string_view azure_read_bytes_name = ProfileEvents::getName(ProfileEvents::ReadBufferFromAzureBytes);
+        std::string_view azure_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromAzureBytes);
+        std::string_view http_rw_bytes_name = ProfileEvents::getName(ProfileEvents::ReadWriteBufferFromHTTPBytes);
+        std::string_view http_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromHTTPBytes);
+        std::string_view net_read_bytes_name = ProfileEvents::getName(ProfileEvents::NetworkReceiveBytes);
+        std::string_view net_write_bytes_name = ProfileEvents::getName(ProfileEvents::NetworkSendBytes);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
@@ -2161,6 +2181,12 @@ void ClientBase::onProfileEvents(Block & block)
             /// Keep the literal in sync with TemporaryDataOnDiskScope::USAGE_EVENT_NAME.
             else if (event_name == "TemporaryDataOnDiskUsage")
                 thread_times[host_name].temp_data_on_disk_usage = value;
+            /// IO: block devices (OS), object storage (S3, Azure), HTTP payloads, and network — all summed.
+            else if (event_name == os_read_bytes_name || event_name == s3_read_bytes_name || event_name == azure_read_bytes_name
+                || event_name == os_write_bytes_name || event_name == s3_write_bytes_name || event_name == azure_write_bytes_name
+                || event_name == http_rw_bytes_name || event_name == http_write_bytes_name
+                || event_name == net_read_bytes_name || event_name == net_write_bytes_name)
+                thread_times[host_name].io_bytes += value;
         }
         progress_indication.updateThreadEventData(thread_times);
         progress_table.updateTable(block);

@@ -1912,6 +1912,11 @@ function freshResourceState()
         cpu_ns: 0,       /// Cumulative CPU time (user + system), in nanoseconds.
         cpu_at_ns: 0,    /// Elapsed time at which CPU was last sampled, in nanoseconds.
         cpu_sampled_ns: 0, /// Value of `cpu_ns` at the last sample, so packets arriving between samples are not lost.
+        /// Cumulative IO (disk + object storage + network) bytes, sampled like CPU for the live rate.
+        io_bytes: 0,
+        io_at_ns: 0,
+        io_sampled: 0,
+        io: 0, /// Smoothed IO rate, in bytes/second.
         /// Per-host memory/disk gauges, keyed by host name: { memory, peak, disk } in bytes.
         /// The display shows the total across hosts and, for a distributed query (many hosts),
         /// the maximum over hosts as "max/host" - like `clickhouse-client`.
@@ -1936,6 +1941,17 @@ function accumulateResourceEvents(state, events)
         if (e.name === 'UserTimeMicroseconds' || e.name === 'SystemTimeMicroseconds')
         {
             state.cpu_ns += value * 1000; /// The value is a per-packet increment in microseconds.
+            continue;
+        }
+
+        /// IO (disk + object storage + network) byte counters are per-packet increments; accumulate
+        /// them all into one sum to derive the live IO rate, exactly like `clickhouse-client`.
+        if (e.name === 'OSReadBytes' || e.name === 'OSWriteBytes' || e.name === 'ReadBufferFromS3Bytes'
+            || e.name === 'WriteBufferFromS3Bytes' || e.name === 'ReadBufferFromAzureBytes' || e.name === 'WriteBufferFromAzureBytes'
+            || e.name === 'ReadWriteBufferFromHTTPBytes' || e.name === 'WriteBufferFromHTTPBytes'
+            || e.name === 'NetworkReceiveBytes' || e.name === 'NetworkSendBytes')
+        {
+            state.io_bytes += value;
             continue;
         }
 
@@ -2253,7 +2269,7 @@ class QueryProgressElement extends HTMLElement
         const dt = elapsed_ns - r.cpu_at_ns;
         if (dt > 0)
         {
-            /// Use the cumulative CPU time consumed since the previous sample, not only the last
+            /// Use the cumulative time/bytes consumed since the previous sample, not only the last
             /// packet's increment: a packet can arrive before a newer elapsed timestamp (dt == 0,
             /// no sample is taken), and its increment must still count towards the next sample.
             const instant = (r.cpu_ns - r.cpu_sampled_ns) / dt; /// Cores used during this interval.
@@ -2261,6 +2277,18 @@ class QueryProgressElement extends HTMLElement
             r.cpu = r.cpu ? (r.cpu * 0.5 + instant * 0.5) : instant;
             r.cpu_at_ns = elapsed_ns;
             r.cpu_sampled_ns = r.cpu_ns;
+
+            /// Sample the IO/network rates the same way (bytes over the interval, in bytes/second).
+            const sample_rate = (total_key, at_key, sampled_key, out_key) =>
+            {
+                const d_ns = elapsed_ns - r[at_key];
+                if (d_ns <= 0) return;
+                const instant_rate = (r[total_key] - r[sampled_key]) / d_ns * 1e9;
+                r[out_key] = r[out_key] ? (r[out_key] * 0.5 + instant_rate * 0.5) : instant_rate;
+                r[at_key] = elapsed_ns;
+                r[sampled_key] = r[total_key];
+            };
+            sample_rate('io_bytes', 'io_at_ns', 'io_sampled', 'io');
         }
 
         this._renderResources();
@@ -2311,6 +2339,8 @@ class QueryProgressElement extends HTMLElement
         if (mem_max < mem_total) parts.push(this._padMetric('ram_max', `${formatReadableBytes(mem_max)} max/host`));
         if (disk_total > 0) parts.push(this._padMetric('disk', `${formatReadableBytes(disk_total)} disk`));
         if (disk_max < disk_total) parts.push(this._padMetric('disk_max', `${formatReadableBytes(disk_max)} max/host`));
+        /// Live IO rate, matching the clickhouse-client progress line.
+        if (r.io > 0) parts.push(this._padMetric('io', `${formatReadableBytes(r.io)}/s IO`));
 
         this._resources_text = parts.join(', ');
         this._renderProgressLine();

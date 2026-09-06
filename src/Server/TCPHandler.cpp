@@ -1304,6 +1304,13 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             std::min(
                 poll_interval * 1000000,
                 static_cast<UInt64>(receive_timeout.totalMicroseconds())));
+    /// ... but wake up often enough to keep the client's live metrics fresh while it is slow to
+    /// send the next data packet. Sessions the flush cannot serve keep the blocking poll.
+    if (!state.skipping_data
+        && client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT
+        && query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+        && state.query_context->getSettingsRef()[Setting::send_profile_events])
+        timeout_us = std::min(timeout_us, std::max(min_timeout_us, interactive_delay));
 
     Stopwatch watch;
 
@@ -1317,6 +1324,13 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                 throw NetException(ErrorCodes::SOCKET_TIMEOUT,
                                 "Timeout exceeded while receiving data from client. Waited for {} seconds, timeout is {} seconds.",
                                 elapsed, receive_timeout.totalSeconds());
+            }
+
+            if (!state.skipping_data && after_send_progress.elapsed() / 1000 >= interactive_delay)
+            {
+                after_send_progress.restart();
+                sendLogs(state);
+                sendInsertProfileEvents(state);
             }
         }
 
