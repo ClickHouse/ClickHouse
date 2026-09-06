@@ -348,6 +348,9 @@ Pipe createMergeTreeSequentialSource(
     /// No `SAMPLE` clause reaches this path, so the sample factor is 1 - the same value
     /// `ReadFromMergeTree` publishes for a query without `SAMPLE`.
     info->const_virtual_fields.emplace("_sample_factor", 1.0);
+    /// `_table` and `_database` are constant per table, the same way `ReadFromMergeTree` publishes them.
+    info->const_virtual_fields.emplace("_table", storage.getStorageID().getTableName());
+    info->const_virtual_fields.emplace("_database", storage.getStorageID().getDatabaseName());
 
     /// The part might have some rows masked by lightweight deletes
     bool has_lightweight_delete = info->data_part_info->hasLightweightDelete() || info->alter_conversions->hasLightweightDelete();
