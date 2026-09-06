@@ -108,7 +108,7 @@ SELECT _table, key, value FROM mv2 ORDER BY key ASC;
 
 SELECT _table, * FROM dist5 ORDER BY key ASC;
 SELECT _table, * FROM dist6 ORDER BY key ASC;
-SELECT _table, * FROM m3 ORDER BY key ASC;
+SELECT _table, * FROM m3 ORDER BY key ASC, _table ASC;
 SELECT _table, * FROM m4 WHERE _table = 'd8' ORDER BY key ASC;
 SELECT _table, * FROM m5 WHERE _table = 'd8' ORDER BY key ASC;
 

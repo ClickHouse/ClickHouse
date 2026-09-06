@@ -1,0 +1,36 @@
+-- a read of nothing but the virtual columns still reports the child name
+05045_child
+05045_child
+1
+1
+1	05045_child
+-- the values agree with the child pruning
+1
+1
+0
+-- a read that also needs a real column is not affected
+05045_child	1
+05045_child	1
+-- the child column itself is still readable under its own name
+7	5	1
+-- a row policy that needs the child column keeps filtering on the child value
+05045_child	1
+1
+0
+-- an ALIAS column over the child column keeps its own value
+05045_alias_child	8
+05045_alias_child	8
+8
+-- a child whose only column is named _table leaves the stream with the constant alone
+05045_only_child
+05045_only_child
+05045_only_child
+05045_only_child
+2
+-- a Merge table that declares _table itself reads the child column instead
+7
+8
+-- a delegating child reports its own name, not the name behind it
+05045_inner
+1
+0
