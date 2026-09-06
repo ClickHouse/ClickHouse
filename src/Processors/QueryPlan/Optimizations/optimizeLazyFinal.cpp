@@ -71,6 +71,110 @@ static void exposeNodesAsDAGOutputs(ActionsDAG & dag, const NameSet & names)
     }
 }
 
+/// Collect the pre-FINAL (non-deferred) filters of `reading_step` for the winner-selection read.
+///
+/// A filter the query applies BEFORE the FINAL merge constrains which rows participate in
+/// deduplication. The lazy path's deduplication is the `argMax` aggregation over the
+/// winner-selection read, so the filter must be applied on that read's input: otherwise the
+/// aggregation picks a row the filter excludes and the key produces no row at all, instead of the
+/// highest-versioned row that does satisfy the filter.
+///
+/// Returns nullopt when a non-deferred filter exists but cannot be pushed into the winner-selection
+/// read safely, in which case the caller must leave the plan untouched.
+static std::optional<LazyFinalPreFinalFilters> collectPreFinalFilters(
+    const ReadFromMergeTree * reading_step,
+    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeData & data)
+{
+    const auto & query_info = reading_step->getQueryInfo();
+
+    /// Deferral is recorded by `deferFiltersAfterFinalIfNeeded` and does NOT remove the filter from
+    /// `query_info` until pipeline build, so the accessors below - not the presence of the filter -
+    /// are what tells the two orderings apart.
+    const bool has_non_deferred_row_level_filter
+        = query_info.row_level_filter && !reading_step->getDeferredRowLevelFilter();
+    const bool has_non_deferred_prewhere
+        = query_info.prewhere_info && !reading_step->getDeferredPrewhereInfo();
+
+    LazyFinalPreFinalFilters result;
+    if (!has_non_deferred_row_level_filter && !has_non_deferred_prewhere)
+        return result;
+
+    /// The aggregation reads these; a filter must not consume them away. The containment test below
+    /// only fires when the predicate IS one of these bare columns; in every other case what protects
+    /// the aggregation's inputs is `cloneFilterSubDAG` re-exposing each predicate input as a
+    /// pass-through output.
+    NameSet required_columns;
+    for (const auto & column : metadata_snapshot->getSortingKey().expression->getRequiredColumnsWithTypes())
+        required_columns.insert(column.name);
+    if (!data.merging_params.version_column.empty())
+        required_columns.insert(data.merging_params.version_column);
+    if (!data.merging_params.is_deleted_column.empty())
+        required_columns.insert(data.merging_params.is_deleted_column);
+
+    /// A predicate that can observe rows FINAL would have eliminated must not be evaluated on a
+    /// different row set than the one the query already evaluates it on. `cloneFilterSubDAG` keeps
+    /// only the predicate computation, so these checks see the predicate itself.
+    auto is_safe_to_push = [](const ActionsDAG & dag) { return !dag.hasNonDeterministic() && !dag.hasStatefulFunctions(); };
+
+    NameSet extra_columns_seen;
+    const auto & columns_description = storage_snapshot->metadata->getColumns();
+    auto collect_storage_inputs = [&](const ActionsDAG & dag)
+    {
+        for (const auto * input : dag.getInputs())
+        {
+            const auto & name = input->result_name;
+            /// Only storage columns can be requested from the winner-selection read: the
+            /// `ReadFromMergeTree` constructor resolves the requested names through
+            /// `StorageSnapshot::getSampleBlockForColumns`, which throws for anything else.
+            /// A derived input is produced by the cloned filters themselves.
+            if (!columns_description.hasColumnOrSubcolumn(GetColumnsOptions::All, name)
+                && !storage_snapshot->metadata->virtuals.has(name))
+                continue;
+            if (extra_columns_seen.insert(name).second)
+                result.extra_columns.push_back(name);
+        }
+    };
+
+    if (has_non_deferred_row_level_filter)
+    {
+        auto cloned = std::make_shared<FilterDAGInfo>();
+        /// `cloneFilterSubDAG` exposes every input of the predicate as a pass-through output, so no
+        /// column the aggregation needs can be erased by the filter's own DAG.
+        cloned->actions = cloneFilterSubDAG(query_info.row_level_filter->actions, query_info.row_level_filter->column_name);
+        cloned->column_name = query_info.row_level_filter->column_name;
+        cloned->do_remove_column
+            = query_info.row_level_filter->do_remove_column && !required_columns.contains(cloned->column_name);
+
+        if (!is_safe_to_push(cloned->actions))
+            return std::nullopt;
+
+        collect_storage_inputs(cloned->actions);
+        result.row_level_filter = std::move(cloned);
+    }
+
+    if (has_non_deferred_prewhere)
+    {
+        auto cloned = std::make_shared<PrewhereInfo>(query_info.prewhere_info->clone());
+        cloned->prewhere_actions
+            = cloneFilterSubDAG(query_info.prewhere_info->prewhere_actions, query_info.prewhere_info->prewhere_column_name);
+        cloned->remove_prewhere_column
+            = query_info.prewhere_info->remove_prewhere_column && !required_columns.contains(cloned->prewhere_column_name);
+        /// Nothing above the winner-selection read consumes the predicate column, so the rows have
+        /// to be dropped by the read itself rather than by a later step.
+        cloned->need_filter = true;
+
+        if (!is_safe_to_push(cloned->prewhere_actions))
+            return std::nullopt;
+
+        collect_storage_inputs(cloned->prewhere_actions);
+        result.prewhere_info = std::move(cloned);
+    }
+
+    return result;
+}
+
 /// Add a FilterStep that keeps only rows where is_deleted == 0.
 /// If remove_is_deleted_column is true, the is_deleted column is also removed from output
 /// (used when the column was added internally and not requested by the query).
@@ -260,31 +364,57 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
 
 struct SplitResult
 {
+    enum class Outcome
+    {
+        /// The reading node was replaced in place (all parts non-intersecting): nothing left to do.
+        PlanReplaced,
+        /// Lazy FINAL does not apply to this read; the reading step was left untouched and the plan
+        /// must keep the ordinary FINAL read.
+        DeclinedLeaveUntouched,
+        /// The caller must build the lazy branch. `non_intersecting_plan` is the half to union with
+        /// it, or null when the split produced no non-intersecting half.
+        BuildLazyBranch,
+    };
+
     std::unique_ptr<QueryPlan> non_intersecting_plan;
-    /// Set when `optimizeLazyFinal` must stop right after the split: either the plan was replaced in-place
-    /// (all parts non-intersecting), or lazy FINAL does not apply and the reading step was left untouched.
-    bool fully_replaced = false;
+    /// Declining is the default so that a return which names no outcome fails closed.
+    Outcome outcome = Outcome::DeclinedLeaveUntouched;
 };
 
 /// Try to split parts into non-intersecting and intersecting by primary key.
-/// If all parts are non-intersecting, replaces the plan node directly and returns fully_replaced=true.
-/// Otherwise, if allow_partial_split is set, returns a plan for non-intersecting parts (or nullptr
-/// if none), and updates the reading step's analyzed result to contain only intersecting parts;
-/// if not set, leaves the reading step untouched and returns fully_replaced=true to stop.
+/// If all parts are non-intersecting, replaces the plan node directly and returns PlanReplaced.
+/// Otherwise, if allow_partial_split and lazy_branch_available are both set, returns BuildLazyBranch
+/// together with a plan for the non-intersecting parts (or null when there are none), and updates the
+/// reading step's analyzed result to contain only intersecting parts; if either is unset, leaves the
+/// reading step untouched and returns DeclinedLeaveUntouched to stop.
+/// The two returns for a key this splitter cannot analyse sit above the checks at the bottom, so they
+/// re-test them and yield BuildLazyBranch only when all three preconditions hold.
 static SplitResult trySplitNonIntersectingParts(
     ReadFromMergeTree * reading_step,
     ReadFromMergeTree::AnalysisResultPtr analyzed_result,
     FilterStep * filter_step,
     QueryPlan::Node * read_node,
     QueryPlan & query_plan,
-    bool allow_partial_split)
+    bool allow_partial_split,
+    bool lazy_branch_available)
 {
     const auto & metadata_snapshot = reading_step->getStorageMetadata();
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     const auto & sorting_key = metadata_snapshot->getSortingKey();
 
+    /// The two returns below for a key this splitter cannot analyse skip the checks at the bottom of
+    /// this function, so they must re-test them: a direct text-index read cannot produce its virtual
+    /// columns through the lazy source, and a query that stops reading early (read-in-order or a small
+    /// limit) needs the ordinary FINAL read because the lazy replacement is unordered.
+    const bool unanalysable_key_may_build_lazy_branch
+        = lazy_branch_available && allow_partial_split && reading_step->getIndexReadTasks().empty();
+
     if (!isSafePrimaryKey(primary_key))
-        return {};
+        return {
+            .non_intersecting_plan = nullptr,
+            .outcome = unanalysable_key_may_build_lazy_branch
+                ? SplitResult::Outcome::BuildLazyBranch
+                : SplitResult::Outcome::DeclinedLeaveUntouched};
 
     bool in_reverse_order = false;
     if (!sorting_key.reverse_flags.empty())
@@ -294,7 +424,11 @@ static SplitResult trySplitNonIntersectingParts(
         for (size_t i = 1; i < num_pk && i < sorting_key.reverse_flags.size(); ++i)
         {
             if (in_reverse_order != sorting_key.reverse_flags[i])
-                return {};
+                return {
+                    .non_intersecting_plan = nullptr,
+                    .outcome = unanalysable_key_may_build_lazy_branch
+                        ? SplitResult::Outcome::BuildLazyBranch
+                        : SplitResult::Outcome::DeclinedLeaveUntouched};
         }
     }
 
@@ -307,27 +441,36 @@ static SplitResult trySplitNonIntersectingParts(
             std::move(split.non_intersecting_parts_ranges), reading_step, filter_step);
 
         if (!plan)
-            return {};
+            return {.non_intersecting_plan = nullptr, .outcome = SplitResult::Outcome::DeclinedLeaveUntouched};
 
         auto expected_header = reading_step->getOutputHeader();
         query_plan.replaceNodeWithPlan(read_node, std::move(*plan), expected_header);
-        return {.non_intersecting_plan = nullptr, .fully_replaced = true};
+        return {.non_intersecting_plan = nullptr, .outcome = SplitResult::Outcome::PlanReplaced};
     }
 
     /// The set/true-branch machinery built for intersecting parts reads through the lazy true-branch
     /// source, which cannot produce the `__text_index_*` virtual columns of a direct read from a text
     /// index. Leave the reading step untouched so the query falls back to a regular FINAL read.
-    /// Must come before the `non_intersecting_parts_ranges.empty()` check to cover the all-intersecting case.
+    /// Must precede every BuildLazyBranch return, including the two unanalysable-key ones above, which
+    /// re-test it through `unanalysable_key_may_build_lazy_branch`.
     if (!reading_step->getIndexReadTasks().empty())
-        return {.non_intersecting_plan = nullptr, .fully_replaced = true};
+        return {.non_intersecting_plan = nullptr, .outcome = SplitResult::Outcome::DeclinedLeaveUntouched};
 
     /// For queries that can stop reading early the set-building plan is a pessimization, and the
     /// partial split alone does not preserve the reading order; keep the regular FINAL read.
     if (!allow_partial_split)
-        return {.non_intersecting_plan = nullptr, .fully_replaced = true};
+        return {.non_intersecting_plan = nullptr, .outcome = SplitResult::Outcome::DeclinedLeaveUntouched};
 
+    /// Everything below hands the intersecting parts to the lazy branch (with or without a
+    /// non-intersecting half to union). When that branch cannot be built the whole read must stay an
+    /// ordinary FINAL read, so decline here - before `analyzed_result` is narrowed at all.
+    if (!lazy_branch_available)
+        return {.non_intersecting_plan = nullptr, .outcome = SplitResult::Outcome::DeclinedLeaveUntouched};
+
+    /// All parts intersect, so there is no non-intersecting half to union and the reading step is left
+    /// as it is - but the caller still builds the lazy branch over the whole part set.
     if (split.non_intersecting_parts_ranges.empty())
-        return {};
+        return {.non_intersecting_plan = nullptr, .outcome = SplitResult::Outcome::BuildLazyBranch};
 
     /// Update the original reading step to only have intersecting parts.
     /// Adjust index_stats by subtracting the non-intersecting contribution,
@@ -370,10 +513,14 @@ static SplitResult trySplitNonIntersectingParts(
     auto plan = createNonIntersectingPlan(
         std::move(split.non_intersecting_parts_ranges), reading_step, filter_step);
 
+    /// The reading step has already been narrowed to the intersecting parts above, so the caller must
+    /// build the lazy branch over them; there is just no non-intersecting half left to union.
     if (!plan)
-        return {};
+        return {.non_intersecting_plan = nullptr, .outcome = SplitResult::Outcome::BuildLazyBranch};
 
-    return {.non_intersecting_plan = std::make_unique<QueryPlan>(std::move(*plan))};
+    return {
+        .non_intersecting_plan = std::make_unique<QueryPlan>(std::move(*plan)),
+        .outcome = SplitResult::Outcome::BuildLazyBranch};
 }
 
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes [[maybe_unused]], const QueryPlanOptimizationSettings & optimization_settings)
@@ -468,6 +615,26 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     if (primary_key.column_names.empty())
         return;
 
+    /// Whether a filter is deferred to after FINAL is decided by `deferFiltersAfterFinalIfNeeded`,
+    /// which only runs as part of `optimizePrimaryKeyConditionAndLimit`. When that pass is disabled
+    /// (the automatic-parallel-replicas candidate plan does exactly this) the deferral accessors are
+    /// null for every filter, so a non-deferred filter is indistinguishable from a deferred one and
+    /// the winner-selection read cannot be built correctly.
+    const bool deferral_undeterminable
+        = !optimization_settings.query_plan_optimize_primary_key
+        && (reading_step->getRowLevelFilter() || reading_step->getPrewhereInfo());
+
+    /// A predicate that is nondeterministic or stateful must not be evaluated on the extra row set
+    /// the winner-selection read would see; keep the ordinary FINAL read for those.
+    auto pre_final_filters = deferral_undeterminable
+        ? std::optional<LazyFinalPreFinalFilters>{}
+        : collectPreFinalFilters(reading_step, reading_step->getStorageSnapshot(), metadata_snapshot, data);
+
+    /// The lazy branch needs a winner-selection read that applies the same pre-FINAL filters. The
+    /// all-non-intersecting split needs no such read, so it stays available even when the branch is
+    /// not - hence this is passed into the split rather than returned on.
+    const bool lazy_branch_available = pre_final_filters.has_value();
+
     /// Run early index analysis so the analyzed (PK-filtered) parts can be used
     /// both for the non-intersecting split and for the set/true-branch plans.
     /// The WHERE filter was already pushed by optimizePrimaryKeyConditionAndLimit,
@@ -490,11 +657,14 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// intersecting (overlapping, need FINAL). This avoids running the expensive
     /// aggregation-based FINAL on parts that have no duplicates.
     /// When all parts are non-intersecting, replaceNodeWithPlan is called inside
-    /// and fully_replaced is set — in that case we're done.
+    /// and PlanReplaced is returned, in which case we're done.
     auto split_result = trySplitNonIntersectingParts(
-        reading_step, analyzed_result, filter_step, read_node, query_plan, /*allow_partial_split=*/ !stops_reading_early);
+        reading_step, analyzed_result, filter_step, read_node, query_plan, /*allow_partial_split=*/ !stops_reading_early,
+        lazy_branch_available);
 
-    if (split_result.fully_replaced)
+    /// Tested for the one outcome that continues rather than against the ones that stop, so that a
+    /// future fourth outcome keeps the ordinary FINAL read instead of falling into the lazy branch.
+    if (split_result.outcome != SplitResult::Outcome::BuildLazyBranch)
         return;
 
     const auto & context = reading_step->getContext();
@@ -722,6 +892,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// Shared state between LazyFinalKeyAnalysisTransform and LazyReadReplacingFinalSource.
     auto shared_state = std::make_shared<LazyFinalSharedState>();
 
+    /// Guaranteed by the split: only BuildLazyBranch reaches here, and every return of it is either
+    /// below the `lazy_branch_available` gate or itself guarded by it.
+    chassert(pre_final_filters.has_value());
+
     /// Builds the ReadFromMergeTree step with IN-set filter, runs index analysis,
     /// checks if enough marks were filtered, and signals.
     auto analysis_step = std::make_unique<LazyFinalKeyAnalysisStep>(
@@ -736,7 +910,8 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         max_block_numbers_to_read,
         parts_for_set,
         context,
-        optimization_settings.min_filtered_ratio_for_lazy_final);
+        optimization_settings.min_filtered_ratio_for_lazy_final,
+        std::move(*pre_final_filters));
     auto * analysis_step_ptr = analysis_step.get();
     set_plan.addStep(std::move(analysis_step));
 
