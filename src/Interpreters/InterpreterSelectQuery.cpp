@@ -841,7 +841,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         else if (auto * distributed = dynamic_cast<StorageDistributed *>(storage.get());
                  distributed && context->canUseParallelReplicasCustomKeyForCluster(*distributed->getCluster()))
         {
-            context->setSetting("distributed_group_by_no_merge", 2);
+            /// Skipping the merge on the initiator (distributed_group_by_no_merge=2) is only correct when the
+            /// custom key is a function of the GROUP BY keys, so each group is fully processed by one replica.
+            /// Otherwise (e.g. `SELECT count()`) merging is required, so keep it enabled by default.
+            bool can_skip_merge = false;
+            if (auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *context))
+                can_skip_merge = customKeyResultCanSkipMerge(query, custom_key_ast, *context);
+
+            if (can_skip_merge)
+                context->setSetting("distributed_group_by_no_merge", 2);
             context->setSetting("prefer_localhost_replica", Field(0));
         }
         else if (
