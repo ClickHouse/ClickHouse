@@ -269,12 +269,19 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
 
     const auto & dictionary = low_cardinality_data.getDictionary();
 
+    /// The cast narrows without reporting loss, so UInt32(4294967295) reaches an Int32 dictionary as
+    /// -1, an entry it is not equal to. The string family is the exception: equality pads a shorter
+    /// needle to the element width, so there a cast image does equal a different entry.
+    const bool needle_may_wrap = !isStringOrFixedString(removeNullable(cast_type));
+
     auto find_in_dictionary = [&](std::string_view elem) -> std::optional<UInt64>
     {
-        /// The default slot holds its value whether or not any row references it, and the cast above
-        /// narrows without reporting loss, so UInt64(256) reaches it as UInt8(0). Answering from that
-        /// slot requires the constant to have survived the cast; one that did not equals no element.
-        if (elem == dictionary.getNestedNotNullableColumn()->getDataAt(dictionary.getNestedTypeDefaultValueIndex())
+        /// The default slot holds its value whether or not any row references it, so a wrapped
+        /// constant matches it even when the dictionary never saw that value.
+        const bool is_default_slot
+            = elem == dictionary.getNestedNotNullableColumn()->getDataAt(dictionary.getNestedTypeDefaultValueIndex());
+
+        if ((needle_may_wrap || is_default_slot)
             && !target_type->equals(*value_type_without_low_cardinality)
             && !targetTypeRepresentsValue(original_value, value_type_without_low_cardinality, value, cast_type))
             return {};

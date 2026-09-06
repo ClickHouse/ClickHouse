@@ -1,0 +1,86 @@
+-- signed element, same-width unsigned needle
+Int32/UInt32	0	0
+Int64/UInt64	0	0
+-- unsigned element, same-width signed needle
+UInt32/Int32	0	0
+UInt64/Int64	0	0
+-- same-width narrow pairs, which integer promotion already compared correctly
+Int16/UInt16	0	0
+Int8/UInt8	0	0
+UInt8/Int8	0	0
+-- a narrow signed element against a wider unsigned needle promotes to the needle, so it wrapped
+Int8/UInt32	0	0
+Int16/UInt32	0	0
+Int8/UInt64	0	0
+Int16/UInt64	0	0
+Int8/UInt32 rep	1	1
+-- representable mixed-sign needles must keep matching
+Int32/UInt32 rep	1	1
+Int64/UInt64 rep	1	1
+UInt32/Int32 rep	1	1
+UInt64/Int64 rep	1	1
+-- sibling functions sharing the comparison
+indexOf	0	0
+indexOf rep	1	1
+countEqual	0	0
+countEqual rep	1	1
+notHas	1	1
+notHas rep	0	0
+-- indexOfAssumeSorted: the binary search ordering must match the equality
+sorted UInt64/Int64	0	0
+sorted UInt64/Int64 rep	2	2
+sorted Int32/UInt32	0	0
+sorted Int32/UInt32 rep	3	3
+-- Map key/value lookups use the same helpers
+mapContains	0	0
+mapContains rep	1	1
+mapContainsValue	0	0
+mapContainsValue rep	1	1
+-- non-constant needle
+vector needle	1	1	1
+vector needle	4294967295	0	0
+-- Nullable elements
+Nullable(Int32)	0	0
+Nullable(Int32) rep	1	1
+Nullable(Int32) NULL	1
+-- LowCardinality elements: the dictionary shortcut must not derive an index from a wrapping cast
+LC(Int32) const	0	0
+LC(Int32) const rep	1	1
+LC(Int64) const	0	0
+LC(Int64) const rep	1	1
+LC(Int32) vector	1	1	1
+LC(Int32) vector	4294967295	0	0
+LC(Nullable(Int32)) const	0	0
+LC(Nullable(Int32)) const rep	1	1
+LC(Nullable(Int32)) NULL	1
+LC(Int32) indexOf	0	0
+LC(Int32) countEqual	0	0
+-- integer/float mixed domain: the cast must not lose precision
+Float64/Int64	0	0
+Float64/Int64 rep	1	1
+Int64/Float64	0	0
+Int64/Float64 rep	1	1
+Float32/Int64	0	0
+Float32/Int32	0	0
+Float32/Int64 rep	1	1
+-- NaN never equals anything
+NaN needle	0	0
+NaN element, int needle	1	1
+-- an Enum element compares through its underlying Int8, so a wider needle wrapped it too
+Enum8/UInt8	0
+Enum8/UInt8 rep	1
+Enum8/UInt32	0
+Enum8/UInt32 rep	1
+-- a String needle shorter than a FixedString element still matches, since equality pads.
+-- The needle carries a trailing NUL, which a round trip through String would strip.
+LC(FixedString(4))/String	1	1
+LC(FixedString(4))/String NUL	1	1
+LC(FixedString(4))/String absent	0	0
+-- the dictionary shortcut over a float element must not resolve a lossy integer needle
+LC(Float64)/Int64	0	0
+LC(Float64)/Int64 rep	1	1
+-- a temporal element narrows a wider temporal needle, so the dictionary must not answer either
+LC(Date)/DateTime	0	0
+LC(Date)/DateTime rep	1	1
+LC(IPv4)/UInt64	0
+LC(IPv4)/UInt64 rep	1

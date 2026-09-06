@@ -19,6 +19,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Core/AccurateComparison.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
@@ -96,53 +97,22 @@ private:
     using ArrOffset = ColumnArray::Offset;
     using ArrOffsets = ColumnArray::Offsets;
 
-    static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
+    /// Same comparison the scalar `=` operator uses (accurate::equalsOp via EqualsOp), so that
+    /// membership never equates values that `=` considers different.
+    static bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
     {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-        return left == right[i];
-#pragma clang diagnostic pop
+        return accurate::equalsOp(left, right[i]);
     }
 
-    static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
+    static bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
     {
-        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
-        {
-            return left[i] == static_cast<Initial>(right);
-        }
-        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
-        {
-            return static_cast<Result>(left[i]) == right;
-        }
-        else
-        {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-            return left[i] == right;
-#pragma clang diagnostic pop
-        }
+        return accurate::equalsOp(left[i], right);
     }
 
-    static constexpr bool compare(
+    static bool compare(
             const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j)
     {
-        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
-        {
-            return left[i] == static_cast<Initial>(right[j]);
-        }
-        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
-        {
-            return static_cast<Result>(left[i]) == right[j];
-        }
-        else
-        {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-            return left[i] == right[j];
-#pragma clang diagnostic pop
-        }
+        return accurate::equalsOp(left[i], right[j]);
     }
 
     /// LowCardinality
@@ -162,24 +132,11 @@ private:
         return accurateEquals(arr[pos], rhs);
     }
 
-    static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
+    /// Despite the name, this computes `left[i] >= right`; it must stay consistent with compare
+    /// above or the binary search in lowerBound descends the wrong half.
+    static bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
     {
-        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
-        {
-            return left[i] >= static_cast<Initial>(right);
-        }
-        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
-        {
-            return static_cast<Result>(left[i]) >= right;
-        }
-        else
-        {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-            return left[i] >= right;
-#pragma clang diagnostic pop
-        }
+        return accurate::greaterOrEqualsOp(left[i], right);
     }
 
     static bool lessOrEqual(const IColumn & left, const Result & right, size_t i, size_t) { return left[i] >= right; }
