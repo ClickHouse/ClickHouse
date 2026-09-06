@@ -48,6 +48,10 @@ public:
         /// True when the database is created by the server itself (e.g. loading metadata on startup) rather
         /// than by a user query. Lets an engine distinguish an internal reload from a user `ATTACH DATABASE`.
         bool internal = false;
+        /// True only while replaying a database definition that is already stored on disk. `internal` does not
+        /// mean that: a user statement wrapped in `PARALLEL WITH` also executes internally, so a decision that
+        /// grants a stored definition more trust than a fresh query must read this.
+        bool loading_stored_metadata = false;
     };
 
     struct EngineFeatures
@@ -75,7 +79,7 @@ public:
         Documentation documentation;
     };
 
-    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE, bool internal = false);
+    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE, bool internal = false, bool loading_stored_metadata = false);
 
     using DatabaseEngines = std::unordered_map<std::string, Creator>;
 
@@ -103,7 +107,7 @@ public:
 private:
     DatabaseEngines database_engines;
 
-    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal);
+    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal, bool loading_stored_metadata);
 
     /// validate validates the database engine that's specified in the create query for
     /// engine arguments, settings and table overrides.

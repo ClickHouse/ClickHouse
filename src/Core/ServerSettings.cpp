@@ -1539,8 +1539,14 @@ permitted source again. It never silently regains the server's identity. This ke
 for example one created in an older version before the restriction existed, or one whose named collection was
 later re-bound to `use_environment_credentials = 1` — from aborting server startup.
 
+It also covers a second case, where the effect differs. When the stored definition instead sends a named
+collection's own credentials to a destination that collection does not authorise, there is no ambient identity
+to drop, so the object keeps loading with those credentials and the destination is only written to the log as a
+warning. A query asking for the same redirect now is refused outright.
+
 When disabled, loading such an object instead fails, which can prevent the server from starting. Use this only
-if you prefer a hard failure over a silently inaccessible table, disk, or catalog database.
+if you prefer a hard failure over a table, disk, or catalog database that is silently inaccessible, or that
+reaches a destination its named collection does not authorise.
 )", 0) \
     DECLARE(Bool, s3_allow_server_credentials_for_system_table_disks, false, R"(
 Allows a dynamic `disk(type = s3, ...)` of a table in the `system` database to use the server's own (ambient)

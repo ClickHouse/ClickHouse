@@ -233,7 +233,7 @@ def test_materialized_postgresql_table_engine_named_collection_addresses_expr(st
 def test_user_attach_respects_remote_host_filter(started_cluster):
     # A user-issued `ATTACH DATABASE` is not a startup replay: exempting it would be a direct
     # bypass of `remote_url_allow_hosts` (attach a blocked but reachable host, and the engine is
-    # free to connect to it later). Only the internal metadata replay skips the filter.
+    # free to connect to it later). Only replaying a stored definition skips the filter.
     node.query("DROP DATABASE IF EXISTS pg_db_user_attach")
     error = node.query_and_get_error(f"ATTACH DATABASE pg_db_user_attach ENGINE = PostgreSQL('{BLOCKED_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')")
     assert "UNACCEPTABLE_URL" in error
@@ -247,6 +247,33 @@ def test_user_attach_respects_remote_host_filter(started_cluster):
         settings={"allow_experimental_database_materialized_postgresql": 1},
     )
     assert "UNACCEPTABLE_URL" in error
+
+
+def test_parallel_with_user_attach_respects_remote_host_filter(started_cluster):
+    # A `PARALLEL WITH` child executes with `internal = true`, so the replay exemption cannot be keyed
+    # on that flag: the child is still the user's own `ATTACH DATABASE` at mode `ATTACH`. Keying on it
+    # let the wrapped form through while the bare form above was rejected, sending the credentials of
+    # the attached definition to a host `remote_url_allow_hosts` forbids.
+    node.query("DROP DATABASE IF EXISTS pg_db_parallel_attach")
+    node.query("DROP DATABASE IF EXISTS pg_parallel_sink")
+    error = node.query_and_get_error(
+        f"ATTACH DATABASE pg_db_parallel_attach ENGINE = PostgreSQL('{BLOCKED_HOST}:5432', 'postgres', 'postgres', '{pg_pass}') "
+        "PARALLEL WITH CREATE DATABASE pg_parallel_sink ENGINE = Memory"
+    )
+    assert "UNACCEPTABLE_URL" in error
+    assert node.query("SELECT count() FROM system.databases WHERE name = 'pg_db_parallel_attach'").strip() == "0"
+    node.query("DROP DATABASE IF EXISTS pg_parallel_sink")
+
+    node.query("DROP DATABASE IF EXISTS mpg_parallel_attach")
+    node.query("DROP DATABASE IF EXISTS mpg_parallel_sink")
+    error = node.query_and_get_error(
+        f"ATTACH DATABASE mpg_parallel_attach UUID '00001111-2222-3333-4444-555566667779' ENGINE = MaterializedPostgreSQL('{BLOCKED_HOST}:5432', 'postgres', 'postgres', '{pg_pass}') "
+        "PARALLEL WITH CREATE DATABASE mpg_parallel_sink ENGINE = Memory",
+        settings={"allow_experimental_database_materialized_postgresql": 1},
+    )
+    assert "UNACCEPTABLE_URL" in error
+    assert node.query("SELECT count() FROM system.databases WHERE name = 'mpg_parallel_attach'").strip() == "0"
+    node.query("DROP DATABASE IF EXISTS mpg_parallel_sink")
 
 
 def test_user_attach_table_respects_multi_address_validation(started_cluster):

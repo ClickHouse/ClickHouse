@@ -50,6 +50,14 @@ std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     const auto context = args.getLocalContext();
+
+    /// Must precede `initialize`, which parses the definition and reads this. True for every route that replays
+    /// a definition this server already stored rather than accepting a fresh one; such a replay can arrive at
+    /// `CREATE`, so `mode` alone cannot tell it apart - hence the same flags `registerStorageMergeTree` reads
+    /// to answer that question.
+    configuration->is_metadata_replay = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax
+        || args.is_restore_from_backup || context->isRecoveryFromStoredMetadata();
+
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
     // Use format settings from global server context + settings from

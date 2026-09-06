@@ -20,6 +20,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <boost/algorithm/string.hpp>
@@ -33,6 +34,14 @@ namespace Setting
 {
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+}
+
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsString access_key_id;
+    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsBool no_sign_request;
+    extern const S3AuthSettingsBool use_environment_credentials;
 }
 
 static const std::unordered_set<std::string_view> optional_configuration_keys = {
@@ -205,7 +214,7 @@ void DatabaseS3::shutdown()
 {
 }
 
-DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPtr context_)
+DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPtr context_, bool is_metadata_replay)
 {
     Configuration result;
 
@@ -235,6 +244,28 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
         if (!result.no_sign_request && !has_complete_keys
             && !collection.getOrDefault<bool>("use_environment_credentials", false))
         {
+            result.no_sign_request = true;
+        }
+
+        /// Here rather than downstream: `getTableImpl` rebuilds positional `s3(url, key, secret)` arguments
+        /// that reach `fromAST`, by which point the collection's per-key override provenance is gone. The auth
+        /// is reassembled because this seam builds none of its own; the engine accepts only these four fields.
+        S3::S3AuthSettings auth;
+        auth[S3AuthSetting::access_key_id] = result.access_key_id.value_or("");
+        auth[S3AuthSetting::secret_access_key] = result.secret_access_key.value_or("");
+        auth[S3AuthSetting::no_sign_request] = result.no_sign_request;
+        auth[S3AuthSetting::use_environment_credentials] = result.use_environment_credentials;
+        const bool grandfathered
+            = validateS3CollectionDestinationBinding(collection, auth, result.url_prefix, context_, is_metadata_replay);
+
+        /// Without a url prefix `getFullUrl` returns the queried table name verbatim, so every lookup names its
+        /// own destination and there is no single stored one to grandfather. Load anonymously instead, which is
+        /// what `s3_load_table_anonymously_if_credentials_restricted` grants elsewhere.
+        if (grandfathered && result.url_prefix.empty())
+        {
+            result.access_key_id.reset();
+            result.secret_access_key.reset();
+            result.use_environment_credentials = false;
             result.no_sign_request = true;
         }
     }
@@ -337,7 +368,16 @@ void registerDatabaseS3(DatabaseFactory & factory)
         if (engine->arguments && !engine->arguments->children.empty())
         {
             ASTs & engine_args = engine->arguments->children;
-            config = DatabaseS3::parseArguments(engine_args, args.context);
+            /// A database is replayed from its stored statement with a plain `ATTACH` on startup, not
+            /// `FORCE_ATTACH` as tables are, so `isLoadingFromExistingMetadata` is too narrow here. A short
+            /// `ATTACH DATABASE d` likewise replays a stored statement, while
+            /// `ATTACH DATABASE d ENGINE = S3(...)` supplies a fresh definition. Note the field name differs
+            /// by factory: databases read `args.create_query`, storages read `args.query`.
+            /// `args.internal` would not be enough: `PARALLEL WITH` runs a user's own statement internally
+            /// and at mode `ATTACH`, so on those two fields a fresh definition looks like the replay.
+            const bool is_metadata_replay = (args.loading_stored_metadata && args.mode >= LoadingStrictnessLevel::ATTACH)
+                || args.create_query.attach_short_syntax;
+            config = DatabaseS3::parseArguments(engine_args, args.context, is_metadata_replay);
         }
 
         return std::make_shared<DatabaseS3>(args.database_name, config, args.context);

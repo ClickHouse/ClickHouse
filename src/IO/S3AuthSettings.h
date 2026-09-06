@@ -77,6 +77,15 @@ struct S3AuthSettings
     /// otherwise mint a server-identity bearer token for a user-chosen endpoint.
     void clearServerManagedGcpOAuth();
 
+    /// Whether a request built from these settings carries credential material of any kind. The two
+    /// authentication layers are independent: `no_sign_request` suppresses SigV4 only, while a `gcp_oauth`
+    /// HTTP client sends a bearer token regardless of it.
+    ///
+    /// The families enumerated here are the ones `S3::getCredentialsProvider` and
+    /// `PocoHTTPClientFactory::CreateHttpClient` decide between; a family added in either of those places
+    /// belongs here too. There is no compile-time guarantee of completeness.
+    bool hasEffectiveCredentials() const;
+
     HTTPHeaderEntries headers;
     HTTPHeaderEntries access_headers;
 

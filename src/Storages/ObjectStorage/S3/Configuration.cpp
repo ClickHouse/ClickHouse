@@ -3,6 +3,9 @@
 
 #if USE_AWS_S3
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -75,6 +78,11 @@ namespace S3RequestSetting
     extern const S3RequestSettingsString storage_class_name;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -122,6 +130,189 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "google_adc_client_secret", /// For GCP
     "google_adc_refresh_token", /// For GCP
 };
+
+namespace
+{
+    struct Origin
+    {
+        String scheme;
+        String host;
+        UInt16 port;
+
+        bool operator==(const Origin & other) const = default;
+
+        /// Safe to log as it stands: an origin holds no userinfo and no query string, the two places a URL
+        /// carries a credential.
+        String toString() const { return fmt::format("{}://{}:{}", scheme, host, port); }
+    };
+
+    /// A URL is only safe to log with its userinfo and its presigned-query values masked: a stored `url` may be
+    /// `user:pass@host` or carry `X-Amz-Signature`, and the server log is outside `SHOW_NAMED_COLLECTIONS_SECRETS`.
+    /// The two scans are the pair `FunctionSecretArgumentsFinder` applies, for the same reason.
+    String maskedForLog(const String & url)
+    {
+        String masked = url;
+        maskURIUserinfo(masked);
+        maskPresignedURLParameters(masked);
+        return masked;
+    }
+
+    /// The origin `raw` points at, or nullopt when it declares none (a relative URL: no scheme, no host).
+    /// `S3::URI` first so that scheme mappings (`s3://bucket/key` -> `https://bucket.s3.amazonaws.com/key`) are
+    /// applied to both sides of a comparison; plain `Poco::URI` for a value it rejects on unrelated grounds.
+    /// `Poco::URI::getPort()` substitutes the scheme's well-known port when the URL writes none, so
+    /// `https://h/` and `https://h:443/` are one origin while `http://h:443` and `https://h:443` are two.
+    std::optional<Origin> declaredOrigin(const String & raw, ContextPtr context)
+    {
+        if (raw.empty())
+            return std::nullopt;
+
+        const auto & settings = context->getSettingsRef();
+        Poco::URI parsed;
+        try
+        {
+            parsed = S3::URI(
+                         raw,
+                         settings[Setting::allow_archive_path_syntax],
+                         /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
+                         /*uri_style*/ settings[Setting::s3_uri_style])
+                         .uri;
+        }
+        catch (...) /// Ok: only whether the parse succeeded matters; the exception itself carries nothing this decision uses.
+        {
+            try
+            {
+                parsed = Poco::URI(raw);
+            }
+            catch (const Poco::Exception &)
+            {
+                return std::nullopt;
+            }
+        }
+
+        if (parsed.getScheme().empty() && parsed.getHost().empty())
+            return std::nullopt;
+
+        return Origin{
+            boost::algorithm::to_lower_copy(parsed.getScheme()), boost::algorithm::to_lower_copy(parsed.getHost()), parsed.getPort()};
+    }
+
+    /// Whether a secret that the authenticating mechanism still reads came from the collection definition
+    /// rather than from the query. Only complete replacement releases the destination: a query that overrides
+    /// `access_key_id` alone leaves the stored `secret_access_key` signing.
+    ///
+    /// `headers`, `access_headers` and the SSE keys are absent by design - S3's `optional_configuration_keys`
+    /// accepts none of them, so a value there came from the server `<s3>`/endpoint config.
+    /// `use_environment_credentials` is accepted, but the credential it selects is the server's own identity.
+    bool hasCollectionDerivedSecret(const NamedCollection & collection, const S3::S3AuthSettings & auth)
+    {
+        auto stored = [&](const std::string & key, const String & effective_value)
+        { return !effective_value.empty() && !collection.isQueryOverridden(key); };
+
+        /// Terminal, mirroring `hasEffectiveCredentials()`: under `gcp_oauth` the AWS legs below describe no
+        /// credential at all, since `S3::getCredentialsProvider` installs an anonymous provider and skips the
+        /// STS wrapper on that value.
+        if (boost::iequals(auth[S3AuthSetting::http_client].value, "gcp_oauth"))
+        {
+            /// A complete ADC triple is the mechanism `PocoHTTPClientGCPOAuth::requestBearerToken` picks, and it
+            /// mints the token without reading the metadata-service fields, so those name no credential then.
+            const bool adc_mints_the_token = !auth[S3AuthSetting::google_adc_client_id].value.empty()
+                && !auth[S3AuthSetting::google_adc_client_secret].value.empty()
+                && !auth[S3AuthSetting::google_adc_refresh_token].value.empty();
+
+            return stored("google_adc_client_id", auth[S3AuthSetting::google_adc_client_id].value)
+                || stored("google_adc_client_secret", auth[S3AuthSetting::google_adc_client_secret].value)
+                || stored("google_adc_refresh_token", auth[S3AuthSetting::google_adc_refresh_token].value)
+                || (!adc_mints_the_token
+                    && (stored("service_account", auth[S3AuthSetting::service_account].value)
+                        || stored("request_token_path", auth[S3AuthSetting::request_token_path].value)
+                        || stored("metadata_service", auth[S3AuthSetting::metadata_service].value)));
+        }
+
+        if (auth[S3AuthSetting::no_sign_request].value)
+            return false;
+
+        /// SigV4 needs both halves of the key pair, and the session token is read only alongside them, so a
+        /// lone half describes no credential: the request goes out anonymously and carries none of it.
+        const bool signs = !auth[S3AuthSetting::access_key_id].value.empty()
+            && !auth[S3AuthSetting::secret_access_key].value.empty();
+
+        /// `external_id` is read only by the STS assume-role wrapper, which `S3::getCredentialsProvider` builds
+        /// only for a non-empty `role_arn`; with no role to assume, nothing sends it.
+        return (signs
+                && (stored("access_key_id", auth[S3AuthSetting::access_key_id].value)
+                    || stored("secret_access_key", auth[S3AuthSetting::secret_access_key].value)
+                    || stored("session_token", auth[S3AuthSetting::session_token].value)))
+            || stored("role_arn", auth[S3AuthSetting::role_arn].value)
+            || (!auth[S3AuthSetting::role_arn].value.empty()
+                && stored("external_id", auth[S3AuthSetting::external_id].value));
+    }
+}
+
+bool validateS3CollectionDestinationBinding(
+    const NamedCollection & collection,
+    const S3::S3AuthSettings & effective_auth,
+    const String & effective_url,
+    ContextPtr context,
+    bool is_metadata_replay)
+{
+    /// An operator who wrote `url = '...' OVERRIDABLE` decided the destination may move. Re-tested here with
+    /// `false` as the default because `findOverrideForbiddingKey` accepts the override on the strength of
+    /// `allow_named_collection_override_by_default` alone and passes no signal on about which of the two it was.
+    if (collection.isOverridable("url", /*default_value=*/false))
+        return false;
+
+    if (!effective_auth.hasEffectiveCredentials() || !hasCollectionDerivedSecret(collection, effective_auth))
+        return false;
+
+    /// The authorised destination is whatever the collection's own definition names, which is the value a
+    /// query override replaced rather than the override itself. `markQueryOverridden` records a before-value
+    /// only for a key the collection actually held, so the two cases are distinguished by the stored value
+    /// alone and not by whether an override happened.
+    const String stored_url = collection.isQueryOverridden("url")
+        ? collection.getValueBeforeQueryOverride("url").value_or("")
+        : collection.getOrDefault<String>("url", "");
+
+    String reason;
+    if (stored_url.empty())
+    {
+        /// A collection that names no destination at all authorises none: its credential may not be sent
+        /// anywhere the query picks.
+        reason = "the collection declares no url";
+    }
+    else
+    {
+        /// A relative stored url has no origin of its own - `s3_base` supplies one - so there is nothing here to
+        /// compare an effective origin against.
+        const auto declared = declaredOrigin(stored_url, context);
+        if (!declared)
+            return false;
+
+        const auto effective = declaredOrigin(effective_url, context);
+        if (effective && *effective == *declared)
+            return false;
+        reason = fmt::format("the collection declares the origin {}", declared->toString());
+    }
+
+    /// Whoever loads a persisted definition did not choose it, and throwing here aborts server startup rather
+    /// than leaving one object inaccessible. Same trade as `getClient` and
+    /// `DatabaseDataLake::initializeOrLeaveUnavailable`, under the same server setting.
+    if (is_metadata_replay
+        && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
+    {
+        LOG_WARNING(
+            getLogger("NamedCollectionDestinationBinding"),
+            "Loading a stored definition that sends a named collection's own credentials to '{}', a destination the "
+            "collection does not authorise ({}). A query asking for this now is refused; it is allowed here only "
+            "because refusing a stored definition would stop the server from starting. Set the server setting "
+            "s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.",
+            maskedForLog(effective_url),
+            reason);
+        return true;
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for 'url'");
+}
 
 String StorageS3Configuration::getDataSourceDescription() const
 {
@@ -205,7 +396,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         /*client_restricts_server_credentials=*/context->shouldRestrictUserQueryS3Credentials());
 }
 
-void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
+void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context, bool is_metadata_replay)
 {
     const auto & settings = context->getSettingsRef();
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
@@ -335,6 +526,10 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->request_settings = S3::S3RequestSettings(collection, settings, /* validate_settings */ true);
 
     s3_capabilities = std::make_unique<S3Capabilities>(getCapabilitiesFromConfig(config, "s3"));
+
+    /// Last, so the auth is normalized and the URI fully resolved (`s3_base`, `filename`, archive syntax).
+    validateS3CollectionDestinationBinding(
+        collection, s3_settings->auth_settings, url.uri.toString(), context, is_metadata_replay);
 }
 
 static ASTPtr extractExtraCredentials(ASTs & args)
@@ -1177,7 +1372,7 @@ void StorageS3Configuration::initializeFromParsedArguments(S3StorageParsedArgume
 void StorageS3Configuration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     S3StorageParsedArguments parsed_arguments;
-    parsed_arguments.fromNamedCollection(collection, context);
+    parsed_arguments.fromNamedCollection(collection, context, is_metadata_replay);
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()

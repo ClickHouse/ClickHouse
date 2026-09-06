@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Common/Macros.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
@@ -51,6 +52,9 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     auto configuration = std::make_shared<Configuration>();
+    /// Assigned before `initialize` parses the definition: see `createStorageObjectStorage`.
+    configuration->is_metadata_replay = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax
+        || args.is_restore_from_backup || args.getLocalContext()->isRecoveryFromStoredMetadata();
     /// Parse with the create context so a `SETTINGS s3_allow_server_credentials_in_user_queries = 1` on the
     /// `CREATE` is honored (see `StorageS3Configuration::fromAST`); the processing context stays global below.
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getLocalContext(), false, &args.table_id);
