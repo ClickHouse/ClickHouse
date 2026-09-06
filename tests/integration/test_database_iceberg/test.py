@@ -933,6 +933,105 @@ def test_optimize_manifest_with_catalog(started_cluster):
     assert rows_after == rows_before
 
 
+def test_remove_orphan_files_with_catalog(started_cluster):
+    # On a catalog-managed table, reachability for remove_orphan_files is rooted at the
+    # metadata file the catalog has committed. A metadata file that merely sits at a higher
+    # version number in storage is not the table state, so the objects of the committed
+    # snapshots must survive while that file is itself collected as an orphan.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_orphan_with_catalog_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
+
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    # Several inserts, so the committed state spans several snapshots and several data files.
+    for value in (1, 2, 3):
+        node.query(f"INSERT INTO {table_ref} VALUES ({value});", settings=write_settings)
+
+    catalog = load_catalog_impl(started_cluster)
+    committed_location = catalog.load_table(f"{root_namespace}.{table_name}").metadata_location
+    bucket = "warehouse-rest"
+    assert committed_location.startswith(f"s3://{bucket}/"), committed_location
+    committed_key = committed_location[len(f"s3://{bucket}/"):]
+
+    def metadata_versions():
+        # Version numbers of the vN / NNNNN-<uuid> metadata files present in storage,
+        # mapped to their object keys.
+        out = {}
+        prefix = f"{table_name}/metadata/"
+        for name in list_s3_objects(started_cluster.minio_client, bucket, prefix):
+            if not name.endswith(".metadata.json"):
+                continue
+            match = re.match(r"v?(\d+)[.-]", name)
+            if match:
+                out[int(match.group(1))] = prefix + name
+        return out
+
+    versions = metadata_versions()
+    committed_version = max(v for v, key in versions.items() if key == committed_key)
+    assert committed_version == max(versions), (
+        f"expected the catalog pointer to be the highest version in storage before the "
+        f"divergence, got v{committed_version} of {sorted(versions)}"
+    )
+
+    earlier_version = min(v for v in versions if v < committed_version)
+    stale_content = _get_s3_object_bytes(
+        started_cluster.minio_client, bucket, versions[earlier_version]
+    )
+    uncommitted_key = (
+        f"{table_name}/metadata/{committed_version + 1:05d}-{uuid.uuid4()}.metadata.json"
+    )
+    # A well-formed metadata file that no catalog pointer names, holding an earlier state of
+    # this table: what a writer that built metadata from a stale base and never committed it
+    # to the catalog leaves behind. Resolving by storage version picks it, and it does not
+    # reference the objects the later commits added.
+    _put_s3_object_bytes(started_cluster.minio_client, bucket, uncommitted_key, stale_content)
+
+    def data_files():
+        return sorted(
+            name for name in list_s3_objects(
+                started_cluster.minio_client, bucket, f"{table_name}/"
+            )
+            if name.startswith("data/") and name.endswith(".parquet")
+        )
+
+    data_before = data_files()
+    assert len(data_before) >= 3, data_before
+    rows_before = node.query(f"SELECT x FROM {table_ref} ORDER BY x")
+    assert rows_before == "1\n2\n3\n", rows_before
+
+    time.sleep(2)
+    # older_than is pinned to now: the default age window spares every fresh object, so an
+    # unpinned run would pass on any binary.
+    node.query(
+        f"ALTER TABLE {table_ref} EXECUTE remove_orphan_files("
+        f"older_than = '{time.strftime('%Y-%m-%d %H:%M:%S')}');",
+        settings={"allow_insert_into_iceberg": 1, "allow_iceberg_remove_orphan_files": 1},
+    )
+
+    assert data_files() == data_before, (
+        "remove_orphan_files deleted data files of snapshots the catalog has committed.\n"
+        f"  Before: {data_before}\n  After:  {data_files()}"
+    )
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == rows_before
+    assert committed_key in metadata_versions().values(), (
+        f"remove_orphan_files deleted {committed_key}, the metadata file the catalog points at"
+    )
+    # The oracle is file existence plus a data read, and this arm keeps it honest: a binary
+    # that simply stopped deleting would satisfy every assertion above.
+    remaining = list_s3_objects(started_cluster.minio_client, bucket, f"{table_name}/")
+    assert uncommitted_key[len(table_name) + 1:] not in remaining, (
+        f"the uncommitted {uncommitted_key} is an orphan relative to the committed state "
+        "and should have been deleted"
+    )
+
+
 @pytest.mark.parametrize(
     "fields_to_remove",
     [

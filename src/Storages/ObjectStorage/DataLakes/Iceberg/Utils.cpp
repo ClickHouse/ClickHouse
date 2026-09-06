@@ -171,6 +171,32 @@ static bool isTemporaryMetadataFile(const String & file_name)
     return Poco::UUID{}.tryParse(substring);
 }
 
+/// True for `v<N>.metadata.json`, the only scheme whose file name is itself the compare-and-set:
+/// aiming at an N that exists collides, so existence means N is committed and a higher N carries a
+/// superset of the state. A uuid in the name removes both properties.
+static bool isVersionHintCommitScheme(const String & file_name)
+{
+    if (!file_name.starts_with('v'))
+        return false;
+    auto end_pos = file_name.find_first_of(".-");
+    if (end_pos == String::npos || end_pos <= 1 || file_name[end_pos] != '.')
+        return false;
+    return std::all_of(file_name.begin() + 1, file_name.begin() + end_pos, isdigit);
+}
+
+/// The file name a hint's content addresses, resolved the way the reader resolves it: a bare
+/// version number can only address `v<N>`, any other content names a file directly, and a
+/// directory part is dropped because the reader reads the name alone under `metadata/`.
+static std::optional<String> versionHintTargetName(const String & hint_content)
+{
+    if (hint_content.empty())
+        return {};
+    if (std::all_of(hint_content.begin(), hint_content.end(), isdigit))
+        return "v" + hint_content + ".metadata.json";
+    String named = hint_content.ends_with(".metadata.json") ? hint_content : hint_content + ".metadata.json";
+    return String(std::filesystem::path(named).filename());
+}
+
 /// Parse an all-digit version string into Int32, mapping overflow/garbage to BAD_ARGUMENTS.
 /// std::stoi throws std::out_of_range for values above INT_MAX, which would surface as an
 /// opaque STD_EXCEPTION (see issue #109612) instead of a clean BAD_ARGUMENTS.
@@ -1210,12 +1236,42 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         {
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
         }
+
+        /// A candidate outside the scheme the table itself commits through counts a version sequence
+        /// that is not this table's, so it must not be ranked against this table's files. The hint
+        /// declares the scheme; uuid selection identifies files by content and needs no name rule.
+        std::optional<bool> own_scheme_is_version_numbered;
+        if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
+            && !(table_uuid.has_value() && use_table_uuid_for_metadata_file_selection))
+        {
+            /// A hint that cannot be read leaves the scheme unknown, and guessing it here would
+            /// widen what a destructive caller may delete, so the read is allowed to throw.
+            String hint_content;
+            StoredObject version_hint(std::filesystem::path(table_path) / "metadata" / "version-hint.text");
+            auto buf = object_storage->readObject(version_hint, ReadSettings{});
+            readString(hint_content, *buf);
+            if (auto target = versionHintTargetName(hint_content))
+            {
+                const bool version_numbered = isVersionHintCommitScheme(*target);
+                auto has = [&](auto && predicate) { return std::any_of(metadata_files.begin(), metadata_files.end(),
+                    [&](const String & p) { return predicate(String(std::filesystem::path(p).filename())); }); };
+                /// A bare version number may address a compressed spelling of the name, so the
+                /// scheme is what has to be present, not the exact name. A hint naming a file
+                /// directly declares nothing unless that file is really there.
+                if (has([&](const String & name) { return isVersionHintCommitScheme(name) == version_numbered; })
+                    && (version_numbered || has([&](const String & name) { return name == *target; })))
+                    own_scheme_is_version_numbered = version_numbered;
+            }
+        }
+
         std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
         metadata_files_with_versions.reserve(metadata_files.size());
         for (const auto & path : metadata_files)
         {
             String filename = std::filesystem::path(path).filename();
             if (isTemporaryMetadataFile(filename))
+                continue;
+            if (own_scheme_is_version_numbered && isVersionHintCommitScheme(filename) != *own_scheme_is_version_numbered)
                 continue;
             auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
 
@@ -1271,24 +1327,35 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         }
 
         /// Get the latest version of metadata file: v<V>.metadata.json
-        const ShortMetadataFileInfo & latest_metadata_file_info = [&]()
+        auto ranks_below = [selection_way](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b)
         {
             if (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
-            {
-                return *std::max_element(
-                    metadata_files_with_versions.begin(),
-                    metadata_files_with_versions.end(),
-                    [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.last_updated_ms < b.last_updated_ms; });
-            }
-            else
-            {
-                return *std::max_element(
-                    metadata_files_with_versions.begin(),
-                    metadata_files_with_versions.end(),
-                    [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.version < b.version; });
-            }
-        }();
-        return MetadataFileWithInfo{latest_metadata_file_info.version, latest_metadata_file_info.path, getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
+                return a.last_updated_ms < b.last_updated_ms;
+            return a.version < b.version;
+        };
+
+        const ShortMetadataFileInfo & latest_metadata_file_info
+            = *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end(), ranks_below);
+
+        /// One version can be claimed by a plain and a compressed spelling of the same name
+        /// (`v7.metadata.json`, `v7.gz.metadata.json`). Both are committed under the name-collision
+        /// rule, so which one is current is not decidable here, and listing order would decide it.
+        if (own_scheme_is_version_numbered)
+            for (const auto & candidate : metadata_files_with_versions)
+                if (candidate.path != latest_metadata_file_info.path && candidate.version == latest_metadata_file_info.version)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Iceberg table with path {} has two metadata files claiming version {}: '{}' and '{}'. "
+                        "Remove or rename the one that is not current",
+                        table_path,
+                        latest_metadata_file_info.version,
+                        latest_metadata_file_info.path,
+                        candidate.path);
+
+        return MetadataFileWithInfo{
+            latest_metadata_file_info.version,
+            latest_metadata_file_info.path,
+            getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
     };
 
     /// We'll query latest metadata from either cache or the actual remote catalog with a certain configured tolerance of staleness
@@ -1319,9 +1386,9 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const std::optional<String> & table_uuid,
     CompressionMethod known_compression_method,
     bool force_fetch_latest_metadata,
-    bool ignore_explicit_metadata_file_path)
+    bool ignore_metadata_pointer_overrides)
 {
-    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed && !ignore_explicit_metadata_file_path)
+    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed && !ignore_metadata_pointer_overrides)
     {
         auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
         if (explicit_metadata_path.contains('\0'))
@@ -1359,7 +1426,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         return getLatestMetadataFileAndVersion(
             object_storage, table_path, data_lake_settings, metadata_cache, local_context, normalizeUuid(explicit_table_uuid), true, force_fetch_latest_metadata);
     }
-    else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
+    else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value && !ignore_metadata_pointer_overrides)
     {
         auto version_hint_path = std::filesystem::path(table_path) / "metadata" / "version-hint.text";
         std::string metadata_file;
@@ -1394,7 +1461,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
     CompressionMethod known_compression_method,
-    bool ignore_explicit_metadata_file_path)
+    bool ignore_metadata_pointer_overrides)
 {
     if (!catalog)
         return getLatestOrExplicitMetadataFileAndVersion(
@@ -1407,7 +1474,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
             table_uuid,
             known_compression_method,
             /* force_fetch_latest_metadata */ true,
-            ignore_explicit_metadata_file_path);
+            ignore_metadata_pointer_overrides);
 
     DataLake::TableMetadata table_metadata;
     table_metadata.withDataLakeSpecificProperties().withLocation();
@@ -1425,6 +1492,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path]
         = table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location);
 
+    /// A catalog's pointer IS the committed state, so it is resolved rather than overridden.
     return getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         table_path,
@@ -1435,7 +1503,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
         table_uuid,
         known_compression_method,
         /* force_fetch_latest_metadata */ true,
-        /* ignore_explicit_metadata_file_path */ false);
+        /* ignore_metadata_pointer_overrides */ false);
 }
 
 
