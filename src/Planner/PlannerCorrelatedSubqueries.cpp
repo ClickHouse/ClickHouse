@@ -26,12 +26,14 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/TableJoin.h>
 
 #include <Parsers/SelectUnionMode.h>
 
 #include <Planner/Planner.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerJoins.h>
 #include <Planner/PlannerJoinsLogical.h>
 #include <Planner/Utils.h>
 
@@ -1099,6 +1101,11 @@ QueryPlan buildLogicalJoin(
         /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
         result_join->setOptimized();
     }
+
+    /// Fall back to hash only if nothing enabled runs the join.
+    auto & result_join_algorithms = result_join->getJoinSettings().join_algorithms;
+    if (!anyEnabledAlgorithmSupports(result_join_algorithms, join_kind_to_use, JoinStrictness::Any, /*direct_join_possible=*/false))
+        result_join_algorithms.push_back(JoinAlgorithm::HASH);
 
     QueryPlan result_plan;
 

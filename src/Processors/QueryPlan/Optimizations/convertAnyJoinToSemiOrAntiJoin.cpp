@@ -6,6 +6,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Joins.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Planner/PlannerJoins.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -134,20 +135,25 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
     if (!join || child_node->children.size() != 2)
         return 0;
 
-    /// The Join engine requires its declared join kind and strictness to remain unchanged.
-    auto isStorageJoin = [](auto & step)
-    {
-        auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(step.get());
-        return lookup_step && lookup_step->getPreparedJoinStorage().storage_join;
-    };
-    if (isStorageJoin(child_node->children.back()->step))
+    /// The Join engine rejects a changed strictness.
+    auto * right_lookup_step = typeid_cast<JoinStepLogicalLookup *>(child_node->children.back()->step.get());
+    if (right_lookup_step && right_lookup_step->getPreparedJoinStorage().storage_join)
         return 0;
+    /// direct needs a key-value right side.
+    const bool direct_join_possible = right_lookup_step && right_lookup_step->getPreparedJoinStorage().storage_key_value;
 
     auto & join_operator = join->getJoinOperator();
     if (join_operator.strictness != JoinStrictness::Any)
         return 0;
 
     if (!isLeftOrRight(join_operator.kind))
+        return 0;
+
+    /// Rewrite only if something runs the result; ANY stays runnable.
+    const auto & join_algorithms = join->getJoinSettings().join_algorithms;
+    const bool semi_supported = anyEnabledAlgorithmSupports(join_algorithms, join_operator.kind, JoinStrictness::Semi, direct_join_possible);
+    const bool anti_supported = anyEnabledAlgorithmSupports(join_algorithms, join_operator.kind, JoinStrictness::Anti, direct_join_possible);
+    if (!semi_supported && !anti_supported)
         return 0;
 
     const auto & filter_dag = filter->getExpression();
@@ -162,7 +168,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
             auto result_for_not_matched_rows = filterResultForNotMatchedRows(filter_dag, filter_column_name, *right_stream_input_header);
             auto result_for_matched_rows = filterResultForMatchedRows(getPreFilterActionsDAG<JoinSide::Right>(child_node, join), filter_dag, filter_column_name);
 
-            if (result_for_not_matched_rows == FilterResult::FALSE)
+            if (result_for_not_matched_rows == FilterResult::FALSE && semi_supported)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to SEMI JOIN");
                 join_operator.strictness = JoinStrictness::Semi;
@@ -174,7 +180,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                 }
                 return 2;
             }
-            if (result_for_matched_rows == FilterResult::FALSE)
+            if (result_for_matched_rows == FilterResult::FALSE && anti_supported)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to ANTI JOIN");
                 join_operator.strictness = JoinStrictness::Anti;
@@ -193,7 +199,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
             auto result_for_not_matched_rows = filterResultForNotMatchedRows(filter_dag, filter_column_name, *left_stream_input_header);
             auto result_for_matched_rows = filterResultForMatchedRows(getPreFilterActionsDAG<JoinSide::Left>(child_node, join), filter_dag, filter_column_name);
 
-            if (result_for_not_matched_rows == FilterResult::FALSE)
+            if (result_for_not_matched_rows == FilterResult::FALSE && semi_supported)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to SEMI JOIN");
                 join_operator.strictness = JoinStrictness::Semi;
@@ -205,7 +211,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                 }
                 return 2;
             }
-            if (result_for_matched_rows == FilterResult::FALSE)
+            if (result_for_matched_rows == FilterResult::FALSE && anti_supported)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to ANTI JOIN");
                 join_operator.strictness = JoinStrictness::Anti;
