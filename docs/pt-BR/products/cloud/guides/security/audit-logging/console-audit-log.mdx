@@ -9,11 +9,15 @@ keywords: ['log de auditoria']
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-As atividades do Console são registradas no log de auditoria. Se você tiver a função de organização Admin ou Developer, poderá consultar o log e integrá-lo aos seus sistemas de logging.
+As atividades do Console são registradas no log de auditoria. Usuários com acesso podem consultar o log e integrá-lo aos seus sistemas de logging. O acesso ao log de auditoria é controlado pela permissão **View audit logs** (`control-plane:organization:view-activities`):
 
-<div id="console-audit-log-ui">
-  ## Acesse o log do console pela interface do usuário
-</div>
+* Usuários com a função de organização Admin têm acesso por padrão.
+* Os demais usuários do Console precisam de acesso à organização e de uma [função personalizada](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles) que inclua a permissão **View audit logs**.
+* As API keys precisam de uma função que inclua essa mesma permissão.
+
+Para uma descrição de todas as permissões, consulte [Funções e permissões do Console](/pt-BR/products/cloud/reference/security/console-roles).
+
+## Acesse o log do console pela interface do usuário {#console-audit-log-ui}
 
 <Steps>
   <Step title="Selecione a organização" id="select-org">
@@ -48,16 +52,12 @@ As atividades do Console são registradas no log de auditoria. Se você tiver a 
   <Image img="/images/cloud/security/activity_log3.webp" size="lg" alt="Exportação CSV de atividade do ClickHouse Cloud" border />
 </div>
 
-<div id="console-audit-log-api">
-  ## Acesse o log de auditoria do console pela API
-</div>
+## Acesse o log de auditoria do console pela API {#console-audit-log-api}
 
 Você pode usar o endpoint `activity` da ClickHouse Cloud API para exportar
 eventos de auditoria. Mais detalhes podem ser encontrados na [referência da API](/pt-BR/products/cloud/api-reference/organization/get-list-of-available-organizations).
 
-<div id="log-integrations">
-  ## Integrações de logs
-</div>
+## Integrações de logs {#log-integrations}
 
 Você pode usar a API para fazer integração com a plataforma de logging de sua escolha. As opções a seguir contam com conectores compatíveis prontos para uso:
 

@@ -4,9 +4,7 @@ title: Cloud 快速入门命令行客户端
 
 本页介绍如何通过 [ClickHouse 命令行客户端](/zh/products/cloud/features/cli) (`clickhousectl`) 在命令行中预配 ClickHouse Cloud 服务、连接到服务并加载数据。命令以非交互方式运行；使用 `--json` 时，`clickhousectl` 将输出 JSON。
 
-<div id="prerequisites">
-  ## 前置条件
-</div>
+## 前置条件 {#prerequisites}
 
 安装 ClickHouse 命令行客户端：
 
@@ -26,9 +24,7 @@ clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
 
 或者，设置 `CLICKHOUSE_CLOUD_API_KEY` 和 `CLICKHOUSE_CLOUD_API_SECRET` 环境变量。使用 `clickhousectl cloud auth status` 进行验证；预期会显示一条 scope 为 `read/write` 的条目。
 
-<div id="create-service">
-  ## 创建 ClickHouse 服务
-</div>
+## 创建 ClickHouse 服务 {#create-service}
 
 创建服务并保存响应内容；`default` 用户的密码仅会显示一次：
 
@@ -81,9 +77,7 @@ CH_HOST=$(jq -r '.service.endpoints[] | select(.protocol=="nativesecure") | .hos
 
 使用 `clickhousectl` 创建的服务默认使用允许所有 IP 地址 (`0.0.0.0/0`) 访问的 IP 访问列表。要限制访问，请在创建服务时传入 `--ip-allow`；请参阅[&quot;设置 IP 过滤器&quot;](/zh/products/cloud/guides/security/connectivity/setting-ip-filters)。
 
-<div id="wait-for-provisioning">
-  ## 等待服务预配完成
-</div>
+## 等待服务预配完成 {#wait-for-provisioning}
 
 预配过程约需一分钟。持续轮询，直到状态变为 `running`：
 
@@ -93,14 +87,12 @@ while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "
 done
 ```
 
-<div id="run-sql">
-  ## 使用 Query API 执行 SQL
-</div>
+## 使用 Query API 执行 SQL {#run-sql}
 
 `clickhousectl cloud service query` 通过 HTTP 执行 SQL，无需本地 `clickhouse` 二进制文件或服务密码。首次调用时会自动创建 Query API 端点和服务范围的 API 密钥：
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --query "SHOW databases"
+clickhousectl cloud service query --id "$CH_ID" --json --query "SHOW databases"
 ```
 
 ```text
@@ -111,11 +103,9 @@ Provisioning Query API endpoint + key for service 'quickstart-ch'...
 {"name":"system"}
 ```
 
-管道输出默认采用 `JSONEachRow`；如需表格格式的输出，请传入 `--format PrettyCompact`。
+在终端中输出默认采用 `PrettyCompact`，管道输出时则默认采用 `TabSeparated`。上文使用的 `--json` 表示选择 `JSONEachRow`；如需其他格式，请改用 `--format` (`--json` 与 `--format` 不能同时使用) 。
 
-<div id="create-database-and-table">
-  ## 创建数据库和表
-</div>
+## 创建数据库和表 {#create-database-and-table}
 
 ```bash
 clickhousectl cloud service query --id "$CH_ID" \
@@ -145,7 +135,7 @@ clickhousectl cloud service query --id "$CH_ID" \
 验证是否成功：
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query --id "$CH_ID" --json \
   --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp"
 ```
 
@@ -158,9 +148,7 @@ clickhousectl cloud service query --id "$CH_ID" \
 
 时间戳取决于您执行 insert 的时间，因此会有所不同。
 
-<div id="load-csv-file">
-  ## 加载 CSV 文件
-</div>
+## 加载 CSV 文件 {#load-csv-file}
 
 假设名为 `data.csv` 的 CSV 文件包含以下文本：
 
@@ -180,7 +168,7 @@ printf 'INSERT INTO helloworld.my_first_table FORMAT CSV\n' | cat - data.csv \
 验证新行是否已写入：
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query --id "$CH_ID" --json \
   --query "SELECT count() FROM helloworld.my_first_table"
 ```
 
@@ -188,9 +176,7 @@ clickhousectl cloud service query --id "$CH_ID" \
 {"count()":7}
 ```
 
-<div id="native-client">
-  ## 使用 clickhouse client 连接
-</div>
+## 使用 clickhouse client 连接 {#native-client}
 
 您也可以通过[原生协议](/zh/concepts/features/interfaces/client)使用 **clickhouse client** 进行连接。ClickHouse 命令行客户端会为您管理 `clickhouse` 二进制文件，因此无需另行安装客户端：
 
@@ -226,9 +212,7 @@ clickhouse client --host "$CH_HOST" --secure --port 9440 \
   --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
 ```
 
-<div id="cleanup">
-  ## 清理
-</div>
+## 清理 {#cleanup}
 
 删除服务会永久删除其所有数据。`--force` 会先停止正在运行的服务：
 

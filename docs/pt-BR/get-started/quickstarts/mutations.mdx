@@ -1,6 +1,6 @@
 ---
 slug: /guides/developer/mutations
-sidebarTitle: 'Atualização e exclusão de dados'
+sidebarTitle: 'Atualização e exclusão de dados no ClickHouse'
 searchable: true
 keywords: ['UPDATE', 'DELETE', 'mutações']
 title: 'Atualização e exclusão de dados no ClickHouse'
@@ -34,7 +34,7 @@ excluir dados existentes. Essas operações são chamadas de &quot;mutações&qu
 </Tip>
 
 <div id="updating-data">
-  ## Atualizando dados
+  ## Atualizando dados {#updating-data}
 </div>
 
 Use o comando `ALTER TABLE...UPDATE` para atualizar linhas de uma tabela:
@@ -76,7 +76,7 @@ ALTER TABLE [<database>.]<table> UPDATE <column> = <expression> WHERE <filter_ex
 </Note>
 
 <div id="deleting-data">
-  ## Excluindo dados
+  ## Excluindo dados {#deleting-data}
 </div>
 
 Use o comando `ALTER TABLE` para excluir linhas:
@@ -106,7 +106,7 @@ A `<filter_expr>` deve retornar um valor UInt8 para cada linha de dados.
 Consulte a página da documentação da [instrução `DELETE`](/pt-BR/reference/statements/delete) para mais detalhes.
 
 <div id="lightweight-deletes">
-  ## Exclusões leves
+  ## Exclusões leves {#lightweight-deletes}
 </div>
 
 Outra opção para excluir linhas é usar o comando `DELETE FROM`, conhecido como **exclusão leve**. As linhas excluídas são marcadas como excluídas imediatamente e serão automaticamente filtradas de todas as consultas subsequentes, portanto você não precisa esperar pela mesclagem das partes nem usar a palavra-chave `FINAL`. A limpeza dos dados acontece de forma assíncrona em segundo plano.

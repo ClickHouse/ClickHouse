@@ -1,0 +1,98 @@
+---
+sidebarTitle: 'Rust codec'
+keywords: ['clickhouse', 'python', 'rust', 'native', 'codec', 'performance']
+description: '面向 ClickHouse Connect 的可选启用编译型 Rust 编解码器'
+slug: /integrations/language-clients/python/rust-codec
+title: 'Rust 原生编解码器'
+doc_type: 'reference'
+---
+
+ClickHouse Connect 可以使用编译后的 Rust 编解码器来解码查询结果、编码插入数据，替代默认的 Python 与 Cython 实现。该 Rust 编解码器仅适用于由客户端管理的 `FORMAT Native` 流量，涵盖 `query`、`query_np`、`query_df` 及其块流式与行流式变体，以及包括 `insert_df` 在内的插入操作。Arrow 相关方法使用 `FORMAT Arrow`，不受影响；raw 查询、raw 插入以及非 Native 格式同样不受影响。
+
+该编解码器目前为 Experimental 功能，需显式启用，默认仍使用 Python 编解码器。
+
+## 安装 {#installation}
+
+编译后的编解码器以名为 `clickhouse-connect-core` 的独立 wheel 包形式发布，该包提供 `_ch_core` 扩展模块。若要进行评估，请将该编解码器与 PyArrow 一并安装：
+
+```bash
+pip install "clickhouse-connect[rust,arrow]"
+```
+
+在 1.8 中，凡是生成 NumPy 或 Pandas 输出的 Rust 路径都需要 PyArrow，包括 `query_np`、`query_df`、它们的流式变体，以及 `query(..., use_numpy=True)`。若缺少 PyArrow，`native_codec="rust"` 会记录一条警告，并改用 Python 编解码器执行这些查询；而 `native_codec="rust_strict"` 则会引发 `NotSupportedError`。
+
+对于只使用标准 Python 行结果、行块或列块流以及插入操作，而不需要 NumPy 或 Pandas 输出的应用而言，单独安装 `rust` extra 仍然足够轻量。这些路径不需要 PyArrow：
+
+```bash
+pip install "clickhouse-connect[rust]"
+```
+
+该编解码器、其打包方式及依赖集合均为 Experimental。目前正在评估在未来 发行版 中改用体积更小的 Arrow 互操作依赖。
+
+如果选择了 Rust 编解码器，但未安装编译后的模块，则创建 client 时会引发 `NotSupportedError`，并在错误信息中给出此安装命令。
+
+## 启用 编解码器 {#enabling-the-codec}
+
+通过 `native_codec` 客户端选项选择编解码器：
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(host="localhost", native_codec="rust")
+```
+
+可接受的值：
+
+| Value         | Behavior                                                         |
+| ------------- | ---------------------------------------------------------------- |
+| `python`      | 默认值。现有的 Python 与 Cython 编解码器。                                   |
+| `rust`        | 优先使用 Rust 编解码器。包含不受支持选项的查询，以及包含不受支持类型的插入操作，将转由 Python 编解码器处理。 |
+| `rust_strict` | 强制使用 Rust 编解码器。遇到不受支持的选项和类型时将抛出异常，而不会转由其他 编解码器 处理。             |
+
+默认值也可通过 `native_codec` 通用设置或 `CLICKHOUSE_CONNECT_NATIVE_CODEC` 环境变量指定。优先次序为：客户端 keyword argument 最高，其次是通用设置，最后是环境变量。
+
+对于 `interface="chdb"` 的客户端，该选项将被忽略，此类客户端始终使用 Python 编解码器。
+
+## 何时使用 Rust 编解码器 {#when-to-use-the-rust-codec}
+
+Rust 编解码器最适用于包含文本、容器和复杂类型 (如 `String`、`LowCardinality`、`Map`、`Array`、`JSON`、`Decimal` 和 `UUID`) 的大型 DataFrame 结果。此外，它对大型行块流和列块流、并发查询工作负载以及批量插入也有帮助。
+
+对于小结果集以及受网络带宽制约的查询，性能提升可能并不明显。扁平的数值型结果在 Python 编解码器中已经走了高效的批量处理路径，因此收益同样有限。
+
+对于非常宽或全数值型的结果，目前使用 Rust 编解码器时，缓冲式 `query()` 调用可能更慢，且峰值内存占用更高。这类工作负载建议优先使用 `query_df`、`query_row_block_stream` 或 `query_column_block_stream`，流式处理可将内存占用保持在可控范围内。
+
+在采用该编解码器之前，请针对自身的工作负载进行基准测试。测量时请使用 `native_codec="rust_strict"`，这样遇到不受支持的选项或缺失的依赖时会直接抛出异常，而不会悄悄将查询转由 Python 处理。
+
+## Fallback 规则 {#fallback-rules}
+
+Fallback 决策在读取或发送任何字节之前就已完成，因此绝不会出现流中途切换编解码器的情况。对于查询，该选择发生在读取 response body 之前。对于插入，只有当所有列类型都受支持时才会选用 Rust 编码器，否则整个 insert 都在 Python 编解码器上执行。
+
+当 `naive_datetime_insert="server"` 生效时，`rust` 会将包含任何 `DateTime` 或 `DateTime64` 列的插入操作路由到 Python 编解码器，以便应用声明的列时区或服务器时区。`rust_strict` 则会拒绝这种组合。默认的 `naive_datetime_insert="local"` 模式仍使用 Rust 编码器。
+
+driver 内部的 metadata 查询，包括 SQLAlchemy dialect 的 reflection 语句，在所有模式下都会静默使用 Python 编解码器。
+
+Rust 编解码器检测到格式错误的 Native payloads 时会引发 `DataError`。
+
+## Versioning {#versioning}
+
+`clickhouse-connect-core` 的版本与 `clickhouse-connect` 相互独立。驱动通过 `rust` extra 声明兼容的版本范围，模块则导出一个 binding API 版本号；当选择 Rust 编解码器时，驱动会对该版本号进行校验。如果已安装的 wheel 对当前驱动而言版本过旧，创建 client 时会引发 `NotSupportedError`，并在其中给出升级命令：
+
+```bash
+pip install --upgrade clickhouse-connect-core
+```
+
+编解码器修复和性能提升会随 `clickhouse-connect-core` 发行版一同发布，只需升级 wheel 即可获取，无需等待 `clickhouse-connect` 发行版。
+
+## 已知行为差异 {#known-behavior-differences}
+
+Rust 编解码器的目标是与 Python 编解码器逐单元保持一致。目前已知存在以下差异。
+
+* 对于 `Variant` 列，`query_np` 和 `query_df` 返回的结果是普通 Python 对象，而非 numpy 标量值。值相同，但单元类型不同。
+* 包含 `Time64` 的 `Dynamic` 值在 Rust 的 `query_np` 和 `query_df` 结果中会物化为 `datetime.timedelta`。在标度为 0、3、6 和 9 时，这些值与 Python 编解码器的 `numpy.timedelta64` 单元相等，但单元类型不同；在其他标度下，Rust 编解码器返回 `datetime.timedelta`，而 Python 编解码器会引发 `ProgrammingError`，因为 NumPy 没有匹配的单位。Rust 解码后不会向驱动暴露 Dynamic 成员元数据，因此当需要 NumPy 单元类型或对不受支持的标度进行校验时，请使用 `native_codec="python"`。
+* 对于 `query_df`，Python 编解码器可能会将存储在 JSON shared data 中的复合类型值转为字符串。Rust 编解码器返回解码后的对象，与两种编解码器的 `query_np` 结果一致。
+* 若 `LowCardinality` 备选类型位于按单元物化的容器中 (例如 `Array(Variant(...))`) ，生成的单元值虽然相等，但不会像 Python 编解码器那样共享每个字典 slot 的对象标识。
+* 含有一个或多个 elements 的 `Nullable(Tuple(...))` 列在 Rust 编解码器上可正确解码。Python 编解码器会误读这种 layout，因此应以 Rust 的结果为准。两种编解码器都支持 `Nullable(Tuple())`。
+* 对于 Rust 路径未实现的查询选项 (例如按查询自定义的 `query_formats`) ，`rust_strict` 会直接拒绝，而不会悄然改变行为。
+* Rust 的插入转换和校验错误可能引发 `DataError`，而 Python 编解码器引发的是 `ValueError`，且消息文本可能不同。例如无效的 `Time` 和 `Time64` 值、IPv6 地址、QBit dimensions、`FixedString` 长度、`Float64` 字符串，以及尝试向 `Tuple()` 列插入 elements 等情况。
+* Rust 编码器会拒绝用于 `FixedString(N)` 的 `b""`，也会拒绝用于整数列的数字字符串 (如 `"2"`) 。而 Python 编解码器会对空的 `FixedString` 值做零填充，并对数字字符串进行强制转换。
+* 对于某些 `Dynamic` shared variant 值，Python 编解码器会将其保留为 raw bytes，而 Rust 编解码器会将其解码为对应的 Python 类型。例如，存储的 `Date` 在 Rust 中返回 `datetime.date`，在 Python 中则返回二进制值。

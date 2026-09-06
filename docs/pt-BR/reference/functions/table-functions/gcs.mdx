@@ -16,9 +16,7 @@ Este é um alias da [função de tabela s3](/pt-BR/reference/functions/table-fun
 
 Se você tiver várias réplicas no cluster, poderá usar a [função s3Cluster](/pt-BR/reference/functions/table-functions/s3Cluster) (que funciona com GCS) para paralelizar inserções.
 
-<div id="syntax">
-  ## Sintaxe
-</div>
+## Sintaxe {#syntax}
 
 ```sql
 gcs(url [, NOSIGN | hmac_key, hmac_secret] [,format] [,structure] [,compression_method] [,partition_strategy])
@@ -32,9 +30,7 @@ gcs(named_collection[, option=value [,..]])
   Consulte a [documentação de interoperabilidade do Google](https://cloud.google.com/storage/docs/interoperability) para mais detalhes sobre o endpoint e o HMAC.
 </Tip>
 
-<div id="arguments">
-  ## Argumentos
-</div>
+## Argumentos {#arguments}
 
 | Argumento                    | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -43,7 +39,7 @@ gcs(named_collection[, option=value [,..]])
 | `hmac_key` and `hmac_secret` | Chaves que especificam as credenciais a serem usadas com o endpoint informado. Opcional.                                                                                                                                                                                                                                                                                                                                      |
 | `format`                     | O [formato](/pt-BR/reference/formats/index) do arquivo.                                                                                                                                                                                                                                                                                                                                                                             |
 | `structure`                  | Estrutura da tabela. Formato `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                   |
-| `compression_method`         | O parâmetro é opcional. Valores aceitos: `none`, `gzip` ou `gz`, `brotli` ou `br`, `xz` ou `LZMA`, `zstd` ou `zst`. Por padrão, o método de compressão é detectado automaticamente pela extensão do arquivo.                                                                                                                                                                                                                  |
+| `compression_method`         | O parâmetro é opcional. Valores aceitos: `none`, `gzip` ou `gz`, `deflate`, `brotli` ou `br`, `xz` ou `LZMA`, `zstd` ou `zst`, `lz4`, `bz2`, `snappy`. Por padrão, o método de compressão é detectado automaticamente pela extensão do arquivo. Para `snappy`, o formato de transmissão é selecionado pela configuração [snappy&#95;mode](/pt-BR/reference/settings/session-settings/other#snappy_mode) (`basic` por padrão).       |
 | `partition_strategy`         | Opcional. Valores aceitos: `wildcard` ou `hive`. `wildcard` requer `{_partition_id}` no caminho. Sem uma estratégia explícita, um caminho com `{_partition_id}` usa `wildcard`. Um caminho com outro glob não usa estratégia de particionamento e ignora `PARTITION BY`. Um caminho sem glob usa `hive` quando `file_like_engine_default_partition_strategy` é `hive`; caso contrário, não usa estratégia de particionamento. |
 
 <Info>
@@ -69,15 +65,11 @@ Os argumentos também podem ser passados usando [coleções nomeadas](/pt-BR/con
 | `no_sign_request`             | Desabilitado por padrão.                                                                                                                                                                                                                  |
 | `expiration_window_seconds`   | O valor padrão é 120.                                                                                                                                                                                                                     |
 
-<div id="returned-value">
-  ## Valor retornado
-</div>
+## Valor retornado {#returned-value}
 
 Uma tabela com a estrutura especificada para ler ou gravar dados no arquivo especificado.
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
 Selecionando as duas primeiras linhas do arquivo do GCS `https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz`. O método de compressão é detectado automaticamente pela extensão de arquivo `.gz`:
 
@@ -109,9 +101,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-<div id="usage">
-  ## Uso
-</div>
+## Uso {#usage}
 
 Suponha que temos vários arquivos com as seguintes URIs no GCS:
 
@@ -204,9 +194,7 @@ SELECT count(*)
 FROM gcs(creds, url='https://s3-object-url.csv')
 ```
 
-<div id="partitioned-write">
-  ## Gravação particionada
-</div>
+## Gravação particionada {#partitioned-write}
 
 Se você especificar a expressão `PARTITION BY` ao inserir dados na tabela `GCS`, será criado um arquivo separado para cada valor de partição. Dividir os dados em arquivos separados ajuda a aumentar a eficiência das operações de leitura.
 
@@ -234,9 +222,7 @@ INSERT INTO TABLE FUNCTION
 
 Como resultado, os dados são gravados em três arquivos, em buckets diferentes: `my_bucket_1/file.csv`, `my_bucket_10/file.csv` e `my_bucket_20/file.csv`.
 
-<div id="related">
-  ## Relacionados
-</div>
+## Relacionados {#related}
 
 * [função de tabela S3](/pt-BR/reference/functions/table-functions/s3)
 * [motor S3](/pt-BR/reference/engines/table-engines/integrations/s3)

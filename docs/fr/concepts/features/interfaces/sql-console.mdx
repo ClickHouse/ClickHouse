@@ -1,0 +1,40 @@
+---
+description: 'Documentation de la SQL Console intégrée, exposée par le serveur HTTP ClickHouse à l’adresse `/ui`'
+sidebarTitle: 'SQL Console'
+slug: /interfaces/sql-console
+title: 'SQL Console'
+doc_type: 'reference'
+---
+
+La SQL Console est une web UI intégrée permettant d’exécuter des requêtes et d’explorer les données. Elle est accessible depuis n’importe quel port HTTP de ClickHouse, sur le chemin `/ui`, par exemple `http://localhost:8123/ui`.
+
+:::note
+La SQL Console est une fonctionnalité expérimentale.
+:::
+
+## Overview {#overview}
+
+La SQL Console est une application monopage (SPA) compilée sous forme de bundle statique et intégrée directement dans le binary ClickHouse, tout comme ClickStack est intégré à `/clickstack`. Toutes les ressources sont servies par le binary ClickHouse lui-même — aucun CDN third-party n&#39;est chargé.
+
+Pour l&#39;ouvrir, accédez à `/ui` sur n&#39;importe quel port HTTP de ClickHouse (par exemple, `http://localhost:8123/ui`).
+
+## Comment il est servi {#how-it-is-served}
+
+Le bundle est compressé en gzip au moment du build et intégré avec `#embed`, de sorte que chaque réponse de `/ui` comporte un header `Content-Encoding: gzip`. Comme la SQL Console est une application monopage qui effectue le routage côté client, les requêtes sous `/ui` qui ne correspondent à aucune ressource embarquée et qui ne ressemblent pas à un fichier (c&#39;est-à-dire sans extension) basculent vers le service de `index.html`. Les requêtes vers des paths qui ressemblent à des ressources manquantes (par exemple `/ui/nonexistent.js`) renvoient le status HTTP `404 Not Found`.
+
+Le path `/ui` est mis en correspondance de manière exacte ou lorsqu&#39;il est suivi d&#39;une délimitation `/`, `?` ou `#`, si bien que les routes voisines telles que `/uix` ne sont pas détournées par le fallback de la SPA.
+
+## Relation avec les autres UI web {#relationship-to-other-web-uis}
+
+ClickHouse fournit plusieurs interfaces web intégrées, exposées sur le port HTTP :
+
+* [`/play`](/fr/interfaces/web-sql) — l&#39;UI Web SQL légère.
+* `/dashboard` — les dashboards intégrés.
+* `/clickstack` — l&#39;UI ClickStack intégrée.
+* `/ui` — la SQL Console décrite ici.
+
+Les liens vers chacune d&#39;elles figurent sur la page d&#39;accueil du serveur HTTP de ClickHouse.
+
+## Authentification {#authentication}
+
+La SQL Console s&#39;authentifie via les mêmes vérifications de `Session` et de contrôle d&#39;accès que le protocole HTTP. La diffusion des ressources statiques de l&#39;UI sur `/ui` ne nécessite pas d&#39;authentification ; les requêtes émises par l&#39;UI sont authentifiées comme n&#39;importe quelle autre requête HTTP.

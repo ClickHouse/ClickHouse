@@ -25,18 +25,14 @@ Además, la ordenación distingue entre mayúsculas y minúsculas.
 Las filas con valores idénticos en las expresiones de ordenación se devuelven en un orden arbitrario y no determinista.
 Si se omite la cláusula `ORDER BY` en una sentencia `SELECT`, el orden de las filas también es arbitrario y no determinista.
 
-<div id="sorting-of-special-values">
-  ## Ordenación de valores especiales
-</div>
+## Ordenación de valores especiales {#sorting-of-special-values}
 
 Hay dos opciones para el orden de ordenación de `NaN` y `NULL`:
 
 * De forma predeterminada o con el modificador `NULLS LAST`: primero los valores, luego `NaN` y después `NULL`.
 * Con el modificador `NULLS FIRST`: primero `NULL`, luego `NaN` y después los demás valores.
 
-<div id="example">
-  ### Ejemplo
-</div>
+### Ejemplo {#example}
 
 Para la tabla
 
@@ -74,9 +70,7 @@ Ejecute la consulta `SELECT * FROM t_null_nan ORDER BY y NULLS FIRST` para obten
 
 Cuando se ordenan números de coma flotante, los NaN se separan de los demás valores. Independientemente del orden de ordenación, los NaN aparecen al final. En otras palabras, en orden ascendente se colocan como si fueran mayores que todos los demás números, mientras que en orden descendente se colocan como si fueran menores que el resto.
 
-<div id="collation-support">
-  ## Compatibilidad con la intercalación
-</div>
+## Compatibilidad con la intercalación {#collation-support}
 
 Para ordenar valores [String](/es/reference/data-types/string), puede especificar una intercalación (comparación). Ejemplo: `ORDER BY SearchPhrase COLLATE 'tr'`: para ordenar por palabra clave en orden ascendente, usando el alfabeto turco, sin distinguir entre mayúsculas y minúsculas, asumiendo que las cadenas están codificadas en UTF-8. `COLLATE` puede especificarse, o no, de forma independiente para cada expresión en ORDER BY. Si se especifica `ASC` o `DESC`, `COLLATE` se coloca después. Al usar `COLLATE`, la ordenación siempre distingue entre mayúsculas y minúsculas.
 
@@ -84,9 +78,7 @@ La intercalación es compatible con [LowCardinality](/es/reference/data-types/lo
 
 Solo recomendamos usar `COLLATE` para la ordenación final de un número reducido de filas, ya que ordenar con `COLLATE` es menos eficiente que la ordenación normal por bytes.
 
-<div id="collation-examples">
-  ## Ejemplos de intercalación
-</div>
+## Ejemplos de intercalación {#collation-examples}
 
 Ejemplo solo con valores [String](/es/reference/data-types/string):
 
@@ -242,9 +234,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 └───┴─────────┘
 ```
 
-<div id="implementation-details">
-  ## Detalles de implementación
-</div>
+## Detalles de implementación {#implementation-details}
 
 Se utiliza menos RAM si, además de `ORDER BY`, se especifica un [LIMIT](/es/reference/statements/select/limit) lo bastante pequeño. De lo contrario, la cantidad de memoria utilizada es proporcional al volumen de datos que se va a ordenar. En el procesamiento distribuido de consultas, si se omite [GROUP BY](/es/reference/statements/select/group-by), la ordenación se realiza parcialmente en los servidores remotos y los resultados se fusionan en el servidor que realiza la solicitud. Esto significa que, en la ordenación distribuida, el volumen de datos que se debe ordenar puede ser mayor que la cantidad de memoria disponible en un solo servidor.
 
@@ -254,15 +244,13 @@ La ejecución de una consulta puede usar más memoria que `max_bytes_before_exte
 
 La ordenación externa es mucho menos eficaz que la ordenación en RAM.
 
-<div id="optimization-of-data-reading">
-  ## Optimización de la lectura de datos
-</div>
+## Optimización de la lectura de datos {#optimization-of-data-reading}
 
 Si la expresión `ORDER BY` tiene un prefijo que coincide con la clave de ordenación de la tabla, puede optimizar la consulta mediante la configuración [optimize&#95;read&#95;in&#95;order](/es/reference/settings/session-settings/optimize#optimize_read_in_order).
 
 Cuando la configuración `optimize_read_in_order` está habilitada, el servidor de ClickHouse usa el índice de la tabla y lee los datos en el orden de la clave `ORDER BY`. Esto permite evitar leer todos los datos cuando se especifica [LIMIT](/es/reference/statements/select/limit). Por tanto, las consultas sobre grandes volúmenes de datos con un límite pequeño se procesan más rápido.
 
-La optimización funciona tanto con `ASC` como con `DESC`, y no funciona junto con la cláusula [GROUP BY](/es/reference/statements/select/group-by) ni con el modificador [FINAL](/es/reference/statements/select/from#final-modifier).
+La optimización funciona tanto con `ASC` como con `DESC`, y no funciona junto con la cláusula [GROUP BY](/es/reference/statements/select/group-by). Con el modificador [FINAL](/es/reference/statements/select/from#final-modifier), la optimización funciona en el orden directo de la clave de ordenación y, en el caso de las tablas [ReplacingMergeTree](/es/reference/engines/table-engines/mergetree-family/replacingmergetree), también en el orden inverso, controlado por la configuración `optimize_read_in_reverse_order_final`.
 
 Cuando la configuración `optimize_read_in_order` está deshabilitada, el servidor de ClickHouse no usa el índice de la tabla al procesar consultas `SELECT`.
 
@@ -276,9 +264,7 @@ La optimización es compatible con los siguientes motores de tabla:
 
 En las tablas con motor `MaterializedView`, la optimización funciona con vistas como `SELECT ... FROM merge_tree_table ORDER BY pk`. Pero no es compatible con consultas como `SELECT ... FROM view ORDER BY pk` si la consulta de la vista no incluye la cláusula `ORDER BY`.
 
-<div id="order-by-expr-with-fill-modifier">
-  ## Modificador ORDER BY Expr WITH FILL
-</div>
+## Modificador ORDER BY Expr WITH FILL {#order-by-expr-with-fill-modifier}
 
 Este modificador también se puede combinar con el [modificador LIMIT ... WITH TIES](/es/reference/statements/select/limit#limit--with-ties-modifier).
 
@@ -594,9 +580,7 @@ SELECT n, source, inter FROM (
 └─────┴──────────┴───────┘
 ```
 
-<div id="filling-grouped-by-sorting-prefix">
-  ## Relleno agrupado por prefijo de ordenación
-</div>
+## Relleno agrupado por prefijo de ordenación {#filling-grouped-by-sorting-prefix}
 
 Puede ser útil rellenar de forma independiente las filas que tienen los mismos valores en determinadas columnas; un buen ejemplo es rellenar los valores que faltan en series temporales.
 Supongamos que existe la siguiente tabla de series temporales:
@@ -648,9 +632,7 @@ INTERPOLATE ( value AS 9999 )
 Aquí, la columna `value` se interpoló con `9999` solo para que las filas rellenadas se distingan más fácilmente.
 Este comportamiento se controla mediante la configuración `use_with_fill_by_sorting_prefix` (habilitada de forma predeterminada)
 
-<div id="related-content">
-  ## Contenido relacionado
-</div>
+## Contenido relacionado {#related-content}
 
 * Blog: [Cómo trabajar con series temporales en ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 

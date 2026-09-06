@@ -19,8 +19,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-datetime64値の末尾のゼロを動的に削除し、出力スケールを [0, 3, 6] に調整します。
-これはそれぞれ &#39;seconds&#39;、&#39;milliseconds&#39;、&#39;microseconds&#39; に対応します
+`DateTime64`値の末尾のゼロを動的に削除し、すべての有効桁を保持できるよう、出力スケールを次の3の倍数 ([0, 3, 6, 9]) に切り上げます。小数部がすべてゼロの場合は省略されます。
 
 <div id="date_time_input_format">
   ## date_time_input_format

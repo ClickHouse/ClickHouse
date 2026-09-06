@@ -17,7 +17,9 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 يتضمن مقاييس تُحتسب دوريًا في الخلفية. على سبيل المثال، مقدار ذاكرة RAM المستخدمة.
 
-يكون المقياس إما قياسيًا (رقمًا واحدًا في العمود `value`) أو من نوع مفتاح-قيمة: مُفصّلًا حسب كل كيان، مثل نواة CPU أو جهاز كتلي أو واجهة شبكة أو قرص. تُمثَّل مقاييس المفتاح-القيمة بصف واحد يحتوي على [Map](/ar/reference/data-types/map) في العمود `key_values` (على سبيل المثال، يربط `CPUFrequencyMHz` رقم كل نواة CPU بترددها)، ويكون عمود `value` فيها هو `NaN`.
+يكون المقياس إما قياسيًا (رقمًا واحدًا في العمود `value`) أو من نوع مفتاح-قيمة: مُفصّلًا حسب كل كيان، مثل نواة CPU أو جهاز تخزين كتلي أو واجهة شبكة أو قرص. تُمثَّل مقاييس المفتاح-القيمة بصف واحد يحتوي على [Map](/ar/reference/data-types/map) في العمود `key_values` (على سبيل المثال، يربط `CPUFrequencyMHz` رقم كل نواة CPU بترددها)، ويكون عمود `value` فيها هو `NaN`.
+
+قبل الإصدار 26.8، كان كل مفتاح مقياسًا قياسيًا منفصلًا مع تضمين المفتاح بصيغة معدّلة في اسمه (`CPUFrequencyMHz_0`). يتيح إعداد الخادم [`asynchronous_metrics_key_values_mode`](/ar/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) العودة إلى هذا الشكل (`legacy_names`) أو عرض الشكلين معًا (`both`) أثناء ترحيل المراقبة.
 
 <div id="columns">
   ## الأعمدة

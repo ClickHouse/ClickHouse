@@ -21,7 +21,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "1048576"},{"label": "新しい設定"}]}]} />
 
-一時ファイルの書き込み用バッファサイズです。バッファサイズを大きくするとシステムコールの回数は減りますが、メモリ消費量は増えます。
+一時ファイルの書き込み用バッファサイズです。バッファサイズを大きくするとシステムコールの回数は減りますが、メモリ消費量は増えます。1 GiB を超える値は 1 GiB に切り下げられます。
 
 <div id="temporary_files_codec">
   ## temporary_files_codec

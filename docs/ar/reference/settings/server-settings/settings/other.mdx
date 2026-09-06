@@ -14,21 +14,15 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 تضبط هذه الإعدادات خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="abort_on_logical_error">
-  ## abort_on_logical_error
-</div>
+## abort_on_logical_error {#abort_on_logical_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />يؤدي إلى تعطل الخادم عند حدوث استثناءات LOGICAL&#95;ERROR. للمختصين فقط.
 
-<div id="allowed_disks_for_table_engines">
-  ## allowed_disks_for_table_engines
-</div>
+## allowed_disks_for_table_engines {#allowed_disks_for_table_engines}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />قائمة الأقراص المسموح بها للاستخدام مع Iceberg
 
-<div id="auth_use_forwarded_address">
-  ## auth_use_forwarded_address
-</div>
+## auth_use_forwarded_address {#auth_use_forwarded_address}
 
 استخدم العنوان الأصلي للمصادقة للعملاء المتصلين عبر وكيل.
 
@@ -38,9 +32,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
   يجب استخدام هذا الإعداد بحذر شديد، إذ يمكن انتحال العناوين المُعاد توجيهها بسهولة، لذلك لا ينبغي الوصول مباشرةً إلى الخوادم التي تقبل هذا النوع من المصادقة، بل يجب أن يقتصر الوصول إليها على المرور عبر وكيل موثوق.
 </Note>
 
-<div id="bcrypt_workfactor">
-  ## bcrypt_workfactor
-</div>
+## bcrypt_workfactor {#bcrypt_workfactor}
 
 معامل العمل لنوع المصادقة `bcrypt_password` الذي يستخدم [خوارزمية Bcrypt](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 ويحدّد معامل العمل مقدار القدرة الحاسوبية والوقت اللازمين لحساب قيمة التجزئة والتحقق من كلمة المرور.
@@ -57,9 +49,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
   العبء الحسابي لـ bcrypt عند قيم عامل العمل الأعلى.
 </Warning>
 
-<div id="blob_storage_log">
-  ## blob_storage_log
-</div>
+## blob_storage_log {#blob_storage_log}
 
 إعدادات جدول النظام [`blob_storage_log`](/ar/reference/system-tables/blob_storage_log).
 
@@ -77,9 +67,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 </blob_storage_log>
 ```
 
-<div id="builtin_dictionaries_reload_interval">
-  ## builtin_dictionaries_reload_interval
-</div>
+## builtin_dictionaries_reload_interval {#builtin_dictionaries_reload_interval}
 
 الفاصل الزمني بالثواني قبل إعادة تحميل القواميس المضمّنة.
 
@@ -91,21 +79,15 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
-<div id="cache_size_to_ram_max_ratio">
-  ## cache_size_to_ram_max_ratio
-</div>
+## cache_size_to_ram_max_ratio {#cache_size_to_ram_max_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />تعيين الحد الأقصى لنسبة حجم ذاكرة التخزين المؤقت إلى RAM. يتيح ذلك تقليل حجم ذاكرة التخزين المؤقت على الأنظمة منخفضة الذاكرة.
 
-<div id="cannot_allocate_thread_fault_injection_probability">
-  ## cannot_allocate_thread_fault_injection_probability
-</div>
+## cannot_allocate_thread_fault_injection_probability {#cannot_allocate_thread_fault_injection_probability}
 
 <SettingsInfoBlock type="Double" default_value="0" changeable_without_restart="No" />لأغراض الاختبار.
 
-<div id="cgroups_memory_usage_observer_wait_time">
-  ## cgroups_memory_usage_observer_wait_time
-</div>
+## cgroups_memory_usage_observer_wait_time {#cgroups_memory_usage_observer_wait_time}
 
 <SettingsInfoBlock type="UInt64" default_value="15" changeable_without_restart="لا" />
 
@@ -113,9 +95,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 لتعطيل مراقب cgroup، اضبط هذه القيمة على `0`.
 
-<div id="compression">
-  ## الضغط
-</div>
+## الضغط {#compression}
 
 إعدادات ضغط البيانات للجداول التي تستخدم المحرك [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -151,10 +131,10 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 **الإجراءات عند استيفاء الشروط**:
 
 * إذا طابق جزء بيانات مجموعةَ شروط، يستخدم ClickHouse طريقة الضغط المحددة.
-* إذا طابق جزء بيانات عدةَ مجموعات شروط، يستخدم ClickHouse أول مجموعة شروط مطابقة.
+* إذا طابق جزء بيانات عدةَ مجموعات شروط، يستخدم ClickHouse آخر مجموعة شروط مطابقة (تُفحص أقسام `<case>` بالترتيب، ويتجاوز كل قسم مطابق الاختيارَ السابق).
 
 <Note>
-  إذا لم يستوفِ جزءُ البيانات أيًّا من الشروط، يستخدم ClickHouse ضغط `lz4`.
+  إذا لم يستوفِ جزءُ البيانات أيًّا من الشروط، يستخدم ClickHouse القيمة الافتراضية المدمجة المراعية للحجم: `LZ4` لما هو أقل من 100 ميغابايت و`ZSTD(3)` عند هذا الحد أو فوقه. وكما هو الحال في شروط `min_part_size` أعلاه، فإن الحجم المقصود هو الحجم المعروف لحظة اختيار الـ codec، قبل كتابة البيانات: `0` لجزء أُدرج حديثًا، وحجم الأجزاء المصدر في حالة الدمج أو الطفرة. ولذلك فإن أي إعادة كتابة تُقلّص مدخلاتها، مثل `TTL DELETE` أو دمج انهياري، تُصنَّف بناءً على حجم المدخلات وقد تنتج جزءًا أصغر من العتبة ومع ذلك يكون مضغوطًا بـ `ZSTD(3)`.
 </Note>
 
 **مثال**
@@ -165,28 +145,22 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>1</level>
+        <level>10</level>
     </case>
 </compression>
 ```
 
-<div id="config-file">
-  ## ملف الإعدادات
-</div>
+## ملف الإعدادات {#config-file}
 
 <SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />يشير إلى ملف إعدادات الخادم.
 
-<div id="config_reload_interval_ms">
-  ## config_reload_interval_ms
-</div>
+## config_reload_interval_ms {#config_reload_interval_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="نعم" />
 
 مدى تكرار إعادة تحميل ClickHouse للإعدادات والتحقق من وجود تغييرات جديدة
 
-<div id="core_dump">
-  ## core_dump
-</div>
+## core_dump {#core_dump}
 
 يضبط الحدّ المرن لحجم ملف `core dump`.
 
@@ -202,9 +176,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 </core_dump>
 ```
 
-<div id="crash_log">
-  ## crash_log
-</div>
+## crash_log {#crash_log}
 
 إعدادات تشغيل جدول النظام [crash&#95;log](/ar/reference/system-tables/crash_log).
 
@@ -241,9 +213,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 </crash_log>
 ```
 
-<div id="create_union_system_log_tables">
-  ## create_union_system_log_tables
-</div>
+## create_union_system_log_tables {#create_union_system_log_tables}
 
 يطلب إنشاء جداول `all_...` إلى جانب جداول سجل النظام (`system.all_query_log` لـ `system.query_log`، و`system.all_text_log` لـ `system.text_log`، وهكذا). يمثل هذا الجدول اتحادًا لجدول السجل المقابل وإصداراته المُدوَّرة (`query_log_0`، `query_log_1`، ...) و/أو للجداول نفسها عبر جميع النسخ المتماثلة في مجموعة، ويتيح الاستعلام عنها جميعًا دفعةً واحدة دون الحاجة إلى تذكّر تعبيرات مثل `clusterAllReplicas(default, merge(system, '^query_log'))`.
 
@@ -271,18 +241,14 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 </create_union_system_log_tables>
 ```
 
-<div id="database_atomic_delay_before_drop_table_sec">
-  ## database_atomic_delay_before_drop_table_sec
-</div>
+## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
 
 <SettingsInfoBlock type="UInt64" default_value="480" changeable_without_restart="No" />
 
 مدة التأخير التي يمكن خلالها استعادة جدول تم إسقاطه باستخدام تعليمة [`UNDROP`](/ar/reference/statements/undrop). إذا نُفِّذت `DROP TABLE` مع المُعدِّل `SYNC`، فسيتم تجاهل هذا الإعداد.
 القيمة الافتراضية لهذا الإعداد هي `480` (8 دقائق).
 
-<div id="dead_letter_queue">
-  ## dead_letter_queue
-</div>
+## dead_letter_queue {#dead_letter_queue}
 
 إعدادات جدول النظام &#39;dead&#95;letter&#95;queue&#39;.
 
@@ -299,24 +265,18 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 </dead_letter_queue>
 ```
 
-<div id="dictionary_background_reconnect_interval">
-  ## dictionary_background_reconnect_interval
-</div>
+## dictionary_background_reconnect_interval {#dictionary_background_reconnect_interval}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />الفاصل الزمني، بالمللي ثانية، بين محاولات إعادة الاتصال بقواميس MySQL وPostgres التي فشل اتصالها وكان `background_reconnect` مُمكّنًا فيها.
 
-<div id="disk_transaction_wait_for_blob_removal">
-  ## disk_transaction_wait_for_blob_removal
-</div>
+## disk_transaction_wait_for_blob_removal {#disk_transaction_wait_for_blob_removal}
 
 <SettingsInfoBlock type="منطقي" default_value="1" changeable_without_restart="لا" />
 
 القيمة الافتراضية لإعداد `wait_for_blob_removal` لكل قرص.
 عند تفعيله، ينتظر الخادم اكتمال إزالة الـ blob في الخلفية قبل الإقرار بالعملية.
 
-<div id="display_secrets_in_show_and_select">
-  ## display_secrets_in_show_and_select
-</div>
+## display_secrets_in_show_and_select {#display_secrets_in_show_and_select}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
@@ -332,9 +292,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 * `0` — معطّل.
 * `1` — مفعّل.
 
-<div id="dns_max_consecutive_failures">
-  ## dns_max_consecutive_failures
-</div>
+## dns_max_consecutive_failures {#dns_max_consecutive_failures}
 
 <SettingsInfoBlock type="UInt32" default_value="5" changeable_without_restart="لا" />
 
@@ -344,9 +302,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 * [`SYSTEM DROP DNS CACHE`](/ar/reference/statements/system#drop-dns-cache)
 
-<div id="dynamic_user_defined_executable_functions_path">
-  ## dynamic_user_defined_executable_functions_path
-</div>
+## dynamic_user_defined_executable_functions_path {#dynamic_user_defined_executable_functions_path}
 
 <SettingsInfoBlock type="سلسلة نصية" default_value="/var/lib/clickhouse/dynamic_user_defined_executable_functions/" changeable_without_restart="لا" />
 
@@ -359,9 +315,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
 ```
 
-<div id="encryption">
-  ## التشفير
-</div>
+## التشفير {#encryption}
 
 يُهيِّئ أمرًا للحصول على مفتاح لاستخدامه مع [ترميزات التشفير](/ar/reference/statements/create/table/codec#encryption-codecs). يجب كتابة المفتاح (أو المفاتيح) في متغيرات البيئة أو تعيينه في ملف الإعدادات.
 
@@ -443,17 +397,13 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
   ينطبق كل ما ذُكر أعلاه على `aes_256_gcm_siv` أيضًا (لكن يجب أن يكون طول المفتاح 32 بايتًا).
 </Note>
 
-<div id="enforce_keeper_component_tracking">
-  ## enforce_keeper_component_tracking
-</div>
+## enforce_keeper_component_tracking {#enforce_keeper_component_tracking}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
 إذا كان هذا الخيار مفعّلًا، فيجب تعيين اسم مكوّن لكل طلب ZooKeeper عبر `Coordination::setCurrentComponent`. ويُطلق استثناء `LOGICAL_ERROR` إذا كان اسم المكوّن مفقودًا.
 
-<div id="error_log">
-  ## error_log
-</div>
+## error_log {#error_log}
 
 يكون مُعطّلًا بشكل افتراضي.
 
@@ -488,9 +438,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 <SystemLogParameters />
 
-<div id="filesystem_caches_path">
-  ## filesystem_caches_path
-</div>
+## filesystem_caches_path {#filesystem_caches_path}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 
@@ -502,9 +450,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 <filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>
 ```
 
-<div id="google_protos_path">
-  ## google_protos_path
-</div>
+## google_protos_path {#google_protos_path}
 
 <SettingsInfoBlock type="String" default_value="/usr/share/clickhouse/protos/" changeable_without_restart="No" />
 
@@ -516,21 +462,15 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 <google_protos_path>/usr/share/clickhouse/protos/</google_protos_path>
 ```
 
-<div id="handshake_timeout_milliseconds">
-  ## handshake_timeout_milliseconds
-</div>
+## handshake_timeout_milliseconds {#handshake_timeout_milliseconds}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />مهلة الوقت الفعلي، بالمللي ثانية، لمرحلة مصافحة TCP بالكامل (Hello + Addendum). يحدّ هذا الإعداد من المدة التي يمكن لاتصال غير مُصادَق عليه أن يحتجز خلالها خيط تنفيذ. اضبطه على 0 للتعطيل.
 
-<div id="hdfs.libhdfs3_conf">
-  ## hdfs.libhdfs3_conf
-</div>
+## hdfs.libhdfs3_conf {#hdfs.libhdfs3_conf}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />يوجّه libhdfs3 إلى المسار الصحيح لملف إعدادات الخاص به.
 
-<div id="hsts_max_age">
-  ## hsts_max_age
-</div>
+## hsts_max_age {#hsts_max_age}
 
 مدة انتهاء HSTS بالثواني.
 
@@ -544,15 +484,11 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 <hsts_max_age>600000</hsts_max_age>
 ```
 
-<div id="iceberg_background_schedule_pool_size">
-  ## iceberg_background_schedule_pool_size
-</div>
+## iceberg_background_schedule_pool_size {#iceberg_background_schedule_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10" changeable_without_restart="No" />حجم مجمّع مؤشرات الترابط المستخدم لجلب أحدث البيانات الوصفية من كتالوج Iceberg بعيد بشكل غير متزامن؛ ويكون هذا المجمّع مشتركًا بين جميع الجداول النشطة.
 
-<div id="ignore_empty_sql_security_in_create_view_query">
-  ## ignore_empty_sql_security_in_create_view_query
-</div>
+## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
@@ -566,9 +502,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
   لا يؤثر تغيير هذا الإعداد إلا في العروض التي تُنشأ لاحقًا؛ أما التعريفات المخزنة للعروض الحالية فتبقى دون تغيير.
 </Note>
 
-<div id="include_from">
-  ## include_from
-</div>
+## include_from {#include_from}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 
@@ -585,15 +519,11 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 <include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 ```
 
-<div id="insert_deduplication_version">
-  ## insert_deduplication_version
-</div>
+## insert_deduplication_version {#insert_deduplication_version}
 
-<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />آلية حماية للترحيل، وهي مهملة. لا يدعم هذا الإصدار سوى قيمة hash الموحّدة لآلية insert deduplication (`new_unified_hash`)؛ ويرفض الخادم بدء التشغيل إذا وُجد هذا الإعداد بأي قيمة أخرى (مثل `old_separate_hashes` أو `compatible_double_hashes`). أكمِل ترحيل إزالة التكرار على الإصدار السابق قبل الترقية، وذلك بتشغيل `compatible_double_hashes` (الذي يكتب كلًا من قيم hash القديمة والموحّدة). بالنسبة إلى الجداول المكررة، شغّله لمدة لا تقل عن `replicated_deduplication_window_seconds` (ساعة واحدة افتراضيًا)؛ إذ تحتفظ النوافذ الافتراضية بقيم hash الموحّدة لجميع عمليات insert خلال تلك النافذة، ويُعد ذلك كافيًا لتغطية حلقة retry لعملية insert. أما بالنسبة إلى الجداول غير المكررة التي تكون فيها `non_replicated_deduplication_window` &gt; 0، فالنافذة تعتمد على العدد لا على الوقت، لذا شغّل `compatible_double_hashes` لما لا يقل عن هذا العدد من عمليات insert قبل الترقية.
+<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />آلية حماية للترحيل، وهي مهملة. لا تدعم إصدارات ClickHouse 26.7 والإصدارات الأحدث سوى قيمة التجزئة الموحّدة لآلية insert deduplication (`new_unified_hash`)؛ ويرفض الخادم بدء التشغيل إذا وُجد هذا الإعداد بأي قيمة أخرى (مثل `old_separate_hashes` أو `compatible_double_hashes`). أكمِل ترحيل إزالة التكرار على الإصدار السابق قبل الترقية، وذلك بتشغيل `compatible_double_hashes` (الذي يكتب كلًا من قيم التجزئة القديمة والموحّدة). بالنسبة إلى الجداول المكررة، شغّله لمدة لا تقل عن `replicated_deduplication_window_seconds` (ساعة واحدة افتراضيًا)؛ إذ تحتفظ النوافذ الافتراضية بقيم التجزئة الموحّدة لجميع عمليات insert خلال تلك النافذة، ويُعد ذلك كافيًا لتغطية حلقة retry لعملية insert. أما بالنسبة إلى الجداول غير المكررة التي تكون فيها `non_replicated_deduplication_window` &gt; 0، فالنافذة تعتمد على العدد لا على الوقت، لذا شغّل `compatible_double_hashes` لما لا يقل عن هذا العدد من عمليات insert قبل الترقية.
 
-<div id="io_thread_pool_queue_size">
-  ## io_thread_pool_queue_size
-</div>
+## io_thread_pool_queue_size {#io_thread_pool_queue_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
 
@@ -603,9 +533,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
   تعني القيمة `0` عدم وجود حد.
 </Note>
 
-<div id="keep_alive_timeout">
-  ## keep_alive_timeout
-</div>
+## keep_alive_timeout {#keep_alive_timeout}
 
 <SettingsInfoBlock type="ثوانٍ" default_value="30" changeable_without_restart="لا" />
 
@@ -617,9 +545,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 <keep_alive_timeout>30</keep_alive_timeout>
 ```
 
-<div id="ldap_servers">
-  ## ldap_servers
-</div>
+## ldap_servers {#ldap_servers}
 
 أدرِج هنا خوادم LDAP مع معلمات الاتصال الخاصة بها من أجل:
 
@@ -686,9 +612,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 </my_ad_server>
 ```
 
-<div id="logger">
-  ## المُسجِّل
-</div>
+## المُسجِّل {#logger}
 
 موقع رسائل السجل وتنسيقها.
 
@@ -881,81 +805,55 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 يمكن حذف خصائص السجل عبر وضع تعليق على الخاصية. على سبيل المثال، إذا كنت لا تريد أن يطبع السجل `query_id`، فيمكنك وضع تعليق على الوسم `<query_id>`.
 
-<div id="logger.count">
-  ## logger.count
-</div>
+## logger.count {#logger.count}
 
 <SettingsInfoBlock type="UInt64" default_value="1" changeable_without_restart="No" />سياسة التدوير: الحد الأقصى لعدد ملفات السجل القديمة التي يحتفظ بها ClickHouse.
 
-<div id="logger.errorlog">
-  ## logger.errorlog
-</div>
+## logger.errorlog {#logger.errorlog}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />مسار ملف سجل الأخطاء.
 
-<div id="logger.formatting.type">
-  ## logger.formatting.type
-</div>
+## logger.formatting.type {#logger.formatting.type}
 
 <SettingsInfoBlock type="String" default_value="json" changeable_without_restart="No" />تنسيق السجل لمخرجات وحدة التحكم. حاليًا، لا يُدعَم إلا `<json>`.
 
-<div id="logger.level">
-  ## logger.level
-</div>
+## logger.level {#logger.level}
 
 <SettingsInfoBlock type="String" default_value="trace" changeable_without_restart="لا" />مستوى السجل. القيم المقبولة: `<none>` (تعطيل التسجيل)، `<fatal>`, `<critical>`, `<error>`, `<warning>`, `<notice>`, `<information>`, `<debug>`, `<trace>`, `<test>`.
 
-<div id="logger.log">
-  ## logger.log
-</div>
+## logger.log {#logger.log}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />مسار ملف السجل.
 
-<div id="logger.rotation">
-  ## logger.rotation
-</div>
+## logger.rotation {#logger.rotation}
 
 <SettingsInfoBlock type="String" default_value="100M" changeable_without_restart="No" />سياسة التدوير: تحدد متى يتم تدوير ملفات السجل. يمكن أن يستند التدوير إلى الحجم أو الوقت أو مزيج منهما. أمثلة: 100M، يوميًا، 100M,يوميًا. بمجرد أن يتجاوز ملف السجل الحجم المحدد أو عند انقضاء الفترة الزمنية المحددة، يُعاد تسميته ويُؤرشف، ثم يُنشأ ملف سجل جديد.
 
-<div id="logger.shutdown_level">
-  ## logger.shutdown_level
-</div>
+## logger.shutdown_level {#logger.shutdown_level}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />يُستخدم مستوى الإيقاف لتعيين مستوى المُسجِّل الجذر عند إيقاف تشغيل الخادم.
 
-<div id="logger.size">
-  ## logger.size
-</div>
+## logger.size {#logger.size}
 
 <SettingsInfoBlock type="String" default_value="100M" changeable_without_restart="No" />سياسة التدوير: الحد الأقصى لحجم ملفات السجل بالبايت. وبمجرد أن يتجاوز حجم ملف السجل هذه العتبة، تُعاد تسميته ويُؤرشف، ثم يُنشأ ملف سجل جديد.
 
-<div id="logger.startup_level">
-  ## logger.startup_level
-</div>
+## logger.startup_level {#logger.startup_level}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />يُستخدم مستوى بدء التشغيل لضبط مستوى المُسجِّل الجذر عند بدء تشغيل الخادم. وبعد اكتمال بدء التشغيل، يُعاد مستوى التسجيل إلى الإعداد `<level>`.
 
-<div id="logger.stream_compress">
-  ## logger.stream_compress
-</div>
+## logger.stream_compress {#logger.stream_compress}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="لا" />يضغط رسائل السجل باستخدام LZ4. اضبطه على `<1>` أو `<true>` لتمكينه.
 
-<div id="logger.syslog_level">
-  ## logger.syslog_level
-</div>
+## logger.syslog_level {#logger.syslog_level}
 
 <SettingsInfoBlock type="String" default_value="trace" changeable_without_restart="No" />مستوى السجل لتسجيل الرسائل في syslog.
 
-<div id="logger.use_syslog">
-  ## logger.use_syslog
-</div>
+## logger.use_syslog {#logger.use_syslog}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />تُوجَّه أيضًا مخرجات السجل إلى syslog.
 
-<div id="macros">
-  ## ماكرو
-</div>
+## ماكرو {#macros}
 
 استبدالات المَعلمات للجداول المُكرَّرة.
 
@@ -969,15 +867,11 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 <macros incl="macros" optional="true" />
 ```
 
-<div id="message_queue_disable_insertion">
-  ## message_queue_disable_insertion
-</div>
+## message_queue_disable_insertion {#message_queue_disable_insertion}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />تعطيل الإدراج من محركات قوائم انتظار الرسائل (Kafka وRabbitMQ وNATS) في العروض المادية المرفقة
 
-<div id="metric_log">
-  ## metric_log
-</div>
+## metric_log {#metric_log}
 
 يكون معطّلًا بشكل افتراضي.
 
@@ -1012,9 +906,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 <SystemLogParameters />
 
-<div id="mmap_cache_size">
-  ## mmap_cache_size
-</div>
+## mmap_cache_size {#mmap_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" changeable_without_restart="Yes" />
 
@@ -1031,9 +923,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
   يمكن تعديل هذا الإعداد في وقت التشغيل، وسيُطبَّق مفعوله فورًا.
 </Note>
 
-<div id="mutation_workload">
-  ## mutation_workload
-</div>
+## mutation_workload {#mutation_workload}
 
 <SettingsInfoBlock type="String" default_value="default" changeable_without_restart="نعم" />
 
@@ -1043,9 +933,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 * [جدولة أعباء العمل](/ar/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="named_collections_storage.type">
-  ## named_collections_storage.type
-</div>
+## named_collections_storage.type {#named_collections_storage.type}
 
 <SettingsInfoBlock type="String" default_value="local" changeable_without_restart="No" />
 
@@ -1053,44 +941,42 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 و`keeper_encrypted` و`zookeeper` و`zookeeper_encrypted`.
 يُضبط باستخدام `named_collections_storage.type` ‏(`<named_collections_storage><type>` في XML).
 
-<div id="oom_score">
-  ## oom_score
-</div>
+## oom_score {#oom_score}
 
 <SettingsInfoBlock type="Int32" default_value="0" changeable_without_restart="No" />في أنظمة Linux، يمكن لهذا الإعداد التحكّم في سلوك قاتل نفاد الذاكرة (OOM) في Linux.
 
-<div id="openssl">
-  ## openSSL
-</div>
+## openSSL {#openssl}
 
 تهيئة SSL للعميل/الخادم.
 
-يوفَّر دعم SSL بواسطة مكتبة `libpoco`. وتُشرح خيارات التهيئة المتاحة في [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h). ويمكن العثور على القيم الافتراضية في [SSLManager.cpp](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/src/SSLManager.cpp).
+يوفَّر دعم SSL بواسطة مكتبة `libpoco`. وتُشرح خيارات التهيئة المتاحة في [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h). ويمكن العثور على القيم الافتراضية في [SSLManager.cpp](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/src/SSLManager.cpp).
+
+يُعاد تحميل الملفات المشار إليها في `certificateFile` و`privateKeyFile` و`caConfig` دون إعادة تشغيل عند تغيّرها أو عند تنفيذ `SYSTEM RELOAD CONFIG`. وتستخدم الاتصالات الجديدة الشهادات المُعاد تحميلها، أما الاتصالات القائمة فلا تتأثر.
 
 مفاتيح إعدادات العميل/الخادم:
 
-| الخيار                        | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | القيمة الافتراضية                                                                          |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `cacheSessions`               | يُفعّل أو يعطّل التخزين المؤقت للجلسات. يجب استخدامه مع `sessionIdContext`. القيم المقبولة: `true`، `false`.                                                                                                                                                                                                                                                                                                                                                                | `false`                                                                                    |
-| `caConfig`                    | مسار إلى الملف أو الدليل الذي يحتوي على شهادات CA الموثوق بها. إذا كان يشير إلى ملف، فيجب أن يكون بتنسيق PEM، ويمكن أن يحتوي على عدة شهادات CA. وإذا كان يشير إلى دليل، فيجب أن يحتوي على ملف ‎.pem‎ واحد لكل شهادة CA. تُحدَّد أسماء الملفات باستخدام قيمة hash لاسم subject الخاص بـ CA. ويمكن العثور على التفاصيل في صفحة الدليل الخاصة بـ [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). |                                                                                            |
-| `certificateFile`             | مسار ملف شهادة العميل/الخادم بتنسيق PEM. يمكنك تركه فارغًا إذا كان `privateKeyFile` يحتوي على الشهادة.                                                                                                                                                                                                                                                                                                                                                                      |                                                                                            |
-| `cipherList`                  | خوارزميات التشفير التي يدعمها OpenSSL.                                                                                                                                                                                                                                                                                                                                                                                                                                      | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`                                                  |
-| `disableProtocols`            | البروتوكولات غير المسموح باستخدامها.                                                                                                                                                                                                                                                                                                                                                                                                                                        |                                                                                            |
-| `extendedVerification`        | إذا كان مُمكّنًا، فتحقّق من أن CN أو SAN في الشهادة يطابق اسم مضيف النظير.                                                                                                                                                                                                                                                                                                                                                                                                  | `false`                                                                                    |
-| `fips`                        | يُفعّل وضع FIPS في OpenSSL. ويكون ذلك مدعومًا إذا كان إصدار OpenSSL الخاص بالمكتبة يدعم FIPS.                                                                                                                                                                                                                                                                                                                                                                               | `false`                                                                                    |
-| `invalidCertificateHandler`   | فئة (فئة فرعية من CertificateHandler) تُستخدم للتحقق من الشهادات غير الصالحة. على سبيل المثال: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .                                                                                                                                                                                                                                                                           | `RejectCertificateHandler`                                                                 |
-| `loadDefaultCAFile`           | ما إذا كان سيتم استخدام شهادات CA المضمّنة في OpenSSL. يفترض ClickHouse أن شهادات CA المضمّنة موجودة في الملف `/etc/ssl/cert.pem` (أو في الدليل `/etc/ssl/certs`، على التوالي)، أو في الملف (أو الدليل، على التوالي) المحدد بواسطة متغير البيئة `SSL_CERT_FILE` (أو `SSL_CERT_DIR`، على التوالي).                                                                                                                                                                           | `true`                                                                                     |
-| `preferServerCiphers`         | حزم التعمية التي يفضّلها العميل على الخادم.                                                                                                                                                                                                                                                                                                                                                                                                                                 | `false`                                                                                    |
-| `privateKeyFile`              | المسار إلى الملف الذي يحتوي على المفتاح الخاص لشهادة PEM. وقد يحتوي الملف على المفتاح والشهادة في الوقت نفسه.                                                                                                                                                                                                                                                                                                                                                               |                                                                                            |
-| `privateKeyPassphraseHandler` | فئة (فئة فرعية من PrivateKeyPassphraseHandler) تطلب عبارة المرور اللازمة للوصول إلى المفتاح الخاص. على سبيل المثال: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.                                                                                                                                                                                                       | `KeyConsoleHandler`                                                                        |
-| `requireTLSv1`                | يتطلب اتصالًا عبر TLSv1. القيم المقبولة: `true`، `false`.                                                                                                                                                                                                                                                                                                                                                                                                                   | `false`                                                                                    |
-| `requireTLSv1_1`              | يتطلب اتصالًا عبر TLSv1.1. القيم المقبولة: `true`، `false`.                                                                                                                                                                                                                                                                                                                                                                                                                 | `false`                                                                                    |
-| `requireTLSv1_2`              | يتطلب اتصالًا عبر TLSv1.2. القيم المقبولة: `true`، `false`.                                                                                                                                                                                                                                                                                                                                                                                                                 | `false`                                                                                    |
-| `sessionCacheSize`            | الحد الأقصى لعدد الجلسات التي يحتفظ بها الخادوم في ذاكرة التخزين المؤقت. تشير القيمة `0` إلى عدد غير محدود من الجلسات.                                                                                                                                                                                                                                                                                                                                                      | [1024*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978) |
-| `sessionIdContext`            | مجموعة فريدة من الأحرف العشوائية يضيفها الخادوم إلى كل معرّف يتم إنشاؤه. يجب ألا يتجاوز طول السلسلة `SSL_MAX_SSL_SESSION_ID_LENGTH`. يُنصح دائمًا باستخدام هذه المعلمة لأنها تساعد على تجنّب المشكلات، سواء خزّن الخادوم الجلسة مؤقتًا أو طلب العميل التخزين المؤقت.                                                                                                                                                                                                        | `$\{application.name\}`                                                                    |
-| `sessionTimeout`              | مدة تخزين الجلسة مؤقتًا على الخادم، بالساعات.                                                                                                                                                                                                                                                                                                                                                                                                                               | `2`                                                                                        |
-| `verificationDepth`           | الحد الأقصى لطول سلسلة التحقق. سيفشل التحقق إذا تجاوز طول سلسلة الشهادات القيمة المحددة.                                                                                                                                                                                                                                                                                                                                                                                    | `9`                                                                                        |
-| `verificationMode`            | أسلوب التحقق من شهادات العقدة. ترد التفاصيل في وصف الفئة [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). القيم الممكنة: `none`, `relaxed`, `strict`, `once`.                                                                                                                                                                                                                                                    | `relaxed`                                                                                  |
+| الخيار                        | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | القيمة الافتراضية                                                                          |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `cacheSessions`               | يُفعّل أو يعطّل التخزين المؤقت للجلسات. يجب استخدامه مع `sessionIdContext`. القيم المقبولة: `true`، `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `false`                                                                                    |
+| `caConfig`                    | مسار إلى الملف أو الدليل الذي يحتوي على شهادات CA الموثوق بها. إذا كان يشير إلى ملف، فيجب أن يكون بتنسيق PEM، ويمكن أن يحتوي على عدة شهادات CA. وإذا كان يشير إلى دليل، فيجب أن يحتوي على ملف ‎.pem‎ واحد لكل شهادة CA. تُحدَّد أسماء الملفات باستخدام قيمة hash لاسم subject الخاص بـ CA. ويمكن العثور على التفاصيل في صفحة الدليل الخاصة بـ [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). وعلى غرار `certificateFile` و`privateKeyFile`، يُعاد تحميل شهادات CA دون إعادة تشغيل عند تغيّر الملف أو عند تنفيذ `SYSTEM RELOAD CONFIG`. |                                                                                            |
+| `certificateFile`             | مسار ملف شهادة العميل/الخادم بتنسيق PEM. يمكنك تركه فارغًا إذا كان `privateKeyFile` يحتوي على الشهادة.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |                                                                                            |
+| `cipherList`                  | خوارزميات التشفير التي يدعمها OpenSSL.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`                                                  |
+| `disableProtocols`            | البروتوكولات غير المسموح باستخدامها.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |                                                                                            |
+| `extendedVerification`        | إذا كان مُمكّنًا، فتحقّق من أن CN أو SAN في الشهادة يطابق اسم مضيف النظير.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `false`                                                                                    |
+| `fips`                        | يُفعّل وضع FIPS في OpenSSL. ويكون ذلك مدعومًا إذا كان إصدار OpenSSL الخاص بالمكتبة يدعم FIPS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `false`                                                                                    |
+| `invalidCertificateHandler`   | فئة (فئة فرعية من CertificateHandler) تُستخدم للتحقق من الشهادات غير الصالحة. على سبيل المثال: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .                                                                                                                                                                                                                                                                                                                                                                                                                     | `RejectCertificateHandler`                                                                 |
+| `loadDefaultCAFile`           | ما إذا كان سيتم استخدام شهادات CA المضمّنة في OpenSSL. يفترض ClickHouse أن شهادات CA المضمّنة موجودة في الملف `/etc/ssl/cert.pem` (أو في الدليل `/etc/ssl/certs`، على التوالي)، أو في الملف (أو الدليل، على التوالي) المحدد بواسطة متغير البيئة `SSL_CERT_FILE` (أو `SSL_CERT_DIR`، على التوالي).                                                                                                                                                                                                                                                                                                                     | `true`                                                                                     |
+| `preferServerCiphers`         | حزم التعمية التي يفضّلها العميل على الخادم.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `false`                                                                                    |
+| `privateKeyFile`              | المسار إلى الملف الذي يحتوي على المفتاح الخاص لشهادة PEM. وقد يحتوي الملف على المفتاح والشهادة في الوقت نفسه.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |                                                                                            |
+| `privateKeyPassphraseHandler` | فئة (فئة فرعية من PrivateKeyPassphraseHandler) تطلب عبارة المرور اللازمة للوصول إلى المفتاح الخاص. على سبيل المثال: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.                                                                                                                                                                                                                                                                                                                                                 | `KeyConsoleHandler`                                                                        |
+| `requireTLSv1`                | يتطلب اتصالًا عبر TLSv1. القيم المقبولة: `true`، `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `false`                                                                                    |
+| `requireTLSv1_1`              | يتطلب اتصالًا عبر TLSv1.1. القيم المقبولة: `true`، `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `false`                                                                                    |
+| `requireTLSv1_2`              | يتطلب اتصالًا عبر TLSv1.2. القيم المقبولة: `true`، `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `false`                                                                                    |
+| `sessionCacheSize`            | الحد الأقصى لعدد الجلسات التي يحتفظ بها الخادوم في ذاكرة التخزين المؤقت. تشير القيمة `0` إلى عدد غير محدود من الجلسات.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | [1024*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978) |
+| `sessionIdContext`            | مجموعة فريدة من الأحرف العشوائية يضيفها الخادوم إلى كل معرّف يتم إنشاؤه. يجب ألا يتجاوز طول السلسلة `SSL_MAX_SSL_SESSION_ID_LENGTH`. يُنصح دائمًا باستخدام هذه المعلمة لأنها تساعد على تجنّب المشكلات، سواء خزّن الخادوم الجلسة مؤقتًا أو طلب العميل التخزين المؤقت.                                                                                                                                                                                                                                                                                                                                                  | `$\{application.name\}`                                                                    |
+| `sessionTimeout`              | مدة تخزين الجلسة مؤقتًا على الخادم، بالساعات.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `2`                                                                                        |
+| `verificationDepth`           | الحد الأقصى لطول سلسلة التحقق. سيفشل التحقق إذا تجاوز طول سلسلة الشهادات القيمة المحددة.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `9`                                                                                        |
+| `verificationMode`            | أسلوب التحقق من شهادات العقدة. ترد التفاصيل في وصف الفئة [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). القيم الممكنة: `none`, `relaxed`, `strict`, `once`.                                                                                                                                                                                                                                                                                                                                                                                              | `relaxed`                                                                                  |
 
 **مثال للإعدادات:**
 
@@ -1122,195 +1008,131 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 </openSSL>
 ```
 
-<div id="openssl.client.caconfig">
-  ## openSSL.client.caConfig
-</div>
+## openSSL.client.caConfig {#openssl.client.caconfig}
 
-<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />المسار إلى الملف أو الدليل الذي يحتوي على شهادات CA الموثوق بها. إذا كان يشير إلى ملف، فيجب أن يكون بتنسيق PEM، ويمكن أن يحتوي على عدة شهادات CA. وإذا كان يشير إلى دليل، فيجب أن يحتوي على ملف ‎.pem واحد لكل شهادة CA. ويُبحث عن أسماء الملفات باستخدام قيمة تجزئة اسم الـ subject الخاص بـ CA. يمكن العثور على التفاصيل في صفحة man الخاصة بـ [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />المسار إلى الملف أو الدليل الذي يحتوي على شهادات CA الموثوق بها. إذا كان يشير إلى ملف، فيجب أن يكون بتنسيق PEM، ويمكن أن يحتوي على عدة شهادات CA. وإذا كان يشير إلى دليل، فيجب أن يحتوي على ملف ‎.pem واحد لكل شهادة CA. ويُبحث عن أسماء الملفات باستخدام قيمة تجزئة اسم الـ subject الخاص بـ CA. يمكن العثور على التفاصيل في صفحة man الخاصة بـ [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/). ويُعاد تحميل شهادات CA دون إعادة تشغيل عند تغيّر الملف أو عند تنفيذ `SYSTEM RELOAD CONFIG`؛ ويجري التحقق من الاتصالات الجديدة مقابل الشهادات المُعاد تحميلها.
 
-<div id="openssl.client.cachesessions">
-  ## openSSL.client.cacheSessions
-</div>
+## openSSL.client.cacheSessions {#openssl.client.cachesessions}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />يتيح تفعيل تخزين الجلسات مؤقتًا أو تعطيله. يجب استخدامه بالاقتران مع `<sessionIdContext>`. القيم المقبولة: `<true>`، `<false>`.
 
-<div id="openssl.client.certificatefile">
-  ## openSSL.client.certificateFile
-</div>
+## openSSL.client.certificateFile {#openssl.client.certificatefile}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />مسار ملف شهادة العميل/الخادم بتنسيق PEM. يمكنك تركه إذا كان `<privateKeyFile>` يتضمن الشهادة.
 
-<div id="openssl.client.cipherlist">
-  ## openSSL.client.cipherList
-</div>
+## openSSL.client.cipherList {#openssl.client.cipherlist}
 
 <SettingsInfoBlock type="String" default_value="ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" changeable_without_restart="No" />خوارزميات التشفير المدعومة في OpenSSL.
 
-<div id="openssl.client.disableprotocols">
-  ## openSSL.client.disableProtocols
-</div>
+## openSSL.client.disableProtocols {#openssl.client.disableprotocols}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />البروتوكولات التي لا يُسمح باستخدامها.
 
-<div id="openssl.client.extendedverification">
-  ## openSSL.client.extendedVerification
-</div>
+## openSSL.client.extendedVerification {#openssl.client.extendedverification}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="لا" />إذا كان مفعّلًا، فتحقّق من أن CN أو SAN في الشهادة يتطابق مع اسم مضيف النظير.
 
-<div id="openssl.client.fips">
-  ## openSSL.client.fips
-</div>
+## openSSL.client.fips {#openssl.client.fips}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />يُفعِّل وضع FIPS في OpenSSL. وهو مدعوم إذا كان إصدار OpenSSL الخاص بالمكتبة يدعم FIPS.
 
-<div id="openssl.client.invalidcertificatehandler.name">
-  ## openSSL.client.invalidCertificateHandler.name
-</div>
+## openSSL.client.invalidCertificateHandler.name {#openssl.client.invalidcertificatehandler.name}
 
 <SettingsInfoBlock type="String" default_value="RejectCertificateHandler" changeable_without_restart="لا" />فئة (فئة فرعية من CertificateHandler) تُستخدم للتحقق من الشهادات غير الصالحة. على سبيل المثال: `<<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>>`.
 
-<div id="openssl.client.loaddefaultcafile">
-  ## openSSL.client.loadDefaultCAFile
-</div>
+## openSSL.client.loadDefaultCAFile {#openssl.client.loaddefaultcafile}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />يحدّد ما إذا كان سيتم استخدام شهادات CA المضمّنة في OpenSSL. يفترض ClickHouse أن شهادات CA المضمّنة موجودة في الملف `</etc/ssl/cert.pem>` (أو في الدليل `</etc/ssl/certs>`) أو في الملف (أو الدليل) المحدد بواسطة متغير البيئة `<SSL_CERT_FILE>` (أو `<SSL_CERT_DIR>`).
 
-<div id="openssl.client.preferserverciphers">
-  ## openSSL.client.preferServerCiphers
-</div>
+## openSSL.client.preferServerCiphers {#openssl.client.preferserverciphers}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />خوارزميات التشفير في الخادم التي يفضّلها العميل.
 
-<div id="openssl.client.privatekeyfile">
-  ## openSSL.client.privateKeyFile
-</div>
+## openSSL.client.privateKeyFile {#openssl.client.privatekeyfile}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />مسار الملف الذي يحتوي على المفتاح الخاص لشهادة PEM. وقد يحتوي الملف على المفتاح والشهادة في الوقت نفسه.
 
-<div id="openssl.client.privatekeypassphrasehandler.name">
-  ## openSSL.client.privateKeyPassphraseHandler.name
-</div>
+## openSSL.client.privateKeyPassphraseHandler.name {#openssl.client.privatekeypassphrasehandler.name}
 
 <SettingsInfoBlock type="String" default_value="KeyConsoleHandler" changeable_without_restart="لا" />الفئة (فئة فرعية من PrivateKeyPassphraseHandler) التي تطلب عبارة المرور عند الوصول إلى المفتاح الخاص. على سبيل المثال: `<<privateKeyPassphraseHandler>>`, `<<name>KeyFileHandler</name>>`, `<<options><password>test</password></options>>`, `<</privateKeyPassphraseHandler>>`
 
-<div id="openssl.client.verificationdepth">
-  ## openSSL.client.verificationDepth
-</div>
+## openSSL.client.verificationDepth {#openssl.client.verificationdepth}
 
 <SettingsInfoBlock type="UInt64" default_value="9" changeable_without_restart="No" />الحد الأقصى لطول سلسلة التحقّق. سيفشل التحقّق إذا تجاوز طول سلسلة الشهادات القيمة المحددة.
 
-<div id="openssl.client.verificationmode">
-  ## openSSL.client.verificationMode
-</div>
+## openSSL.client.verificationMode {#openssl.client.verificationmode}
 
 <SettingsInfoBlock type="String" default_value="relaxed" changeable_without_restart="لا" />الطريقة المتبعة للتحقق من شهادات العقدة. يمكن العثور على التفاصيل في وصف الفئة [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). القيم الممكنة: `<none>`, `<relaxed>`, `<strict>`, `<once>`.
 
-<div id="openssl.server.caconfig">
-  ## openSSL.server.caConfig
-</div>
+## openSSL.server.caConfig {#openssl.server.caconfig}
 
-<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />المسار إلى الملف أو الدليل الذي يحتوي على شهادات CA الموثوقة. إذا كان يشير إلى ملف، فيجب أن يكون بتنسيق PEM، ويمكن أن يحتوي على عدة شهادات CA. وإذا كان يشير إلى دليل، فيجب أن يحتوي على ملف ‎.pem واحد لكل شهادة CA. يُبحث عن أسماء الملفات باستخدام قيمة تجزئة اسم موضوع CA. ويمكن العثور على التفاصيل في صفحة man الخاصة بـ [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />المسار إلى الملف أو الدليل الذي يحتوي على شهادات CA الموثوقة. إذا كان يشير إلى ملف، فيجب أن يكون بتنسيق PEM، ويمكن أن يحتوي على عدة شهادات CA. وإذا كان يشير إلى دليل، فيجب أن يحتوي على ملف ‎.pem واحد لكل شهادة CA. يُبحث عن أسماء الملفات باستخدام قيمة تجزئة اسم موضوع CA. ويمكن العثور على التفاصيل في صفحة man الخاصة بـ [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/). ويُعاد تحميل شهادات CA دون إعادة تشغيل عند تغيّر الملف أو عند تنفيذ `SYSTEM RELOAD CONFIG`؛ ويجري التحقق من الاتصالات الجديدة مقابل الشهادات المعاد تحميلها.
 
-<div id="openssl.server.cachesessions">
-  ## openSSL.server.cacheSessions
-</div>
+## openSSL.server.cacheSessions {#openssl.server.cachesessions}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />يؤدي إلى تمكين أو تعطيل التخزين المؤقت للجلسات. يجب استخدامه مع `<sessionIdContext>`. القيم المقبولة: `<true>`، `<false>`.
 
-<div id="openssl.server.certificatefile">
-  ## openSSL.server.certificateFile
-</div>
+## openSSL.server.certificateFile {#openssl.server.certificatefile}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />مسار ملف شهادة العميل/الخادم بتنسيق PEM. يمكنك عدم تحديده إذا كان `<privateKeyFile>` يحتوي على الشهادة.
 
-<div id="openssl.server.cipherlist">
-  ## openSSL.server.cipherList
-</div>
+## openSSL.server.cipherList {#openssl.server.cipherlist}
 
 <SettingsInfoBlock type="String" default_value="ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" changeable_without_restart="لا" />خوارزميات التشفير المدعومة في OpenSSL.
 
-<div id="openssl.server.disableprotocols">
-  ## openSSL.server.disableProtocols
-</div>
+## openSSL.server.disableProtocols {#openssl.server.disableprotocols}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />البروتوكولات التي لا يُسمح باستخدامها.
 
-<div id="openssl.server.extendedverification">
-  ## openSSL.server.extendedVerification
-</div>
+## openSSL.server.extendedVerification {#openssl.server.extendedverification}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />إذا كان مفعّلًا، فتحقّق من أن CN أو SAN في الشهادة يتطابق مع اسم مضيف النظير.
 
-<div id="openssl.server.fips">
-  ## openSSL.server.fips
-</div>
+## openSSL.server.fips {#openssl.server.fips}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="لا" />يُفعِّل وضع FIPS في OpenSSL. ويكون هذا مدعومًا إذا كان إصدار OpenSSL الخاص بالمكتبة يدعم FIPS.
 
-<div id="openssl.server.invalidcertificatehandler.name">
-  ## openSSL.server.invalidCertificateHandler.name
-</div>
+## openSSL.server.invalidCertificateHandler.name {#openssl.server.invalidcertificatehandler.name}
 
 <SettingsInfoBlock type="String" default_value="RejectCertificateHandler" changeable_without_restart="No" />الفئة (صنف فرعي من CertificateHandler) المستخدَم للتحقق من الشهادات غير الصالحة. على سبيل المثال: `<<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>>`.
 
-<div id="openssl.server.loaddefaultcafile">
-  ## openSSL.server.loadDefaultCAFile
-</div>
+## openSSL.server.loadDefaultCAFile {#openssl.server.loaddefaultcafile}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="لا" />يحدّد ما إذا كان سيتم استخدام شهادات CA المضمّنة في OpenSSL. يفترض ClickHouse أن شهادات CA المضمّنة موجودة في الملف `</etc/ssl/cert.pem>` (أو في الدليل `</etc/ssl/certs>`، على التوالي)، أو في الملف (أو الدليل، على التوالي) المحدد بواسطة متغير البيئة `<SSL_CERT_FILE>` (أو `<SSL_CERT_DIR>`).
 
-<div id="openssl.server.preferserverciphers">
-  ## openSSL.server.preferServerCiphers
-</div>
+## openSSL.server.preferServerCiphers {#openssl.server.preferserverciphers}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />مجموعات التعمية الخاصة بالخادم التي يفضّلها العميل.
 
-<div id="openssl.server.privatekeyfile">
-  ## openSSL.server.privateKeyFile
-</div>
+## openSSL.server.privateKeyFile {#openssl.server.privatekeyfile}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />مسار الملف الذي يحتوي على المفتاح الخاص لشهادة PEM. وقد يحتوي الملف على المفتاح والشهادة في الوقت نفسه.
 
-<div id="openssl.server.privatekeypassphrasehandler.name">
-  ## openSSL.server.privateKeyPassphraseHandler.name
-</div>
+## openSSL.server.privateKeyPassphraseHandler.name {#openssl.server.privatekeypassphrasehandler.name}
 
 <SettingsInfoBlock type="String" default_value="KeyConsoleHandler" changeable_without_restart="لا" />الفئة (فئة فرعية من PrivateKeyPassphraseHandler) التي تطلب عبارة المرور للوصول إلى المفتاح الخاص. على سبيل المثال: `<<privateKeyPassphraseHandler>>`, `<<name>KeyFileHandler</name>>`, `<<options><password>test</password></options>>`, `<</privateKeyPassphraseHandler>>`
 
-<div id="openssl.server.sessioncachesize">
-  ## openSSL.server.sessionCacheSize
-</div>
+## openSSL.server.sessionCacheSize {#openssl.server.sessioncachesize}
 
 <SettingsInfoBlock type="UInt64" default_value="20480" changeable_without_restart="No" />الحد الأقصى لعدد الجلسات التي يحتفظ بها الخادم في ذاكرة التخزين المؤقت. وتشير القيمة 0 إلى أن عدد الجلسات غير محدود.
 
-<div id="openssl.server.sessionidcontext">
-  ## openSSL.server.sessionIdContext
-</div>
+## openSSL.server.sessionIdContext {#openssl.server.sessionidcontext}
 
 <SettingsInfoBlock type="String" default_value="application.name" changeable_without_restart="لا" />مجموعة فريدة من الأحرف العشوائية يُلحقها الخادم بكل معرّف يُنشئه. يجب ألا يتجاوز طول السلسلة `<SSL_MAX_SSL_SESSION_ID_LENGTH>`. يُوصى دائمًا بهذه المعلمة لأنها تساعد على تجنب المشكلات، سواء خزّن الخادم الجلسة مؤقتًا أو طلب العميل التخزين المؤقت.
 
-<div id="openssl.server.sessiontimeout">
-  ## openSSL.server.sessionTimeout
-</div>
+## openSSL.server.sessionTimeout {#openssl.server.sessiontimeout}
 
 <SettingsInfoBlock type="UInt64" default_value="2" changeable_without_restart="No" />مدة الاحتفاظ بالجلسة مؤقتًا على الخادم، بالساعات.
 
-<div id="openssl.server.verificationdepth">
-  ## openSSL.server.verificationDepth
-</div>
+## openSSL.server.verificationDepth {#openssl.server.verificationdepth}
 
 <SettingsInfoBlock type="UInt64" default_value="9" changeable_without_restart="No" />الطول الأقصى لسلسلة التحقق. سيفشل التحقق إذا تجاوز طول سلسلة الشهادات القيمة المحددة.
 
-<div id="openssl.server.verificationmode">
-  ## openSSL.server.verificationMode
-</div>
+## openSSL.server.verificationMode {#openssl.server.verificationmode}
 
 <SettingsInfoBlock type="String" default_value="relaxed" changeable_without_restart="No" />الطريقة المتبعة للتحقق من شهادات العُقدة. تجد التفاصيل في وصف الفئة [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). القيم المحتملة: `<none>`, `<relaxed>`, `<strict>`, `<once>`.
 
-<div id="opentelemetry_span_log">
-  ## opentelemetry_span_log
-</div>
+## opentelemetry_span_log {#opentelemetry_span_log}
 
 إعدادات جدول النظام [`opentelemetry_span_log`](/ar/reference/system-tables/opentelemetry_span_log).
 
@@ -1335,9 +1157,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 </opentelemetry_span_log>
 ```
 
-<div id="part_log">
-  ## part_log
-</div>
+## part_log {#part_log}
 
 يسجّل الأحداث المرتبطة بـ [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)، مثل إضافة البيانات أو دمجها. يمكنك استخدام هذا السجل لمحاكاة خوارزميات الدمج ومقارنة خصائصها. كما يمكنك تصوّر عملية الدمج.
 
@@ -1360,9 +1180,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 </part_log>
 ```
 
-<div id="path">
-  ## المسار
-</div>
+## المسار {#path}
 
 <SettingsInfoBlock type="String" default_value="/var/lib/clickhouse/" changeable_without_restart="No" />
 
@@ -1378,17 +1196,13 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 <path>/var/lib/clickhouse/</path>
 ```
 
-<div id="per_cpu_untracked_memory_thread_buffer">
-  ## per_cpu_untracked_memory_thread_buffer
-</div>
+## per_cpu_untracked_memory_thread_buffer {#per_cpu_untracked_memory_thread_buffer}
 
 <SettingsInfoBlock type="UInt64" default_value="32768" changeable_without_restart="نعم" />
 
 مقدار الذاكرة غير المتتبَّعة، بالبايت، الذي يمكن لكل خيط تنفيذ الاحتفاظ به دون المساس بالميزانية المشتركة لكل CPU. يخفّض ذلك كلفة الاحتساب لكل CPU عند التخصيصات الصغيرة، وهو الهامش المُضاف فوق `max_per_cpu_untracked_memory * number_of_cpus` في أسوأ الحالات. تؤدي القيمة `0` إلى إزالة هذا الهامش: إذ يُحدِّث كل تخصيص العداد المشترك لكل CPU (وهو الأدق، لكنه يسبّب تنازعًا أكبر). Linux فقط.
 
-<div id="point_in_polygon_cache_size">
-  ## point_in_polygon_cache_size
-</div>
+## point_in_polygon_cache_size {#point_in_polygon_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Yes" />
 
@@ -1401,9 +1215,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
   يمكن تعديل هذا الإعداد أثناء runtime، وسيُطبَّق فورًا.
 </Note>
 
-<div id="prefixes_deserialization_thread_pool_thread_pool_queue_size">
-  ## prefixes_deserialization_thread_pool_thread_pool_queue_size
-</div>
+## prefixes_deserialization_thread_pool_thread_pool_queue_size {#prefixes_deserialization_thread_pool_thread_pool_queue_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
 
@@ -1413,17 +1225,13 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
   تعني القيمة `0` عدم وجود حد.
 </Note>
 
-<div id="prepare_system_log_tables_on_startup">
-  ## prepare_system_log_tables_on_startup
-</div>
+## prepare_system_log_tables_on_startup {#prepare_system_log_tables_on_startup}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
 إذا كانت القيمة `true`، يُنشئ ClickHouse جميع جداول `system.*_log` المُعدّة قبل بدء التشغيل. وقد يكون ذلك مفيدًا إذا كانت بعض البرامج النصية الخاصة ببدء التشغيل تعتمد على هذه الجداول.
 
-<div id="process_query_plan_packet">
-  ## process_query_plan_packet
-</div>
+## process_query_plan_packet {#process_query_plan_packet}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
@@ -1436,9 +1244,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 <process_query_plan_packet>true</process_query_plan_packet>
 ```
 
-<div id="processors_profile_log">
-  ## processors_profile_log
-</div>
+## processors_profile_log {#processors_profile_log}
 
 إعدادات جدول النظام [`processors_profile_log`](/ar/reference/system-tables/processors_profile_log).
 
@@ -1459,9 +1265,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 </processors_profile_log>
 ```
 
-<div id="prometheus">
-  ## prometheus
-</div>
+## prometheus {#prometheus}
 
 إتاحة بيانات المقاييس ليتمكّن [Prometheus](https://prometheus.io) من كشطها.
 
@@ -1471,9 +1275,9 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 * `port` – المنفذ الخاص بـ `endpoint`.
 * `metrics` – إتاحة المقاييس من جدول [system.metrics](/ar/reference/system-tables/metrics).
 * `events` – إتاحة المقاييس من جدول [system.events](/ar/reference/system-tables/events).
-* `asynchronous_metrics` – إتاحة قيم المقاييس الحالية من جدول [system.asynchronous&#95;metrics](/ar/reference/system-tables/asynchronous_metrics).
+* `asynchronous_metrics` – إتاحة قيم المقاييس الحالية من جدول [system.asynchronous&#95;metrics](/ar/reference/system-tables/asynchronous_metrics). تُتاح مقاييس المفتاح-القيمة (المقسمة حسب نواة CPU أو جهاز كتلي أو واجهة شبكة أو قرص) كعينة واحدة لكل مفتاح، تحمل المفتاح كتسمية: `ClickHouseAsyncMetrics_BlockReadBytes{device="sda"}`. يُتيح إعداد الخادم [`asynchronous_metrics_key_values_mode`](/ar/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) عرضها بأسمائها المشوهة السابقة للإصدار 26.8 بدلًا من ذلك (`ClickHouseAsyncMetrics_BlockReadBytes_sda`)، أو بكلتا الطريقتين في آن واحد.
 * `errors` - إتاحة عدد الأخطاء حسب رموز الخطأ التي حدثت منذ آخر إعادة تشغيل للخادم. ويمكن أيضًا الحصول على هذه المعلومات من [system.errors](/ar/reference/system-tables/errors).
-* `labels` – تسميات ثابتة تُضاف إلى كل مقياس مُتاح. يعرّف كل عنصر تابع تسمية واحدة: اسم العنصر هو اسم التسمية (ويجب أن يطابق `[a-zA-Z_][a-zA-Z0-9_]*`) وقيمة العنصر هي قيمة التسمية. تدعم قيم التسميات استبدالات الإعدادات القياسية، مثل السمة `from_env`. يُرفض اسم التسمية إذا كان يبدأ بـ `__` (المحجوزة في Prometheus)، أو إذا كان سيتعارض مع تسمية تكتبها نقطة النهاية هذه بالفعل لأحد أقسامها المُمكّنة، وإلا فستحمل العينة اسم التسمية نفسه مرتين. لذا تتبع مجموعة الأسماء المحجوزة واجهة التصدير النشطة لنقطة النهاية: `le` عند تمكين `histograms`؛ وتسميات `ClickHouse_Info` (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) عند تمكين `info`؛ وأي تسمية تستخدمها عائلة مقاييس مُدرَّج تكراري مكشوفة أو عائلة مقاييس ذات أبعاد مكشوفة (مثل `group` أو `direction` أو `operation_type`) عند تمكين `histograms`/`dimensional_metrics`. ولأن ذلك يعتمد على ما تكشفه نقطة النهاية فعليًا، فقد يكون الاسم صالحًا في نقطة نهاية ويُرفض في أخرى — فعلى سبيل المثال، تكشف نقطة نهاية Keeper `keeper_metrics_only` عائلات `keeper_*` فقط، لذا تُقبل فيها التسميات التي تستخدمها عائلات الخادم فقط.
+* `labels` – تسميات ثابتة تُضاف إلى كل مقياس مُتاح. يعرّف كل عنصر تابع تسمية واحدة: اسم العنصر هو اسم التسمية (ويجب أن يطابق `[a-zA-Z_][a-zA-Z0-9_]*`) وقيمة العنصر هي قيمة التسمية. تدعم قيم التسميات استبدالات الإعدادات القياسية، مثل السمة `from_env`. يُرفض اسم التسمية إذا كان يبدأ بـ `__` (المحجوزة في Prometheus)، أو إذا كان سيتعارض مع تسمية تكتبها نقطة النهاية هذه بالفعل لأحد أقسامها المُمكّنة، وإلا فستحمل العينة اسم التسمية نفسه مرتين. لذا تتبع مجموعة الأسماء المحجوزة واجهة التصدير النشطة لنقطة النهاية: `le` عند تمكين `histograms`؛ وتسميات `ClickHouse_Info` (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) عند تمكين `info`؛ وتسميات مفاتيح المقاييس غير المتزامنة ذات المفتاح-القيمة (`channel`, `cpu`, `device`, `disk`, `interface`, `mc`, `sensor`) عند تمكين `asynchronous_metrics` ونشرها بصيغة المفتاح-القيمة، التي يحددها إعداد الخادم [`asynchronous_metrics_key_values_mode`](/ar/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode)؛ وأي تسمية تستخدمها عائلة مقاييس مُدرَّج تكراري مكشوفة أو عائلة مقاييس ذات أبعاد مكشوفة (مثل `group` أو `direction` أو `operation_type`) عند تمكين `histograms`/`dimensional_metrics`. ولأن ذلك يعتمد على ما تكشفه نقطة النهاية فعليًا، فقد يكون الاسم صالحًا في نقطة نهاية ويُرفض في أخرى — فعلى سبيل المثال، تكشف نقطة نهاية Keeper `keeper_metrics_only` عائلات `keeper_*` فقط، لذا تُقبل فيها التسميات التي تستخدمها عائلات الخادم فقط. تُتحقق صحة التسميات الثابتة وفق القاعدة نفسها عند تحميل إعدادات، بما في ذلك عند `SYSTEM RELOAD CONFIG`: يُرفض التحميل بالكامل قبل أن يصبح ساريًا إذا كان سيجعل تسمية ثابتة تتعارض — بإضافة تسمية كهذه، أو بتغيير `asynchronous_metrics_key_values_mode` بحيث تبدأ تسميات المفاتيح بالكتابة — بدلًا من إتاحة التسمية نفسها مرتين. تؤدي أي تغييرات مقبولة على الوضع إلى إعادة إنشاء نقاط النهاية التي تتيح المقاييس، بحيث تُنشر الصيغة الجديدة وتسميات الإعداد نفسه معًا.
 
 **مثال**
 
@@ -1503,15 +1307,11 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 curl 127.0.0.1:9363/metrics
 ```
 
-<div id="prometheus.keeper_metrics_only">
-  ## prometheus.keeper_metrics_only
-</div>
+## prometheus.keeper_metrics_only {#prometheus.keeper_metrics_only}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="لا" />يعرض المقاييس المتعلقة بـ Keeper
 
-<div id="proxy">
-  ## الوكيل
-</div>
+## الوكيل {#proxy}
 
 حدِّد خوادم وكيلة لطلبات HTTP وHTTPS، وهي مدعومة حاليًا في تخزين S3 ودوال جداول S3 ودوال URL.
 
@@ -1649,9 +1449,7 @@ curl 127.0.0.1:9363/metrics
 فسيتحقق من نوع المُحلِّل التالي في ترتيب الأولوية، إلى أن يصل إلى مُحلِّل البيئة.
 ويتيح ذلك أيضًا استخدام مزيج من أنواع المُحلِّلات.
 
-<div id="remap_executable">
-  ## remap_executable
-</div>
+## remap_executable {#remap_executable}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="لا" />
 
@@ -1667,9 +1465,7 @@ curl 127.0.0.1:9363/metrics
 <remap_executable>false</remap_executable>
 ```
 
-<div id="replica_group_name">
-  ## replica_group_name
-</div>
+## replica_group_name {#replica_group_name}
 
 اسم مجموعة النسخ المتماثلة لقاعدة البيانات Replicated.
 
@@ -1684,9 +1480,7 @@ curl 127.0.0.1:9363/metrics
 <replica_group_name>backups</replica_group_name>
 ```
 
-<div id="replicated_merge_tree">
-  ## replicated_merge_tree
-</div>
+## replicated_merge_tree {#replicated_merge_tree}
 
 ضبط دقيق للجداول في [ReplicatedMergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree). لهذا الإعداد أولوية أعلى.
 
@@ -1700,15 +1494,11 @@ curl 127.0.0.1:9363/metrics
 </replicated_merge_tree>
 ```
 
-<div id="restore_threads">
-  ## restore_threads
-</div>
+## restore_threads {#restore_threads}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16" changeable_without_restart="No" />الحد الأقصى لعدد سلاسل التنفيذ المستخدمة لتنفيذ طلبات RESTORE.
 
-<div id="send_crash_reports">
-  ## send_crash_reports
-</div>
+## send_crash_reports {#send_crash_reports}
 
 إعدادات إرسال تقارير الأعطال إلى فريق المطورين الأساسيين لـ ClickHouse.
 
@@ -1730,17 +1520,13 @@ curl 127.0.0.1:9363/metrics
 </send_crash_reports>
 ```
 
-<div id="series_keeper_path">
-  ## series_keeper_path
-</div>
+## series_keeper_path {#series_keeper_path}
 
 <SettingsInfoBlock type="String" default_value="/clickhouse/series" changeable_without_restart="لا" />
 
 المسار في Keeper الذي يحتوي على أرقام متزايدة تلقائيًا، وتُنشئها الدالة `generateSerialID`. ستكون كل سلسلة عبارة عن عقدة ضمن هذا المسار.
 
-<div id="ssh_server">
-  ## ssh_server
-</div>
+## ssh_server {#ssh_server}
 
 سيُكتب الجزء العام من مفتاح المضيف في ملف known&#95;hosts
 على جهة عميل SSH عند أول اتصال.
@@ -1758,9 +1544,7 @@ curl 127.0.0.1:9363/metrics
 </ssh_server>
 ```
 
-<div id="table_engines_require_grant">
-  ## table_engines_require_grant
-</div>
+## table_engines_require_grant {#table_engines_require_grant}
 
 <CloudNotSupportedBadge />
 
@@ -1772,9 +1556,7 @@ curl 127.0.0.1:9363/metrics
   افتراضيًا، ولأغراض التوافق مع الإصدارات السابقة، يتجاهل إنشاء جدول باستخدام table engine محدد امتياز grant، ولكن يمكنك تغيير هذا السلوك بضبط هذه القيمة على `true`.
 </Note>
 
-<div id="tcp_ssh_port">
-  ## tcp_ssh_port
-</div>
+## tcp_ssh_port {#tcp_ssh_port}
 
 منفذ خادم SSH الذي يتيح للمستخدم الاتصال وتنفيذ الاستعلامات بشكل تفاعلي باستخدام العميل المضمّن عبر PTY.
 
@@ -1784,9 +1566,7 @@ curl 127.0.0.1:9363/metrics
 <tcp_ssh_port>9022</tcp_ssh_port>
 ```
 
-<div id="text_log">
-  ## text_log
-</div>
+## text_log {#text_log}
 
 إعدادات [جدول النظام text&#95;log](/ar/reference/system-tables/text_log) الخاصة بتسجيل الرسائل النصية.
 
@@ -1817,9 +1597,7 @@ curl 127.0.0.1:9363/metrics
 </clickhouse>
 ```
 
-<div id="thread_pool_queue_size">
-  ## thread_pool_queue_size
-</div>
+## thread_pool_queue_size {#thread_pool_queue_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="لا" />
 
@@ -1835,9 +1613,7 @@ curl 127.0.0.1:9363/metrics
 <thread_pool_queue_size>12000</thread_pool_queue_size>
 ```
 
-<div id="throw_on_unknown_workload">
-  ## throw_on_unknown_workload
-</div>
+## throw_on_unknown_workload {#throw_on_unknown_workload}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />
 
@@ -1856,9 +1632,7 @@ curl 127.0.0.1:9363/metrics
 
 * [جدولة أعباء العمل](/ar/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="timezone">
-  ## timezone
-</div>
+## timezone {#timezone}
 
 المنطقة الزمنية الخاصة بالخادم.
 
@@ -1876,9 +1650,7 @@ curl 127.0.0.1:9363/metrics
 
 * [session&#95;timezone](/ar/reference/settings/session-settings/other#session_timezone)
 
-<div id="trace_log">
-  ## trace_log
-</div>
+## trace_log {#trace_log}
 
 إعدادات عمل جدول النظام [trace&#95;log](/ar/reference/system-tables/trace_log).
 
@@ -1900,9 +1672,7 @@ curl 127.0.0.1:9363/metrics
 </trace_log>
 ```
 
-<div id="url_scheme_mappers">
-  ## url_scheme_mappers
-</div>
+## url_scheme_mappers {#url_scheme_mappers}
 
 إعدادات لتحويل بادئات URL المختصرة أو الرمزية إلى عناوين URL كاملة.
 
@@ -1922,9 +1692,7 @@ curl 127.0.0.1:9363/metrics
 </url_scheme_mappers>
 ```
 
-<div id="validate_tcp_client_information">
-  ## validate_tcp_client_information
-</div>
+## validate_tcp_client_information {#validate_tcp_client_information}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />يحدّد ما إذا كان التحقق من معلومات العميل مفعّلًا عند استلام حزمة الاستعلام.
 
@@ -1934,9 +1702,7 @@ curl 127.0.0.1:9363/metrics
 <validate_tcp_client_information>false</validate_tcp_client_information>
 ```
 
-<div id="wait_dictionaries_load_at_startup">
-  ## wait_dictionaries_load_at_startup
-</div>
+## wait_dictionaries_load_at_startup {#wait_dictionaries_load_at_startup}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
@@ -1958,15 +1724,11 @@ curl 127.0.0.1:9363/metrics
 <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
 ```
 
-<div id="webassembly_udf_engine">
-  ## webassembly_udf_engine
-</div>
+## webassembly_udf_engine {#webassembly_udf_engine}
 
-<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />المحرّك المستخدم لتشغيل WebAssembly UDFs. القيم المدعومة هي &#39;wasmtime&#39; و &#39;wasmedge&#39;.
+<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />المحرّك المستخدم لتشغيل WebAssembly UDFs. القيمة المدعومة الوحيدة هي &#39;wasmtime&#39;.
 
-<div id="webterminal_allowed_origins">
-  ## webterminal_allowed_origins
-</div>
+## webterminal_allowed_origins {#webterminal_allowed_origins}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />قائمة مفصولة بفواصل لقيم Origin الكاملة (المخطط + المضيف + المنفذ الاختياري) المسموح لها بفتح جلسات WebSocket الخاصة بـ `/webterminal`. عند تركها فارغة، تُطبَّق سياسة نفس الأصل بصرامة (يجب أن تتطابق قيمة Origin مع مخطط الطلب ومضيفه ومنفذه). اضبط هذا لعمليات النشر الموجودة خلف وكيل عكسي يُنهي TLS، حيث تكون `request.isSecure()` مساوية لـ `false` رغم أن المتصفح يستخدم `https`. مثال: `https://example.com,https://app.example.com:8443`.
 

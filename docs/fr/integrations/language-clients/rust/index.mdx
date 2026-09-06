@@ -45,12 +45,12 @@ Voir aussi : [page sur crates.io](https://crates.io/crates/clickhouse).
   ## Fonctionnalités Cargo
 </div>
 
-* `lz4` (activée par défaut) — active les variantes `Compression::Lz4` et `Compression::Lz4Hc(_)`. Si elle est activée, `Compression::Lz4` est utilisée par défaut pour toutes les requêtes, sauf `WATCH`.
+* `lz4` (activée par défaut) — active les variantes `Compression::Lz4` et `Compression::Lz4Hc(_)`. Si elle est activée, `Compression::Lz4` est utilisée par défaut pour toutes les requêtes, sauf `WATCH`, que seul ClickHouse antérieur à la v26.9 accepte.
 * `native-tls` — prend en charge les URL utilisant le schéma `HTTPS` via `hyper-tls`, qui s&#39;appuie sur OpenSSL.
 * `rustls-tls` — prend en charge les URL utilisant le schéma `HTTPS` via `hyper-rustls`, qui ne s&#39;appuie pas sur OpenSSL.
 * `inserter` — active `client.inserter()`.
 * `test-util` — ajoute des mocks. Voir [l&#39;exemple](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs). À utiliser uniquement dans `dev-dependencies`.
-* `watch` — active la fonctionnalité `client.watch`. Voir la section correspondante pour plus de détails.
+* `watch` — active la fonctionnalité `client.watch`. Elle émet une requête `WATCH`, supprimée dans ClickHouse v26.9 avec `WINDOW VIEW` ; elle ne fonctionne donc qu’avec des serveurs plus anciens.
 * `uuid` — ajoute `serde::uuid` pour utiliser la crate [uuid](https://docs.rs/uuid).
 * `time` — ajoute `serde::time` pour utiliser la crate [time](https://docs.rs/time).
 
@@ -556,7 +556,7 @@ struct MyRow {
   ## Simulation
 </div>
 
-Le crate fournit des utilitaires permettant de simuler un serveur CH et de tester les requêtes DDL, `SELECT`, `INSERT` et `WATCH`. Cette fonctionnalité peut être activée avec la fonctionnalité `test-util`. Utilisez-la **uniquement** comme dépendance de développement.
+Le crate fournit des utilitaires permettant de simuler un serveur CH et de tester les requêtes DDL, `SELECT`, `INSERT` et `WATCH` (`WATCH` est uniquement accepté par les versions de ClickHouse antérieures à v26.9). Cette fonctionnalité peut être activée avec la fonctionnalité `test-util`. Utilisez-la **uniquement** comme dépendance de développement.
 
 Voir [l’exemple](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs).
 

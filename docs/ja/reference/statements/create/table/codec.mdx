@@ -12,7 +12,7 @@ doc_type: 'reference'
 import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-デフォルトでは、ClickHouse はセルフマネージド版では `lz4` 圧縮を使用し、ClickHouse Cloud では `zstd` を使用します。
+デフォルトでは、ClickHouse はセルフマネージド版では `ZSTD(3)` 圧縮を使用し、ClickHouse Cloud では `zstd` を使用します。`MergeTree` ファミリーでは、デフォルトはサイズに応じて決まります。100 MB 未満では高速な `LZ4` が使用され、100 MB 以上では `ZSTD(3)` が使用されます。そのため、挿入されたばかりのデータは `LZ4` として始まり、バックグラウンドマージによって生成されたより大きなパーツは `ZSTD(3)` に切り替わります。このしきい値は、データが書き込まれる前、コーデックを選択しなければならない時点で判明しているパーツサイズ (挿入されたばかりのパーツでは `0`、マージやミューテーションではソースパーツのサイズ) に適用され、結果として生成されるパーツのサイズには適用されません。
 
 `MergeTree` エンジンファミリーでは、サーバー設定の [compression](/ja/reference/settings/server-settings/settings/other#compression) セクションでデフォルトの圧縮方式を変更できます。
 
@@ -50,45 +50,34 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 圧縮は、以下のテーブルエンジンでサポートされています。
 
 * [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリー。カラム圧縮コーデックと、[compression](/ja/reference/settings/server-settings/settings/other#compression) 設定でデフォルトの圧縮方式を選択する機能をサポートします。
-* [Log](/ja/reference/engines/table-engines/log-family/index) ファミリー。デフォルトでは `lz4` 圧縮方式を使用し、カラム圧縮コーデックをサポートします。
+* [Log](/ja/reference/engines/table-engines/log-family/index) ファミリー — `Log` および `TinyLog` エンジンはデフォルトの `ZSTD(3)` 圧縮方式を使用し、カラム圧縮コーデックをサポートします。
+* [StripeLog](/ja/reference/engines/table-engines/log-family/index) は、すべてのカラムをデフォルトの `ZSTD(3)` 方式で圧縮された単一の共有データストリームに書き込むため、カラムごとの圧縮コーデックは適用されません。
 * [Set](/ja/reference/engines/table-engines/special/set)。デフォルトの圧縮のみをサポートします。
 * [Join](/ja/reference/engines/table-engines/special/join)。デフォルトの圧縮のみをサポートします。
 
 ClickHouse は、汎用コーデックと特殊用途のコーデックをサポートしています。
 
-<div id="general-purpose-codecs">
-  ## 汎用コーデック
-</div>
+## 汎用コーデック {#general-purpose-codecs}
 
-<div id="none">
-  ### NONE
-</div>
+### NONE {#none}
 
 `NONE` — 圧縮なし。
 
-<div id="lz4">
-  ### LZ4
-</div>
+### LZ4 {#lz4}
 
-`LZ4` — デフォルトで使用される可逆[データ圧縮アルゴリズム](https://github.com/lz4/lz4)です。LZ4 の高速圧縮を使用します。
+`LZ4` — 可逆[データ圧縮アルゴリズム](https://github.com/lz4/lz4)です。LZ4 の高速圧縮を使用します。
 
-<div id="lz4hc">
-  ### LZ4HC
-</div>
+### LZ4HC {#lz4hc}
 
 `LZ4HC[(level)]` — レベルを設定可能な LZ4 HC (高圧縮) アルゴリズム。デフォルトレベルは 9 です。`level <= 0` を指定すると、デフォルトレベルが適用されます。指定可能なレベル: [1, 12]。推奨レベル範囲: [4, 9]。
 
-<div id="zstd">
-  ### ZSTD
-</div>
+### ZSTD {#zstd}
 
-`ZSTD[(level)]` — `level`を指定可能な[ZSTD圧縮アルゴリズム](https://en.wikipedia.org/wiki/Zstandard)。指定可能なレベル: [1, 22]。デフォルトのレベル: 1。
+`ZSTD[(level)]` — `level`を指定可能な[ZSTD圧縮アルゴリズム](https://en.wikipedia.org/wiki/Zstandard)。指定可能なレベル: [1, 22]。デフォルトのレベル: 1。`ZSTD(3)`は、コーデックを明示的に指定していないカラムにデフォルトで適用されるコーデックです (`MergeTree`のパーツの場合、書き込み時に見積もられたパーツサイズが100 MBに達した時点で適用されます。それ未満では`LZ4`が使用されます) 。
 
 高い圧縮レベルは、1回圧縮して何度も展開するような非対称なシナリオで有用です。レベルが高いほど圧縮率は向上しますが、CPU使用率も高くなります。
 
-<div id="zxc">
-  ### ZXC
-</div>
+### ZXC {#zxc}
 
 <ExperimentalBadge />
 
@@ -100,53 +89,37 @@ ClickHouse は、汎用コーデックと特殊用途のコーデックをサポ
   このコーデックは実験的機能であり、使用するには `SET enable_zxc_codec = 1` が必要です。
 </Note>
 
-<div id="zstd_qat">
-  ### 廃止された: ZSTD_QAT
-</div>
+### 廃止された: ZSTD_QAT {#zstd_qat}
 
 <CloudNotSupportedBadge />
 
-<div id="deflate_qpl">
-  ### 廃止された: DEFLATE_QPL
-</div>
+### 廃止された: DEFLATE_QPL {#deflate_qpl}
 
 <CloudNotSupportedBadge />
 
-<div id="specialized-codecs">
-  ## 特殊用途のコーデック
-</div>
+## 特殊用途のコーデック {#specialized-codecs}
 
 これらのコーデックは、データ固有の特性を利用して、より効果的に圧縮できるよう設計されています。一部のコーデックはデータ自体を圧縮するのではなく、データを前処理します。これにより、汎用コーデックを使用する後続の圧縮段階で、より高い圧縮率を実現できます。
 
-<div id="delta">
-  ### Delta
-</div>
+### Delta {#delta}
 
 `Delta(delta_bytes)` — 最初の値を除き、生データの値を隣接する2つの値の差に置き換える圧縮方式です。最初の値はそのまま保持されます。`delta_bytes` は生データの値の最大サイズで、デフォルト値は `sizeof(type)` です。引数としての `delta_bytes` の指定は非推奨であり、今後のリリースでサポートが削除される予定です。Delta はデータ準備コーデックであるため、単独では使用できません。
 
-<div id="doubledelta">
-  ### DoubleDelta
-</div>
+### DoubleDelta {#doubledelta}
 
 `DoubleDelta(bytes_size)` — デルタの差を計算し、コンパクトなバイナリ形式で書き込みます。`bytes_size` は、[Delta](#delta) コーデック の `delta_bytes` と同様の意味を持ちます。引数としての `bytes_size` の指定は非推奨であり、今後のリリースでサポートが削除されます。時系列データのように stride が一定の単調な数列では、最適な圧縮率が得られます。任意の数値型で使用できます。Gorilla TSDB で使用されるアルゴリズムを実装し、64 ビット型をサポートするように拡張しています。32 ビットのデルタでは追加で 1 ビットを使用し、4 ビットのプレフィックスではなく 5 ビットのプレフィックスを使用します。詳細については、[Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf) の「Compressing Time Stamps」を参照してください。DoubleDelta はデータ準備 コーデック であるため、単独では使用できません。
 
-<div id="gcd">
-  ### GCD
-</div>
+### GCD {#gcd}
 
 `GCD()` - - カラム内の値の最大公約数 (GCD) を計算し、各値をGCDで除算します。整数、小数、日付/時刻のカラムで使用できます。このコーデックは、24、28、16、24、8、24 (GCD = 4) のように、値がGCDの倍数ずつ増減するカラムに適しています。GCDはデータ準備コーデックであるため、単独では使用できません。
 
-<div id="gorilla">
-  ### Gorilla
-</div>
+### Gorilla {#gorilla}
 
 `Gorilla(bytes_size)` — 現在と直前の浮動小数点値の XOR を計算し、compact なバイナリ形式で書き込みます。連続する値の差が小さいほど、つまり時系列の値の変化が緩やかなほど、圧縮率が向上します。Gorilla TSDB で使用されているアルゴリズムを実装し、64 ビット型をサポートするよう拡張しています。`bytes_size` に指定できる値は 1、2、4、8 です。デフォルト値は、`sizeof(type)` が 1、2、4、8 のいずれかであればその値、それ以外の場合は 1 です。詳細については、[Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078) のセクション 4.1 を参照してください。
 
-<div id="alp">
-  ### ALP
-</div>
+### ALP {#alp}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 `ALP(variant)` — 浮動小数点データ向けの適応型可逆圧縮です。`Float32` と `Float64` をサポートします。詳細については、[ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334)を参照してください。
 
@@ -157,18 +130,14 @@ ClickHouse は、汎用コーデックと特殊用途のコーデックをサポ
 * `ALP(RD)` — Real Doubles バリアント。各値のビットパターンを再解釈し、高位部分 (符号 + 指数 + 仮数の上位ビット) と低位部分に分割します。高位部分は Dictionary エンコード (最大 8 エントリ) され、低位部分はビットパッキングされます。多くの値で上位ビットが共通している場合に最適です。
 
 <Note>
-  このコーデックは実験的機能であり、使用するには `SET enable_alp_codec = 1` が必要です。
+  このコーデックはベータ版であり、使用するには `SET enable_alp_codec = 1` が必要です。
 </Note>
 
-<div id="fpc">
-  ### FPC
-</div>
+### FPC {#fpc}
 
 `FPC(level, float_size)` - 数列内の次の浮動小数点値を、2 つの予測器のうち精度の高い方を使って繰り返し予測し、実際の値と予測値の XOR を取り、その結果を先行ゼロ圧縮します。Gorilla と同様に、変化の緩やかな浮動小数点値の系列を保存する場合に効率的です。64 ビット値 (double) では FPC は Gorilla より高速ですが、32 ビット値では性能が異なる場合があります。指定可能な `level` の値は 1～28 で、デフォルト値は 12 です。指定可能な `float_size` の値は 4、8 で、型が Float の場合、デフォルト値は `sizeof(type)` です。それ以外の場合は 4 です。アルゴリズムの詳細については、[High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf) を参照してください。
 
-<div id="sz3">
-  ### SZ3
-</div>
+### SZ3 {#sz3}
 
 <ExperimentalBadge />
 
@@ -178,9 +147,7 @@ ClickHouse は、汎用コーデックと特殊用途のコーデックをサポ
   この コーデック は実験的機能です。使用するには `SET enable_sz3_codec = 1` を設定する必要があります。
 </Note>
 
-<div id="t64">
-  ### T64
-</div>
+### T64 {#t64}
 
 `T64` — 整数データ型 (`Enum`、`Date`、`DateTime` を含む) の値に含まれる未使用の上位ビットを切り詰める圧縮方式です。このアルゴリズムの各ステップで、コーデック は 64 個の値からなる ブロック を取得し、それらを 64x64 のビット行列に配置して転置し、値の未使用ビットを切り詰めた後、残りを数列として返します。未使用ビットとは、この圧縮方式が使用されるデータパート全体において、最大値と最小値で異ならないビットです。
 
@@ -195,9 +162,7 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
-<div id="quantized">
-  ### Quantized
-</div>
+### Quantized {#quantized}
 
 <ExperimentalBadge />
 
@@ -226,23 +191,17 @@ CREATE TABLE vectors
 ENGINE = MergeTree ORDER BY id;
 ```
 
-<div id="encryption-codecs">
-  ## 暗号化コーデック
-</div>
+## 暗号化コーデック {#encryption-codecs}
 
 これらのコーデックは実際にはデータを圧縮せず、代わりにディスク上のデータを暗号化します。[encryption](/ja/reference/settings/server-settings/settings/other#encryption)設定で暗号化キーが指定されている場合にのみ使用できます。暗号化されたデータは通常、有意に圧縮できないため、暗号化はコーデックパイプラインの最後にのみ適しています。
 
 暗号化コーデック:
 
-<div id="aes_128_gcm_siv">
-  ### AES_128_GCM_SIV
-</div>
+### AES_128_GCM_SIV {#aes_128_gcm_siv}
 
 `CODEC('AES-128-GCM-SIV')` — [RFC 8452](https://tools.ietf.org/html/rfc8452) のGCM-SIVモードでAES-128を使用し、データを暗号化します。
 
-<div id="aes-256-gcm-siv">
-  ### AES-256-GCM-SIV
-</div>
+### AES-256-GCM-SIV {#aes-256-gcm-siv}
 
 `CODEC('AES-256-GCM-SIV')` — AES-256 を GCM-SIV モードで使用してデータを暗号化します。
 
@@ -280,15 +239,17 @@ CREATE TABLE mytable
 ENGINE = MergeTree ORDER BY x;
 ```
 
-<div id="adaptive-codec-selection">
-  ## 適応型コーデック選択
-</div>
+## 適応型コーデック選択 {#adaptive-codec-selection}
 
 <ExperimentalBadge />
 
-上記の特殊用途のコーデックは適切なデータを大幅に圧縮できますが、選択には専門知識が必要であり、時間とともにデータが変化するカラムに常に最適な単一の選択肢があるとは限りません。MergeTree 設定 [`allow_experimental_adaptive_codec_selection`](/ja/reference/settings/merge-tree-settings) を有効にすると、ClickHouse が自動的に選択します。デフォルトのコーデック (`CODEC(Default)` または `CODEC` の指定なし) を使用するカラムでは、各ブロックはテーブル&#39;のデフォルトコーデック、`NONE`、およびカラム型に適した特殊用途のコーデックの中から、最も小さく圧縮できるコーデックで書き込まれます。
+上記の特殊用途のコーデックは適切なデータを大幅に圧縮できますが、選択には専門知識が必要であり、時間とともにデータが変化するカラムに常に最適な単一の選択肢があるとは限りません。MergeTree 設定 [`enable_adaptive_codec_selection`](/ja/reference/settings/merge-tree-settings) を有効にすると、ClickHouse が自動的に選択します。デフォルトのコーデック (`CODEC(Default)` または `CODEC` の指定なし) を使用するカラムでは、各ブロックはテーブル&#39;のデフォルトコーデック、`NONE`、およびカラム型に適した特殊用途のコーデックの中から、最も小さく圧縮できるコーデックで書き込まれます。
 
-ブロックがデフォルトコーデック使用時より大きくなることはなく、圧縮できないデータは生データとして保存されます (圧縮するとファイルがわずかに大きくなり、読み取りも遅くなるためです) 。この処理は、いずれにしてもデータが再圧縮される、バックグラウンドでのマージとミューテーション時に行われます。挿入速度には影響しません。ディスクから取得するデータ量が減り、クエリで読み取るすべてのブロックはまず展開する必要があり、特殊なコーデックはデフォルトの `LZ4` より高速に展開できるため、クエリは多くの場合高速になります。各ブロックには書き込み時に使用したコーデックが記録されるため、読み取り時に設定は不要です。また、すべてのデータを読み取り可能なまま、いつでもこの機能を無効にできます。
+<Note>
+  現在、特殊用途のコーデックが選択されるのは、64 ビット以下の整数、列挙型、日付・時刻、`Decimal32`/`Decimal64`、`IPv4`、および `Float32`/`Float64` です。その他のカラムでは、デフォルトコーデックと `NONE` のどちらかが選択されます。
+</Note>
+
+ブロックがデフォルトコーデック使用時より大きくなることはなく、圧縮できないデータは生データとして保存されます (圧縮するとファイルがわずかに大きくなり、読み取りも遅くなるためです) 。この処理は、いずれにしてもデータが再圧縮される、バックグラウンドでのマージとミューテーション時に行われます。挿入速度には影響しません。ディスクから取得するデータ量が減り、クエリで読み取るすべてのブロックはまず展開する必要があり、特殊用途のコーデックはデフォルトの `LZ4` より高速に展開できるため、クエリは多くの場合高速になります。各ブロックには書き込み時に使用したコーデックが記録されるため、読み取り時に設定は不要です。また、すべてのデータを読み取り可能なまま、いつでもこの機能を無効にできます。
 
 ```sql
 CREATE TABLE adaptive
@@ -298,7 +259,7 @@ CREATE TABLE adaptive
 )
 ENGINE = MergeTree
 ORDER BY time
-SETTINGS allow_experimental_adaptive_codec_selection = 1;
+SETTINGS enable_adaptive_codec_selection = 1;
 
 INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
 OPTIMIZE TABLE adaptive FINAL;
@@ -317,11 +278,7 @@ SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase
    └─────────┴────────────────────┘
 ```
 
-現在選択対象となるのは、整数、列挙型、日付・時刻、`Decimal32`/`Decimal64`、`IPv4`などの整数系カラムです。
-
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * ブログ: [スキーマとコーデックを使用したClickHouseの最適化](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 * ブログ: [ClickHouseで時系列データを扱う](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

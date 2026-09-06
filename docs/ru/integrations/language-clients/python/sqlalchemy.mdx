@@ -15,9 +15,7 @@ ClickHouse Connect включает диалект SQLAlchemy (`clickhousedb`), 
 pip install "clickhouse-connect[sqlalchemy]"
 ```
 
-<div id="sqlalchemy-connect">
-  ## Подключение через SQLAlchemy
-</div>
+## Подключение через SQLAlchemy {#sqlalchemy-connect}
 
 Создайте движок, указав URL в формате `clickhousedb://` или `clickhousedb+connect://`:
 
@@ -37,9 +35,7 @@ with engine.connect() as conn:
 
 См. [Аргументы и настройки подключения](/ru/integrations/language-clients/python/driver-api#connection-arguments), чтобы ознакомиться с доступными параметрами клиента.
 
-<div id="sqlalchemy-per-query-settings">
-  ### Настройки для отдельных запросов
-</div>
+### Настройки для отдельных запросов {#sqlalchemy-per-query-settings}
 
 Передавайте настройки ClickHouse через параметры выполнения SQLAlchemy. Настройки можно задавать на уровне движка, соединения или оператора. Если один и тот же ключ задан в нескольких местах, значение на уровне оператора имеет приоритет над значением на уровне соединения или движка.
 
@@ -54,9 +50,7 @@ with engine.connect() as conn:
     value = conn.execute(stmt).scalar_one()
 ```
 
-<div id="sqlalchemy-per-query-read-formats">
-  ### Форматы чтения для отдельных запросов
-</div>
+### Форматы чтения для отдельных запросов {#sqlalchemy-per-query-read-formats}
 
 Задавайте форматы чтения ClickHouse для движка, соединения или оператора с помощью параметра выполнения SQLAlchemy `query_formats`. Форматы оператора применяются первыми и переопределяют соответствующие ключи и подстановочные шаблоны соединения или движка.
 
@@ -71,9 +65,7 @@ with engine.connect() as conn:
     rows = conn.execute(stmt).all()
 ```
 
-<div id="sqlalchemy-server-side-parameters">
-  ### Серверные параметры
-</div>
+### Серверные параметры {#sqlalchemy-server-side-parameters}
 
 SQLAlchemy обычно подставляет параметры на стороне клиента. Чтобы использовать серверные параметры ClickHouse, включите их при создании движка:
 
@@ -88,9 +80,7 @@ engine = create_engine(
 
 Имена привязок должны быть ASCII-именами ClickHouse типа BareWord. Имена, которые начинаются и заканчиваются на `$`, отклоняются, поскольку основной драйвер резервирует их для параметров запроса в виде необработанных двоичных данных.
 
-<div id="sqlalchemy-core-queries">
-  ## Основные запросы
-</div>
+## Основные запросы {#sqlalchemy-core-queries}
 
 Диалект поддерживает запросы `SELECT` в SQLAlchemy Core с JOIN, фильтрами, сортировкой, ограничением и смещением, а также `DISTINCT` и составные SELECT.
 
@@ -125,15 +115,52 @@ with engine.connect() as conn:
     conn.execute(stmt)
 ```
 
-<div id="sqlalchemy-literal-rendering">
-  ### Подстановка литералов
-</div>
+### Подстановка литералов {#sqlalchemy-literal-rendering}
 
 Когда SQLAlchemy подставляет связанное значение в запрос через `literal_binds` или `literal_execute`, диалект использует правила экранирования ClickHouse для общих строковых типов и типов ClickHouse. Это также относится к обёрткам `TypeDecorator` и вариантам, выбранным с помощью `with_variant()`. Строковые значения сохраняют знаки процента и обратные косые черты, даже если другие связанные параметры не подставляются.
 
-<div id="sqlalchemy-json-subcolumns">
-  ### Подстолбцы JSON
-</div>
+### Подсказки типов JSON {#sqlalchemy-json-type-hints}
+
+Типизированные JSON-пути объявляются через отображение `typed_paths`. Типом пути может быть класс типа ClickHouse SQLAlchemy, настроенный экземпляр или строка с именем типа ClickHouse. Строки с именами типов позволяют задавать типы, у которых нет конструктора SQLAlchemy, например `Dynamic`, и при этом подходят для сложных настроенных выражений типов. Они сохраняют имена в именованном `Tuple`.
+
+Строки с именами типов могут содержать настроенные вложенные типы JSON, например ``Array(JSON(`child` UInt32))``. Распознаваемые имена типов ClickHouse в таких строках регистронезависимы и выводятся в канонической капитализации. Строка должна содержать ровно одно полное выражение типа. Завершающий текст и некорректные вложенные аргументы JSON отклоняются.
+
+Пустой `Tuple()` не поддерживается в качестве типизированного JSON-пути, так как ClickHouse не может сериализовать его через Native format JSON-столбца. Основной драйвер поддерживает `Tuple()` в столбцах запроса и вставки в любой позиции, в том числе вложенным в позиционные или именованные кортежи, внутри `Array`, а также как `Nullable(Tuple())` там, где это включено на сервере.
+
+```python
+from sqlalchemy import Column, MetaData, Table
+
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
+
+events = Table(
+    "events",
+    MetaData(),
+    Column(
+        "payload",
+        JSON(
+            typed_paths={
+                "event.id": UInt32,
+                "details": "Tuple(id UInt32, label Nullable(String))",
+                "attributes": "Variant(String, Array(String))",
+            },
+            max_dynamic_paths=256,
+            max_dynamic_types=16,
+            skip_paths=["internal.debug"],
+            skip_regexps=[r"^private\."],
+        ),
+    ),
+)
+```
+
+Для простых путей, являющихся идентификаторами Python, именованные аргументы служат сокращённой записью для `typed_paths`, например `JSON(user_id=UInt32)`. Используйте `typed_paths` для путей с точками, пробелами, обратными кавычками, точками в кодировке `%2E`, а также для имён, совпадающих с параметрами конструктора. Типизированный путь с именем `SKIP` поддерживается через это отображение. Ключи в `typed_paths` и значения в `skip_paths` — это декодированные имена. Обратные и двойные кавычки в начале или в конце имени трактуются как обычные символы пути, а не как заранее применённое SQL-экранирование. Внутри необработанной строки типа обратные и двойные кавычки являются синтаксисом идентификаторов ClickHouse.
+
+Можно задать до 1000 типизированных путей. `max_dynamic_paths` принимает значения от 0 до 10000, `max_dynamic_types` — от 0 до 254. Эти диапазоны действуют и внутри необработанных строк вложенных JSON-типов. Явные серверные значения по умолчанию 1024 и 32 в генерируемый DDL не включаются. Для обычных пропускаемых путей выполняется дедупликация. Строки регулярных выражений не проверяются средствами Python, поскольку ClickHouse использует синтаксис RE2. Дублирующиеся регулярные выражения сохраняются.
+
+Обычный пропускаемый путь не может называться в точности `REGEXP`, так как ClickHouse резервирует этот токен для `SKIP REGEXP`. Имена вида `REGEXP_foo` остаются допустимыми. В необработанной строке JSON-типа операнд обычного `SKIP` должен быть одним идентификатором ClickHouse либо составным идентификатором, разделённым точками. Составной идентификатор без кавычек не может начинаться с `REGEXP`; заключайте первый компонент в кавычки, если он является данными пути. У `SKIP REGEXP` должен быть ровно один строковый литерал в одинарных кавычках. Части идентификатора заключайте в обратные или двойные кавычки, если они содержат пробелы или знаки пунктуации. Необработанные подсказки JSON-типа поддерживают `Variant(...)`; для отдельного `Variant` публичного конструктора SQLAlchemy нет. Члены `Variant` упорядочиваются и дедуплицируются по тем же каноническим именам, которые использует ClickHouse.
+
+Конструктор упорядочивает аргументы в той же канонической форме, которую возвращает ClickHouse. Отражённые типы, копии типов SQLAlchemy и автогенерация Alembic сохраняют эту конфигурацию.
+
+### Подстолбцы JSON {#sqlalchemy-json-subcolumns}
 
 Для столбца, объявленного или представленного как `JSON` в ClickHouse, используйте квадратные скобки, чтобы выбирать по одному сегменту пути к подстолбцу, хранящемуся в базе:
 
@@ -179,9 +206,7 @@ request_id = json_subcolumn(request, "id", type_=UInt32)
 
 Каждый сегмент заключается в кавычки отдельно, в том числе имена с пробелами или обратными кавычками. Обратные кавычки не делают точку литеральной при обработке JSON-путей в ClickHouse. Если включен `json_type_escape_dots_in_keys`, используйте кодирование ClickHouse `%2E` для литеральных точек в ключах. Обращайтесь к ключу с именем `a.b` через `payload["a%2Eb"]`, а не через `payload["a.b"]`.
 
-<div id="sqlalchemy-query-extensions">
-  ### Расширения запросов к ClickHouse
-</div>
+### Расширения запросов к ClickHouse {#sqlalchemy-query-extensions}
 
 Импортируйте `select` из `clickhouse_connect.cc_sqlalchemy`, чтобы типизированные методы ClickHouse были доступны средствам статической проверки типов. Эти методы также доступны в стандартном `sqlalchemy.select` при выполнении.
 
@@ -257,9 +282,7 @@ stmt = select(
 
 Стандартная конструкция SQLAlchemy `values()` компилируется в синтаксис табличной функции ClickHouse `VALUES`, в том числе при использовании в общем табличном выражении (CTE). Для формы CTE требуется SQLAlchemy 2.0.42 или более поздней версии, в которой был добавлен `Values.cte()`.
 
-<div id="sqlalchemy-materialized-ctes">
-  ### Материализованные CTE
-</div>
+### Материализованные CTE {#sqlalchemy-materialized-ctes}
 
 По умолчанию ClickHouse подставляет тело общего табличного выражения (CTE), поэтому при каждом обращении к CTE его тело выполняется заново. Передайте `materialized=True` в `.cte()`, чтобы сгенерировать `WITH <name> AS MATERIALIZED (...)`, при котором тело вычисляется один раз:
 
@@ -301,11 +324,11 @@ ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
 
 ClickHouse не поддерживает рекурсивные материализованные CTE. Вспомогательные функции SQLAlchemy вызывают `ValueError`, если одновременно заданы `recursive=True` и `materialized=True`.
 
-<div id="sqlalchemy-ddl-reflection">
-  ## DDL и рефлексия
-</div>
+## DDL и рефлексия {#sqlalchemy-ddl-reflection}
 
 ClickHouse Connect предоставляет типы данных ClickHouse, движки таблиц, конструкции для словарей, DDL для баз данных и рефлексию таблиц.
+
+Отдельные столбцы `Variant` отражаются через внутренний тип SQLAlchemy, а автогенерация Alembic сохраняет их канонические исходные имена типов без повторяющихся изменений типа. Столбцы `Geometry` и `MultiPoint` отражаются как публичные типы SQLAlchemy.
 
 ```python
 import sqlalchemy as db
@@ -339,9 +362,7 @@ with engine.connect() as conn:
 
 Аргументы ключа MergeTree, такие как `order_by`, `partition_by`, `primary_key`, `sample_by` и `ttl`, принимают столбцы SQLAlchemy, SQL-выражения, а также обычные строки.
 
-<div id="sqlalchemy-inserts">
-  ## Вставка данных и базовое использование ORM
-</div>
+## Вставка данных и базовое использование ORM {#sqlalchemy-inserts}
 
 Поддерживаются вставки через Core и простые модели ORM. Для массовой загрузки данных предпочтительнее использовать вставки через Core.
 
@@ -383,9 +404,7 @@ with Session(engine) as session:
     session.commit()
 ```
 
-<div id="sqlalchemy-alembic">
-  ## Миграции Alembic
-</div>
+## Миграции Alembic {#sqlalchemy-alembic}
 
 ClickHouse Connect поддерживает интеграцию с Alembic для миграций схем ClickHouse. Установите её с помощью:
 
@@ -407,9 +426,7 @@ pip install "clickhouse-connect[alembic]"
 
 См. полный [пример работы с Alembic](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md). Пользователям, переходящим с `clickhouse-sqlalchemy`, также следует ознакомиться с [руководством по миграции](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md).
 
-<div id="scope-and-limitations">
-  ## Область применения и ограничения
-</div>
+## Область применения и ограничения {#scope-and-limitations}
 
 * ClickHouse не поддерживает традиционные транзакции через этот HTTP-диалект. `engine.begin()` и `Session.commit()` организуют работу на стороне Python, но коммит и rollback на сервере ничего не меняют.
 * `UPDATE`, двухфазные транзакции, последовательности, `RETURNING` и расширенные уровни изоляции в этом диалекте не реализованы. При необходимости используйте явный ClickHouse SQL для серверных мутаций.

@@ -60,9 +60,7 @@ Union
             Output: number
 ```
 
-<div id="explain-types">
-  ## EXPLAIN 类型
-</div>
+## EXPLAIN 类型 {#explain-types}
 
 * `AST` — 抽象语法树。
 * `SYNTAX` — 经 AST 层级优化后的查询文本。
@@ -73,9 +71,7 @@ Union
 * `ESTIMATE` — 处理查询时，将从表中读取的预估行数、标记数和 parts 数量。
 * `TABLE OVERRIDE` — 表函数 schema 上表覆盖的已验证结果。
 
-<div id="explain-ast">
-  ### EXPLAIN AST
-</div>
+### EXPLAIN AST {#explain-ast}
 
 转储查询的 AST。支持所有类型的查询，不仅限于 `SELECT`。
 
@@ -113,9 +109,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
         ExpressionList
 ```
 
-<div id="explain-syntax">
-  ### EXPLAIN SYNTAX
-</div>
+### EXPLAIN SYNTAX {#explain-syntax}
 
 显示查询在语法分析后的抽象语法树 (AST) 。
 
@@ -156,9 +150,7 @@ ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
 ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
 ```
 
-<div id="explain-query-tree">
-  ### EXPLAIN QUERY TREE
-</div>
+### EXPLAIN QUERY TREE {#explain-query-tree}
 
 设置：
 
@@ -187,9 +179,7 @@ QUERY id: 0
     TABLE id: 3, table_name: default.test_table
 ```
 
-<div id="explain-plan">
-  ### EXPLAIN PLAN
-</div>
+### EXPLAIN PLAN {#explain-plan}
 
 转储查询计划步骤。
 
@@ -630,9 +620,7 @@ Join (JOIN FillRightFirst)
          Output: id, value
 ```
 
-<div id="explain-pipeline">
-  ### EXPLAIN PIPELINE
-</div>
+### EXPLAIN PIPELINE {#explain-pipeline}
 
 设置：
 
@@ -672,9 +660,7 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
-<div id="explain-analyze">
-  ### EXPLAIN ANALYZE
-</div>
+### EXPLAIN ANALYZE {#explain-analyze}
 
 `EXPLAIN ANALYZE` 会实际执行查询，丢弃结果行，并输出与 `EXPLAIN PLAN` 相同的计划树，同时为每个步骤标注其在运行时的实际执行情况。
 
@@ -783,9 +769,7 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
   2. `max_threads` 中设置的最大查询处理线程数。
 </Note>
 
-<div id="explain-analyze-join-steps">
-  #### Join 步骤
-</div>
+#### Join 步骤 {#explain-analyze-join-steps}
 
 对于 JOIN 步骤，`EXPLAIN ANALYZE` 会输出每一侧的*参与*行——`Left` 和 `Right`——后面跟着所有特定于该 JOIN 实现的行。`Left` 和 `Right` 对应 SQL 中的逻辑左右侧。在大多数情况下，`Left` 也是 JOIN 的探测侧，`Right` 则是 JOIN 的构建侧。不过，由于 JOIN 执行期间可能发生交换，情况并非总是如此。涵盖了 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm) 的所有取值 (`hash`、`parallel_hash`、`grace_hash`、`partial_merge`、`full_sorting_merge`、`parallel_full_sorting_merge`、`direct`) ，以及该设置无法选择的两种实现：`CROSS` 或 `COMMA` JOIN、任何不含键相等条件的 `ON` 子句，以及 [`Join`](/zh/reference/engines/table-engines/special/join) 表引擎。大多数实现都会报告两侧；有些仅报告其物化的一侧 (例如，`direct` 只输出 `Left:`) 。
 
@@ -805,9 +789,7 @@ Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_ra
 
 无法精确推导的数值会报告为 `not collected`，而不是 `0`。`match rate` 和 `fanout` 都由 `matched` 推导而来，因此没有 `matched` 的一侧会将这三项均报告为 `not collected`。
 
-<div id="explain-analyze-fanout">
-  #### 扇出
-</div>
+#### 扇出 {#explain-analyze-fanout}
 
 `fanout` 用于衡量行数的倍增情况：
 
@@ -822,9 +804,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 * `fanout = 1` — 完整的 1:1 JOIN；每个匹配行恰好产生一个结果行。
 * `fanout > 1` — 1:N JOIN；另一侧的重复键导致行数倍增。两侧同时出现较大值，表明发生了非预期的 Cartesian 膨胀。
 
-<div id="explain-analyze-matches">
-  #### 何时需要 `matches = 1` 才能获取数值
-</div>
+#### 何时需要 `matches = 1` 才能获取数值 {#explain-analyze-matches}
 
 这些数值大多来自 JOIN 本身就会生成的数据，普通的 `EXPLAIN ANALYZE` 即会报告。其余数值需要执行 JOIN 原本不会进行的额外记录操作，因此只有在使用 `EXPLAIN ANALYZE matches = 1` 时才会报告。具体哪些数值属于这种情况取决于算法；对于哈希家族，有以下两种情况：
 
@@ -871,9 +851,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 
 当两种算法都报告数值时，结果是一致的。合并算法只是掌握了更多信息；对于何谓匹配，它们并无分歧。
 
-<div id="explain-analyze-join-algorithm-lines">
-  #### 算法特定行
-</div>
+#### 算法特定行 {#explain-analyze-join-algorithm-lines}
 
 下面来看各 JOIN 实现额外添加的行。
 
@@ -930,9 +908,7 @@ Spill: yes · right spilled <right_spilled_bytes>
 
 对于与 [`Join`](/zh/reference/engines/table-engines/special/join) 表引擎进行的 JOIN，会同时报告两侧的信息，并附带描述预构建表的 `Hash table:` 行。右侧统计的是存储在引擎中的行数，而非某次查询中构建的行数。
 
-<div id="explain-analyze-processors">
-  #### 每个处理器的耗时
-</div>
+#### 每个处理器的耗时 {#explain-analyze-processors}
 
 当 `processors = 1` 时，会在每个阶段下方额外打印一行，显示该阶段各处理器的耗时分布：
 
@@ -942,9 +918,7 @@ Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
 
 `<n>` 是该阶段中的处理器数量。`median` 和 `max` 之间差距较大，说明并行处理器之间存在负载不均。
 
-<div id="explain-estimate">
-  ### EXPLAIN ESTIMATE
-</div>
+### EXPLAIN ESTIMATE {#explain-estimate}
 
 显示在处理查询时，将从表中读取的预估行数、标记数和 parts 数量。适用于 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族的表。
 
@@ -968,11 +942,11 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-<div id="explain-whatif">
-  ### EXPLAIN WHATIF
-</div>
+### EXPLAIN WHATIF {#explain-whatif}
 
 在*不*将索引物化到磁盘上的情况下，估算假设性跳过索引对 `SELECT` 查询的潜在收益。使用 [`CREATE HYPOTHETICAL INDEX`](/zh/reference/statements/hypothetical-index#create-hypothetical-index) 定义一个或多个候选项，然后运行 `EXPLAIN WHATIF SELECT ...`，即可查看每个候选项的以下信息：是否适用、预估读取的标记数、预估字节数以及跳过比率。
+
+使用 [`CREATE HYPOTHETICAL PROJECTION`](/zh/reference/statements/hypothetical-projection#create-hypothetical-projection) 定义的假设性 PROJECTION 也会作为候选项列出，但目前尚不会估算它们的收益：每一项都会以 `status: not_applicable` 报告。如果某个 PROJECTION 的定义已不再适用于该表——例如列已被删除，或某项设置变更禁用了它所需的功能——则会改为报告相应的原因。
 
 **语法**
 
@@ -982,7 +956,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 
 **设置**
 
-* `empirical` — `1` (默认值) 会在内存中对经过基线剪枝的粒度运行索引，以测量跳过比率 (上限) 。`0` 则会跳过该路径。无论哪种情况，如果 empirical 未产生结果 (已禁用，或索引无法在内存中求值) ，估算器都会回退到列[统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)；如果两者都不可用，则最终回退到仅包含适用性的摘要。
+* `empirical` — `1` (默认值) 会在内存中对经过基线剪枝的粒度运行索引，以测量跳过比率 (上界) 。`0` 则会跳过该路径。无论哪种情况，如果 empirical 未产生结果 (已禁用，或索引无法在内存中求值) ，估算器都会回退到列[统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)；如果两者都不可用，则最终回退到仅包含适用性的摘要。
 
 **输出**
 
@@ -1018,11 +992,11 @@ Estimation:
 
 该设置以内联方式写在 `WHATIF` 与 `SELECT` 之间——没有 `SETTINGS` 关键字 (这与其他 `EXPLAIN` 变体接受选项的方式一致) 。
 
-如果该表没有定义任何假设索引，`EXPLAIN WHATIF` 会报告 `status: not_applicable`，并提示你创建一个。
+如果该表既没有定义任何假设索引，也没有定义任何假设 PROJECTION，`EXPLAIN WHATIF` 会报告 `status: not_applicable`，并提示你创建一个。
 
 **组合行 (多个候选项)&#x20;**
 
-当以经验方式评估两个或更多候选项时，`EXPLAIN WHATIF` 会在各候选项对应的行后追加一个名为 `(combined: idx_a, idx_b, ...)` 的额外块。它报告的是同时拥有*所有*这些索引时的联合收益：实际读取只有在某个粒度通过了*每个*跳过索引时才会保留该粒度，因此组合估算就是各候选项保留下来的粒度的交集。因此，它的 `skip_ratio` 至少与表现最佳的单个候选项一样高——互补的索引一起会剪枝掉更多数据，而冗余的索引则不会带来变化。
+当有两个或更多候选项以经验方式进行评估时，`EXPLAIN WHATIF` 会在各候选项行之后追加一个名为 `(combined: idx_a, idx_b, ...)` 的额外块。它报告的是同时拥有*所有*这些索引时的联合收益：实际读取只有在某个粒度通过*每一个*跳过索引时才会保留它，因此组合估算就是各候选项存活粒度的交集。所以它的 `skip_ratio` 至少不低于最佳的单个候选项——互补的索引组合起来能裁减更多数据，而冗余的索引则不会带来变化。
 
 只有 `source: empirical` 的候选项会参与计算，因为组合行是通过对它们各自按粒度划分的存活集合求交集构建出来的。估算为 `statistical` 或 `applicability_only` 的候选项没有按粒度划分的数据，因此会被排除；因此，只有当至少两个候选项生成了经验估算时，组合块才会出现，否则将被省略 (例如在 `empirical = 0` 时) 。它的估算字段与单个候选项的经验块相同，但 `elapsed_us` 为 `0`——组合估算是根据各候选项的扫描结果推导得出的，而不是一次新的扫描。合成的 `(combined: ...)` 名称仅用作报告标签，不能与 `force_data_skipping_indices` 一起使用。
 
@@ -1092,9 +1066,7 @@ Estimation:
 
 如果这两种路径都不可用 (例如 `empirical = 0` 且未定义列统计信息) ，估算器会报告 `source: applicability_only`，以及保守的 `skip_ratio: 0.0%`。
 
-<div id="explain-table-override">
-  ### EXPLAIN TABLE OVERRIDE
-</div>
+### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
 显示通过 table function 访问的表 schema 上应用表覆盖后的结果。
 还会进行一些验证；如果该覆盖会导致某种失败，则会抛出异常。

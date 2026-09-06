@@ -15,7 +15,7 @@ import SelfManaged from '/snippets/ja/_self_managed_only_automated.mdx';
 ClickHouse Keeper は、データの[レプリケーション](/ja/reference/engines/table-engines/mergetree-family/replication)および[distributed DDL](/ja/reference/statements/distributed-ddl)クエリの実行に必要な協調システムを提供します。ClickHouse Keeper は ZooKeeper と互換性があります。
 
 <div id="implementation-details">
-  ### 実装の詳細
+  ### 実装の詳細 {#implementation-details}
 </div>
 
 ZooKeeper は、初期に登場した著名なオープンソースの協調システムの 1 つです。Java で実装されており、シンプルで強力なデータモデルを備えています。ZooKeeper の協調アルゴリズムである ZooKeeper Atomic Broadcast (ZAB) は、各 ZooKeeper ノードが読み取りをローカルで処理するため、読み取りの線形化可能性を保証しません。ZooKeeper とは異なり、ClickHouse Keeper は C++ で書かれており、[RAFTアルゴリズム](https://raft.github.io/)の[実装](https://github.com/eBay/NuRaft)を使用しています。このアルゴリズムは、読み取りと書き込みの両方で線形化可能性を実現し、さまざまな言語による複数のオープンソース実装があります。
@@ -29,13 +29,13 @@ ClickHouse Keeper は、[ZooKeeper](https://zookeeper.apache.org/doc/r3.1.2/zook
 </Note>
 
 <div id="configuration">
-  ### 設定
+  ### 設定 {#configuration}
 </div>
 
 ClickHouse Keeper は、ZooKeeper のスタンドアロンの代替として、または ClickHouse server の内部コンポーネントとして使用できます。いずれの場合も、設定はほぼ同じ `.xml` ファイルで行います。
 
 <div id="keeper-configuration-settings">
-  #### Keeper 設定項目
+  #### Keeper 設定項目 {#keeper-configuration-settings}
 </div>
 
 ClickHouse Keeper のメイン設定タグは `<keeper_server>` で、以下のパラメータを使用できます。
@@ -60,9 +60,7 @@ ClickHouse Keeper のメイン設定タグは `<keeper_server>` で、以下の�
 
 その他の一般的なパラメータは、ClickHouse server の設定 (`listen_host`、`logger` など) から継承されます。
 
-<div id="internal-coordination-settings">
-  #### 内部協調設定
-</div>
+#### 内部協調設定 {#internal-coordination-settings}
 
 内部協調設定は `<keeper_server>.<coordination_settings>` セクションにあり、次のパラメータがあります。
 
@@ -79,6 +77,8 @@ ClickHouse Keeper のメイン設定タグは `<keeper_server>` で、以下の�
 | `reserved_log_items`                      | compaction を実行するまでに保持する協調ログレコード数。                                                                                                                                                                     | `100000`         |
 | `snapshot_distance`                       | ClickHouse Keeper が新しいスナップショットを作成する間隔 (ログ内のレコード数ベース) 。                                                                                                                                                | `100000`         |
 | `snapshots_to_keep`                       | 保持するスナップショットの数。                                                                                                                                                                                       | `3`              |
+| `compress_snapshots_with_zstd_format`     | ClickHouse 独自の LZ4 ブロックフォーマットではなく、ZSTD フォーマットでスナップショットを書き込みます。                                                                                                                                        | `true`           |
+| `snapshot_zstd_compression_level`         | スナップショットの ZSTD 圧縮レベル。レベルを下げると CPU 使用量は減りますが、スナップショットは大きくなります。負の値は ZSTD の fast レベルを選択します。`compress_snapshots_with_zstd_format` が有効な場合にのみ使用されます。                                                        | `3`              |
 | `stale_log_gap`                           | リーダーがフォロワーを stale と見なし、ログの代わりにスナップショットを送信するしきい値。                                                                                                                                                      | `10000`          |
 | `fresh_log_gap`                           | ノードが fresh と見なされるしきい値。                                                                                                                                                                                | `200`            |
 | `max_requests_batch_size`                 | RAFT に送信する前の、リクエスト数ベースの Batch の最大サイズ。                                                                                                                                                                 | `100`            |
@@ -163,7 +163,7 @@ ClickHouse Keeper のメイン設定タグは `<keeper_server>` で、以下の�
 ```
 
 <div id="how-to-run">
-  ### 実行方法
+  ### 実行方法 {#how-to-run}
 </div>
 
 ClickHouse Keeper は ClickHouse server パッケージに同梱されているため、`/etc/your_path_to_config/clickhouse-server/config.xml` に `<keeper_server>` の設定を追加し、通常どおり ClickHouse server を起動するだけです。スタンドアロンの ClickHouse Keeper を実行する場合も、同様に次のように起動できます。
@@ -178,9 +178,7 @@ clickhouse-keeper --config /etc/your_path_to_config/config.xml
 clickhouse keeper --config /etc/your_path_to_config/config.xml
 ```
 
-<div id="four-letter-word-commands">
-  ### 4文字コマンド
-</div>
+### 4文字コマンド {#four-letter-word-commands}
 
 ClickHouse Keeper は、ZooKeeper とほぼ同じ 4lw コマンドも提供しています。各コマンドは `mntr`、`stat` などのように 4 文字で構成されています。さらに、いくつかの便利なコマンドがあります。`stat` は server と接続中のクライアントに関する一般的な情報を返し、`srvr` は server の詳細情報を返し、`cons` は connections の詳細情報を返します。
 
@@ -300,6 +298,7 @@ quorum_reads=false
 force_sync=false
 compress_logs=true
 compress_snapshots_with_zstd_format=true
+snapshot_zstd_compression_level=3
 configuration_change_tries_count=20
 ```
 
@@ -440,7 +439,7 @@ AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interf
 ```
 
 <div id="http-control">
-  ### HTTP 制御
+  ### HTTP 制御 {#http-control}
 </div>
 
 ClickHouse Keeper は、レプリカがトラフィックを受け付ける準備ができているかどうかを確認するための HTTP インターフェイスを提供します。これは、[Kubernetes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-readiness-probes) などのクラウド環境で利用できます。
@@ -461,7 +460,7 @@ ClickHouse Keeper は、レプリカがトラフィックを受け付ける準�
 ```
 
 <div id="feature-flags">
-  ### 機能フラグ
+  ### 機能フラグ {#feature-flags}
 </div>
 
 Keeper は ZooKeeper およびそのクライアントと完全な互換性がありますが、ClickHouse client で利用できる独自の機能やリクエストタイプもいくつか導入しています。
@@ -498,13 +497,13 @@ Keeper クラスターで新しい機能を有効にする場合は、まずク�
 </Note>
 
 <div id="migration-from-zookeeper">
-  ### ZooKeeper からの移行
+  ### ZooKeeper からの移行 {#migration-from-zookeeper}
 </div>
 
 ZooKeeper から ClickHouse Keeper へのシームレスな移行はできません。ZooKeeper クラスターを停止し、データを変換したうえで、ClickHouse Keeper を起動する必要があります。`clickhouse-keeper-converter` ツールは、ZooKeeper のログとスナップショットを ClickHouse Keeper のスナップショットに変換します。ZooKeeper 3.4 以降が必要です。
 
 <div id="pre-migration-preparation">
-  #### 移行前の準備
+  #### 移行前の準備 {#pre-migration-preparation}
 </div>
 
 移行を行うには、データのインジェストを停止する必要があります。開始前にメンテナンスウィンドウを確保してください。
@@ -517,9 +516,7 @@ SYSTEM STOP MERGES;
 
 移行後に整合性を確認できるよう、移行前に比較用のメトリクスを記録しておきます。
 
-<div id="migration-steps">
-  #### 移行手順
-</div>
+#### 移行手順 {#migration-steps}
 
 1. すべての ClickHouse ノードへのデータのインジェストを停止します。
 
@@ -549,7 +546,7 @@ clickhouse-keeper-converter \
 10. バックグラウンドタスクを再開し、データのインジェストを再開します。
 
 <div id="consolidating-multiple-zookeeper-clusters">
-  #### 複数の ZooKeeper クラスターの統合
+  #### 複数の ZooKeeper クラスターの統合 {#consolidating-multiple-zookeeper-clusters}
 </div>
 
 複数の ZooKeeper クラスター (たとえば分片グループごとに 1 つ) を運用している場合は、それらを 1 つの ClickHouse Keeper クラスターに統合できます。公式の `clickhouse-keeper-converter` ツールがサポートしているのは 1 対 1 の変換 (1 つの ZooKeeper クラスターから 1 つの Keeper スナップショットへの変換) のみであるため、統合するには converter のソースコードを修正し、複数のスナップショットをマージする必要があります。
@@ -559,7 +556,7 @@ clickhouse-keeper-converter \
 3. マージした出力を、対象の ClickHouse Keeper スナップショット用ディレクトリに書き込みます。
 
 <div id="handling-encryption-and-acls">
-  #### 暗号化とACLの取り扱い
+  #### 暗号化とACLの取り扱い {#handling-encryption-and-acls}
 </div>
 
 ClickHouse Keeper は、ZooKeeper と同じ ACL スキーム (`world`、`auth`、`digest`) をサポートしています。変換時に ACL をどのように扱うかは、ZooKeeper の構成によって異なります。
@@ -568,7 +565,7 @@ ClickHouse Keeper は、ZooKeeper と同じ ACL スキーム (`world`、`auth`�
 * **部分的に暗号化されている**: 変換前にスーパー管理者アカウントに権限を付与し、影響を受けるパスで `setAcl -R` を使って ACL をクリアします。変換後、必要に応じて ClickHouse Keeper で暗号化を再度有効にしてください。
 
 <div id="verifying-the-migration">
-  #### 移行の検証
+  #### 移行の検証 {#verifying-the-migration}
 </div>
 
 ClickHouse Keeper を起動し、ClickHouse を再起動したら、移行が正常に完了したことを確認するために、主要なメトリクスを移行前のベースラインと比較します。
@@ -581,22 +578,23 @@ ClickHouse Keeper を起動し、ClickHouse を再起動したら、移行が正
 比較のために大規模な ZooKeeper ツリーを直接走査するのは避けてください。代わりに、変換時に変換したすべてのパスをファイルに出力してください。
 
 <div id="post-migration-tuning">
-  #### 移行後のチューニング
+  #### 移行後のチューニング {#post-migration-tuning}
 </div>
 
 移行後は、より大規模なクラスターや、より高いスループットが必要な場合に備えて、以下の設定を調整することを検討してください。
 
-| 設定                                    | デフォルト   | 推奨値     | 注記                                |
-| ------------------------------------- | ------- | ------- | --------------------------------- |
-| `max_requests_batch_size`             | `100`   | `10000` | パート数や分片数が多いクラスターでは値を増やしてください      |
-| `force_sync`                          | `true`  | `false` | ログ書き込みを非同期にすると、スループットが向上します       |
-| `compress_logs`                       | `false` | `true`  | Raft のログファイルを圧縮して、ディスク I/O を削減します |
-| `compress_snapshots_with_zstd_format` | `true`  | —       | 既定で有効になっており、zstd でスナップショットを圧縮します  |
+| 設定                                    | デフォルト   | 推奨値     | 注記                                                 |
+| ------------------------------------- | ------- | ------- | -------------------------------------------------- |
+| `max_requests_batch_size`             | `100`   | `10000` | パート数や分片数が多いクラスターでは値を増やしてください                       |
+| `force_sync`                          | `true`  | `false` | ログ書き込みを非同期にすると、スループットが向上します                        |
+| `compress_logs`                       | `false` | `true`  | Raft のログファイルを圧縮して、ディスク I/O を削減します                  |
+| `compress_snapshots_with_zstd_format` | `true`  | —       | 既定で有効になっており、zstd でスナップショットを圧縮します                   |
+| `snapshot_zstd_compression_level`     | `3`     | —       | 値を小さくするとスナップショット圧縮の CPU 使用量は減りますが、スナップショットは大きくなります |
 
 これらの設定は、[Keeper の設定](#internal-coordination-settings) の `coordination_settings` で構成します。
 
 <div id="recovering-after-losing-quorum">
-  ### クォーラム喪失後の復旧
+  ### クォーラム喪失後の復旧 {#recovering-after-losing-quorum}
 </div>
 
 ClickHouse Keeper は Raft を使用しているため、クラスターのサイズに応じて一定数のノード障害に耐えられます。
@@ -625,7 +623,7 @@ ClickHouse Keeper は Raft を使用しているため、クラスターのサ�
 7. クォーラムが成立すると、リーダーノードは通常動作モードに戻り、すべてのリクエストを受け付けます。`mntr` で確認すると、`zk_server_state` に対して `leader` が返るはずです。
 
 <div id="using-disks-with-keeper">
-  ## Keeper でディスクを使用する
+  ## Keeper でディスクを使用する {#using-disks-with-keeper}
 </div>
 
 Keeper は、スナップショット、ログファイル、状態ファイルの保存先として、[外部ディスク](/ja/concepts/features/configuration/server-config/storing-data) の一部をサポートしています。
@@ -706,7 +704,7 @@ Keeper インスタンスのストレージ構成例は、次のようになり�
 同様に、スナップショットについても、最新のスナップショットを除くすべてのスナップショットは `snapshot_s3_plain` に保存され、最新のスナップショットはディスク `snapshot_local` に保存されます。
 
 <div id="changing-disk-setup">
-  ### ディスク構成の変更
+  ### ディスク構成の変更 {#changing-disk-setup}
 </div>
 
 <Warning>
@@ -738,9 +736,7 @@ Keeper インスタンスのストレージ構成例は、次のようになり�
 起動時に、すべてのログファイルは `log_local` と `log_s3_plain` から `log_local2` ディスクに移動されます。
 また、すべてのスナップショットファイルは `snapshot_local` と `snapshot_s3_plain` から `snapshot_local2` ディスクに移動されます。
 
-<div id="configuring-logs-cache">
-  ## ログキャッシュの設定
-</div>
+## ログキャッシュの設定 {#configuring-logs-cache}
 
 ディスクから読み取るデータ量を最小限に抑えるため、Keeper はログエントリをメモリにキャッシュします。
 リクエストが大きい場合、ログエントリがメモリを過度に消費する可能性があるため、キャッシュするログの量には上限が設けられています。
@@ -767,7 +763,7 @@ Keeper インスタンスのストレージ構成例は、次のようになり�
 </Note>
 
 <div id="prometheus">
-  ## Prometheus
+  ## Prometheus {#prometheus}
 </div>
 
 Keeper は、[Prometheus](https://prometheus.io) によるスクレイピング用にメトリクスデータを公開できます。
@@ -806,7 +802,7 @@ curl 127.0.0.1:9363/metrics
 ClickHouse Cloud の[Prometheus インテグレーション](/ja/products/cloud/features/monitoring/prometheus)もご覧ください。
 
 <div id="clickhouse-keeper-user-guide">
-  ## ClickHouse Keeper ユーザーガイド
+  ## ClickHouse Keeper ユーザーガイド {#clickhouse-keeper-user-guide}
 </div>
 
 このガイドでは、ClickHouse Keeper を設定するためのシンプルで最小限の構成と、分散処理をテストする方法の例を紹介します。この例では、Linux 上の 3 つのノードを使用します。
@@ -1073,19 +1069,19 @@ ClickHouse Cloud の[Prometheus インテグレーション](/ja/products/cloud/
 </Steps>
 
 <div id="summary">
-  ### まとめ
+  ### まとめ {#summary}
 </div>
 
 このガイドでは、ClickHouse Keeper を使用してクラスターを構成する方法を説明しました。ClickHouse Keeper を使用すると、クラスターを構成し、分片をまたいでレプリケーション可能な分散テーブルを定義できます。
 
 <div id="configuring-clickhouse-keeper-with-unique-paths">
-  ## 一意のパスでClickHouse Keeperを設定する
+  ## 一意のパスでClickHouse Keeperを設定する {#configuring-clickhouse-keeper-with-unique-paths}
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### 説明
+  ### 説明 {#description}
 </div>
 
 この記事では、組み込みの `{uuid}` マクロ設定を使って、
@@ -1097,7 +1093,7 @@ ClickHouse Keeper または ZooKeeper に一意のエントリを作成する方
 パスが再利用されることはありません。
 
 <div id="example-environment">
-  ### 環境例
+  ### 環境例 {#example-environment}
 </div>
 
 3 ノードのクラスターを構成し、3 つすべてのノードで ClickHouse Keeper を、
@@ -1137,7 +1133,7 @@ ClickHouse は 2 つのレプリカからなる単一の分片として構成さ
 ```
 
 <div id="procedures-to-set-up-tables-to-use-uuid">
-  ### テーブルで `{uuid}` を使用するための設定手順
+  ### テーブルで `{uuid}` を使用するための設定手順 {#procedures-to-set-up-tables-to-use-uuid}
 </div>
 
 1. 各サーバーでマクロを設定します
@@ -1231,7 +1227,7 @@ Query id: 3bc7f339-ab74-4c7d-a752-1ffe54219c0e
 ```
 
 <div id="testing">
-  ### 動作確認
+  ### 動作確認 {#testing}
 </div>
 
 1. 最初のノード (例: `chnode1`) にデータを挿入します
@@ -1295,7 +1291,7 @@ Query id: 6cbab449-9e7f-40fe-b8c2-62d46ba9f5c8
 ```
 
 <div id="alternatives">
-  ### 別の方法
+  ### 別の方法 {#alternatives}
 </div>
 
 デフォルトのレプリケーションパスは、マクロと `{uuid}` を使ってあらかじめ定義できます
@@ -1363,7 +1359,7 @@ ORDER BY id
 ```
 
 <div id="troubleshooting">
-  ### トラブルシューティング
+  ### トラブルシューティング {#troubleshooting}
 </div>
 
 テーブル情報とUUIDを取得するコマンドの例:
@@ -1410,13 +1406,13 @@ Query id: b047d459-a1d2-4016-bcf9-3e97e30e49c2
 ```
 
 <div id="reconfiguration">
-  ## ClickHouse Keeper の動的再設定
+  ## ClickHouse Keeper の動的再設定 {#reconfiguration}
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### 説明
+  ### 説明 {#description-1}
 </div>
 
 `keeper_server.enable_reconfiguration` が有効な場合、ClickHouse Keeper はクラスターを動的に再構成するための ZooKeeper の [`reconfig`](https://zookeeper.apache.org/doc/r3.5.3-beta/zookeeperReconfig.html#sc_reconfig_modifying)
@@ -1509,7 +1505,7 @@ Keeper の再構成実装には、いくつかの注意点があります。
   適用されたかどうかを確認できます。
 
 <div id="converting-a-single-node-keeper-into-a-cluster">
-  ## 単一ノードの Keeper をクラスター化する
+  ## 単一ノードの Keeper をクラスター化する {#converting-a-single-node-keeper-into-a-cluster}
 </div>
 
 実験的な Keeper ノードをクラスターに拡張する必要が生じる場合があります。以下は、3 ノードのクラスターに段階的に拡張する手順の概要です。
@@ -1525,7 +1521,7 @@ Keeper の再構成実装には、いくつかの注意点があります。
 この手順を確実に理解するのに役立つよう、[サンドボックスリポジトリ](https://github.com/ClickHouse/keeper-extend-cluster)も用意されています。
 
 <div id="unsupported-features">
-  ## サポートされていない機能
+  ## サポートされていない機能 {#unsupported-features}
 </div>
 
 ClickHouse Keeper は ZooKeeper との完全な互換性を目指していますが、現時点では未実装の機能がいくつかあります (現在も開発は進行中です) 。

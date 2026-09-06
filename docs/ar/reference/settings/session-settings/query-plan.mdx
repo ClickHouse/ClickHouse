@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد أُنشئت تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="query_plan_aggregation_bucket_top_k">
-  ## query_plan_aggregation_bucket_top_k
-</div>
+## query_plan_aggregation_bucket_top_k {#query_plan_aggregation_bucket_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,9 +28,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_aggregation_in_order">
-  ## query_plan_aggregation_in_order
-</div>
+## query_plan_aggregation_in_order {#query_plan_aggregation_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -50,9 +46,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_convert_any_join_to_semi_or_anti_join">
-  ## query_plan_convert_any_join_to_semi_or_anti_join
-</div>
+## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -60,9 +54,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 السماح بتحويل ANY JOIN إلى SEMI أو ANTI JOIN إذا كان عامل التصفية بعد JOIN يُقيَّم دائمًا إلى false بالنسبة إلى الصفوف المطابقة أو غير المطابقة
 
-<div id="query_plan_convert_join_to_in">
-  ## query_plan_convert_join_to_in
-</div>
+## query_plan_convert_join_to_in {#query_plan_convert_join_to_in}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -70,9 +62,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يسمح بتحويل `JOIN` إلى استعلام فرعي باستخدام `IN` إذا كانت أعمدة الإخراج مرتبطة بالجدول الأيسر فقط. قد يؤدي ذلك إلى نتائج غير صحيحة مع عمليات `JOIN` غير `ANY` (مثل `ALL JOIN`، وهو الإعداد الافتراضي).
 
-<div id="query_plan_convert_outer_join_to_inner_join">
-  ## query_plan_convert_outer_join_to_inner_join
-</div>
+## query_plan_convert_outer_join_to_inner_join {#query_plan_convert_outer_join_to_inner_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -80,9 +70,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 السماح بتحويل `OUTER JOIN` إلى `INNER JOIN` إذا كانت التصفية بعد `JOIN` تستبعد دائمًا القيم الافتراضية
 
-<div id="query_plan_direct_read_from_text_index">
-  ## query_plan_direct_read_from_text_index
-</div>
+## query_plan_direct_read_from_text_index {#query_plan_direct_read_from_text_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -90,9 +78,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يسمح بإجراء تصفية البحث النصي الكامل باستخدام فهرس النص المعكوس فقط ضمن خطة الاستعلام.
 
-<div id="query_plan_display_internal_aliases">
-  ## query_plan_display_internal_aliases
-</div>
+## query_plan_display_internal_aliases {#query_plan_display_internal_aliases}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -100,17 +86,13 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 إظهار الأسماء المستعارة الداخلية (مثل &#95;&#95;table1) في EXPLAIN PLAN بدلًا من تلك المحددة في الاستعلام الأصلي.
 
-<div id="query_plan_enable_multithreading_after_window_functions">
-  ## query_plan_enable_multithreading_after_window_functions
-</div>
+## query_plan_enable_multithreading_after_window_functions {#query_plan_enable_multithreading_after_window_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 تمكين المعالجة متعددة الخيوط بعد تقييم دوال النافذة للسماح بمعالجة التدفقات بشكل متوازٍ
 
-<div id="query_plan_enable_optimizations">
-  ## query_plan_enable_optimizations
-</div>
+## query_plan_enable_optimizations {#query_plan_enable_optimizations}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -125,9 +107,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل جميع التحسينات على مستوى خطة الاستعلام
 * 1 - تمكين التحسينات على مستوى خطة الاستعلام (لكن قد تظل بعض التحسينات الفردية معطلة عبر إعداداتها الخاصة)
 
-<div id="query_plan_execute_functions_after_sorting">
-  ## query_plan_execute_functions_after_sorting
-</div>
+## query_plan_execute_functions_after_sorting {#query_plan_execute_functions_after_sorting}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -143,9 +123,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_filter_push_down">
-  ## query_plan_filter_push_down
-</div>
+## query_plan_filter_push_down {#query_plan_filter_push_down}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -161,9 +139,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_fuse_filter_into_array_join">
-  ## query_plan_fuse_filter_into_array_join
-</div>
+## query_plan_fuse_filter_into_array_join {#query_plan_fuse_filter_into_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -176,9 +152,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
   هذا إعداد مخصص للخبراء لا ينبغي أن يستخدمه المطورون إلا لأغراض التصحيح. قد يتغير هذا الإعداد مستقبلًا بطرق غير متوافقة مع الإصدارات السابقة أو قد يُزال.
 </Note>
 
-<div id="query_plan_join_shard_by_pk_ranges">
-  ## query_plan_join_shard_by_pk_ranges
-</div>
+## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -186,9 +160,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 طبّق التجزئة في JOIN إذا كانت مفاتيح JOIN تتضمن بادئة من PRIMARY KEY في كلا الجدولين. وهو مدعوم لخوارزميات hash و parallel&#95;hash و full&#95;sorting&#95;merge و parallel&#95;full&#95;sorting&#95;merge. وعادةً لا يسرّع الاستعلامات، لكنه قد يقلّل من استهلاك الذاكرة.
 
-<div id="query_plan_join_swap_table">
-  ## query_plan_join_swap_table
-</div>
+## query_plan_join_swap_table {#query_plan_join_swap_table}
 
 <SettingsInfoBlock type="BoolAuto" default_value="auto" />
 
@@ -200,9 +172,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * &#39;false&#39;: لا تبدّل الجداول أبدًا (الجدول الأيمن هو جدول البناء).
 * &#39;true&#39;: بدّل الجداول دائمًا (الجدول الأيسر هو جدول البناء).
 
-<div id="query_plan_lift_up_array_join">
-  ## query_plan_lift_up_array_join
-</div>
+## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -218,9 +188,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_lift_up_union">
-  ## query_plan_lift_up_union
-</div>
+## query_plan_lift_up_union {#query_plan_lift_up_union}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -236,9 +204,20 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_max_limit_for_join_lazy_indexing">
-  ## query_plan_max_limit_for_join_lazy_indexing
-</div>
+## query_plan_lower_array_join_function {#query_plan_lower_array_join_function}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "تحسين جديد يحوّل دالة arrayJoin إلى خطوة ARRAY JOIN فعلية؛ وهو معطّل افتراضيًا."}]}]} />
+
+يُفعّل أو يعطّل تحسينًا على مستوى خطة الاستعلام يحوّل دالة `arrayJoin` داخل تعبير إلى خطوة `ARRAY JOIN` فعلية، بحيث تستخدم آلية التنفيذ نفسها لعبارة `ARRAY JOIN` (النسخ المتماثل الكسول ودمج عوامل التصفية).
+لا يسري مفعوله إلا إذا كان الإعداد [query&#95;plan&#95;enable&#95;optimizations](/ar/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) مضبوطًا على 1.
+
+<Note>
+  هذا إعداد مخصص للخبراء، ولا ينبغي أن يستخدمه المطورون إلا لأغراض تصحيح الأخطاء. قد يتغير هذا الإعداد مستقبلًا بطرق غير متوافقة مع الإصدارات السابقة أو قد يُزال.
+</Note>
+
+## query_plan_max_limit_for_join_lazy_indexing {#query_plan_max_limit_for_join_lazy_indexing}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -246,9 +225,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يتحكم في قيمة الحد الأقصى التي تتيح استخدام خطة الاستعلام لتحسين الفهرسة الكسولة في JOIN. إذا كانت القيمة صفرًا، فلا يوجد حد.
 
-<div id="query_plan_max_limit_for_lazy_materialization">
-  ## query_plan_max_limit_for_lazy_materialization
-</div>
+## query_plan_max_limit_for_lazy_materialization {#query_plan_max_limit_for_lazy_materialization}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -256,9 +233,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يتحكم في القيمة القصوى للحد التي تسمح باستخدام خطة الاستعلام لتحسين التجسيد الكسول. إذا كانت القيمة صفراً، فلا يوجد حد.
 
-<div id="query_plan_max_limit_for_top_k_optimization">
-  ## query_plan_max_limit_for_top_k_optimization
-</div>
+## query_plan_max_limit_for_top_k_optimization {#query_plan_max_limit_for_top_k_optimization}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -268,9 +243,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يتحكم هذا الإعداد أيضًا في سلوك [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ar/reference/settings/session-settings/enable#enable_group_by_top_k_optimization).
 
-<div id="query_plan_max_optimizations_to_apply">
-  ## query_plan_max_optimizations_to_apply
-</div>
+## query_plan_max_optimizations_to_apply {#query_plan_max_optimizations_to_apply}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -283,9 +256,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
   هذا إعداد مخصّص للمستخدمين الخبراء، ويجب ألا يستخدمه إلا المطورون لأغراض تصحيح الأخطاء. وقد يتغير هذا الإعداد مستقبلًا على نحو غير متوافق مع الإصدارات السابقة، أو قد تتم إزالته.
 </Note>
 
-<div id="query_plan_max_set_size_for_projection_match">
-  ## query_plan_max_set_size_for_projection_match
-</div>
+## query_plan_max_set_size_for_projection_match {#query_plan_max_set_size_for_projection_match}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -295,9 +266,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يُستخدم هذا الإعداد بواسطة مطابِق الإسقاط التجميعي (وأي مطابِق إسقاط مستقبلي يحتاج إلى مقارنة مجموعات عبارة `IN`). وتبلغ تكلفة حساب تجزئة المحتوى `O(N log N)` بالنسبة إلى عدد عناصر المجموعة؛ ويضع هذا الإعداد حدًا للتكلفة المتكبدة أثناء التخطيط عند ظهور عدد كبير من عبارات `IN` في الاستعلام أو الإسقاط.
 
-<div id="query_plan_max_step_description_length">
-  ## query_plan_max_step_description_length
-</div>
+## query_plan_max_step_description_length {#query_plan_max_step_description_length}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -305,9 +274,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 الحد الأقصى لطول وصف الخطوة في EXPLAIN PLAN.
 
-<div id="query_plan_merge_expression_into_join">
-  ## query_plan_merge_expression_into_join
-</div>
+## query_plan_merge_expression_into_join {#query_plan_merge_expression_into_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -315,9 +282,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يتيح دمج التعبيرات ضمن خطوة JOIN أثناء تحسين إعادة ترتيب JOIN.
 
-<div id="query_plan_merge_expressions">
-  ## query_plan_merge_expressions
-</div>
+## query_plan_merge_expressions {#query_plan_merge_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -333,9 +298,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_merge_filter_into_join_condition">
-  ## query_plan_merge_filter_into_join_condition
-</div>
+## query_plan_merge_filter_into_join_condition {#query_plan_merge_filter_into_join_condition}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -343,9 +306,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يسمح بدمج عامل التصفية ضمن شرط `JOIN` وتحويل `CROSS JOIN` إلى `INNER`.
 
-<div id="query_plan_merge_filters">
-  ## query_plan_merge_filters
-</div>
+## query_plan_merge_filters {#query_plan_merge_filters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -353,9 +314,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 السماح بدمج عوامل التصفية في خطة الاستعلام.
 
-<div id="query_plan_min_columns_for_join_lazy_indexing">
-  ## query_plan_min_columns_for_join_lazy_indexing
-</div>
+## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
@@ -363,9 +322,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 التحكم في الحد الأدنى لعدد أعمدة البيانات من الجانب الأيسر اللازمة لتفعيل تحسين الفهرسة الكسولة في JOIN. تعني القيمة 0 أن هذا التحسين معطّل.
 
-<div id="query_plan_optimize_count_from_text_index">
-  ## query_plan_optimize_count_from_text_index
-</div>
+## query_plan_optimize_count_from_text_index {#query_plan_optimize_count_from_text_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -374,9 +331,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 يتيح الإجابة عن `SELECT count() ... WHERE <text search predicate>` مباشرةً بالاعتماد على عدد عناصر قوائم الإسناد في فهرس النص، من دون تجسيد الصفوف المطابقة.
 لا يسري إلا عند تمكين `query_plan_direct_read_from_text_index`.
 
-<div id="query_plan_optimize_join_order_algorithm">
-  ## query_plan_optimize_join_order_algorithm
-</div>
+## query_plan_optimize_join_order_algorithm {#query_plan_optimize_join_order_algorithm}
 
 <ExperimentalBadge />
 
@@ -392,9 +347,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * &#39;dphyp&#39; - يطبّق خوارزمية DPhyp ‏(البرمجة الديناميكية عبر تقسيم الرسم البياني الفائق) حاليًا على عمليات الربط الداخلية فقط - يستكشف مساحة البحث نفسها مثل `dpsize`، لكنه يعدد فقط أزواج الرسوم البيانية الفرعية المتصلة، ما يولّد عددًا أقل من عمليات JOIN الوسيطة في رسوم JOIN البيانية المتناثرة، على حساب عدم مراعاة الضربات الديكارتية
   يمكن تحديد عدة خوارزميات في قائمة مفصولة بفواصل، مثل `dphyp,greedy`. وتُجرَّب بالترتيب؛ فإذا تعذّر على خوارزمية ما التعامل مع الاستعلام (على سبيل المثال بسبب عمليات الربط الخارجية أو المكوّنات غير المتصلة)، تُستخدَم الخوارزمية التالية كخيار احتياطي.
 
-<div id="query_plan_optimize_join_order_limit">
-  ## query_plan_optimize_join_order_limit
-</div>
+## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -403,9 +356,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 حسِّن ترتيب عمليات JOIN ضمن الاستعلام الفرعي نفسه. لا يتوفر الدعم حاليًا إلا لحالات محدودة جدًا.
 القيمة هي الحد الأقصى لعدد الجداول التي يمكن تحسين ترتيبها.
 
-<div id="query_plan_optimize_join_order_max_searched_plans">
-  ## query_plan_optimize_join_order_max_searched_plans
-</div>
+## query_plan_optimize_join_order_max_searched_plans {#query_plan_optimize_join_order_max_searched_plans}
 
 <ExperimentalBadge />
 
@@ -417,9 +368,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 يضع هذا حدًا زمنيًا لعملية التحسين على نحو حتمي (بغض النظر عن الزمن الفعلي المنقضي) في رسوم join البيانية الكثيفة، مثل الرسوم الكاملة أو النجمية، حيث ينمو فضاء البحث نموًا أسيًا.
 اضبط القيمة على 0 لتعطيل هذا الحد. لا يؤثر ذلك في `query_plan_optimize_join_order_limit` الافتراضي، حيث يظل البحث دائمًا أقل بكثير من هذا الحد.
 
-<div id="query_plan_optimize_join_order_randomize">
-  ## query_plan_optimize_join_order_randomize
-</div>
+## query_plan_optimize_join_order_randomize {#query_plan_optimize_join_order_randomize}
 
 <ExperimentalBadge />
 
@@ -431,9 +380,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 عند تعيينها إلى 1، يُولَّد random seed، وعند تعيينها إلى قيمة &gt; 1، تُستخدم تلك القيمة مباشرةً كبذرة.
 هذا مخصّص للاختبار بهدف اكتشاف الأخطاء الناتجة عن اختلاف ترتيبات JOIN.
 
-<div id="query_plan_optimize_lazy_final">
-  ## query_plan_optimize_lazy_final
-</div>
+## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -441,9 +388,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 تحسين القراءة باستخدام FINAL من ReplacingMergeTree من خلال إنشاء مجموعة من المفاتيح الأساسية واستخدامها في تحليل الفهرس.
 
-<div id="query_plan_optimize_lazy_materialization">
-  ## query_plan_optimize_lazy_materialization
-</div>
+## query_plan_optimize_lazy_materialization {#query_plan_optimize_lazy_materialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -451,9 +396,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 استخدم خطة الاستعلام لتحسين التجسيد الكسول.
 
-<div id="query_plan_optimize_lazy_materialization_for_file">
-  ## query_plan_optimize_lazy_materialization_for_file
-</div>
+## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -461,9 +404,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 استخدم تحسين التجسيد الكسول عند قراءة ملفات Parquet المحلية باستخدام دالة الجدول `file` ومحرك الجدول `File`: في استعلامات `ORDER BY ... LIMIT n`، لا تُقرأ الأعمدة غير المطلوبة للفرز والتصفية إلا للصفوف `n` التي تبقى بعد تطبيق `LIMIT`. لا يسري هذا الإعداد إلا إذا كان `query_plan_optimize_lazy_materialization` مفعّلًا.
 
-<div id="query_plan_optimize_lazy_materialization_for_object_storage">
-  ## query_plan_optimize_lazy_materialization_for_object_storage
-</div>
+## query_plan_optimize_lazy_materialization_for_object_storage {#query_plan_optimize_lazy_materialization_for_object_storage}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -471,9 +412,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 استخدم تحسين التجسيد الكسول عند قراءة ملفات Parquet من تخزين الكائنات (بما في ذلك جداول Iceberg): في استعلامات `ORDER BY ... LIMIT n`، لا تُقرأ الأعمدة غير اللازمة للفرز والتصفية إلا للصفوف الـ `n` التي تبقى بعد تطبيق `LIMIT`. لا يسري هذا الإعداد إلا إذا كان `query_plan_optimize_lazy_materialization` مفعّلًا.
 
-<div id="query_plan_optimize_prewhere">
-  ## query_plan_optimize_prewhere
-</div>
+## query_plan_optimize_prewhere {#query_plan_optimize_prewhere}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -481,9 +420,25 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 السماح بتمرير عامل التصفية إلى تعبير PREWHERE لوحدات التخزين المدعومة
 
-<div id="query_plan_push_down_limit">
-  ## query_plan_push_down_limit
-</div>
+## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "إعداد جديد ينقل مركّبات شرط التصفية عبر مفاتيح الربط المتساوية بحيث يعمل تقليم المفتاح الأساسي على كلا الجانبين."}]}]} />
+
+يفعّل أو يعطّل تحسينًا على مستوى خطة الاستعلام ينسخ مركّبات شرط التصفية من أحد جانبي
+الربط المتساوي إلى الجانب الآخر عبر استبدال المفاتيح المتساوية، بحيث يتمكن تقليم المفتاح الأساسي/الفهرس
+في الجانب الآخر من الاستفادة منها.
+
+ينطبق ذلك عندما لا يفصل بين شرط التصفية وعملية القراءة من `MergeTree` وبين الربط سوى خطوات
+التعبير والتصفية، وعندما يقارن المركّب المنسوخ عمودًا من أعمدة المفتاح الأساسي بقيمة ثابتة
+(بما في ذلك `IN` مع مجموعة ثابتة). أما المسند الواقع أسفل ربط متداخل أو أسفل `DISTINCT`، أو
+المقارنة بين عمودَي مفاتيح، فيُترك كما هو، إذ لا يمكنه تفعيل تقليم المفتاح الأساسي في الجانب
+الآخر، ومن ثم فإن نسخه لن يضيف سوى عمل إضافي.
+
+لا يسري مفعوله إلا إذا كانت قيمة `query_plan_enable_optimizations` هي 1.
+
+## query_plan_push_down_limit {#query_plan_push_down_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -499,9 +454,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_push_down_volume_reducing_functions">
-  ## query_plan_push_down_volume_reducing_functions
-</div>
+## query_plan_push_down_volume_reducing_functions {#query_plan_push_down_volume_reducing_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -519,9 +472,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تفعيل
 
-<div id="query_plan_push_limit_by_into_sort">
-  ## query_plan_push_limit_by_into_sort
-</div>
+## query_plan_push_limit_by_into_sort {#query_plan_push_limit_by_into_sort}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -536,9 +487,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_read_in_order">
-  ## query_plan_read_in_order
-</div>
+## query_plan_read_in_order {#query_plan_read_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -554,9 +503,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_read_in_order_through_join">
-  ## query_plan_read_in_order_through_join
-</div>
+## query_plan_read_in_order_through_join {#query_plan_read_in_order_through_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -564,9 +511,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 الحفاظ على القراءة بالترتيب من الجدول الأيسر في عمليات JOIN، بحيث يمكن للخطوات اللاحقة الاستفادة من ذلك.
 
-<div id="query_plan_remove_redundant_distinct">
-  ## query_plan_remove_redundant_distinct
-</div>
+## query_plan_remove_redundant_distinct {#query_plan_remove_redundant_distinct}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -584,9 +529,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_remove_redundant_sorting">
-  ## query_plan_remove_redundant_sorting
-</div>
+## query_plan_remove_redundant_sorting {#query_plan_remove_redundant_sorting}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -604,9 +547,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_remove_unused_columns">
-  ## query_plan_remove_unused_columns
-</div>
+## query_plan_remove_unused_columns {#query_plan_remove_unused_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -624,9 +565,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_reuse_storage_ordering_for_window_functions">
-  ## query_plan_reuse_storage_ordering_for_window_functions
-</div>
+## query_plan_reuse_storage_ordering_for_window_functions {#query_plan_reuse_storage_ordering_for_window_functions}
 
 **الأسماء البديلة**: `optimize_read_in_window_order`
 
@@ -646,9 +585,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_short_circuit_constant_false_join">
-  ## query_plan_short_circuit_constant_false_join
-</div>
+## query_plan_short_circuit_constant_false_join {#query_plan_short_circuit_constant_false_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -656,9 +593,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 قصّر تنفيذ `JOIN` عندما يُختزل شرط `ON` إلى ثابت بقيمة false، وذلك باستبدال كل جانب إدخال لا يمكنه المساهمة بأي صف (كلا الجانبين في `INNER`/`CROSS`/`SEMI`، والجانب غير المحفوظ في `LEFT`/`RIGHT`) بمصدر فارغ، بحيث لا يُقرأ الجانب غير المساهم. ينطبق ذلك على المحلل (`enable_analyzer = 1`) وعلى الخطط غير الموزعة.
 
-<div id="query_plan_split_filter">
-  ## query_plan_split_filter
-</div>
+## query_plan_split_filter {#query_plan_split_filter}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -674,9 +609,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_text_index_add_hint">
-  ## query_plan_text_index_add_hint
-</div>
+## query_plan_text_index_add_hint {#query_plan_text_index_add_hint}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -684,9 +617,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 السماح بإضافة تلميح (شرط إضافي) للتصفية يُنشأ من فهرس النص المعكوس في خطة الاستعلام.
 
-<div id="query_plan_top_k_through_join">
-  ## query_plan_top_k_through_join
-</div>
+## query_plan_top_k_through_join {#query_plan_top_k_through_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -700,9 +631,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * 0 - تعطيل
 * 1 - تمكين
 
-<div id="query_plan_try_use_vector_search">
-  ## query_plan_try_use_vector_search
-</div>
+## query_plan_try_use_vector_search {#query_plan_try_use_vector_search}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -12,7 +12,7 @@ doc_type: 'مرجع'
 import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-افتراضيًا، يستخدم ClickHouse ضغط `lz4` في الإصدار المُدار ذاتيًا، و`zstd` في ClickHouse Cloud.
+افتراضيًا، يستخدم ClickHouse ضغط `ZSTD(3)` في الإصدار المُدار ذاتيًا، و`zstd` في ClickHouse Cloud. أما بالنسبة إلى عائلة `MergeTree` فالإعداد الافتراضي يراعي الحجم: يُستخدم `LZ4` الأسرع لما هو أقل من 100 ميغابايت، و`ZSTD(3)` عند هذا الحد أو أعلى منه، بحيث تبدأ البيانات المُدرجة حديثًا بـ`LZ4` بينما تنتقل الأجزاء الأكبر الناتجة عن عمليات الدمج في الخلفية إلى `ZSTD(3)`. ويُطبَّق هذا الحد على حجم الجزء المعروف عند وجوب اختيار برنامج الترميز، أي قبل كتابة البيانات — وهو `0` لجزء مُدرج حديثًا، وحجم الأجزاء المصدر في حالة الدمج أو التحوير — وليس على حجم الجزء الناتج.
 
 بالنسبة إلى عائلة محركات `MergeTree`، يمكنك تغيير طريقة الضغط الافتراضية في قسم [الضغط](/ar/reference/settings/server-settings/settings/other#compression) ضمن إعدادات الخادم.
 
@@ -50,45 +50,34 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 يدعم الضغط في محركات الجداول التالية:
 
 * عائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree): تدعم برامج ترميز ضغط الأعمدة وتحديد طريقة الضغط الافتراضية من خلال إعدادات [الضغط](/ar/reference/settings/server-settings/settings/other#compression).
-* عائلة [Log](/ar/reference/engines/table-engines/log-family/index): تستخدم طريقة الضغط `lz4` افتراضيًا وتدعم برامج ترميز ضغط الأعمدة.
+* عائلة [Log](/ar/reference/engines/table-engines/log-family/index) — يستخدم محركا `Log` و`TinyLog` طريقة الضغط الافتراضية `ZSTD(3)` ويدعمان برامج ترميز ضغط الأعمدة.
+* يكتب [StripeLog](/ar/reference/engines/table-engines/log-family/index) جميع الأعمدة في تدفق بيانات مشترك واحد مضغوط بالطريقة الافتراضية `ZSTD(3)`، لذا لا تُطبَّق عليه برامج ترميز الضغط لكل عمود.
 * [Set](/ar/reference/engines/table-engines/special/set): لا يدعم سوى الضغط الافتراضي.
 * [Join](/ar/reference/engines/table-engines/special/join): لا يدعم سوى الضغط الافتراضي.
 
 يدعم ClickHouse برامج الترميز العامة والمتخصصة.
 
-<div id="general-purpose-codecs">
-  ## برامج الترميز العامة
-</div>
+## برامج الترميز العامة {#general-purpose-codecs}
 
-<div id="none">
-  ### NONE
-</div>
+### NONE {#none}
 
 `NONE` — بدون ضغط.
 
-<div id="lz4">
-  ### LZ4
-</div>
+### LZ4 {#lz4}
 
-`LZ4` — [خوارزمية ضغط بيانات](https://github.com/lz4/lz4) بلا فقدان، تُستخدم افتراضيًا. تستخدم ضغط LZ4 السريع.
+`LZ4` — [خوارزمية ضغط بيانات](https://github.com/lz4/lz4) بلا فقدان. تستخدم ضغط LZ4 السريع.
 
-<div id="lz4hc">
-  ### LZ4HC
-</div>
+### LZ4HC {#lz4hc}
 
 `LZ4HC[(level)]` — خوارزمية LZ4 HC (ضغط عالٍ) ذات مستوى قابل للضبط. المستوى الافتراضي: 9. يؤدي ضبط `level <= 0` إلى استخدام المستوى الافتراضي. المستويات المتاحة: [1, 12]. نطاق المستويات الموصى به: [4, 9].
 
-<div id="zstd">
-  ### ZSTD
-</div>
+### ZSTD {#zstd}
 
-`ZSTD[(level)]` — [خوارزمية الضغط ZSTD](https://en.wikipedia.org/wiki/Zstandard) ذات `level` قابل للضبط. المستويات المتاحة: [1, 22]. المستوى الافتراضي: 1.
+`ZSTD[(level)]` — [خوارزمية الضغط ZSTD](https://en.wikipedia.org/wiki/Zstandard) ذات `level` قابل للضبط. المستويات المتاحة: [1, 22]. المستوى الافتراضي: 1. و`ZSTD(3)` هو الـ برنامج ترميز المطبَّق افتراضيًا على الأعمدة التي لا تحدد برنامج ترميز بشكل صريح (بالنسبة إلى أجزاء `MergeTree` ينطبق ذلك بمجرد أن يبلغ حجم الجزء المقدَّر وقت الكتابة 100 ميغابايت؛ وما دون ذلك يُستخدم `LZ4`).
 
 تكون مستويات الضغط العالية مفيدة في السيناريوهات غير المتناظرة، مثل الضغط مرة واحدة وفك الضغط مرارًا. فكلما ارتفع المستوى، تحسن الضغط وزاد استخدام CPU.
 
-<div id="zxc">
-  ### ZXC
-</div>
+### ZXC {#zxc}
 
 <ExperimentalBadge />
 
@@ -100,53 +89,37 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
   برنامج الترميز هذا تجريبي، ويتطلب استخدامه ضبط `SET enable_zxc_codec = 1`.
 </Note>
 
-<div id="zstd_qat">
-  ### متقادمة: ZSTD_QAT
-</div>
+### متقادمة: ZSTD_QAT {#zstd_qat}
 
 <CloudNotSupportedBadge />
 
-<div id="deflate_qpl">
-  ### متقادم: DEFLATE_QPL
-</div>
+### متقادم: DEFLATE_QPL {#deflate_qpl}
 
 <CloudNotSupportedBadge />
 
-<div id="specialized-codecs">
-  ## برامج الترميز المتخصصة
-</div>
+## برامج الترميز المتخصصة {#specialized-codecs}
 
 صُممت برامج الترميز هذه لجعل الضغط أكثر فعاليةً من خلال استغلال خصائص معيّنة للبيانات. لا تضغط بعض هذه البرامج البيانات بنفسها، بل تعالجها مسبقًا بحيث تحقق مرحلة ضغط ثانية، باستخدام برنامج ترميز عام الغرض، نسبة ضغط أعلى للبيانات.
 
-<div id="delta">
-  ### دلتا
-</div>
+### دلتا {#delta}
 
 `Delta(delta_bytes)` — أسلوب ضغط تُستبدل فيه القيم الخام بفروق القيم المتجاورة، باستثناء القيمة الأولى التي تبقى دون تغيير. يشير `delta_bytes` إلى الحد الأقصى لحجم القيم الخام، وتكون قيمته الافتراضية `sizeof(type)`. أُهمل تحديد `delta_bytes` كوسيطة، وستُزال دعمه في إصدار مستقبلي. دلتا هو برنامج ترميز لإعداد البيانات، أي لا يمكن استخدامه بمفرده.
 
-<div id="doubledelta">
-  ### DoubleDelta
-</div>
+### DoubleDelta {#doubledelta}
 
 `DoubleDelta(bytes_size)` — يحسب دلتا الفروق ويكتبها بصيغة ثنائية مدمجة. يحمل `bytes_size` معنى مشابهاً لـ `delta_bytes` في برنامج ترميز [Delta](#delta). أصبح تحديد `bytes_size` كوسيط مهجوراً، وستُزال دعمه في إصدار مستقبلي. تتحقق أفضل معدلات الضغط للتسلسلات الرتيبة ذات stride ثابت، مثل بيانات السلاسل الزمنية. يمكن استخدامه مع أي نوع رقمي. يطبق الخوارزمية المستخدمة في Gorilla TSDB، مع توسيعها لدعم الأنواع ذات 64 بت. يستخدم بتاً إضافياً واحداً لفروق 32 بت: بادئات من 5 بت بدلاً من بادئات من 4 بت. لمزيد من المعلومات، راجع Compressing Time Stamps في [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf). يُعد DoubleDelta برنامج ترميز لإعداد البيانات، أي لا يمكن استخدامه بصورة مستقلة.
 
-<div id="gcd">
-  ### GCD
-</div>
+### GCD {#gcd}
 
 `GCD()` - - يحسب القاسم المشترك الأكبر (GCD) لقيم العمود، ثم يقسم كل قيمة على GCD. يمكن استخدامه مع أعمدة الأعداد الصحيحة والأعداد العشرية وأعمدة التاريخ/الوقت. يناسب برنامج الترميز هذا الأعمدة التي تتغير قيمها (زيادةً أو نقصانًا) بمضاعفات GCD، مثل: 24، 28، 16، 24، 8، 24 (GCD = 4). يُعد GCD برنامج ترميز لإعداد البيانات، أي لا يمكن استخدامه بمفرده.
 
-<div id="gorilla">
-  ### Gorilla
-</div>
+### Gorilla {#gorilla}
 
 `Gorilla(bytes_size)` — يحسب عملية XOR بين قيمة الفاصلة العائمة الحالية والسابقة، ويكتب الناتج بصيغة ثنائية مضغوطة. كلما صغر الفرق بين القيم المتتالية، أي كلما تغيّرت قيم السلسلة ببطء أكبر، تحسّن معدل الضغط. ينفّذ الخوارزمية المستخدمة في Gorilla TSDB مع توسيعها لدعم الأنواع ذات 64 بت. القيم الممكنة لـ `bytes_size` هي: 1، 2، 4، 8. والقيمة الافتراضية هي `sizeof(type)` إذا كانت تساوي 1 أو 2 أو 4 أو 8؛ وفي جميع الحالات الأخرى تكون 1. لمزيد من المعلومات، راجع القسم 4.1 في [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
 
-<div id="alp">
-  ### ALP
-</div>
+### ALP {#alp}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 `ALP(variant)` — ضغط تكيّفي بلا فقدان للبيانات ذات الفاصلة العائمة. يدعم `Float32` و`Float64`. لمزيد من التفاصيل، راجع [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
 
@@ -157,18 +130,14 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 * `ALP(RD)` — متغير Real Doubles. يعيد تفسير نمط بتات كل قيمة ويقسّمه إلى جزء علوي (الإشارة + الأس + البتات العليا من المانتيسا) وجزء سفلي. تُشفَّر الأجزاء العليا باستخدام قاموس (بحد أقصى 8 إدخالات)، وتُحزم الأجزاء السفلى بالبتات. يعمل على نحو أفضل عندما تشترك قيم كثيرة في البتات العليا نفسها.
 
 <Note>
-  برنامج الترميز هذا تجريبي، ويتطلب استخدامه `SET enable_alp_codec = 1`.
+  برنامج الترميز هذا في مرحلة Beta، ويتطلب استخدامه `SET enable_alp_codec = 1`.
 </Note>
 
-<div id="fpc">
-  ### FPC
-</div>
+### FPC {#fpc}
 
 `FPC(level, float_size)` - يتنبأ مرارًا بقيمة الفاصلة العائمة التالية في التسلسل باستخدام الأدق من متنبئين، ثم يُجري عملية XOR بين القيمة الفعلية والقيمة المتنبأ بها، ويضغط النتيجة بحذف الأصفار البادئة. على غرار Gorilla، تكون هذه الطريقة فعالة عند تخزين سلسلة من قيم الفاصلة العائمة التي تتغير ببطء. بالنسبة إلى القيم ذات 64 بت (double)، يكون FPC أسرع من Gorilla، أما القيم ذات 32 بت فقد تختلف النتائج. قيم `level` الممكنة هي: 1-28، والقيمة الافتراضية هي 12. قيم `float_size` الممكنة هي: 4 و8، والقيمة الافتراضية هي `sizeof(type)` إذا كان النوع Float. وفي جميع الحالات الأخرى، تكون 4. للاطلاع على وصف تفصيلي للخوارزمية، راجع [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
 
-<div id="sz3">
-  ### SZ3
-</div>
+### SZ3 {#sz3}
 
 <ExperimentalBadge />
 
@@ -178,9 +147,7 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
   برنامج الترميز هذا تجريبي، ويتطلب استخدام `SET enable_sz3_codec = 1`.
 </Note>
 
-<div id="t64">
-  ### T64
-</div>
+### T64 {#t64}
 
 `T64` — أسلوب ضغط يقتطع البتات العليا غير المستخدمة من القيم في أنواع البيانات الصحيحة (بما في ذلك `Enum` و`Date` و`DateTime`). في كل خطوة من خوارزميته، يأخذ برنامج الترميز كتلة تضم 64 قيمة، ويضعها في مصفوفة بتات بحجم 64x64، ثم ينقلها ويقتطع البتات غير المستخدمة من القيم ويُرجع الباقي كتسلسل. والبتات غير المستخدمة هي البتات التي لا تختلف بين القيمتين الصغرى والكبرى ضمن جزء البيانات الكامل الذي يُستخدم فيه الضغط.
 
@@ -195,9 +162,7 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
-<div id="quantized">
-  ### التكميم
-</div>
+### التكميم {#quantized}
 
 <ExperimentalBadge />
 
@@ -226,23 +191,17 @@ CREATE TABLE vectors
 ENGINE = MergeTree ORDER BY id;
 ```
 
-<div id="encryption-codecs">
-  ## برامج ترميز التشفير
-</div>
+## برامج ترميز التشفير {#encryption-codecs}
 
 لا تضغط برامج الترميز هذه البيانات فعليًا، بل تشفّر البيانات المخزنة على القرص. لا تتوفر إلا عند تحديد مفتاح تشفير من خلال إعدادات [encryption](/ar/reference/settings/server-settings/settings/other#encryption). لاحظ أن التشفير لا يكون منطقيًا إلا في نهاية مسارات برامج الترميز، إذ لا يمكن عادةً ضغط البيانات المشفّرة بطريقة فعّالة.
 
 برامج ترميز التشفير:
 
-<div id="aes_128_gcm_siv">
-  ### AES_128_GCM_SIV
-</div>
+### AES_128_GCM_SIV {#aes_128_gcm_siv}
 
 `CODEC('AES-128-GCM-SIV')` — يشفّر البيانات باستخدام AES-128 في وضع GCM-SIV وفقًا لـ [RFC 8452](https://tools.ietf.org/html/rfc8452).
 
-<div id="aes-256-gcm-siv">
-  ### AES-256-GCM-SIV
-</div>
+### AES-256-GCM-SIV {#aes-256-gcm-siv}
 
 `CODEC('AES-256-GCM-SIV')` — يشفّر البيانات باستخدام AES-256 بوضع GCM-SIV.
 
@@ -280,15 +239,17 @@ CREATE TABLE mytable
 ENGINE = MergeTree ORDER BY x;
 ```
 
-<div id="adaptive-codec-selection">
-  ## الاختيار التكيفي لبرنامج الترميز
-</div>
+## الاختيار التكيفي لبرنامج الترميز {#adaptive-codec-selection}
 
 <ExperimentalBadge />
 
-يمكن لبرامج الترميز المتخصصة المذكورة أعلاه تقليص حجم البيانات المناسبة لها بدرجة كبيرة، لكن اختيارها يتطلب خبرة، ولا يوجد خيار واحد يناسب عمودًا تتغير بياناته بمرور الوقت. عند تمكين إعداد MergeTree ‏[`allow_experimental_adaptive_codec_selection`](/ar/reference/settings/merge-tree-settings)، يتولى ClickHouse الاختيار نيابةً عنك. بالنسبة إلى الأعمدة التي تستخدم برنامج الترميز الافتراضي (`CODEC(Default)` أو لا تستخدم `CODEC` مطلقًا)، تُكتب كل كتلة ببرنامج الترميز الذي يحقق أصغر حجم ممكن بعد الضغط، ويُختار من بين برنامج الترميز الافتراضي للجدول و`NONE` وبرامج الترميز المتخصصة الملائمة لنوع العمود.
+يمكن لبرامج الترميز المتخصصة المذكورة أعلاه تقليص حجم البيانات المناسبة لها بدرجة كبيرة، لكن اختيارها يتطلب خبرة، ولا يوجد خيار واحد يناسب عمودًا تتغير بياناته بمرور الوقت. عند تمكين إعداد MergeTree ‏[`enable_adaptive_codec_selection`](/ar/reference/settings/merge-tree-settings)، يتولى ClickHouse الاختيار نيابةً عنك. بالنسبة إلى الأعمدة التي تستخدم برنامج الترميز `Default` (`CODEC(Default)` أو لا تستخدم `CODEC` مطلقًا)، تُكتب كل كتلة ببرنامج الترميز الذي يحقق أصغر حجم ممكن بعد الضغط، ويُختار من بين برنامج الترميز `Default` للجدول و`NONE` وبرامج الترميز المتخصصة الملائمة لنوع العمود.
 
-لا يزيد حجم الكتلة مطلقًا عما كان سيحققه برنامج الترميز الافتراضي، وتُخزَّن البيانات غير القابلة للضغط بصيغتها الخام، لأن ضغطها سينتج ملفًا أكبر قليلًا وأبطأ في القراءة. تتم هذه العملية في الخلفية أثناء عمليات الدمج والطفرات، حيث تُعاد البيانات إلى الضغط على أي حال. لا تتأثر سرعة الإدراج. وغالبًا ما تصبح الاستعلامات أسرع: إذ يُجلب قدر أقل من البيانات من القرص، ويجب فك ضغط كل كتلة يقرأها الاستعلام أولًا، كما أن فك ضغط برامج الترميز المتخصصة أسرع من فك ضغط `LZ4` الافتراضي. تسجل كل كتلة برنامج الترميز الذي كُتبت به، لذا لا تتطلب القراءة أي إعداد، ويمكن إيقاف الميزة في أي وقت مع بقاء جميع البيانات قابلة للقراءة.
+<Note>
+  تُختار برامج الترميز المتخصصة حاليًا للأعداد الصحيحة حتى 64 بت، والتعدادات، والتواريخ والأوقات، و`Decimal32`/`Decimal64`، و`IPv4`، و`Float32`/`Float64`. أما الأعمدة الأخرى فيُختار لها بين برنامج الترميز `Default` و`NONE`.
+</Note>
+
+لا يزيد حجم الكتلة مطلقًا عما كان سيحققه برنامج الترميز `Default`، وتُخزَّن البيانات غير القابلة للضغط بصيغتها الخام، لأن ضغطها سينتج ملفًا أكبر قليلًا وأبطأ في القراءة. تتم هذه العملية في الخلفية أثناء عمليات الدمج والطفرات، حيث تُعاد البيانات إلى الضغط على أي حال. لا تتأثر سرعة الإدراج. وغالبًا ما تصبح الاستعلامات أسرع: إذ يُجلب قدر أقل من البيانات من القرص، ويجب فك ضغط كل كتلة يقرأها الاستعلام أولًا، كما أن فك ضغط برامج الترميز المتخصصة أسرع من فك ضغط `LZ4` الافتراضي. تسجل كل كتلة برنامج الترميز الذي كُتبت به، لذا لا تتطلب القراءة أي إعداد، ويمكن إيقاف الميزة في أي وقت مع بقاء جميع البيانات قابلة للقراءة.
 
 ```sql
 CREATE TABLE adaptive
@@ -298,13 +259,13 @@ CREATE TABLE adaptive
 )
 ENGINE = MergeTree
 ORDER BY time
-SETTINGS allow_experimental_adaptive_codec_selection = 1;
+SETTINGS enable_adaptive_codec_selection = 1;
 
 INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
 OPTIMIZE TABLE adaptive FINAL;
 ```
 
-يمكنك الاطّلاع على كيفية عمل ذلك باستخدام دالة الجدول [`mergeTreeCodecBlockCounts`](/ar/reference/functions/table-functions/mergeTreeCodecBlockCounts). هنا، تزداد قيمة `time` باطراد، لذا تفوّق `T64`، الذي لا يخزّن سوى البتات المتغيرة داخل الكتلة، على برنامج الترميز الافتراضي في كل كتلة. يحتوي `user_id` على قيم hash لا يستطيع أي برنامج ترميز تقليصها، لذا خُزّنت كُتله بصيغتها الخام:
+يمكنك الاطّلاع على كيفية عمل ذلك باستخدام دالة الجدول [`mergeTreeCodecBlockCounts`](/ar/reference/functions/table-functions/mergeTreeCodecBlockCounts). هنا، تزداد قيمة `time` باطراد، لذا تفوّق `T64`، الذي لا يخزّن سوى البتات المتغيرة داخل الكتلة، على برنامج الترميز `Default` في كل كتلة. يحتوي `user_id` على قيم hash لا يستطيع أي برنامج ترميز تقليصها، لذا خُزّنت كُتله بصيغتها الخام:
 
 ```sql
 SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase(), 'adaptive');
@@ -317,11 +278,7 @@ SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase
    └─────────┴────────────────────┘
 ```
 
-يشمل الاختيار حاليًا الأعمدة ذات القيم الشبيهة بالأعداد الصحيحة: الأعداد الصحيحة، والتعدادات، والتواريخ والأوقات، و`Decimal32`/`Decimal64`، و`IPv4`.
-
-<div id="related-content">
-  ## محتوى ذو صلة
-</div>
+## محتوى ذو صلة {#related-content}
 
 * مدونة: [تحسين ClickHouse باستخدام المخططات وبرامج الترميز](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 * مدونة: [العمل مع بيانات السلاسل الزمنية في ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

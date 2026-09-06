@@ -10,21 +10,36 @@ doc_type: 'guide'
 import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 import { Image } from "/snippets/ar/components/Image.jsx";
+import ConfigurableBackupsCLI from "/snippets/ar/cloud/backups/_configurable_backups_cli.mdx";
 
-<ScalePlanFeatureBadge feature="النسخ الاحتياطية القابلة للتهيئة" linking_verb_are="True" />
+<Visibility for="agents">
+  <ConfigurableBackupsCLI />
+</Visibility>
 
-لإعداد جدولة النسخ الاحتياطي لخدمة، انتقل إلى علامة التبويب **الإعدادات** في وحدة التحكم وانقر على **تغيير إعدادات النسخ الاحتياطي**.
+<Visibility for="humans">
+  <View title="واجهة Cloud">
+    <ScalePlanFeatureBadge feature="النسخ الاحتياطية القابلة للتهيئة" linking_verb_are="True" />
 
-<Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="إعداد إعدادات النسخ الاحتياطي" border />
+    لإعداد جدولة النسخ الاحتياطي لخدمة، انتقل إلى علامة التبويب **الإعدادات** في وحدة التحكم وانقر على **تغيير إعدادات النسخ الاحتياطي**.
 
-سيؤدي ذلك إلى فتح علامة تبويب على اليمين، حيث يمكنك اختيار قيم مدة الاحتفاظ والتكرار ووقت البدء. ستحتاج إلى حفظ الإعدادات التي اخترتها لكي يتم تطبيقها.
+    <Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="إعداد إعدادات النسخ الاحتياطي" border />
 
-<Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="تحديد مدة الاحتفاظ بالنسخ الاحتياطي وتكراره" border />
+    سيؤدي ذلك إلى فتح علامة تبويب على اليمين، حيث يمكنك اختيار قيم مدة الاحتفاظ والتكرار ووقت البدء. ستحتاج إلى حفظ الإعدادات التي اخترتها لكي يتم تطبيقها.
 
-<Note>
-  وقت البدء والتكرار لا يمكن استخدامهما معًا. وتكون الأولوية لوقت البدء.
-</Note>
+    <Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="تحديد مدة الاحتفاظ بالنسخ الاحتياطي وتكراره" border />
 
-<Note>
-  قد يؤدي تغيير جدولة النسخ الاحتياطي إلى ارتفاع رسوم التخزين الشهرية، لأن بعض النسخ الاحتياطية قد لا تكون مشمولة ضمن النسخ الاحتياطية الافتراضية للخدمة. راجع [&quot;فهم تكلفة النسخ الاحتياطي&quot;](/ar/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
-</Note>
+    <Note>
+      وقت البدء والتكرار لا يمكن استخدامهما معًا. وتكون الأولوية لوقت البدء.
+    </Note>
+
+    <Note>
+      قد يؤدي تغيير جدولة النسخ الاحتياطي إلى ارتفاع رسوم التخزين الشهرية، لأن بعض النسخ الاحتياطية قد لا تكون مشمولة ضمن النسخ الاحتياطية الافتراضية للخدمة. راجع [&quot;فهم تكلفة النسخ الاحتياطي&quot;](/ar/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
+    </Note>
+  </View>
+
+  <View title="CLI">
+    يمكنك اتباع هذه الخطوات بنفسك، أو تنفيذها عبر برنامج نصي، أو إسنادها إلى AI Agent. انتقل إلى عرض **واجهة Cloud** للاطلاع على نسخة وحدة التحكم.
+
+    <ConfigurableBackupsCLI />
+  </View>
+</Visibility>

@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 此引擎提供与 [亚马逊 S3](https://aws.amazon.com/s3/) 生态系统的集成。它与 [HDFS](/zh/reference/engines/table-engines/integrations/hdfs) 引擎类似，但提供 S3 专有功能。
 
-<div id="example">
-  ## 示例
-</div>
+## 示例 {#example}
 
 ```sql
 CREATE TABLE s3_engine_table (name String, value UInt32)
@@ -31,9 +29,7 @@ SELECT * FROM s3_engine_table LIMIT 2;
 └──────┴───────┘
 ```
 
-<div id="creating-a-table">
-  ## 创建表
-</div>
+## 创建表 {#creating-a-table}
 
 ```sql
 CREATE TABLE s3_engine_table (name String, value UInt32)
@@ -42,23 +38,19 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-<div id="parameters">
-  ### 引擎参数
-</div>
+### 引擎参数 {#parameters}
 
 * `path` — 包含文件路径的存储桶 URL。在 `readonly` 模式下支持以下通配符：`*`、`**`、`?`、`{abc,def}` 和 `{N..M}`，其中 `N`、`M` 表示数字，`'abc'`、`'def'` 表示字符串。更多信息请参见[下文](#wildcards-in-path)。
 * `NOSIGN` - 如果提供此关键字来代替凭证，则所有请求都不会签名。
 * `format` — 文件的[格式](/zh/reference/formats/index#formats-overview)。
 * `aws_access_key_id`, `aws_secret_access_key` - [AWS](https://aws.amazon.com/) 账户用户的长期凭证。你可以使用它们对请求进行身份验证。该参数是可选的。如果未指定凭证，则会使用配置文件中的凭证。更多信息请参见 [Using S3 for Data Storage](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)。
-* `compression` — 压缩类型。支持的值：`none`、`gzip/gz`、`brotli/br`、`xz/LZMA`、`zstd/zst`。该参数是可选的。默认情况下，会根据文件扩展名自动检测压缩类型。
+* `compression` — 压缩类型。支持的值：`none`、`gzip/gz`、`deflate`、`brotli/br`、`xz/LZMA`、`zstd/zst`、`lz4`、`bz2`、`snappy`。该参数是可选的。默认情况下，会根据文件扩展名自动检测压缩类型。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置选择 (默认为 `basic`) 。
 * `partition_strategy` – 可选值：`wildcard` 或 `hive`。`wildcard` 要求路径中包含 `{_partition_id}`，它会被替换为分区键。`hive` 不允许使用通配符，假定该路径是表根路径，并生成 Hive 风格的分区目录，以 Snowflake IDs 作为文件名、文件格式作为扩展名。未显式指定策略时，包含 `{_partition_id}` 的路径使用 `wildcard`。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不包含 glob 的路径在 `file_like_engine_default_partition_strategy` 为 `hive` 时使用 `hive`；否则不使用分区策略。
 * `partition_columns_in_data_file` - 仅与 `hive` 分区策略一起使用。用于告知 ClickHouse 是否应在数据文件中包含分区列。默认为 `false`。
 * `storage_class_name` - 可选值：`STANDARD`、`REDUCED_REDUNDANCY`、`STANDARD_IA`、`ONEZONE_IA`、`INTELLIGENT_TIERING`、`GLACIER_IR`、`EXPRESS_ONEZONE`。仅支持可立即检索的 S3 storage classes (不支持 `GLACIER` 和 `DEEP_ARCHIVE` 等归档类) 。可用于指定 [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/)。
 * `extra_credentials` - 可选。用于在 ClickHouse Cloud 中传递用于基于角色的访问控制的 `role_arn`。配置步骤请参见 [Secure S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
 
-<div id="data-cache">
-  ### 数据缓存
-</div>
+### 数据缓存 {#data-cache}
 
 `S3` 表引擎支持将数据缓存在本地磁盘上。
 有关文件系统缓存的配置选项和用法，请参见本[节](/zh/concepts/features/configuration/server-config/storing-data#using-local-cache)。
@@ -89,17 +81,13 @@ SETTINGS filesystem_cache_name = 'cache_for_s3', enable_filesystem_cache = 1;
 
 2. 复用 ClickHouse 的 `storage_configuration` 部分中的缓存配置 (以及相应的缓存存储) ，[此处有说明](/zh/concepts/features/configuration/server-config/storing-data#using-local-cache)
 
-<div id="partition-by">
-  ### PARTITION BY
-</div>
+### PARTITION BY {#partition-by}
 
 `PARTITION BY` —— 可选。在大多数情况下，你不需要分区键；即使需要，通常也无需使用比按月更细的分区键。分区不会加快查询速度 (与 `ORDER BY` 表达式不同) 。绝不要使用粒度过细的分区。不要按客户标识符或名称对数据进行分区 (应改为将客户标识符或名称作为 `ORDER BY` 表达式中的第一列) 。
 
 如果按月分区，请使用 `toYYYYMM(date_column)` 表达式，其中 `date_column` 是一个 [Date](/zh/reference/data-types/date) 类型的日期列。这里的分区名称采用 `"YYYYMM"` 格式。
 
-<div id="partition-strategy">
-  #### 分区策略
-</div>
+#### 分区策略 {#partition-strategy}
 
 `wildcard`：将文件路径中的 `{_partition_id}` 通配符替换为实际的分区键。不支持读取。当路径包含 `{_partition_id}` 时，默认选择此策略。
 
@@ -149,9 +137,7 @@ select _path, * from t_03363_parquet;
 └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
-<div id="querying-partitioned-data">
-  ### 查询分区数据
-</div>
+### 查询分区数据 {#querying-partitioned-data}
 
 本示例使用 [docker compose recipe](https://github.com/ClickHouse/examples/tree/5fdc6ff72f4e5137e23ea075c88d3f44b0202490/docker-compose-recipes/recipes/ch-and-minio-S3)，其中集成了 ClickHouse 和 MinIO。你也可以通过替换端点和身份验证配置值，使用 S3 复现相同的查询。
 
@@ -169,9 +155,7 @@ select _path, * from t_03363_parquet;
   这也正是分区写入的意义所在。
 </Note>
 
-<div id="create-the-table">
-  #### 创建表
-</div>
+#### 创建表 {#create-the-table}
 
 ```sql highlight={8}
 CREATE TABLE p
@@ -189,17 +173,13 @@ ENGINE = S3(
 PARTITION BY column3
 ```
 
-<div id="insert-data">
-  #### 插入数据
-</div>
+#### 插入数据 {#insert-data}
 
 ```sql
 INSERT INTO p VALUES (1, 2, 3), (3, 2, 1), (78, 43, 45)
 ```
 
-<div id="select-from-partition-3">
-  #### 查询分区 3
-</div>
+#### 查询分区 3 {#select-from-partition-3}
 
 <Tip>
   此查询使用 S3 表函数
@@ -216,9 +196,7 @@ FROM s3('http://minio:10000/clickhouse//test_3.csv', 'minioadmin', 'minioadminpa
 └────┴────┴────┘
 ```
 
-<div id="select-from-partition-1">
-  #### 查询分区 1 中的数据
-</div>
+#### 查询分区 1 中的数据 {#select-from-partition-1}
 
 ```sql
 SELECT *
@@ -231,9 +209,7 @@ FROM s3('http://minio:10000/clickhouse//test_1.csv', 'minioadmin', 'minioadminpa
 └────┴────┴────┘
 ```
 
-<div id="select-from-partition-45">
-  #### 查询分区 45 中的数据
-</div>
+#### 查询分区 45 中的数据 {#select-from-partition-45}
 
 ```sql
 SELECT *
@@ -246,9 +222,7 @@ FROM s3('http://minio:10000/clickhouse//test_45.csv', 'minioadmin', 'minioadminp
 └────┴────┴────┘
 ```
 
-<div id="limitation">
-  #### 限制
-</div>
+#### 限制 {#limitation}
 
 你可能会很自然地想尝试 `Select * from p`，但如上所述，这条查询会失败；请使用前面的查询语句。
 
@@ -261,15 +235,11 @@ Received exception from server (version 23.4.1):
 Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading from a partitioned S3 storage is not implemented yet. (NOT_IMPLEMENTED)
 ```
 
-<div id="inserting-data">
-  ## 插入数据
-</div>
+## 插入数据 {#inserting-data}
 
 请注意，只能向新文件中插入行。不存在合并周期或文件拆分操作。文件一旦写入，后续插入就会失败。为避免这种情况，你可以使用 `s3_truncate_on_insert` 和 `s3_create_new_file_on_insert` 设置。更多详情请参见[这里](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data)。
 
-<div id="virtual-columns">
-  ## 虚拟列
-</div>
+## 虚拟列 {#virtual-columns}
 
 * `_path` — 文件路径。类型：`LowCardinality(String)`。
 * `_file` — 文件名。类型：`LowCardinality(String)`。
@@ -280,9 +250,7 @@ Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading fr
 
 有关虚拟列的更多信息，请参见[此处](/zh/reference/engines/table-engines/index#table_engines-virtual_columns)。
 
-<div id="implementation-details">
-  ## 实现细节
-</div>
+## 实现细节 {#implementation-details}
 
 * 读写可并行进行
 * 不支持：
@@ -296,9 +264,7 @@ Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading fr
   在 ClickHouse 22.8 及更高版本中，Zero-copy 复制默认已禁用。不建议在生产环境中使用此功能。
 </Info>
 
-<div id="wildcards-in-path">
-  ## `path` 中的通配符
-</div>
+## `path` 中的通配符 {#wildcards-in-path}
 
 `path` 参数可使用类似 bash 的通配符来指定多个文件。要处理某个文件，该文件必须存在，并且与整个路径模式完全匹配。文件列表是在执行 `SELECT` 时确定的 (而不是在 `CREATE` 时) 。
 
@@ -357,9 +323,7 @@ CREATE TABLE table_with_asterisk (name String, value UInt32)
     ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/*', 'CSV');
 ```
 
-<div id="resolving-relative-urls">
-  ## 解析相对 URL
-</div>
+## 解析相对 URL {#resolving-relative-urls}
 
 [s3&#95;base](/zh/reference/settings/session-settings/s3#s3_base) 设置允许在 `S3` 引擎中使用相对 URL。设置 `s3_base` 后，如果路径不含 scheme，则会根据 [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) 以 base URL 为基准进行解析。有关解析规则的完整说明，请参阅 [S3 表函数文档](/zh/reference/functions/table-functions/s3#resolving-relative-urls)。解析得到的 URL 会 materialized 并存储在表定义中，因此表创建后不再依赖 `s3_base` 的值。
 
@@ -369,18 +333,14 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
     ENGINE = S3('aapl_stock.csv', NOSIGN, 'CSVWithNames');
 ```
 
-<div id="storage-settings">
-  ## 存储设置
-</div>
+## 存储设置 {#storage-settings}
 
 * [s3&#95;truncate&#95;on&#95;insert](/zh/reference/settings/session-settings/s3#s3_truncate_on_insert) - 允许在插入前先截断文件。默认禁用。
 * [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/zh/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - 如果 format 带有 suffix，则允许在每次 insert 时创建新文件。默认禁用。
 * [s3&#95;skip&#95;empty&#95;files](/zh/reference/settings/session-settings/s3#s3_skip_empty_files) - 允许在读取时跳过空文件。默认启用。
 * [s3&#95;base](/zh/reference/settings/session-settings/s3#s3_base) - 用于解析传递给 engine 的相对 URL 的 base URL。默认为空 (禁用) 。
 
-<div id="settings">
-  ## S3 相关设置
-</div>
+## S3 相关设置 {#settings}
 
 以下设置可在查询执行前设置，也可以写入配置文件。
 
@@ -398,9 +358,7 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
 
 安全注意事项：如果恶意用户可以指定任意 S3 URL，则必须将 `s3_max_redirects` 设为零，以避免 [SSRF](https://en.wikipedia.org/wiki/Server-side_request_forgery) 攻击；或者，必须在服务器配置中指定 `remote_host_filter`。
 
-<div id="endpoint-settings">
-  ## 基于端点的设置
-</div>
+## 基于端点的设置 {#endpoint-settings}
 
 以下设置可在配置文件中为指定端点设置 (将按 URL 的精确前缀匹配) ：
 
@@ -443,9 +401,7 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
 </s3>
 ```
 
-<div id="working-with-archives">
-  ## 处理归档文件
-</div>
+## 处理归档文件 {#working-with-archives}
 
 假设 S3 上有以下几个归档文件 URI：
 
@@ -471,9 +427,7 @@ FROM s3(
   虽然 ZIP 和 TAR 归档可以从任何受支持的存储位置访问，但 7Z 归档只能在安装了 ClickHouse 的本地文件系统上读取。
 </Note>
 
-<div id="accessing-public-buckets">
-  ## 访问公共存储桶
-</div>
+## 访问公共存储桶 {#accessing-public-buckets}
 
 ClickHouse 会尝试从多种不同类型的来源获取凭证。
 有时，访问某些公共存储桶时可能会因此出现问题，导致客户端返回 `403` 错误码。
@@ -484,15 +438,11 @@ CREATE TABLE big_table (name String, value UInt32)
     ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv', NOSIGN, 'CSVWithNames');
 ```
 
-<div id="optimizing-performance">
-  ## 优化性能
-</div>
+## 优化性能 {#optimizing-performance}
 
 有关如何优化 `s3` 函数性能的详细信息，请参阅[详细指南](/zh/integrations/connectors/data-ingestion/AWS/performance)。
 
-<div id="role-based-access">
-  ## 基于角色的访问控制
-</div>
+## 基于角色的访问控制 {#role-based-access}
 
 在 ClickHouse Cloud 中，您可以使用基于角色的访问控制通过 S3 进行身份验证，而无需使用访问密钥。有关配置步骤，请参见 [Secure S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
 
@@ -510,9 +460,7 @@ CREATE TABLE my_s3_table(name String, value UInt32)
 ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', external_id = 'my-external-id'), 'CSV')
 ```
 
-<div id="see-also">
-  ## 另请参阅
-</div>
+## 另请参阅 {#see-also}
 
 * [S3 表函数](/zh/reference/functions/table-functions/s3)
 * [将 S3 与 ClickHouse 集成](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

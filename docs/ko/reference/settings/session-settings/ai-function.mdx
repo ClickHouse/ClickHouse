@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)로부터 자동 생성됩니다.
 
@@ -18,7 +18,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
   ## ai_function_allow_insecure_endpoint
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -30,7 +30,7 @@ false(기본값)로 설정하면 AI 함수는 프롬프트와 API Key를 암호�
   ## ai_function_embedding_default_credentials
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "새로운 설정"}]}]} />
 
@@ -40,7 +40,7 @@ false(기본값)로 설정하면 AI 함수는 프롬프트와 API Key를 암호�
   ## ai_function_embedding_max_batch_size
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -52,7 +52,7 @@ false(기본값)로 설정하면 AI 함수는 프롬프트와 API Key를 암호�
   ## ai_function_max_api_calls_per_query
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -64,39 +64,39 @@ AI 함수가 쿼리당 전송할 수 있는 HTTP 요청의 최대 개수입니�
   ## ai_function_max_input_tokens_per_query
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000000"},{"label": "새로운 설정"}]}]} />
 
-단일 쿼리에서 모든 AI 함수 API 호출에 걸친 입력(프롬프트) 토큰의 최대 총수입니다. 이 값은 provider 응답을 기준으로 누적 추적됩니다. 호출의 입력 토큰 수는 응답이 도착할 때까지 알 수 없으므로, 이 제한은 진행 중인 요청마다 한 번의 호출에 해당하는 입력 토큰 수만큼 초과될 수 있습니다. 다른 AI QUOTA와 마찬가지로 이 제한은 분산 쿼리 전체에서 합산되지 않고 서버/쿼리 프래그먼트별로 적용되며, 최상위 쿼리에서 설정해야 합니다. 하위 쿼리의 `SETTINGS` 재정의는 무시됩니다. 비활성화하려면 0으로 설정하십시오.
+단일 쿼리에서 모든 AI 함수 API 호출에 걸친 입력(프롬프트) 토큰의 최대 총수입니다. 이 값은 프로바이더 응답을 기준으로 누적 추적됩니다. 호출의 입력 토큰 수는 응답이 도착할 때까지 알 수 없으므로, 이 제한은 진행 중인 요청마다 한 번의 호출에 해당하는 입력 토큰 수만큼 초과될 수 있습니다. 다른 AI QUOTA와 마찬가지로 이 제한은 분산 쿼리 전체에서 합산되지 않고 서버/쿼리 프래그먼트별로 적용되며, 최상위 쿼리에서 설정해야 합니다. 하위 쿼리의 `SETTINGS` 재정의는 무시됩니다. 비활성화하려면 0으로 설정하십시오.
 
-이 제한은 응답에 `usage` 객체를 포함해 보고하는 provider(OpenAI, Anthropic, vLLM)에만 적용됩니다. 토큰 사용량을 생략하는 provider(특히 HuggingFace TEI)의 경우 카운터가 0으로 유지되므로, 이러한 호출 수를 제한하려면 대신 `ai_function_max_api_calls_per_query`를 사용하십시오.
+이 제한은 응답에 `usage` 객체를 포함해 보고하는 프로바이더(OpenAI, Anthropic, vLLM)에만 적용됩니다. 토큰 사용량을 생략하는 프로바이더(특히 HuggingFace TEI)의 경우 카운터가 0으로 유지되므로, 이러한 호출 수를 제한하려면 대신 `ai_function_max_api_calls_per_query`를 사용하십시오.
 
 <div id="ai_function_max_output_tokens_per_query">
   ## ai_function_max_output_tokens_per_query
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="500000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "500000"},{"label": "새로운 설정"}]}]} />
 
-단일 쿼리에서 수행되는 모든 AI 함수 API 호출에 대해, 전체 출력(completion) 토큰의 총합으로 허용되는 최대값입니다. 이 값은 provider의 응답을 기준으로 누적 추적됩니다. 호출의 출력 토큰 수는 응답이 도착해야 알 수 있으므로, 진행 중인 요청마다 한 번의 호출에서 생성된 출력 토큰 수만큼 이 제한을 초과할 수 있습니다. 다른 AI QUOTA와 마찬가지로 이 제한은 분산 쿼리 전체에서 합산되지 않고 서버 / 쿼리 프래그먼트별로 적용되며, 최상위 쿼리에서 설정해야 합니다. 하위 쿼리의 `SETTINGS` 재정의는 무시됩니다. 비활성화하려면 0으로 설정하십시오.
+단일 쿼리에서 수행되는 모든 AI 함수 API 호출에 대해, 전체 출력(completion) 토큰의 총합으로 허용되는 최대값입니다. 이 값은 프로바이더의 응답을 기준으로 누적 추적됩니다. 호출의 출력 토큰 수는 응답이 도착해야 알 수 있으므로, 진행 중인 요청마다 한 번의 호출에서 생성된 출력 토큰 수만큼 이 제한을 초과할 수 있습니다. 다른 AI QUOTA와 마찬가지로 이 제한은 분산 쿼리 전체에서 합산되지 않고 서버 / 쿼리 프래그먼트별로 적용되며, 최상위 쿼리에서 설정해야 합니다. 하위 쿼리의 `SETTINGS` 재정의는 무시됩니다. 비활성화하려면 0으로 설정하십시오.
 
-이 제한은 응답에 `usage` 객체를 포함해 보고하는 provider(OpenAI, Anthropic, vLLM)에만 적용됩니다. 임베딩 함수(`aiEmbed`, `aiSimilarity`)에는 적용되지 않으며, 이러한 함수는 출력 토큰을 생성하지 않습니다.
+이 제한은 응답에 `usage` 객체를 포함해 보고하는 프로바이더(OpenAI, Anthropic, vLLM)에만 적용됩니다. 임베딩 함수(`aiEmbed`, `aiSimilarity`)에는 적용되지 않으며, 이러한 함수는 출력 토큰을 생성하지 않습니다.
 
 <div id="ai_function_max_retries">
   ## ai_function_max_retries
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="UInt64" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "기본적으로 일시적 API 오류는 한 번 재시도하므로 프로바이더에서 단일 429 또는 5xx가 발생해도 쿼리가 실패하지 않습니다."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
 개별 API 요청에서 일시적 오류가 발생했을 때의 최대 재시도 횟수입니다. 각 재시도에는 `ai_function_retry_initial_delay_ms`에서 시작하는 지수 백오프가 적용됩니다.
 
@@ -104,7 +104,7 @@ AI 함수가 쿼리당 전송할 수 있는 HTTP 요청의 최대 개수입니�
   ## ai_function_request_timeout_sec
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="60" />
 
@@ -116,7 +116,7 @@ AI 함수가 수행하는 개별 HTTP 요청(AI chat completions 및 임베딩 A
   ## ai_function_retry_initial_delay_ms
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -128,7 +128,7 @@ AI 함수가 수행하는 개별 HTTP 요청(AI chat completions 및 임베딩 A
   ## ai_function_text_default_credentials
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "새로운 설정"}]}]} />
 
@@ -138,7 +138,7 @@ AI 함수가 수행하는 개별 HTTP 요청(AI chat completions 및 임베딩 A
   ## ai_function_throw_on_error
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -150,7 +150,7 @@ true(기본값)이면 모든 재시도를 소진한 후에도 영구적으로 �
   ## ai_function_throw_on_quota_exceeded
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

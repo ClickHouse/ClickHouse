@@ -14,21 +14,15 @@ O motor `Atomic` oferece suporte a consultas [`DROP TABLE`](#drop-detach-table) 
   No ClickHouse Cloud, o [motor de banco de dados `Shared`](/pt-BR/products/cloud/features/infrastructure/shared-catalog#shared-database-engine) é usado por padrão e também oferece suporte às operações mencionadas acima.
 </Note>
 
-<div id="creating-a-database">
-  ## Criando um banco de dados
-</div>
+## Criando um banco de dados {#creating-a-database}
 
 ```sql
 CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
 ```
 
-<div id="specifics-and-recommendations">
-  ## Detalhes e recomendações
-</div>
+## Detalhes e recomendações {#specifics-and-recommendations}
 
-<div id="table-uuid">
-  ### UUID da tabela
-</div>
+### UUID da tabela {#table-uuid}
 
 Cada tabela no banco de dados `Atomic` tem um [UUID](/pt-BR/reference/data-types/uuid) persistente e armazena seus dados no seguinte diretório:
 
@@ -50,22 +44,16 @@ CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE 
   Você pode usar a configuração [show&#95;table&#95;uuid&#95;in&#95;table&#95;create&#95;query&#95;if&#95;not&#95;nil](/pt-BR/reference/settings/session-settings/show#show_table_uuid_in_table_create_query_if_not_nil) para exibir o UUID na consulta `SHOW CREATE`.
 </Note>
 
-<div id="rename-table">
-  ### RENAME TABLE
-</div>
+### RENAME TABLE {#rename-table}
 
 As consultas [`RENAME`](/pt-BR/reference/statements/rename) não modificam o UUID nem movem os dados da tabela. Essas consultas são executadas imediatamente e não esperam a conclusão de outras consultas que estejam usando a tabela.
 
-<div id="drop-detach-table">
-  ### DROP/DETACH TABLE
-</div>
+### DROP/DETACH TABLE {#drop-detach-table}
 
 Ao usar `DROP TABLE`, nenhum dado é excluído. O motor `Atomic` apenas marca a tabela como removida, movendo seus metadados para `/clickhouse_path/metadata_dropped/` e notificando a thread em segundo plano. O atraso antes da exclusão definitiva dos dados da tabela é especificado pela configuração [`database_atomic_delay_before_drop_table_sec`](/pt-BR/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec).
 Você pode especificar o modo síncrono usando o modificador `SYNC`. Para isso, use a configuração [`database_atomic_wait_for_drop_and_detach_synchronously`](/pt-BR/reference/settings/session-settings/database#database_atomic_wait_for_drop_and_detach_synchronously). Nesse caso, `DROP` espera que `SELECT`, `INSERT` e outras consultas em execução que estejam usando a tabela terminem. A tabela será removida quando não estiver mais em uso.
 
-<div id="exchange-tables">
-  ### EXCHANGE TABLES/DICTIONARIES
-</div>
+### EXCHANGE TABLES/DICTIONARIES {#exchange-tables}
 
 A consulta [`EXCHANGE`](/pt-BR/reference/statements/exchange) troca tabelas ou dicionários atomicamente. Por exemplo, em vez desta operação não atômica:
 
@@ -79,15 +67,11 @@ você pode usar um banco de dados Atomic:
 EXCHANGE TABLES new_table AND old_table;
 ```
 
-<div id="replicatedmergetree-in-atomic-database">
-  ### ReplicatedMergeTree em banco de dados Atomic
-</div>
+### ReplicatedMergeTree em banco de dados Atomic {#replicatedmergetree-in-atomic-database}
 
 Para tabelas [`ReplicatedMergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/replication), recomenda-se não especificar os parâmetros do motor para o caminho no ZooKeeper nem o nome da réplica. Nesse caso, serão usados os parâmetros de configuração [`default_replica_path`](/pt-BR/reference/settings/server-settings/settings/default-replica#default_replica_path) e [`default_replica_name`](/pt-BR/reference/settings/server-settings/settings/default-replica#default_replica_name). Se quiser especificar explicitamente os parâmetros do motor, recomenda-se usar as macros `{uuid}`. Isso garante que caminhos exclusivos sejam gerados automaticamente para cada tabela no ZooKeeper.
 
-<div id="metadata-disk">
-  ### Disco de metadados
-</div>
+### Disco de metadados {#metadata-disk}
 
 Quando `disk` é especificado em `SETTINGS`, o disco é usado para armazenar os arquivos de metadados da tabela.
 Por exemplo:
@@ -98,9 +82,31 @@ CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path
 
 Se não for especificado, o disco definido em `database_disk.disk` será usado por padrão.
 
-<div id="see-also">
-  ## Veja também
-</div>
+### Limitando o número de tabelas {#limiting-the-number-of-tables}
+
+A configuração `max_tables` limita quantas tabelas o banco de dados pode conter. `0` (o padrão) significa ilimitado. Todo objeto do tipo tabela conta para o limite: uma tabela comum, uma view, uma visão materializada e um dicionário criado com `CREATE DICTIONARY`. Quando o limite é atingido, `CREATE TABLE`, `CREATE DICTIONARY` e `ATTACH TABLE` lançam a exceção `TOO_MANY_TABLES`.
+
+```sql
+CREATE DATABASE db ENGINE = Atomic SETTINGS max_tables = 100;
+```
+
+O limite de um banco de dados existente pode ser alterado com `ALTER DATABASE`:
+
+```sql
+ALTER DATABASE db MODIFY SETTING max_tables = 200;
+```
+
+Reduzir o limite para um valor abaixo do número atual de tabelas não remove nenhuma tabela. Isso apenas impede que novas sejam criadas até que a contagem volte a ficar abaixo do limite.
+
+`CREATE OR REPLACE TABLE` cria brevemente a substituta com um nome temporário antes de colocá-la no lugar; por isso, substituir uma tabela quando o banco de dados está exatamente em `max_tables` falha com `TOO_MANY_TABLES`, mesmo que a contagem final de tabelas não aumente. Mover um objeto para o banco de dados com `RENAME TABLE` ou `RENAME DICTIONARY` também está sujeito ao limite.
+
+Uma visão materializada criada sem a cláusula `TO` possui uma tabela interna oculta que conta para o limite como se fosse uma tabela à parte.
+
+O limite é verificado antes do início de uma operação, portanto funciona em regime de melhor esforço: consultas concorrentes podem ultrapassá-lo ligeiramente.
+
+A configuração está disponível para os motores de banco de dados em disco que mantêm suas tabelas em memória e seus metadados em arquivos `.sql` locais: `Atomic` e `Ordinary`. Ela não é suportada pelo motor `Replicated`.
+
+## Veja também {#see-also}
 
 * [system.databases](/pt-BR/reference/system-tables/databases) tabela do sistema
 

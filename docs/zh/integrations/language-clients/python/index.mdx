@@ -17,7 +17,7 @@ ClickHouse Connect 是一个核心数据库驱动，可与多种 Python 应用�
 
 * 主要接口是 `clickhouse_connect.driver` 中的同步 `Client` 和基于原生 aiohttp 的 `AsyncClient`。该驱动包还提供查询和 insert 上下文、流式辅助工具、DB-API 支持，以及更底层的 HTTP 方法。
 * `clickhouse_connect.datatypes` 包使用 ClickHouse Native 二进制列式格式对 ClickHouse 类型进行序列化和反序列化。
-* `clickhouse_connect.driverc` 中的可选 Cython 扩展可加速常见的序列化、转换和 buffering 路径。在无法构建这些扩展的平台上，仍可使用 pure Python 路径。
+* `clickhouse_connect.driverc` 中的可选 Cython 扩展可加速常见的序列化、转换和 buffering 路径。在无法构建这些扩展的平台上，仍可使用纯 Python 路径。一个需要主动启用的 Experimental [Rust codec](/zh/integrations/language-clients/python/rust-codec) 可以完全替代 Native format 的处理过程。
 * 该包附带 PEP 561 类型信息，因此下游类型检查器可使用公共驱动、DB-API 和 SQLAlchemy 接口的 annotations。
 * `clickhouse_connect.cc_sqlalchemy` 中的 [SQLAlchemy](https://www.sqlalchemy.org/) dialect 支持 SQLAlchemy Core、schema reflection、ClickHouse 特有的查询 clauses 和 table engines，以及 Alembic migrations。基础的 ORM reads 和 inserts 可以正常工作，但该 dialect 的设计目标是分析型 workloads，而非完整的工作单元式 ORM 行为。
 * 核心驱动和 [ClickHouse Connect SQLAlchemy](/zh/integrations/language-clients/python/sqlalchemy) 实现是将 ClickHouse 连接到 Apache Superset 的首选方法。请使用 `ClickHouse Connect` 数据库 connection，或 `clickhousedb` SQLAlchemy dialect connection string。
@@ -25,12 +25,10 @@ ClickHouse Connect 是一个核心数据库驱动，可与多种 Python 应用�
 本文档内容截至 clickhouse-connect 1.6.0。若你正从 0.15.x 或更早版本升级，请参阅 [1.0 migration guide](https://github.com/ClickHouse/clickhouse-connect/blob/main/MIGRATION.md)。
 
 <Note>
-  标准的 ClickHouse Connect clients 使用 HTTP interface。这支持 HTTP load balancers、proxies 以及常见的企业网络控制。ClickHouse Connect 还提供一个 Experimental 的 in-process [chDB](#embedded-chdb-backend) 后端。
+  标准的 ClickHouse Connect 客户端 使用 HTTP interface。这支持 HTTP load balancers、proxies 以及常见的企业网络控制。ClickHouse Connect 还提供一个 Experimental 的 in-process [chDB](#embedded-chdb-backend) 后端。
 </Note>
 
-<div id="requirements-and-compatibility">
-  ## 要求与兼容性
-</div>
+## 要求与兼容性 {#requirements-and-compatibility}
 
 | 组件         | 支持的版本                                                 |
 | ---------- | ----------------------------------------------------- |
@@ -44,9 +42,7 @@ ClickHouse Connect 是一个核心数据库驱动，可与多种 Python 应用�
 
 该软件包在可用时会提供已编译的 wheel；如果无法构建 Cython 扩展，则会回退为纯 Python 实现。PyArrow 支持 Python 3.10 至 3.14。Python 3.14 需要 PyArrow 22 或更高版本。
 
-<div id="installation">
-  ## 安装
-</div>
+## 安装 {#installation}
 
 通过 pip 从 [PyPI](https://pypi.org/project/clickhouse-connect/) 安装 ClickHouse Connect：
 
@@ -64,6 +60,7 @@ pip install "clickhouse-connect[polars]"     # Polars
 pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
+pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup
 pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
 ```
 
@@ -72,36 +69,52 @@ ClickHouse Connect 也可以从源码安装：
 * 对 [GitHub repository](https://github.com/ClickHouse/clickhouse-connect) 执行 `git clone`。
 * 切换到项目根目录并运行 `pip install .`。构建系统会自动安装 Cython，以编译可选的 C 扩展。
 
-已安装的版本可通过 `clickhouse_connect.__version__` 查看。
+### 源码构建模式 {#source-build-modes}
 
-<div id="support-policy">
-  ## 支持策略
-</div>
+源码构建支持三种模式。当 Cython 不可用或 `cythonize()` 失败时，默认模式和 required 模式都会构建失败。skip 模式不会导入 Cython。
+
+| 模式          | 命令                                               | 行为                                           |
+| ----------- | ------------------------------------------------ | -------------------------------------------- |
+| 默认          | `pip install .`                                  | 尝试编译 C 扩展。如果编译器或链接器失败，构建将回退为纯 Python 安装。 |
+| 纯 Python | `CLICKHOUSE_CONNECT_SKIP_CYTHON=1 pip install .` | 直接构建纯 Python，不尝试编译扩展。                    |
+| Required    | `CLICKHOUSE_CONNECT_REQUIRE_C=1 pip install .`   | 如果扩展无法编译，则构建失败。推荐用于 CI 以及构建可分发的 wheel。       |
+
+同时设置 `CLICKHOUSE_CONNECT_SKIP_CYTHON=1` 和 `CLICKHOUSE_CONNECT_REQUIRE_C=1` 会导致错误。
+
+默认回退生成的 wheel 不包含已编译的扩展，但仍保留平台和解释器标签。只有 skip 模式才会生成 `py3-none-any`。`pip` 可能会缓存由索引中的 sdist 构建出的回退 wheel，并在编译器问题修复后，仍将其重用于兼容的 Python 版本和平台。可使用以下命令清除缓存：
+
+```bash
+pip cache remove clickhouse_connect
+```
+
+检查这三个 extension 模块是否都已存在。若都存在，则会输出 `True`：
+
+```bash
+python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in ('clickhouse_connect.driverc.buffer', 'clickhouse_connect.driverc.dataconv', 'clickhouse_connect.driverc.npconv')))"
+```
+
+直接导入 `clickhouse_connect.driverc.npconv` 同样需要安装 NumPy。
+
+已安装的版本可通过 `clickhouse_connect.__version__` 获取。
+
+## 支持策略 {#support-policy}
 
 在报告问题前，请先更新到最新的 ClickHouse Connect 发行版。请在 [GitHub 项目](https://github.com/ClickHouse/clickhouse-connect/issues)中提交 issue。ClickHouse Connect 以每个驱动发行版发布时[仍受积极支持的 ClickHouse 发行版](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md)为目标。它通常也兼容较旧的服务器版本，但较新的数据类型和协议功能可能需要更新的服务器版本。
 
-<div id="basic-usage">
-  ## 基本用法
-</div>
+## 基本用法 {#basic-usage}
 
-<div id="gather-your-connection-details">
-  ### 准备连接详情
-</div>
+### 准备连接详情 {#gather-your-connection-details}
 
 <ConnectionDetails />
 
-<div id="establish-a-connection">
-  ### 建立连接
-</div>
+### 建立连接 {#establish-a-connection}
 
 下面展示了两个连接到 ClickHouse 的示例：
 
 * 连接到 localhost 上的 ClickHouse 服务器。
 * 连接到 ClickHouse Cloud 服务。
 
-<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost">
-  #### 使用 ClickHouse Connect 客户端实例连接到 localhost 上运行的 ClickHouse 服务器：
-</div>
+#### 使用 ClickHouse Connect 客户端实例连接到 localhost 上运行的 ClickHouse 服务器： {#use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost}
 
 ```python
 import clickhouse_connect
@@ -113,9 +126,7 @@ client = clickhouse_connect.get_client(
 )
 ```
 
-<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service">
-  #### 使用 ClickHouse Connect 客户端实例连接到 ClickHouse Cloud 服务：
-</div>
+#### 使用 ClickHouse Connect 客户端实例连接到 ClickHouse Cloud 服务： {#use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service}
 
 <Tip>
   使用前面获取的连接信息。ClickHouse Cloud 服务要求使用 TLS，因此请使用 8443 端口。
@@ -132,9 +143,7 @@ client = clickhouse_connect.get_client(
 )
 ```
 
-<div id="interact-with-your-database">
-  ### 与数据库交互
-</div>
+### 与数据库交互 {#interact-with-your-database}
 
 要执行 ClickHouse SQL 命令，请使用客户端的 `command` 方法：
 
@@ -165,9 +174,7 @@ print(result.result_rows)
 client.close()
 ```
 
-<div id="embedded-chdb-backend">
-  ## 嵌入式 chDB 后端
-</div>
+## 嵌入式 chDB 后端 {#embedded-chdb-backend}
 
 Experimental chDB 后端可在 Python 进程内直接运行 ClickHouse 查询，无需 HTTP 服务器。安装 `chdb` 扩展包，然后通过 `interface="chdb"` 或 `chdb://` DSN 选择该后端：
 

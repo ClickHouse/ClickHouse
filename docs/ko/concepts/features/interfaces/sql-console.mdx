@@ -1,0 +1,40 @@
+---
+description: 'ClickHouse HTTP 서버의 `/ui` 경로에서 제공되는 내장 SQL 콘솔 UI 문서'
+sidebarTitle: 'SQL 콘솔'
+slug: /interfaces/sql-console
+title: 'SQL 콘솔'
+doc_type: 'reference'
+---
+
+SQL 콘솔은 쿼리를 실행하고 데이터를 탐색할 수 있는 내장 웹 UI입니다. 모든 ClickHouse HTTP 포트의 `/ui` 경로에서 제공되며, 예를 들어 `http://localhost:8123/ui`로 접속할 수 있습니다.
+
+:::note
+SQL 콘솔은 실험적 기능입니다.
+:::
+
+## 개요 {#overview}
+
+SQL 콘솔은 단일 페이지 애플리케이션(SPA)으로, 정적 번들로 컴파일되어 ClickHouse 바이너리에 직접 내장됩니다. ClickStack이 `/clickstack`에 내장되는 방식과 동일합니다. 모든 자산은 ClickHouse 바이너리 자체에서 제공되며, 타사 CDN은 전혀 로드되지 않습니다.
+
+SQL 콘솔을 열려면 임의의 ClickHouse HTTP 포트에서 `/ui` 경로로 이동하십시오(예: `http://localhost:8123/ui`).
+
+## 제공 방식 {#how-it-is-served}
+
+번들은 빌드 시점에 gzip으로 압축되어 `#embed`로 내장되므로, `/ui`에서 반환되는 모든 응답에는 `Content-Encoding: gzip` 헤더가 포함됩니다. SQL 콘솔은 클라이언트 측 라우팅을 수행하는 단일 페이지 애플리케이션이므로, `/ui` 하위 요청 중 내장된 자산에 매핑되지 않고 파일처럼 보이지도 않는(즉, 확장자가 없는) 요청은 `index.html`을 제공하는 방식으로 폴백됩니다. 존재하지 않는 자산처럼 보이는 경로(예: `/ui/nonexistent.js`)에 대한 요청은 HTTP status `404 Not Found`를 반환합니다.
+
+`/ui` 경로는 정확히 일치하는 경우 또는 뒤에 `/`, `?`, `#` 경계가 오는 경우에만 매칭되므로, `/uix`와 같은 형제 경로는 SPA 폴백에 가로채이지 않습니다.
+
+## 다른 웹 UI와의 관계 {#relationship-to-other-web-uis}
+
+ClickHouse는 HTTP 포트로 제공되는 여러 내장 웹 인터페이스를 기본 포함합니다:
+
+* [`/play`](/ko/interfaces/web-sql) — 경량 Web SQL UI입니다.
+* `/dashboard` — 내장 대시보드입니다.
+* `/clickstack` — 내장 ClickStack UI입니다.
+* `/ui` — 여기에서 설명하는 SQL 콘솔입니다.
+
+이들 모두에 대한 링크는 ClickHouse HTTP 서버 랜딩 페이지에서 확인할 수 있습니다.
+
+## 인증 {#authentication}
+
+SQL 콘솔은 HTTP 프로토콜과 동일한 `Session` 및 액세스 제어 검사를 통해 인증을 수행합니다. `/ui`에서 정적 UI 자산을 제공할 때는 인증이 필요하지 않으며, UI가 실행하는 쿼리는 다른 HTTP 요청과 동일하게 인증됩니다.

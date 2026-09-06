@@ -60,9 +60,7 @@ Union
             Output: number
 ```
 
-<div id="explain-types">
-  ## Tipos de EXPLAIN
-</div>
+## Tipos de EXPLAIN {#explain-types}
 
 * `AST` — Árbol de sintaxis abstracta.
 * `SYNTAX` — Texto de la consulta tras las optimizaciones a nivel de AST.
@@ -73,9 +71,7 @@ Union
 * `ESTIMATE` — Número estimado de filas, marcas y partes que se leerán de las tablas al procesar la consulta.
 * `TABLE OVERRIDE` — Resultado validado de una sobrescritura de tabla sobre el esquema de una función de tabla.
 
-<div id="explain-ast">
-  ### EXPLAIN AST
-</div>
+### EXPLAIN AST {#explain-ast}
 
 Muestra el AST de la consulta. Admite todo tipo de consultas, no solo `SELECT`.
 
@@ -113,9 +109,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
         ExpressionList
 ```
 
-<div id="explain-syntax">
-  ### EXPLAIN SYNTAX
-</div>
+### EXPLAIN SYNTAX {#explain-syntax}
 
 Muestra el árbol de sintaxis abstracta (AST) de una consulta tras el análisis sintáctico.
 
@@ -156,9 +150,7 @@ ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
 ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
 ```
 
-<div id="explain-query-tree">
-  ### EXPLAIN QUERY TREE
-</div>
+### EXPLAIN QUERY TREE {#explain-query-tree}
 
 Configuración:
 
@@ -187,9 +179,7 @@ QUERY id: 0
     TABLE id: 3, table_name: default.test_table
 ```
 
-<div id="explain-plan">
-  ### EXPLAIN PLAN
-</div>
+### EXPLAIN PLAN {#explain-plan}
 
 Muestra los pasos del plan de consulta.
 
@@ -630,9 +620,7 @@ Join (JOIN FillRightFirst)
          Output: id, value
 ```
 
-<div id="explain-pipeline">
-  ### EXPLAIN PIPELINE
-</div>
+### EXPLAIN PIPELINE {#explain-pipeline}
 
 Configuración:
 
@@ -672,9 +660,7 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
-<div id="explain-analyze">
-  ### EXPLAIN ANALYZE
-</div>
+### EXPLAIN ANALYZE {#explain-analyze}
 
 `EXPLAIN ANALYZE` sí ejecuta la consulta, descarta las filas del resultado y muestra el mismo árbol del plan que `EXPLAIN PLAN`, con cada paso anotado con lo que realmente ocurrió en tiempo de ejecución.
 
@@ -784,9 +770,7 @@ Las filas y los bytes se informan una vez para todo el paso (la línea `I/O`). E
   2. el número máximo de hilos de procesamiento de consultas configurado en `max_threads`.
 </Note>
 
-<div id="explain-analyze-join-steps">
-  #### Pasos de join
-</div>
+#### Pasos de join {#explain-analyze-join-steps}
 
 En un paso de join, `EXPLAIN ANALYZE` muestra líneas de *participación* para cada lado —`Left` y `Right`—, seguidas de las líneas específicas de la implementación del join. `Left` y `Right` corresponden a los lados lógicos de SQL. En la mayoría de los casos, `Left` también será el lado de sondeo del join y `Right`, el lado de construcción. Sin embargo, no siempre es así, debido al swap que puede producirse durante la ejecución del join. Se cubren todos los valores de [`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm) (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), así como las dos implementaciones que esta configuración no puede seleccionar: un join `CROSS` o `COMMA`, cualquier sección `ON` sin igualdad de clave y el motor de tabla [`Join`](/es/reference/engines/table-engines/special/join). La mayoría informa sobre ambos lados; algunas solo informan del lado que materializan (por ejemplo, `direct` solo muestra `Left:`).
 
@@ -806,9 +790,7 @@ Para cada lado, `EXPLAIN ANALYZE` informa de lo siguiente:
 
 Un valor que no puede calcularse con exactitud se informa como `not collected` en lugar de `0`. `match rate` y `fanout` se derivan de `matched`, por lo que, si un lado no dispone de este valor, los tres se informan como `not collected`.
 
-<div id="explain-analyze-fanout">
-  #### Fanout
-</div>
+#### Fanout {#explain-analyze-fanout}
 
 `fanout` mide la multiplicación de filas:
 
@@ -823,9 +805,7 @@ Un `outer join` genera una fila de salida rellenada con `NULL` por cada fila del
 * `fanout = 1` — un join 1:1 sin duplicados; cada fila coincidente generó exactamente una fila de salida.
 * `fanout > 1` — un join 1:N; las claves duplicadas del otro lado multiplicaron las filas. Un valor alto en ambos lados a la vez indica una explosión cartesiana no intencionada.
 
-<div id="explain-analyze-matches">
-  #### Cuándo los números requieren `matches = 1`
-</div>
+#### Cuándo los números requieren `matches = 1` {#explain-analyze-matches}
 
 La mayoría de estos números se obtienen de datos que el join ya genera de todos modos y se muestran con un `EXPLAIN ANALYZE` normal. El resto requiere un seguimiento que el join no realizaría de otro modo, por lo que solo se muestra con `EXPLAIN ANALYZE matches = 1`. Cuáles son depende del algoritmo; en la familia hash hay dos casos:
 
@@ -872,9 +852,7 @@ El motor de tabla [`Join`](/es/reference/engines/table-engines/special/join) sig
 
 Cuando ambos algoritmos informan un número, los resultados coinciden. Los algoritmos de fusión simplemente disponen de más información; no difieren en cuanto a lo que constituye una coincidencia.
 
-<div id="explain-analyze-join-algorithm-lines">
-  #### Líneas específicas del algoritmo
-</div>
+#### Líneas específicas del algoritmo {#explain-analyze-join-algorithm-lines}
 
 Veamos las líneas que añade cada implementación de JOIN además de las anteriores.
 
@@ -931,9 +909,7 @@ Ambos lados informan `matched not collected` aquí: un predicado constante empar
 
 Para un join con el motor de tabla [`Join`](/es/reference/engines/table-engines/special/join), se muestran ambos lados, junto con la línea `Hash table:`, que describe la tabla preconstruida. El lado derecho cuenta las filas almacenadas en el motor, no las filas de una compilación específica de cada consulta.
 
-<div id="explain-analyze-processors">
-  #### Tiempos por procesador
-</div>
+#### Tiempos por procesador {#explain-analyze-processors}
 
 Con `processors = 1`, se imprime una línea adicional debajo de cada etapa que muestra la distribución del tiempo transcurrido entre los procesadores de la etapa:
 
@@ -943,9 +919,7 @@ Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
 
 `<n>` es el número de procesadores de la etapa. Una gran diferencia entre `median` y `max` apunta a un desequilibrio de carga entre los procesadores paralelos.
 
-<div id="explain-estimate">
-  ### EXPLAIN ESTIMATE
-</div>
+### EXPLAIN ESTIMATE {#explain-estimate}
 
 Muestra el número estimado de filas, marcas y partes que se leerán de las tablas al procesar la consulta. Funciona con tablas de la familia [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -969,11 +943,11 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-<div id="explain-whatif">
-  ### EXPLAIN WHATIF
-</div>
+### EXPLAIN WHATIF {#explain-whatif}
 
 Estima el beneficio que tendría un índice de omisión hipotético en una consulta `SELECT`, *sin* materializar el índice en disco. Defina uno o más candidatos con [`CREATE HYPOTHETICAL INDEX`](/es/reference/statements/hypothetical-index#create-hypothetical-index) y luego ejecute `EXPLAIN WHATIF SELECT ...` para ver, para cada candidato, si aplica, las marcas estimadas leídas, los bytes estimados y la tasa de omisión.
+
+Las proyecciones hipotéticas definidas con [`CREATE HYPOTHETICAL PROJECTION`](/es/reference/statements/hypothetical-projection#create-hypothetical-projection) también se listan como candidatas, pero su beneficio aún no se estima: cada una se informa con `status: not_applicable`. Una proyección cuya definición ya no es aplicable a la tabla —una columna eliminada o un cambio de configuración que deshabilita las funcionalidades que necesita— se informa con ese motivo en su lugar.
 
 **Sintaxis**
 
@@ -1019,11 +993,11 @@ Estimation:
 
 La configuración se escribe en línea entre `WHATIF` y `SELECT`; no hay palabra clave `SETTINGS` (esto coincide con cómo otras variantes de `EXPLAIN` aceptan sus opciones).
 
-Si no hay índices hipotéticos definidos para la tabla, `EXPLAIN WHATIF` informa `status: not_applicable` con una sugerencia para crear uno.
+Si no hay índices hipotéticos ni proyecciones hipotéticas definidos para la tabla, `EXPLAIN WHATIF` informa `status: not_applicable` con una sugerencia para crear uno.
 
 **Fila combinada (múltiples candidatos)**
 
-Cuando dos o más candidatos se evalúan empíricamente, `EXPLAIN WHATIF` agrega un bloque adicional llamado `(combined: idx_a, idx_b, ...)` después de las filas de cada candidato. Informa del beneficio conjunto de tener *todos* esos índices a la vez: una lectura real conserva un gránulo solo si sobrevive a *todos* los índices de omisión, por lo que la estimación combinada es la intersección de los gránulos supervivientes de los candidatos. Por tanto, su `skip_ratio` es al menos tan alta como la del mejor candidato individual: los índices complementarios podan más juntos, mientras que los redundantes la dejan sin cambios.
+Cuando se evalúan dos o más candidatos de forma empírica, `EXPLAIN WHATIF` añade un bloque adicional llamado `(combined: idx_a, idx_b, ...)` después de las filas por candidato. Este informa el beneficio conjunto de tener *todos* esos índices a la vez: una lectura real conserva un gránulo solo si sobrevive a *cada* índice de omisión, por lo que la estimación combinada es la intersección de los gránulos supervivientes de los candidatos. Por lo tanto, su `skip_ratio` es al menos tan alto como el del mejor candidato individual: los índices complementarios podan más en conjunto, mientras que los redundantes lo dejan sin cambios.
 
 Solo contribuyen los candidatos con `source: empirical`, porque la fila combinada se construye al intersectar sus conjuntos de supervivencia por gránulo. Los candidatos estimados como `statistical` o `applicability_only` no tienen datos por gránulo y se excluyen; en consecuencia, el bloque combinado aparece solo cuando al menos dos candidatos produjeron una estimación empírica y, en caso contrario, se omite (por ejemplo, con `empirical = 0`). Sus campos de estimación se leen igual que los de un bloque empírico por candidato, excepto que `elapsed_us` es `0` — la estimación combinada se deriva de los escaneos por candidato, no de un escaneo nuevo. El nombre sintético `(combined: ...)` es solo una etiqueta del informe y no puede usarse con `force_data_skipping_indices`.
 
@@ -1093,9 +1067,7 @@ El número proviene de la selectividad de las estadísticas de columna para `b <
 
 Si ninguna de las dos vías está disponible (p. ej., `empirical = 0` y no hay estadísticas de columna definidas), el estimador informa `source: applicability_only` y un `skip_ratio: 0.0%` conservador.
 
-<div id="explain-table-override">
-  ### EXPLAIN TABLE OVERRIDE
-</div>
+### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
 Muestra el resultado de una sobrescritura de tabla aplicada al esquema de una tabla a la que se accede mediante una función de tabla.
 También realiza ciertas validaciones y genera una excepción si la sobrescritura hubiera provocado algún tipo de fallo.

@@ -42,7 +42,7 @@ Para habilitarlo:
 2. Establezca un número máximo de réplicas superior al número mínimo de réplicas. El escalador automático funciona dentro de estos límites. Si establece ambos valores iguales, el servicio queda fijado a un número de réplicas determinado y se deshabilita el escalado automático horizontal.
 
 <Note>
-  Los servicios pueden escalar horizontalmente hasta un máximo de 20 réplicas. Si necesita réplicas adicionales, póngase en contacto con nuestro equipo de soporte.
+  Para conocer los límites de réplicas que se aplican a su servicio, consulte [Límites de uso](/es/cloud/bestpractices/usage-limits). Póngase en contacto con nuestro equipo de soporte si necesita réplicas adicionales.
 </Note>
 
 <div id="configure-your-clients">
@@ -90,5 +90,5 @@ Los eventos de escalado se muestran en el panel de métricas del servicio de la 
 
 * El escalado automático horizontal se encuentra en vista previa privada y el equipo de soporte de ClickHouse debe habilitarlo para su organización.
 * El tamaño vertical de la réplica debe fijarse configurando la memoria mínima igual a la memoria máxima.
-* Cada servicio está limitado a un máximo de 20 réplicas. Póngase en contacto con el soporte si necesita réplicas adicionales.
+* Se aplican límites de réplicas; consulte [Límites de uso](/es/cloud/bestpractices/usage-limits) para conocer los límites que se aplican a su servicio, y póngase en contacto con el soporte si necesita réplicas adicionales.
 * Se generan recomendaciones cada 10 minutos; el escalado automático horizontal no está diseñado para absorber picos de menos de un minuto. Para picos predecibles, considere el [escalado programado](/es/products/cloud/features/autoscaling/scheduled-scaling).

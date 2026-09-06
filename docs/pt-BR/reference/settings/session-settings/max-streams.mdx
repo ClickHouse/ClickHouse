@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_streams_for_files_processing_in_cluster_functions">
-  ## max_streams_for_files_processing_in_cluster_functions
-</div>
+## max_streams_for_files_processing_in_cluster_functions {#max_streams_for_files_processing_in_cluster_functions}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -23,27 +21,21 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Se não for zero, limita o número de threads que leem dados de arquivos em *funções de tabela de cluster*.
 
-<div id="max_streams_for_merge_tree_reading">
-  ## max_streams_for_merge_tree_reading
-</div>
+## max_streams_for_merge_tree_reading {#max_streams_for_merge_tree_reading}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Se não for zero, limita o número de streams de leitura da tabela MergeTree.
 
-<div id="max_streams_for_union_step">
-  ## max_streams_for_union_step
-</div>
+## max_streams_for_union_step {#max_streams_for_union_step}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nova configuração para limitar o número de streams de dados ativos simultaneamente em uma etapa `UNION` e reduzir o pico de uso de memória."}]}]} />
 
-Limita o número de streams de dados ativos simultaneamente em uma etapa `UNION` (aplica-se tanto a `UNION ALL` quanto a `UNION DISTINCT`, porque `UNION DISTINCT` é implementado por meio de uma etapa `UNION ALL` seguida de uma etapa `DISTINCT`). Quando uma consulta `UNION` tem muitas subconsultas, todas abrem seus buffers de leitura ao mesmo tempo, o que faz o uso de memória ser proporcional ao número de subconsultas. Essa configuração insere processadores `Concat` para afunilar o pipeline, de modo que no máximo essa quantidade de streams fique ativa ao mesmo tempo, reduzindo drasticamente o pico de memória. O limite real é o valor mínimo entre este valor e `max_threads * max_streams_for_union_step_to_max_threads_ratio` (se qualquer um deles for 0, ele será ignorado). Quando ambos são 0, nenhum afunilamento é aplicado. O limite também não é aplicado quando o plano da consulta exige que cada fluxo de saída do `UNION` permaneça ordenado individualmente (por exemplo, quando a otimização de leitura em ordem é aplicada em todo o `UNION`); nesse caso, a preservação da ordenação tem precedência e o afunilamento é ignorado.
+Limita o número de streams de dados ativos simultaneamente em uma etapa `UNION` (aplica-se a `UNION ALL`, a `UNION DISTINCT`, porque é implementado por meio de uma etapa `UNION ALL` seguida de uma etapa `DISTINCT`, e a uma leitura de tabela `Merge` com réplicas paralelas baseadas em plano, que é expandida em uma união das leituras de suas tabelas subjacentes). Quando uma consulta `UNION` tem muitas subconsultas, todas abrem seus buffers de leitura ao mesmo tempo, o que faz o uso de memória ser proporcional ao número de subconsultas. Essa configuração insere processadores `Concat` para afunilar o pipeline, de modo que no máximo essa quantidade de streams fique ativa ao mesmo tempo, reduzindo drasticamente o pico de memória. O limite real é o valor mínimo entre este valor e `max_threads * max_streams_for_union_step_to_max_threads_ratio` (se qualquer um deles for 0, ele será ignorado). Quando ambos são 0, nenhum afunilamento é aplicado. O limite também não é aplicado quando o plano da consulta exige que cada fluxo de saída do `UNION` permaneça ordenado individualmente (por exemplo, quando a otimização de leitura em ordem é aplicada em todo o `UNION`); nesse caso, a preservação da ordenação tem precedência e o afunilamento é ignorado.
 
-<div id="max_streams_for_union_step_to_max_threads_ratio">
-  ## max_streams_for_union_step_to_max_threads_ratio
-</div>
+## max_streams_for_union_step_to_max_threads_ratio {#max_streams_for_union_step_to_max_threads_ratio}
 
 <SettingsInfoBlock type="Float" default_value="8" />
 
@@ -51,17 +43,15 @@ Limita o número de streams de dados ativos simultaneamente em uma etapa `UNION`
 
 Essa razão multiplicada por `max_threads` determina o limite de streams ativos simultaneamente em uma etapa `UNION` (aplica-se tanto a `UNION ALL` quanto a `UNION DISTINCT`). O limite real é o valor mínimo entre esse valor calculado e `max_streams_for_union_step` (se qualquer um dos dois for 0, ele será ignorado). Por exemplo, com `max_threads = 8` e essa razão definida como 1, no máximo 8 streams estarão ativos. Defina como 0 para desativar esse limite baseado em razão. Assim como `max_streams_for_union_step`, o limite não é aplicado quando o plano de consulta exige que cada stream de saída do `UNION` permaneça ordenado individualmente.
 
-<div id="max_streams_multiplier_for_merge_tables">
-  ## max_streams_multiplier_for_merge_tables
-</div>
+## max_streams_multiplier_for_merge_tables {#max_streams_multiplier_for_merge_tables}
 
 <SettingsInfoBlock type="Float" default_value="5" />
 
 Solicita mais streams ao ler de uma Merge table. Os streams serão distribuídos entre as tabelas usadas pela Merge table. Isso permite uma distribuição mais uniforme do trabalho entre as threads e é especialmente útil quando as tabelas mescladas diferem em tamanho.
 
-<div id="max_streams_to_max_threads_ratio">
-  ## max_streams_to_max_threads_ratio
-</div>
+O número de streams que leem simultaneamente também é limitado por esse multiplicador — exceto no caso de uma leitura de tabela `Merge` com réplicas paralelas baseadas em plano ([parallel&#95;replicas&#95;allow&#95;merge&#95;tables](/pt-BR/reference/settings/session-settings/parallel-replicas#parallel_replicas_allow_merge_tables)), que é expandida em uma união das leituras de suas tabelas subjacentes e, portanto, é limitada por [max&#95;streams&#95;for&#95;union&#95;step](/pt-BR/reference/settings/session-settings/max-streams#max_streams_for_union_step), como qualquer outra união.
+
+## max_streams_to_max_threads_ratio {#max_streams_to_max_threads_ratio}
 
 <SettingsInfoBlock type="Float" default_value="1" />
 

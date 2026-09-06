@@ -14,17 +14,27 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.merge&#95;tree&#95;settings](/ko/reference/system-tables/merge_tree_settings)에서 확인할 수 있으며, ClickHouse 소스에서 자동 생성됩니다.
 
-<div id="enable_index_granularity_compression">
-  ## enable_index_granularity_compression
-</div>
+## enable_adaptive_codec_selection {#enable_adaptive_codec_selection}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "새 설정입니다."}]}]} />
+
+활성화하면 머지와 뮤테이션 시 기본 코덱(`CODEC` 절이 없거나 `CODEC(Default)`)을 사용하는 컬럼의 블록별로 코덱을 선택합니다.
+후보는 테이블의 기본 코덱(`default_compression_codec` 설정 참조), `NONE`, 그리고 컬럼 타입에 적합한 특수 코덱입니다.
+출력 크기가 가장 작은 코덱이 선택됩니다. 따라서 기본 코덱보다 압축 효율이 떨어지지 않으며, 압축되지 않는 블록은 raw로 저장됩니다.
+기본 코덱에 암호화(예: `AES_128_GCM_SIV`)가 포함된 컬럼은 적응형으로 선택되지 않으므로 항상 암호화가 적용됩니다.
+블록별 코덱은 [`mergeTreeCodecBlockCounts`](/ko/reference/functions/table-functions/index) 테이블 함수에서 확인할 수 있습니다.
+
+## enable_index_granularity_compression {#enable_index_granularity_compression}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 가능한 경우 인덱스 세분화 수준 값을 메모리에서 압축합니다
 
-<div id="enable_max_bytes_limit_for_min_age_to_force_merge">
-  ## enable_max_bytes_limit_for_min_age_to_force_merge
-</div>
+## enable_max_bytes_limit_for_min_age_to_force_merge {#enable_max_bytes_limit_for_min_age_to_force_merge}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -39,18 +49,14 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * `true`
 * `false`
 
-<div id="enable_mixed_granularity_parts">
-  ## enable_mixed_granularity_parts
-</div>
+## enable_mixed_granularity_parts {#enable_mixed_granularity_parts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 `index_granularity_bytes` 설정을 사용해 granule 크기를 제어하는 방식으로 전환할지 여부를 설정합니다. 19.11 버전 이전에는 granule 크기를 제한하는 설정으로 `index_granularity`만 있었습니다. `index_granularity_bytes` 설정은 큰 행(수십~수백 메가바이트)을 포함한 테이블에서 데이터를 조회할 때 ClickHouse 성능을 향상시킵니다.
 큰 행이 있는 테이블이 있다면 `SELECT` 쿼리의 효율을 높이기 위해 해당 테이블에서 이 설정을 활성화할 수 있습니다.
 
-<div id="enable_replacing_merge_with_cleanup_for_min_age_to_force_merge">
-  ## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge
-</div>
+## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge {#enable_replacing_merge_with_cleanup_for_min_age_to_force_merge}
 
 <ExperimentalBadge />
 
@@ -68,17 +74,13 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * `true`
 * `false`
 
-<div id="enable_the_endpoint_id_with_zookeeper_name_prefix">
-  ## enable_the_endpoint_id_with_zookeeper_name_prefix
-</div>
+## enable_the_endpoint_id_with_zookeeper_name_prefix {#enable_the_endpoint_id_with_zookeeper_name_prefix}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 복제된 MergeTree 테이블에서 ZooKeeper 이름 접두사와 함께 Endpoint ID를 활성화합니다.
 
-<div id="enable_vertical_merge_algorithm">
-  ## enable_vertical_merge_algorithm
-</div>
+## enable_vertical_merge_algorithm {#enable_vertical_merge_algorithm}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 

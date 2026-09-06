@@ -17,12 +17,12 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
 
 <ScalePlanFeatureBadge feature="手動水平スケーリング" />
 
-ClickHouse Cloudの[public APIs](/ja/products/cloud/api-reference/service/instance-scaling-update)を使用すると、サービスのスケーリング設定を更新してサービスをスケールしたり、Cloud Console からレプリカ数を調整したりできます。
+ClickHouse Cloudの[public APIs](/ja/products/cloud/api-reference/service/instance-scaling-update)を使用すると、サービスのスケーリング設定を更新してサービスをスケールしたり、ClickHouse Cloud Console からレプリカ数を調整したりできます。
 
 **Scale** ティアと **Enterprise** ティアでは、単一レプリカのサービスもサポートされています。いったんスケールアウトしたサービスは、最小で単一レプリカまでスケールインできます。ただし、単一レプリカのサービスは可用性が低くなるため、本番環境での利用は推奨されません。
 
 <Note>
-  サービスは水平方向に最大 20 レプリカまでスケールできます。さらにレプリカが必要な場合は、サポートチームまでお問い合わせください。
+  お使いのサービスに適用されるレプリカ数の上限については、[Usage limits](/ja/cloud/bestpractices/usage-limits) を参照してください。さらにレプリカが必要な場合は、サポートチームまでお問い合わせください。
 </Note>
 
 <div id="horizontal-scaling-via-api">

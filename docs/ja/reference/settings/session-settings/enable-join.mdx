@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="enable_join_fixed_hash_table_conversion">
-  ## enable_join_fixed_hash_table_conversion
-</div>
+## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,15 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 キーが値域の小さい単一の整数である場合に、join 用のハッシュテーブルをフラットな配列に変換できるようにします。
 
-<div id="enable_join_runtime_filters">
-  ## enable_join_runtime_filters
-</div>
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "結果に右側の行由来の値が決して含まれない join（`LEFT ANTI`、および右側のカラムが選択されていない場合の `LEFT SEMI`）の ハッシュテーブル に、右側の行への参照を持たず結合キーのみを格納する新しい設定。"}]}]} />
+
+結果に右側の行由来の値が決して含まれない join、すなわち `LEFT ANTI` および右側のカラムが選択されていない場合の `LEFT SEMI` では、右側の行への参照を持たず結合キーのみを格納する ハッシュテーブル を使用します。この種の ハッシュテーブル は cell が小さく、右側の block を保持せずに drop できます。
+
+## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <BetaBadge />
 
@@ -37,9 +41,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 実行時に右側から収集した結合キーの集合で左側をフィルタリングします。
 
-<div id="enable_join_runtime_filters_index_analysis">
-  ## enable_join_runtime_filters_index_analysis
-</div>
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
 <ExperimentalBadge />
 
@@ -49,9 +51,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 JOIN の左辺にあるグラニュールを刈り込むため、2 回目の索引解析 (`use_skip_indexes_on_data_read` 経由) を実行します。
 
-<div id="enable_join_transitive_predicates">
-  ## enable_join_transitive_predicates
-</div>
+## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
 <BetaBadge />
 

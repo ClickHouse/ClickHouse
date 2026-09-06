@@ -1,0 +1,98 @@
+---
+sidebarTitle: 'Rust códec'
+keywords: ['clickhouse', 'python', 'rust', 'native', 'códec', 'performance']
+description: 'Códec de Rust compilado y opcional para ClickHouse Connect'
+slug: /integrations/language-clients/python/rust-codec
+title: 'Códec nativo de Rust'
+doc_type: 'reference'
+---
+
+ClickHouse Connect puede decodificar los resultados de las consultas y codificar los inserts con un códec de Rust compilado en lugar de la implementación predeterminada en Python y Cython. El códec de Rust se aplica únicamente al tráfico `FORMAT Native` gestionado por el client, lo que abarca `query`, `query_np`, `query_df`, sus variantes de streaming por bloques y por filas, y los inserts, incluido `insert_df`. Los métodos de Arrow usan `FORMAT Arrow` y no se ven afectados, al igual que las consultas sin procesar, los inserts sin procesar y los formatos que no son Native.
+
+El códec es experimental y de uso opcional. El códec de Python sigue siendo el predeterminado.
+
+## Instalación {#installation}
+
+El códec compilado se distribuye como un wheel independiente llamado `clickhouse-connect-core`, que proporciona el módulo de extensión `_ch_core`. Para evaluarlo, instale el códec junto con PyArrow:
+
+```bash
+pip install "clickhouse-connect[rust,arrow]"
+```
+
+En la versión 1.8, toda ruta de Rust que produzca salida de NumPy o Pandas requiere PyArrow. Esto incluye `query_np`, `query_df`, sus variantes de streaming y `query(..., use_numpy=True)`. Sin PyArrow, `native_codec="rust"` registra una advertencia y ejecuta esas consultas con el códec de Python. En cambio, `native_codec="rust_strict"` lanza `NotSupportedError`.
+
+El extra `rust` por sí solo se mantiene ligero para las aplicaciones que usan resultados de filas estándar de Python, streams de bloques por filas o por columnas, e inserts sin solicitar salida de NumPy o Pandas. Esas rutas no requieren PyArrow:
+
+```bash
+pip install "clickhouse-connect[rust]"
+```
+
+El códec, su empaquetado y su conjunto de dependencias son experimentales. Se está evaluando una dependencia de interoperabilidad con Arrow más ligera para una futura release.
+
+Si se selecciona un códec de Rust y el módulo compilado no está instalado, la creación del client lanza un `NotSupportedError` que indica este comando de instalación.
+
+## Habilitar el códec {#enabling-the-codec}
+
+Seleccione el códec con la opción de client `native_codec`:
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(host="localhost", native_codec="rust")
+```
+
+Valores aceptados:
+
+| Value         | Comportamiento                                                                                                                               |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `python`      | Valor predeterminado. El códec existente de Python y Cython.                                                                                 |
+| `rust`        | Da preferencia al códec de Rust. Las queries con opciones no admitidas y los inserts con tipos no admitidos se redirigen al códec de Python. |
+| `rust_strict` | Exige el códec de Rust. Las opciones y los tipos no admitidos generan un error en lugar de redirigirse.                                      |
+
+El valor predeterminado también puede definirse mediante el common setting `native_codec` o la environment variable `CLICKHOUSE_CONNECT_NATIVE_CODEC`. El orden de precedencia es: primero el keyword argument del client, luego el common setting y, por último, la environment variable.
+
+Esta opción se ignora en los clients con `interface="chdb"`, que siempre usan el códec de Python.
+
+## Cuándo usar el códec de Rust {#when-to-use-the-rust-codec}
+
+El códec de Rust resulta más útil para resultados de DataFrame grandes con tipos de texto, de contenedor y complejos, como `String`, `LowCardinality`, `Map`, `Array`, `JSON`, `Decimal` y `UUID`. También puede beneficiar a streams de bloques grandes de filas y columnas, a cargas de trabajo con consultas concurrentes y a inserciones masivas.
+
+En resultados pequeños y consultas limitadas por la red, la diferencia puede ser mínima. Los resultados numéricos planos ya utilizan rutas masivas eficientes en el códec de Python, por lo que el beneficio también puede ser menor.
+
+Las llamadas a `query()` almacenadas temporalmente en el búfer sobre resultados muy anchos o totalmente numéricos pueden ser, por ahora, más lentas y consumir más memoria máxima con el códec de Rust. Para esas cargas de trabajo, es preferible usar `query_df`, `query_row_block_stream` o `query_column_block_stream`. El streaming mantiene la memoria acotada.
+
+Haz un benchmark de tu propia carga de trabajo antes de adoptar el códec. Usa `native_codec="rust_strict"` mientras mides, de modo que una opción no soportada o una dependencia faltante lance un error en lugar de redirigir silenciosamente la consulta a Python.
+
+## Reglas de fallback {#fallback-rules}
+
+Las decisiones de fallback se toman antes de leer o enviar ningún byte, por lo que nunca se produce un cambio de códec a mitad del stream. En las queries, la elección ocurre antes de consumir el response body. En los inserts, el codificador de Rust solo se selecciona cuando todos los tipos de columna son compatibles; de lo contrario, todo el insert se ejecuta con el códec de Python.
+
+Cuando `naive_datetime_insert="server"` está activo, `rust` deriva al códec de Python cualquier insert que contenga alguna columna `DateTime` o `DateTime64`, de modo que se aplique el timezone declarado de la columna o el server timezone. `rust_strict` rechaza esa combinación. El modo predeterminado `naive_datetime_insert="local"` sigue utilizando el codificador de Rust.
+
+Las queries de metadata internas del driver, incluidas las sentencias de reflection del dialect de SQLAlchemy, siempre usan el códec de Python, de forma silenciosa, en todos los modos.
+
+Los payloads Native malformados que detecta el códec de Rust generan `DataError`.
+
+## Control de versiones {#versioning}
+
+`clickhouse-connect-core` se versiona de forma independiente de `clickhouse-connect`. El driver declara un rango compatible mediante el extra `rust`, y el módulo exporta una versión de la API de vinculación que el driver comprueba cuando se selecciona un codec de Rust. Si el wheel instalado es demasiado antiguo para el driver, la creación del client lanza un `NotSupportedError` que indica el comando de upgrade:
+
+```bash
+pip install --upgrade clickhouse-connect-core
+```
+
+Las correcciones de códecs y las mejoras del rendimiento se publican como versiones de `clickhouse-connect-core` y pueden incorporarse con solo actualizar el wheel, sin esperar a una versión de `clickhouse-connect`.
+
+## Diferencias de comportamiento conocidas {#known-behavior-differences}
+
+El códec de Rust busca la paridad celda a celda con el códec de Python. Se conocen las siguientes diferencias.
+
+* Los resultados de `query_np` y `query_df` para columnas `Variant` contienen objetos Python simples en lugar de valores escalares de numpy. Los valores son iguales, pero los tipos de celda difieren.
+* Los valores `Dynamic` que contienen `Time64` se materializan como `datetime.timedelta` en los resultados de `query_np` y `query_df` de Rust. Con las escalas 0, 3, 6 y 9, los valores coinciden con las celdas `numpy.timedelta64` del códec de Python, pero los tipos de celda difieren. En las demás escalas, el códec de Rust devuelve `datetime.timedelta`, mientras que el de Python lanza `ProgrammingError` porque NumPy no dispone de una unidad equivalente. Los metadatos de los miembros de Dynamic no se exponen al driver tras la decodificación en Rust, por lo que conviene usar `native_codec="python"` cuando se necesiten tipos de celda de NumPy o la validación de escalas no admitidas.
+* En `query_df`, el códec de Python puede convertir a cadena los valores compuestos almacenados en los shared data de JSON. El códec de Rust devuelve objetos decodificados, lo que coincide con los resultados de `query_np` de ambos códecs.
+* Una alternativa `LowCardinality` dentro de un contenedor que se materializa por celda, como `Array(Variant(...))`, produce celdas con valores iguales que no comparten la identidad de objeto por slot de diccionario que sí presenta el códec de Python.
+* Las columnas `Nullable(Tuple(...))` con uno o más elementos se decodifican correctamente con el códec de Rust. El códec de Python interpreta mal este layout, por lo que el resultado de Rust es el comportamiento de referencia. Ambos códecs admiten `Nullable(Tuple())`.
+* `rust_strict` rechaza las opciones de consulta que la ruta de Rust no implementa, como los `query_formats` personalizados por consulta, en lugar de alterar el comportamiento de forma silenciosa.
+* Los errores de conversión y validación en las inserciones de Rust pueden lanzar `DataError` allí donde el códec de Python lanza `ValueError`, y el texto del mensaje puede diferir. Algunos ejemplos son valores `Time` y `Time64` inválidos, direcciones IPv6, dimensiones de QBit, longitudes de `FixedString`, cadenas `Float64` e intentos de insertar elementos en una columna `Tuple()`.
+* El codificador de Rust rechaza `b""` para `FixedString(N)` y cadenas numéricas como `"2"` en columnas de enteros. El códec de Python rellena con ceros un valor `FixedString` vacío y convierte las cadenas numéricas.
+* El códec de Rust decodifica algunos valores de variantes compartidas de `Dynamic` a sus tipos de Python cuando el códec de Python deja el valor como bytes sin procesar. Por ejemplo, un `Date` almacenado puede devolverse como `datetime.date` desde Rust y como un valor binario desde Python.

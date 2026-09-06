@@ -1,0 +1,40 @@
+---
+description: 'ClickHouse HTTP サーバーの `/ui` で提供される埋め込み SQL Console UI のドキュメント'
+sidebarTitle: 'SQL Console'
+slug: /interfaces/sql-console
+title: 'SQL Console'
+doc_type: 'reference'
+---
+
+SQL Console は、クエリの実行やデータの探索を行うための埋め込み Web UI です。任意の ClickHouse HTTP ポートの `/ui` パスで提供されます (例: `http://localhost:8123/ui`) 。
+
+:::note
+SQL Console は実験的機能です。
+:::
+
+## 概要 {#overview}
+
+SQL Console はシングルページアプリケーション (SPA) で、静的なバンドルにコンパイルされ、ClickStack が `/clickstack` に埋め込まれているのと同様に、ClickHouse バイナリに直接埋め込まれています。すべてのアセットは ClickHouse バイナリ自体から配信されるため、サードパーティの CDN は一切読み込まれません。
+
+開くには、任意の ClickHouse HTTP ポートで `/ui` にアクセスしてください (例: `http://localhost:8123/ui`)。
+
+## どのように配信されるか {#how-it-is-served}
+
+バンドルはビルド時にgzip圧縮され、`#embed`で埋め込まれるため、`/ui`からのすべてのレスポンスには`Content-Encoding: gzip`ヘッダーが付与されます。SQL Consoleはクライアントサイドルーティングを行うシングルページアプリケーションであるため、`/ui`配下のリクエストのうち、埋め込みアセットに対応せず、かつファイルのように見えない (つまり拡張子を持たない) ものについては、フォールバックとして`index.html`を配信します。存在しないアセットのように見えるパス (例えば`/ui/nonexistent.js`) へのリクエストには、HTTPステータス`404 Not Found`を返します。
+
+`/ui`というパスは完全一致する場合、または後ろに`/`、`?`、`#`の境界が続く場合にのみマッチするため、`/uix`のような同階層のルートがSPAのフォールバックに乗っ取られることはありません。
+
+## 他の web UI との関係 {#relationship-to-other-web-uis}
+
+ClickHouse には、HTTP ポート経由で提供される組み込みの web インターフェイスがいくつかあります:
+
+* [`/play`](/ja/interfaces/web-sql) — 軽量な Web SQL UI。
+* `/dashboard` — 組み込みの dashboards。
+* `/clickstack` — 埋め込み ClickStack UI。
+* `/ui` — ここで説明している SQL Console。
+
+これらすべてへのリンクは、ClickHouse HTTP サーバーのランディングページに用意されています。
+
+## 認証 {#authentication}
+
+SQL Console は、HTTP プロトコルと同じ `Session` およびアクセス制御チェックによって認証されます。`/ui` で配信される静的な UI アセットの取得に認証は不要ですが、UI から発行されるクエリは、他の HTTP リクエストと同様に認証されます。

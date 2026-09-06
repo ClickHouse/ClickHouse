@@ -513,7 +513,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Steps>
 
 <div id="configure-openssl-for-standalone-clickhouse-keeper">
-  ## تهيئة OpenSSL لـ ClickHouse Keeper المستقل
+  ## تهيئة OpenSSL لـ ClickHouse Keeper المستقل {#configure-openssl-for-standalone-clickhouse-keeper}
 </div>
 
 عند تشغيل ClickHouse Keeper كعملية مستقلة (بدلاً من تضمينه داخل ClickHouse server)، يجب تهيئة شهادات OpenSSL وإعداداته بشكل منفصل في ملف تهيئة Keeper. ومن دون ذلك، لن يتمكن Keeper من إنشاء اتصالات آمنة لاتصال العميل (`tcp_port_secure`) أو لتنفيذ تكرار Raft بين عُقد Keeper.
@@ -557,13 +557,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Note>
 
 <div id="openssl-verification-modes">
-  ## أوضاع التحقق في OpenSSL ومعالِجات الشهادات
+  ## أوضاع التحقق في OpenSSL ومعالِجات الشهادات {#openssl-verification-modes}
 </div>
 
 يوفّر الإعداد `<openSSL>` عدة خيارات لكلٍّ من `<verificationMode>` و`<invalidCertificateHandler>`، تتحكّم في الطريقة التي يتحقق بها ClickHouse من شهادات TLS. وتنطبق هذه الإعدادات على clickhouse-server وclickhouse-client وClickHouse Keeper المستقل.
 
 <div id="verification-modes">
-  ### أوضاع التحقق
+  ### أوضاع التحقق {#verification-modes}
 </div>
 
 اضبط `<verificationMode>` داخل القسم `<server>` أو `<client>` في `<openSSL>`:
@@ -576,7 +576,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 | `strict`  | يتطلب شهادة الطرف المقابل ويتحقق منها بالكامل. يفشل الاتصال إذا كانت الشهادة مفقودة أو منتهية الصلاحية أو غير موقَّعة من CA موثوقة. ويُنصح به لبيئات الإنتاج. |
 
 <div id="invalid-certificate-handlers">
-  ### معالجات الشهادات غير الصالحة
+  ### معالجات الشهادات غير الصالحة {#invalid-certificate-handlers}
 </div>
 
 عيّن `<invalidCertificateHandler>` داخل القسم `<server>` أو `<client>` ضمن `<openSSL>`. يحدّد هذا المعالج ما يحدث عند فشل التحقق من الشهادة. على جانب الخادم، يتحكم في كيفية التعامل مع شهادات العميل غير الصالحة. وعلى جانب العميل، يتحكم في كيفية التعامل مع شهادات الخادم غير الصالحة.
@@ -587,7 +587,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 | `AcceptCertificateHandler` | يقبل الاتصال حتى إذا كانت الشهادة غير صالحة. لا تستخدمه إلا لأغراض الاختبار.  |
 
 <div id="disabling-certificate-verification">
-  ### مثال: تعطيل التحقق من الشهادة
+  ### مثال: تعطيل التحقق من الشهادة {#disabling-certificate-verification}
 </div>
 
 <Warning>
@@ -667,8 +667,19 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </openSSL>
 ```
 
+## تدوير الشهادات وشهادات CA دون إعادة تشغيل {#rotating-certificates-without-restart}
+
+يراقب ClickHouse server وClickHouse Keeper الملفات المشار إليها في `certificateFile` و`privateKeyFile` و`caConfig`
+ضمن قسمَي `openSSL.server` و`openSSL.client` (وفي `protocols.*` بالنسبة إلى البروتوكولات القابلة للتركيب)، أو الملفات الموجودة داخل
+الدليل إذا كان `caConfig` دليلًا. وعند تغيّر أحد هذه الملفات، أو عند تنفيذ `SYSTEM RELOAD CONFIG`، يُعاد تحميل
+الشهادات وتُستخدم في جميع اتصالات TLS الجديدة، بما في ذلك HTTPS، والبروتوكول native الآمن، واتصالات interserver،
+والاتصالات مع Keeper، واتصالات Raft بين عُقد Keeper. أما الاتصالات القائمة فتظل تستخدم الشهادات التي فُتحت بها.
+
+ولتدوير CA دون توقف للخدمة، استبدل أولًا ملف `caConfig` بحزمة تضم شهادة CA القديمة والجديدة معًا، ثم بدّل شهادات
+العُقد وشهادات العميل بشهادات صادرة عن CA الجديدة، وأخيرًا استبدل الحزمة بشهادة CA الجديدة وحدها.
+
 <div id="summary">
-  ## الملخص
+  ## الملخص {#summary}
 </div>
 
 ركّزت هذه المقالة على إعداد بيئة ClickHouse باستخدام TLS. ستختلف الإعدادات بحسب المتطلبات في بيئات الإنتاج؛ فعلى سبيل المثال، مستويات التحقق من الشهادات، والبروتوكولات، وخوارزميات التشفير، وغيرها. لكن ينبغي أن تكون لديك الآن فكرة واضحة عن الخطوات اللازمة لتهيئة الاتصالات الآمنة وتنفيذها.

@@ -50,11 +50,12 @@
       "group": "Migrations",
       "pages": [
         "pt-BR/products/managed-postgres/migrations/overview",
-        "pt-BR/products/managed-postgres/migrations/pg_dump-pg_restore",
-        "pt-BR/products/managed-postgres/migrations/logical-replication",
-        "pt-BR/products/managed-postgres/migrations/peerdb",
         "pt-BR/products/managed-postgres/migrations/clickpipes",
         "pt-BR/products/managed-postgres/migrations/data-validation",
+        "pt-BR/products/managed-postgres/migrations/logical-replication",
+        "pt-BR/products/managed-postgres/migrations/neon",
+        "pt-BR/products/managed-postgres/migrations/pg_dump-pg_restore",
+        "pt-BR/products/managed-postgres/migrations/peerdb",
         "pt-BR/products/managed-postgres/migrations/faq"
       ]
     },

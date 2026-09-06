@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Estas configurações estão disponíveis em [system.merge&#95;tree&#95;settings](/pt-BR/reference/system-tables/merge_tree_settings) e são geradas automaticamente com base no código-fonte do ClickHouse.
 
-<div id="max_replicated_fetches_network_bandwidth">
-  ## max_replicated_fetches_network_bandwidth
-</div>
+## max_replicated_fetches_network_bandwidth {#max_replicated_fetches_network_bandwidth}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -43,11 +41,9 @@ Valor padrão: `0`.
 Pode ser usada para limitar a velocidade ao replicar dados para adicionar ou
 substituir novos nós.
 
-<div id="max_replicated_logs_to_keep">
-  ## max_replicated_logs_to_keep
-</div>
+## max_replicated_logs_to_keep {#max_replicated_logs_to_keep}
 
-<SettingsInfoBlock type="UInt64" default_value="1000" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1000" />
 
 Quantos registros podem haver no log do ClickHouse Keeper se houver uma
 réplica inativa. Uma réplica inativa é considerada perdida quando esse número é excedido.
@@ -56,36 +52,28 @@ Valores possíveis:
 
 * Qualquer número inteiro positivo.
 
-<div id="max_replicated_merges_in_queue">
-  ## max_replicated_merges_in_queue
-</div>
+## max_replicated_merges_in_queue {#max_replicated_merges_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 Quantas tarefas de mesclagem e mutação de partes são permitidas simultaneamente na
 fila do ReplicatedMergeTree.
 
-<div id="max_replicated_merges_with_ttl_in_queue">
-  ## max_replicated_merges_with_ttl_in_queue
-</div>
+## max_replicated_merges_with_ttl_in_queue {#max_replicated_merges_with_ttl_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 Quantas tarefas de mesclagem de partes com TTL são permitidas simultaneamente na
 fila do ReplicatedMergeTree.
 
-<div id="max_replicated_mutations_in_queue">
-  ## max_replicated_mutations_in_queue
-</div>
+## max_replicated_mutations_in_queue {#max_replicated_mutations_in_queue}
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
 Quantas tarefas de mutação de partes são permitidas simultaneamente na
 fila do ReplicatedMergeTree.
 
-<div id="max_replicated_sends_network_bandwidth">
-  ## max_replicated_sends_network_bandwidth
-</div>
+## max_replicated_sends_network_bandwidth {#max_replicated_sends_network_bandwidth}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

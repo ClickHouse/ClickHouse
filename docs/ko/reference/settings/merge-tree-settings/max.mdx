@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.merge&#95;tree&#95;settings](/ko/reference/system-tables/merge_tree_settings)에서 확인할 수 있으며, ClickHouse 소스에서 자동 생성됩니다.
 
-<div id="max_avg_part_size_for_too_many_parts">
-  ## max_avg_part_size_for_too_many_parts
-</div>
+## max_avg_part_size_for_too_many_parts {#max_avg_part_size_for_too_many_parts}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -27,9 +25,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 서버의 단일 테이블에 수백 테라바이트의 데이터를 저장할 수 있습니다. 이는
 비활성 파트 또는 전체 파트의 임계값에는 영향을 주지 않습니다.
 
-<div id="max_buckets_in_map">
-  ## max_buckets_in_map
-</div>
+## max_buckets_in_map {#max_buckets_in_map}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -39,17 +35,13 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 실제 버킷 수는 [map&#95;buckets&#95;strategy](/ko/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy)에 따라 결정됩니다.
 허용되는 최대값은 256입니다.
 
-<div id="max_cleanup_delay_period">
-  ## max_cleanup_delay_period
-</div>
+## max_cleanup_delay_period {#max_cleanup_delay_period}
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 
 오래된 큐 로그, 블록 해시 및 파트를 정리하는 최대 주기입니다.
 
-<div id="max_compress_block_size">
-  ## max_compress_block_size
-</div>
+## max_compress_block_size {#max_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -59,9 +51,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 설정 참조). 테이블 생성 시 지정한 값은 이 설정의 전역
 값을 재정의합니다.
 
-<div id="max_concurrent_queries">
-  ## max_concurrent_queries
-</div>
+## max_concurrent_queries {#max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -81,9 +71,7 @@ Possible values:
 <max_concurrent_queries>50</max_concurrent_queries>
 ```
 
-<div id="max_digestion_size_per_segment">
-  ## max_digestion_size_per_segment
-</div>
+## max_digestion_size_per_segment {#max_digestion_size_per_segment}
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" />
 
@@ -91,9 +79,7 @@ Possible values:
 
 더 이상 사용되지 않는 설정이며, 아무런 효과가 없습니다.
 
-<div id="max_file_name_length">
-  ## max_file_name_length
-</div>
+## max_file_name_length {#max_file_name_length}
 
 <SettingsInfoBlock type="UInt64" default_value="127" />
 
@@ -103,9 +89,7 @@ Possible values:
 파일 시스템 오류를 방지할 수 있도록 여유를 두고 최대 파일 이름 길이(보통 255
 바이트)보다 작게 설정하는 것이 좋습니다.
 
-<div id="max_partitions_to_read">
-  ## max_partitions_to_read
-</div>
+## max_partitions_to_read {#max_partitions_to_read}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -121,17 +105,68 @@ table을 생성할 때 지정한 설정 값은
 쿼리 / 세션 / profile 수준에서 쿼리 복잡도 설정 [max&#95;partitions&#95;to&#95;read](/ko/reference/settings/session-settings/max-partitions#max_partitions_to_read)를
 지정할 수도 있습니다.
 
-<div id="max_projections">
-  ## max_projections
-</div>
+## max_projections {#max_projections}
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
 MergeTree 프로젝션의 최대 개수입니다.
 
-<div id="max_uncompressed_bytes_in_patches">
-  ## max_uncompressed_bytes_in_patches
-</div>
+## max_table_size_bytes_compressed {#max_table_size_bytes_compressed}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "테이블의 모든 활성 및 비활성 데이터 파트에서 압축된 총 바이트 수를 제한하는 새로운 설정입니다."}]}]} />
+
+테이블의 모든 활성 및 비활성 데이터 파트에서 압축된 총 바이트 수(디스크상 크기)가 이 값을 초과하면 `Table size limit exceeded` 예외가 발생하며 `INSERT`가 중단됩니다. 이 설정은 디스크 사용량을 제한하기 위한 것이므로 비활성 파트도 계산에 포함됩니다. 비활성 파트는 백그라운드에서 제거되므로(`old_parts_lifetime` 설정 참고) 시간이 지나면 관찰되는 크기가 줄어들 수 있습니다. 제한은 `INSERT` 시작 시와 백그라운드 머지 및 뮤테이션 결과를 포함한 새 데이터 파트가 작업 집합에 커밋될 때 확인됩니다. materialized view에서 수행하는 삽입도 확인됩니다. 복제된 fetch에서는 제한을 확인하지 않으므로 여러 레플리카에 병렬로 삽입할 경우 제한을 초과할 수 있는 race condition이 발생할 수 있습니다. 빈 데이터 파트의 커밋은 항상 허용되므로, 예를 들어 `TRUNCATE` 또는 `ALTER TABLE ... DROP
+PARTITION`을 사용해 제한을 초과한 테이블에서 데이터를 제거할 수 있습니다.
+
+가능한 값:
+
+* 양의 정수.
+* 0 — 제한 없음.
+
+다중 테넌트, 임시 및 데모 서비스에 유용합니다.
+
+## max_table_size_bytes_uncompressed {#max_table_size_bytes_uncompressed}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "테이블의 모든 활성 및 비활성 데이터 파트에 걸친 압축되지 않은 바이트 총량을 제한하는 새로운 설정입니다."}]}]} />
+
+`max_table_size_bytes_compressed`와 동일하지만, 테이블의 모든 활성 및 비활성 데이터
+파트에 걸친 압축되지 않은 바이트 총량에 제한이 적용됩니다.
+
+가능한 값:
+
+* 양의 정수.
+* 0 — 제한 없음.
+
+다중 테넌트, 임시 및 데모 서비스에 유용합니다.
+
+## max_table_size_rows {#max_table_size_rows}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "테이블의 활성 데이터 파트에 포함된 총 행 수를 제한하는 새로운 설정."}]}]} />
+
+테이블의 활성 데이터 파트에 포함된 총 행 수가 이 값을 초과하면 `INSERT`가
+`Table size limit exceeded` 예외와 함께 중단됩니다. 이 제한은 `INSERT` 시작 시점과
+새로운 데이터 파트가 작업 집합에 커밋될 때 검사되며, 백그라운드 머지 및
+뮤테이션의 결과도 검사 대상에 포함됩니다(따라서 테이블 크기를 제한 이상으로 늘리는 뮤테이션은
+완료되지 못하고 재시도됩니다). materialized view가 수행하는 삽입도 검사 대상입니다.
+복제된 fetch에는 이 제한이 적용되지 않으므로, 여러 레플리카에 병렬로 삽입할 때
+제한을 초과하게 되는 race condition이 발생할 수 있습니다. 빈 데이터 파트의 커밋은
+항상 허용되므로, 제한을 초과한 테이블에서도 `TRUNCATE`나
+`ALTER TABLE ... DROP PARTITION` 등으로 데이터를 삭제할 수 있습니다.
+
+가능한 값:
+
+* 양의 정수.
+* 0 — 무제한.
+
+다중 테넌트, 임시, 데모 서비스에 유용합니다.
+
+## max_uncompressed_bytes_in_patches {#max_uncompressed_bytes_in_patches}
 
 <SettingsInfoBlock type="UInt64" default_value="32212254720" />
 

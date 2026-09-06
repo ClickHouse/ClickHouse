@@ -12,15 +12,11 @@ doc_type: 'référence'
 Crée une nouvelle table. Par défaut, les tables sont créées uniquement sur le serveur actuel.
 Les requêtes DDL distribuées utilisent la clause `ON CLUSTER`, qui est [décrite séparément](/fr/reference/statements/distributed-ddl).
 
-<div id="syntax-forms">
-  ## Formes de syntaxe
-</div>
+## Formes de syntaxe {#syntax-forms}
 
 Cette requête peut prendre différentes formes de syntaxe selon le cas d&#39;utilisation.
 
-<div id="with-explicit-schema">
-  ### Créer une table avec un schéma explicite
-</div>
+### Créer une table avec un schéma explicite {#with-explicit-schema}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -45,9 +41,7 @@ Si nécessaire, la clé primaire peut être spécifiée, avec une ou plusieurs e
 
 Des commentaires peuvent être ajoutés aux colonnes et à la table.
 
-<div id="with-a-schema-similar-to-other-table">
-  ### Créer une table avec le schéma d’une table existante
-</div>
+### Créer une table avec le schéma d’une table existante {#with-a-schema-similar-to-other-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
@@ -59,9 +53,7 @@ Pour répliquer le schéma d’une table existante :
 
 Cela crée une table avec la même structure qu’une autre table.
 
-<div id="with-a-schema-and-data-cloned-from-another-table">
-  ### Créer une table avec le schéma et les données d’une table existante
-</div>
+### Créer une table avec le schéma et les données d’une table existante {#with-a-schema-and-data-cloned-from-another-table}
 
 Pour répliquer le schéma et les données d&#39;une table existante :
 
@@ -78,9 +70,7 @@ ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 
 Pour ces deux fonctionnalités, vous pouvez spécifier un moteur différent pour la table. Si le moteur n&#39;est pas spécifié, le même moteur que pour la table d&#39;origine (`db.table`) sera utilisé.
 
-<div id="from-a-table-function">
-  ### Créer une table avec une fonction de table
-</div>
+### Créer une table avec une fonction de table {#from-a-table-function}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
@@ -88,9 +78,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 
 Crée une table produisant le même résultat que la [fonction de table](/fr/reference/functions/table-functions/index) spécifiée. La table créée fonctionnera également de la même manière que la fonction de table correspondante.
 
-<div id="from-select-query">
-  ### Créer une table avec une requête SELECT
-</div>
+### Créer une table avec une requête SELECT {#from-select-query}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
@@ -115,9 +103,7 @@ SELECT x, toTypeName(x) FROM t1;
 └───┴───────────────┘
 ```
 
-<div id="default_values">
-  ## Spécifier les valeurs par défaut des colonnes
-</div>
+## Spécifier les valeurs par défaut des colonnes {#default_values}
 
 La description de colonne peut spécifier une expression de valeur par défaut sous la forme `DEFAULT expr`, `MATERIALIZED expr` ou `ALIAS expr`. Exemple : `URLDomain String DEFAULT domain(URL)`.
 
@@ -129,9 +115,7 @@ Si un type de données et une expression de valeur par défaut sont tous deux sp
 
 Une expression de valeur par défaut `expr` peut faire référence à des colonnes de table quelconques et à des constantes. ClickHouse vérifie que les modifications de la structure de la table n’introduisent pas de boucles dans le calcul de l’expression. Pour INSERT, il vérifie que les expressions peuvent être résolues, c’est-à-dire que toutes les colonnes à partir desquelles elles peuvent être calculées ont bien été fournies.
 
-<div id="default">
-  ### DEFAULT
-</div>
+### DEFAULT {#default}
 
 `DEFAULT expr`
 
@@ -157,9 +141,7 @@ SELECT * FROM test;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-<div id="materialized">
-  ### MATERIALIZED
-</div>
+### MATERIALIZED {#materialized}
 
 `MATERIALIZED expr`
 
@@ -197,9 +179,7 @@ SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-<div id="ephemeral">
-  ### EPHEMERAL
-</div>
+### EPHEMERAL {#ephemeral}
 
 `EPHEMERAL [expr]`
 
@@ -235,9 +215,7 @@ hexed:      Z��
 hex(hexed): 5A90B714
 ```
 
-<div id="alias">
-  ### ALIAS
-</div>
+### ALIAS {#alias}
 
 `ALIAS expr`
 
@@ -274,9 +252,7 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 └────┴────────────┴──────────┘
 ```
 
-<div id="null-or-not-null-modifiers">
-  ## Modificateurs `NULL` ou `NOT NULL`
-</div>
+## Modificateurs `NULL` ou `NOT NULL` {#null-or-not-null-modifiers}
 
 Les modificateurs `NULL` et `NOT NULL` placés après le type de données dans une définition de colonne permettent ou non que celui-ci soit [Nullable](/fr/reference/data-types/nullable).
 
@@ -284,9 +260,7 @@ Si le type n’est pas `Nullable` et que `NULL` est spécifié, il sera traité 
 
 Voir aussi le paramètre [data&#95;type&#95;default&#95;nullable](/fr/reference/settings/session-settings/other#data_type_default_nullable).
 
-<div id="primary-key">
-  ## Clé primaire
-</div>
+## Clé primaire {#primary-key}
 
 Vous pouvez définir une [clé primaire](/fr/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries) lors de la création d&#39;une table. La clé primaire peut être définie de deux façons :
 
@@ -322,15 +296,11 @@ Vous pouvez définir une [clé primaire](/fr/reference/engines/table-engines/mer
   Vous ne pouvez pas combiner ces deux méthodes dans une seule requête.
 </Tip>
 
-<div id="constraints">
-  ## Spécifier les contraintes de table
-</div>
+## Spécifier les contraintes de table {#constraints}
 
 En plus de la description des colonnes, des contraintes peuvent être définies :
 
-<div id="constraint">
-  ### CONSTRAINT
-</div>
+### CONSTRAINT {#constraint}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -348,9 +318,7 @@ L’ajout d’un grand nombre de contraintes peut nuire aux performances des req
 
 Les contraintes existantes dans toutes les tables peuvent être consultées dans la table [`system.constraints`](/fr/reference/system-tables/constraints).
 
-<div id="assume">
-  ### ASSUME
-</div>
+### ASSUME {#assume}
 
 La clause `ASSUME` est utilisée pour définir une `CONSTRAINT` sur une table, supposée être vraie. Cette contrainte peut ensuite être utilisée par l&#39;optimiseur pour améliorer les performances des requêtes SQL.
 
@@ -374,15 +342,11 @@ Ensuite, lors de l’exécution de la requête `SELECT name FROM users_a WHERE l
 
 `ASSUME CONSTRAINT` **ne fait pas respecter la contrainte** ; il informe simplement l’optimiseur que la contrainte est supposée vraie. Si la contrainte n’est pas réellement vraie, les résultats des requêtes peuvent être incorrects. Par conséquent, vous ne devez utiliser `ASSUME CONSTRAINT` que si vous êtes sûr que la contrainte est vraie.
 
-<div id="ttl-expression">
-  ## Définir la durée de conservation avec TTL
-</div>
+## Définir la durée de conservation avec TTL {#ttl-expression}
 
 Définit la durée de conservation des valeurs. Ne peut être spécifiée que pour les tables de la famille MergeTree. Pour une description détaillée, consultez [TTL pour les colonnes et les tables](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
 
-<div id="column_compression_codec">
-  ## Sélectionner les codecs de compression des colonnes
-</div>
+## Sélectionner les codecs de compression des colonnes {#column_compression_codec}
 
 {/* Ancres de redirection pour les liens vers les sections déplacées vers /reference/statements/create/table/codec */}
 
@@ -430,7 +394,7 @@ Définit la durée de conservation des valeurs. Ne peut être spécifiée que po
 
 <a id="adaptive-codec-selection" />
 
-Par défaut, ClickHouse utilise la compression `lz4` dans la version autogérée et `zstd` dans ClickHouse Cloud. Vous pouvez également définir la méthode de compression pour chaque colonne dans la requête `CREATE TABLE` :
+Par défaut, ClickHouse utilise la compression `ZSTD(3)` dans la version autogérée et `zstd` dans ClickHouse Cloud. Pour la famille `MergeTree`, la valeur par défaut dépend de la taille : le codec `LZ4`, plus rapide, est utilisé en dessous de 100 Mo et `ZSTD(3)` à partir de ce seuil ; ainsi, les données fraîchement insérées commencent en `LZ4` et les parties plus volumineuses produites par les fusions en arrière-plan basculent vers `ZSTD(3)`. Le seuil s&#39;applique à la taille de la partie connue au moment où le codec doit être choisi, avant que les données ne soient écrites — `0` pour une partie fraîchement insérée, et la taille des parties sources pour un merge ou une mutation — et non à la taille de la partie résultante. Vous pouvez également définir la méthode de compression pour chaque colonne dans la requête `CREATE TABLE` :
 
 ```sql
 CREATE TABLE codec_example
@@ -447,15 +411,11 @@ ENGINE = <Engine>
 
 Pour découvrir les codecs de compression à usage général, spécialisés et de chiffrement disponibles, consultez [Codecs de compression des colonnes](/fr/reference/statements/create/table/codec).
 
-<div id="temporary-tables">
-  ## Créer des tables temporaires
-</div>
+## Créer des tables temporaires {#temporary-tables}
 
 ClickHouse prend en charge les tables temporaires, qui disparaissent à la fin de la session. Pour en savoir plus, consultez [CREATE TEMPORARY TABLE](/fr/reference/statements/create/table/temporary-table).
 
-<div id="replace-table">
-  ## Mettre à jour une table de façon atomique avec REPLACE TABLE
-</div>
+## Mettre à jour une table de façon atomique avec REPLACE TABLE {#replace-table}
 
 {/* Ancres de destination des liens vers les sections déplacées vers /reference/statements/create/table/replace-table */}
 
@@ -465,9 +425,7 @@ ClickHouse prend en charge les tables temporaires, qui disparaissent à la fin d
 
 L’instruction `REPLACE` vous permet de mettre à jour une table [de façon atomique](/fr/concepts/core-concepts/glossary#atomicity). Pour plus de détails, consultez [REPLACE TABLE](/fr/reference/statements/create/table/replace-table).
 
-<div id="comment-clause">
-  ## Ajouter un commentaire à une table
-</div>
+## Ajouter un commentaire à une table {#comment-clause}
 
 Vous pouvez ajouter un commentaire à une table lors de sa création.
 
@@ -508,9 +466,7 @@ SELECT name, comment FROM system.tables WHERE name = 't1';
 └──────┴─────────────────────┘
 ```
 
-<div id="related-content">
-  ## Contenu connexe
-</div>
+## Contenu connexe {#related-content}
 
 * Blog : [Optimiser ClickHouse grâce aux schémas et aux codecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 * Blog : [Travailler avec des données de séries temporelles dans ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

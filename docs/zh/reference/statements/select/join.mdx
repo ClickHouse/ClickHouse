@@ -22,9 +22,7 @@ FROM <left_table>
 
 `ON` 子句中的表达式和 `USING` 子句中的列称为&quot;连接键&quot;。除非另有说明，`JOIN` 会对连接键匹配的行生成 [笛卡儿积](https://en.wikipedia.org/wiki/Cartesian_product)，因此结果中的行数可能远多于源表。
 
-<div id="supported-types-of-join">
-  ## 支持的 JOIN 类型
-</div>
+## 支持的 JOIN 类型 {#supported-types-of-join}
 
 支持所有标准的 [SQL JOIN](https://en.wikipedia.org/wiki/Join_\(SQL\)) 类型：
 
@@ -56,9 +54,7 @@ ClickHouse 还支持以下额外的 JOIN 类型：
   当 [join&#95;algorithm](/zh/reference/settings/session-settings/join#join_algorithm) 设置为 `partial_merge` 时，`RIGHT JOIN` 和 `FULL JOIN` 仅支持 `ALL` strictness (不支持 `SEMI`、`ANTI`、`ANY` 和 `ASOF`) 。
 </Note>
 
-<div id="settings">
-  ## 设置
-</div>
+## 设置 {#settings}
 
 默认的 join 类型可通过 [`join_default_strictness`](/zh/reference/settings/session-settings/join#join_default_strictness) 设置进行覆盖。
 
@@ -75,9 +71,7 @@ ClickHouse server 对 `ANY JOIN` 操作的处理方式取决于 [`any_join_disti
 
 使用 `cross_to_inner_join_rewrite` 设置可定义当 ClickHouse 无法将 `CROSS JOIN` 重写为 `INNER JOIN` 时的行为。默认值为 `1`，表示允许 join 继续执行，但速度会更慢。如果希望抛出错误，请将 `cross_to_inner_join_rewrite` 设为 `0`；将其设为 `2` 时，则不会运行 cross joins，而是强制重写所有逗号/cross joins。如果在该值为 `2` 时重写失败，你将收到一条错误消息：“Please, try to simplify `WHERE` section”。
 
-<div id="on-section-conditions">
-  ## `ON` 部分中的条件
-</div>
+## `ON` 部分中的条件 {#on-section-conditions}
 
 `ON` 部分可以包含多个通过 `AND` 和 `OR` 运算符组合起来的条件。用于指定连接键的条件必须：
 
@@ -180,9 +174,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
 └───┴────┴─────┘
 ```
 
-<div id="join-with-inequality-conditions-for-columns-from-different-tables">
-  ## 对不同表中的列使用带不等条件的 JOIN
-</div>
+## 对不同表中的列使用带不等条件的 JOIN {#join-with-inequality-conditions-for-columns-from-different-tables}
 
 ClickHouse 当前支持在 `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` 中，除相等条件外，还可使用不等条件。不等条件仅支持 `hash`、`parallel_hash` 和 `grace_hash` JOIN 算法。JOIN 过程中求值的非等值条件不能包含 `arrayJoin`，因为此类条件必须保持行数不变；仅适用于一侧的条件，以及基于 `arrayJoin` 的等值键会在 JOIN 前被提取，因此不受影响；非析取的 `ALL INNER JOIN` 条件同样不受影响，因为此类条件会在 JOIN 后应用。如果展开操作仅依赖于一侧，请在 JOIN 前将其移至子查询中的 `ARRAY JOIN`；如果条件中的 `arrayJoin` 参数读取两侧的列，则必须重构该条件。
 
@@ -232,9 +224,7 @@ key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
 
-<div id="null-values-in-join-keys">
-  ## JOIN 连接键中的 NULL 和 NaN 值
-</div>
+## JOIN 连接键中的 NULL 和 NaN 值 {#null-values-in-join-keys}
 
 `NULL` 不等于任何值，包括其自身。这意味着，如果某个 `JOIN` 连接键在一个表中的值为 `NULL`，它就不会与另一个表中的 `NULL` 值匹配。
 
@@ -295,9 +285,7 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 如果需要确保 `NaN` 行不匹配，请将其映射为 `NULL` 值：`ON if(isNaN(A.id), NULL, A.id) = B.id`。
 在 `ASOF JOIN` 中，最近匹配列按排序进行比较，而 `NaN` 不支持排序——请在两侧过滤掉此类行。
 
-<div id="asof-join-usage">
-  ## ASOF JOIN 用法
-</div>
+## ASOF JOIN 用法 {#asof-join-usage}
 
 当你需要连接没有精确匹配项的记录时，`ASOF JOIN` 非常有用。
 
@@ -351,9 +339,7 @@ USING (equi_column1, ... equi_columnN, asof_column)
   [Join](/zh/reference/engines/table-engines/special/join) 表引擎**不**支持它。
 </Note>
 
-<div id="paste-join-usage">
-  ## PASTE JOIN 用法
-</div>
+## PASTE JOIN 用法 {#paste-join-usage}
 
 `PASTE JOIN` 的结果是一张表，包含左侧子查询的所有列，随后是右侧子查询的所有列。
 各行会根据其在原始表中的位置进行匹配 (因此必须明确行的顺序) 。
@@ -411,9 +397,7 @@ SETTINGS max_block_size = 2;
 └───┴──────┘
 ```
 
-<div id="distributed-join">
-  ## Distributed JOIN
-</div>
+## Distributed JOIN {#distributed-join}
 
 执行涉及分布式表的 JOIN 有两种方式：
 
@@ -422,9 +406,7 @@ SETTINGS max_block_size = 2;
 
 使用 `GLOBAL` 时请务必小心。更多信息，请参见[分布式子查询](/zh/reference/statements/in#distributed-subqueries)部分。
 
-<div id="implicit-type-conversion">
-  ## 隐式类型转换
-</div>
+## 隐式类型转换 {#implicit-type-conversion}
 
 `INNER JOIN`、`LEFT JOIN`、`RIGHT JOIN` 和 `FULL JOIN` 查询支持对&quot;连接键&quot;进行隐式类型转换。但是，如果左表和右表中的连接键无法转换为同一种类型，则查询无法执行 (例如，不存在一种数据类型能够同时容纳 `UInt64` 和 `Int64` 的所有值，或 `String` 和 `Int32` 的所有值) 。
 
@@ -466,29 +448,21 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 └────┴──────┴───────────────┴─────────────────┘
 ```
 
-<div id="usage-recommendations">
-  ## 使用建议
-</div>
+## 使用建议 {#usage-recommendations}
 
-<div id="processing-of-empty-or-null-cells">
-  ### 空单元格或 NULL 单元格的处理
-</div>
+### 空单元格或 NULL 单元格的处理 {#processing-of-empty-or-null-cells}
 
 在连接表时，可能会出现空单元格。设置 [join&#95;use&#95;nulls](/zh/reference/settings/session-settings/join#join_use_nulls) 用于定义 ClickHouse 如何填充这些单元格。
 
 如果 `JOIN` 键是 [Nullable](/zh/reference/data-types/nullable) 字段，则键中只要有一个值为 [NULL](/zh/reference/syntax#null)，对应的行就不会被连接。
 
-<div id="syntax">
-  ### 语法
-</div>
+### 语法 {#syntax}
 
 `USING` 中指定的列在两个子查询中必须同名，其他列则必须使用不同的名称。你可以使用别名来修改子查询中列的名称。
 
 `USING` 子句用于指定一个或多个参与 join 的列，从而要求这些列相等。列列表不带括号。更复杂的 join 条件不受支持。
 
-<div id="syntax-limitations">
-  ### 语法限制
-</div>
+### 语法限制 {#syntax-limitations}
 
 对于单个 `SELECT` 查询中的多个 `JOIN` 子句：
 
@@ -500,9 +474,7 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 
 * `ON`、`WHERE` 和 `GROUP BY` 子句中不能使用任意表达式，但你可以先在 `SELECT` 子句中定义一个表达式，再通过别名在这些子句中使用它。
 
-<div id="performance">
-  ### 性能
-</div>
+### 性能 {#performance}
 
 运行 `JOIN` 时，与查询其他阶段相关的执行顺序不会被优化。连接操作 (即在右侧表中查找) 会在 `WHERE` 过滤和聚合之前执行。
 
@@ -512,9 +484,7 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 
 如果你需要使用 `JOIN` 与维度表进行连接 (这类表通常较小，包含维度属性，例如广告活动名称) ，那么 `JOIN` 可能并不方便，因为每次查询都需要重新访问右侧表。对于这种情况，建议使用“字典”功能来代替 `JOIN`。更多信息，请参见 [字典](/zh/reference/statements/create/dictionary) 部分。
 
-<div id="memory-limitations">
-  ### 内存限制
-</div>
+### 内存限制 {#memory-limitations}
 
 默认情况下，ClickHouse 使用 [哈希连接](https://en.wikipedia.org/wiki/Hash_join) 算法。ClickHouse 会获取 right&#95;table，并在 RAM 中为其创建哈希表。如果启用了 `join_algorithm = 'auto'`，那么当内存消耗达到某个阈值后，ClickHouse 会回退到 [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join 算法。有关 `JOIN` 算法的说明，请参见 [join&#95;algorithm](/zh/reference/settings/session-settings/join#join_algorithm) 设置。
 
@@ -526,9 +496,7 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 当达到这些限制中的任意一个时，ClickHouse 会按照 [join&#95;overflow&#95;mode](/zh/reference/settings/session-settings/join#join_overflow_mode)
 设置中的指示执行。
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 示例：
 
@@ -571,9 +539,7 @@ LIMIT 10
 └───────────┴────────┴────────┘
 ```
 
-<div id="related-content">
-  ## 相关内容
-</div>
+## 相关内容 {#related-content}
 
 * 博客：[ClickHouse：全面支持 SQL JOIN 的极速 DBMS - 第 1 部分](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
 * 博客：[ClickHouse：全面支持 SQL JOIN 的极速 DBMS - 原理剖析 - 第 2 部分](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)

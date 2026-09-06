@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="query_plan_aggregation_bucket_top_k">
-  ## query_plan_aggregation_bucket_top_k
-</div>
+## query_plan_aggregation_bucket_top_k {#query_plan_aggregation_bucket_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,9 +28,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_aggregation_in_order">
-  ## query_plan_aggregation_in_order
-</div>
+## query_plan_aggregation_in_order {#query_plan_aggregation_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -50,9 +46,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_convert_any_join_to_semi_or_anti_join">
-  ## query_plan_convert_any_join_to_semi_or_anti_join
-</div>
+## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -60,9 +54,7 @@ Valeurs possibles :
 
 Permet de convertir ANY JOIN en SEMI ou ANTI JOIN si le filtre après JOIN renvoie toujours false pour les lignes correspondantes ou non correspondantes
 
-<div id="query_plan_convert_join_to_in">
-  ## query_plan_convert_join_to_in
-</div>
+## query_plan_convert_join_to_in {#query_plan_convert_join_to_in}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -70,9 +62,7 @@ Permet de convertir ANY JOIN en SEMI ou ANTI JOIN si le filtre après JOIN renvo
 
 Permet de convertir un `JOIN` en sous-requête avec `IN` si les colonnes de sortie sont liées uniquement à la table de gauche. Peut produire des résultats incorrects avec des `JOIN` autres que `ANY JOIN` (par ex. `ALL JOIN`, qui est la valeur par défaut).
 
-<div id="query_plan_convert_outer_join_to_inner_join">
-  ## query_plan_convert_outer_join_to_inner_join
-</div>
+## query_plan_convert_outer_join_to_inner_join {#query_plan_convert_outer_join_to_inner_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -80,9 +70,7 @@ Permet de convertir un `JOIN` en sous-requête avec `IN` si les colonnes de sort
 
 Permet de convertir `OUTER JOIN` en `INNER JOIN` si le filtre appliqué après `JOIN` exclut toujours les valeurs par défaut
 
-<div id="query_plan_direct_read_from_text_index">
-  ## query_plan_direct_read_from_text_index
-</div>
+## query_plan_direct_read_from_text_index {#query_plan_direct_read_from_text_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -90,9 +78,7 @@ Permet de convertir `OUTER JOIN` en `INNER JOIN` si le filtre appliqué après `
 
 Permet d’effectuer le filtrage de recherche en texte intégral en s’appuyant uniquement sur l’index de texte inversé dans le plan de requête.
 
-<div id="query_plan_display_internal_aliases">
-  ## query_plan_display_internal_aliases
-</div>
+## query_plan_display_internal_aliases {#query_plan_display_internal_aliases}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -100,17 +86,13 @@ Permet d’effectuer le filtrage de recherche en texte intégral en s’appuyant
 
 Afficher les alias internes (tels que &#95;&#95;table1) dans EXPLAIN PLAN au lieu de ceux spécifiés dans la requête d’origine.
 
-<div id="query_plan_enable_multithreading_after_window_functions">
-  ## query_plan_enable_multithreading_after_window_functions
-</div>
+## query_plan_enable_multithreading_after_window_functions {#query_plan_enable_multithreading_after_window_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Activer le multithreading après l’évaluation des fonctions de fenêtre afin de permettre le traitement parallèle des flux
 
-<div id="query_plan_enable_optimizations">
-  ## query_plan_enable_optimizations
-</div>
+## query_plan_enable_optimizations {#query_plan_enable_optimizations}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -125,9 +107,7 @@ Valeurs possibles :
 * 0 - Désactiver toutes les optimisations au niveau du plan de requête
 * 1 - Activer les optimisations au niveau du plan de requête (mais certaines optimisations peuvent toujours être désactivées via leurs paramètres individuels)
 
-<div id="query_plan_execute_functions_after_sorting">
-  ## query_plan_execute_functions_after_sorting
-</div>
+## query_plan_execute_functions_after_sorting {#query_plan_execute_functions_after_sorting}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -143,9 +123,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_filter_push_down">
-  ## query_plan_filter_push_down
-</div>
+## query_plan_filter_push_down {#query_plan_filter_push_down}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -161,9 +139,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_fuse_filter_into_array_join">
-  ## query_plan_fuse_filter_into_array_join
-</div>
+## query_plan_fuse_filter_into_array_join {#query_plan_fuse_filter_into_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -176,9 +152,7 @@ Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations
   Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre peut évoluer de manière non rétrocompatible ou être supprimé ultérieurement.
 </Note>
 
-<div id="query_plan_join_shard_by_pk_ranges">
-  ## query_plan_join_shard_by_pk_ranges
-</div>
+## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -186,9 +160,7 @@ Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations
 
 Applique le sharding pour JOIN si les clés de jointure contiennent un préfixe de PRIMARY KEY dans les deux tables. Pris en charge par les algorithmes hash, parallel&#95;hash, full&#95;sorting&#95;merge et parallel&#95;full&#95;sorting&#95;merge. En général, cela n&#39;accélère pas les requêtes, mais peut réduire la consommation de mémoire.
 
-<div id="query_plan_join_swap_table">
-  ## query_plan_join_swap_table
-</div>
+## query_plan_join_swap_table {#query_plan_join_swap_table}
 
 <SettingsInfoBlock type="BoolAuto" default_value="auto" />
 
@@ -200,9 +172,7 @@ Détermine de quel côté de la jointure doit se trouver la table de build (éga
 * &#39;false&#39; : ne jamais permuter les tables (la table de droite est la table de build).
 * &#39;true&#39; : toujours permuter les tables (la table de gauche est la table de build).
 
-<div id="query_plan_lift_up_array_join">
-  ## query_plan_lift_up_array_join
-</div>
+## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -218,9 +188,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_lift_up_union">
-  ## query_plan_lift_up_union
-</div>
+## query_plan_lift_up_union {#query_plan_lift_up_union}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -236,9 +204,20 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_max_limit_for_join_lazy_indexing">
-  ## query_plan_max_limit_for_join_lazy_indexing
-</div>
+## query_plan_lower_array_join_function {#query_plan_lower_array_join_function}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouvelle optimisation transformant une fonction arrayJoin en véritable étape ARRAY JOIN ; désactivée par défaut."}]}]} />
+
+Active ou désactive une optimisation au niveau du plan de requête qui transforme une fonction `arrayJoin` au sein d’une expression en véritable étape `ARRAY JOIN`, afin qu’elle utilise les mêmes mécanismes d’exécution que la clause `ARRAY JOIN` (réplication différée et fusion des filtres).
+Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](/fr/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) est défini sur 1.
+
+<Note>
+  Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre peut évoluer ultérieurement de manière non rétrocompatible ou être supprimé.
+</Note>
+
+## query_plan_max_limit_for_join_lazy_indexing {#query_plan_max_limit_for_join_lazy_indexing}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -246,9 +225,7 @@ Valeurs possibles :
 
 Contrôle la limite maximale autorisant l’utilisation du plan de requête pour l’optimisation d’indexation paresseuse dans JOIN. Si la valeur est zéro, il n’y a pas de limite.
 
-<div id="query_plan_max_limit_for_lazy_materialization">
-  ## query_plan_max_limit_for_lazy_materialization
-</div>
+## query_plan_max_limit_for_lazy_materialization {#query_plan_max_limit_for_lazy_materialization}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -256,9 +233,7 @@ Contrôle la limite maximale autorisant l’utilisation du plan de requête pour
 
 Contrôle la valeur maximale de LIMIT autorisant l&#39;utilisation du plan de requête pour l&#39;optimisation de la matérialisation différée. Si cette valeur est égale à zéro, il n&#39;y a pas de limite.
 
-<div id="query_plan_max_limit_for_top_k_optimization">
-  ## query_plan_max_limit_for_top_k_optimization
-</div>
+## query_plan_max_limit_for_top_k_optimization {#query_plan_max_limit_for_top_k_optimization}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -268,9 +243,7 @@ Définit la valeur maximale de LIMIT autorisant l’évaluation du plan de requ�
 
 Ce paramètre contrôle également le comportement de [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/fr/reference/settings/session-settings/enable#enable_group_by_top_k_optimization).
 
-<div id="query_plan_max_optimizations_to_apply">
-  ## query_plan_max_optimizations_to_apply
-</div>
+## query_plan_max_optimizations_to_apply {#query_plan_max_optimizations_to_apply}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -283,9 +256,7 @@ Lors de l&#39;exécution normale des requêtes, si le nombre réel d&#39;optimis
   Il s&#39;agit d&#39;un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu&#39;à des fins de débogage. Ce paramètre peut évoluer à l&#39;avenir de manière non rétrocompatible, voire être supprimé.
 </Note>
 
-<div id="query_plan_max_set_size_for_projection_match">
-  ## query_plan_max_set_size_for_projection_match
-</div>
+## query_plan_max_set_size_for_projection_match {#query_plan_max_set_size_for_projection_match}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -295,9 +266,7 @@ Nombre maximal de lignes dans un ensemble de clause `IN` pour lequel le mécanis
 
 Utilisé par le mécanisme de correspondance des projections d’agrégation (et par tout futur mécanisme de correspondance des projections devant comparer des ensembles de clause `IN`). Le calcul du hachage de contenu est en `O(N log N)` par rapport au nombre d’éléments de l’ensemble ; ce paramètre limite le coût de la planification lorsque de nombreuses clauses `IN` apparaissent dans la requête ou la projection.
 
-<div id="query_plan_max_step_description_length">
-  ## query_plan_max_step_description_length
-</div>
+## query_plan_max_step_description_length {#query_plan_max_step_description_length}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -305,9 +274,7 @@ Utilisé par le mécanisme de correspondance des projections d’agrégation (et
 
 Longueur maximale de la description d’étape dans EXPLAIN PLAN.
 
-<div id="query_plan_merge_expression_into_join">
-  ## query_plan_merge_expression_into_join
-</div>
+## query_plan_merge_expression_into_join {#query_plan_merge_expression_into_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -315,9 +282,7 @@ Longueur maximale de la description d’étape dans EXPLAIN PLAN.
 
 Permet de fusionner des expressions avec l’étape JOIN lors de l’optimisation du réordonnancement des jointures.
 
-<div id="query_plan_merge_expressions">
-  ## query_plan_merge_expressions
-</div>
+## query_plan_merge_expressions {#query_plan_merge_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -333,9 +298,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_merge_filter_into_join_condition">
-  ## query_plan_merge_filter_into_join_condition
-</div>
+## query_plan_merge_filter_into_join_condition {#query_plan_merge_filter_into_join_condition}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -343,9 +306,7 @@ Valeurs possibles :
 
 Permet d’intégrer le filtre à la condition `JOIN` et de convertir `CROSS JOIN` en `INNER`.
 
-<div id="query_plan_merge_filters">
-  ## query_plan_merge_filters
-</div>
+## query_plan_merge_filters {#query_plan_merge_filters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -353,9 +314,7 @@ Permet d’intégrer le filtre à la condition `JOIN` et de convertir `CROSS JOI
 
 Permet de fusionner les filtres dans le plan de requête.
 
-<div id="query_plan_min_columns_for_join_lazy_indexing">
-  ## query_plan_min_columns_for_join_lazy_indexing
-</div>
+## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
@@ -363,9 +322,7 @@ Permet de fusionner les filtres dans le plan de requête.
 
 Contrôle le nombre minimal de colonnes de charge utile du côté gauche nécessaire pour activer l’optimisation d’indexation paresseuse dans JOIN. 0 signifie que l’optimisation est désactivée.
 
-<div id="query_plan_optimize_count_from_text_index">
-  ## query_plan_optimize_count_from_text_index
-</div>
+## query_plan_optimize_count_from_text_index {#query_plan_optimize_count_from_text_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -374,9 +331,7 @@ Contrôle le nombre minimal de colonnes de charge utile du côté gauche nécess
 Permet de répondre à `SELECT count() ... WHERE <text search predicate>` directement à partir de la cardinalité des listes de publication de l’index de texte, sans matérialiser les lignes correspondantes.
 Ne prend effet que si `query_plan_direct_read_from_text_index` est activé.
 
-<div id="query_plan_optimize_join_order_algorithm">
-  ## query_plan_optimize_join_order_algorithm
-</div>
+## query_plan_optimize_join_order_algorithm {#query_plan_optimize_join_order_algorithm}
 
 <ExperimentalBadge />
 
@@ -392,9 +347,7 @@ Spécifie quels algorithmes d’ordre des jointures essayer lors de l’optimisa
 * &#39;dphyp&#39; - implémente l’algorithme DPhyp (Dynamic Programming via Hypergraph Partitioning), actuellement uniquement pour les jointures internes - explore le même espace de recherche que `dpsize`, mais n’énumère que les paires de sous-graphes connectés, ce qui génère moins de jointures intermédiaires sur des graphes de jointure clairsemés, au prix de ne pas prendre en compte les produits cartésiens
   Plusieurs algorithmes peuvent être spécifiés sous forme de liste séparée par des virgules, par exemple `dphyp,greedy`. Ils sont essayés dans l’ordre ; si un algorithme ne peut pas traiter la requête (par exemple, en raison de jointures externes ou de composantes non connexes), le suivant est utilisé comme solution de repli.
 
-<div id="query_plan_optimize_join_order_limit">
-  ## query_plan_optimize_join_order_limit
-</div>
+## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -403,9 +356,7 @@ Spécifie quels algorithmes d’ordre des jointures essayer lors de l’optimisa
 Optimise l&#39;ordre des jointures au sein d&#39;une même sous-requête. Cette fonctionnalité n&#39;est actuellement prise en charge que dans des cas très limités.
 La valeur correspond au nombre maximal de tables à optimiser.
 
-<div id="query_plan_optimize_join_order_max_searched_plans">
-  ## query_plan_optimize_join_order_max_searched_plans
-</div>
+## query_plan_optimize_join_order_max_searched_plans {#query_plan_optimize_join_order_max_searched_plans}
 
 <ExperimentalBadge />
 
@@ -417,9 +368,7 @@ Nombre maximal de plans partiels que l&#39;optimiseur de l&#39;ordre des jointur
 Cette limite borne de manière déterministe le temps d&#39;optimisation (indépendamment du temps écoulé) sur des graphes de jointures denses, tels que des cliques ou des étoiles, où l&#39;espace de recherche croît exponentiellement.
 Définissez cette valeur sur 0 pour désactiver la limite. Cela n&#39;a aucun effet sur la valeur par défaut `query_plan_optimize_join_order_limit`, pour laquelle la recherche reste toujours bien en deçà de cette limite.
 
-<div id="query_plan_optimize_join_order_randomize">
-  ## query_plan_optimize_join_order_randomize
-</div>
+## query_plan_optimize_join_order_randomize {#query_plan_optimize_join_order_randomize}
 
 <ExperimentalBadge />
 
@@ -431,9 +380,7 @@ Lorsqu’il est différent de zéro, l’optimiseur de l’ordre des jointures u
 Lorsqu’il est défini sur 1, une graine aléatoire est générée ; lorsqu’il est défini sur une valeur &gt; 1, cette valeur est utilisée directement comme graine.
 Ce paramètre est destiné aux tests afin de détecter les erreurs causées par différents ordres de jointure.
 
-<div id="query_plan_optimize_lazy_final">
-  ## query_plan_optimize_lazy_final
-</div>
+## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -441,9 +388,7 @@ Ce paramètre est destiné aux tests afin de détecter les erreurs causées par 
 
 Optimise la lecture avec FINAL à partir de ReplacingMergeTree en construisant un ensemble de clés primaires, puis en l’utilisant pour l’analyse d’index.
 
-<div id="query_plan_optimize_lazy_materialization">
-  ## query_plan_optimize_lazy_materialization
-</div>
+## query_plan_optimize_lazy_materialization {#query_plan_optimize_lazy_materialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -451,9 +396,7 @@ Optimise la lecture avec FINAL à partir de ReplacingMergeTree en construisant u
 
 Utiliser le plan de requête pour l’optimisation par matérialisation différée.
 
-<div id="query_plan_optimize_lazy_materialization_for_file">
-  ## query_plan_optimize_lazy_materialization_for_file
-</div>
+## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -461,9 +404,7 @@ Utiliser le plan de requête pour l’optimisation par matérialisation différ�
 
 Utilise l&#39;optimisation de matérialisation différée lors de la lecture de fichiers Parquet locaux avec la fonction de table `file` et le moteur de table `File` : pour les requêtes `ORDER BY ... LIMIT n`, les colonnes non nécessaires au tri et au filtrage ne sont lues que pour les `n` lignes conservées après l&#39;application de `LIMIT`. Ne prend effet que si `query_plan_optimize_lazy_materialization` est activé.
 
-<div id="query_plan_optimize_lazy_materialization_for_object_storage">
-  ## query_plan_optimize_lazy_materialization_for_object_storage
-</div>
+## query_plan_optimize_lazy_materialization_for_object_storage {#query_plan_optimize_lazy_materialization_for_object_storage}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -471,9 +412,7 @@ Utilise l&#39;optimisation de matérialisation différée lors de la lecture de 
 
 Utilise l&#39;optimisation de matérialisation différée pour lire des fichiers Parquet depuis le stockage d&#39;objets, y compris les tables Iceberg : pour les requêtes `ORDER BY ... LIMIT n`, les colonnes inutiles pour le tri et le filtrage ne sont lues que pour les `n` lignes conservées après application de `LIMIT`. Ne prend effet que si `query_plan_optimize_lazy_materialization` est activé.
 
-<div id="query_plan_optimize_prewhere">
-  ## query_plan_optimize_prewhere
-</div>
+## query_plan_optimize_prewhere {#query_plan_optimize_prewhere}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -481,9 +420,25 @@ Utilise l&#39;optimisation de matérialisation différée pour lire des fichiers
 
 Permet de pousser le filtre dans l&#39;expression PREWHERE pour les moteurs de stockage pris en charge
 
-<div id="query_plan_push_down_limit">
-  ## query_plan_push_down_limit
-</div>
+## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nouveau paramètre qui fait remonter les conjoncts de filtre à travers les clés d'équi-jointure afin que le pruning par clé primaire s'applique des deux côtés."}]}]} />
+
+Active ou désactive une optimisation au niveau du plan de requête qui copie les conjoncts de filtre d&#39;un côté
+d&#39;une équi-jointure vers l&#39;autre par substitution des clés d&#39;équi-jointure, afin que le pruning par clé primaire/index
+de l&#39;autre côté puisse en tirer parti.
+
+S&#39;applique lorsque le filtre et la lecture `MergeTree` ne sont séparés de la jointure que par des étapes d&#39;expression
+et de filtre, et lorsque le conjonct copié compare une colonne de clé primaire à une constante
+(y compris `IN` avec un ensemble constant). Un prédicat situé sous une jointure imbriquée ou sous `DISTINCT`, de même qu&#39;une
+comparaison entre deux colonnes clés, est laissé tel quel : il ne pourrait pas déclencher de pruning par clé primaire de
+l&#39;autre côté, et le copier ne ferait donc qu&#39;ajouter du travail inutile.
+
+Ne prend effet que si `query_plan_enable_optimizations` vaut 1.
+
+## query_plan_push_down_limit {#query_plan_push_down_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -499,9 +454,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_push_down_volume_reducing_functions">
-  ## query_plan_push_down_volume_reducing_functions
-</div>
+## query_plan_push_down_volume_reducing_functions {#query_plan_push_down_volume_reducing_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -519,9 +472,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_push_limit_by_into_sort">
-  ## query_plan_push_limit_by_into_sort
-</div>
+## query_plan_push_limit_by_into_sort {#query_plan_push_limit_by_into_sort}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -536,9 +487,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_read_in_order">
-  ## query_plan_read_in_order
-</div>
+## query_plan_read_in_order {#query_plan_read_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -554,9 +503,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_read_in_order_through_join">
-  ## query_plan_read_in_order_through_join
-</div>
+## query_plan_read_in_order_through_join {#query_plan_read_in_order_through_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -564,9 +511,7 @@ Valeurs possibles :
 
 Conserve la lecture dans l’ordre depuis la table de gauche lors des opérations JOIN, afin qu’elle puisse être utilisée par les étapes suivantes.
 
-<div id="query_plan_remove_redundant_distinct">
-  ## query_plan_remove_redundant_distinct
-</div>
+## query_plan_remove_redundant_distinct {#query_plan_remove_redundant_distinct}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -584,9 +529,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_remove_redundant_sorting">
-  ## query_plan_remove_redundant_sorting
-</div>
+## query_plan_remove_redundant_sorting {#query_plan_remove_redundant_sorting}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -604,9 +547,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_remove_unused_columns">
-  ## query_plan_remove_unused_columns
-</div>
+## query_plan_remove_unused_columns {#query_plan_remove_unused_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -624,9 +565,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_reuse_storage_ordering_for_window_functions">
-  ## query_plan_reuse_storage_ordering_for_window_functions
-</div>
+## query_plan_reuse_storage_ordering_for_window_functions {#query_plan_reuse_storage_ordering_for_window_functions}
 
 **Aliases** : `optimize_read_in_window_order`
 
@@ -646,9 +585,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_short_circuit_constant_false_join">
-  ## query_plan_short_circuit_constant_false_join
-</div>
+## query_plan_short_circuit_constant_false_join {#query_plan_short_circuit_constant_false_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -656,9 +593,7 @@ Valeurs possibles :
 
 Court-circuite un `JOIN` dont la condition `ON` est réduite à une constante false en remplaçant par une source vide chaque côté d&#39;entrée qui ne peut contribuer aucune ligne (les deux côtés pour `INNER`/`CROSS`/`SEMI`, le côté non préservé pour `LEFT`/`RIGHT`), afin de ne pas lire le côté qui ne contribue pas au résultat. S&#39;applique à l&#39;analyseur (`enable_analyzer = 1`) et aux plans non distribués.
 
-<div id="query_plan_split_filter">
-  ## query_plan_split_filter
-</div>
+## query_plan_split_filter {#query_plan_split_filter}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -674,9 +609,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_text_index_add_hint">
-  ## query_plan_text_index_add_hint
-</div>
+## query_plan_text_index_add_hint {#query_plan_text_index_add_hint}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -684,9 +617,7 @@ Valeurs possibles :
 
 Permet d&#39;ajouter un hint (prédicat supplémentaire) pour le filtrage généré à partir de l&#39;index de texte inversé dans le plan de requête.
 
-<div id="query_plan_top_k_through_join">
-  ## query_plan_top_k_through_join
-</div>
+## query_plan_top_k_through_join {#query_plan_top_k_through_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -700,9 +631,7 @@ Valeurs possibles :
 * 0 - Désactiver
 * 1 - Activer
 
-<div id="query_plan_try_use_vector_search">
-  ## query_plan_try_use_vector_search
-</div>
+## query_plan_try_use_vector_search {#query_plan_try_use_vector_search}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

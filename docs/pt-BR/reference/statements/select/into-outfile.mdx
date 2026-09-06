@@ -18,13 +18,11 @@ Arquivos compactados são compatíveis. O tipo de compressão é detectado pela 
 SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
 ```
 
-`file_name` e `type` são literais de string. Os tipos de compressão suportados são: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+`file_name` e `type` são literais de string. Os tipos de compressão suportados são: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`, `'snappy'`. Para `snappy`, o formato wire é selecionado pela configuração [snappy&#95;mode](/pt-BR/reference/settings/session-settings/other#snappy_mode) (`basic` por padrão).
 
 `level` é um literal numérico. Há suporte para inteiros positivos nos seguintes intervalos: `1-12` para os tipos `gzip`, `deflate` e `lz4`, `1-22` para o tipo `zstd` e `1-9` para os demais tipos de compressão. Para `gzip` e `deflate`, níveis acima de `9` exigem a compilação padrão com `libdeflate`; uma compilação sem `libdeflate` oferece suporte aos níveis `1-9`.
 
-<div id="implementation-details">
-  ## Detalhes de implementação
-</div>
+## Detalhes de implementação {#implementation-details}
 
 * Esta funcionalidade está disponível no [cliente de linha de comando](/pt-BR/concepts/features/interfaces/client) e no [clickhouse-local](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local). Portanto, uma consulta enviada pela [interface HTTP](/pt-BR/concepts/features/interfaces/http) falhará.
 * A consulta falhará se já existir um arquivo com o mesmo nome.

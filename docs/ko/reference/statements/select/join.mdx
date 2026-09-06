@@ -22,9 +22,7 @@ FROM <left_table>
 
 `ON` 절의 표현식과 `USING` 절의 컬럼을 &quot;조인 키&quot;라고 합니다. 별도로 명시하지 않는 한, `JOIN`은 &quot;조인 키&quot;가 일치하는 행들로 [카테시안 곱](https://en.wikipedia.org/wiki/Cartesian_product)을 생성하므로, 원본 테이블보다 훨씬 많은 행이 결과에 포함될 수 있습니다.
 
-<div id="supported-types-of-join">
-  ## 지원되는 JOIN 유형
-</div>
+## 지원되는 JOIN 유형 {#supported-types-of-join}
 
 모든 표준 [SQL JOIN](https://en.wikipedia.org/wiki/Join_\(SQL\)) 유형을 지원합니다:
 
@@ -56,9 +54,7 @@ ClickHouse에서 추가로 지원하는 조인 유형은 다음과 같습니다:
   [join&#95;algorithm](/ko/reference/settings/session-settings/join#join_algorithm)이 `partial_merge`로 설정된 경우, `RIGHT JOIN` 및 `FULL JOIN`은 `ALL` 엄격성에서만 지원됩니다(`SEMI`, `ANTI`, `ANY`, `ASOF`는 지원되지 않음).
 </Note>
 
-<div id="settings">
-  ## 설정
-</div>
+## 설정 {#settings}
 
 기본 조인 유형은 [`join_default_strictness`](/ko/reference/settings/session-settings/join#join_default_strictness) 설정으로 재정의할 수 있습니다.
 
@@ -75,9 +71,7 @@ ClickHouse에서 추가로 지원하는 조인 유형은 다음과 같습니다:
 
 ClickHouse가 `CROSS JOIN`을 `INNER JOIN`으로 재작성하지 못할 때의 동작은 `cross_to_inner_join_rewrite` 설정으로 지정할 수 있습니다. 기본값은 `1`이며, 이 경우 조인은 계속 수행되지만 더 느려집니다. 오류를 발생시키려면 `cross_to_inner_join_rewrite`를 `0`으로 설정하고, 크로스 조인을 실행하지 않고 대신 모든 쉼표 조인/크로스 조인을 재작성하도록 강제하려면 `2`로 설정하십시오. 값이 `2`일 때 재작성에 실패하면 &quot;Please, try to simplify `WHERE` section&quot;라는 오류 메시지가 표시됩니다.
 
-<div id="on-section-conditions">
-  ## `ON` 절의 조건
-</div>
+## `ON` 절의 조건 {#on-section-conditions}
 
 `ON` 절에는 `AND` 및 `OR` 연산자로 결합된 여러 조건을 포함할 수 있습니다. 조인 키를 지정하는 조건은 다음 요구 사항을 충족해야 합니다.
 
@@ -180,9 +174,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
 └───┴────┴─────┘
 ```
 
-<div id="join-with-inequality-conditions-for-columns-from-different-tables">
-  ## 서로 다른 테이블의 컬럼에 대한 부등 조건 JOIN
-</div>
+## 서로 다른 테이블의 컬럼에 대한 부등 조건 JOIN {#join-with-inequality-conditions-for-columns-from-different-tables}
 
 ClickHouse는 현재 동등 조건뿐 아니라 부등 조건도 포함한 `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN`을 지원합니다. 부등 조건은 `hash`, `parallel_hash` 및 `grace_hash` 조인 알고리즘에서만 지원됩니다. 조인 중 평가되는 비동등 조건에는 행 수를 유지해야 하므로 `arrayJoin`을 포함할 수 없습니다. 한쪽에만 적용되는 조건과 `arrayJoin`에 대한 동등 키는 조인 전에 추출되므로 영향을 받지 않습니다. 논리합으로 연결되지 않은 `ALL INNER JOIN` 조건도 조인 후에 적용되므로 영향을 받지 않습니다. 확장이 한쪽에만 의존하는 경우 조인 전에 서브쿼리의 `ARRAY JOIN`으로 이동하십시오. `arrayJoin` 인수가 양쪽의 컬럼을 읽는 조건은 구조를 변경해야 합니다.
 
@@ -232,9 +224,7 @@ key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
 
-<div id="null-values-in-join-keys">
-  ## JOIN 키의 NULL 및 NaN 값
-</div>
+## JOIN 키의 NULL 및 NaN 값 {#null-values-in-join-keys}
 
 `NULL`은 자기 자신을 포함해 어떤 값과도 같지 않습니다. 즉, 한 테이블에서 `JOIN` 키의 값이 `NULL`이면 다른 테이블의 `NULL` 값과 일치하지 않습니다.
 
@@ -295,9 +285,7 @@ float `JOIN` 키의 `NaN` 값에는 위의 `NULL` 규칙이 적용되지 않습�
 `NaN` 행이 일치하지 않아야 한다면 `NULL` 값으로 매핑하십시오: `ON if(isNaN(A.id), NULL, A.id) = B.id`.
 `ASOF JOIN`에서는 가장 가까운 일치 항목의 컬럼을 정렬 순서로 비교하는데, `NaN`은 이를 지원하지 않으므로 양쪽에서 이러한 행을 필터링하십시오.
 
-<div id="asof-join-usage">
-  ## ASOF JOIN 사용
-</div>
+## ASOF JOIN 사용 {#asof-join-usage}
 
 정확히 일치하는 항목이 없는 레코드를 조인해야 할 때 `ASOF JOIN`이 유용합니다.
 
@@ -351,9 +339,7 @@ USING (equi_column1, ... equi_columnN, asof_column)
   [Join](/ko/reference/engines/table-engines/special/join) 테이블 엔진에서는 지원되지 않습니다.
 </Note>
 
-<div id="paste-join-usage">
-  ## PASTE JOIN 사용법
-</div>
+## PASTE JOIN 사용법 {#paste-join-usage}
 
 `PASTE JOIN`의 결과는 왼쪽 서브쿼리의 모든 컬럼 뒤에 오른쪽 서브쿼리의 모든 컬럼이 이어지는 테이블입니다.
 행은 원본 테이블에서의 위치를 기준으로 대응됩니다(행 순서가 정의되어 있어야 합니다).
@@ -411,9 +397,7 @@ SETTINGS max_block_size = 2;
 └───┴──────┘
 ```
 
-<div id="distributed-join">
-  ## 분산 JOIN
-</div>
+## 분산 JOIN {#distributed-join}
 
 분산 테이블이 포함된 JOIN을 실행하는 방법은 두 가지입니다.
 
@@ -422,9 +406,7 @@ SETTINGS max_block_size = 2;
 
 `GLOBAL`을 사용할 때는 주의하십시오. 자세한 내용은 [분산 서브쿼리](/ko/reference/statements/in#distributed-subqueries) 섹션을 참조하십시오.
 
-<div id="implicit-type-conversion">
-  ## 암시적 타입 변환
-</div>
+## 암시적 타입 변환 {#implicit-type-conversion}
 
 `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL JOIN` 쿼리는 &quot;조인 키&quot;에 대한 암시적 타입 변환을 지원합니다. 하지만 왼쪽 테이블과 오른쪽 테이블의 join 키를 하나의 타입으로 변환할 수 없으면 쿼리를 실행할 수 없습니다(예를 들어 `UInt64`와 `Int64`의 모든 값을 모두 표현할 수 있는 데이터 타입이 없거나, `String`과 `Int32`를 함께 표현할 수 있는 데이터 타입이 없는 경우).
 
@@ -466,29 +448,21 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 └────┴──────┴───────────────┴─────────────────┘
 ```
 
-<div id="usage-recommendations">
-  ## 사용 권장 사항
-</div>
+## 사용 권장 사항 {#usage-recommendations}
 
-<div id="processing-of-empty-or-null-cells">
-  ### 비어 있거나 NULL인 셀 처리
-</div>
+### 비어 있거나 NULL인 셀 처리 {#processing-of-empty-or-null-cells}
 
 테이블을 조인하는 동안 빈 셀이 나타날 수 있습니다. [join&#95;use&#95;nulls](/ko/reference/settings/session-settings/join#join_use_nulls) 설정은 ClickHouse가 이러한 셀을 어떻게 채울지 결정합니다.
 
 `JOIN` 키가 [널 허용](/ko/reference/data-types/nullable) 필드인 경우, 키 중 하나 이상이 [NULL](/ko/reference/syntax#null) 값인 행은 조인되지 않습니다.
 
-<div id="syntax">
-  ### 구문
-</div>
+### 구문 {#syntax}
 
 `USING`에 지정된 컬럼은 두 서브쿼리에서 이름이 같아야 하며, 나머지 컬럼은 서로 다른 이름이어야 합니다. 별칭을 사용해 서브쿼리의 컬럼 이름을 변경할 수 있습니다.
 
 `USING` 절은 조인할 하나 이상의 컬럼을 지정하며, 이를 통해 해당 컬럼들이 서로 같은 값으로 매칭됩니다. 컬럼 목록은 괄호 없이 지정합니다. 더 복잡한 조인 조건은 지원되지 않습니다.
 
-<div id="syntax-limitations">
-  ### 구문 제한 사항
-</div>
+### 구문 제한 사항 {#syntax-limitations}
 
 단일 `SELECT` 쿼리에서 여러 `JOIN` 절을 사용하는 경우:
 
@@ -500,9 +474,7 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 
 * `ON`, `WHERE`, `GROUP BY` 절에서는 임의의 표현식을 사용할 수 없지만, `SELECT` 절에서 표현식을 정의한 뒤 별칭을 통해 해당 절에서 사용할 수 있습니다.
 
-<div id="performance">
-  ### 성능
-</div>
+### 성능 {#performance}
 
 `JOIN`을 실행할 때는 쿼리의 다른 단계와의 관계에서 실행 순서가 최적화되지 않습니다. join(오른쪽 테이블을 검색하는 작업)은 `WHERE` 필터링보다 먼저, 그리고 집계보다 먼저 실행됩니다.
 
@@ -512,9 +484,7 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 
 차원 테이블(예: 광고 캠페인 이름과 같은 차원 속성을 담고 있는 비교적 작은 테이블)과 조인하기 위해 `JOIN`이 필요한 경우, 모든 쿼리마다 오른쪽 테이블에 다시 접근해야 하므로 `JOIN`이 그리 편리하지 않을 수 있습니다. 이런 경우에는 `JOIN` 대신 &quot;딕셔너리&quot; 기능을 사용하는 것이 좋습니다. 자세한 내용은 [Dictionaries](/ko/reference/statements/create/dictionary) 섹션을 참조하십시오.
 
-<div id="memory-limitations">
-  ### 메모리 제한
-</div>
+### 메모리 제한 {#memory-limitations}
 
 기본적으로 ClickHouse는 [해시 조인](https://en.wikipedia.org/wiki/Hash_join) 알고리즘을 사용합니다. ClickHouse는 right&#95;table을 가져와 이를 위한 해시 테이블을 RAM에 생성합니다. `join_algorithm = 'auto'`가 활성화되어 있으면, 메모리 사용량이 일정 임계값에 도달한 후 ClickHouse는 [머지](https://en.wikipedia.org/wiki/Sort-merge_join) 조인 알고리즘으로 전환합니다. `JOIN` 알고리즘에 대한 설명은 [join&#95;algorithm](/ko/reference/settings/session-settings/join#join_algorithm) 설정을 참조하십시오.
 
@@ -526,9 +496,7 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 이러한 제한 중 하나에 도달하면 ClickHouse는 [join&#95;overflow&#95;mode](/ko/reference/settings/session-settings/join#join_overflow_mode)
 설정에 따라 동작합니다.
 
-<div id="examples">
-  ## 예시
-</div>
+## 예시 {#examples}
 
 예시:
 
@@ -571,9 +539,7 @@ LIMIT 10
 └───────────┴────────┴────────┘
 ```
 
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
 * 블로그: [ClickHouse: 완전한 SQL 조인을 지원하는 초고속 DBMS - Part 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
 * 블로그: [ClickHouse: 완전한 SQL 조인을 지원하는 초고속 DBMS - 내부 구조 - Part 2](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)

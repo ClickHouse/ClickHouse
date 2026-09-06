@@ -45,12 +45,12 @@ clickhouse = { version = "0.12.2", features = ["test-util"] }
   ## Cargo 特性
 </div>
 
-* `lz4` (默认启用) — 启用 `Compression::Lz4` 和 `Compression::Lz4Hc(_)` Variant。启用后，除 `WATCH` 外，所有查询默认都使用 `Compression::Lz4`。
+* `lz4` (默认启用) — 启用 `Compression::Lz4` 和 `Compression::Lz4Hc(_)` Variant。启用后，除 `WATCH` 外，所有查询默认都使用 `Compression::Lz4`；`WATCH` 仅受 ClickHouse v26.9 之前的版本支持。
 * `native-tls` — 通过 `hyper-tls` 支持 `HTTPS` schema 的 URL，并链接 OpenSSL。
 * `rustls-tls` — 通过 `hyper-rustls` 支持 `HTTPS` schema 的 URL，且不链接 OpenSSL。
 * `inserter` — 启用 `client.inserter()`。
 * `test-util` — 添加 mock。参见[示例](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs)。仅在 `dev-dependencies` 中使用。
-* `watch` — 启用 `client.watch` 功能。详见对应章节。
+* `watch` — 启用 `client.watch` 功能。它会发出 `WATCH` 查询；该查询与 `WINDOW VIEW` 一同在 ClickHouse v26.9 中被移除，因此仅适用于较旧的服务器。
 * `uuid` — 添加 `serde::uuid`，以便配合 [uuid](https://docs.rs/uuid) crate 使用。
 * `time` — 添加 `serde::time`，以便配合 [time](https://docs.rs/time) crate 使用。
 
@@ -556,7 +556,7 @@ struct MyRow {
   ## 模拟
 </div>
 
-该 crate 提供了一些工具，用于模拟 CH 服务器，以及测试 DDL、`SELECT`、`INSERT` 和 `WATCH` 查询。可通过 `test-util` feature 启用此功能。**仅**应将其用作开发依赖项。
+该 crate 提供了一些工具，用于模拟 CH 服务器，以及测试 DDL、`SELECT`、`INSERT` 和 `WATCH` 查询 (早于 v26.9 的 ClickHouse 才接受 `WATCH`) 。可通过 `test-util` feature 启用此功能。**仅**应将其用作开发依赖项。
 
 参见[该示例](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs)。
 

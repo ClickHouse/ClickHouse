@@ -247,7 +247,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
       aria-label={item.title}
       style={{
         "--sde-image-light-mode": `url("${webpFor(item.imgDark)}")`,
-        "--sde-image-dark-mode": `url("${webpFor(item.imgLight)}")`,
+        "--sde-image-dark-mode": `url("${webpFor(item.imgLight)}")`
       }}
     />
   )
@@ -258,15 +258,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
       <style
         dangerouslySetInnerHTML={{
           __html: `
-        @keyframes sde-pop {
-          from { opacity: 0; transform: translateY(14px) scale(0.96); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes sde-fade {
-          from { opacity: 0; }
-          to   { opacity: 1; }
-        }
-        .sde-view { animation: sde-fade 0.25s ease both; }
         .sde-tile {
           display: block;
           width: 100%;
@@ -275,8 +266,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           background: transparent;
           text-align: left;
           cursor: pointer;
-          animation: sde-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
-          transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
         }
         .sde-tile:hover { transform: translateY(-4px) scale(1.015); }
         .sde-tile:active { transform: translateY(-1px) scale(0.995); }
@@ -290,7 +279,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           border-radius: 8px;
           overflow: hidden;
           box-shadow: 0 1px 3px rgba(0,0,0,0.12);
-          transition: box-shadow 0.25s ease;
         }
         .dark .sde-root .sde-tile-media { border-color: #3c3c3c; }
         .sde-tile:hover .sde-tile-media { box-shadow: 0 12px 28px rgba(0,0,0,0.22); }
@@ -321,7 +309,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           backdrop-filter: blur(6px);
           -webkit-backdrop-filter: blur(6px);
           opacity: 0;
-          transition: opacity 0.25s ease;
           pointer-events: none;
         }
         .sde-tile:hover .sde-tile-hint { opacity: 1; }
@@ -349,7 +336,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           align-items: center;
           gap: 4px;
         }
-        .sde-child { animation: sde-pop 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
         .sde-back {
           display: inline-flex;
           align-items: center;
@@ -362,7 +348,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           opacity: 0.5;
           font-size: 0.875rem;
           font-weight: 500;
-          transition: opacity 0.2s ease;
         }
         .sde-back:hover { opacity: 1; }
         .sde-detail-title {
@@ -370,7 +355,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           font-weight: 600;
           line-height: 1.3;
           margin: 0 0 1.25rem 0;
-          animation: sde-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
         }
       `
         }}
@@ -379,8 +363,8 @@ export const SampleDatasetExplorer = ({ categories }) => {
       {!selected ? (
         <div className="sde-view">
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-            {cats.map((cat, i) => (
-              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`${cat.title} のデータセットを探索`}>
+            {cats.map((cat) => (
+              <button key={cat.id} type="button" className="sde-tile" onClick={() => setSelectedId(cat.id)} aria-label={`${cat.title} のデータセットを探索`}>
                 <span className="sde-tile-media">
                   <Banner cat={cat} />
                   <span className="sde-tile-hint">
@@ -414,8 +398,8 @@ export const SampleDatasetExplorer = ({ categories }) => {
           <h2 className="sde-detail-title">{selected.title}</h2>
 
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-            {selected.datasets.map((ds, i) => (
-              <a key={ds.href} href={withBase(ds.href)} className="sde-child sde-tile" style={{ animationDelay: `${i * 50}ms` }}>
+            {selected.datasets.map((ds) => (
+              <a key={ds.href} href={withBase(ds.href)} className="sde-tile">
                 <span className="sde-tile-media">
                   {ds.imgDark && ds.imgLight && <ThemeImage item={ds} />}
                   <span className="sde-tile-hint">

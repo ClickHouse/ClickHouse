@@ -9,11 +9,15 @@ keywords: ['سجل التدقيق']
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-تُسجَّل أنشطة Console في سجل التدقيق. إذا كان لديك دور Admin أو Developer على مستوى مؤسسة، يمكنك مراجعة السجل ودمجه مع أنظمة التسجيل لديك.
+تُسجَّل أنشطة Console في سجل التدقيق. يمكن للمستخدمين الذين لديهم صلاحية الوصول مراجعة السجل ودمجه مع أنظمة التسجيل لديهم. يخضع الوصول إلى سجل التدقيق لصلاحية **View audit logs** (`control-plane:organization:view-activities`):
 
-<div id="console-audit-log-ui">
-  ## الوصول إلى سجل التدقيق عبر واجهة المستخدم
-</div>
+* المستخدمون الذين لديهم دور Admin على مستوى المؤسسة يمتلكون هذا الوصول افتراضيًا.
+* يحتاج مستخدمو Console الآخرون إلى وصول على مستوى المؤسسة بالإضافة إلى [دور مخصص](/ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles) يتضمن صلاحية **View audit logs**.
+* تحتاج مفاتيح واجهة برمجة التطبيقات إلى دور يتضمن الصلاحية نفسها.
+
+للاطلاع على وصف جميع الصلاحيات، راجع [أدوار Console وصلاحياتها](/ar/products/cloud/reference/security/console-roles).
+
+## الوصول إلى سجل التدقيق عبر واجهة المستخدم {#console-audit-log-ui}
 
 <Steps>
   <Step title="حدِّد المؤسسة" id="select-org">
@@ -48,16 +52,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Image img="/images/cloud/security/activity_log3.webp" size="lg" alt="تصدير Activity بتنسيق CSV في ClickHouse Cloud" border />
 </div>
 
-<div id="console-audit-log-api">
-  ## الوصول إلى سجل تدقيق Console عبر واجهة برمجة تطبيقات
-</div>
+## الوصول إلى سجل تدقيق Console عبر واجهة برمجة تطبيقات {#console-audit-log-api}
 
 يمكنك استخدام نقطة النهاية `activity` في واجهة برمجة تطبيقات ClickHouse Cloud للحصول على نسخة مُصدَّرة
 من أحداث التدقيق. ويمكنك العثور على مزيد من التفاصيل في [مرجع واجهة برمجة تطبيقات](/ar/products/cloud/api-reference/organization/get-list-of-available-organizations).
 
-<div id="log-integrations">
-  ## تكاملات السجلات
-</div>
+## تكاملات السجلات {#log-integrations}
 
 يمكنك استخدام واجهة برمجة تطبيقات للتكامل مع منصة تسجيل من اختيارك. وفيما يلي الموصلات الجاهزة المدعومة:
 

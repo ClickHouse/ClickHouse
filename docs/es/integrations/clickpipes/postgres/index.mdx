@@ -14,159 +14,152 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/es/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/es/clickpipes/_changing_tls_settings.mdx';
+import PostgresClickPipeCli from '/snippets/es/clickpipes/_postgres_clickpipe_cli.mdx';
 import SettingPartitionBy from '/snippets/es/clickpipes/_target_ch_partition_by.mdx';
 
-Puede usar ClickPipes para ingestar datos desde su base de datos Postgres de origen a ClickHouse Cloud. La base de datos Postgres de origen puede estar alojada en sus instalaciones o en la nube, incluidos Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase y otros.
+<Visibility for="agents">
+  <PostgresClickPipeCli />
+</Visibility>
 
-Los ClickPipes de Postgres se pueden implementar y gestionar manualmente mediante la UI de ClickPipes, así como de forma programática con [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) y [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
+<Visibility for="humans">
+  <View title="UI de Cloud">
+    Puedes usar ClickPipes para ingestar datos desde tu base de datos de Postgres de origen en ClickHouse Cloud. La base de datos de Postgres de origen puede estar alojada on-premise o en la nube, incluidos Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase y otros.
 
-<div id="prerequisites">
-  ## Requisitos previos
-</div>
+    Los ClickPipes de Postgres se pueden desplegar y administrar manualmente desde la ClickPipes UI, así como de forma programática mediante [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) y [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
 
-Para empezar, primero debes asegurarte de que tu base de datos de Postgres esté configurada correctamente. Según tu instancia de Postgres de origen, puedes seguir cualquiera de las siguientes guías:
+    ## Requisitos previos {#prerequisites}
 
-1. [Amazon RDS Postgres](/es/integrations/clickpipes/postgres/source/rds)
+    Para empezar, primero debes asegurarte de que tu base de datos de Postgres esté configurada correctamente. Según tu instancia de Postgres de origen, puedes seguir cualquiera de las siguientes guías:
 
-2. [Amazon Aurora Postgres](/es/integrations/clickpipes/postgres/source/aurora)
+    1. [Amazon RDS Postgres](/es/integrations/clickpipes/postgres/source/rds)
 
-3. [Supabase Postgres](/es/integrations/clickpipes/postgres/source/supabase)
+    2. [Amazon Aurora Postgres](/es/integrations/clickpipes/postgres/source/aurora)
 
-4. [Google Cloud SQL Postgres](/es/integrations/clickpipes/postgres/source/google-cloudsql)
+    3. [Supabase Postgres](/es/integrations/clickpipes/postgres/source/supabase)
 
-5. [Azure Flexible Server for Postgres](/es/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
+    4. [Google Cloud SQL Postgres](/es/integrations/clickpipes/postgres/source/google-cloudsql)
 
-6. [Neon Postgres](/es/integrations/clickpipes/postgres/source/neon-postgres)
+    5. [Azure Flexible Server for Postgres](/es/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
 
-7. [Crunchy Bridge Postgres](/es/integrations/clickpipes/postgres/source/crunchy-postgres)
+    6. [Neon Postgres](/es/integrations/clickpipes/postgres/source/neon-postgres)
 
-8. [Fuente genérica de Postgres](/es/integrations/clickpipes/postgres/source/generic), si utilizas cualquier otro proveedor de Postgres o una instancia autohospedada.
+    7. [Crunchy Bridge Postgres](/es/integrations/clickpipes/postgres/source/crunchy-postgres)
 
-9. [TimescaleDB](/es/integrations/clickpipes/postgres/source/timescale), si utilizas la extensión TimescaleDB en un servicio administrado o en una instancia autohospedada.
+    8. [Fuente genérica de Postgres](/es/integrations/clickpipes/postgres/source/generic), si utilizas cualquier otro proveedor de Postgres o una instancia autohospedada.
 
-<Warning>
-  Los proxies de Postgres, como PgBouncer, RDS Proxy y Supabase Pooler, no son compatibles con la replicación basada en CDC. Asegúrate de NO usarlos para la configuración de ClickPipes y, en su lugar, añade los detalles de conexión de la base de datos de Postgres real.
-</Warning>
+    9. [TimescaleDB](/es/integrations/clickpipes/postgres/source/timescale), si utilizas la extensión TimescaleDB en un servicio administrado o en una instancia autohospedada.
 
-Una vez configurada tu base de datos de Postgres de origen, puedes continuar con la creación de tu ClickPipe.
+    <Warning>
+      Los proxies de Postgres, como PgBouncer, RDS Proxy y Supabase Pooler, no son compatibles con la replicación basada en CDC. Asegúrate de NO usarlos para la configuración de ClickPipes y, en su lugar, añade los detalles de conexión de la base de datos de Postgres real.
+    </Warning>
 
-<div id="creating-your-clickpipe">
-  ## Crear tu ClickPipe
-</div>
+    Una vez configurada tu base de datos de Postgres de origen, puedes continuar con la creación de tu ClickPipe.
 
-Asegúrate de haber iniciado sesión en tu cuenta de ClickHouse Cloud. Si aún no tienes una cuenta, puedes registrarte [aquí](https://cloud.clickhouse.com/).
+    ## Creación de tu ClickPipe {#creating-your-clickpipe}
 
-[//]: # "   TODO update image here"
+    Asegúrate de haber iniciado sesión en tu cuenta de ClickHouse Cloud. Si aún no tienes una cuenta, puedes registrarte [aquí](https://cloud.clickhouse.com/).
 
-1. En la consola de ClickHouse Cloud, ve a tu servicio de ClickHouse Cloud.
+    [//]: # "   TODO update image here"
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Servicio de ClickPipes" size="lg" border />
+    1. En la consola de ClickHouse Cloud, navega hasta tu servicio de ClickHouse Cloud.
 
-2. Selecciona el botón `Data Sources` en el menú lateral izquierdo y haz clic en &quot;Set up a ClickPipe&quot;
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Servicio de ClickPipes" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Seleccionar importaciones" size="lg" border />
+    2. Selecciona el botón `Data Sources` en el menú de la izquierda y haz clic en &quot;Set up a ClickPipe&quot;
 
-3. Selecciona la tarjeta `Postgres CDC`
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Seleccionar importaciones" size="lg" border />
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="Seleccionar Postgres" size="lg" border />
+    3. Selecciona el tile `Postgres CDC`
 
-<div id="adding-your-source-postgres-database-connection">
-  ### Añadir la conexión de tu base de datos Postgres de origen
-</div>
+       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="Selecciona Postgres" size="lg" border />
 
-4. Completa los datos de conexión de tu base de datos Postgres de origen que configuraste en el paso de requisitos previos.
+    ### Añadir la conexión a la base de datos de Postgres de origen {#adding-your-source-postgres-database-connection}
 
-<Info>
-  Antes de empezar a añadir los datos de tu conexión, asegúrate de haber incluido las direcciones IP de ClickPipes en la lista de permitidos de las reglas de tu firewall. Puedes encontrar la lista de direcciones IP de ClickPipes [aquí](/es/integrations/clickpipes/networking/static-ips).
-  Para obtener más información, consulta las guías de configuración de Postgres de origen enlazadas [en la parte superior de esta página](#prerequisites).
-</Info>
+    4. Completa los detalles de conexión de tu base de datos de Postgres de origen que configuraste en el paso de requisitos previos.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="Completa los datos de conexión" size="lg" border />
+    <Info>
+      Antes de empezar a añadir tus detalles de conexión, asegúrate de haber incluido las direcciones IP de ClickPipes en la lista de permitidos de las reglas de tu firewall. Puedes encontrar la lista de direcciones IP de ClickPipes [aquí](/es/integrations/clickpipes/networking/static-ips).
+      Para más información, consulta las guías de configuración de Postgres de origen enlazadas [al principio de esta página](#prerequisites).
+    </Info>
 
-<div id="optional-setting-up-aws-private-link">
-  #### (Opcional) Configurar AWS Private Link
-</div>
+    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="Introduce los detalles de conexión" size="lg" border />
 
-Puede usar AWS Private Link para conectarse a su base de datos Postgres de origen si está alojada en AWS. Esto resulta útil si
-quiere mantener privada la transferencia de datos.
-Puede seguir la [guía de configuración para establecer la conexión](/es/integrations/clickpipes/networking/aws-privatelink).
+    #### (Opcional) Configuración de AWS Private Link {#optional-setting-up-aws-private-link}
 
-<div id="optional-changing-tls-settings">
-  #### (Opcional) Modificar la configuración de TLS
-</div>
+    Puedes usar AWS Private Link para conectarte a tu base de datos de Postgres de origen si está alojada en AWS. Esto resulta útil si
+    quieres mantener privada la transferencia de tus datos.
+    Puedes seguir la [guía de configuración para establecer la conexión](/es/integrations/clickpipes/networking/aws-privatelink).
 
-<ChangingTLSSettings />
+    #### (Opcional) Cambiar la configuración de TLS {#optional-changing-tls-settings}
 
-<div id="optional-setting-up-ssh-tunneling">
-  #### (Opcional) Configuración del túnel SSH
-</div>
+    <ChangingTLSSettings />
 
-Puede especificar los detalles del túnel SSH si su base de datos Postgres de origen no es accesible públicamente.
+    #### (Opcional) Configurar SSH tunneling {#optional-setting-up-ssh-tunneling}
 
-1. Active el interruptor &quot;Use SSH Tunnelling&quot;.
+    Puedes especificar los detalles de SSH tunneling si tu base de datos de Postgres de origen no es accesible públicamente.
 
-2. Complete los datos de la conexión SSH.
+    1. Activa el toggle &quot;Use SSH Tunnelling&quot;.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="Túnel SSH" size="lg" border />
+    2. Completa los detalles de conexión SSH.
 
-3. Para usar autenticación con claves, haga clic en &quot;Revoke and generate key pair&quot; para generar un nuevo par de claves y copie la clave pública generada en su servidor SSH, en `~/.ssh/authorized_keys`.
+       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH tunneling" size="lg" border />
 
-4. Haga clic en &quot;Verify Connection&quot; para verificar la conexión.
+    3. Para usar la autenticación basada en claves, haz clic en &quot;Revoke and generate key pair&quot; para generar un nuevo par de claves y copia la clave pública generada en tu servidor SSH en `~/.ssh/authorized_keys`.
 
-<Note>
-  Asegúrese de permitir [dirección IP de ClickPipes](/es/integrations/clickpipes/networking/static-ips) en las reglas de su firewall para el host bastión SSH, de modo que ClickPipes pueda establecer el túnel SSH.
-</Note>
+    4. Haz clic en &quot;Verify Connection&quot; para verificar la conexión.
 
-Una vez completados los datos de la conexión, haga clic en &quot;Next&quot;.
+    <Note>
+      Asegúrate de permitir las [direcciones IP de ClickPipes](/es/integrations/clickpipes/networking/static-ips) en las reglas de tu firewall para el host bastión SSH, de modo que ClickPipes pueda establecer el túnel SSH.
+    </Note>
 
-<div id="configuring-the-replication-settings">
-  ### Configuración de la replicación
-</div>
+    Una vez completados los detalles de conexión, haz clic en &quot;Next&quot;.
 
-5. Asegúrate de seleccionar el slot de replicación en la lista desplegable que creaste en el paso de requisitos previos.
+    ### Configurar los ajustes de replicación {#configuring-the-replication-settings}
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg" alt="Seleccionar el slot de replicación" size="lg" border />
+    5. Asegúrate de seleccionar en la lista desplegable el replication slot que creaste en el paso de requisitos previos.
 
-<div id="advanced-settings">
-  #### Configuración avanzada
-</div>
+       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg" alt="Seleccionar replication slot" size="lg" border />
 
-Puede configurar las opciones avanzadas si es necesario. A continuación, se ofrece una breve descripción de cada ajuste:
+    #### Configuración avanzada {#advanced-settings}
 
-* **Sync interval**: Es el intervalo con el que ClickPipes consultará la base de datos de origen para detectar cambios. Esto afecta al servicio de ClickHouse de destino; si el costo es un factor importante, recomendamos mantenerlo en un valor más alto (superior a `3600`).
-* **Parallel threads for initial load**: Es la cantidad de workers en paralelo que se utilizarán para obtener la instantánea inicial. Resulta útil cuando tiene una gran cantidad de tablas y desea controlar cuántos workers en paralelo se usan para obtener la instantánea inicial. Este ajuste se aplica por tabla.
-* **Pull batch size**: El tamaño del lote de extracción es la cantidad de filas que se obtendrán en un solo lote. Este ajuste se aplica según disponibilidad y puede que no se respete en todos los casos.
-* **Snapshot number of rows per partition**: Es la cantidad de filas que se obtendrán en cada partición durante la instantánea inicial. Resulta útil cuando sus tablas tienen una gran cantidad de filas y desea controlar cuántas filas se obtienen en cada partición.
-* **Snapshot number of tables in parallel**: Es la cantidad de tablas que se obtendrán en paralelo durante la instantánea inicial. Resulta útil cuando tiene una gran cantidad de tablas y desea controlar cuántas tablas se obtienen en paralelo.
+    Si lo necesitas, puedes configurar los ajustes avanzados. A continuación se ofrece una breve descripción de cada ajuste:
 
-<div id="configuring-the-tables">
-  ### Configuración de las tablas
-</div>
+    * **Sync interval**: es el intervalo con el que ClickPipes consultará la base de datos de origen en busca de cambios. Esto tiene implicaciones en el servicio de ClickHouse de destino; para los usuarios sensibles al costo, recomendamos mantenerlo en un valor alto (superior a `3600`).
+    * **Parallel threads for initial load**: es la cantidad de workers en paralelo que se usarán para obtener el snapshot inicial. Resulta útil cuando tienes una gran cantidad de tablas y quieres controlar el número de workers en paralelo empleados para obtener el snapshot inicial. Esta configuración es por tabla.
+    * **Pull batch size**: la cantidad de filas que se obtienen en un solo batch. Es una configuración de mejor esfuerzo y puede no respetarse en todos los casos.
+    * **Snapshot number of rows per partition**: es la cantidad de filas que se obtendrán en cada partición durante el snapshot inicial. Resulta útil cuando tienes una gran cantidad de filas en tus tablas y quieres controlar el número de filas obtenidas en cada partición.
+    * **Snapshot number of tables in parallel**: es la cantidad de tablas que se obtendrán en paralelo durante el snapshot inicial. Resulta útil cuando tienes una gran cantidad de tablas y quieres controlar el número de tablas obtenidas en paralelo.
 
-6. Aquí puede seleccionar la base de datos de destino para su ClickPipe. Puede seleccionar una base de datos existente o crear una nueva.
+    ### Configuración de las tablas {#configuring-the-tables}
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg" alt="Seleccionar base de datos de destino" size="lg" border />
+    6. Aquí puedes seleccionar la base de datos de destino para tu ClickPipe. Puedes elegir una base de datos existente o crear una nueva.
 
-7. Puede seleccionar las tablas que desea replicar desde la base de datos Postgres de origen. Mientras selecciona las tablas, también puede optar por cambiarles el nombre en la base de datos de destino de ClickHouse, así como excluir columnas específicas.
+       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg" alt="Seleccionar la base de datos de destino" size="lg" border />
 
-<Warning>
-  Si está definiendo una clave de ordenación en ClickHouse distinta de la clave primaria de Postgres, no olvide leer todas las [consideraciones](/es/integrations/clickpipes/postgres/ordering-keys) al respecto
-</Warning>
+    7. Puedes seleccionar las tablas que quieres replicar desde la base de datos de Postgres de origen. Al seleccionar las tablas, también puedes optar por renombrarlas en la base de datos en ClickHouse de destino, así como excluir columnas específicas.
 
-8. <SettingPartitionBy />
+    <Warning>
+      Si defines en ClickHouse una ordering key distinta de la primary key de Postgres, no olvides leer todas las [consideraciones](/es/integrations/clickpipes/postgres/ordering-keys) al respecto
+    </Warning>
 
-<div id="review-permissions-and-start-the-clickpipe">
-  ### Revisa los permisos e inicia ClickPipe
-</div>
+    8. <SettingPartitionBy />
 
-9. Selecciona el rol &quot;Acceso completo&quot; en el menú desplegable de permisos y haz clic en &quot;Completar configuración&quot;.
+    ### Revisa los permisos e inicia el ClickPipe {#review-permissions-and-start-the-clickpipe}
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Revisar permisos" size="lg" border />
+    9. Selecciona el rol &quot;Full access&quot; en el desplegable de permisos y haz clic en &quot;Complete Setup&quot;.
 
-<div id="whats-next">
-  ## ¿Qué sigue?
-</div>
+       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Revisar permisos" size="lg" border />
 
-Una vez que haya configurado su ClickPipe para replicar datos de PostgreSQL a ClickHouse Cloud, puede centrarse en cómo consultar y modelar sus datos para obtener un rendimiento óptimo. Consulte la [guía de migración](/es/get-started/migrate/postgres/overview) para evaluar qué estrategia se adapta mejor a sus necesidades, así como las páginas [Estrategias de deduplicación (usando CDC)](/es/integrations/clickpipes/postgres/deduplication) y [Claves de ordenación](/es/integrations/clickpipes/postgres/ordering-keys) para conocer las buenas prácticas aplicables a las cargas de trabajo con CDC.
+    ## ¿Qué sigue? {#whats-next}
 
-Para consultas habituales sobre el CDC de PostgreSQL y la solución de problemas, consulte la [página de preguntas frecuentes de Postgres](/es/integrations/clickpipes/postgres/faq).
+    Una vez que hayas configurado tu ClickPipe para replicar datos de PostgreSQL a ClickHouse Cloud, puedes centrarte en cómo consultar y modelar tus datos para obtener un rendimiento óptimo. Consulta la [guía de migración](/es/get-started/migrate/postgres/overview) para evaluar qué estrategia se adapta mejor a tus necesidades, así como las páginas [Estrategias de deduplicación (con CDC)](/es/integrations/clickpipes/postgres/deduplication) y [Claves de ordenación](/es/integrations/clickpipes/postgres/ordering-keys) para conocer las buenas prácticas en cargas de trabajo de CDC.
+
+    Para consultar preguntas habituales sobre CDC de PostgreSQL y resolución de problemas, visita la [página de preguntas frecuentes de Postgres](/es/integrations/clickpipes/postgres/faq).
+  </View>
+
+  <View title="CLI">
+    Puedes seguir estos pasos tú mismo, automatizarlos con un script o delegarlos a un AI Agent. Cambia a la vista **Cloud UI** para ver la versión de la consola.
+
+    <PostgresClickPipeCli />
+  </View>
+</Visibility>

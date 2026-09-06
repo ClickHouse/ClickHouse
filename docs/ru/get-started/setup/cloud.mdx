@@ -58,7 +58,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
 
         <br />
 
-        ### Подключение через консоль SQL
+        ### Подключение через консоль SQL {#connect-using-sql-console}
 
         Для быстрого начала работы ClickHouse предоставляет веб-консоль SQL, в которую вы будете перенаправлены после завершения онбординга.
 
@@ -78,7 +78,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
 
         Готово — теперь вы можете начать использовать новый сервис ClickHouse!
 
-        ### Подключение приложения
+        ### Подключение приложения {#connect-with-your-app}
 
         Нажмите кнопку подключения в навигационном меню. Откроется модальное окно с учетными данными для вашего сервиса и инструкциями по подключению через выбранный интерфейс или клиентскую библиотеку.
 
@@ -104,15 +104,15 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
         * Загрузите файл — поддерживаются форматы JSON, CSV и TSV
         * Загрузите данные по URL-адресу файла
 
-        ### ClickPipes
+        ### ClickPipes {#clickpipes}
 
-        [ClickPipes](/ru/integrations/clickpipes/home) — это управляемая интеграционная платформа, которая позволяет загружать данные из самых разных источников буквально в несколько кликов. Разработанная для самых требовательных нагрузок, надежная и масштабируемая архитектура ClickPipes обеспечивает стабильную производительность и надежность. ClickPipes можно использовать как для долгосрочной передачи данных в реальном времени, так и для разовой загрузки данных.
+        [ClickPipes](/ru/integrations/clickpipes/home) — это управляемая интеграционная платформа, которая позволяет загружать данные из самых разных источников буквально в несколько кликов. Разработанная для самых требовательных нагрузок, надежная и масштабируемая архитектура ClickPipes обеспечивает стабильную производительность и надежность. ClickPipes можно использовать как для долгосрочной потоковой передачи данных, так и для разовой загрузки данных.
 
         <Image img="/images/_snippets/select_data_source.webp" size="lg" alt="Выберите источник данных" border />
 
         <br />
 
-        ### Добавление данных через SQL Console
+        ### Добавление данных через SQL Console {#add-data-using-the-sql-console}
 
         Как и большинство систем управления базами данных, ClickHouse логически группирует таблицы в **базы данных**. Чтобы создать новую базу данных в ClickHouse, используйте команду [`CREATE DATABASE`](/ru/reference/statements/create/database):
 
@@ -155,7 +155,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
           Доступно множество движков таблиц, но для простой таблицы на одном сервере ClickHouse, скорее всего, подойдет [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree).
         </Info>
 
-        #### Краткое введение в первичные ключи
+        #### Краткое введение в первичные ключи {#a-brief-intro-to-primary-keys}
 
         Прежде чем двигаться дальше, важно разобраться, как в ClickHouse работают первичные ключи (их реализация
         может показаться неожиданной!):
@@ -175,7 +175,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
 
         Подробное описание ключевых концепций ClickHouse см. в разделе [&quot;Основные концепции&quot;](/ru/concepts/core-concepts/index).
 
-        #### Вставьте данные в вашу таблицу
+        #### Вставьте данные в вашу таблицу {#insert-data-into-your-table}
 
         В ClickHouse можно использовать привычную команду [`INSERT INTO TABLE`](/ru/reference/statements/insert-into), однако важно понимать, что каждая вставка в таблицу [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) приводит к созданию в хранилище нового **part**.
 
@@ -208,7 +208,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
         SELECT * FROM helloworld.my_first_table
         ```
 
-        ### Добавление данных с помощью клиента ClickHouse
+        ### Добавление данных с помощью клиента ClickHouse {#add-data-using-the-clickhouse-client}
 
         Также вы можете подключиться к своему сервису ClickHouse Cloud с помощью инструмента командной строки [**clickhouse client**](/ru/concepts/features/interfaces/client). Чтобы получить эти данные, нажмите `Connect` в меню слева. В открывшемся диалоговом окне выберите `Native` в выпадающем списке:
 
@@ -288,7 +288,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
         exit
         ```
 
-        ### Загрузка файла
+        ### Загрузка файла {#upload-a-file}
 
         Одна из типичных задач в начале работы с базой данных — вставка данных, которые у вас уже есть в файлах. Мы разместили в интернете
         пример данных, который вы можете вставить: это данные о кликах пользователей (clickstream), включающие ID пользователя, посещённый URL и
@@ -331,7 +331,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
       Подробнее см. в разделе [&quot;Настройка IP filters&quot;](/ru/products/cloud/guides/security/connectivity/setting-ip-filters).
     </Tip>
 
-    ## Что дальше?
+    ## Что дальше? {#whats-next}
 
     * В [руководстве](/ru/get-started/quickstarts/tutorial) вы вставите 2 миллиона строк в таблицу и выполните несколько аналитических запросов
     * У нас есть список [демонстрационных наборов данных](/ru/get-started/sample-datasets/index) с инструкциями по их вставке

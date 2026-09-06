@@ -24,6 +24,24 @@ Estos ajustes configuran el servidor de ClickHouse y se autogeneran a partir del
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Hace que las métricas asíncronas calculen únicamente las métricas de Keeper.
 
+<div id="asynchronous_metrics_key_values_mode">
+  ## asynchronous_metrics_key_values_mode
+</div>
+
+<SettingsInfoBlock type="AsynchronousMetricsKeyValuesMode" default_value="key_values" changeable_without_restart="Yes" />
+
+Define de qué forma se publican las métricas asíncronas de clave-valor —las desglosadas por núcleo de CPU, dispositivo de bloques, interfaz de red, disco, sensor de temperatura, controlador de memoria o canal de logging— en [`system.asynchronous_metrics`](/es/reference/system-tables/asynchronous_metrics), [`system.asynchronous_metric_log`](/es/reference/system-tables/asynchronous_metric_log), el endpoint de Prometheus y Graphite.
+
+Valores posibles:
+
+* `key_values` - cada familia es una única métrica de clave-valor: un `Map` en la columna `key_values` de `system.asynchronous_metrics`, una fila por clave en `system.asynchronous_metric_log`, una muestra de Prometheus por clave con una etiqueta como `device="sda"` y una ruta de Graphite `<prefix>.<Metric>.<key>`.
+* `legacy_names` - cada clave es una métrica escalar independiente con la clave incorporada en su nombre, como antes de la versión 26.8: `OSUserTimeCPU3`, `CPUFrequencyMHz_0`, `BlockReadBytes_sda`, `NetworkReceiveBytes_eth0`, `DiskTotal_default`, `Temperature0`, `EDAC0_Correctable`, etc.
+* `both` - ambas formas se publican a la vez, lo que resulta útil durante la migración de la monitorización. Tenga cuidado con el doble recuento en este modo: una agregación de nombres de métricas que coinciden con un prefijo, como `sum(value) ... WHERE metric LIKE 'NetworkReceiveBytes%'`, cuenta cada valor dos veces.
+
+Una familia de métricas de clave-valor introducida después de la versión 26.8 no tiene un nombre heredado y siempre se publica en formato de clave-valor.
+
+El SETTING se aplica sobre la marcha: se vuelve a leer en cada actualización de las métricas asíncronas, por lo que `SYSTEM RELOAD CONFIG` basta para cambiar el formato sin reiniciar.
+
 <div id="asynchronous_metrics_update_period_s">
   ## asynchronous_metrics_update_period_s
 </div>

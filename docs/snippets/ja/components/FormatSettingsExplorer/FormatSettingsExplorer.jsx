@@ -430,11 +430,12 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "type_json_*",
-      count: 4,
+      count: 5,
       settings: [
         { name: "type_json_allow_duplicated_key_with_literal_and_nested_object", path: "/type-json#type_json_allow_duplicated_key_with_literal_and_nested_object", default: "1" },
         { name: "type_json_skip_duplicated_paths", path: "/type-json#type_json_skip_duplicated_paths", default: "0" },
         { name: "type_json_skip_invalid_typed_paths", path: "/type-json#type_json_skip_invalid_typed_paths", default: "0" },
+        { name: "type_json_skip_null_typed_paths", path: "/type-json#type_json_skip_null_typed_paths", default: "0" },
         { name: "type_json_use_partial_match_to_skip_paths_by_regexp", path: "/type-json#type_json_use_partial_match_to_skip_paths_by_regexp", default: "1" }
       ],
       children: []
@@ -639,13 +640,13 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} 一致する {matchingCount === 1 ? "設定" : "設定"}
+            {matchingCount} 件の設定が一致{matchingCount === 1 ? "" : ""}
           </span>
         </div>
       )}
       <div className="mt-3 w-full overflow-x-auto rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 font-mono text-sm leading-6 dark:border-white/10 dark:bg-transparent">
         <div className="flex min-w-full items-center justify-between gap-4">
-          <div className="min-w-max font-semibold">/format-設定</div>
+          <div className="min-w-max font-semibold">/format-settings</div>
           <button
             type="button"
             aria-label={allGroupsExpanded ? "すべて折りたたむ" : "すべて展開"}

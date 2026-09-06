@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="query_plan_aggregation_bucket_top_k">
-  ## query_plan_aggregation_bucket_top_k
-</div>
+## query_plan_aggregation_bucket_top_k {#query_plan_aggregation_bucket_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,9 +28,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 * 0 - 無効化
 * 1 - 有効化
 
-<div id="query_plan_aggregation_in_order">
-  ## query_plan_aggregation_in_order
-</div>
+## query_plan_aggregation_in_order {#query_plan_aggregation_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -50,9 +46,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_plan_convert_any_join_to_semi_or_anti_join">
-  ## query_plan_convert_any_join_to_semi_or_anti_join
-</div>
+## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -60,9 +54,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 JOIN の後のフィルタが、不一致の行または一致した行に対して常に false と評価される場合に、ANY JOIN を SEMI JOIN または ANTI JOIN に変換できるようにします
 
-<div id="query_plan_convert_join_to_in">
-  ## query_plan_convert_join_to_in
-</div>
+## query_plan_convert_join_to_in {#query_plan_convert_join_to_in}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -70,9 +62,7 @@ JOIN の後のフィルタが、不一致の行または一致した行に対し
 
 出力カラムが左テーブルにのみ関連している場合に、`JOIN` を `IN` を使ったサブクエリに変換できるようにします。非 ANY JOIN (たとえばデフォルトの ALL JOIN) では、誤った結果になる可能性があります。
 
-<div id="query_plan_convert_outer_join_to_inner_join">
-  ## query_plan_convert_outer_join_to_inner_join
-</div>
+## query_plan_convert_outer_join_to_inner_join {#query_plan_convert_outer_join_to_inner_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -80,9 +70,7 @@ JOIN の後のフィルタが、不一致の行または一致した行に対し
 
 `JOIN` 後のフィルタで常にデフォルト値が除外される場合、`OUTER JOIN` を `INNER JOIN` に変換できるようにします
 
-<div id="query_plan_direct_read_from_text_index">
-  ## query_plan_direct_read_from_text_index
-</div>
+## query_plan_direct_read_from_text_index {#query_plan_direct_read_from_text_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -90,9 +78,7 @@ JOIN の後のフィルタが、不一致の行または一致した行に対し
 
 クエリプランで、転置テキスト索引のみを使用した全文検索のフィルタリングを可能にします。
 
-<div id="query_plan_display_internal_aliases">
-  ## query_plan_display_internal_aliases
-</div>
+## query_plan_display_internal_aliases {#query_plan_display_internal_aliases}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -100,17 +86,13 @@ JOIN の後のフィルタが、不一致の行または一致した行に対し
 
 EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部別名 (&#95;&#95;table1 など) を表示します。
 
-<div id="query_plan_enable_multithreading_after_window_functions">
-  ## query_plan_enable_multithreading_after_window_functions
-</div>
+## query_plan_enable_multithreading_after_window_functions {#query_plan_enable_multithreading_after_window_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 ウィンドウ関数の評価後にマルチスレッドを有効にし、並列ストリーム処理を可能にします
 
-<div id="query_plan_enable_optimizations">
-  ## query_plan_enable_optimizations
-</div>
+## query_plan_enable_optimizations {#query_plan_enable_optimizations}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -125,9 +107,7 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 * 0 - クエリプランレベルのすべての最適化を無効にする
 * 1 - クエリプランレベルの最適化を有効にする (ただし、個々の最適化はそれぞれの設定によって無効にされる場合があります)
 
-<div id="query_plan_execute_functions_after_sorting">
-  ## query_plan_execute_functions_after_sorting
-</div>
+## query_plan_execute_functions_after_sorting {#query_plan_execute_functions_after_sorting}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -143,9 +123,7 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_plan_filter_push_down">
-  ## query_plan_filter_push_down
-</div>
+## query_plan_filter_push_down {#query_plan_filter_push_down}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -161,9 +139,7 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_plan_fuse_filter_into_array_join">
-  ## query_plan_fuse_filter_into_array_join
-</div>
+## query_plan_fuse_filter_into_array_join {#query_plan_fuse_filter_into_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -176,9 +152,7 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
   これは開発者がデバッグ目的でのみ使用すべき、上級者向けの設定です。この設定は将来、後方互換性のない変更が加えられたり、削除されたりする可能性があります。
 </Note>
 
-<div id="query_plan_join_shard_by_pk_ranges">
-  ## query_plan_join_shard_by_pk_ranges
-</div>
+## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -186,9 +160,7 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 
 両方のテーブルで、結合キーに PRIMARY KEY のプレフィックスが含まれている場合は、JOIN に対して分片化を適用します。hash、parallel&#95;hash、full&#95;sorting&#95;merge、parallel&#95;full&#95;sorting&#95;merge アルゴリズムでサポートされています。通常、クエリの高速化にはつながりませんが、メモリ消費量を抑えられる場合があります。
 
-<div id="query_plan_join_swap_table">
-  ## query_plan_join_swap_table
-</div>
+## query_plan_join_swap_table {#query_plan_join_swap_table}
 
 <SettingsInfoBlock type="BoolAuto" default_value="auto" />
 
@@ -200,9 +172,7 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 * &#39;false&#39;: テーブルを入れ替えません (右テーブルがビルドテーブルになります) 。
 * &#39;true&#39;: 常にテーブルを入れ替えます (左テーブルがビルドテーブルになります) 。
 
-<div id="query_plan_lift_up_array_join">
-  ## query_plan_lift_up_array_join
-</div>
+## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -218,9 +188,7 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_plan_lift_up_union">
-  ## query_plan_lift_up_union
-</div>
+## query_plan_lift_up_union {#query_plan_lift_up_union}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -236,9 +204,20 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_plan_max_limit_for_join_lazy_indexing">
-  ## query_plan_max_limit_for_join_lazy_indexing
-</div>
+## query_plan_lower_array_join_function {#query_plan_lower_array_join_function}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "arrayJoin 関数を実際の ARRAY JOIN ステップに変換する新しい最適化。デフォルトでは無効。"}]}]} />
+
+式内の `arrayJoin` 関数を実際の `ARRAY JOIN` ステップに変換するクエリプランレベルの最適化を有効または無効にします。これにより、遅延実行レプリケーションやフィルター融合を含む、`ARRAY JOIN` 句と同じ実行機構で処理されます。
+設定 [query&#95;plan&#95;enable&#95;optimizations](/ja/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) が 1 の場合にのみ有効です。
+
+<Note>
+  これは開発者によるデバッグ目的に限って使用すべき、上級者向けの設定です。この設定は今後、後方互換性のない変更が加えられたり、削除されたりする可能性があります。
+</Note>
+
+## query_plan_max_limit_for_join_lazy_indexing {#query_plan_max_limit_for_join_lazy_indexing}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -246,9 +225,7 @@ EXPLAIN PLAN で、元のクエリで指定された別名ではなく、内部�
 
 JOIN の遅延索引最適化でクエリプランを使用できる上限値を制御します。0 の場合、制限はありません。
 
-<div id="query_plan_max_limit_for_lazy_materialization">
-  ## query_plan_max_limit_for_lazy_materialization
-</div>
+## query_plan_max_limit_for_lazy_materialization {#query_plan_max_limit_for_lazy_materialization}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -256,9 +233,7 @@ JOIN の遅延索引最適化でクエリプランを使用できる上限値を
 
 遅延マテリアライゼーションの最適化にクエリプランを使用できる最大制限値を制御します。0 の場合、制限はありません。
 
-<div id="query_plan_max_limit_for_top_k_optimization">
-  ## query_plan_max_limit_for_top_k_optimization
-</div>
+## query_plan_max_limit_for_top_k_optimization {#query_plan_max_limit_for_top_k_optimization}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -268,9 +243,7 @@ minmax スキップ索引と動的しきい値フィルタリングを使用し�
 
 この設定は、[enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ja/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) の動作も制御します。
 
-<div id="query_plan_max_optimizations_to_apply">
-  ## query_plan_max_optimizations_to_apply
-</div>
+## query_plan_max_optimizations_to_apply {#query_plan_max_optimizations_to_apply}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -283,9 +256,7 @@ EXPLAIN PLAN クエリでは、この上限に達すると最適化の適用を�
   これは上級者向けの設定であり、開発者がデバッグ目的でのみ使用すべきです。この設定は今後、後方互換性のない形で変更されたり、削除されたりする可能性があります。
 </Note>
 
-<div id="query_plan_max_set_size_for_projection_match">
-  ## query_plan_max_set_size_for_projection_match
-</div>
+## query_plan_max_set_size_for_projection_match {#query_plan_max_set_size_for_projection_match}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -295,9 +266,7 @@ projection matcher が 2 つの Set が等しいかどうかを判定する際�
 
 aggregate projection matcher (および、`IN` 句の Set を比較する必要がある将来の projection matcher) で使用されます。内容ハッシュの計算量は、Set の elements 数に対して `O(N log N)` です。この設定は、クエリまたは projection に多数の `IN` 句が現れる場合に、プランニング時に発生するコストを抑えるためのものです。
 
-<div id="query_plan_max_step_description_length">
-  ## query_plan_max_step_description_length
-</div>
+## query_plan_max_step_description_length {#query_plan_max_step_description_length}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -305,9 +274,7 @@ aggregate projection matcher (および、`IN` 句の Set を比較する必要�
 
 EXPLAIN PLAN におけるステップの説明の最大長。
 
-<div id="query_plan_merge_expression_into_join">
-  ## query_plan_merge_expression_into_join
-</div>
+## query_plan_merge_expression_into_join {#query_plan_merge_expression_into_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -315,9 +282,7 @@ EXPLAIN PLAN におけるステップの説明の最大長。
 
 JOIN 順序の最適化時に、式を JOIN ステップにマージできるようにします。
 
-<div id="query_plan_merge_expressions">
-  ## query_plan_merge_expressions
-</div>
+## query_plan_merge_expressions {#query_plan_merge_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -333,9 +298,7 @@ JOIN 順序の最適化時に、式を JOIN ステップにマージできるよ
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_plan_merge_filter_into_join_condition">
-  ## query_plan_merge_filter_into_join_condition
-</div>
+## query_plan_merge_filter_into_join_condition {#query_plan_merge_filter_into_join_condition}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -343,9 +306,7 @@ JOIN 順序の最適化時に、式を JOIN ステップにマージできるよ
 
 フィルターを `JOIN` 条件にマージし、`CROSS JOIN` を `INNER` に変換できるようにします。
 
-<div id="query_plan_merge_filters">
-  ## query_plan_merge_filters
-</div>
+## query_plan_merge_filters {#query_plan_merge_filters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -353,9 +314,7 @@ JOIN 順序の最適化時に、式を JOIN ステップにマージできるよ
 
 クエリプラン内のフィルタをマージできるようにします。
 
-<div id="query_plan_min_columns_for_join_lazy_indexing">
-  ## query_plan_min_columns_for_join_lazy_indexing
-</div>
+## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
@@ -363,9 +322,7 @@ JOIN 順序の最適化時に、式を JOIN ステップにマージできるよ
 
 JOIN で遅延索引最適化を有効にするために必要な、左側の payload カラムの最小数を制御します。0 はこの最適化が無効であることを意味します。
 
-<div id="query_plan_optimize_count_from_text_index">
-  ## query_plan_optimize_count_from_text_index
-</div>
+## query_plan_optimize_count_from_text_index {#query_plan_optimize_count_from_text_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -374,9 +331,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 一致する行をマテリアライズすることなく、テキスト索引のポスティングリストのカーディナリティから直接 `SELECT count() ... WHERE <text search predicate>` に応答できるようにします。
 `query_plan_direct_read_from_text_index` が有効な場合にのみ有効です。
 
-<div id="query_plan_optimize_join_order_algorithm">
-  ## query_plan_optimize_join_order_algorithm
-</div>
+## query_plan_optimize_join_order_algorithm {#query_plan_optimize_join_order_algorithm}
 
 <ExperimentalBadge />
 
@@ -392,9 +347,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 * &#39;dphyp&#39; - 現時点では INNER JOIN のみに対応する DPhyp (ハイパーグラフ分割による動的計画法) アルゴリズムを実装します。`dpsize` と同じ探索空間を調べますが、連結された部分グラフのペアだけを列挙するため、クロス積を考慮しない代わりに、スパースな JOIN グラフでは中間 JOIN の数を減らせます
   複数のアルゴリズムは、たとえば `dphyp,greedy` のようにカンマ区切りのリストで指定できます。指定した順に試行され、あるアルゴリズムでクエリを処理できない場合 (たとえば OUTER JOIN や非連結なコンポーネントがある場合) は、フォールバックとして次のアルゴリズムが使用されます。
 
-<div id="query_plan_optimize_join_order_limit">
-  ## query_plan_optimize_join_order_limit
-</div>
+## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -403,9 +356,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 同じサブクエリ内の JOIN 順序を最適化します。現在のところ、ごく限られたケースでのみサポートされています。
 値は、最適化対象とするテーブルの最大数です。
 
-<div id="query_plan_optimize_join_order_max_searched_plans">
-  ## query_plan_optimize_join_order_max_searched_plans
-</div>
+## query_plan_optimize_join_order_max_searched_plans {#query_plan_optimize_join_order_max_searched_plans}
 
 <ExperimentalBadge />
 
@@ -417,9 +368,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 これにより、クリークやスターのように探索空間が指数関数的に増大する密な JOIN グラフにおいて、optimization 時間を決定論的に制限できます (実時間には依存しません) 。
 制限を無効にするには 0 に設定します。既定の `query_plan_optimize_join_order_limit` では探索が常にこの上限を十分下回るため、影響はありません。
 
-<div id="query_plan_optimize_join_order_randomize">
-  ## query_plan_optimize_join_order_randomize
-</div>
+## query_plan_optimize_join_order_randomize {#query_plan_optimize_join_order_randomize}
 
 <ExperimentalBadge />
 
@@ -431,9 +380,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 1 に設定するとランダムシードが生成され、1 より大きい値に設定すると、その値がシードとして直接使用されます。
 これは、異なる JOIN 順序によって発生するエラーを見つけるためのテストを目的としています。
 
-<div id="query_plan_optimize_lazy_final">
-  ## query_plan_optimize_lazy_final
-</div>
+## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -441,9 +388,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 主キーのセットを構築し、それを索引解析に使用することで、ReplacingMergeTree に対する FINAL 付きの読み取りを最適化します。
 
-<div id="query_plan_optimize_lazy_materialization">
-  ## query_plan_optimize_lazy_materialization
-</div>
+## query_plan_optimize_lazy_materialization {#query_plan_optimize_lazy_materialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -451,9 +396,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 遅延マテリアライゼーションの最適化でクエリプランを使用します。
 
-<div id="query_plan_optimize_lazy_materialization_for_file">
-  ## query_plan_optimize_lazy_materialization_for_file
-</div>
+## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -461,9 +404,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 `file` テーブル関数および `File` テーブルエンジンを使用してローカル Parquet ファイルを読み取る際に、遅延マテリアライゼーションの最適化を使用します。`ORDER BY ... LIMIT n` クエリでは、ソートとフィルタリングに不要なカラムは、`LIMIT` 後に残る `n` 行に対してのみ読み取られます。`query_plan_optimize_lazy_materialization` が有効な場合にのみ有効です。
 
-<div id="query_plan_optimize_lazy_materialization_for_object_storage">
-  ## query_plan_optimize_lazy_materialization_for_object_storage
-</div>
+## query_plan_optimize_lazy_materialization_for_object_storage {#query_plan_optimize_lazy_materialization_for_object_storage}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -471,9 +412,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 オブジェクトストレージから Parquet ファイル (Iceberg テーブルを含む) を読み取る際に、遅延マテリアライゼーションの最適化を使用します。`ORDER BY ... LIMIT n` クエリでは、ソートやフィルタリングに不要なカラムは、`LIMIT` の結果として残った `n` 行についてのみ読み取られます。`query_plan_optimize_lazy_materialization` が有効な場合にのみ有効です。
 
-<div id="query_plan_optimize_prewhere">
-  ## query_plan_optimize_prewhere
-</div>
+## query_plan_optimize_prewhere {#query_plan_optimize_prewhere}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -481,9 +420,19 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 サポートされているストレージで、フィルタをPREWHERE式にプッシュダウンできるようにします
 
-<div id="query_plan_push_down_limit">
-  ## query_plan_push_down_limit
-</div>
+## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "等価結合キーをまたいでフィルターの conjunct を持ち上げ、両側で主キーの pruning が発火するようにする新しい設定。"}]}]} />
+
+等価結合の一方の側にあるフィルターの conjunct を、等価キーの substitution によってもう一方の側へコピーするクエリプランレベルの最適化を切り替えます。これにより、もう一方の側の主キー / 索引の pruning でその conjunct を利用できるようになります。
+
+この最適化が適用されるのは、フィルターと `MergeTree` の読み取りが式ステップおよびフィルターステップのみを挟んで join と隔てられており、かつコピー対象の conjunct が主キーカラムと定数を比較している場合(定数の Set を用いた `IN` を含む)です。ネストされた join の下や `DISTINCT` の下にある述語、および 2 つのキーカラム同士の比較は対象外です。これらはもう一方の側で主キーの pruning に利用できず、コピーしても処理が増えるだけだからです。
+
+`query_plan_enable_optimizations` が 1 の場合にのみ有効になります。
+
+## query_plan_push_down_limit {#query_plan_push_down_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -499,9 +448,7 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_plan_push_down_volume_reducing_functions">
-  ## query_plan_push_down_volume_reducing_functions
-</div>
+## query_plan_push_down_volume_reducing_functions {#query_plan_push_down_volume_reducing_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -519,9 +466,7 @@ wide `String` / `FixedString` の引数を置き換えるため、これらの�
 * 0 - 無効化
 * 1 - 有効化
 
-<div id="query_plan_push_limit_by_into_sort">
-  ## query_plan_push_limit_by_into_sort
-</div>
+## query_plan_push_limit_by_into_sort {#query_plan_push_limit_by_into_sort}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -536,9 +481,7 @@ wide `String` / `FixedString` の引数を置き換えるため、これらの�
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_plan_read_in_order">
-  ## query_plan_read_in_order
-</div>
+## query_plan_read_in_order {#query_plan_read_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -554,9 +497,7 @@ read in-order 最適化のクエリプランレベルでの 最適化 を切り�
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_plan_read_in_order_through_join">
-  ## query_plan_read_in_order_through_join
-</div>
+## query_plan_read_in_order_through_join {#query_plan_read_in_order_through_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -564,9 +505,7 @@ read in-order 最適化のクエリプランレベルでの 最適化 を切り�
 
 JOIN演算において左テーブルから順序どおりに読み取りを継続し、その後のステップで利用できるようにします。
 
-<div id="query_plan_remove_redundant_distinct">
-  ## query_plan_remove_redundant_distinct
-</div>
+## query_plan_remove_redundant_distinct {#query_plan_remove_redundant_distinct}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -584,9 +523,7 @@ JOIN演算において左テーブルから順序どおりに読み取りを継�
 * 0 - 無効化
 * 1 - 有効化
 
-<div id="query_plan_remove_redundant_sorting">
-  ## query_plan_remove_redundant_sorting
-</div>
+## query_plan_remove_redundant_sorting {#query_plan_remove_redundant_sorting}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -604,9 +541,7 @@ JOIN演算において左テーブルから順序どおりに読み取りを継�
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_plan_remove_unused_columns">
-  ## query_plan_remove_unused_columns
-</div>
+## query_plan_remove_unused_columns {#query_plan_remove_unused_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -624,9 +559,7 @@ JOIN演算において左テーブルから順序どおりに読み取りを継�
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_plan_reuse_storage_ordering_for_window_functions">
-  ## query_plan_reuse_storage_ordering_for_window_functions
-</div>
+## query_plan_reuse_storage_ordering_for_window_functions {#query_plan_reuse_storage_ordering_for_window_functions}
 
 **別名**: `optimize_read_in_window_order`
 
@@ -646,9 +579,7 @@ JOIN演算において左テーブルから順序どおりに読み取りを継�
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_plan_short_circuit_constant_false_join">
-  ## query_plan_short_circuit_constant_false_join
-</div>
+## query_plan_short_circuit_constant_false_join {#query_plan_short_circuit_constant_false_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -656,9 +587,7 @@ JOIN演算において左テーブルから順序どおりに読み取りを継�
 
 `ON` 条件が定数 false に畳み込まれる `JOIN` を短絡評価します。行を生成できない各入力側 (`INNER`/`CROSS`/`SEMI` では両側、`LEFT`/`RIGHT` では保持されない側) を空のソースに置き換えることで、結果に寄与しない側を読み取りません。アナライザ (`enable_analyzer = 1`) および非分散プランに適用されます。
 
-<div id="query_plan_split_filter">
-  ## query_plan_split_filter
-</div>
+## query_plan_split_filter {#query_plan_split_filter}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -674,9 +603,7 @@ JOIN演算において左テーブルから順序どおりに読み取りを継�
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_plan_text_index_add_hint">
-  ## query_plan_text_index_add_hint
-</div>
+## query_plan_text_index_add_hint {#query_plan_text_index_add_hint}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -684,9 +611,7 @@ JOIN演算において左テーブルから順序どおりに読み取りを継�
 
 クエリプランで、転置テキスト索引から構築されるフィルタリングに対するヒント (追加の述語) を追加できるようにします。
 
-<div id="query_plan_top_k_through_join">
-  ## query_plan_top_k_through_join
-</div>
+## query_plan_top_k_through_join {#query_plan_top_k_through_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -700,9 +625,7 @@ JOIN演算において左テーブルから順序どおりに読み取りを継�
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_plan_try_use_vector_search">
-  ## query_plan_try_use_vector_search
-</div>
+## query_plan_try_use_vector_search {#query_plan_try_use_vector_search}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

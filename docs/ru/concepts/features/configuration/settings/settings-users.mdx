@@ -54,6 +54,8 @@ doc_type: 'reference'
         </auth_methods>
 
         <access_management>0|1</access_management>
+        <named_collection_control>0|1</named_collection_control>
+        <show_named_collections_secrets>0|1</show_named_collections_secrets>
 
         <networks incl="networks" replace="replace">
         </networks>
@@ -78,9 +80,7 @@ doc_type: 'reference'
 </users>
 ```
 
-<div id="user-namepassword">
-  ### user_name/password
-</div>
+### user_name/password {#user-namepassword}
 
 Пароль можно указать в открытом виде или в виде SHA256 (в шестнадцатеричном формате).
 
@@ -116,9 +116,7 @@ doc_type: 'reference'
 
   Первая строка результата — пароль. Вторая строка — соответствующий двойной хэш SHA1.
 
-<div id="totp-authentication-configuration">
-  ### Конфигурация аутентификации TOTP
-</div>
+### Конфигурация аутентификации TOTP {#totp-authentication-configuration}
 
 Time-Based One-Time Password (TOTP) можно использовать для аутентификации пользователей ClickHouse с помощью временных кодов доступа, действующих ограниченное время.
 Этот метод аутентификации TOTP соответствует стандарту [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238), поэтому он совместим с популярными TOTP-приложениями, такими как Google Authenticator, 1Password и аналогичными инструментами.
@@ -299,6 +297,46 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj
 * 1 — Включено.
 
 Значение по умолчанию: 0.
+
+### named_collection_control
+
+Эта настройка включает или отключает управление [named collections](/ru/concepts/features/configuration/server-config/named-collections) для пользователя.
+Она соответствует привилегии `NAMED COLLECTION ADMIN`, за исключением `SHOW NAMED COLLECTIONS SECRETS`, которая управляется отдельно настройкой [`show_named_collections_secrets`](#show_named_collections_secrets-user-setting).
+
+`named_collection_admin` принимается как синоним этой настройки.
+
+Возможные значения:
+
+* 0 — отключено.
+* 1 — включено.
+
+Значение по умолчанию: 0.
+
+### show_named_collections_secrets
+
+Эта настройка включает или отключает для пользователя привилегию `SHOW NAMED COLLECTIONS SECRETS`, которая позволяет ему видеть значения, хранящиеся в [named collections](/ru/concepts/features/configuration/server-config/named-collections), например в таблице [`system.named_collections`](/ru/reference/system-tables/named_collections).
+
+По умолчанию она отключена: возможность управлять named collections не означает возможности прочитать уже сохранённые в них учётные данные.
+
+Эта настройка действует только вместе с `named_collection_control`, поскольку при отключённом `named_collection_control` все привилегии на named collections, включая `SHOW NAMED COLLECTIONS SECRETS`, в любом случае отзываются.
+
+Возможные значения:
+
+* 0 — Отключено.
+* 1 — Включено.
+
+Значение по умолчанию: 0.
+
+<Note>
+  Пользователь может выдавать только те привилегии, которыми обладает сам, поэтому пользователь, у которого отключена хотя бы одна из настроек `access_management`, `named_collection_control` и `show_named_collections_secrets`, не имеет полного набора привилегий и не может передать его кому-либо другому. Например, запрос `GRANT ALL ON *.* TO another_user WITH GRANT OPTION` будет отклонён для пользователя, у которого включены только `access_management` и `named_collection_control`:
+
+  ```text
+  Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+  (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+  ```
+
+  Включите все три настройки, чтобы сделать пользователя полноценным администратором.
+</Note>
 
 ### привилегии
 

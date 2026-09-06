@@ -25,18 +25,14 @@ doc_type: 'reference'
 Строки с одинаковыми значениями в выражениях сортировки возвращаются в произвольном и недетерминированном порядке.
 Если предложение `ORDER BY` опущено в операторе `SELECT`, порядок строк также будет произвольным и недетерминированным.
 
-<div id="sorting-of-special-values">
-  ## Сортировка специальных значений
-</div>
+## Сортировка специальных значений {#sorting-of-special-values}
 
 Есть два варианта порядка сортировки `NaN` и `NULL`:
 
 * По умолчанию или с модификатором `NULLS LAST`: сначала значения, затем `NaN`, затем `NULL`.
 * С модификатором `NULLS FIRST`: сначала `NULL`, затем `NaN`, а затем остальные значения.
 
-<div id="example">
-  ### Пример
-</div>
+### Пример {#example}
 
 Для таблицы
 
@@ -74,9 +70,7 @@ doc_type: 'reference'
 
 При сортировке чисел с плавающей точкой значения NaN отделяются от остальных. Независимо от порядка сортировки, NaN всегда располагаются в конце. Иными словами, при сортировке по возрастанию они считаются больше всех остальных чисел, а при сортировке по убыванию — меньше остальных.
 
-<div id="collation-support">
-  ## Поддержка collation
-</div>
+## Поддержка collation {#collation-support}
 
 Для сортировки по значениям [String](/ru/reference/data-types/string) можно указать collation (правила сравнения). Пример: `ORDER BY SearchPhrase COLLATE 'tr'` — для сортировки по ключевому слову в порядке возрастания с использованием турецкого алфавита, без учета регистра, при условии, что строки представлены в кодировке UTF-8. `COLLATE` можно независимо указывать или не указывать для каждого выражения в ORDER BY. Если указан `ASC` или `DESC`, `COLLATE` указывается после него. При использовании `COLLATE` сортировка всегда выполняется без учета регистра.
 
@@ -84,9 +78,7 @@ doc_type: 'reference'
 
 Мы рекомендуем использовать `COLLATE` только для окончательной сортировки небольшого числа строк, поскольку сортировка с `COLLATE` менее эффективна, чем обычная сортировка по байтам.
 
-<div id="collation-examples">
-  ## Примеры collation
-</div>
+## Примеры collation {#collation-examples}
 
 Пример только со значениями [String](/ru/reference/data-types/string):
 
@@ -242,9 +234,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 └───┴─────────┘
 ```
 
-<div id="implementation-details">
-  ## Подробности реализации
-</div>
+## Подробности реализации {#implementation-details}
 
 Меньше оперативной памяти требуется, если вместе с `ORDER BY` указан достаточно небольшой [LIMIT](/ru/reference/statements/select/limit). В противном случае объём используемой памяти пропорционален объёму данных, которые нужно отсортировать. При распределённой обработке запроса, если [GROUP BY](/ru/reference/statements/select/group-by) отсутствует, сортировка частично выполняется на удалённых серверах, а результаты объединяются на сервере, инициировавшем запрос. Это означает, что при распределённой сортировке объём данных может превышать объём памяти одного сервера.
 
@@ -254,15 +244,13 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 Внешняя сортировка работает значительно менее эффективно, чем сортировка в оперативной памяти.
 
-<div id="optimization-of-data-reading">
-  ## Оптимизация чтения данных
-</div>
+## Оптимизация чтения данных {#optimization-of-data-reading}
 
 Если выражение `ORDER BY` имеет префикс, совпадающий с ключом сортировки таблицы, запрос можно оптимизировать с помощью настройки [optimize&#95;read&#95;in&#95;order](/ru/reference/settings/session-settings/optimize#optimize_read_in_order).
 
 Когда настройка `optimize_read_in_order` включена, сервер ClickHouse использует индекс таблицы и читает данные в порядке ключа `ORDER BY`. Это позволяет избежать чтения всех данных, если указан [LIMIT](/ru/reference/statements/select/limit). Поэтому запросы к большим объемам данных с небольшим `LIMIT` выполняются быстрее.
 
-Оптимизация работает как с `ASC`, так и с `DESC`, и не работает вместе с оператором [GROUP BY](/ru/reference/statements/select/group-by) и модификатором [FINAL](/ru/reference/statements/select/from#final-modifier).
+Оптимизация работает как с `ASC`, так и с `DESC` и не работает вместе с предложением [GROUP BY](/ru/reference/statements/select/group-by). С модификатором [FINAL](/ru/reference/statements/select/from#final-modifier) оптимизация работает в прямом порядке ключа сортировки, а для таблиц [ReplacingMergeTree](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree) — также в обратном порядке, который регулируется настройкой `optimize_read_in_reverse_order_final`.
 
 Когда настройка `optimize_read_in_order` отключена, сервер ClickHouse не использует индекс таблицы при обработке запросов `SELECT`.
 
@@ -276,9 +264,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 В таблицах с движком `MaterializedView` оптимизация работает для представлений вида `SELECT ... FROM merge_tree_table ORDER BY pk`. Но она не поддерживается для запросов вида `SELECT ... FROM view ORDER BY pk`, если запрос представления не содержит предложения `ORDER BY`.
 
-<div id="order-by-expr-with-fill-modifier">
-  ## Модификатор ORDER BY Expr WITH FILL
-</div>
+## Модификатор ORDER BY Expr WITH FILL {#order-by-expr-with-fill-modifier}
 
 Этот модификатор также можно использовать вместе с [модификатором LIMIT ... WITH TIES](/ru/reference/statements/select/limit#limit--with-ties-modifier).
 
@@ -594,9 +580,7 @@ SELECT n, source, inter FROM (
 └─────┴──────────┴───────┘
 ```
 
-<div id="filling-grouped-by-sorting-prefix">
-  ## Заполнение с группировкой по префиксу сортировки
-</div>
+## Заполнение с группировкой по префиксу сортировки {#filling-grouped-by-sorting-prefix}
 
 Иногда бывает полезно независимо заполнять строки с одинаковыми значениями в определённых столбцах. Хороший пример — заполнение пропущенных значений во временных рядах.
 Предположим, имеется следующая таблица временных рядов:
@@ -648,9 +632,7 @@ INTERPOLATE ( value AS 9999 )
 Здесь в столбце `value` было интерполировано значение `9999` — просто чтобы заполненные строки были заметнее.
 Это поведение управляется настройкой `use_with_fill_by_sorting_prefix` (включена по умолчанию)
 
-<div id="related-content">
-  ## Связанные материалы
-</div>
+## Связанные материалы {#related-content}
 
 * Блог: [Работа с данными временных рядов в ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 

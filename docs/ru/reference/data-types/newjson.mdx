@@ -47,15 +47,11 @@ import WhenToUseJson from '/snippets/ru/_when-to-use-json.mdx';
 
 <WhenToUseJson />
 
-<div id="creating-json">
-  ## Создание `JSON`
-</div>
+## Создание `JSON` {#creating-json}
 
 В этом разделе мы рассмотрим различные способы создания `JSON`.
 
-<div id="using-json-in-a-table-column-definition">
-  ### Использование `JSON` в определении столбца таблицы
-</div>
+### Использование `JSON` в определении столбца таблицы {#using-json-in-a-table-column-definition}
 
 ```sql title="Query (Example 1)"
 CREATE TABLE test (json JSON) ENGINE = Memory;
@@ -85,15 +81,11 @@ SELECT json FROM test;
 └───────────────────────────────────┘
 ```
 
-<div id="using-cast-with-json">
-  ### Использование CAST с `::JSON`
-</div>
+### Использование CAST с `::JSON` {#using-cast-with-json}
 
 Различные типы можно преобразовывать с помощью специального синтаксиса `::JSON`.
 
-<div id="cast-from-string-to-json">
-  #### CAST из `String` в `JSON`
-</div>
+#### CAST из `String` в `JSON` {#cast-from-string-to-json}
 
 ```sql title="Query"
 SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json;
@@ -105,9 +97,7 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json
 └────────────────────────────────────────────────────────┘
 ```
 
-<div id="cast-from-tuple-to-json">
-  #### CAST из `Tuple` в `JSON`
-</div>
+#### CAST из `Tuple` в `JSON` {#cast-from-tuple-to-json}
 
 ```sql title="Query"
 SET enable_named_columns_in_function_tuple = 1;
@@ -120,9 +110,7 @@ SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json
 └────────────────────────────────────────────────────────┘
 ```
 
-<div id="cast-from-map-to-json">
-  #### CAST из `Map` в `JSON`
-</div>
+#### CAST из `Map` в `JSON` {#cast-from-map-to-json}
 
 ```sql title="Query"
 SET use_variant_as_common_type=1;
@@ -163,9 +151,7 @@ SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
   ```
 </Note>
 
-<div id="reading-json-paths-as-sub-columns">
-  ## Чтение JSON-путей как подстолбцов
-</div>
+## Чтение JSON-путей как подстолбцов {#reading-json-paths-as-sub-columns}
 
 Тип `JSON` поддерживает чтение каждого JSON-пути как отдельного подстолбца.
 Если тип запрошенного пути не указан в объявлении типа `JSON`,
@@ -296,9 +282,7 @@ while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CA
   Чтобы эффективно читать подстолбцы из компактных частей MergeTree, убедитесь, что включена настройка MergeTree [write&#95;marks&#95;for&#95;substreams&#95;in&#95;compact&#95;parts](/ru/reference/settings/merge-tree-settings/write#write_marks_for_substreams_in_compact_parts).
 </Note>
 
-<div id="reading-json-sub-objects-as-sub-columns">
-  ## Чтение вложенных объектов JSON как подстолбцов
-</div>
+## Чтение вложенных объектов JSON как подстолбцов {#reading-json-sub-objects-as-sub-columns}
 
 Тип `JSON` позволяет читать вложенные объекты как подстолбцы типа `JSON` с помощью специального синтаксиса `json.^some.path`:
 
@@ -332,9 +316,7 @@ SELECT json.^a.b, json.^d.e.f FROM test;
   Когда пути хранятся в basic (`map`) [общих данных](#shared-data-structure), чтение подстолбцов вложенных объектов может быть неэффективным, так как требует сканирования всей общей структуры данных. При сериализации общих данных `map_with_buckets` или `advanced` чтение подстолбцов из общих данных значительно оптимизировано.
 </Note>
 
-<div id="reading-json-combined-sub-columns">
-  ## Чтение комбинированных подстолбцов JSON
-</div>
+## Чтение комбинированных подстолбцов JSON {#reading-json-combined-sub-columns}
 
 Тип `JSON` поддерживает чтение пути в виде **комбинированного подстолбца** с использованием специального синтаксиса `json.@some.path`.
 Комбинированный подстолбец для заданного пути возвращает:
@@ -388,9 +370,7 @@ FROM test;
   Когда пути хранятся в базовых (`map`) [общих данных](#shared-data-structure), чтение комбинированных подстолбцов может быть неэффективным, поскольку требует сканирования всех общих данных. При сериализации общих данных `map_with_buckets` или `advanced` чтение подстолбцов из общих данных значительно оптимизировано.
 </Note>
 
-<div id="type-inference-for-paths">
-  ## Вывод типов для путей
-</div>
+## Вывод типов для путей {#type-inference-for-paths}
 
 При разборе `JSON` ClickHouse пытается определить наиболее подходящий тип данных для каждого JSON-пути.
 Это работает так же, как [автоматическое определение схемы](/ru/concepts/features/interfaces/schema-inference),
@@ -449,9 +429,7 @@ SELECT JSONAllPathsWithTypes('{"a" : [1, 2, 3]}'::JSON) AS paths_with_types sett
 └──────────────────────┘
 ```
 
-<div id="handling-arrays-of-json-objects">
-  ## Обработка массивов объектов JSON
-</div>
+## Обработка массивов объектов JSON {#handling-arrays-of-json-objects}
 
 JSON-пути, содержащие массив объектов, разбираются как тип `Array(JSON)` и записываются в столбец `Dynamic` для этого пути.
 Чтобы прочитать массив объектов, его можно извлечь из столбца `Dynamic` как подстолбец:
@@ -562,9 +540,7 @@ SELECT json.a.b[].^k FROM test
 └──────────────────────────────────────┘
 ```
 
-<div id="handling-json-keys-with-nulls">
-  ## Обработка ключей JSON со значением NULL
-</div>
+## Обработка ключей JSON со значением NULL {#handling-json-keys-with-nulls}
 
 В нашей реализации JSON `null` и отсутствие значения считаются эквивалентными:
 
@@ -580,9 +556,7 @@ SELECT '{}'::JSON AS json1, '{"a" : null}'::JSON AS json2, json1 = json2
 
 Это означает, что невозможно определить, содержали ли исходные данные JSON путь со значением NULL или он вообще отсутствовал.
 
-<div id="handling-json-keys-with-dots">
-  ## Обработка ключей JSON с точками
-</div>
+## Обработка ключей JSON с точками {#handling-json-keys-with-dots}
 
 Внутри JSON-столбца все пути и значения хранятся в уплощённом виде. Это означает, что по умолчанию эти 2 объекта считаются одинаковыми:
 
@@ -691,9 +665,7 @@ SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(SKIP `a%2Eb`) as json,
 └────────────────────────────┴────────────┘
 ```
 
-<div id="reading-json-type-from-data">
-  ## Чтение типа JSON из данных
-</div>
+## Чтение типа JSON из данных {#reading-json-type-from-data}
 
 Все текстовые форматы
 ([`JSONEachRow`](/ru/reference/formats/JSON/JSONEachRow),
@@ -745,9 +717,7 @@ SELECT json FROM format(TSV, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP REGEXP \'
 └───────────────────────────────────────────────────────────────┘
 ```
 
-<div id="reaching-the-limit-of-dynamic-paths-inside-json">
-  ## Достижение предела динамических путей внутри JSON
-</div>
+## Достижение предела динамических путей внутри JSON {#reaching-the-limit-of-dynamic-paths-inside-json}
 
 Тип данных `JSON` может хранить только ограниченное количество путей во внутреннем представлении в виде отдельных подстолбцов.
 По умолчанию этот предел равен `1024`, но его можно изменить в объявлении типа с помощью параметра `max_dynamic_paths`.
@@ -759,9 +729,7 @@ SELECT json FROM format(TSV, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP REGEXP \'
 
 Давайте посмотрим, что происходит, когда этот предел достигается, в нескольких разных сценариях.
 
-<div id="reaching-the-limit-during-data-parsing">
-  ### Достижение лимита при парсинге данных
-</div>
+### Достижение лимита при парсинге данных {#reaching-the-limit-during-data-parsing}
 
 При парсинге объектов `JSON` из данных, когда для текущего блока данных достигается лимит,
 все новые пути будут сохраняться в общей структуре данных. Можно использовать следующие две функции интроспекции: `JSONDynamicPaths`, `JSONSharedDataPaths`:
@@ -789,9 +757,7 @@ SELECT json, JSONDynamicPaths(json), JSONSharedDataPaths(json) FROM format(JSONE
 Как видно, после вставки путей `e` и `f.g` лимит был достигнут,
 и они были вставлены в общую структуру данных.
 
-<div id="during-merges-of-data-parts-in-mergetree-table-engines">
-  ### При слиянии частей данных в движках таблиц MergeTree
-</div>
+### При слиянии частей данных в движках таблиц MergeTree {#during-merges-of-data-parts-in-mergetree-table-engines}
 
 При слиянии нескольких частей данных в таблице `MergeTree` столбец `JSON` в результирующей части данных может достичь лимита динамических путей
 и не сможет хранить все пути из исходных частей в виде подстолбцов.
@@ -856,25 +822,19 @@ ORDER BY _part ASC
 
 Как видим, ClickHouse сохранил наиболее часто встречающиеся пути `a`, `b` и `c`, а пути `d` и `e` переместил в общую структуру данных.
 
-<div id="shared-data-structure">
-  ## Общая структура данных
-</div>
+## Общая структура данных {#shared-data-structure}
 
 Как описано в предыдущем разделе, при достижении ограничения `max_dynamic_paths` все новые пути сохраняются в одной общей структуре данных.
 В этом разделе мы подробнее рассмотрим общую структуру данных и то, как из неё читаются подстолбцы путей.
 
 Подробные сведения о функциях, используемых для анализа содержимого JSON-столбца, см. в разделе [&quot;функции интроспекции&quot;](/ru/reference/data-types/newjson#introspection-functions).
 
-<div id="shared-data-structure-in-memory">
-  ### Общая структура данных в памяти
-</div>
+### Общая структура данных в памяти {#shared-data-structure-in-memory}
 
 В памяти общая структура данных — это просто подстолбец типа `Map(String, String)`, который хранит соответствие между JSON-путём в плоском виде и значением, закодированным в бинарном виде.
 Чтобы извлечь из него подстолбец для пути, мы просто проходим по всем строкам в этом столбце `Map` и пытаемся найти запрошенный путь и его значения.
 
-<div id="shared-data-structure-in-merge-tree-parts">
-  ### Общая структура данных в частях MergeTree
-</div>
+### Общая структура данных в частях MergeTree {#shared-data-structure-in-merge-tree-parts}
 
 В таблицах [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree) данные хранятся в частях данных, в которых всё записывается на диск (локальный или удалённый). При этом данные на диске могут храниться иначе, чем в памяти.
 Сейчас в частях данных MergeTree используются 3 разных варианта сериализации общей структуры данных: `map`, `map_with_buckets`
@@ -888,9 +848,7 @@ ORDER BY _part ASC
 Примечание: изменение сериализации общей структуры данных поддерживается только
 для `v3` [object serialization version](/ru/reference/settings/merge-tree-settings/other#object_serialization_version)
 
-<div id="shared-data-map">
-  #### Map
-</div>
+#### Map {#shared-data-map}
 
 В версии сериализации `map` общие данные сериализуются в виде одного столбца типа `Map(String, String)`, так же, как они хранятся в
 памяти. Чтобы прочитать подстолбец по пути из этого типа сериализации, ClickHouse считывает весь столбец `Map` и
@@ -898,9 +856,7 @@ ORDER BY _part ASC
 
 Эта сериализация эффективна для записи данных и чтения всего `JSON`-столбца, но неэффективна для чтения подстолбцов по путям.
 
-<div id="shared-data-map-with-buckets">
-  #### Map с бакетами
-</div>
+#### Map с бакетами {#shared-data-map-with-buckets}
 
 В версии сериализации `map_with_buckets` общие данные сериализуются как `N` столбцов («бакетов») типа `Map(String, String)`.
 Каждый такой бакет содержит только подмножество путей. Чтобы прочитать подстолбец по пути из этого типа сериализации, ClickHouse
@@ -913,9 +869,7 @@ ORDER BY _part ASC
 и [object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/ru/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part) (по умолчанию 32).
 Максимально допустимое значение для обеих настроек — 256.
 
-<div id="shared-data-advanced">
-  #### Продвинутая
-</div>
+#### Продвинутая {#shared-data-advanced}
 
 В версии сериализации `advanced` общие данные сериализуются в специальную структуру данных, которая обеспечивает максимальную производительность
 чтения подстолбцов по путям за счёт хранения дополнительной информации, позволяющей читать только данные запрошенных путей.
@@ -928,9 +882,7 @@ ORDER BY _part ASC
 
 Более подробный обзор новых сериализаций общих данных и подробности реализации см. в [записи блога](https://clickhouse.com/blog/json-data-type-gets-even-better).
 
-<div id="controlling-the-number-of-dynamic-paths">
-  ## Управление количеством динамических путей внутри JSON в частях данных MergeTree
-</div>
+## Управление количеством динамических путей внутри JSON в частях данных MergeTree {#controlling-the-number-of-dynamic-paths}
 
 Основной способ задать ограничение на динамические пути в JSON — использовать параметр `max_dynamic_paths` в объявлении типа JSON.
 Однако изменение `max_dynamic_paths` для существующих столбцов требует выполнения `ALTER TABLE <table> MODIFY COLUMN <column> JSON(max_dynamic_paths=K)`, что запустит фоновую мутацию, переписывающую все существующие части.
@@ -942,9 +894,7 @@ ORDER BY _part ASC
 
 Примечание: ограничение на динамические пути не может превышать значение, указанное в параметре `max_dynamic_paths`, даже если значения описанных настроек выше.
 
-<div id="introspection-functions">
-  ## Функции интроспекции
-</div>
+## Функции интроспекции {#introspection-functions}
 
 Есть несколько функций, которые помогают исследовать содержимое JSON-столбца:
 
@@ -1083,9 +1033,7 @@ SETTINGS date_time_input_format = 'best_effort'
 └─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┘
 ```
 
-<div id="alter-modify-column-to-json-type">
-  ## ALTER MODIFY COLUMN в тип JSON
-</div>
+## ALTER MODIFY COLUMN в тип JSON {#alter-modify-column-to-json-type}
 
 Существующую таблицу можно изменить, поменяв тип столбца на новый тип `JSON`. В настоящее время поддерживается только `ALTER` из типа `String`.
 
@@ -1107,9 +1055,7 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-<div id="lazy-type-hints">
-  ## Ленивые подсказки типов (экспериментальная возможность)
-</div>
+## Ленивые подсказки типов (экспериментальная возможность) {#lazy-type-hints}
 
 <Note>
   Эта возможность является экспериментальной, и для нее необходимо включить настройку `allow_experimental_json_lazy_type_hints`.
@@ -1125,17 +1071,13 @@ SELECT json, json.a, json.b, json.c FROM test;
 
 Это означает, что вы можете добавлять подсказки типов мгновенно, а данные будут постепенно преобразовываться по мере выполнения обычных фоновых слияний.
 
-<div id="enabling-lazy-type-hints">
-  ### Включение ленивых подсказок типов
-</div>
+### Включение ленивых подсказок типов {#enabling-lazy-type-hints}
 
 ```sql
 SET allow_experimental_json_lazy_type_hints = 1;
 ```
 
-<div id="lazy-type-hints-example">
-  ### Пример
-</div>
+### Пример {#lazy-type-hints-example}
 
 ```sql title="Query"
 -- Создать таблицу и вставить данные
@@ -1158,9 +1100,7 @@ SELECT json.user_id, toTypeName(json.user_id), json.score, toTypeName(json.score
 └──────────────┴──────────────────────────┴────────────┴────────────────────────┘
 ```
 
-<div id="verifying-no-mutation-occurred">
-  ### Проверка отсутствия мутации
-</div>
+### Проверка отсутствия мутации {#verifying-no-mutation-occurred}
 
 Вы можете убедиться, что `ALTER` завершился без мутации, проверив таблицу `system.mutations`:
 
@@ -1172,9 +1112,7 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 
 Это относится к описанным выше изменениям подсказок типов; сведения о случаях, которые вместо этого отклоняются, см. в разделе [Ограничения](#lazy-type-hints-limitations).
 
-<div id="materializing-type-hints">
-  ### Материализация подсказок типов
-</div>
+### Материализация подсказок типов {#materializing-type-hints}
 
 Чтобы материализовать подсказки типов в уже существующих данных, можно:
 
@@ -1182,9 +1120,7 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 2. **Принудительно запустить слияние**: используйте `OPTIMIZE TABLE test_lazy FINAL`, чтобы сразу слить все части
 3. **Переписать части**: используйте `ALTER TABLE test_lazy REWRITE PARTS`, чтобы переписать части с новыми метаданными
 
-<div id="lazy-type-hints-limitations">
-  ### Ограничения
-</div>
+### Ограничения {#lazy-type-hints-limitations}
 
 * Эта возможность экспериментальная и может измениться в будущих версиях
 * Преобразование типов при выполнении запроса может приводить к существенным накладным расходам по производительности по сравнению с заранее материализованными типами, особенно для крупных объектов JSON
@@ -1198,9 +1134,7 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 
   Добавление подсказок для путей, не используемых ни в одной такой структуре, или изменения, при которых тип используемых подстолбцов на диске остаётся неизменным (например, добавление несвязанного типизированного пути), по-прежнему являются операциями только с метаданными.
 
-<div id="comparison-between-values-of-the-json-type">
-  ## Сравнение значений типа JSON
-</div>
+## Сравнение значений типа JSON {#comparison-between-values-of-the-json-type}
 
 Объекты JSON сравниваются аналогично значениям типа Map.
 
@@ -1238,9 +1172,7 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 
 **Примечание:** если 2 пути содержат значения разных типов данных, они сравниваются в соответствии с [правилом сравнения](/ru/reference/data-types/variant#comparing-values-of-variant-data) для типа данных `Variant`.
 
-<div id="data-skipping-indexes-for-json">
-  ## Индексы пропуска данных для JSON
-</div>
+## Индексы пропуска данных для JSON {#data-skipping-indexes-for-json}
 
 [Индексы пропуска данных](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) можно использовать с `JSON`-столбцами тремя способами:
 
@@ -1248,9 +1180,7 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 2. **Индексы на основе путей с `JSONAllPaths`** — индексируйте *набор путей*, присутствующих в каждой грануле, чтобы пропускать гранулы, в которых не может содержаться запрашиваемый путь.
 3. **Индексы на основе значений с `JSONAllValues`** — индексируйте *все значения* по всем JSON-путям с помощью [текстового индекса](/ru/reference/engines/table-engines/mergetree-family/textindexes), чтобы ускорить полнотекстовый поиск по любому подстолбцу JSON с помощью одного индекса.
 
-<div id="json-indexes-on-subcolumns">
-  ### Индексы для отдельных подстолбцов
-</div>
+### Индексы для отдельных подстолбцов {#json-indexes-on-subcolumns}
 
 Вы можете создать индекс пропуска данных для любого подстолбца JSON, используя тот же синтаксис, что и для обычных столбцов.
 Поддерживается любой [тип индекса](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) (`minmax`, `set`, `bloom_filter`, `tokenbf_v1`, `ngrambf_v1` и т. д.).
@@ -1262,9 +1192,7 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 
 Также можно использовать выражения, объединяющие несколько подстолбцов, например `json.a || json.b::String`.
 
-<div id="json-indexes-on-subcolumns-example">
-  #### Пример
-</div>
+#### Пример {#json-indexes-on-subcolumns-example}
 
 ```sql title="Query"
 CREATE TABLE sensor_data
@@ -1313,16 +1241,12 @@ EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'roo
         Granules: 1/8
 ```
 
-<div id="json-indexes-jsonallpaths">
-  ### Индексы по путям с JSONAllPaths
-</div>
+### Индексы по путям с JSONAllPaths {#json-indexes-jsonallpaths}
 
 [Индексы пропуска данных](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) также можно создавать для `JSON`-столбцов с помощью функции [`JSONAllPaths`](/ru/reference/functions/regular-functions/json-functions#JSONAllPaths).
 Это работает так же, как создание индексов пропуска данных для столбцов [`Map`](/ru/reference/data-types/map) через `mapKeys`: индекс хранит набор JSON-путей, присутствующих в каждой грануле, и использует его, чтобы пропускать гранулы, которые не могут содержать запрашиваемый путь.
 
-<div id="json-indexes-jsonallpaths-supported-types">
-  #### Поддерживаемые типы индексов
-</div>
+#### Поддерживаемые типы индексов {#json-indexes-jsonallpaths-supported-types}
 
 `JSONAllPaths` можно использовать со следующими типами индексов пропуска данных:
 
@@ -1331,9 +1255,7 @@ EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'roo
 * [`ngrambf_v1`](/ru/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) — поддерживает `equals` и `IS NOT NULL`.
 * [`text`](/ru/reference/engines/table-engines/mergetree-family/textindexes) (обратный индекс) — поддерживает `equals`, `in` и `IS NOT NULL`.
 
-<div id="json-indexes-on-subcolumns-example">
-  #### Пример
-</div>
+#### Пример {#json-indexes-jsonallpaths-example}
 
 ```sql title="Query"
 CREATE TABLE events
@@ -1396,26 +1318,23 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
         Granules: 1/2
 ```
 
-<div id="json-indexes-jsonallpaths-how-it-works">
-  #### Как это работает
-</div>
+#### Как это работает {#json-indexes-jsonallpaths-how-it-works}
 
 Выражение `JSONAllPaths(json_column)` возвращает `Array(String)`, содержащий все пути, присутствующие в значении JSON.
-Индекс пропуска данных хранит строки этих путей в своей структуре данных (фильтр Блума или инвертированный индекс).
+Индекс пропуска данных хранит строки этих путей в своей структуре данных (фильтр Блума или обратный индекс).
 Когда в запросе используется фильтрация по `json.some.path`, индекс проверяет для каждой гранулы, есть ли в нём строка `"some.path"`, и пропускает гранулы, где она отсутствует.
 
-<div id="json-indexes-jsonallpaths-safety-with-missing-paths">
-  #### Безопасность при отсутствии путей
-</div>
+С индексом сопоставляется только обычный доступ по пути, при необходимости с подсказкой типа или приведением типов (`json.a.b`, `json.a.b.:Int64`, `json.a.b::String`).
+Фильтры по подстолбцу подобъекта (`json.^a`) и по комбинированному подстолбцу literal+sub-object (``json.@`a``) не используют индекс: эти подстолбцы не равны `NULL`, если существует какой-либо вложенный путь `a`, поэтому наличие самого пути `a` в `JSONAllPaths` не является эквивалентным условием.
+
+#### Безопасность при отсутствии путей {#json-indexes-jsonallpaths-safety-with-missing-paths}
 
 Если путь JSON отсутствует в грануле, подстолбец принимает значение:
 
 * `NULL` для типа `Dynamic` (например, `json.path`) и подстолбцов типа `Nullable` (например, `json.path.:Int64`) — сравнения с `NULL` всегда возвращают false, поэтому пропуск безопасен.
 * Значение по умолчанию этого типа для выражений CAST без `Nullable` (например, `json.path::Int64` даёт `0`, если путь отсутствует) — пропуск безопасен, только если сравниваемое значение отличается от значения по умолчанию. Индекс автоматически учитывает это различие.
 
-<div id="json-indexes-jsonallvalues">
-  ### Полнотекстовый поиск с JSONAllValues
-</div>
+### Полнотекстовый поиск с JSONAllValues {#json-indexes-jsonallvalues}
 
 [Текстовые индексы](/ru/reference/engines/table-engines/mergetree-family/textindexes) можно использовать для ускорения полнотекстового поиска по JSON-столбцам с помощью функции [`JSONAllValues`](/ru/reference/functions/regular-functions/json-functions#JSONAllValues).
 `JSONAllValues` возвращает все значения из JSON-столбца в виде `Array(String)`, который можно проиндексировать текстовым индексом.
@@ -1423,9 +1342,7 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
 
 Подробнее и примеры см. в разделе [Индексы на основе значений с JSONAllValues](/ru/reference/engines/table-engines/mergetree-family/textindexes#json-indexes-jsonallvalues) в документации по текстовым индексам.
 
-<div id="tips-for-better-usage-of-the-json-type">
-  ## Советы по более эффективному использованию типа JSON
-</div>
+## Советы по более эффективному использованию типа JSON {#tips-for-better-usage-of-the-json-type}
 
 Прежде чем создавать `JSON`-столбец и загружать в него данные, обратите внимание на следующие рекомендации:
 
@@ -1434,9 +1351,7 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
 * Не задавайте параметру `max_dynamic_paths` слишком большие значения, так как это может снизить эффективность хранения и чтения.
   Хотя это сильно зависит от параметров системы, таких как память, CPU и т. д., в качестве общего практического правила не стоит устанавливать `max_dynamic_paths` выше 10 000 для хранения в локальной файловой системе и 1024 — для хранения в удалённой файловой системе.
 
-<div id="further-reading">
-  ## Дополнительные материалы
-</div>
+## Дополнительные материалы {#further-reading}
 
 * [Как мы создали новый мощный тип данных JSON для ClickHouse](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse)
 * [JSON-челлендж на миллиард документов: ClickHouse против MongoDB, Elasticsearch и других](https://clickhouse.com/blog/json-bench-clickhouse-vs-mongodb-elasticsearch-duckdb-postgresql)

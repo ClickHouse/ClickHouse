@@ -11,9 +11,7 @@ import ReleaseSchedule from "/snippets/es/components/ReleaseSchedule/ReleaseSche
 
 ClickHouse Cloud ofrece diferentes canales de lanzamiento para responder a las distintas necesidades de los usuarios en cuanto a estabilidad, acceso a nuevas funciones y previsibilidad de las actualizaciones. Cada canal tiene un calendario de actualizaciones distinto y está pensado para cubrir diferentes casos de uso: desde usuarios que quieren acceso inmediato a las nuevas versiones hasta quienes prefieren aplazar las actualizaciones para asegurarse de recibir la versión más estable.
 
-<div id="release-channel-details">
-  ## Detalles del canal de lanzamiento
-</div>
+## Detalles del canal de lanzamiento {#release-channel-details}
 
 <Accordion title="Más información sobre los canales de lanzamiento">
   | Nombre del canal         | Descripción                                                                                                                                                                                                                                                                | Consideraciones clave                                                                                                                                           | Niveles compatibles                                    |
@@ -33,9 +31,7 @@ ClickHouse Cloud ofrece diferentes canales de lanzamiento para responder a las d
 
 Las ventanas de actualización programadas están disponibles para todos los canales de lanzamiento en los servicios del nivel Enterprise. Esta funcionalidad le permite configurar una franja horaria en un día determinado de la semana para las actualizaciones.
 
-<div id="release-schedule">
-  ## Calendario de lanzamientos
-</div>
+## Calendario de lanzamientos {#release-schedule}
 
 <Warning>
   **Cómo interpretar las fechas de lanzamiento**
@@ -51,73 +47,57 @@ Las ventanas de actualización programadas están disponibles para todos los can
 
 <ReleaseSchedule
   releases={[
-  {
-   changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
-   version: '26.4',
-   fast_start_date: '2026-06-22',
-   fast_end_date: '2026-07-16',
-   regular_start_date: '2026-08-03',
-   regular_end_date: 'Por determinar',
-   slow_start_date: 'Por determinar',
-   slow_end_date: 'Por determinar',
-   fast_progress: 'green',
-   regular_progress: 'green',
-   slow_progress: 'green',
-  },
-  {
-   changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
-   version: '26.2',
-   fast_start_date: '2026-04-03',
-   fast_end_date: '2026-04-14',
-   regular_start_date: '2026-05-06',
-   regular_end_date: '2026-06-17',
-   slow_start_date: '2026-07-22',
-   slow_end_date: '2026-07-22',
-   fast_progress: 'green',
-   regular_progress: 'green',
-   slow_progress: 'green',
-   fast_delay_note: 'Los servicios con ventanas de actualización se actualizarán a partir del 2026-04-15.',
-  },
-  {
-   changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
-   version: '25.12',
-   fast_start_date: '2026-02-10',
-   fast_end_date: '2026-02-11',
-   regular_start_date: '2026-03-09',
-   regular_end_date: '2026-03-18',
-   slow_start_date: '2026-04-07',
-   slow_end_date: '2026-04-09',
-   fast_progress: 'green',
-   regular_progress: 'green',
-   slow_progress: 'green',
-   regular_delay_note: 'Los servicios con ventanas de actualización programadas recibirán 25.12 durante su ventana programada en la semana posterior al 23 de marzo',
-   slow_delay_note: 'Los servicios con ventanas de actualización programadas recibirán 25.12 durante su ventana programada en la semana posterior al 13 de abril',
- },
- {
-   changelog_link: 'https://clickhouse.com/docs/changelogs/25.10',
-   version: '25.10',
-   fast_start_date: 'Completado',
-   fast_end_date: 'Completado',
-   regular_start_date: 'Completado',
-   regular_end_date: 'Completado',
-   slow_start_date: 'Completado',
-   slow_end_date: 'Completado',
-   fast_progress: 'green',
-   regular_progress: 'green',
-   slow_progress: 'green',
- },
- {
-  changelog_link: 'https://clickhouse.com/docs/changelogs/25.8',
-  version: '25.8',
-  fast_start_date: 'Completado',
-  fast_end_date: 'Completado',
-  regular_start_date: 'Completado',
-  regular_end_date: 'Completado',
-  slow_start_date: 'Completado',
-  slow_end_date: 'Completado',
-  fast_progress: 'green',
-  regular_progress: 'green',
-  slow_progress: 'green',
-}
+{
+ changelog_link: 'https://clickhouse.com/docs/changelogs/26.6',
+ version: '26.6',
+ fast_start_date: '2026-09-07',
+ fast_end_date: 'Por determinar',
+ regular_start_date: 'Por determinar',
+ regular_end_date: 'Por determinar',
+ slow_start_date: 'Por determinar',
+ slow_end_date: 'Por determinar',
+ fast_progress: 'green',
+ regular_progress: 'green',
+ slow_progress: 'green',
+},
+{
+ changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
+ version: '26.4',
+ fast_start_date: '2026-06-22',
+ fast_end_date: '2026-07-16',
+ regular_start_date: '2026-08-03',
+ regular_end_date: '2026-09-07',
+ slow_start_date: 'Por determinar',
+ slow_end_date: 'Por determinar',
+ fast_progress: 'green',
+ regular_progress: 'green',
+ slow_progress: 'green',
+},
+{
+ changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
+ version: '26.2',
+ fast_start_date: 'Completado',
+ fast_end_date: 'Completado',
+ regular_start_date: 'Completado',
+ regular_end_date: 'Completado',
+ slow_start_date: 'Completado',
+ slow_end_date: 'Completado',
+ fast_progress: 'green',
+ regular_progress: 'green',
+ slow_progress: 'green',
+},
+{
+ changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
+ version: '25.12',
+ fast_start_date: 'Completado',
+ fast_end_date: 'Completado',
+ regular_start_date: 'Completado',
+ regular_end_date: 'Completado',
+ slow_start_date: 'Completado',
+ slow_end_date: 'Completado',
+ fast_progress: 'green',
+ regular_progress: 'green',
+ slow_progress: 'green',
+},
 ]}
 />

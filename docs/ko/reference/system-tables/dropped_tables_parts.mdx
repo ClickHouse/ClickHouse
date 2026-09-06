@@ -6,17 +6,13 @@ title: 'system.dropped_tables_parts'
 doc_type: '참고'
 ---
 
-<div id="description">
-  ## 설명
-</div>
+## 설명 {#description}
 
 [system.dropped&#95;tables](/ko/reference/system-tables/dropped_tables)에 있는 삭제된 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블의 파트 정보를 포함합니다
 
 이 테이블의 스키마(schema)는 [system.parts](/ko/reference/system-tables/parts)와 동일합니다
 
-<div id="columns">
-  ## 컬럼
-</div>
+## 컬럼 {#columns}
 
 {/*자동 생성 시작*/}
 
@@ -59,11 +55,11 @@ doc_type: '참고'
 * `min_block_number` ([Int64](/ko/reference/data-types/int-uint)) — 머지 후 현재 파트를 구성하는 데이터 파트의 최소 번호입니다.
 * `max_block_number` ([Int64](/ko/reference/data-types/int-uint)) — 머지 후 현재 파트를 구성하는 데이터 파트의 최대 번호입니다.
 * `level` ([UInt32](/ko/reference/data-types/int-uint)) — 머지 트리의 깊이입니다. 0은 현재 파트가 다른 파트를 머지하여 생성된 것이 아니라 삽입으로 생성되었음을 의미합니다.
-* `data_version` ([UInt64](/ko/reference/data-types/int-uint)) — 데이터 파트에 적용할 뮤테이션을 결정하는 데 사용되는 번호입니다(`data_version`보다 높은 버전의 뮤테이션).
-* `primary_key_bytes_in_memory` ([UInt64](/ko/reference/data-types/int-uint)) — 기본 키 값에 사용되는 메모리 양(바이트)입니다. `primary_key_lazy_load`가 활성화되어 있고 키가 로드되지 않은 경우 0입니다. 0이 아닌 경우 해당 바이트는 파트 자체에 있으며 `jemalloc.mergetree_arena.active_bytes`에 հաշվ հաշվ됩니다. `PrimaryIndexCacheBytes`에는 절대 포함되지 않습니다. 파트별로 두 항목은 상호 배타적입니다. `primary_key_lazy_load` 및 `use_primary_key_cache`에 따라 인덱스는 파트(이 메트릭) 또는 공유 `PrimaryIndexCache`(다른 메트릭)에 존재합니다.
+* `data_version` ([UInt64](/ko/reference/data-types/int-uint)) — 데이터 파트에 적용할 뮤테이션을 결정하는 데 사용되는 번호입니다(data&#95;version보다 높은 버전의 뮤테이션).
+* `primary_key_bytes_in_memory` ([UInt64](/ko/reference/data-types/int-uint)) — 기본 키 값에 사용되는 메모리 양(바이트)입니다. `primary_key_lazy_load`가 활성화되어 있고 키가 로드되지 않은 경우 0입니다. 0이 아닌 경우 해당 바이트는 파트 자체에 있으며 `jemalloc.mergetree_arena.active_bytes`에 집계됩니다. `PrimaryIndexCacheBytes`에는 절대 포함되지 않습니다. 파트별로 두 항목은 상호 배타적입니다. `primary_key_lazy_load` 및 `use_primary_key_cache`에 따라 인덱스는 파트(이 메트릭) 또는 공유 `PrimaryIndexCache`(다른 메트릭)에 존재합니다.
 * `primary_key_bytes_in_memory_allocated` ([UInt64](/ko/reference/data-types/int-uint)) — 기본 키 값용으로 예약된 메모리 양(바이트)입니다. `primary_key_lazy_load`가 활성화되어 있고 키가 로드되지 않은 경우 0입니다. 0이 아닌 경우 `jemalloc.mergetree_arena.active_bytes`에 포함됩니다. `PrimaryIndexCacheBytes`와의 관계는 `primary_key_bytes_in_memory`의 참고 사항을 참조하십시오.
-* `index_granularity_bytes_in_memory` ([UInt64](/ko/reference/data-types/int-uint)) — 인덱스 세분화 수준 값에 사용되는 메모리 양(바이트)입니다(`primary_key_lazy_load=1` 및 `use_primary_key_cache=1`인 경우 0입니다). 0이 아닌 경우 해당 바이트는 파트가 소유하며 `jemalloc.mergetree_arena.active_bytes`에 հաշվ հաշվ됩니다.
-* `index_granularity_bytes_in_memory_allocated` ([UInt64](/ko/reference/data-types/int-uint)) — 인덱스 세분화 수준 값용으로 예약된 메모리 양(바이트)입니다(`primary_key_lazy_load=1` 및 `use_primary_key_cache=1`인 경우 0입니다). 0이 아닌 경우 `jemalloc.mergetree_arena.active_bytes`에 포함됩니다.
+* `index_granularity_bytes_in_memory` ([UInt64](/ko/reference/data-types/int-uint)) — 인덱스 세분화 수준 값에 사용되는 메모리 양(바이트)입니다(primary&#95;key&#95;lazy&#95;load=1 및 use&#95;primary&#95;key&#95;cache=1인 경우 0입니다). 0이 아닌 경우 해당 바이트는 파트가 소유하며 `jemalloc.mergetree_arena.active_bytes`에 집계됩니다.
+* `index_granularity_bytes_in_memory_allocated` ([UInt64](/ko/reference/data-types/int-uint)) — 인덱스 세분화 수준 값용으로 예약된 메모리 양(바이트)입니다(primary&#95;key&#95;lazy&#95;load=1 및 use&#95;primary&#95;key&#95;cache=1인 경우 0입니다). 0이 아닌 경우 `jemalloc.mergetree_arena.active_bytes`에 포함됩니다.
 * `is_frozen` ([UInt8](/ko/reference/data-types/int-uint)) — 파티션 데이터 백업이 존재함을 나타내는 플래그입니다. 1이면 백업이 존재하고, 0이면 존재하지 않습니다. 자세한 내용은 FREEZE PARTITION을 참조하십시오.
 * `database` ([String](/ko/reference/data-types/string)) — 데이터베이스 이름입니다.
 * `table` ([String](/ko/reference/data-types/string)) — 테이블 이름입니다.
@@ -78,7 +74,7 @@ doc_type: '참고'
 * `move_ttl_info.expression` ([Array(String)](/ko/reference/data-types/array)) — 표현식 배열입니다. 각 표현식은 TTL MOVE 규칙을 정의합니다.
 * `move_ttl_info.min` ([Array(DateTime)](/ko/reference/data-types/array)) — 날짜 및 시간 값 배열입니다. 각 요소는 TTL MOVE 규칙의 최소 키 값을 나타냅니다.
 * `move_ttl_info.max` ([Array(DateTime)](/ko/reference/data-types/array)) — 날짜 및 시간 값 배열입니다. 각 요소는 TTL MOVE 규칙의 최대 키 값을 나타냅니다.
-* `default_compression_codec` ([String](/ko/reference/data-types/string)) — 컬럼에 명시적으로 지정된 코덱이 없거나 `CODEC(Default)`를 사용하는 경우 이 데이터 파트를 압축하는 데 사용되는 코덱의 이름입니다. `allow_experimental_adaptive_codec_selection`을 사용하면 이러한 컬럼의 개별 블록에서 다른 코덱을 사용할 수 있습니다. [`mergeTreeCodecBlockCounts`](/ko/reference/functions/table-functions/mergeTreeCodecBlockCounts)를 참조하십시오.
+* `default_compression_codec` ([String](/ko/reference/data-types/string)) — 컬럼에 명시적으로 지정된 코덱이 없거나 `CODEC(Default)`를 사용하는 경우 이 데이터 파트를 압축하는 데 사용되는 코덱의 이름입니다. `UNKNOWN`은 파트 메타데이터에서 이 코덱을 정확히 복구할 수 없었음을 의미합니다. `enable_adaptive_codec_selection`을 사용하면 이러한 컬럼의 개별 블록에서 다른 코덱을 사용할 수 있습니다. [`mergeTreeCodecBlockCounts`](/ko/reference/functions/table-functions/mergeTreeCodecBlockCounts)를 참조하십시오.
 * `recompression_ttl_info.expression` ([Array(String)](/ko/reference/data-types/array)) — TTL 표현식입니다.
 * `recompression_ttl_info.min` ([Array(DateTime)](/ko/reference/data-types/array)) — 이 파트에서 계산된 TTL 표현식의 최솟값입니다. TTL이 만료된 행이 하나 이상 있는지 확인하는 데 사용됩니다.
 * `recompression_ttl_info.max` ([Array(DateTime)](/ko/reference/data-types/array)) — 이 파트에서 계산된 TTL 표현식의 최댓값입니다. 모든 행의 TTL이 만료되었는지 확인하는 데 사용됩니다.
@@ -107,9 +103,7 @@ doc_type: '참고'
 
 {/*AUTOGENERATED_END*/}
 
-<div id="see-also">
-  ## 관련 항목
-</div>
+## 관련 항목 {#see-also}
 
 * [MergeTree 엔진 계열](/ko/reference/engines/table-engines/mergetree-family/mergetree)
 * [system.parts](/ko/reference/system-tables/parts)

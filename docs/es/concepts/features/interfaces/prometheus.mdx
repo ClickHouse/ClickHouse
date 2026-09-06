@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-<div id="expose">
-  ## Exponer métricas del servidor ClickHouse
-</div>
+## Exponer métricas del servidor ClickHouse {#expose}
 
 <Note>
   Si usas ClickHouse Cloud, puedes exponer métricas a Prometheus con la [integración de Prometheus](/es/products/cloud/features/monitoring/prometheus).
@@ -82,15 +80,11 @@ curl http://127.0.0.1:9363/metrics
 
 <CloudNotSupportedBadge />
 
-<div id="prometheus-http-api-and-promql">
-  ## API HTTP de Prometheus y PromQL
-</div>
+## API HTTP de Prometheus y PromQL {#prometheus-http-api-and-promql}
 
 ClickHouse implementa la API HTTP de Prometheus sobre una tabla [`TimeSeries`](/es/reference/engines/table-engines/integrations/time-series). Un handler gestiona la escritura remota, la lectura remota, las consultas PromQL instantáneas y las consultas PromQL de rango.
 
-<div id="prerequisites">
-  ### Requisitos previos
-</div>
+### Requisitos previos {#prerequisites}
 
 Habilite la opción [`allow_experimental_time_series_table`](/es/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) para el usuario que crea la tabla y accede a ella:
 
@@ -107,9 +101,7 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 
 Para las solicitudes a la API HTTP, habilite `allow_experimental_time_series_table` en el perfil del usuario de la API.
 
-<div id="configure-prometheus-api">
-  ### Configure la API de Prometheus
-</div>
+### Configure la API de Prometheus {#configure-prometheus-api}
 
 Configure un handler enrutado por prefijo en el puerto HTTP principal de ClickHouse:
 
@@ -127,16 +119,17 @@ Configure un handler enrutado por prefijo en el puerto HTTP principal de ClickHo
 
 `<defaults/>` conserva los handler integrados para endpoints como `/ping` y para solicitudes SQL. El prefijo anterior expone estos endpoints mediante un único handler:
 
-| Endpoint                         | Finalidad                       |
-| -------------------------------- | ------------------------------- |
-| `/prometheus/api/v1/write`       | Escritura remota de Prometheus  |
-| `/prometheus/api/v1/read`        | Lectura remota de Prometheus    |
-| `/prometheus/api/v1/query`       | Consultas PromQL instantáneas   |
-| `/prometheus/api/v1/query_range` | Consultas PromQL de rango       |
-| `/prometheus/api/v1/series`      | Metadatos de series             |
-| `/prometheus/api/v1/metadata`    | Metadatos de la familia métrica |
+| Endpoint                          | Finalidad                       |
+| --------------------------------- | ------------------------------- |
+| `/prometheus/api/v1/write`        | Escritura remota de Prometheus  |
+| `/prometheus/api/v1/read`         | Lectura remota de Prometheus    |
+| `/prometheus/api/v1/query`        | Consultas PromQL instantáneas   |
+| `/prometheus/api/v1/query_range`  | Consultas PromQL de rango       |
+| `/prometheus/api/v1/format_query` | Formato de expresiones PromQL   |
+| `/prometheus/api/v1/series`       | Metadatos de series             |
+| `/prometheus/api/v1/metadata`     | Metadatos de la familia métrica |
 
-El ejemplo omite `database` y `table` del handler. Cada solicitud debe incluir el parámetro de consulta `table`. También puede incluir `database`, usar un nombre de tabla completo como `prometheus.metrics` u omitir la base de datos para usar `default`. Esto permite que un único handler atienda varias tablas `TimeSeries`.
+El ejemplo omite `database` y `table` del handler. Cada solicitud debe incluir el parámetro de consulta `table` (excepto `/format_query`, que solo analiza la expresión PromQL indicada y no necesita una tabla). También puede incluir `database`, usar un nombre de tabla completo como `prometheus.metrics` u omitir la base de datos para usar `default`. Esto permite que un único handler atienda varias tablas `TimeSeries`.
 
 Para usar una tabla fija en todas las solicitudes, configúrela en el handler:
 
@@ -158,9 +151,7 @@ Configuración de enrutamiento y del handler:
 | `table`      | ninguno        | El nombre de una tabla `TimeSeries`. Si se omite, la solicitud debe incluir el parámetro de consulta `table`. El nombre configurado puede incluir una base de datos.                                      |
 | `database`   | ninguno        | La base de datos que contiene la tabla. Una solicitud puede proporcionarla como parámetro de consulta. Si se omite, ClickHouse usa la base de datos de un valor `table` calificado o recurre a `default`. |
 
-<div id="remote-write">
-  ### Ingeste métricas mediante escritura remota
-</div>
+### Ingeste métricas mediante escritura remota {#remote-write}
 
 ClickHouse admite el [protocolo remote-write de Prometheus](https://prometheus.io/docs/specs/remote_write_spec/). Configure Prometheus para que escriba en el handler:
 
@@ -183,9 +174,7 @@ remote_write:
 
 ClickHouse confirma una solicitud de escritura remota asíncrona solo después de que los datos se hayan vaciado en todas las tablas internas de la tabla `TimeSeries`, independientemente de la configuración de [`wait_for_async_insert`](/es/reference/settings/session-settings/wait-for#wait_for_async_insert): el protocolo remote-write considera duradera una escritura confirmada. Si el vaciado falla, la solicitud devuelve un error y Prometheus la reintenta.
 
-<div id="promql-query-support">
-  ### Consultas con PromQL
-</div>
+### Consultas con PromQL {#promql-query-support}
 
 Utilice el endpoint de consulta instantánea para evaluar una expresión de PromQL en un momento dado:
 
@@ -210,11 +199,19 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+Utilice el endpoint de formato de consulta para analizar y formatear una expresión de PromQL sin evaluarla:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/format_query" \
+  --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
+```
+
+La expresión se devuelve serializada a partir de la consulta analizada, con los espacios en blanco normalizados, los comentarios eliminados, los paréntesis redundantes suprimidos y las duraciones convertidas a número de segundos: `sum by (job) (http_requests_total{code="200"}) / 2`. Este endpoint no evalúa la expresión, por lo que no necesita los parámetros `database` ni `table`.
+
 Consulte las [funcionalidades de PromQL compatibles](/es/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) para obtener la lista de funciones y operadores de agregación que utilizan la API HTTP, el dialecto `promql` y las funciones de tabla.
 
-<div id="grafana">
-  #### Grafana
-</div>
+#### Grafana {#grafana}
 
 Configure una fuente de datos de Prometheus con una URL base que termine antes de `/api/v1`:
 
@@ -237,12 +234,10 @@ datasources:
 Grafana agrega `/api/v1/query` o `/api/v1/query_range` a esta URL base y añade `customQueryParameters` a cada solicitud.
 
 <Note>
-  Solo están implementados los endpoints de consulta `/api/v1/query` y `/api/v1/query_range` y los endpoints de metadatos `/api/v1/series`, `/api/v1/labels` y `/api/v1/metadata`. `/api/v1/series` requiere al menos un selector de series `match[]`, admite los parámetros opcionales `start`, `end` y `limit`, y devuelve la unión de las series coincidentes con cada selector. `/api/v1/labels` acepta los mismos parámetros, con `match[]` como opcional, y devuelve los nombres de etiquetas ordenados de las series coincidentes (o de todas las series cuando no se proporcionan selectores). El endpoint de valores de etiquetas (`/api/v1/label/<name>/values`), que utiliza un origen de datos de Prometheus en Grafana para explorar etiquetas, variables de plantilla y el autocompletado del constructor de consultas, no está implementado y devuelve un error. Escriba expresiones de PromQL en el modo de código en lugar de usar el constructor de consultas.
+  Solo están implementados los endpoints de consulta `/api/v1/query`, `/api/v1/query_range` y `/api/v1/format_query` y los endpoints de metadatos `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` y `/api/v1/metadata`. `/api/v1/series` requiere al menos un selector de series `match[]`, admite los parámetros opcionales `start`, `end` y `limit`, y devuelve la unión de las series coincidentes con cada selector. `/api/v1/labels` acepta los mismos parámetros, con `match[]` como opcional, y devuelve los nombres de etiquetas ordenados de las series coincidentes (o de todas las series cuando no se proporcionan selectores). `/api/v1/label/<name>/values` acepta los mismos parámetros que `/api/v1/labels` y devuelve los valores ordenados de una etiqueta, donde `<name>` puede usar opcionalmente el escapado `U__...` de Prometheus para nombres de etiquetas que contienen caracteres fuera de `[a-zA-Z0-9_]`. Estos endpoints cubren lo que utiliza un origen de datos de Prometheus en Grafana para explorar etiquetas, variables de plantilla y el autocompletado del constructor de consultas.
 </Note>
 
-<div id="sql-entry-points">
-  #### Puntos de entrada de SQL
-</div>
+#### Puntos de entrada de SQL {#sql-entry-points}
 
 ClickHouse utiliza el mismo convertidor de PromQL para la API HTTP, el dialecto `promql` y las funciones de tabla [`prometheusQuery`](/es/reference/functions/table-functions/prometheusQuery) y [`prometheusQueryRange`](/es/reference/functions/table-functions/prometheusQueryRange).
 
@@ -267,9 +262,7 @@ FROM prometheusQuery(
 );
 ```
 
-<div id="metadata">
-  ### Consultar metadatos de métricas
-</div>
+### Consultar metadatos de métricas {#metadata}
 
 El endpoint `/prometheus/api/v1/metadata` devuelve los metadatos de las métricas almacenados en la tabla de destino `Metrics` de la tabla `TimeSeries`: el tipo, el texto de ayuda y la unidad de cada familia de métricas. Admite los siguientes parámetros de Prometheus en la cadena de consulta de la URL:
 
@@ -289,9 +282,7 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-<div id="remote-read">
-  ### Leer métricas mediante lectura remota
-</div>
+### Leer métricas mediante lectura remota {#remote-read}
 
 ClickHouse admite el [protocolo de lectura remota de Prometheus](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) en `/prometheus/api/v1/read`.
 

@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-<div id="expose">
-  ## 暴露 ClickHouse 服务器指标
-</div>
+## 暴露 ClickHouse 服务器指标 {#expose}
 
 <Note>
   如果你使用的是 ClickHouse Cloud，可以通过 [Prometheus 集成](/zh/products/cloud/features/monitoring/prometheus) 向 Prometheus 暴露指标。
@@ -82,15 +80,11 @@ curl http://127.0.0.1:9363/metrics
 
 <CloudNotSupportedBadge />
 
-<div id="prometheus-http-api-and-promql">
-  ## Prometheus HTTP API 和 PromQL
-</div>
+## Prometheus HTTP API 和 PromQL {#prometheus-http-api-and-promql}
 
 ClickHouse 基于 [`TimeSeries`](/zh/reference/engines/table-engines/integrations/time-series) 表实现 Prometheus HTTP API。一个处理程序可处理 远程写入、远程读取、即时 PromQL 查询和范围 PromQL 查询。
 
-<div id="prerequisites">
-  ### 前置条件
-</div>
+### 前置条件 {#prerequisites}
 
 为创建和访问该表的用户启用 [`allow_experimental_time_series_table`](/zh/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) 设置：
 
@@ -107,9 +101,7 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 
 对于 HTTP API 请求，请在 API 用户的 profile 中启用 `allow_experimental_time_series_table`。
 
-<div id="configure-prometheus-api">
-  ### 配置 Prometheus API
-</div>
+### 配置 Prometheus API {#configure-prometheus-api}
 
 在主 ClickHouse HTTP 端口上配置一个按前缀路由的处理程序：
 
@@ -127,16 +119,17 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 
 `<defaults/>` 会保留 `/ping` 等端点和 SQL 请求的内置处理程序。上述前缀通过一个处理程序公开这些端点：
 
-| 端点                               | 用途              |
-| -------------------------------- | --------------- |
-| `/prometheus/api/v1/write`       | Prometheus 远程写入 |
-| `/prometheus/api/v1/read`        | Prometheus 远程读取 |
-| `/prometheus/api/v1/query`       | 即时 PromQL 查询    |
-| `/prometheus/api/v1/query_range` | 范围 PromQL 查询    |
-| `/prometheus/api/v1/series`      | 序列元数据           |
-| `/prometheus/api/v1/metadata`    | 指标家族元数据         |
+| 端点                                | 用途              |
+| --------------------------------- | --------------- |
+| `/prometheus/api/v1/write`        | Prometheus 远程写入 |
+| `/prometheus/api/v1/read`         | Prometheus 远程读取 |
+| `/prometheus/api/v1/query`        | 即时 PromQL 查询    |
+| `/prometheus/api/v1/query_range`  | 范围 PromQL 查询    |
+| `/prometheus/api/v1/format_query` | PromQL 表达式格式化   |
+| `/prometheus/api/v1/series`       | 序列元数据           |
+| `/prometheus/api/v1/metadata`     | 指标家族元数据         |
 
-该示例未在处理程序中指定 `database` 和 `table`。每个请求都必须提供 `table` 查询参数。还可以提供 `database`、使用如 `prometheus.metrics` 这样的限定表名，或者省略数据库以使用 `default`。这样，一个处理程序即可为多个 `TimeSeries` 表提供服务。
+该示例未在处理程序中指定 `database` 和 `table`。每个请求都必须提供 `table` 查询参数 (`/format_query` 除外，它只解析给定的 PromQL 表达式，不需要表) 。还可以提供 `database`、使用如 `prometheus.metrics` 这样的限定表名，或者省略数据库以使用 `default`。这样，一个处理程序即可为多个 `TimeSeries` 表提供服务。
 
 若要让所有请求使用同一个固定表，请在处理程序中进行配置：
 
@@ -148,9 +141,9 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 </handler>
 ```
 
-在 处理程序 中配置的表不能被请求参数覆盖。
+在处理程序中配置的表不能被请求参数覆盖。
 
-路由和 处理程序 设置：
+路由和处理程序设置：
 
 | 名称           | 默认值 | 描述                                                                             |
 | ------------ | --- | ------------------------------------------------------------------------------ |
@@ -158,9 +151,7 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 | `table`      | 无   | `TimeSeries` 表的名称。未指定时，请求必须提供 `table` 查询参数。配置的名称可以包含数据库名称。                     |
 | `database`   | 无   | 包含该表的数据库。请求可通过查询参数提供该值。未指定时，ClickHouse 会使用完全限定的 `table` 值中的数据库，或回退到 `default`。 |
 
-<div id="remote-write">
-  ### 通过 远程写入 摄取指标
-</div>
+### 通过 远程写入 摄取指标 {#remote-write}
 
 ClickHouse 支持 [Prometheus 远程写入 协议](https://prometheus.io/docs/specs/remote_write_spec/)。配置 Prometheus 以向该处理程序写入数据：
 
@@ -183,9 +174,7 @@ remote_write:
 
 ClickHouse 仅在数据已刷新到 `TimeSeries` 表的所有内部表后，才会确认异步远程写入请求，不受 [`wait_for_async_insert`](/zh/reference/settings/session-settings/wait-for#wait_for_async_insert) 设置影响：远程写入协议将已确认的写入视为持久化写入。如果刷新失败，请求会返回错误，Prometheus 将重试。
 
-<div id="promql-query-support">
-  ### 使用 PromQL 查询
-</div>
+### 使用 PromQL 查询 {#promql-query-support}
 
 使用即时查询端点，在某一时间点评估 PromQL 表达式：
 
@@ -210,11 +199,19 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+使用格式化查询端点解析并格式化 PromQL 表达式，而不对其求值：
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/format_query" \
+  --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
+```
+
+该表达式会从解析后的查询中序列化返回，其中空白已归一化、注释已移除、冗余括号已去除，时长也转换为秒数：`sum by (job) (http_requests_total{code="200"}) / 2`。该端点不会对表达式求值，因此不需要 `database` 和 `table` 参数。
+
 有关 HTTP API、`promql` 方言及表函数支持的函数和聚合运算符列表，请参阅[支持的 PromQL 功能](/zh/reference/functions/table-functions/prometheusQueryRange#supported-promql-features)。
 
-<div id="grafana">
-  #### Grafana
-</div>
+#### Grafana {#grafana}
 
 配置 Prometheus 数据源时，基础 URL 应以 `/api/v1` 之前的部分结尾：
 
@@ -237,12 +234,10 @@ datasources:
 Grafana 会将 `/api/v1/query` 或 `/api/v1/query_range` 追加到此基础 URL，并在每个请求中添加 `customQueryParameters`。
 
 <Note>
-  目前仅实现了查询端点 `/api/v1/query` 和 `/api/v1/query_range` 以及元数据端点 `/api/v1/series`、`/api/v1/labels` 和 `/api/v1/metadata`。`/api/v1/series` 至少需要一个 `match[]` 序列选择器，支持可选的 `start`、`end` 和 `limit` 参数，并返回每个选择器匹配的序列的并集。`/api/v1/labels` 接受相同的参数，其中 `match[]` 为可选项，并返回匹配的序列的已排序标记名称 (未提供选择器时则返回所有序列的标记名称) 。Grafana Prometheus 数据源用于浏览标记、模板变量和查询构建器自动补全的标记值端点 (`/api/v1/label/<name>/values`) 尚未实现，调用时会返回错误。请使用代码模式编写 PromQL 表达式，而不要使用查询构建器。
+  目前仅实现了查询端点 `/api/v1/query`、`/api/v1/query_range` 和 `/api/v1/format_query` 以及元数据端点 `/api/v1/series`、`/api/v1/labels`、`/api/v1/label/<name>/values` 和 `/api/v1/metadata`。`/api/v1/series` 至少需要一个 `match[]` 序列选择器，支持可选的 `start`、`end` 和 `limit` 参数，并返回每个选择器匹配的序列的并集。`/api/v1/labels` 接受相同的参数，其中 `match[]` 为可选项，并返回匹配的序列的已排序标记名称 (未提供选择器时则返回所有序列的标记名称) 。`/api/v1/label/<name>/values` 接受与 `/api/v1/labels` 相同的参数，并返回某个标记的已排序值，其中 `<name>` 可选地使用 Prometheus 的 `U__...` 转义方式来表示包含 `[a-zA-Z0-9_]` 之外字符的标记名称。这些端点涵盖了 Grafana Prometheus 数据源用于浏览标记、模板变量和查询构建器自动补全的功能。
 </Note>
 
-<div id="sql-entry-points">
-  #### SQL 入口
-</div>
+#### SQL 入口 {#sql-entry-points}
 
 ClickHouse 的 HTTP API、`promql` 方言以及 [`prometheusQuery`](/zh/reference/functions/table-functions/prometheusQuery) 和 [`prometheusQueryRange`](/zh/reference/functions/table-functions/prometheusQueryRange) 表函数均使用同一个 PromQL 转换器。
 
@@ -267,9 +262,7 @@ FROM prometheusQuery(
 );
 ```
 
-<div id="metadata">
-  ### 查询指标元数据
-</div>
+### 查询指标元数据 {#metadata}
 
 `/prometheus/api/v1/metadata` 端点返回存储在 `TimeSeries` 表的 `Metrics` 目标表中的指标元数据，包括每个指标族的类型、帮助文本和单位。它支持 URL 查询字符串中的以下 Prometheus 参数：
 
@@ -289,9 +282,7 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-<div id="remote-read">
-  ### 通过远程读取读取指标
-</div>
+### 通过远程读取读取指标 {#remote-read}
 
 ClickHouse 在 `/prometheus/api/v1/read` 提供对 [Prometheus 远程读取协议](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/)的支持。
 

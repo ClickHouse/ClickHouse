@@ -104,9 +104,9 @@ Cuando una funcionalidad alcanza la disponibilidad general, su recurso deja de i
   ## Nuevo modelo de precios de Terraform y OpenAPI: explicación de la configuración de réplicas
 </div>
 
-La cantidad de réplicas con la que se creará cada servicio es, de forma predeterminada, de 3 para los niveles Scale y Enterprise, mientras que para el nivel Basic es de 1.
-En los niveles Scale y Enterprise, es posible ajustarla pasando un campo `numReplicas` en la solicitud de creación del servicio.
-El valor del campo `numReplicas` debe estar entre 2 y 20 para el primer servicio de un warehouse. Los servicios que se crean en un warehouse existente pueden tener un número de réplicas de tan solo 1.
+La cantidad de réplicas con la que se creará cada servicio es, de forma predeterminada, de 3 para los tiers Scale y Enterprise, mientras que para el tier Basic es de 1.
+En los tiers Scale y Enterprise, es posible ajustarla pasando un campo `numReplicas` en la solicitud de creación del servicio.
+El valor del campo `numReplicas` debe ser al menos 2 para el primer servicio de un warehouse. Los servicios que se crean en un warehouse existente pueden tener un número de réplicas de tan solo 1. Para conocer el número máximo de réplicas, consulte [Límites de uso](/es/cloud/bestpractices/usage-limits).
 
 <div id="support">
   ## Soporte

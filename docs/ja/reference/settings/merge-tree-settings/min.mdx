@@ -31,9 +31,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 適応型の書き込みバッファを使用することで、多数のカラムを持つテーブルのメモリ使用量を削減できます。
 
+wide パーツが書き込むストリーム数と比較されます。この数はカラム数を大幅に超える可能性があります。
+多数のバケットを持つ `Map` や、深くネストされた `Array` または `Tuple` は、単一のカラムに対して多数のストリームに書き込み、
+ストリームごとに1つの書き込みバッファが割り当てられます。
+
 設定可能な値:
 
-* 0 - 無制限
+* 0 - 無効
 * 1 - 常に有効
 
 <div id="min_compress_block_size">

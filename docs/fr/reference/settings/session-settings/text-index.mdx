@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="text_index_hint_max_selectivity">
-  ## text_index_hint_max_selectivity
-</div>
+## text_index_hint_max_selectivity {#text_index_hint_max_selectivity}
 
 <SettingsInfoBlock type="Float" default_value="0.2" />
 
@@ -23,9 +21,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Sélectivité maximale du filtre permettant d’utiliser le hint construit à partir de l’index de texte inversé.
 
-<div id="text_index_lazy_intersection_density_threshold">
-  ## text_index_lazy_intersection_density_threshold
-</div>
+## text_index_lazy_intersection_density_threshold {#text_index_lazy_intersection_density_threshold}
 
 **Alias** : `text_index_density_threshold`
 
@@ -36,9 +32,7 @@ Sélectivité maximale du filtre permettant d’utiliser le hint construit à pa
 Seuil de densité des posting lists qui détermine l’algorithme d’intersection en mode lazy d’application des posting lists (`text_index_posting_list_apply_mode = 'lazy'`).
 En dessous du seuil : intersection leapfrog (privilégie les posting lists clairsemées). À partir du seuil : intersection bitmap en brute-force (privilégie les posting lists denses).
 
-<div id="text_index_like_max_postings_to_read">
-  ## text_index_like_max_postings_to_read
-</div>
+## text_index_like_max_postings_to_read {#text_index_like_max_postings_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -48,22 +42,19 @@ Nombre maximal de postings volumineux à lire lorsque l’évaluation LIKE de l�
 
 Nécessite que `use_text_index_like_evaluation_by_dictionary_scan` soit activé.
 
-<div id="text_index_like_min_pattern_length">
-  ## text_index_like_min_pattern_length
-</div>
+## text_index_like_min_pattern_length {#text_index_like_min_pattern_length}
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4"},{"label": "Nouveau paramètre"}]}]} />
 
-Longueur minimale de la sous-chaîne alphanumérique recherchée dans un motif LIKE/ILIKE pour que l’évaluation LIKE de l’index de texte par parcours du dictionnaire soit utilisée.
+Longueur minimale de la sous-chaîne alphanumérique recherchée dans un motif LIKE/ILIKE, ou d’une sous-chaîne recherchée par `startsWith`/`endsWith`,
+pour que l’évaluation LIKE de l’index de texte par parcours du dictionnaire soit utilisée.
 Les motifs plus courts que ce seuil correspondent à trop de tokens du dictionnaire et sont ignorés afin d’éviter des parcours coûteux.
 
 Nécessite que `use_text_index_like_evaluation_by_dictionary_scan` soit activé.
 
-<div id="text_index_posting_list_apply_mode">
-  ## text_index_posting_list_apply_mode
-</div>
+## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}
 
 <SettingsInfoBlock type="TextIndexPostingListApplyMode" default_value="lazy" />
 

@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-<div id="expose">
-  ## كشف مقاييس خادم ClickHouse
-</div>
+## كشف مقاييس خادم ClickHouse {#expose}
 
 <Note>
   إذا كنت تستخدم ClickHouse Cloud، يمكنك كشف المقاييس لـ Prometheus باستخدام [تكامل Prometheus](/ar/products/cloud/features/monitoring/prometheus).
@@ -82,15 +80,11 @@ curl http://127.0.0.1:9363/metrics
 
 <CloudNotSupportedBadge />
 
-<div id="prometheus-http-api-and-promql">
-  ## واجهة Prometheus HTTP واجهة برمجة تطبيقات وPromQL
-</div>
+## واجهة Prometheus HTTP واجهة برمجة تطبيقات وPromQL {#prometheus-http-api-and-promql}
 
 يطبّق ClickHouse واجهة Prometheus HTTP واجهة برمجة تطبيقات على جدول [`TimeSeries`](/ar/reference/engines/table-engines/integrations/time-series). يتولى معالج واحد عمليات الكتابة والقراءة عن بُعد، واستعلامات PromQL الفورية، واستعلامات PromQL للنطاق.
 
-<div id="prerequisites">
-  ### المتطلبات الأساسية
-</div>
+### المتطلبات الأساسية {#prerequisites}
 
 فعِّل الإعداد [`allow_experimental_time_series_table`](/ar/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) للمستخدم الذي يُنشئ الجدول ويصل إليه:
 
@@ -107,11 +101,9 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 
 لطلبات واجهة برمجة تطبيقات HTTP، فعِّل `allow_experimental_time_series_table` في ملف تعريف مستخدم واجهة برمجة التطبيقات.
 
-<div id="configure-prometheus-api">
-  ### تهيئة واجهة برمجة تطبيقات Prometheus
-</div>
+### تهيئة واجهة برمجة تطبيقات Prometheus {#configure-prometheus-api}
 
-هيِّئ معالجًا واحدًا قائمًا على توجيه البادئة على منفذ HTTP الرئيسي لـ ClickHouse:
+هيِّئ معالجًا واحدًا قائمًا على توجيه البادئة على منفذ HTTP الرئيسي لـ ClickHouse:
 
 ```xml
 <http_handlers>
@@ -127,16 +119,17 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 
 `<defaults/>` يحافظ على المعالجات المضمنة لنقاط النهاية، مثل `/ping` وطلبات SQL. تتيح البادئة أعلاه الوصول إلى هذه النقاط عبر معالج واحد:
 
-| نقطة النهاية                     | الغرض                            |
-| -------------------------------- | -------------------------------- |
-| `/prometheus/api/v1/write`       | الكتابة عن بُعد في Prometheus    |
-| `/prometheus/api/v1/read`        | القراءة عن بُعد من Prometheus    |
-| `/prometheus/api/v1/query`       | استعلامات PromQL الفورية         |
-| `/prometheus/api/v1/query_range` | استعلامات PromQL للنطاق          |
-| `/prometheus/api/v1/series`      | البيانات الوصفية للسلاسل         |
-| `/prometheus/api/v1/metadata`    | البيانات الوصفية لعائلة المقاييس |
+| نقطة النهاية                      | الغرض                            |
+| --------------------------------- | -------------------------------- |
+| `/prometheus/api/v1/write`        | الكتابة عن بُعد في Prometheus    |
+| `/prometheus/api/v1/read`         | القراءة عن بُعد من Prometheus    |
+| `/prometheus/api/v1/query`        | استعلامات PromQL الفورية         |
+| `/prometheus/api/v1/query_range`  | استعلامات PromQL للنطاق          |
+| `/prometheus/api/v1/format_query` | تنسيق تعبير PromQL               |
+| `/prometheus/api/v1/series`       | البيانات الوصفية للسلاسل         |
+| `/prometheus/api/v1/metadata`     | البيانات الوصفية لعائلة المقاييس |
 
-يحذف المثال `database` و`table` من المعالج. يجب أن يتضمن كل طلب معلمة الاستعلام `table`. ويمكنه أيضًا تضمين `database`، أو استخدام اسم جدول مؤهل مثل `prometheus.metrics`، أو حذف قاعدة البيانات لاستخدام `default`. يتيح ذلك لمعالج واحد خدمة عدة جداول `TimeSeries`.
+يحذف المثال `database` و`table` من المعالج. يجب أن يتضمن كل طلب معلمة الاستعلام `table` (باستثناء `/format_query`، الذي يحلل تعبير PromQL المُعطى فقط ولا يحتاج إلى جدول). ويمكنه أيضًا تضمين `database`، أو استخدام اسم جدول مؤهل مثل `prometheus.metrics`، أو حذف قاعدة البيانات لاستخدام `default`. يتيح ذلك لمعالج واحد خدمة عدة جداول `TimeSeries`.
 
 لاستخدام جدول ثابت واحد لكل طلب، هيّئه في المعالج:
 
@@ -158,9 +151,7 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 | `table`      | none      | اسم جدول `TimeSeries`. عند عدم تحديده، يجب أن يتضمن الطلب معلمة الاستعلام `table`. ويمكن أن يشمل الاسم المُهيأ قاعدة بيانات.                                               |
 | `database`   | none      | قاعدة البيانات التي تحتوي على الجدول. يمكن للطلب تحديدها كمعلمة استعلام. عند عدم تحديدها، يستخدم ClickHouse قاعدة البيانات من قيمة `table` المؤهلة، أو يلجأ إلى `default`. |
 
-<div id="remote-write">
-  ### استيعاب المقاييس عبر الكتابة عن بُعد
-</div>
+### استيعاب المقاييس عبر الكتابة عن بُعد {#remote-write}
 
 يدعم ClickHouse [بروتوكول الكتابة عن بُعد لـ Prometheus](https://prometheus.io/docs/specs/remote_write_spec/). هيّئ Prometheus للكتابة إلى المعالج:
 
@@ -183,9 +174,7 @@ remote_write:
 
 لا يقرّ ClickHouse طلب الكتابة عن بُعد غير المتزامن إلا بعد تفريغ البيانات إلى جميع الجداول الداخلية لجدول `TimeSeries`، بغض النظر عن إعداد [`wait_for_async_insert`](/ar/reference/settings/session-settings/wait-for#wait_for_async_insert): إذ يتعامل بروتوكول الكتابة عن بُعد مع الكتابة المُقَرّ بها على أنها دائمة. وإذا أخفق التفريغ، يُرجع الطلب خطأً ويعيد Prometheus محاولة إرساله.
 
-<div id="promql-query-support">
-  ### الاستعلام باستخدام PromQL
-</div>
+### الاستعلام باستخدام PromQL {#promql-query-support}
 
 استخدم نقطة نهاية الاستعلام الفوري لتقييم تعبير PromQL في نقطة زمنية محددة:
 
@@ -210,11 +199,19 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+استخدم نقطة نهاية تنسيق الاستعلام لتحليل تعبير PromQL وتنسيقه دون تقييمه:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/format_query" \
+  --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
+```
+
+يُعاد التعبير مُسلسلاً من الاستعلام المُحلَّل، مع توحيد المسافات البيضاء، وإزالة التعليقات، وحذف الأقواس الزائدة، وتحويل المدد إلى أعداد بالثواني: `sum by (job) (http_requests_total{code="200"}) / 2`. لا تقوم نقطة النهاية هذه بتقييم التعبير، لذا فهي لا تحتاج إلى المعاملين `database` و`table`.
+
 راجع [ميزات PromQL المدعومة](/ar/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) للاطلاع على قائمة الدالات وعوامل التجميع التي تستخدمها واجهة برمجة تطبيقات HTTP، ولهجة `promql`، ودالات الجداول.
 
-<div id="grafana">
-  #### Grafana
-</div>
+#### Grafana {#grafana}
 
 هيّئ مصدر بيانات Prometheus باستخدام عنوان URL أساسي ينتهي قبل `/api/v1`:
 
@@ -237,12 +234,10 @@ datasources:
 يُلحق Grafana المسارَين ‎`/api/v1/query` أو ‎`/api/v1/query_range` بعنوان URL الأساسي هذا، ويضيف `customQueryParameters` إلى كل طلب.
 
 <Note>
-  لا تُنفَّذ إلا نقطتا نهاية الاستعلام ‎`/api/v1/query` و‎`/api/v1/query_range` ونقاط نهاية البيانات الوصفية ‎`/api/v1/series` و‎`/api/v1/labels` و‎`/api/v1/metadata`. تتطلب ‎`/api/v1/series` محدِّد سلاسل واحدًا على الأقل من `match[]`، وتدعم المعلمات الاختيارية `start` و`end` و`limit`، وتُرجع اتحاد السلاسل المطابقة لكل محدِّد. تقبل ‎`/api/v1/labels` المعلمات نفسها، مع كون `match[]` اختياريًا، وتُرجع أسماء التسميات المرتبة للسلاسل المطابقة (أو لجميع السلاسل عند عدم تقديم أي محددات). أما نقطة نهاية قيم التسميات (‎`/api/v1/label/<name>/values`) التي يستخدمها مصدر بيانات Prometheus في Grafana لتصفّح التسميات ومتغيرات القوالب والإكمال التلقائي في أداة إنشاء الاستعلامات، فهي غير منفَّذة وتُرجع خطأً. اكتب تعبيرات PromQL في وضع الشيفرة بدلاً من أداة إنشاء الاستعلامات.
+  لا تُنفَّذ إلا نقاط نهاية الاستعلام ‎`/api/v1/query` و‎`/api/v1/query_range` و‎`/api/v1/format_query` ونقاط نهاية البيانات الوصفية ‎`/api/v1/series` و‎`/api/v1/labels` و‎`/api/v1/label/<name>/values` و‎`/api/v1/metadata`. تتطلب ‎`/api/v1/series` محدِّد سلاسل واحدًا على الأقل من `match[]`، وتدعم المعلمات الاختيارية `start` و`end` و`limit`، وتُرجع اتحاد السلاسل المطابقة لكل محدِّد. تقبل ‎`/api/v1/labels` المعلمات نفسها، مع كون `match[]` اختياريًا، وتُرجع أسماء التسميات المرتبة للسلاسل المطابقة (أو لجميع السلاسل عند عدم تقديم أي محددات). وتقبل ‎`/api/v1/label/<name>/values` المعلمات نفسها التي تقبلها ‎`/api/v1/labels` وتُرجع القيم المرتبة لتسمية واحدة، مع إمكانية استخدام `<name>` لإفلات Prometheus بصيغة `U__...` لأسماء التسميات التي تحتوي على محارف خارج النطاق `[a-zA-Z0-9_]`. تغطي نقاط النهاية هذه ما يستخدمه مصدر بيانات Prometheus في Grafana لتصفّح التسميات ومتغيرات القوالب والإكمال التلقائي في أداة إنشاء الاستعلامات.
 </Note>
 
-<div id="sql-entry-points">
-  #### نقاط إدخال SQL
-</div>
+#### نقاط إدخال SQL {#sql-entry-points}
 
 يستخدم ClickHouse محوّل PromQL نفسه لواجهة برمجة تطبيقات HTTP، ولهجة `promql`، ودالتي الجدول [`prometheusQuery`](/ar/reference/functions/table-functions/prometheusQuery) و[`prometheusQueryRange`](/ar/reference/functions/table-functions/prometheusQueryRange).
 
@@ -267,9 +262,7 @@ FROM prometheusQuery(
 );
 ```
 
-<div id="metadata">
-  ### الاستعلام عن البيانات الوصفية للمقاييس
-</div>
+### الاستعلام عن البيانات الوصفية للمقاييس {#metadata}
 
 تعيد نقطة النهاية `/prometheus/api/v1/metadata` البيانات الوصفية للمقاييس المخزنة في الجدول الهدف `Metrics` ضمن جدول `TimeSeries`، وهي تشمل النوع ونص المساعدة ووحدة كل عائلة مقاييس. وتدعم معلمات Prometheus التالية في سلسلة استعلام URL:
 
@@ -289,9 +282,7 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-<div id="remote-read">
-  ### قراءة المقاييس عبر القراءة عن بُعد
-</div>
+### قراءة المقاييس عبر القراءة عن بُعد {#remote-read}
 
 يدعم ClickHouse [بروتوكول القراءة عن بُعد لـ Prometheus](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) على المسار `/prometheus/api/v1/read`.
 

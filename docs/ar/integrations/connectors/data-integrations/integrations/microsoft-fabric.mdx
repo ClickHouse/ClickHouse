@@ -15,9 +15,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 <ClickHouseSupportedBadge />
 
-<div id="overview">
-  ## نظرة عامة
-</div>
+## نظرة عامة {#overview}
 
 يُشكّل عبء العمل ClickHouse لـ Microsoft Fabric طبقة تسريع لـ OneLake. إذ يدمج ClickHouse، أسرع قاعدة بيانات تحليلية مفتوحة المصدر، مباشرةً في مساحة عمل Fabric كعبء عمل أصلي.
 
@@ -35,9 +33,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 يتوفر عبء العمل في مركز أعباء العمل في Microsoft Fabric. وللاطلاع على تفاصيل الأمان والخصوصية والامتثال، راجع [إقرار المورّد](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation).
 
-<div id="provisioning">
-  ## الإعداد
-</div>
+## الإعداد {#provisioning}
 
 لإنشاء عنصر ClickHouse:
 
@@ -53,9 +49,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 تُجهَّز الخدمات في منطقة Azure ضمن ClickHouse Cloud الأقرب إلى منطقة سعة Fabric لديك. راجع [المناطق المدعومة](/ar/products/cloud/reference/supported-regions). ولمعرفة مكان تخزين البيانات ومعالجتها، راجع [قسم إقامة البيانات في الإقرار](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation).
 
-<div id="clickhouse-cloud-trial">
-  ## الفترة التجريبية لـ ClickHouse Cloud
-</div>
+## الفترة التجريبية لـ ClickHouse Cloud {#clickhouse-cloud-trial}
 
 يؤدي إنشاء أول عنصر في ClickHouse إلى بدء فترة تجريبية تلقائيًا. يتم توفير مؤسسة تجريبية وservice مخصصة باستخدام هوية Microsoft Entra الخاصة بك.
 
@@ -67,9 +61,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 عند انتهاء الفترة التجريبية أو نفاد الأرصدة، حوّلها إلى مؤسسة مدفوعة عبر [عرض ClickHouse Cloud على Azure Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud).
 
-<div id="syncing-data-from-onelake">
-  ## مزامنة البيانات من OneLake
-</div>
+## مزامنة البيانات من OneLake {#syncing-data-from-onelake}
 
 تتيح لك عملية Sync مزامنة جداول OneLake إلى ClickHouse:
 
@@ -94,24 +86,18 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
   في المعاينة العامة، لا يُدعم حاليًا إلا نسخ لقطة في نقطة زمنية محددة. ومن المخطط توفير المزيد من خيارات النسخ المتماثل في الإصدارات المستقبلية.
 </Note>
 
-<div id="powered-by-clickpipes">
-  ### مدعوم من ClickPipes
-</div>
+### مدعوم من ClickPipes {#powered-by-clickpipes}
 
 يعتمد كل جدول تمت مزامنته على [ClickPipe](/ar/integrations/clickpipes/home)، وهي خدمة الاستيعاب المُدارة في ClickHouse Cloud:
 
 1. يقرأ عبء العمل الجدول مباشرةً من OneLake باستخدام بيانات الاعتماد المصرّح بها
 2. يبث ClickPipe البيانات إلى جدول في خدمة ClickHouse لديك، مع تعيين أنواع البيانات من OneLake إلى أنواع ClickHouse
 
-<div id="cost">
-  ### التكلفة
-</div>
+### التكلفة {#cost}
 
 تكون مزامنة البيانات من OneLake إلى ClickHouse مجانية خلال فترة المعاينة العامة لـ Microsoft Fabric. تبدأ الفوترة عندما يصل عبء عمل Fabric إلى مرحلة التوافر العام. وستُنشر تفاصيل الأسعار عند وصول عبء العمل إلى مرحلة GA.
 
-<div id="sql-console-and-saved-queries">
-  ## وحدة تحكم SQL والاستعلامات المحفوظة
-</div>
+## وحدة تحكم SQL والاستعلامات المحفوظة {#sql-console-and-saved-queries}
 
 تتيح لك وحدة تحكم SQL المضمنة الاستعلام عن بيانات ClickHouse دون مغادرة Fabric.
 
@@ -119,21 +105,15 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
   ![وحدة تحكم SQL المضمنة في ClickHouse للاستعلام عن جدول سيارات الأجرة المتزامن في NYC](/images/integrations/tools/data-integration/microsoft-fabric/fabric-05-sql-console.webp)
 </Frame>
 
-<div id="saved-queries">
-  ### الاستعلامات المحفوظة
-</div>
+### الاستعلامات المحفوظة {#saved-queries}
 
-احفظ أي استعلام باسم لإعادة استخدامه لاحقًا. تُخزَّن الاستعلامات المحفوظة مع العنصر، بحيث يعمل الجميع في مساحة العمل على المجموعة نفسها.
+احفظ أي استعلام باسم لإعادة استخدامه لاحقًا. في مرحلة الـ المعاينة العامة، تكون الاستعلامات المحفوظة خاصة بكل مستخدم؛ أما مشاركة الاستعلامات المحفوظة بغرض التعاون فهي مدرجة ضمن الـ roadmap.
 
-<div id="go-further-with-clickhouse-sql">
-  ### استكشف المزيد مع ClickHouse SQL
-</div>
+### استكشف المزيد مع ClickHouse SQL {#go-further-with-clickhouse-sql}
 
 يقدّم ClickHouse أكثر بكثير من عمليات SELECT السريعة: طرق العرض المادية التي تحسب النتائج مسبقًا عند وصول البيانات، والبحث النصي الكامل، والتجميعات التقريبية، ومئات الدالات المتخصصة. لمعرفة المزيد عمّا يقدمه ClickHouse، اطّلع على [أفضل ممارسات ClickHouse](/ar/concepts/best-practices/index)، و[طرق العرض المادية](/ar/concepts/features/materialized-views/index)، و[أمثلة لحالات الاستخدام](/ar/guides/use-cases/index).
 
-<div id="connecting-your-data">
-  ## توصيل بياناتك
-</div>
+## توصيل بياناتك {#connecting-your-data}
 
 توفّر شاشة **Connect** إرشادات للنسخ واللصق لكل ما يمكنه الاتصال بخدمتك.
 
@@ -147,13 +127,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 يُفعَّل وصول MCP اختياريًا لكل خدمة على حدة، وهو للقراءة فقط. يؤدي تمكينه إلى إتاحة نقطة نهاية خاضعة للحوكمة يمكن للوكلاء الاستعلام منها باستخدام SQL. ويحصلون على الإجابات نفسها في أقل من ثانية كما في Console، من دون استهلاك سعة Fabric لديك. راجع [تمكين خادم MCP البعيد](/ar/products/cloud/features/ai-ml/remote-mcp#enabling) لمعرفة خطوات الإعداد، و[مرجع خادم ClickHouse MCP](/ar/products/cloud/features/ai-ml/remote-mcp#available-tools) للاطلاع على الأدوات المتاحة.
 
-<div id="administration-and-management">
-  ## الإدارة وإدارة النظام
-</div>
+## الإدارة وإدارة النظام {#administration-and-management}
 
-<div id="open-in-clickhouse-cloud">
-  ### فتح في ClickHouse Cloud
-</div>
+### فتح في ClickHouse Cloud {#open-in-clickhouse-cloud}
 
 حدّد **Open in ClickHouse Cloud** لفتح واجهة ClickHouse Cloud الكاملة بعد تسجيل الدخول باستخدام هوية Microsoft الخاصة بك. يمكنك مزامنة البيانات إلى ClickHouse وتشغيل أي عبارات SQL من عبء العمل Fabric، ولكن لإجراء أي مهام إدارية، ستحتاج إلى الدخول إلى وحدة تحكم ClickHouse Cloud لإدارة الخدمة.
 
@@ -161,15 +137,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
   ![إعدادات خدمة ClickHouse Cloud التي تم الوصول إليها من عبء العمل](/images/integrations/tools/data-integration/microsoft-fabric/fabric-07-cloud-console-service.webp)
 </Frame>
 
-<div id="scaling">
-  ### التوسّع
-</div>
+### التوسّع {#scaling}
 
 تتوسّع الخدمات رأسيًا وأفقيًا ضمن الحدود المُهيّأة. اضبط الحدين الأدنى والأقصى لأحجام النسخ المتماثلة من **الإعدادات** في وحدة تحكم ClickHouse Cloud. بالنسبة إلى أحمال العمل المتوقعة والحساسة لزمن الاستجابة، ثبّت الحد الأدنى لحجم النسخة المتماثلة للحفاظ على جاهزية الخدمة. راجع [التوسّع التلقائي](/ar/products/cloud/features/autoscaling/overview) لمزيد من التفاصيل.
 
-<div id="idling">
-  ### الخمول
-</div>
+### الخمول {#idling}
 
 يوقف الخمول موارد الحوسبة مؤقتًا عندما لا تتلقى الخدمة أي استعلامات، ويستأنفها تلقائيًا عند وصول الاستعلام التالي بعد تأخير قصير لبدء التشغيل. تُنشأ الخدمات التجريبية مع تفعيل الخمول.
 
@@ -178,21 +150,15 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 هيّئ الخمول في وحدة تحكم ClickHouse Cloud ضمن صفحة **الإعدادات**. راجع [الخمول التلقائي](/ar/products/cloud/features/autoscaling/idling) للاطلاع على سلوكه الكامل.
 
-<div id="monitoring-the-service">
-  ### مراقبة الخدمة
-</div>
+### مراقبة الخدمة {#monitoring-the-service}
 
 يمكن مراقبة حالة الخدمة وأداء الاستعلامات واستخدام الموارد من وحدة تحكم ClickHouse Cloud. راجع [مراقبة ClickHouse Cloud](/ar/guides/use-cases/observability/cloud-monitoring) للتعرّف على إمكانات المراقبة المدمجة وخيارات التكامل. وللاطلاع على الحالة العامة للمنصة وسجل الحوادث، راجع [status.clickhouse.com](https://status.clickhouse.com).
 
-<div id="monitoring-clickpipes">
-  ### مراقبة ClickPipes
-</div>
+### مراقبة ClickPipes {#monitoring-clickpipes}
 
 تعمل كل عملية مزامنة من OneLake باعتبارها ClickPipe. راقب تقدّم المزامنة ومعدل النقل والأخطاء في [صفحة ClickPipes](/ar/integrations/clickpipes/monitoring) في وحدة تحكم ClickHouse Cloud.
 
-<div id="mapping-to-clickhouse-cloud">
-  ## الربط بـ ClickHouse Cloud
-</div>
+## الربط بـ ClickHouse Cloud {#mapping-to-clickhouse-cloud}
 
 يعمل عبء العمل على [ClickHouse Cloud](https://clickhouse.com/cloud) المستضاف على Azure. توضّح عمليات الربط الثلاث التالية كيفية توافق مفاهيم Fabric مع مفاهيم ClickHouse:
 
@@ -208,30 +174,22 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 **المستخدمون.** عندما يفتح أحد أعضاء مساحة عمل Fabric عنصر ClickHouse لأول مرة، يُوفَّر مستخدم ClickHouse تلقائيًا في مؤسسة ClickHouse Cloud المرتبطة بمساحة العمل.
 
-<div id="support">
-  ## الدعم
-</div>
+## الدعم {#support}
 
 تقدم ClickHouse الدعم لأعباء العمل ClickHouse. تجد جميع التفاصيل، بما في ذلك مستويات الخطورة وأوقات الاستجابة، في [برنامج دعم ClickHouse](https://clickhouse.com/support/program). يمكنك فتح تذكرة من هناك أو مباشرةً من خلال وحدة تحكم ClickHouse Cloud. للاطلاع على حالة المنصة وسجل الحوادث، راجع [status.clickhouse.com](https://status.clickhouse.com).
 
-<div id="azure-marketplace">
-  ## Azure Marketplace
-</div>
+## Azure Marketplace {#azure-marketplace}
 
 يتم تحقيق الدخل من عبء العمل عبر [عرض ClickHouse Cloud على Azure Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud):
 
 * عند انتهاء الفترة التجريبية، يأخذك مسار الترقية في عبء العمل إلى شراء العرض من marketplace لمؤسستك. وبعد ذلك، تُحتسب رسوم الاستخدام بنظام الدفع حسب الاستخدام عبر حساب Azure الخاص بك. راجع [فوترة Azure Marketplace PAYG](/ar/products/cloud/reference/billing/marketplace/azure-marketplace-payg) للتفاصيل.
 * يتطلب إتمام عملية شراء من marketplace الحصول على إذن billing لمؤسسة ClickHouse، وهو إذن يمتلكه مسؤولو workspace. ويمكن لمسؤول المؤسسة منحه لمستخدمين آخرين في Cloud Console.
 
-<div id="getting-started-tutorial">
-  ## دليل عملي للبدء
-</div>
+## دليل عملي للبدء {#getting-started-tutorial}
 
 يستخدم هذا الدليل العملي بيانات العينة المضمنة في Fabric، ما يتيح لك تجربة عبء العمل دون الحاجة إلى توفير مجموعة بيانات خاصة بك.
 
-<div id="load-the-sample-data">
-  ### تحميل البيانات النموذجية
-</div>
+### تحميل البيانات النموذجية {#load-the-sample-data}
 
 في مساحة عمل Fabric، اختر **+ عنصر جديد**، ثم اختر **lakehouse نموذجي** لإضافة نموذج **العطلات الرسمية**. تأكد من ظهور جدول `publicholidays` ضمن الجداول.
 
@@ -239,18 +197,14 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
   ![جدول نموذج العطلات الرسمية في Fabric Lakehouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-sample-lakehouse.webp)
 </Frame>
 
-<div id="create-a-clickhouse-item-and-sync">
-  ### أنشئ عنصر ClickHouse وزامنه
-</div>
+### أنشئ عنصر ClickHouse وزامنه {#create-a-clickhouse-item-and-sync}
 
 1. أنشئ عنصر ClickHouse في مساحة العمل نفسها، كما هو موضح في قسم [الإعداد](#provisioning)
 2. افتح **Sync**، واختر Lakehouse، ثم حدّد جدول `publicholidays`
 3. رتّب البيانات حسب الأعمدة التي تُجري التصفية عليها غالبًا: `countryOrRegion, date`
 4. ابدأ المزامنة، وستُملأ البيانات بعد وقت قصير. يكتمل نقل جدول بهذا الحجم خلال ثوانٍ
 
-<div id="query-the-data">
-  ### الاستعلام عن البيانات
-</div>
+### الاستعلام عن البيانات {#query-the-data}
 
 افتح وحدة تحكم SQL وجرّب:
 
@@ -276,9 +230,7 @@ ORDER BY year;
 
 احفظ الاستعلام الأول باسم **العطلات حسب البلد** للاطلاع على الاستعلامات المحفوظة أثناء الاستخدام.
 
-<div id="connect-to-mcp">
-  ### الاتصال بـ MCP
-</div>
+### الاتصال بـ MCP {#connect-to-mcp}
 
 1. في شاشة **Connect**، فعّل **MCP** للخدمة.
 2. سجّل ClickHouse MCP server لدى MCP client الذي تختاره، كما هو موضح في [بدء الاستخدام مع Remote MCP server](/ar/products/cloud/features/ai-ml/remote-mcp#getting-started).
@@ -286,40 +238,58 @@ ORDER BY year;
 
 يجيب agent عبر تشغيل استعلامات SQL خاضعة للحوكمة وبصلاحية للقراءة فقط على table المتزامن لديك.
 
-<div id="known-limitations">
-  ## القيود المعروفة
-</div>
+## القيود المعروفة {#known-limitations}
 
 ميزة عبء العمل في ClickHouse متاحة كمعاينة عامة. تمثل القيود أدناه الوضع الحالي وليست الحالة النهائية؛ ومعظمها مدرج في خارطة الطريق.
 
-<div id="data-movement">
-  ### نقل البيانات
-</div>
+### نقل البيانات {#data-movement}
 
 * **النسخ لقطات في نقطة زمنية محددة.** لا تتوفر جدولة أو نسخ متماثل مستمر حتى الآن. لتحديث جدول بأحدث بيانات OneLake، أعد تشغيل المزامنة. لا تُنقل التحديثات وعمليات الحذف في جدول المصدر إلى نسخة ClickHouse.
 * **جداول Lakehouse فقط.** تقرأ Sync الجداول من Lakehouse ضمن مساحة العمل نفسها.
 * **لا توجد كتابة عكسية إلى OneLake.** تتدفق البيانات في اتجاه واحد، من OneLake إلى ClickHouse. ومن المخطط إتاحة كتابة نتائج الاستعلامات مجددًا إلى OneLake.
 
-<div id="service-management">
-  ### إدارة الخدمة
-</div>
+### إدارة الخدمة {#service-management}
 
 * **خدمة واحدة لكل عنصر، تُحدَّد عند الإنشاء.** لا يمكنك إرفاق خدمة ClickHouse Cloud موجودة بعنصر Fabric، ولا يمكنك ربط حمل العمل بمؤسسة ClickHouse Cloud موجودة.
 * **يؤدي حذف الخدمة من وحدة تحكم ClickHouse Cloud إلى جعل عنصر Fabric يتيماً وغير قابل للاسترداد.** يؤدي حذف عنصر Fabric إلى حذف خدمته، لكن العملية العكسية غير مدعومة حالياً.
 * **تُضبط إعدادات الخدمة من وحدة تحكم Cloud.** تتم إدارة التوسعة، والخمول، والنسخ الاحتياطية من ClickHouse Cloud، وليس من إعدادات عنصر Fabric.
 
-<div id="access-and-identity">
-  ### الوصول والهوية
-</div>
+### الوصول والهوية {#access-and-identity}
 
 * **تسري تغييرات الدور عند الفتح التالي.** يُعيَّن دورك في مؤسسة ClickHouse استنادًا إلى دورك في مساحة عمل Fabric في كل مرة تفتح فيها عنصرًا من ClickHouse. لا يمكن لـ Fabric إبلاغ ClickHouse بتغييرات الأدوار، لذا لا يسري تغيير دور مساحة العمل فورًا.
 * **لا تؤدي إزالة مستخدم أو خفض صلاحياته في Fabric إلى إلغاء وصوله إلى ClickHouse.** نظرًا إلى أن الأدوار لا تُطبَّق إلا عند فتح المستخدم عنصرًا من ClickHouse، فقد يحتفظ المستخدم الذي أُزيل من مساحة العمل أو خُفِّضت صلاحياته بوصوله الحالي في ClickHouse Cloud، وإذا لم يفتح العنصر مرة أخرى فلن يُنقل هذا التغيير إطلاقًا. لإلغاء الوصول فورًا وبشكل موثوق، أزل المستخدم من المؤسسة في وحدة تحكم ClickHouse Cloud.
 * **الوصول على مستوى مساحة العمل.** يمكن لجميع المستخدمين في مساحة العمل استخدام عناصر ClickHouse فيها. لا تتوفر حاليًا مزامنة دقيقة للأذونات لكل جدول من OneLake.
 * **يتطلب تسجيل الدخول الموحّد إلى Console وجود بريد إلكتروني في ملف تعريف Entra لديك.** يحتاج مستخدمو ClickHouse Cloud إلى عنوان بريد إلكتروني؛ وإذا لم يكن محددًا في ملف تعريف Microsoft Entra لديك، فسيفشل تسجيل الدخول إلى وحدة تحكم ClickHouse Cloud.
 
-<div id="reference">
-  ## المرجع
-</div>
+## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+
+### فشل التحقق من البريد الإلكتروني عند فتح عنصر ClickHouse {#email-verification-fails}
+
+**رموز الخطأ:** `email_not_found`، `email_domain_unverified`
+
+**السبب:** يتطلب تهيئة مستخدم ClickHouse عنوان بريد إلكتروني تابعًا لـ domain مُتحقق منه في حساب Microsoft Entra. وتستوفي حسابات الأعضاء هذا الشرط دائمًا، بما في ذلك الحسابات في المستأجرين الشخصيين أو التجريبيين التي لا تمتلك سوى الـ domain الافتراضي `.onmicrosoft.com`. وهذان الخطآن يعنيان في الغالب أنك مسجّل الدخول بحساب **guest ‏(B2B)**:
+
+* `email_not_found` — لم يُضبط أي عنوان بريد إلكتروني في ملفك التعريفي كـ guest في هذا المستأجر.
+* `email_domain_unverified` — بريدك الإلكتروني تابع للمستأجر الأصلي الخاص بك، وهو ليس
+  domain مُتحقق منه في المستأجر الذي تستخدم Fabric ضمنه.
+
+**الحل:** استخدم حساب عضو في المستأجر، أو تواصل مع مسؤول Fabric للتأكد من أن ملفك التعريفي في Microsoft Entra يحتوي على عنوان بريد إلكتروني على أحد الـ domains المُتحقق منها في المستأجر. راجع [إدارة أسماء الـ domain المخصصة في Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/identity/users/domains-manage).
+
+### تعذّر تسجيل الدخول إلى وحدة تحكم ClickHouse Cloud {#cannot-sign-in-to-the-clickhouse-cloud-console}
+
+**السبب:** يتطلب مستخدمو ClickHouse Cloud وجود عنوان بريد إلكتروني. يفشل تسجيل الدخول من عبء العمل إذا لم يكن هناك بريد إلكتروني مُعيَّن في ملف تعريف Entra، كما أن أول تسجيل دخول إلى الـ وحدة التحكم يُرسل رمز تحقق، لذا يجب أن يكون للعنوان صندوق بريد فعلي. وغالبًا ما تكون عناوين `.onmicrosoft.com` الافتراضية بلا صندوق بريد. أما التجربة داخل Fabric فلا تتأثر بذلك؛ إذ يقتصر هذا القيد على **Open in ClickHouse Cloud** وإتمام الشراء من الـ marketplace.
+
+**الحل:** تواصل مع مسؤول Fabric لإضافة عنوان بريد إلكتروني ذي صندوق بريد نشِط إلى ملف تعريف Entra الخاص بك في Microsoft Entra، ثم أعِد المحاولة.
+
+### رُفض الوصول عند فتح عنصر {#access-denied-when-opening-an-item}
+
+**رمز الخطأ:** `item_access_denied`
+
+**السبب:** المستخدم المسجَّل دخوله لا يملك صلاحية الوصول إلى عنصر Fabric، أو أن تغييرًا حديثًا في دور مساحة العمل لم يُطبَّق بعد.
+
+**الحل:** تأكّد من أنك عضو في مساحة العمل وبالدور الصحيح. تسري تغييرات الدور عند فتح عنصر ClickHouse في المرة التالية.
+
+## المرجع {#reference}
 
 * [إقرار المورّد](https://clickhouse.com/legal/clickhouse-microsoft-fabric-workload-attestation)
 * [ClickHouse Cloud على Microsoft Marketplace](https://marketplace.microsoft.com/en-us/product/clickhouse.clickhouse_cloud)

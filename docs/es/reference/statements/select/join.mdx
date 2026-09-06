@@ -22,9 +22,7 @@ FROM <left_table>
 
 Las expresiones de la cláusula `ON` y las columnas de la cláusula `USING` se denominan &quot;claves de JOIN&quot;. A menos que se indique lo contrario, un `JOIN` produce un [producto cartesiano](https://en.wikipedia.org/wiki/Cartesian_product) de las filas con &quot;claves de JOIN&quot; coincidentes, lo que puede generar resultados con muchas más filas que las tablas de origen.
 
-<div id="supported-types-of-join">
-  ## Tipos de JOIN compatibles
-</div>
+## Tipos de JOIN compatibles {#supported-types-of-join}
 
 Se admiten todos los tipos estándar de [SQL JOIN](https://en.wikipedia.org/wiki/Join_\(SQL\)):
 
@@ -56,9 +54,7 @@ Los tipos de join adicionales disponibles en ClickHouse son:
   Cuando [join&#95;algorithm](/es/reference/settings/session-settings/join#join_algorithm) se establece en `partial_merge`, `RIGHT JOIN` y `FULL JOIN` solo son compatibles con strictness `ALL` (`SEMI`, `ANTI`, `ANY` y `ASOF` no son compatibles).
 </Note>
 
-<div id="settings">
-  ## Configuración
-</div>
+## Configuración {#settings}
 
 El tipo de JOIN predeterminado puede sobrescribirse mediante la configuración [`join_default_strictness`](/es/reference/settings/session-settings/join#join_default_strictness).
 
@@ -75,9 +71,7 @@ El comportamiento del servidor ClickHouse en las operaciones `ANY JOIN` depende 
 
 Use la configuración `cross_to_inner_join_rewrite` para definir el comportamiento cuando ClickHouse no consigue reescribir un `CROSS JOIN` como un `INNER JOIN`. El valor predeterminado es `1`, lo que permite que el JOIN continúe, aunque será más lento. Establezca `cross_to_inner_join_rewrite` en `0` si desea que se genere un error, y en `2` si no quiere ejecutar los cross joins, sino forzar la reescritura de todos los comma/cross joins. Si la reescritura falla cuando el valor es `2`, recibirá un mensaje de error que indica &quot;Please, try to simplify `WHERE` section&quot;.
 
-<div id="on-section-conditions">
-  ## Condiciones de la sección `ON`
-</div>
+## Condiciones de la sección `ON` {#on-section-conditions}
 
 Una sección `ON` puede contener varias condiciones combinadas con los operadores `AND` y `OR`. Las condiciones que especifican claves de `JOIN` deben:
 
@@ -180,9 +174,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
 └───┴────┴─────┘
 ```
 
-<div id="join-with-inequality-conditions-for-columns-from-different-tables">
-  ## JOIN con condiciones de desigualdad para columnas de diferentes tablas
-</div>
+## JOIN con condiciones de desigualdad para columnas de diferentes tablas {#join-with-inequality-conditions-for-columns-from-different-tables}
 
 Actualmente, ClickHouse admite `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` con condiciones de desigualdad además de las condiciones de igualdad. Las condiciones de desigualdad solo se admiten con los algoritmos de join `hash`, `parallel_hash` y `grace_hash`. Una condición de no equivalencia evaluada durante el join no puede contener `arrayJoin`, ya que debe conservar el número de filas; las condiciones que se aplican a un solo lado y una clave de igualdad sobre `arrayJoin` se extraen antes del join y no se ven afectadas; una condición no disyuntiva de `ALL INNER JOIN` tampoco se ve afectada, ya que en ese caso se aplica después del join. Cuando la expansión depende de un solo lado, muévala a un `ARRAY JOIN` en una subconsulta antes del join; una condición cuyo argumento de `arrayJoin` lee columnas de ambos lados debe reestructurarse.
 
@@ -232,9 +224,7 @@ key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
 
-<div id="null-values-in-join-keys">
-  ## Valores `NULL` y `NaN` en las claves de `JOIN`
-</div>
+## Valores `NULL` y `NaN` en las claves de `JOIN` {#null-values-in-join-keys}
 
 `NULL` no es igual a ningún valor, incluido él mismo. Esto significa que, si una clave de `JOIN` tiene un valor `NULL` en una tabla, no coincidirá con un valor `NULL` de la otra tabla.
 
@@ -295,9 +285,7 @@ No dependa de un comportamiento específico.
 Si necesita que las filas con `NaN` no coincidan, asígnelas a valores `NULL`: `ON if(isNaN(A.id), NULL, A.id) = B.id`.
 En un `ASOF JOIN`, la columna de coincidencia más próxima se compara mediante ordenación, algo que `NaN` no admite; filtre esas filas en ambos lados.
 
-<div id="asof-join-usage">
-  ## Uso de ASOF JOIN
-</div>
+## Uso de ASOF JOIN {#asof-join-usage}
 
 `ASOF JOIN` es útil cuando necesitas unir registros que no tienen una correspondencia exacta.
 
@@ -351,9 +339,7 @@ Por ejemplo, considere las siguientes tablas:
   **No** es compatible con el motor de tabla [Join](/es/reference/engines/table-engines/special/join).
 </Note>
 
-<div id="paste-join-usage">
-  ## Uso de PASTE JOIN
-</div>
+## Uso de PASTE JOIN {#paste-join-usage}
 
 El resultado de `PASTE JOIN` es una tabla que contiene todas las columnas de la subconsulta izquierda, seguidas de todas las columnas de la subconsulta derecha.
 Las filas se emparejan según su posición en las tablas originales (el orden de las filas debe estar definido).
@@ -411,9 +397,7 @@ SETTINGS max_block_size = 2;
 └───┴──────┘
 ```
 
-<div id="distributed-join">
-  ## JOIN distribuido
-</div>
+## JOIN distribuido {#distributed-join}
 
 Hay dos formas de ejecutar un JOIN que implica tablas distribuidas:
 
@@ -422,9 +406,7 @@ Hay dos formas de ejecutar un JOIN que implica tablas distribuidas:
 
 Tenga cuidado al usar `GLOBAL`. Para obtener más información, consulte la sección [Subconsultas distribuidas](/es/reference/statements/in#distributed-subqueries).
 
-<div id="implicit-type-conversion">
-  ## Conversión implícita de tipos
-</div>
+## Conversión implícita de tipos {#implicit-type-conversion}
 
 Las consultas `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN` y `FULL JOIN` admiten la conversión implícita de tipos para las &quot;claves de JOIN&quot;. Sin embargo, la consulta no puede ejecutarse si las claves de JOIN de las tablas izquierda y derecha no pueden convertirse a un único tipo (por ejemplo, no existe ningún tipo de dato que pueda contener todos los valores de `UInt64` e `Int64`, o de `String` e `Int32`).
 
@@ -466,29 +448,21 @@ devuelve el conjunto:
 └────┴──────┴───────────────┴─────────────────┘
 ```
 
-<div id="usage-recommendations">
-  ## Recomendaciones de uso
-</div>
+## Recomendaciones de uso {#usage-recommendations}
 
-<div id="processing-of-empty-or-null-cells">
-  ### Procesamiento de celdas vacías o NULL
-</div>
+### Procesamiento de celdas vacías o NULL {#processing-of-empty-or-null-cells}
 
 Al unir tablas, pueden aparecer celdas vacías. La configuración [join&#95;use&#95;nulls](/es/reference/settings/session-settings/join#join_use_nulls) define cómo ClickHouse completa estas celdas.
 
 Si las claves de `JOIN` son campos [Nullable](/es/reference/data-types/nullable), las filas en las que al menos una de las claves tiene el valor [NULL](/es/reference/syntax#null) no se unen.
 
-<div id="syntax">
-  ### Sintaxis
-</div>
+### Sintaxis {#syntax}
 
 Las columnas especificadas en `USING` deben tener los mismos nombres en ambas subconsultas, y las demás columnas deben llamarse de forma diferente. Puede usar alias para cambiar los nombres de las columnas en las subconsultas.
 
 La cláusula `USING` especifica una o varias columnas para el join, lo que establece la igualdad entre ellas. La lista de columnas se indica sin paréntesis. No se admiten condiciones de join más complejas.
 
-<div id="syntax-limitations">
-  ### Limitaciones de sintaxis
-</div>
+### Limitaciones de sintaxis {#syntax-limitations}
 
 Para varias cláusulas `JOIN` en una sola consulta `SELECT`:
 
@@ -500,9 +474,7 @@ Para las cláusulas `ON`, `WHERE` y `GROUP BY`:
 
 * No se pueden usar expresiones arbitrarias en las cláusulas `ON`, `WHERE` y `GROUP BY`, pero puede definir una expresión en una cláusula `SELECT` y luego usarla en estas cláusulas mediante un alias.
 
-<div id="performance">
-  ### Rendimiento
-</div>
+### Rendimiento {#performance}
 
 Al ejecutar un `JOIN`, no se optimiza el orden de ejecución con respecto a otras etapas de la consulta. El `JOIN` (una búsqueda en la tabla de la derecha) se ejecuta antes del filtrado en `WHERE` y antes de la agregación.
 
@@ -512,9 +484,7 @@ En algunos casos, es más eficiente usar [IN](/es/reference/statements/in) en lu
 
 Si necesita un `JOIN` para unir tablas de dimensiones (tablas relativamente pequeñas que contienen propiedades de dimensión, como nombres de campañas publicitarias), puede que `JOIN` no sea la opción más adecuada, ya que se vuelve a acceder a la tabla de la derecha en cada consulta. Para esos casos, existe la funcionalidad de &quot;diccionarios&quot;, que debería usar en lugar de `JOIN`. Para obtener más información, consulte la sección [Diccionarios](/es/reference/statements/create/dictionary).
 
-<div id="memory-limitations">
-  ### Limitaciones de memoria
-</div>
+### Limitaciones de memoria {#memory-limitations}
 
 De forma predeterminada, ClickHouse usa el algoritmo [hash join](https://en.wikipedia.org/wiki/Hash_join). ClickHouse toma la right&#95;table y crea una tabla hash para ella en la RAM. Si `join_algorithm = 'auto'` está habilitado, al superar cierto umbral de consumo de memoria, ClickHouse cambia al algoritmo [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join. Para ver la descripción de los algoritmos `JOIN`, consulte la configuración [join&#95;algorithm](/es/reference/settings/session-settings/join#join_algorithm).
 
@@ -525,9 +495,7 @@ Si necesita restringir el consumo de memoria de la operación `JOIN`, use la sig
 
 Cuando se alcanza cualquiera de estos límites, ClickHouse actúa según lo que indique la configuración [join&#95;overflow&#95;mode](/es/reference/settings/session-settings/join#join_overflow_mode).
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples}
 
 Ejemplo:
 
@@ -570,9 +538,7 @@ LIMIT 10
 └───────────┴────────┴────────┘
 ```
 
-<div id="related-content">
-  ## Contenido relacionado
-</div>
+## Contenido relacionado {#related-content}
 
 * Blog: [ClickHouse: un DBMS rapidísimo con soporte completo para SQL JOIN - Parte 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
 * Blog: [ClickHouse: un DBMS rapidísimo con soporte completo para SQL JOIN - Por dentro - Parte 2](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)

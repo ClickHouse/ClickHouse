@@ -30,14 +30,13 @@ metric_name2[...] = ...
   Введите команду `set allow_experimental_time_series_table = 1`.
 </Info>
 
-<div id="syntax">
-  ## Синтаксис
-</div>
+## Синтаксис {#syntax}
 
 ```sql
 CREATE TABLE name [(columns)] ENGINE=TimeSeries
 [SETTINGS var1=value1, ...]
 [SAMPLES db.samples_table_name | [SAMPLES INNER COLUMNS (...)] [SAMPLES INNER ENGINE engine(arguments)]]
+[RECENT SAMPLES db.recent_samples_table_name | [RECENT SAMPLES INNER COLUMNS (...)] [RECENT SAMPLES INNER ENGINE engine(arguments)]]
 [TAGS db.tags_table_name | [TAGS INNER COLUMNS (...)] [TAGS INNER ENGINE engine(arguments)]]
 [METRICS db.metrics_table_name | [METRICS INNER COLUMNS (...)] [METRICS INNER ENGINE engine(arguments)]]
 ```
@@ -46,9 +45,7 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
   У ключевого слова `SAMPLES` есть псевдоним `DATA`, сохранённый для обратной совместимости.
 </Note>
 
-<div id="usage">
-  ## Использование
-</div>
+## Использование {#usage}
 
 Проще начать с параметров по умолчанию (таблицу `TimeSeries` можно создать, не указывая список столбцов):
 
@@ -61,9 +58,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 * [prometheus remote-write](/ru/concepts/features/interfaces/prometheus#remote-write)
 * [prometheus remote-read](/ru/concepts/features/interfaces/prometheus#remote-read)
 
-<div id="outer-columns">
-  ### Внешние столбцы
-</div>
+### Внешние столбцы {#outer-columns}
 
 Столбцы таблицы TimeSeries создаются автоматически. Это внешние столбцы: они не хранят данные, а лишь предоставляют интерфейс для SELECT/INSERT. Сами данные хранятся в [целевых таблицах](#target-tables). Вот список внешних столбцов:
 
@@ -101,9 +96,7 @@ INSERT INTO my_table (metric_name, tags, time_series, metric_family, type, unit,
      'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
 ```
 
-<div id="specifying-outer-columns">
-  ### Указание внешних столбцов
-</div>
+### Указание внешних столбцов {#specifying-outer-columns}
 
 Внешний столбец `time_series` можно явно указать в операторе `CREATE TABLE`, чтобы переопределить его тип по умолчанию `Array(Tuple(DateTime64(3), Float64))`. ClickHouse извлекает из кортежа тип временной метки и скалярный тип и использует их во внутренней таблице samples:
 
@@ -120,44 +113,52 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 
 Если обе формы используются в одном операторе `CREATE TABLE`, объявленные типы должны совпадать.
 
-<div id="target-tables">
-  ## Целевые таблицы
-</div>
+## Целевые таблицы {#target-tables}
 
 У таблицы `TimeSeries` нет собственных данных — всё хранится в её целевых таблицах.
 Это похоже на то, как работает [materialized view](/ru/reference/statements/create/view#materialized-view),
 с той разницей, что у materialized view одна целевая таблица,
-тогда как у таблицы `TimeSeries` их три: [samples](#samples-table), [tags](#tags-table) и [metrics](#metrics-table).
+тогда как у таблицы `TimeSeries` есть три обязательные целевые таблицы: [samples](#samples-table), [tags](#tags-table) и [metrics](#metrics-table),
+а также необязательная целевая таблица [recent samples](#recent-samples-table), включённая по умолчанию
+(см. настройку [recent&#95;samples&#95;ttl&#95;seconds](#settings)).
 
 Целевые таблицы можно либо явно указать в запросе `CREATE TABLE`,
 либо движок таблицы `TimeSeries` может автоматически сгенерировать внутренние целевые таблицы.
 
-Строки, вставленные в таблицу `TimeSeries`, преобразуются, разбиваются на блоки и вставляются в эти три целевые таблицы.
+Строки, вставленные в таблицу `TimeSeries`, преобразуются, разбиваются на блоки и вставляются в эти целевые таблицы.
 
 Целевые таблицы бывают следующими:
 
-<div id="samples-table">
-  ### Таблица *samples*
-</div>
+### Таблица *samples* {#samples-table}
 
 Таблица *samples* содержит временные ряды, связанные с определённым идентификатором.
 
 Таблица *samples* должна содержать следующие столбцы:
 
-| Имя         | Обязательно? | Тип по умолчанию      | Возможные типы          | Описание                                        |
-| ----------- | ------------ | --------------------- | ----------------------- | ----------------------------------------------- |
-| `id`        | [x]          | `Tuple(UInt64, UUID)` | любой                   | Идентифицирует комбинацию имени метрики и тегов |
-| `timestamp` | [x]          | `DateTime64(3)`       | `DateTime64(X)`         | Момент времени                                  |
-| `value`     | [x]          | `Float64`             | `Float32` или `Float64` | Значение, связанное с `timestamp`               |
+| Имя         | Обязательно? | Тип по умолчанию                      | Возможные типы          | Описание                                        |
+| ----------- | ------------ | ------------------------------------- | ----------------------- | ----------------------------------------------- |
+| `id`        | [x]          | `Tuple(UInt64, LowCardinality(UUID))` | любой                   | Идентифицирует комбинацию имени метрики и тегов |
+| `timestamp` | [x]          | `DateTime64(3)`                       | `DateTime64(X)`         | Момент времени                                  |
+| `value`     | [x]          | `Float64`                             | `Float32` или `Float64` | Значение, связанное с `timestamp`               |
 
 Столбцы, которые движок создаёт самостоятельно, используют кодеки сжатия временных рядов:
 `timestamp CODEC(DoubleDelta, ZSTD(1))` и `value CODEC(ZSTD(3))`. Почти монотонные временные метки плохо
 сжимаются универсальными кодеками и в противном случае могут составлять основную часть размера таблицы samples на диске.
 См. также [Настройка типов столбцов](#adjusting-column-types).
 
-<div id="tags-table">
-  ### Таблица tags
-</div>
+### Таблица recent samples {#recent-samples-table}
+
+Таблица *recent samples* необязательна и включена по умолчанию (см. настройку [recent&#95;samples&#95;ttl&#95;seconds](#settings);
+при установке значения `0` таблица отключается). Она содержит копию образцов, возраст которых меньше TTL, заданного этой настройкой,
+и должна иметь те же столбцы, что и таблица [samples](#samples-table).
+
+Каждый добавленный образец записывается как в таблицу samples, так и в таблицу recent samples.
+Запросы, временной диапазон которых входит в окно TTL, читают данные из таблицы recent samples, а не из основной таблицы samples,
+поскольку она значительно меньше (это можно отключить настройкой уровня запроса `time_series_prefer_recent_samples_table`).
+
+TTL внутренней таблицы recent samples всегда определяется настройкой [recent&#95;samples&#95;ttl&#95;seconds](#settings).
+
+### Таблица tags {#tags-table}
 
 Таблица *tags* содержит идентификаторы, вычисляемые для каждой комбинации имени метрики и тегов.
 
@@ -165,16 +166,14 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 
 | Имя                  | Обязательный? | Тип по умолчанию                      | Возможные типы                                                                                                          | Описание                                                                                                                                                                                                                                                                                                                             |
 | -------------------- | ------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id`                 | [x]           | `Tuple(UInt64, UUID)`                 | any (must match the type of `id` in the [samples](#samples-table) table)                                                | `id` идентифицирует комбинацию имени метрики и тегов. Выражение DEFAULT задаёт способ вычисления такого идентификатора                                                                                                                                                                                                               |
+| `id`                 | [x]           | `Tuple(UInt64, LowCardinality(UUID))` | any (must match the type of `id` in the [samples](#samples-table) table)                                                | `id` идентифицирует комбинацию имени метрики и тегов. Выражение DEFAULT задаёт способ вычисления такого идентификатора                                                                                                                                                                                                               |
 | `metric_name`        | [x]           | `LowCardinality(String)`              | `String` or `LowCardinality(String)`                                                                                    | Имя метрики                                                                                                                                                                                                                                                                                                                          |
 | `<tag_value_column>` | [ ]           | `String`                              | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))`                                              | Значение конкретного тега; имя тега и имя соответствующего столбца задаются в настройке [tags&#95;to&#95;columns](#settings)                                                                                                                                                                                                         |
 | `tags`               | [x]           | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Карта всех тегов, включая тег `__name__`, содержащий имя метрики, а также теги с именами, перечисленными в настройке [tags&#95;to&#95;columns](#settings). В таблицах, созданных более старыми версиями ClickHouse, в этом столбце хранились только теги без выделенных столбцов и без имени метрики; чтение поддерживает оба случая |
 | `min_time`           | [ ]           | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | Минимальная временная метка временного ряда с данным `id`. Столбец создаётся, если [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) имеет значение `true`                                                                                                                                                                |
 | `max_time`           | [ ]           | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | Максимальная временная метка временного ряда с данным `id`. Столбец создаётся, если [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) имеет значение `true`                                                                                                                                                               |
 
-<div id="metrics-table">
-  ### Таблица metrics
-</div>
+### Таблица metrics {#metrics-table}
 
 Таблица *metrics* содержит информацию о собираемых метриках, их типах и описаниях.
 
@@ -187,18 +186,16 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 | `unit`               | [x]           | `LowCardinality(String)` | `String` или `LowCardinality(String)` | Единица измерения, используемая в метрике                                                                                                                          |
 | `help`               | [x]           | `String`                 | `String` или `LowCardinality(String)` | Описание метрики                                                                                                                                                   |
 
-<div id="creation">
-  ## Создание
-</div>
+## Создание {#creation}
 
-Таблицу с движком таблицы `TimeSeries` можно создать несколькими способами.
+Существует несколько способов создать таблицу с движком `TimeSeries`.
 Самый простой оператор
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
-в результате будет создана следующая таблица (это можно увидеть, выполнив `SHOW CREATE TABLE my_table`):
+фактически создаст следующую таблицу (это можно проверить, выполнив `SHOW CREATE TABLE my_table`):
 
 ```sql
 CREATE TABLE my_table
@@ -212,16 +209,24 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
+SETTINGS recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
+(
+    `id` Tuple(UInt64, LowCardinality(UUID)),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
+)
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
+RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(ZSTD(3))
 )
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
+RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
+    `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
@@ -238,17 +243,19 @@ METRICS INNER COLUMNS
 METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
-Итак, столбцы были сгенерированы автоматически, и при этом есть три внутренние целевые таблицы с собственными определениями столбцов,
-сохранёнными в предложениях `INNER COLUMNS`.
+Столбцы были созданы автоматически. Кроме того, имеются четыре внутренние целевые таблицы с собственными определениями столбцов,
+сохранёнными в предложениях `INNER COLUMNS`. Настройка `recent_samples_ttl_seconds` была записана в предложение `SETTINGS`
+со значением по умолчанию: она определяет TTL таблицы recent samples, поэтому её фактическое значение фиксируется при создании.
 
 Внутренние целевые таблицы имеют имена вида `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
-`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
-и каждая целевая таблица имеет собственный набор столбцов:
+`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
+`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
+и у каждой целевой таблицы есть собственный набор столбцов:
 
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` Tuple(UInt64, UUID),
+    `id` Tuple(UInt64, LowCardinality(UUID)),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(ZSTD(3))
 )
@@ -258,9 +265,23 @@ SETTINGS index_granularity = 32768
 ```
 
 ```sql
+CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+(
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
+ORDER BY (id, timestamp)
+TTL toDateTime(timestamp) + toIntervalSecond(345600)
+SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
+```
+
+```sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
+    `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
@@ -285,9 +306,7 @@ ORDER BY metric_family_name
 SETTINGS index_granularity = 8192
 ```
 
-<div id="create-as">
-  ## Создание таблицы AS на основе существующей таблицы
-</div>
+## Создание таблицы AS на основе существующей таблицы {#create-as}
 
 Оператор `CREATE TABLE new_table AS existing_table` копирует из `existing_table`:
 
@@ -298,9 +317,7 @@ SETTINGS index_granularity = 8192
 Этот оператор недопустим, если у `existing_table` есть внешние цели.
 Внешний список столбцов формируется заново, а не копируется.
 
-<div id="adjusting-column-types">
-  ## Настройка типов столбцов
-</div>
+## Настройка типов столбцов {#adjusting-column-types}
 
 Вы можете настраивать типы столбцов во внутренних целевых таблицах с помощью предложения `INNER COLUMNS`. Например, чтобы хранить временные метки в микросекундах, а значения — как `Float32`, используйте:
 
@@ -316,9 +333,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
 ```
 
-<div id="id-column">
-  ## Столбец `id`
-</div>
+## Столбец `id` {#id-column}
 
 Столбец `id` содержит идентификаторы; каждый из них вычисляется для комбинации имени метрики и тегов.
 Тип и выражение `DEFAULT`, используемое для генерации идентификаторов, можно настроить с помощью предложения `TAGS INNER COLUMNS`:
@@ -330,7 +345,9 @@ TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(tags))
 
 Столбец `id` может иметь любой сопоставимый тип, кроме Nullable. Типы `id`, объявленные во внутренних таблицах samples и tags, должны совпадать.
 
-Если для столбца `id` не указано выражение `DEFAULT` и параметр `id_generator` не задан, ClickHouse автоматически выберет выражение `DEFAULT` на основе типа `id`, но только если тип `id` является одним из следующих: `UUID`, `UInt64`, `UInt128`, `FixedString(16)` или кортежем из двух таких типов. Для такого кортежа автоматически выбранное выражение вычисляет хеш имени метрики в первом компоненте и хеш всех тегов во втором компоненте.
+Если для столбца `id` не указано выражение `DEFAULT` и параметр `id_generator` не задан, ClickHouse автоматически выберет выражение `DEFAULT` на основе типа `id`, но только если тип `id` является одним из следующих: `UUID`, `UInt64`, `UInt128`, `FixedString(16)`, те же типы, обёрнутые в `LowCardinality`, или кортежем из двух таких типов. Для такого кортежа автоматически выбранное выражение вычисляет хеш имени метрики в первом компоненте и хеш всех тегов во втором компоненте.
+
+Тип идентификатора `LowCardinality`, например `Tuple(UInt64, LowCardinality(UUID))`, хранит идентификаторы в словарной кодировке: таблица samples сохраняет небольшие словари для каждого блока с индексами словаря вместо повторения полного идентификатора в каждой строке, что уменьшает объём данных, считываемых запросами.
 
 Параметр `id_generator` позволяет выполнить ту же настройку без использования предложения `INNER COLUMNS`:
 
@@ -341,9 +358,7 @@ SETTINGS id_generator = 'sipHash64(tags)'
 
 Если этот параметр задан, для генерации `id` используется именно он, даже если `DEFAULT` столбца содержит другое выражение.
 
-<div id="tags-column">
-  ## Столбец `tags`
-</div>
+## Столбец `tags` {#tags-column}
 
 Столбец `tags` содержит все теги временного ряда, включая тег `__name__` с именем метрики.
 
@@ -365,23 +380,34 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
   всеми тегами, кроме имени метрики.
 </Note>
 
-<div id="inner-table-engines">
-  ## Движки внутренних целевых таблиц
-</div>
+## Движки внутренних целевых таблиц {#inner-table-engines}
 
 По умолчанию внутренние целевые таблицы используют следующие движки таблиц:
 
 * таблица [samples](#samples-table) использует [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree);
+* таблица [recent samples](#recent-samples-table) использует [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree), разбитый на 5-часовые бакеты (см. настройку [recent&#95;samples&#95;partition&#95;by](#settings)), с `TTL`, определяемым
+  настройкой [recent&#95;samples&#95;ttl&#95;seconds](#settings), и с включённым `ttl_only_drop_parts`, поэтому устаревшие части удаляются целиком;
 * таблица [tags](#tags-table) использует [AggregatingMergeTree](/ru/reference/engines/table-engines/mergetree-family/aggregatingmergetree), поскольку одни и те же данные часто вставляются в эту таблицу несколько раз, поэтому необходим способ
   удалять дубликаты, а также потому, что для столбцов `min_time` и `max_time` требуется выполнять агрегацию;
 * таблица [metrics](#metrics-table) использует [ReplacingMergeTree](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree), поскольку одни и те же данные часто вставляются в эту таблицу несколько раз, поэтому необходим способ
   удалять дубликаты.
+
+Семейство движков создаваемых внутренних таблиц определяется настройкой уровня запроса `default_table_engine`:
+при `default_table_engine = ReplicatedMergeTree` или `SharedMergeTree` внутренние таблицы используют соответствующие
+движки `Replicated` или `Shared`. При `default_table_engine = None` (или любом другом значении) движки внутренних таблиц
+должны быть указаны явно.
+
+Все внутренние таблицы должны иметь одинаковый тип репликации: если одна из них реплицируемая (или общая), остальные внутренние
+таблицы также должны быть реплицируемыми (или общими), иначе их содержимое будет различаться между репликами. Например,
+объявление `SAMPLES INNER ENGINE = ReplicatedMergeTree(...)` требует, чтобы остальные внутренние движки также были реплицируемыми —
+либо объявленными явно, либо созданными с `default_table_engine = ReplicatedMergeTree`.
 
 Для внутренних целевых таблиц также можно использовать другие движки таблиц, если это указано:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES ENGINE=ReplicatedMergeTree
+RECENT SAMPLES ENGINE=ReplicatedMergeTree
 TAGS ENGINE=ReplicatedAggregatingMergeTree
 METRICS ENGINE=ReplicatedReplacingMergeTree
 ```
@@ -393,9 +419,7 @@ METRICS ENGINE=ReplicatedReplacingMergeTree
 движок задаётся непосредственно, как показано выше, `TimeSeries` автоматически устанавливает для неё `allow_dimensions_outside_sorting_key = 1`;
 для созданной вручную агрегирующей [внешней](#external-target-tables) таблицы tags вы должны установить этот параметр самостоятельно.
 
-<div id="external-target-tables">
-  ## Внешние целевые таблицы
-</div>
+## Внешние целевые таблицы {#external-target-tables}
 
 Таблицу `TimeSeries` можно настроить так, чтобы она использовала таблицу, созданную вручную:
 
@@ -416,13 +440,15 @@ CREATE TABLE metrics_for_my_table ...
 CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_for_my_table METRICS metrics_for_my_table;
 ```
 
+Внешнюю таблицу также можно использовать в качестве целевой таблицы для [recent samples](#recent-samples-table) (предложение `RECENT SAMPLES my_recent_samples_table`).
+Такая таблица должна иметь те же столбцы, что и внешняя таблица samples, и должна хранить данные не менее
+[recent&#95;samples&#95;ttl&#95;seconds](#settings) секунд, за что отвечает пользователь.
+
 Типы столбцов внешних таблиц (`id`, `timestamp`, `value` и `<tag_value_column>`, перечисленные в [`tags_to_columns`](#settings)) должны совпадать с теми, которые таблица `TimeSeries` в противном случае сгенерировала бы внутри системы (ограничения на типы см. в разделах [таблица Samples](#samples-table), [таблица Tags](#tags-table) и [таблица Metrics](#metrics-table)). О несоответствии типов сообщается во время `CREATE`.
 
 Выражение генератора `id` для внешней целевой таблицы tags вычисляется во время `INSERT` в следующем порядке: сначала настройка [`id_generator`](#settings) (если она задана), затем `DEFAULT`, объявленный для столбца `id` внешней таблицы (если он есть), и затем канонический генератор, определяемый типом `id`. Таким образом, эта настройка имеет приоритет над любым `DEFAULT`, объявленным для внешней таблицы — подробности см. в разделе [Столбец `id`](#id-column).
 
-<div id="altering-settings">
-  ## Изменение настроек
-</div>
+## Изменение настроек {#altering-settings}
 
 После `CREATE` можно изменить две настройки:
 
@@ -432,15 +458,14 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
 Обратите внимание: если изменить `id_generator`, когда данные уже есть в таблице tags, для одной и той же комбинации metric+tag могут создаваться разные идентификаторы — старые строки сохранят прежние идентификаторы, а новые будут использовать новый генератор.
 
 Другие настройки нельзя изменить с помощью `ALTER ... MODIFY SETTING`, потому что они закладываются в схему внутренних таблиц во время `CREATE`.
 
-<div id="settings">
-  ## Настройки
-</div>
+## Настройки {#settings}
 
 Ниже приведён список настроек, которые можно указать при определении таблицы `TimeSeries`:
 
@@ -453,14 +478,12 @@ ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 | `aggregate_min_time_and_max_time`    | Bool       | true                                                          | При создании внутренней целевой таблицы `tags` этот флаг включает использование `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` вместо просто `Nullable(DateTime64(3))` в качестве типа столбца `min_time`; то же самое относится и к столбцу `max_time`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `filter_by_min_time_and_max_time`    | Bool       | true                                                          | Если установлено значение true, таблица будет использовать столбцы `min_time` и `max_time` для фильтрации временных рядов                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `samples_index_granularity`          | UInt64     | 32768                                                         | Устанавливает `index_granularity` внутренней таблицы [samples](#samples-table). При явной установке переопределяет `index_granularity` из объявления движка. Игнорируется для внешней таблицы samples и движка, не относящегося к MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `tags_index_granularity`             | UInt64     | 8192                                                          | Устанавливает `index_granularity` внутренней таблицы [tags](#tags-table). При явной установке переопределяет `index_granularity` из объявления движка. Игнорируется для внешней таблицы tags и движка, не относящегося к MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `recent_samples_ttl_seconds`         | UInt64     | 345600                                                        | Срок хранения дополнительной целевой таблицы `recent samples`, в которую также записывается каждый вставленный образец. Для внутренней таблицы recent samples всегда задаётся `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` на основе этой настройки, переопределяя любой TTL из объявления движка; внешняя таблица recent samples должна хранить данные не менее указанного числа секунд. Запросы, временной диапазон которых укладывается в окно TTL, используют таблицу recent samples предпочтительно перед основной таблицей samples (см. настройку уровня запроса `time_series_prefer_recent_samples_table`). По умолчанию — 4 дня; действующее значение фиксируется в определении таблицы при выполнении CREATE. Установите значение 0, чтобы отключить таблицу recent samples |
-| `recent_samples_partition_by`        | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Ключ партиционирования внутренней таблицы `recent samples`, например `toStartOfHour(timestamp)`. Требует, чтобы `recent_samples_ttl_seconds` не был равен нулю                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `recent_samples_index_granularity`   | UInt64     | 8192                                                          | Устанавливает `index_granularity` внутренней таблицы `recent samples`. Требует, чтобы `recent_samples_ttl_seconds` не был равен нулю                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `recent_samples_partition_by`        | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Ключ партиционирования внутренней таблицы `recent samples`, например `toStartOfHour(timestamp)`. При явной установке переопределяет ключ партиционирования из объявления движка; если не задано ни то ни другое, используется одна партиция на каждые 5 часов. Игнорируется для внешней таблицы recent samples. Требует, чтобы `recent_samples_ttl_seconds` не был равен нулю                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `recent_samples_index_granularity`   | UInt64     | 8192                                                          | Устанавливает `index_granularity` внутренней таблицы `recent samples`. При явной установке переопределяет `index_granularity` из объявления движка. Игнорируется для внешней таблицы recent samples и движка, не относящегося к MergeTree. Требует, чтобы `recent_samples_ttl_seconds` не был равен нулю                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `tags_index_granularity`             | UInt64     | 8192                                                          | Устанавливает `index_granularity` внутренней таблицы [tags](#tags-table). При явной установке переопределяет `index_granularity` из объявления движка. Игнорируется для внешней таблицы tags и движка, не относящегося к MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
-<div id="functions">
-  # Функции
-</div>
+# Функции {#functions}
 
 Ниже приведён список функций, поддерживающих таблицу `TimeSeries` в качестве аргумента:
 

@@ -211,7 +211,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Если OpenTelemetry включен в запросе [журнала](#logs) или [трассировки](#traces), столбец с trace ID будет добавлен автоматически.
 
-Если в данных есть столбец с trace ID, к ним будут добавлены ссылки &quot;**View Trace**&quot; и &quot;**View Logs**&quot;.
+Если присутствует столбец с trace ID, плагин может добавить к данным ссылки &quot;**View Trace**&quot; и &quot;**View Logs**&quot;.
+
+Переключатели включены по умолчанию. Для ссылки текущего типа запроса не требуются настроенные значения по умолчанию, тогда как межсигнальная ссылка появляется только при наличии у источника данных настроенных значений по умолчанию для целевого сигнала. Их можно скрыть с помощью переключателей **Показывать ссылки &quot;View trace&quot;** и **Показывать ссылки &quot;View logs&quot;** в разделах конфигурации [трассировки](/ru/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) и [журнала](/ru/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links) источника данных.
 
 <div id="linking-abilities">
   ### Возможности ссылок

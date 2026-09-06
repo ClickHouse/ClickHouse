@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-<div id="expose">
-  ## Экспорт метрик сервера ClickHouse
-</div>
+## Экспорт метрик сервера ClickHouse {#expose}
 
 <Note>
   Если вы используете ClickHouse Cloud, вы можете экспортировать метрики в Prometheus с помощью [интеграции Prometheus](/ru/products/cloud/features/monitoring/prometheus).
@@ -82,15 +80,11 @@ curl http://127.0.0.1:9363/metrics
 
 <CloudNotSupportedBadge />
 
-<div id="prometheus-http-api-and-promql">
-  ## HTTP API Prometheus и PromQL
-</div>
+## HTTP API Prometheus и PromQL {#prometheus-http-api-and-promql}
 
 ClickHouse реализует HTTP API Prometheus поверх таблицы [`TimeSeries`](/ru/reference/engines/table-engines/integrations/time-series). Один обработчик поддерживает удалённую запись, удалённое чтение, мгновенные запросы PromQL и запросы PromQL по диапазону.
 
-<div id="prerequisites">
-  ### Предварительные требования
-</div>
+### Предварительные требования {#prerequisites}
 
 Включите настройку [`allow_experimental_time_series_table`](/ru/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) для пользователя, создающего таблицу и работающего с ней:
 
@@ -107,9 +101,7 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 
 Для HTTP-запросов к API включите `allow_experimental_time_series_table` в профиле пользователя API.
 
-<div id="configure-prometheus-api">
-  ### Настройка API Prometheus
-</div>
+### Настройка API Prometheus {#configure-prometheus-api}
 
 Настройте один обработчик с маршрутизацией по префиксу на основном HTTP-порту ClickHouse:
 
@@ -127,16 +119,17 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 
 `<defaults/>` сохраняет встроенные обработчики для таких конечных точек, как `/ping`, а также для SQL-запросов. Указанный выше префикс предоставляет доступ к этим конечным точкам через один обработчик:
 
-| Конечная точка                   | Назначение                  |
-| -------------------------------- | --------------------------- |
-| `/prometheus/api/v1/write`       | удалённая запись Prometheus |
-| `/prometheus/api/v1/read`        | удалённое чтение Prometheus |
-| `/prometheus/api/v1/query`       | мгновенные запросы PromQL   |
-| `/prometheus/api/v1/query_range` | запросы PromQL по диапазону |
-| `/prometheus/api/v1/series`      | Метаданные серии            |
-| `/prometheus/api/v1/metadata`    | Метаданные семейства метрик |
+| Конечная точка                    | Назначение                      |
+| --------------------------------- | ------------------------------- |
+| `/prometheus/api/v1/write`        | удалённая запись Prometheus     |
+| `/prometheus/api/v1/read`         | удалённое чтение Prometheus     |
+| `/prometheus/api/v1/query`        | мгновенные запросы PromQL       |
+| `/prometheus/api/v1/query_range`  | запросы PromQL по диапазону     |
+| `/prometheus/api/v1/format_query` | форматирование выражений PromQL |
+| `/prometheus/api/v1/series`       | Метаданные серии                |
+| `/prometheus/api/v1/metadata`     | Метаданные семейства метрик     |
 
-В примере в обработчике не указаны `database` и `table`. В каждом запросе необходимо передавать параметр запроса `table`. Также можно передать `database`, использовать полное имя таблицы, например `prometheus.metrics`, или не указывать базу данных, чтобы использовать `default`. Это позволяет одному обработчику обслуживать несколько таблиц `TimeSeries`.
+В примере в обработчике не указаны `database` и `table`. В каждом запросе необходимо передавать параметр запроса `table` (кроме `/format_query`, который только разбирает переданное выражение PromQL и не требует таблицы). Также можно передать `database`, использовать полное имя таблицы, например `prometheus.metrics`, или не указывать базу данных, чтобы использовать `default`. Это позволяет одному обработчику обслуживать несколько таблиц `TimeSeries`.
 
 Чтобы использовать одну фиксированную таблицу для всех запросов, настройте её в обработчике:
 
@@ -158,9 +151,7 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 | `table`      | none         | Имя таблицы `TimeSeries`. Если не указано, запрос должен содержать параметр запроса `table`. Указанное имя может включать имя базы данных.                                            |
 | `database`   | none         | База данных, содержащая таблицу. Запрос может передать её в параметре запроса. Если не указано, ClickHouse использует базу данных из полного имени `table` или базу данных `default`. |
 
-<div id="remote-write">
-  ### Приём метрик через удалённую запись
-</div>
+### Приём метрик через удалённую запись {#remote-write}
 
 ClickHouse поддерживает [протокол удалённой записи Prometheus](https://prometheus.io/docs/specs/remote_write_spec/). Настройте Prometheus на запись в обработчик:
 
@@ -183,9 +174,7 @@ remote_write:
 
 ClickHouse подтверждает асинхронный запрос удалённой записи только после сброса данных на диск во все внутренние таблицы таблицы `TimeSeries`, независимо от настройки [`wait_for_async_insert`](/ru/reference/settings/session-settings/wait-for#wait_for_async_insert): согласно протоколу удалённой записи подтверждённая запись считается надёжно сохранённой. Если сброс на диск завершается ошибкой, запрос возвращает ошибку, и Prometheus повторяет попытку.
 
-<div id="promql-query-support">
-  ### Запрос с PromQL
-</div>
+### Запрос с PromQL {#promql-query-support}
 
 Используйте конечную точку мгновенного запроса, чтобы вычислить выражение PromQL на определённый момент времени:
 
@@ -210,11 +199,19 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+Используйте конечную точку format-запроса, чтобы разобрать и отформатировать выражение PromQL без его вычисления:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/format_query" \
+  --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
+```
+
+Выражение возвращается сериализованным из разобранного запроса: пробельные символы нормализованы, комментарии удалены, избыточные скобки убраны, а длительности преобразованы в число секунд: `sum by (job) (http_requests_total{code="200"}) / 2`. Эта конечная точка не вычисляет выражение, поэтому ей не нужны параметры `database` и `table`.
+
 Список функций и операторов агрегации, поддерживаемых HTTP API, диалектом `promql` и табличными функциями, см. в разделе [Поддерживаемые возможности PromQL](/ru/reference/functions/table-functions/prometheusQueryRange#supported-promql-features).
 
-<div id="grafana">
-  #### Grafana
-</div>
+#### Grafana {#grafana}
 
 Настройте источник данных Prometheus, указав базовый URL без `/api/v1` в конце:
 
@@ -237,12 +234,10 @@ datasources:
 Grafana добавляет `/api/v1/query` или `/api/v1/query_range` к этому базовому URL, а также `customQueryParameters` к каждому запросу.
 
 <Note>
-  Реализованы только конечные точки запросов `/api/v1/query` и `/api/v1/query_range`, а также конечные точки метаданных `/api/v1/series`, `/api/v1/labels` и `/api/v1/metadata`. Для `/api/v1/series` требуется как минимум один селектор серий `match[]`; она поддерживает необязательные параметры `start`, `end` и `limit` и возвращает объединение серий, соответствующих каждому селектору. `/api/v1/labels` принимает те же параметры, при этом `match[]` необязателен, и возвращает отсортированные имена меток соответствующих серий (или всех серий, если селекторы не указаны). Конечная точка значений меток (`/api/v1/label/<name>/values`), используемая источником данных Prometheus в Grafana для просмотра меток, переменных шаблона и автодополнения в конструкторе запросов, не реализована и возвращает ошибку. Вводите выражения PromQL в режиме кода, а не в конструкторе запросов.
+  Реализованы только конечные точки запросов `/api/v1/query`, `/api/v1/query_range` и `/api/v1/format_query`, а также конечные точки метаданных `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` и `/api/v1/metadata`. Для `/api/v1/series` требуется как минимум один селектор серий `match[]`; она поддерживает необязательные параметры `start`, `end` и `limit` и возвращает объединение серий, соответствующих каждому селектору. `/api/v1/labels` принимает те же параметры, при этом `match[]` необязателен, и возвращает отсортированные имена меток соответствующих серий (или всех серий, если селекторы не указаны). `/api/v1/label/<name>/values` принимает те же параметры, что и `/api/v1/labels`, и возвращает отсортированные значения одной метки, причём в `<name>` может использоваться принятое в Prometheus экранирование `U__...` для имён меток, содержащих символы вне `[a-zA-Z0-9_]`. Этих конечных точек достаточно для всего, что источник данных Prometheus в Grafana использует для просмотра меток, переменных шаблона и автодополнения в конструкторе запросов.
 </Note>
 
-<div id="sql-entry-points">
-  #### Точки входа SQL
-</div>
+#### Точки входа SQL {#sql-entry-points}
 
 ClickHouse использует один и тот же конвертер PromQL для HTTP API, диалекта `promql`, а также табличных функций [`prometheusQuery`](/ru/reference/functions/table-functions/prometheusQuery) и [`prometheusQueryRange`](/ru/reference/functions/table-functions/prometheusQueryRange).
 
@@ -267,9 +262,7 @@ FROM prometheusQuery(
 );
 ```
 
-<div id="metadata">
-  ### Запрос метаданных метрик
-</div>
+### Запрос метаданных метрик {#metadata}
 
 Конечная точка `/prometheus/api/v1/metadata` возвращает метаданные метрик, хранящиеся в целевой таблице `Metrics` таблицы `TimeSeries`: тип, текст справки и единицу измерения каждого семейства метрик. Она поддерживает следующие параметры Prometheus в строке запроса URL:
 
@@ -289,9 +282,7 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-<div id="remote-read">
-  ### Чтение метрик через удалённое чтение
-</div>
+### Чтение метрик через удалённое чтение {#remote-read}
 
 ClickHouse поддерживает [протокол Prometheus удалённого чтения](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) по адресу `/prometheus/api/v1/read`.
 

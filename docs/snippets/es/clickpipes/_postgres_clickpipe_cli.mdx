@@ -1,0 +1,290 @@
+---
+title: CLI de ClickPipes para Postgres
+---
+
+Esta página explica cómo crear un ClickPipe de CDC de Postgres, monitorizarlo hasta que empiece a replicar y verificar los datos en ClickHouse, todo desde la línea de comandos con la [ClickHouse CLI](/es/products/cloud/features/cli) (`clickhousectl`). Los comandos no son interactivos; `clickhousectl` devuelve JSON con `--json`.
+
+## Prerequisitos {#cli-prerequisites}
+
+Instale la CLI de ClickHouse:
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+También necesitas `jq` y `psql` para el paso de verificación.
+
+Las operaciones de escritura (crear, eliminar) requieren [autenticación mediante API key](/es/products/cloud/features/admin-features/api/openapi); el inicio de sesión con OAuth es de solo lectura:
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+Como alternativa, define las variables de entorno `CLICKHOUSE_CLOUD_API_KEY` y `CLICKHOUSE_CLOUD_API_SECRET`. Compruébalo con `clickhousectl cloud auth status`; deberías ver una entrada con el scope `read/write`.
+
+Tu base de datos Postgres de origen debe prepararse antes para CDC: replicación lógica habilitada, un usuario de replicación y las direcciones IP de ClickPipes permitidas en tu firewall. Sigue la guía de configuración correspondiente a tu proveedor; por ejemplo, [Amazon RDS](/es/integrations/clickpipes/postgres/source/rds), [Supabase](/es/integrations/clickpipes/postgres/source/supabase), [Neon](/es/integrations/clickpipes/postgres/source/neon-postgres) o la [guía genérica de origen Postgres](/es/integrations/clickpipes/postgres/source/generic) para despliegues autogestionados y otros proveedores. Conéctate directamente al host de Postgres: los proxies y poolers como PgBouncer, RDS Proxy y Supabase Pooler no son compatibles con CDC.
+
+También necesitas un servicio de ClickHouse Cloud de destino en ejecución. Obtén su ID con `clickhousectl cloud service list --json` o crea uno siguiendo el [inicio rápido de Cloud](/es/getting-started/quick-start/cloud):
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json \
+  | jq -r '.[] | select(.name=="my-service") | .id')
+```
+
+Recopile en variables los datos de conexión del origen obtenidos en el paso de requisitos previos. Este tutorial replica una única tabla, `public.orders`; sustituya ese nombre, y todas las referencias posteriores a él (incluidos los nombres de columna en los pasos de verificación), por los de su propia tabla:
+
+```bash
+PG_HOST=postgres.example.com
+PG_PORT=5432
+PG_DATABASE=postgres
+PG_USERNAME=clickpipes_user
+PG_PASSWORD='<your-password>'
+```
+
+## Crear el ClickPipe {#create-the-clickpipe}
+
+Cree el pipe en el servicio de destino y guarde la respuesta:
+
+```bash
+clickhousectl cloud clickpipe create postgres "$CH_ID" \
+  --name orders-sync \
+  --host "$PG_HOST" \
+  --port "$PG_PORT" \
+  --pg-database "$PG_DATABASE" \
+  --username "$PG_USERNAME" \
+  --password "$PG_PASSWORD" \
+  --table-mapping public.orders:orders \
+  --json > pipe.json
+
+PIPE_ID=$(jq -r .id pipe.json)
+```
+
+El comando valida la conexión con el origen antes de crear el pipe, por lo que los problemas de conectividad, credenciales y TLS aparecen de inmediato como un error `BAD_REQUEST`. La respuesta devuelve la configuración del pipe (aquí recortada; la respuesta completa incluye todos los ajustes de replicación):
+
+```json
+{
+  "id": "e3d9a1f4-7b2c-4c58-9f6a-0d8b4e2c7a19",
+  "name": "orders-sync",
+  "serviceId": "7a1c04e2-9b3f-4a86-b21d-6f3e9d5c8a41",
+  "state": "Provisioning",
+  "destination": {
+    "database": "default"
+  },
+  "source": {
+    "postgres": {
+      "host": "postgres.example.com",
+      "port": 5432,
+      "database": "postgres",
+      "type": "postgres",
+      "settings": {
+        "replicationMode": "cdc",
+        "syncIntervalSeconds": 60,
+        "pullBatchSize": 100000,
+        "initialLoadParallelism": 4
+      },
+      "tableMappings": [
+        {
+          "sourceSchemaName": "public",
+          "sourceTable": "orders",
+          "targetTable": "orders",
+          "tableEngine": "MergeTree"
+        }
+      ]
+    }
+  }
+}
+```
+
+Notas:
+
+* Se requiere `--table-mapping` o `--table-mapping-json`. `--table-mapping` puede repetirse, con un `schema.table:target_table` por cada tabla de origen, y deja el resto de opciones por tabla en su valor predeterminado. Las tablas replicadas se crean en la base de datos `default` del ClickHouse service, con los nombres indicados por los destinos de la correspondencia: asignar un nombre de destino distinto es la forma de renombrar una tabla durante la replicación
+* Un único comando sirve para toda la familia Postgres: pasa `--postgres-type` para un proveedor gestionado (`supabase`, `neon`, `alloydb`, `planetscale`, `rdspostgres`, `aurorapostgres`, `cloudsqlpostgres`, `azurepostgres`, `crunchybridge`, `tigerdata`); el valor predeterminado es `postgres`
+* La publicación y el replication slot se crean automáticamente, y la publicación se limita a las tablas asignadas. Pasa `--publication-name` para usar una publicación que hayas creado tú mismo en el paso de requisitos previos
+* `--replication-slot-name` reutiliza un slot que hayas creado tú mismo y solo se acepta junto con `--replication-mode cdc_only`
+* `--replication-mode` selecciona `cdc` (snapshot inicial más replicación continua; es el valor predeterminado), `snapshot` (copia única) o `cdc_only` (omite el snapshot inicial)
+
+### Shaping de las tablas de destino {#shaping-the-destination-tables}
+
+`--table-mapping` solo cambia el nombre. Para las opciones por tabla que definen la estructura de la tabla de destino, pase la correspondencia como un objeto JSON con `--table-mapping-json`, que toma tal cual el objeto de correspondencia de tablas de la API. `sourceSchemaName`, `sourceTable` y `targetTable` son obligatorios; `excludedColumns`, `sortingKeys`, `useCustomSortingKey`, `partitionByExpr`, `partitionKey` y `tableEngine` son opcionales. Ambos indicadores se pueden repetir y combinar en un mismo comando:
+
+```bash
+clickhousectl cloud clickpipe create postgres "$CH_ID" \
+  --name orders-sync \
+  --host "$PG_HOST" \
+  --port "$PG_PORT" \
+  --pg-database "$PG_DATABASE" \
+  --username "$PG_USERNAME" \
+  --password "$PG_PASSWORD" \
+  --table-mapping public.orders:orders \
+  --table-mapping-json '{"sourceSchemaName":"public","sourceTable":"customers","targetTable":"customers","excludedColumns":["ssn"],"sortingKeys":["created_at","customer_id"]}' \
+  --sync-interval-seconds 30 \
+  --json
+```
+
+Esa correspondencia deja `ssn` completamente fuera del destino y ordena `customers` por `(created_at, customer_id)` en lugar de por la primary key del origen:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SHOW CREATE TABLE customers" --format TSVRaw
+```
+
+```text
+CREATE TABLE default.customers
+(
+    `customer_id` Int32,
+    `name` String,
+    `created_at` DateTime64(6),
+    `_peerdb_synced_at` DateTime64(9) DEFAULT now64(),
+    `_peerdb_is_deleted` UInt8,
+    `_peerdb_version` UInt64
+)
+ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+PRIMARY KEY (created_at, customer_id)
+ORDER BY (created_at, customer_id)
+SETTINGS index_granularity = 8192
+```
+
+Notas:
+
+* `useCustomSortingKey` se establece automáticamente cuando se indica `sortingKeys`, ya que la API ignora las claves sin él. Los campos desconocidos se rechazan en el lado del cliente con el código de salida 2 en lugar de descartarse de forma silenciosa, por lo que un error tipográfico como `excludeColumns` provoca un fallo en vez de ignorarse
+* `partitionKey` particiona el snapshot inicial para el paralelismo y no guarda relación con el `PARTITION BY` de la tabla de destino, que se define con `partitionByExpr`
+* `tableEngine` es `MergeTree` (el valor predeterminado, y lo que envía el formulario simple), `ReplacingMergeTree` o `Null`
+
+### Configuración de CDC {#cdc-settings}
+
+Los ajustes de replicación son indicadores que solo se especifican en el momento de la creación: `--sync-interval-seconds`, `--pull-batch-size`, `--initial-load-parallelism`, `--snapshot-rows-per-partition`, `--snapshot-parallel-tables`, `--allow-nullable-columns`, `--enable-failover-slots` y `--delete-on-merge`. Una vez creado el pipe, solo pueden modificarse `syncIntervalSeconds` y `pullBatchSize`; los ajustes de snapshot y de carga inicial quedan fijados en la creación, así que elígelos ahora.
+
+Un pipe de Postgres CDC conserva su configuración en el propio pipe, así que puedes consultarla con `clickpipe get`:
+
+```bash
+clickhousectl cloud clickpipe get "$CH_ID" "$PIPE_ID" --json \
+  | jq .source.postgres.settings
+```
+
+```json
+{
+  "allowNullableColumns": false,
+  "deleteOnMerge": false,
+  "enableFailoverSlots": false,
+  "initialLoadParallelism": 4,
+  "publicationName": "",
+  "pullBatchSize": 100000,
+  "replicationMode": "cdc",
+  "replicationSlotName": "",
+  "snapshotNumRowsPerPartition": 100000,
+  "snapshotNumberOfParallelTables": 1,
+  "syncIntervalSeconds": 30
+}
+```
+
+`clickhousectl cloud clickpipe settings get` es un endpoint distinto que solo abarca los ajustes de ingestión de los pipes de streaming y de almacenamiento de objetos. Con un pipe de Postgres, termina con código 1 y le remite de nuevo a `clickpipe get`.
+
+### Permisos de destino {#destination-permissions}
+
+ClickPipes escribe en el service con su propio usuario. De forma predeterminada, ese usuario recibe el `default_role`, con acceso completo; `--role <role-name>` (repetible) permite seleccionar otros ClickHouse roles ya existentes, el equivalente en la CLI del paso de rol de permisos de la consola. Los roles que indiques sustituyen a `default_role`, por lo que entre todos deben otorgar todo lo que hace el pipe: crear las tablas de destino y escribir en ellas. Un rol read-only hace que la creación falle directamente:
+
+```text
+Error: BAD_REQUEST: ClickHouse validation failed: failed to create validation table peerdb_validation_tOgS: code: 497, message: clickpipe:...: Not enough privileges. To execute this query, it's necessary to have the grant CREATE TABLE ON default.peerdb_validation_tOgS
+```
+
+Los nombres `clickpipes` y `clickpipes_system` están reservados y se rechazan del lado del cliente.
+
+### TLS de origen y autoridades de certificación {#source-tls}
+
+TLS y la verificación de certificados están habilitados de forma predeterminada, y un origen cuya cadena de certificados sea de confianza pública no necesita indicadores adicionales. Si el origen presenta un certificado firmado por una CA que no es de confianza pública —lo que incluye [ClickHouse Managed Postgres](/es/cloud/managed-postgres)—, la comprobación de la conexión falla antes de crear el pipe y el error indica el nombre del indicador que lo soluciona:
+
+```text
+Error: BAD_REQUEST: failed to establish connection: failed to connect to `user=postgres database=postgres`: 203.0.113.10:5432 (postgres.example.com): failed to write startup message: write failed: tls: failed to verify certificate: x509: certificate signed by unknown authority
+
+Hint: The source certificate chain is not publicly trusted. For a private or self-signed source CA, pass its PEM CA bundle with `--ca-certificate <PATH>`.
+```
+
+Pase el paquete de CA del origen en formato PEM con `--ca-certificate`. En el caso de ClickHouse Managed Postgres, `clickhousectl` obtiene el paquete automáticamente:
+
+```bash
+clickhousectl cloud postgres certs get <postgres-service-id> --output pg-ca.pem
+```
+
+Después, vuelve a ejecutar el comando de creación añadiendo `--ca-certificate pg-ca.pem`.
+
+Si, por el contrario, el certificado es válido pero se emitió para un nombre distinto al que utilizas para conectarte, el error incluye una sugerencia diferente, que apunta a `--tls-host <hostname>` para indicar el hostname que debe usar la verificación del certificado.
+
+## Espere a que el pipe alcance el estado Running {#wait-for-running}
+
+El pipe pasa por `Provisioning`, `Setup` y (en el caso de tablas grandes) `Snapshot` antes de llegar a `Running`; el primer pipe de un service puede tardar varios minutos. `Failed` e `InternalError` son estados terminales:
+
+```bash
+while :; do
+  STATE=$(clickhousectl cloud clickpipe get "$CH_ID" "$PIPE_ID" --json | jq -r .state)
+  case "$STATE" in
+    Running) break ;;
+    Failed|InternalError) echo "ClickPipe entered terminal state: $STATE" >&2; exit 1 ;;
+  esac
+  sleep 15
+done
+```
+
+## Comprobar el estado del pipe {#check-pipe-status}
+
+`clickpipe list` muestra todos los pipes del servicio; `clickpipe get` devuelve un único pipe con su configuración completa:
+
+```bash
+clickhousectl cloud clickpipe list "$CH_ID" --json \
+  | jq -r '.[] | [.id, .name, .state] | @tsv'
+```
+
+```text
+e3d9a1f4-7b2c-4c58-9f6a-0d8b4e2c7a19	orders-sync	Running
+```
+
+## Verificar los datos en ClickHouse {#verify-the-data-in-clickhouse}
+
+Consulte el servicio de destino directamente desde la CLI. La primera llamada aprovisiona automáticamente un Query API endpoint y una API key con alcance específico al service:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT order_id, customer, amount FROM orders ORDER BY order_id" --json
+```
+
+```text
+Provisioning Query API endpoint + key for service 'my-service'...
+{"order_id":1,"customer":"Alice","amount":42.5}
+{"order_id":2,"customer":"Bob","amount":17.99}
+{"order_id":3,"customer":"Charlie","amount":99}
+{"order_id":4,"customer":"Diana","amount":5.25}
+{"order_id":5,"customer":"Eve","amount":250}
+```
+
+Los cambios en el origen se replican de forma continua según el intervalo de sincronización: 60 segundos de forma predeterminada, o el valor que se haya asignado a `--sync-interval-seconds` al crearla. Inserta una fila en el origen y consulta periódicamente hasta que aparezca:
+
+Pasa la contraseña mediante `PGPASSWORD` en lugar de un URI de conexión, así los caracteres especiales que contenga no necesitan escaparse:
+
+```bash
+PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USERNAME" -d "$PG_DATABASE" \
+  -c "INSERT INTO orders (customer, amount) VALUES ('Frank', 12.34);"
+
+while [ "$(clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT count() FROM orders" --format TSV)" != "6" ]; do
+  sleep 10
+done
+```
+
+## Administrar el pipe {#manage-the-pipe}
+
+El ciclo de vida del pipe se administra con `clickhousectl cloud clickpipe stop`, `clickhousectl cloud clickpipe start` y `clickhousectl cloud clickpipe resync` (elimina y vuelve a tomar el snapshot de las tablas de destino); cada uno recibe los mismos argumentos `"$CH_ID" "$PIPE_ID"`. Si el origen solo es accesible a través de red privada, `clickhousectl cloud clickpipe reverse-private-endpoint` administra el endpoint de AWS PrivateLink o de Google Private Service Connect; indica como `--host` uno de los nombres DNS que devuelve al crear el pipe. Los orígenes Postgres con túnel SSH por ahora solo se admiten desde la UI: la CLI admite conexiones directas y reverse private endpoints, pero no permite configurar SSH tunneling. Consulta `clickhousectl cloud clickpipe --help` para ver la lista completa de subcomandos.
+
+## Limpieza {#cleanup}
+
+Al eliminar el pipe se detiene la replicación:
+
+```bash
+clickhousectl cloud clickpipe delete "$CH_ID" "$PIPE_ID"
+```
+
+```text
+{"deleted":"e3d9a1f4-7b2c-4c58-9f6a-0d8b4e2c7a19"}
+```
+
+## Próximos pasos {#cli-whats-next}
+
+Consulta la [guía de migración](/es/get-started/migrate/postgres/overview) para evaluar qué estrategia se ajusta mejor a tus requisitos, así como las páginas [Estrategias de deduplicación (usando CDC)](/es/integrations/clickpipes/postgres/deduplication) y [Claves de ordenación](/es/integrations/clickpipes/postgres/ordering-keys) para conocer las buenas prácticas en workloads de CDC. Si tienes dudas habituales sobre CDC en PostgreSQL o necesitas resolver problemas, consulta la [página de preguntas frecuentes de Postgres](/es/integrations/clickpipes/postgres/faq).

@@ -1,0 +1,40 @@
+---
+description: 'وثائق واجهة SQL Console المضمّنة التي يوفّرها خادم HTTP في ClickHouse على المسار `/ui`'
+sidebarTitle: 'SQL Console'
+slug: /interfaces/sql-console
+title: 'SQL Console'
+doc_type: 'reference'
+---
+
+SQL Console هي واجهة ويب مضمّنة لتنفيذ الاستعلامات واستكشاف البيانات، وهي متاحة عبر أي منفذ HTTP في ClickHouse على المسار `/ui`، مثل `http://localhost:8123/ui`.
+
+:::note
+SQL Console ميزة تجريبية.
+:::
+
+## نظرة عامة {#overview}
+
+SQL Console هو تطبيق أحادي الصفحة (SPA) يُصرَّف إلى حزمة ثابتة ويُضمَّن مباشرةً داخل ملف ClickHouse التنفيذي (binary)، على غرار تضمين ClickStack عند `/clickstack`. وتُقدَّم جميع الأصول من ملف ClickHouse التنفيذي نفسه — دون تحميل أي شبكات توصيل محتوى (CDN) تابعة لطرف خارجي.
+
+لفتحه، انتقل إلى `/ui` على أي منفذ HTTP خاص بـ ClickHouse (على سبيل المثال، `http://localhost:8123/ui`).
+
+## كيفية تقديمها {#how-it-is-served}
+
+تُضغط الحزمة (bundle) بصيغة gzip أثناء الـ build وتُضمَّن باستخدام `#embed`، لذا تحمل كل استجابة من `/ui` الـ header ‏`Content-Encoding: gzip`. ونظرًا لأن SQL Console تطبيق أحادي الصفحة ينفّذ التوجيه من جهة العميل، فإن الطلبات ضمن `/ui` التي لا تقابل أصلًا مُضمَّنًا ولا تبدو كملف (أي لا تحمل امتدادًا) تعود احتياطيًا إلى تقديم `index.html`. أما الطلبات الموجَّهة إلى مسارات تبدو كأصول مفقودة (مثل `/ui/nonexistent.js`) فتُرجع status ‏HTTP‏ `404 Not Found`.
+
+يُطابَق المسار `/ui` تمامًا أو عندما يليه حدّ من نوع `/` أو `?` أو `#`، وبذلك لا تستولي آلية الـ fallback الخاصة بتطبيق الصفحة الواحدة على المسارات المجاورة مثل `/uix`.
+
+## العلاقة بواجهات الويب الأخرى {#relationship-to-other-web-uis}
+
+يوفّر ClickHouse عدة واجهات ويب مدمجة تُقدَّم عبر منفذ HTTP:
+
+* [`/play`](/ar/interfaces/web-sql) — واجهة Web SQL الخفيفة.
+* `/dashboard` — لوحات المعلومات المدمجة.
+* `/clickstack` — واجهة ClickStack المضمّنة.
+* `/ui` — واجهة SQL Console الموضّحة هنا.
+
+تتوفّر روابط هذه الواجهات جميعها في الصفحة الرئيسية لخادم HTTP في ClickHouse.
+
+## المصادقة {#authentication}
+
+تعتمد SQL Console في المصادقة على نفس فحوصات `Session` والتحكم في الوصول المستخدمة في HTTP protocol. ولا يتطلب تقديم ملفات الـ UI الثابتة على المسار `/ui` أي مصادقة، أما الاستعلامات التي ترسلها الـ UI فتخضع للمصادقة مثل أي HTTP request آخر.

@@ -11,9 +11,7 @@ doc_type: 'reference'
 
 يوفّر هذا المحرّك تكاملًا مع [Amazon S3](https://aws.amazon.com/s3/). يشبه هذا المحرّك محرّك [HDFS](/ar/reference/engines/table-engines/integrations/hdfs)، لكنه يوفّر ميزات خاصة بـ S3.
 
-<div id="example">
-  ## مثال
-</div>
+## مثال {#example}
 
 ```sql
 CREATE TABLE s3_engine_table (name String, value UInt32)
@@ -32,9 +30,7 @@ SELECT * FROM s3_engine_table LIMIT 2;
 └──────┴───────┘
 ```
 
-<div id="creating-a-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#creating-a-table}
 
 ```sql
 CREATE TABLE s3_engine_table (name String, value UInt32)
@@ -43,23 +39,19 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-<div id="parameters">
-  ### معلمات المحرك
-</div>
+### معلمات المحرك {#parameters}
 
 * `path` — عنوان URL لـ حاوية مع مسار الملف. يدعم أحرف البدل التالية في وضع `readonly`: `*`, `**`, `?`, `{abc,def}` و `{N..M}`، حيث إن `N` و `M` — أرقام، و`'abc'` و `'def'` — سلاسل نصية. لمزيد من المعلومات، راجع [أدناه](#wildcards-in-path).
 * `NOSIGN` - إذا جرى توفير هذه الكلمة المفتاحية بدلًا من بيانات الاعتماد، فلن تُوقَّع أي من الطلبات.
 * `format` — [تنسيق](/ar/reference/formats/index#formats-overview) الملف.
 * `aws_access_key_id`, `aws_secret_access_key` - بيانات اعتماد طويلة الأجل لمستخدم حساب [AWS](https://aws.amazon.com/). يمكنك استخدامها لمصادقة طلباتك. هذه المعلمة اختيارية. إذا لم يتم تحديد بيانات الاعتماد، فستُستخدم من ملف التهيئة. لمزيد من المعلومات، راجع [استخدام S3 لتخزين البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
-* `compression` — نوع الضغط. القيم المدعومة: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. هذه المعلمة اختيارية. افتراضيًا، سيُكتشف نوع الضغط تلقائيًا من امتداد الملف.
+* `compression` — نوع الضغط. القيم المدعومة: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. هذه المعلمة اختيارية. افتراضيًا، سيُكتشف نوع الضغط تلقائيًا من امتداد الملف. بالنسبة إلى `snappy`، يُختار التنسيق السلكي بواسطة إعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (وتكون قيمته `basic` افتراضيًا).
 * `partition_strategy` – الخيارات: `wildcard` أو `hive`. يتطلب `wildcard` وجود `{_partition_id}` في المسار، ويُستبدل بمفتاح التقسيم. لا يسمح `hive` بأحرف البدل، ويفترض أن المسار هو جذر الجدول، ويُنشئ أدلة تقسيم بنمط Hive مع Snowflake IDs كأسماء ملفات وتنسيق الملف كامتداد. دون استراتيجية صريحة، يستخدم المسار الذي يحتوي على `{_partition_id}` استراتيجية `wildcard`. ولا يستخدم المسار الذي يحتوي على glob آخر أي استراتيجية تقسيم ويتجاهل `PARTITION BY`. ويستخدم المسار الذي لا يحتوي على glob استراتيجية `hive` عندما يكون `file_like_engine_default_partition_strategy` هو `hive`؛ وإلا فلن يستخدم أي استراتيجية تقسيم.
 * `partition_columns_in_data_file` - يُستخدم فقط مع استراتيجية التقسيم `hive`. ويُخبر ClickHouse ما إذا كان ينبغي توقع كتابة أعمدة التقسيم في ملف البيانات. القيمة الافتراضية `false`.
 * `storage_class_name` - الخيارات: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. لا تُدعَم إلا فئات تخزين S3 التي تسمح بالاسترجاع الفوري (أما الفئات الأرشيفية مثل `GLACIER` و `DEEP_ARCHIVE` فغير مدعومة). وتسمح بتحديد [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
 * `extra_credentials` - اختياري. يُستخدم لتمرير `role_arn` من أجل التحكم في الوصول المستند إلى الأدوار في ClickHouse Cloud. راجع [تأمين S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) لمعرفة خطوات الإعداد.
 
-<div id="data-cache">
-  ### ذاكرة التخزين المؤقت للبيانات
-</div>
+### ذاكرة التخزين المؤقت للبيانات {#data-cache}
 
 يدعم محرك الجدول `S3` التخزين المؤقت للبيانات على القرص المحلي.
 راجع خيارات تهيئة ذاكرة التخزين المؤقت لنظام الملفات وكيفية استخدامها في هذا [القسم](/ar/concepts/features/configuration/server-config/storing-data#using-local-cache).
@@ -90,17 +82,13 @@ SETTINGS filesystem_cache_name = 'cache_for_s3', enable_filesystem_cache = 1;
 
 2. أعد استخدام إعدادات cache (وبالتالي مساحة تخزين cache) من قسم `storage_configuration` في ClickHouse، [كما هو موضّح هنا](/ar/concepts/features/configuration/server-config/storing-data#using-local-cache)
 
-<div id="partition-by">
-  ### PARTITION BY
-</div>
+### PARTITION BY {#partition-by}
 
 `PARTITION BY` — اختياري. في معظم الحالات، لا تحتاج إلى مفتاح تقسيم، وحتى إذا احتجت إليه، فعادةً لا تحتاج إلى مفتاح تقسيم أكثر دقة من التقسيم حسب الشهر. لا يؤدي التقسيم إلى تسريع الاستعلامات (على عكس تعبير ORDER BY). يجب ألّا تستخدم تقسيمًا مفرط الدقة إطلاقًا. لا تقسّم بياناتك حسب معرّفات العملاء أو أسمائهم (وبدلًا من ذلك، اجعل معرّف العميل أو اسمه هو العمود الأول في تعبير ORDER BY).
 
 للتقسيم حسب الشهر، استخدم التعبير `toYYYYMM(date_column)`، حيث إن `date_column` هو عمود يحتوي على تاريخ من النوع [Date](/ar/reference/data-types/date). تكون أسماء الأقسام هنا بالتنسيق `"YYYYMM"`.
 
-<div id="partition-strategy">
-  #### استراتيجية التقسيم
-</div>
+#### استراتيجية التقسيم {#partition-strategy}
 
 `حرف بدل`: يستبدل رمز البدل `{_partition_id}` في مسار الملف بمفتاح التقسيم الفعلي. القراءة غير مدعومة. يُحدَّد هذا الخيار افتراضيًا عندما يحتوي المسار على `{_partition_id}`.
 
@@ -150,9 +138,7 @@ select _path, * from t_03363_parquet;
 └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
-<div id="querying-partitioned-data">
-  ### الاستعلام عن البيانات المُقسَّمة إلى أقسام
-</div>
+### الاستعلام عن البيانات المُقسَّمة إلى أقسام {#querying-partitioned-data}
 
 يستخدم هذا المثال [وصفة Docker Compose](https://github.com/ClickHouse/examples/tree/5fdc6ff72f4e5137e23ea075c88d3f44b0202490/docker-compose-recipes/recipes/ch-and-minio-S3)، التي تدمج ClickHouse مع MinIO. ينبغي أن تتمكن من إعادة تنفيذ الاستعلامات نفسها باستخدام S3 من خلال استبدال قيم endpoint والمصادقة.
 
@@ -171,9 +157,7 @@ select _path, * from t_03363_parquet;
   على شكل مجموعات فرعية، ومن هنا تأتي فائدة الكتابة المُقسَّمة إلى أقسام.
 </Note>
 
-<div id="create-the-table">
-  #### إنشاء الجدول
-</div>
+#### إنشاء الجدول {#create-the-table}
 
 ```sql highlight={8}
 CREATE TABLE p
@@ -191,17 +175,13 @@ ENGINE = S3(
 PARTITION BY column3
 ```
 
-<div id="insert-data">
-  #### إدراج البيانات
-</div>
+#### إدراج البيانات {#insert-data}
 
 ```sql
 INSERT INTO p VALUES (1, 2, 3), (3, 2, 1), (78, 43, 45)
 ```
 
-<div id="select-from-partition-3">
-  #### الاستعلام من القسم 3
-</div>
+#### الاستعلام من القسم 3 {#select-from-partition-3}
 
 <Tip>
   يستخدم هذا الاستعلام دالة الجدول S3
@@ -218,9 +198,7 @@ FROM s3('http://minio:10000/clickhouse//test_3.csv', 'minioadmin', 'minioadminpa
 └────┴────┴────┘
 ```
 
-<div id="select-from-partition-1">
-  #### الاستعلام من التقسيم 1
-</div>
+#### الاستعلام من التقسيم 1 {#select-from-partition-1}
 
 ```sql
 SELECT *
@@ -233,9 +211,7 @@ FROM s3('http://minio:10000/clickhouse//test_1.csv', 'minioadmin', 'minioadminpa
 └────┴────┴────┘
 ```
 
-<div id="select-from-partition-45">
-  #### الاستعلام من القسم 45
-</div>
+#### الاستعلام من القسم 45 {#select-from-partition-45}
 
 ```sql
 SELECT *
@@ -248,9 +224,7 @@ FROM s3('http://minio:10000/clickhouse//test_45.csv', 'minioadmin', 'minioadminp
 └────┴────┴────┘
 ```
 
-<div id="limitation">
-  #### قيد
-</div>
+#### قيد {#limitation}
 
 قد تحاول بطبيعة الحال تنفيذ `Select * from p`، لكن كما ذُكر أعلاه، سيفشل هذا الاستعلام؛ استخدم الاستعلام المذكور سابقًا.
 
@@ -263,15 +237,11 @@ Received exception from server (version 23.4.1):
 Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading from a partitioned S3 storage is not implemented yet. (NOT_IMPLEMENTED)
 ```
 
-<div id="inserting-data">
-  ## إدراج البيانات
-</div>
+## إدراج البيانات {#inserting-data}
 
 لاحظ أنه لا يمكن إدراج الصفوف إلا في الملفات الجديدة. ولا توجد دورات دمج أو عمليات تقسيم للملفات. وبمجرد كتابة ملف، ستفشل عمليات الإدراج اللاحقة. لتجنّب ذلك، يمكنك استخدام الإعدادين `s3_truncate_on_insert` و`s3_create_new_file_on_insert`. راجع مزيدًا من التفاصيل [هنا](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
-<div id="virtual-columns">
-  ## الأعمدة الافتراضية
-</div>
+## الأعمدة الافتراضية {#virtual-columns}
 
 * `_path` — مسار الملف. النوع: `LowCardinality(String)`.
 * `_file` — اسم الملف. النوع: `LowCardinality(String)`.
@@ -282,9 +252,7 @@ Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading fr
 
 لمزيد من المعلومات حول الأعمدة الافتراضية، راجع [هنا](/ar/reference/engines/table-engines/index#table_engines-virtual_columns).
 
-<div id="implementation-details">
-  ## تفاصيل التنفيذ
-</div>
+## تفاصيل التنفيذ {#implementation-details}
 
 * يمكن إجراء عمليات القراءة والكتابة بالتوازي
 * غير مدعوم:
@@ -298,9 +266,7 @@ Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading fr
   يكون النسخ المتماثل دون نسخ معطّلًا افتراضيًا في ClickHouse الإصدار 22.8 والإصدارات الأحدث. لا يُنصح باستخدام هذه الميزة في بيئة الإنتاج.
 </Info>
 
-<div id="wildcards-in-path">
-  ## أحرف البدل في المسار
-</div>
+## أحرف البدل في المسار {#wildcards-in-path}
 
 يمكن للوسيطة `path` تحديد عدة ملفات باستخدام أحرف بدل شبيهة بتلك المستخدمة في bash. ولكي يُعالَج الملف، يجب أن يكون موجودًا وأن يطابق نمط المسار بالكامل. ويُحدَّد تعداد الملفات أثناء `SELECT` (وليس عند `CREATE`).
 
@@ -359,9 +325,7 @@ CREATE TABLE table_with_asterisk (name String, value UInt32)
     ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/*', 'CSV');
 ```
 
-<div id="resolving-relative-urls">
-  ## حل عناوين URL النسبية
-</div>
+## حل عناوين URL النسبية {#resolving-relative-urls}
 
 يتيح الإعداد [s3&#95;base](/ar/reference/settings/session-settings/s3#s3_base) استخدام عنوان URL نسبي في محرك `S3`. عند تعيين `s3_base` وإذا لم يكن للمسار مخطط، يُحلّ بالنسبة إلى عنوان URL الأساسي وفقًا لـ [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). للاطلاع على وصف كامل لقواعد الحل، راجع [وثائق دالة الجدول S3](/ar/reference/functions/table-functions/s3#resolving-relative-urls). يُجسَّد عنوان URL المحلول في تعريف الجدول المخزَّن، لذا لا يعتمد الجدول على قيمة `s3_base` بعد إنشائه.
 
@@ -371,18 +335,14 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
     ENGINE = S3('aapl_stock.csv', NOSIGN, 'CSVWithNames');
 ```
 
-<div id="storage-settings">
-  ## إعدادات التخزين
-</div>
+## إعدادات التخزين {#storage-settings}
 
 * [s3&#95;truncate&#95;on&#95;insert](/ar/reference/settings/session-settings/s3#s3_truncate_on_insert) - يسمح بتفريغ الملف قبل الإدراج فيه. يكون مُعطّلًا افتراضيًا.
 * [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/ar/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - يسمح بإنشاء ملف جديد عند كل عملية إدراج إذا كان التنسيق يتضمن لاحقة. يكون مُعطّلًا افتراضيًا.
 * [s3&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings/s3#s3_skip_empty_files) - يسمح بتخطي الملفات الفارغة أثناء القراءة. يكون مُفعّلًا افتراضيًا.
 * [s3&#95;base](/ar/reference/settings/session-settings/s3#s3_base) - عنوان URL الأساسي لحل عناوين URL النسبية المُمرّرة إلى المحرك. يكون فارغًا (مُعطّلًا) افتراضيًا.
 
-<div id="settings">
-  ## الإعدادات المتعلقة بـ S3
-</div>
+## الإعدادات المتعلقة بـ S3 {#settings}
 
 يمكن تعيين الإعدادات التالية قبل تنفيذ الاستعلام أو وضعها في ملف التهيئة.
 
@@ -400,9 +360,7 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
 
 اعتبار أمني: إذا كان بإمكان مستخدم خبيث تحديد عناوين URL عشوائية لـ S3، فيجب تعيين `s3_max_redirects` إلى صفر لتجنب هجمات [SSRF](https://en.wikipedia.org/wiki/Server-side_request_forgery)؛ أو بدلًا من ذلك، يجب تحديد `remote_host_filter` في إعدادات الخادم.
 
-<div id="endpoint-settings">
-  ## الإعدادات المستندة إلى endpoint
-</div>
+## الإعدادات المستندة إلى endpoint {#endpoint-settings}
 
 يمكن تحديد الإعدادات التالية في ملف التهيئة لـ endpoint معين (الذي سيُطابَق بالبادئة الدقيقة لعنوان URL):
 
@@ -445,9 +403,7 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
 </s3>
 ```
 
-<div id="working-with-archives">
-  ## العمل مع ملفات الأرشيف
-</div>
+## العمل مع ملفات الأرشيف {#working-with-archives}
 
 لنفترض أن لدينا عدة ملفات أرشيفية بعناوين URI التالية على S3:
 
@@ -473,9 +429,7 @@ FROM s3(
   وبينما يمكن الوصول إلى أرشيفات ZIP وTAR من أي موقع تخزين مدعوم، فلا يمكن قراءة أرشيفات 7Z إلا من نظام الملفات المحلي المثبّت عليه ClickHouse.
 </Note>
 
-<div id="accessing-public-buckets">
-  ## الوصول إلى الحاويات العامة
-</div>
+## الوصول إلى الحاويات العامة {#accessing-public-buckets}
 
 يحاول ClickHouse جلب بيانات الاعتماد من أنواع متعددة من المصادر.
 وقد يؤدي ذلك أحيانًا إلى حدوث مشكلات عند الوصول إلى بعض الحاويات العامة، فيُرجع العميل رمز الخطأ `403`.
@@ -486,15 +440,11 @@ CREATE TABLE big_table (name String, value UInt32)
     ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv', NOSIGN, 'CSVWithNames');
 ```
 
-<div id="optimizing-performance">
-  ## تحسين الأداء
-</div>
+## تحسين الأداء {#optimizing-performance}
 
 للتعرّف على تفاصيل تحسين أداء الدالة `s3`، راجع [دليلنا المفصّل](/ar/integrations/connectors/data-ingestion/AWS/performance).
 
-<div id="role-based-access">
-  ## التحكم في الوصول المستند إلى الأدوار
-</div>
+## التحكم في الوصول المستند إلى الأدوار {#role-based-access}
 
 في ClickHouse Cloud، يمكنك استخدام التحكم في الوصول المستند إلى الأدوار للمصادقة على S3 بدلًا من استخدام مفاتيح الوصول. راجع [تأمين S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للاطلاع على خطوات الإعداد.
 
@@ -512,9 +462,7 @@ CREATE TABLE my_s3_table(name String, value UInt32)
 ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', external_id = 'my-external-id'), 'CSV')
 ```
 
-<div id="see-also">
-  ## راجع أيضًا
-</div>
+## راجع أيضًا {#see-also}
 
 * [دالة الجدول S3](/ar/reference/functions/table-functions/s3)
 * [تكامل S3 مع ClickHouse](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

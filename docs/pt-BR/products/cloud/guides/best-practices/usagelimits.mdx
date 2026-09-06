@@ -2,24 +2,44 @@
 slug: /cloud/bestpractices/usage-limits
 sidebarTitle: 'Limites de uso'
 title: 'Limites de uso'
-description: 'Descreve os limites de uso recomendados no ClickHouse Cloud'
+description: 'Descreve os limites de uso de organização, warehouse e serviço no ClickHouse Cloud'
 doc_type: 'reference'
-keywords: ['limites de uso', 'cotas', 'melhores práticas', 'gerenciamento de recursos', 'recursos de nuvem']
+keywords: ['limites de uso', 'quotas', 'melhores práticas', 'gerenciamento de recursos', 'recursos de cloud']
 ---
 
-Embora o ClickHouse seja conhecido por sua velocidade e confiabilidade, o desempenho ideal é
-alcançado dentro de determinados parâmetros operacionais. Por exemplo, ter tabelas,
-bancos de dados ou partes em excesso pode afetar negativamente o desempenho. Para evitar isso, o ClickHouse
-Cloud impõe limites em diversas dimensões operacionais.
-Os valores padrão desses limites de proteção estão listados abaixo. Salvo indicação em contrário,
-eles se aplicam ao nível do serviço.
+O ClickHouse foi construído para ser rápido e confiável. Para manter o desempenho ideal, recomendamos
+determinados parâmetros de operação. Por exemplo, ter tabelas,
+bancos de dados ou partes em excesso pode prejudicar o desempenho. Para evitar isso, o ClickHouse
+Cloud aplica limites em várias dimensões operacionais.
+
+Os limites flexíveis se aplicam em três escopos diferentes. As seções abaixo começam pelos
+limites em nível de serviço, que são os primeiros com que a maioria dos workloads se depara.
+
+| Escopo                                  | O que abrange                                                                                                             | Limites nesse escopo                                                                                                                          |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **[Serviço](#service-limits)**          | Um único serviço e seu compute                                                                                            | Compute por serviço (concorrência de consultas, ingestão em lote); limites de objetos de dados quando executado como standalone (veja abaixo) |
+| **[Warehouse](#warehouse-limits)**      | Um [warehouse](/pt-BR/products/cloud/features/infrastructure/warehouses) — o grupo de serviços que compartilham os mesmos dados | Réplicas combinadas em todo o warehouse; objetos de dados no shared catalog (tabelas, bancos de dados e assim por diante)                           |
+| **[Organização](#organization-limits)** | Toda a sua organização no ClickHouse Cloud (todos os warehouses e serviços somados)                                       | Número de serviços; número de warehouses                                                                                                      |
+
+O escopo dos **limites de objetos de dados** (bancos de dados, tabelas, colunas, partições e partes) depende de como você executa seus serviços.
+Se você executa **serviços standalone**, esses limites se aplicam por serviço.
+Assim que os serviços passam a compartilhar dados em um **warehouse**, os mesmos limites passam a valer uma única vez para o shared catalog do warehouse.
+Os números não mudam — muda apenas o nível em que são medidos.
 
 <Tip>
-  Se você se deparou com um desses limites de proteção, é possível que esteja
-  implementando seu caso de uso de forma não otimizada. Entre em contato com o [suporte](https://clickhouse.com/support/program), e
-  teremos prazer em ajudar você a aprimorar seu caso de uso para evitar exceder esses limites
-  ou avaliar como podemos aumentá-los de maneira controlada.
+  Se você esbarrou em uma dessas proteções, é possível que esteja
+  implementando seu caso de uso de forma não otimizada. Entre em contato com o [suporte](https://clickhouse.com/support/program):
+  teremos prazer em ajudá-lo a refinar seu caso de uso para evitar exceder essas proteções
+  ou avaliar em conjunto como aumentá-las de maneira controlada.
 </Tip>
+
+<div id="service-limits">
+  ## Limites de serviço
+</div>
+
+Os limites abaixo se aplicam a um **serviço standalone** (e, para contagens de objetos de dados, ao armazenamento desse serviço).
+
+Se o serviço pertencer a um **warehouse**, os limites de objetos de dados (bancos de dados, tabelas, colunas, partições e partes) passam a se aplicar ao shared catalog do warehouse, conforme descrito em [Limites de warehouse](#warehouse-limits) abaixo — os valores permanecem os mesmos, mas são medidos em todo o warehouse, e não em um único serviço. Os demais limites, como **concorrência de consultas** e **ingestão em lote**, continuam sendo por serviço (ou por réplica) em ambos os casos.
 
 | Dimensão                               | Limite                                                                                                                    |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -32,17 +52,12 @@ eles se aplicam ao nível do serviço.
 | **Partições**                          | 50k                                                                                                                       |
 | **Partes**                             | 10k (consulte a configuração [`max_parts_in_total`](/pt-BR/products/cloud/guides/cloud-compatibility#max_parts_in_total-10000)) |
 | **Tamanho da parte**                   | 150 GB                                                                                                                    |
-| **Serviços por organização**           | 20 (flexível)                                                                                                             |
-| **Réplicas por serviço**               | 20 (flexível)                                                                                                             |
-| **Réplicas por warehouse**             | 50 (flexível)                                                                                                             |
 | **Baixa cardinalidade**                | 10k ou menos                                                                                                              |
 | **Chaves primárias em uma tabela**     | 4–5 que filtrem suficientemente os dados                                                                                  |
 | **Concorrência de consultas**          | 1000 (por réplica)                                                                                                        |
 | **Ingestão em lote**                   | Qualquer valor &gt; 1 milhão de linhas é dividido em blocos de 1 milhão de linhas                                         |
 
-Para limites de réplicas e escalonamento de warehouse, consulte [warehouses](/pt-BR/products/cloud/features/infrastructure/warehouses#scaling).
-
-Os valores acima são limites de proteção padrão. O limite aplicado a um serviço específico pode ser maior do que o valor mostrado aqui, pois serviços maiores são configurados com mais margem de capacidade. O limite efetivamente aplicável ao seu serviço é informado no aviso recebido quando você se aproxima dele. Para serviços que já excedem os limites de uso acima, os limites de tabelas/bancos de dados são definidos como a contagem atual de tabelas/bancos de dados do serviço mais 25%.
+Os valores acima são limites de proteção padrão. O limite aplicado a um serviço específico pode ser maior do que o valor mostrado aqui, pois serviços maiores são configurados com mais margem de capacidade. O limite efetivamente aplicável ao seu serviço é informado no aviso recebido quando você se aproxima dele. Para serviços que já excedem esses limites, os limites de tabelas e bancos de dados são definidos como a contagem atual do serviço mais 25%.
 
 <Note>
   Para serviços de réplica única, o número máximo de bancos de dados é limitado a
@@ -52,10 +67,42 @@ Os valores acima são limites de proteção padrão. O limite aplicado a um serv
   incluindo serviços de réplica única.
 </Note>
 
-Os limites específicos de aviso e erro do seu serviço podem ser verificados consultando system.server&#95;settings. Por exemplo,
+Os limites específicos de aviso e erro do seu serviço podem ser verificados consultando `system.server_settings`. Por exemplo:
 
-```
-SELECT * 
-FROM system.server_settings 
+```sql
+SELECT *
+FROM system.server_settings
 WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw', 'max_view_num_to_warn', 'max_view_num_to_throw', 'max_dictionary_num_to_warn', 'max_dictionary_num_to_throw', 'max_named_collection_num_to_warn', 'max_named_collection_num_to_throw')
 ```
+
+<div id="warehouse-limits">
+  ## Limites de warehouse
+</div>
+
+Um [warehouse](/pt-BR/products/cloud/features/infrastructure/warehouses) é um conjunto de serviços que compartilham os mesmos dados.
+Os limites de warehouse se aplicam a esse grupo compartilhado como um todo — não a cada serviço separadamente nem à organização inteira.
+
+| Dimensão                   | Limite        |
+| -------------------------- | ------------- |
+| **Réplicas por warehouse** | 50 (flexível) |
+
+O limite de réplicas corresponde à contagem **combinada** de réplicas de todos os serviços do warehouse.
+Como todos os serviços de um warehouse compartilham um único ClickHouse Keeper, esse limite existe para preservar a estabilidade do Keeper. O padrão de 50 é flexível e depende dos seus dados e da sua workload; o teto é maior no ClickHouse 26.6+, e pretendemos elevá-lo ainda mais no futuro.
+Entre em contato com o [suporte](https://clickhouse.com/support/program) para aumentá-lo; para mais detalhes sobre o scaling de warehouses, consulte [warehouses](/pt-BR/products/cloud/features/infrastructure/warehouses#scaling).
+
+**Não há um limite separado para a quantidade de serviços** em um warehouse — ela é restringida apenas pelo limite combinado de réplicas acima.
+
+Como os serviços de um warehouse compartilham um único catalog (as mesmas tabelas, bancos de dados, views e assim por diante), os [limites de objetos de dados em nível de serviço](#service-limits) descritos acima são contados **uma vez por warehouse**, e não multiplicados por serviço. Warehouses distintos são isolados entre si, portanto cada warehouse contabiliza suas próprias tabelas e bancos de dados nesses limites.
+
+<div id="organization-limits">
+  ## Limites da organização
+</div>
+
+Esses limites se aplicam a toda a organização do ClickHouse Cloud — ou seja, ao conjunto de todos os seus warehouses e serviços.
+
+| Dimensão                       | Limite        |
+| ------------------------------ | ------------- |
+| **Warehouses por organização** | Sem limite    |
+| **Serviços por organização**   | 20 (flexível) |
+
+O limite de **serviços por organização** contabiliza todos os serviços de *todos* os warehouses da organização. Trata-se de uma proteção herdada do passado, e não de um limite rígido; entre em contato com o [suporte](https://clickhouse.com/support/program), que normalmente consegue aumentá-lo após uma breve análise.

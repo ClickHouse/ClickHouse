@@ -19,9 +19,7 @@ keywords: ['네이티브 프로토콜', 'TCP', 'wire 프로토콜', '핸드셰�
 
 몇 가지 특성은 전체에 걸쳐 공통적으로 적용됩니다. 이 프로토콜은 바이너리이며 위치 기반입니다. `BlockInfo` 내부를 제외하면 필드 태그가 없으므로, 바이트 하나만 어긋나도 그 뒤에 오는 모든 내용의 동기화가 깨집니다. 또한 상태를 유지하는 프로토콜이며, 각 TCP 연결은 한 번에 하나의 쿼리만 처리합니다. 즉, 멀티플렉싱은 없습니다. 고정 폭 정수는 리틀 엔디언입니다.
 
-<div id="overview">
-  ## 개요
-</div>
+## 개요 {#overview}
 
 | Property | Value                                                                   |
 | -------- | ----------------------------------------------------------------------- |
@@ -68,19 +66,13 @@ sequenceDiagram
 
 네이티브 TCP 프로토콜은 SQL의 `FORMAT` 절과 관계없이 항상 표 형식 데이터를 Native 형식으로 전달합니다. `RowBinary`, `CSV`, `JSON` 등으로 다시 포맷하는 작업은 클라이언트의 역할이며, 클라이언트가 Native 블록을 디코딩한 후 수행합니다. (HTTP 인터페이스는 `FORMAT` 절을 실제로 반영하는 별도의 코드 경로이며, 여기서는 HTTP를 다루지 않습니다.)
 
-<div id="security">
-  ## 보안
-</div>
+## 보안 {#security}
 
-<div id="transport-security">
-  ### 전송 보안(TLS)
-</div>
+### 전송 보안(TLS) {#transport-security}
 
 TLS는 프로토콜 아래에 있는 전송 계층에서 동작합니다. TLS를 활성화하면 전체 TCP 스트림이 암호화되며, TLS 사용 여부와 관계없이 프로토콜 메시지는 바이트 단위까지 동일합니다.
 
-<div id="authentication">
-  ### 인증
-</div>
+### 인증 {#authentication}
 
 인증은 핸드셰이크 과정에서 [`ClientHello`](#clienthello) 메시지를 통해 수행됩니다. `user` 및 `password` 필드는 평문 문자열로 전송되므로, 전송 계층 암호화(TLS)가 전송 중 자격 증명을 보호합니다.
 
@@ -88,19 +80,13 @@ TLS는 프로토콜 아래에 있는 전송 계층에서 동작합니다. TLS를
 
 SSH 챌린지-응답 인증은 프로토콜 버전 54466부터 지원됩니다 — 자세한 내용은 [SSH 챌린지-응답 인증](#ssh-authentication)을 참조하십시오.
 
-<div id="inter-server-secret">
-  ### 서버 간 시크릿
-</div>
+### 서버 간 시크릿 {#inter-server-secret}
 
 분산 쿼리 실행에서는 서버가 시크릿을 wire에 노출하지 않고도 공유된 시크릿을 알고 있음을 증명하여 서로 인증합니다. 각 Query의 [`Query`](#query) 필드 4에는 salt, nonce, 구성된 시크릿, 그리고 쿼리를 바탕으로 계산한 32바이트 SHA-256 `auth_hash`가 포함되며, 수신 서버는 이를 다시 계산해 비교합니다. 이 동작은 `INTERSERVER_SECRET` 기능(v54441)으로 제어됩니다. 외부 클라이언트는 이 필드에 항상 빈 문자열을 보냅니다. [서버 간 인증](#inter-server-authentication)을 참조하십시오.
 
-<div id="versioning-and-feature-gates">
-  ## 버전 관리와 기능 게이트
-</div>
+## 버전 관리와 기능 게이트 {#versioning-and-feature-gates}
 
-<div id="version-negotiation">
-  ### 버전 협상
-</div>
+### 버전 협상 {#version-negotiation}
 
 클라이언트와 서버는 핸드셰이크 중에 각각 지원하는 최대 프로토콜 버전을 선언합니다. **협상된 버전**은 두 버전 중 더 작은 값입니다:
 
@@ -110,9 +96,7 @@ negotiated_version = min(client_version, server_version)
 
 그 이후의 모든 메시지에서는 협상된 버전에 따라 wire에 어떤 필드가 포함될지가 결정됩니다.
 
-<div id="feature-gates">
-  ### 기능 게이트
-</div>
+### 기능 게이트 {#feature-gates}
 
 기능은 해당 기능이 도입된 프로토콜 버전으로 식별되며, 협상된 버전이 그 번호와 같거나 크면 **활성** 상태가 됩니다.
 
@@ -120,9 +104,7 @@ negotiated_version = min(client_version, server_version)
   기능이 활성 상태이면 해당 필드는 wire에 **반드시** 포함되어야 합니다. 프로토콜은 위치에 엄격하게 의존하므로, 기능 게이트가 적용된 필드를 생략하면 그 뒤의 모든 필드에 대한 바이트 스트림이 손상됩니다.
 </Warning>
 
-<div id="feature-table">
-  ### 기능 표
-</div>
+### 기능 표 {#feature-table}
 
 | 기능                                                           | 버전    | 영향 대상                            | wire 영향                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ------------------------------------------------------------ | ----- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -162,7 +144,7 @@ negotiated_version = min(client_version, server_version)
 | SERVER&#95;SETTINGS                                          | 54474 | ServerHello                      | Server는 ServerHello의 끝부분에서 `nonce` 뒤에 기본값이 아닌 설정들을 목록으로 전송합니다. 포맷은 빈 key로 종료되는 `(key, flags, value)` 3개 항목의 반복이며, Query packet의 settings 목록과 동일합니다.                                                                                                                                                                                                                                                                                                                                                                     |
 | QUERY&#95;AND&#95;LINE&#95;NUMBERS                           | 54475 | ClientInfo                       | ClientInfo의 끝부분에 `script_query_number` (VarUInt)와 `script_line_number` (VarUInt)가 추가됩니다. clickhouse-client가 다중 statement 스크립트의 오류 위치를 추적하는 데 사용하며, 외부 클라이언트는 `0, 0`을 전송합니다.                                                                                                                                                                                                                                                                                                                                             |
 | JWT&#95;IN&#95;INTERSERVER                                   | 54476 | ClientInfo                       | ClientInfo의 끝부분에 JWT 존재 여부를 나타내는 UInt8과 선택적 `String jwt`가 추가됩니다. 외부 클라이언트(JWT 없음)는 바이트 `0x00`을 전송합니다. (C++에서는 `DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER`로 표기되며, 상수 이름에 오타가 있음을 유의하십시오.)                                                                                                                                                                                                                                                                                                                                 |
-| QUERY&#95;PLAN&#95;SERIALIZATION                             | 54477 | ServerHello, QueryPlan packet    | ServerHello는 server settings 뒤에 `VarUInt query_plan_serialization_version`를 추가합니다. 또한 사전 구축된 쿼리 계획의 서버 간 전달을 위한 `ClientPacket::QueryPlan` (code `13`)을 도입합니다. 외부 클라이언트는 이를 전송하지 않습니다.                                                                                                                                                                                                                                                                                                                                   |
+| QUERY&#95;PLAN&#95;SERIALIZATION                             | 54477 | ServerHello, QueryPlan packet    | ServerHello는 server settings 뒤에 `VarUInt query_plan_serialization_version`를 추가합니다. 또한 사전 구축된 쿼리 계획의 서버 간 전달을 위한 `ClientPacket::QueryPlan` (code `13`)을 도입합니다. 외부 클라이언트는 이를 전송하지 않습니다. 쿼리 계획 직렬화 버전 `10`은 직렬화된 계획 앞에 `VarUInt max_threads`와 `Bool concurrency_control`을 추가합니다. 둘 중 하나라도 기본값이 아니면 initiator는 버전 `10` 미만 peer에 대해 SQL shipping을 사용하여 peer가 전송된 쿼리 설정에서 계획을 구축하도록 합니다.                                                                                                                                      |
 | PARALLEL&#95;BLOCK&#95;MARSHALLING                           | 54478 | Block (Column)                   | Server는 병렬 처리를 위해 컬럼을 `ColumnBLOB`(인라인 compressed)으로 감쌀 수 있습니다. 이는 쿼리에서 compression이 활성화되어 있고 AND `rows > 1`일 때만 적용되며, 그렇지 않으면 일반 컬럼 wire 형식이 적용됩니다. 송신 Query packet에서 compression을 활성화하지 않는 클라이언트는 wire 변경이 없습니다.                                                                                                                                                                                                                                                                                                      |
 | VERSIONED&#95;CLUSTER&#95;FUNCTION&#95;PROTOCOL              | 54479 | ServerHello                      | ServerHello의 끝부분에 `VarUInt cluster_function_protocol_version`가 추가됩니다. `*Cluster` 테이블 함수(`s3Cluster` 등)에 사용됩니다. 현재 값은 `8` (`DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION`)이며, 버전 `7`은 비공개 저장소 기능(Iceberg compaction)을 위해 예약되어 있고, `8`에서는 서버 간 클러스터 읽기 작업 payload(`ReadTaskResponse` 본문이며, 여기서는 구체적으로 명시하지 않음 — 아래 참조)에 선택적 `read_source_index`가 추가됩니다. 외부 클라이언트는 이를 디코드한 뒤 무시합니다.                                                                                                                                            |
 | OUT&#95;OF&#95;ORDER&#95;BUCKETS&#95;IN&#95;AGGREGATION      | 54480 | BlockInfo                        | BlockInfo의 필드 태그 기반 스트림에 필드 3 (`out_of_order_buckets: Vec<Int32>`)이 추가됩니다. `[VarUInt count][Int32]*count`로 디코드됩니다. 외부 클라이언트는 이를 직접 내보내지 않지만, 디코더는 server가 전송한 비어 있지 않은 목록을 읽습니다.                                                                                                                                                                                                                                                                                                                                        |
@@ -178,9 +160,7 @@ negotiated_version = min(client_version, server_version)
 | QUANTILE&#95;DETERMINISTIC&#95;SKIP&#95;DEGREE               | 54491 | Block (Column)                   | `AggregateFunction(quantileDeterministic, ...)`(및 `quantiles`/`median` 표기)의 상태 버전을 `0`에서 `1`로 올리고, 각 직렬화된 상태 끝에 `UInt8 skip_degree`를 추가합니다. 변경되는 것은 해당 집계 함수 하나의 상태 payload뿐이며, 컬럼 framing은 그대로이고 다른 모든 집계 함수는 각자 자체 버전을 유지합니다. 이 리비전보다 낮으면 writer가 버전 `0` 상태를 내보내므로 이전 peer에는 영향이 없습니다.                                                                                                                                                                                                                                |
 | STRING&#95;WITH&#95;SIZE&#95;STREAM&#95;SERIALIZATION        | 54492 | Block (Column)                   | `String` 컬럼은 값별 길이 접두사 레이아웃에서 누적 바이트 오프셋의 별도 스트림(`Array`가 사용하는 것과 동일한 오프셋 레이아웃)으로 전환되며, `[UInt64 × num_rows offsets][data blob]` 형식 그대로 전송됩니다. 협상된 리비전에 따라 적용되며, 54492 미만에서는 writer가 값별 길이 접두사를 사용합니다. wire에는 이를 위한 컬럼별 마커가 없으며, 양측은 리비전만으로 이를 결정합니다. [String column layout](/ko/reference/interfaces/specs/NativeFormat#string-type)을 참조하십시오.                                                                                                                                                                             |
 
-<div id="packet-envelope">
-  ## 패킷 엔벌로프
-</div>
+## 패킷 엔벌로프 {#packet-envelope}
 
 wire로 전송되는 모든 메시지는 양방향에서 동일한 외부 구조를 가집니다:
 
@@ -195,9 +175,7 @@ wire로 전송되는 모든 메시지는 양방향에서 동일한 외부 구조
 
 [메시지 참고](#message-reference)에서는 각 패킷의 **본문**만 문서화합니다. 즉, 패킷 유형 코드 뒤에 오는 바이트입니다. 필드 번호는 첫 번째 본문 필드를 1로 하여 시작합니다.
 
-<div id="chunked-framing">
-  ### 청크 프레이밍 (v54470+)
-</div>
+### 청크 프레이밍 (v54470+) {#chunked-framing}
 
 `CHUNKED_PROTOCOL` 기능이 **협상되면**([핸드셰이크](#handshake-phase) 참조), wire 상의 모든 패킷은 청크 프레이밍으로 감싸집니다. 이 래핑은 **방향별**로 적용됩니다. 즉, 클라이언트→서버와 서버→클라이언트는 각각 별도로 협상되며, 서로 다른 모드(청크 방식 또는 프레이밍 없음)로 결정될 수 있습니다.
 
@@ -240,15 +218,11 @@ wire로 전송되는 모든 메시지는 양방향에서 동일한 외부 구조
 
 **시점.** 협상 문자열은 프레이밍되지 않은 wire로 전송됩니다. ClientHello → ServerHello (서버 선호도) → Addendum (클라이언트의 협상된 값) 순서입니다. 프레이밍 전환은 Addendum이 플러시된 *이후* 전송되는 모든 바이트에 적용됩니다. Addendum 자체, ClientHello, ServerHello는 항상 프레이밍되지 않습니다.
 
-<div id="connection-lifecycle">
-  ## 연결 수명 주기
-</div>
+## 연결 수명 주기 {#connection-lifecycle}
 
 어느 시점이든 연결은 정확히 네 가지 상태 중 하나입니다: `HANDSHAKE`, `READY`, `READING_RESPONSE`, 또는 종료 상태입니다. 프로토콜은 멀티플렉싱을 지원하지 않으므로, 이전 응답을 모두 수신하기 전에 클라이언트가 새 요청을 보내면 wire 상에서 바이트가 뒤섞여 스트림이 손상됩니다.
 
-<div id="states">
-  ### 상태
-</div>
+### 상태 {#states}
 
 ```mermaid
 stateDiagram-v2
@@ -274,9 +248,7 @@ stateDiagram-v2
 | `READING_RESPONSE` | 클라이언트가 Query를 보내면 진입합니다. 클라이언트는 `READY`로 돌아가기 전에 서버의 응답 스트림을 끝까지 모두 읽어야 합니다. 여기서 클라이언트→서버로 허용되는 유일한 패킷은 Cancel입니다(이 페이지에서는 설명하지 않음).                                             |
 | Terminated         | 더 이상 사용할 수 없습니다. 클라이언트는 새 TCP 연결을 열고 핸드셰이크를 다시 시작해야 합니다.                                                                                                                         |
 
-<div id="handshake-phase">
-  ### 핸드셰이크 단계
-</div>
+### 핸드셰이크 단계 {#handshake-phase}
 
 인증을 수행하고 프로토콜 버전을 협상합니다. 이 과정은 각 connection마다 다른 어떤 작업보다 먼저 정확히 한 번만 발생합니다.
 
@@ -314,9 +286,7 @@ sequenceDiagram
 
 성공하면 연결 상태가 `READY`로 전환되며, 오류가 발생하면 연결이 종료됩니다.
 
-<div id="ping-phase">
-  ### Ping 단계
-</div>
+### Ping 단계 {#ping-phase}
 
 TCP keepalive와는 별도의 애플리케이션 수준 liveness 확인입니다. Ping/Pong 왕복이 성공하면 TCP 연결이 양방향 모두에서 살아 있으며 서버가 응답 가능함을 확인할 수 있습니다. Ping은 무상태(stateless)이며 어떤 쿼리와도 연관되지 않으므로 여러 번 연속으로 보내는 Ping도 서로 독립적입니다.
 
@@ -345,9 +315,7 @@ sequenceDiagram
    | `Exception` (2) | [`Exception`](#exception)을 디코딩하여 오류로 반환합니다. |
    | 그 외 모든 경우       | 프로토콜 위반입니다.                                 |
 
-<div id="query-phase">
-  ### 쿼리 단계
-</div>
+### 쿼리 단계 {#query-phase}
 
 클라이언트가 SQL 문을 전송하면 서버는 결과 블록과 실행 텔레메트리를 스트리밍하여 반환합니다. 응답은 정확히 하나의 `EndOfStream` 또는 `Exception`으로 끝나는 패킷 시퀀스입니다.
 
@@ -401,9 +369,7 @@ sequenceDiagram
   `num_rows == 0` 경우는 새 구현에서 자주 혼동을 일으킵니다. 행 수가 0인 블록은 경계 마커 또는 스키마 헤더일 뿐, 스트림 종료 신호가 아닙니다. 응답은 `EndOfStream` 또는 `Exception`이 와야만 끝납니다.
 </Note>
 
-<div id="insert-phase">
-  ### INSERT 단계
-</div>
+### INSERT 단계 {#insert-phase}
 
 INSERT 단계는 [쿼리 단계](#query-phase)에 2번의 추가 통신이 더해진 형태입니다. 클라이언트가 `INSERT` 구문을 전송하면 서버는 대상 테이블을 설명하는 **스키마 블록**으로 응답합니다. 그런 다음 클라이언트는 행이 포함된 데이터 패킷을 스트리밍하고, 이어서 비어 있는 Data 마커를 보냅니다. 마지막으로 서버는 `EndOfStream` 또는 `Exception`으로 마무리합니다.
 
@@ -447,9 +413,7 @@ sequenceDiagram
 
 `EndOfStream` 또는 처리된 `Exception`이 발생하면 connection은 `READY` 상태로 돌아갑니다. 프로토콜 위반과 I/O 오류가 발생하면 connection이 종료됩니다.
 
-<div id="message-reference">
-  ## 메시지 참고
-</div>
+## 메시지 참고 {#message-reference}
 
 필드는 wire 순서대로 나열됩니다. `유형` 컬럼은 다음 의미로 사용합니다.
 
@@ -466,9 +430,7 @@ sequenceDiagram
 
 이 표는 패킷 유형 코드 다음에 오는 각 패킷의 본문만 설명합니다.
 
-<div id="clienthello">
-  ### ClientHello (패킷 유형 0)
-</div>
+### ClientHello (패킷 유형 0) {#clienthello}
 
 클라이언트 → 서버. TCP connection이 열린 후 전송되는 첫 번째 메시지입니다.
 
@@ -482,9 +444,7 @@ sequenceDiagram
 | 6 | user                 | String  | 공통 | 인증에 사용할 username입니다. 비어 있으면 서버의 기본 세션 사용자(`default_session_user` 서버 설정이며, 26.8 이전 서버에서는 거부됨)를 의미합니다. [인증](#authentication)을 참조하십시오. |
 | 7 | password             | String  | 공통 | 비밀번호(plaintext)                                                                                                                     |
 
-<div id="serverhello">
-  ### ServerHello (패킷 유형 0)
-</div>
+### ServerHello (패킷 유형 0) {#serverhello}
 
 Server → Client. 인증이 성공했을 때 ClientHello에 대한 응답입니다.
 
@@ -519,9 +479,7 @@ Server → Client. 인증이 성공했을 때 ClientHello에 대한 응답입니
   악의적이거나 잘못 구성된 서버에 대비해 자원 사용량을 제한하려면, 디코딩된 `count`는 최대 256개 항목으로 제한하고 각 `pattern` 및 `message` String은 최대 4096바이트로 제한하십시오. `count`가 `0`인 경우(뒤따르는 쌍이 없음)는 비밀번호 정책이 구성되지 않은 서버에서 일반적으로 나타나는 경우입니다.
 </Note>
 
-<div id="addendum">
-  ### Addendum (패킷 유형 없음)
-</div>
+### Addendum (패킷 유형 없음) {#addendum}
 
 클라이언트 → 서버이며, `ADDENDUM` (v54458)일 때만 사용됩니다. 핸드셰이크 교환이 완료된 직후 전송됩니다. 별도의 패킷 유형은 아니며, 필드는 패킷 유형 바이트 접두사 없이 wire에 원시 형태 그대로 기록됩니다.
 
@@ -534,21 +492,15 @@ Server → Client. 인증이 성공했을 때 ClientHello에 대한 응답입니
 
 청크 프레이밍 전환은 이 Addendum이 플러시된 *후에* 적용되며, Addendum 자체는 프레이밍되지 않습니다.
 
-<div id="ping">
-  ### Ping (패킷 유형 4)
-</div>
+### Ping (패킷 유형 4) {#ping}
 
 클라이언트 → 서버. 본문은 없으며, 패킷은 청크 프레이밍 전에는 단일 바이트 `0x04`로 구성됩니다. 청킹이 협상되면 이 바이트는 청크의 1바이트 payload가 됩니다([청크 프레이밍](#chunked-framing) 참조).
 
-<div id="pong">
-  ### Pong (패킷 유형 4)
-</div>
+### Pong (패킷 유형 4) {#pong}
 
 서버 → 클라이언트. 본문은 없으며, 청크 프레이밍이 적용되기 전에는 패킷이 단일 바이트 `0x04`입니다. 청크 사용이 협상되면 이 바이트는 청크의 1바이트 payload가 됩니다([청크 프레이밍](#chunked-framing) 참조).
 
-<div id="exception">
-  ### Exception (패킷 유형 2)
-</div>
+### Exception (패킷 유형 2) {#exception}
 
 서버 → 클라이언트. 서버에서 어느 단계에서든 오류가 발생하면 전송됩니다.
 
@@ -560,9 +512,7 @@ Server → Client. 인증이 성공했을 때 ClientHello에 대한 응답입니
 | 4 | stack&#95;trace           | String | 공통 | 서버 측 stack trace                                 |
 | 5 | has&#95;nested (obsolete) | Bool   | 공통 | 더 이상 사용되지 않는 호환성용 바이트입니다. 서버는 항상 `false`를 기록합니다. |
 
-<div id="query">
-  ### Query (패킷 유형 1)
-</div>
+### Query (패킷 유형 1) {#query}
 
 클라이언트 → 서버.
 
@@ -578,9 +528,7 @@ Server → Client. 인증이 성공했을 때 ClientHello에 대한 응답입니
 | 7  | query&#95;body     | String      | 공통    | always                                                    | SQL 텍스트                                                                                                                                                                                                                                                                 |
 | 8  | parameters         | Parameter[] | 클라이언트       | PARAMETERS (v54459)                                       | [Parameter](#parameter) 참조. 빈 키로 종료됩니다.                                                                                                                                                                                                                                 |
 
-<div id="clientinfo">
-  ### ClientInfo (Query에 포함됨)
-</div>
+### ClientInfo (Query에 포함됨) {#clientinfo}
 
 클라이언트 → 서버, Query 본문(field 2)에 포함됩니다. `CLIENT_INFO` (v54032)로 제어됩니다. (ClientInfo 내부의 일부 field는 아래에 각 field별로 명시된 것처럼 이후 버전에서 제어됩니다.)
 
@@ -637,9 +585,7 @@ If has_trace == 1:
   [UInt8:    trace_flags]       W3C trace flags
 ```
 
-<div id="inter-server-authentication">
-  ### 서버 간 인증
-</div>
+### 서버 간 인증 {#inter-server-authentication}
 
 Query 필드 4(`auth_hash`)는 wire 상에서 공유되는 클러스터 시크릿이 **아닙니다**. 원본 시크릿을 그대로 보내면 인증에 실패할 뿐 아니라 시크릿도 노출됩니다. 대신, 서버 간 클라이언트로 동작하는 서버는 솔트가 적용된 SHA-256 해시를 사용해 시크릿을 알고 있음을 증명합니다.
 
@@ -650,9 +596,7 @@ Query 필드 4(`auth_hash`)는 wire 상에서 공유되는 클러스터 시크�
 
 외부(비 서버 간) 클라이언트는 이 모드로 절대 진입하지 않으며 항상 빈 `auth_hash`를 보냅니다.
 
-<div id="setting">
-  ### 설정
-</div>
+### 설정 {#setting}
 
 Query 본문의 설정 목록([Query](#query) 패킷, field 3)에 인라인 인코딩됩니다. 이 목록은 협상된 버전과 관계없이 **항상 존재**하며, key가 빈 Setting으로 종료됩니다. 즉, 뒤에 flags나 value 없이 단일 `VarUInt 0`으로 끝납니다. 설정별 인코딩만 협상된 버전에 따라 달라지며, `SETTINGS_SERIALIZED_AS_STRINGS`(v54429)로 구분됩니다.
 
@@ -675,9 +619,7 @@ Query 본문의 설정 목록([Query](#query) 패킷, field 3)에 인라인 인�
 * `0x0c` — 독립적인 플래그가 아니라 **2-bit tier** field입니다: `0x00` = Production, `0x04` = Obsolete, `0x08` = Experimental, `0x0c` = Beta. 2비트 전체(`flags & 0x0c`)를 읽어야 합니다. 단순히 `flags & 0x04`로 검사하면 Beta(`0x0c`)를 Obsolete로 잘못 분류하게 됩니다.
 * `0x80` — **HotReload**(재시작 없이 구성 다시 로드, flags enum에 정의되어 있으며 주로 coordination settings에서 확인됨).
 
-<div id="parameter">
-  ### 매개변수
-</div>
+### 매개변수 {#parameter}
 
 `SELECT {x:UInt64}`와 같은 매개변수화된 쿼리에서 사용하는 쿼리 매개변수입니다. `Custom` 플래그(`0x02`)가 설정된 [Setting](#setting)과 동일한 방식으로 인코딩되며, 마찬가지로 빈 key로 종료됩니다.
 
@@ -691,9 +633,7 @@ Query 본문의 설정 목록([Query](#query) 패킷, field 3)에 인라인 인�
   매개변수 값은 원시 리터럴이 아니라 값의 SQL 표현입니다. String 유형 매개변수는 반드시 이미 작은따옴표로 감싼 상태로 전달해야 합니다(예: `{name:String}`의 값은 `Alice`가 아니라 `'Alice'`입니다). 그렇지 않으면 server의 값 parser가 이를 거부합니다.
 </Note>
 
-<div id="data">
-  ### 데이터 (패킷 유형 1 server→client, 패킷 유형 2 client→server)
-</div>
+### 데이터 (패킷 유형 1 server→client, 패킷 유형 2 client→server) {#data}
 
 양방향 모두에 사용됩니다. 결과 블록, INSERT 데이터, 외부 테이블, 그리고 데이터 종료 마커를 전달합니다.
 
@@ -714,9 +654,7 @@ wire 형식은 대칭적이며, 양방향 모두 Block 앞에 `table_name` 접�
 
 블록 변형과 각 의미는 [Block variants](/ko/reference/interfaces/specs/NativeFormat#block-variants)에 설명되어 있습니다.
 
-<div id="progress">
-  ### Progress (패킷 유형 3)
-</div>
+### Progress (패킷 유형 3) {#progress}
 
 서버 → 클라이언트. 쿼리 실행 중 주기적으로 전송됩니다. 모든 필드는 VarUInt이며, 각 패킷에는 **이전 `Progress` 패킷 이후의 증가분**이 담기며 누적 합계는 포함되지 않습니다. 전송 전에 서버는 카운터를 읽은 뒤 이를 원자적으로 0으로 재설정하고, 마지막 전송 이후의 시간 차이로 `elapsed_ns`를 계산합니다. 따라서 실행 중 합계를 얻으려면 클라이언트가 연속해서 도착하는 패킷을 로컬에서 **반드시 누적해야 합니다**. 패킷을 절대값으로 취급하면 패킷이 2개 이상 도착했을 때 진행률 표시가 뒤로 되돌아가거나 실제보다 적게 집계될 수 있습니다.
 
@@ -730,9 +668,7 @@ wire 형식은 대칭적이며, 양방향 모두 Block 앞에 `table_name` 접�
 | 6 | wrote&#95;bytes | VarUInt | universal | WRITE&#95;CLIENT&#95;INFO (v54420)                     | 이전 패킷 이후 기록된 바이트 수(INSERT용)이며, 누적해야 합니다                                                |
 | 7 | elapsed&#95;ns  | VarUInt | universal | SERVER&#95;QUERY&#95;TIME&#95;IN&#95;PROGRESS (v54460) | 이전 패킷 이후 경과한 나노초 수입니다(전체 쿼리 시간이 아니라 증가분). 누적해야 합니다                                     |
 
-<div id="profileinfo">
-  ### ProfileInfo (패킷 유형 6)
-</div>
+### ProfileInfo (패킷 유형 6) {#profileinfo}
 
 Server → Client. 각 쿼리마다 한 번씩, 실행이 끝날 무렵 전송됩니다.
 
@@ -747,9 +683,7 @@ Server → Client. 각 쿼리마다 한 번씩, 실행이 끝날 무렵 전송�
 | 7 | applied&#95;aggregation         | Bool    | universal | ROWS&#95;BEFORE&#95;AGGREGATION (v54469) | GROUP BY가 적용되었는지 여부                                                                                                                                                                                             |
 | 8 | rows&#95;before&#95;aggregation | VarUInt | universal | ROWS&#95;BEFORE&#95;AGGREGATION (v54469) | 집계 전 행 수                                                                                                                                                                                                        |
 
-<div id="totals">
-  ### 합계 (패킷 유형 7)
-</div>
+### 합계 (패킷 유형 7) {#totals}
 
 서버 → 클라이언트. `WITH TOTALS`가 포함된 쿼리에 대해 전송됩니다. wire 형식은 [데이터](#data)와 동일합니다. 즉, `table_name` 문자열(항상 비어 있음) 다음에 Block이 옵니다. 다른 점은 패킷 유형 바이트뿐입니다.
 
@@ -759,9 +693,7 @@ Server → Client. 각 쿼리마다 한 번씩, 실행이 끝날 무렵 전송�
 [Block]                     see the Native Format spec
 ```
 
-<div id="extremes">
-  ### 극값 (패킷 유형 8)
-</div>
+### 극값 (패킷 유형 8) {#extremes}
 
 서버 → 클라이언트. `extremes` 설정이 활성화되면 전송됩니다. wire 형식은 [데이터](#data)와 동일합니다. 이 블록에는 정확히 2개의 행이 있으며, 0번 행에는 각 컬럼의 최솟값이, 1번 행에는 최댓값이 들어 있습니다.
 
@@ -771,9 +703,7 @@ Server → Client. 각 쿼리마다 한 번씩, 실행이 끝날 무렵 전송�
 [Block]                     num_rows = 2
 ```
 
-<div id="log">
-  ### Log (패킷 유형 10)
-</div>
+### Log (패킷 유형 10) {#log}
 
 서버 → 클라이언트. 쿼리에 활성화된 로그 큐가 있을 때 전송됩니다(`send_logs_level` 설정, [로그 스트리밍](#log-streaming) 참조).
 
@@ -798,9 +728,7 @@ Server → Client. 각 쿼리마다 한 번씩, 실행이 끝날 무렵 전송�
 | 7 | source                          | String   | 로거 이름                                                   |
 | 8 | text                            | String   | 로그 메시지 텍스트                                              |
 
-<div id="profileevents">
-  ### ProfileEvents (패킷 유형 14)
-</div>
+### ProfileEvents (패킷 유형 14) {#profileevents}
 
 Server → Client. 쿼리별 성능 카운터를 전달합니다.
 
@@ -827,9 +755,7 @@ Server → Client. 쿼리별 성능 카운터를 전달합니다.
   `value` 컬럼의 타입은 패킷마다 고정되어 있지 않습니다 — 이전 서버는 `UInt64`를 내보내고, 최신 서버는 `Int64`를 내보냅니다. 하나의 비트 폭으로 단정하지 말고 블록 헤더에서 컬럼의 타입 문자열을 읽으십시오.
 </Note>
 
-<div id="tablecolumns">
-  ### TableColumns (패킷 유형 11)
-</div>
+### TableColumns (패킷 유형 11) {#tablecolumns}
 
 서버 → 클라이언트, `COLUMN_DEFAULTS_METADATA` (v54410) 조건에서만 전송됩니다. 서버는 컬럼 기본값 메타데이터를 전달하기 위해 `INSERT` 스키마 블록 앞에 이를 전송하지만, 협상된 버전이 54410 이상이고 **또한** `input_format_defaults_for_omitted_fields` 설정이 활성화된 경우에만 전송합니다. 54410 미만에서는 이 패킷이 전혀 전송되지 않으므로, 구버전 클라이언트는 이를 **기다리지 않아야 합니다** — 스키마 `Data` 블록이 바로 이어집니다. v54410+ 클라이언트는 어느 순서든 처리할 수 있어야 합니다. 즉, 선택적 `TableColumns` 다음에 스키마 블록이 올 수 있습니다.
 
@@ -844,9 +770,7 @@ Server → Client. 쿼리별 성능 카운터를 전달합니다.
   협상된 버전이 54481 이상(`COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS`)이면 서버는 **두** 필드를 동일한 선택적 압축 출력 경로를 통해 기록합니다. 따라서 쿼리에 `compression = true`가 설정된 경우 전체 `TableColumns` body(`external_table` + `columns_description`)가 [compression frame](/ko/reference/interfaces/specs/NativeFormat#compression-frame) 내부에 포함되며, 클라이언트는 이에 대응하는 압축 해제 스트림을 통해 이를 읽습니다. 쿼리에 압축이 없으면 body는 위 표와 정확히 동일한 형태로 압축되지 않은 채 wire에 기록됩니다. 이는 `INSERT` 스키마 응답에서 중요합니다. `Log`와 `ProfileEvents`에 대해서만 압축 처리를 전환하고 `TableColumns`에는 적용하지 않는 클라이언트는 쿼리 압축이 활성화된 경우 응답을 잘못 읽게 됩니다.
 </Info>
 
-<div id="timezoneupdate">
-  ### TimezoneUpdate (패킷 유형 17)
-</div>
+### TimezoneUpdate (패킷 유형 17) {#timezoneupdate}
 
 Server → Client, `TIMEZONE_UPDATES`(v54464)로 제어됩니다. 이 패킷은 정확히 한 곳에서만 전송됩니다. 바로 `input` 테이블 함수의 초기화기입니다(`INSERT INTO <table> SELECT ... FROM input('<structure>')` 형태의 쿼리로, 클라이언트에서 행을 스트리밍함). 서버가 입력 스키마 `Data` 블록을 보낸 직후([INSERT 단계](#insert-phase) 참조), 쿼리 Context의 현재 `session_timezone`을 담은 `TimezoneUpdate`를 전송하여 클라이언트가 곧 보낼 행을 동일한 시간대로 parse하도록 합니다. 서버는 쿼리 도중 임의로 수행된 `SET session_timezone` 변경에 대해서는 이 패킷을 전송하지 않으며, 이후 결과 블록을 어떤 형식으로 포맷해야 하는지 클라이언트에 알리기 위해서도 전송하지 않습니다.
 
@@ -856,9 +780,7 @@ Server → Client, `TIMEZONE_UPDATES`(v54464)로 제어됩니다. 이 패킷은 
 
 이 패킷은 입력 스키마 블록 바로 다음, 그리고 클라이언트가 행 블록 전송을 시작하기 전에 한 번 도착합니다. `TimezoneUpdate`를 무시하는 디코더도 wire 정렬을 유지하려면 뒤따르는 `String`은 반드시 소비해야 합니다.
 
-<div id="ssh-authentication">
-  ### SSH 챌린지-응답 인증(패킷 유형 11, 12, 18)
-</div>
+### SSH 챌린지-응답 인증(패킷 유형 11, 12, 18) {#ssh-authentication}
 
 `SSH_AUTHENTICATION`(v54466)으로 제어되며, 명시적으로 활성화한 경우에만 사용할 수 있습니다. ClientHello가 `user = " SSH KEY AUTHENTICATION " + <real_user>`(앞뒤 공백 포함)와 `password = ""`를 보내면 연결은 SSH 흐름으로 진입합니다. 서버는 접두사를 읽고 이를 제거해 실제 사용자를 복원한 다음 챌린지-응답 방식으로 전환합니다.
 
@@ -915,9 +837,7 @@ sequenceDiagram
 
 SSH 인증을 사용하지 않는 외부 클라이언트는 패킷 11, 12, 18을 전혀 보지 않습니다 — 사용자가 username 접두사를 통해 명시적으로 선택하지 않는 한, 이러한 패킷은 wire에 나타나지 않습니다.
 
-<div id="mergetreeallrangesannouncementresponse">
-  ### MergeTreeAllRangesAnnouncementResponse (패킷 유형 14)
-</div>
+### MergeTreeAllRangesAnnouncementResponse (패킷 유형 14) {#mergetreeallrangesannouncementresponse}
 
 클라이언트 → 서버, 서버 간 전용입니다. `parallel_replicas_protocol_version ≥ 8`일 때만 적용됩니다([VERSIONED&#95;PARALLEL&#95;REPLICAS&#95;PROTOCOL](#feature-table) 참조). 외부 클라이언트는 이 패킷을 전송하지 않습니다.
 
@@ -929,9 +849,7 @@ SSH 인증을 사용하지 않는 외부 클라이언트는 패킷 11, 12, 18을
 
 버전 `8` 미만에서는 mode와 관계없이 announcement가 fire-and-forget 방식으로 처리되며, 팔로워는 로컬에서 알고 있는 모든 파트에 대해 소스를 구성합니다(기존 방식).
 
-<div id="mergetreeallrangesannouncementresponse-body">
-  #### 본문
-</div>
+#### 본문 {#mergetreeallrangesannouncementresponse-body}
 
 | # | 필드            | 유형                                                            | 설명                                                                                                                                                                                                                                                                                                                                           |
 | - | ------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -939,18 +857,14 @@ SSH 인증을 사용하지 않는 외부 클라이언트는 패킷 11, 12, 18을
 | 2 | parts         | [RangesInDataPartsDescription](#rangesindatapartsdescription) | coordinator가 해당 announcement의 스트림에 대해 등록한 기준 파트 집합입니다. 빈 목록은 해당 스트림이 coordinator에 존재하지 않음을 의미합니다(예: 팔로워가 initiator가 생성한 split 수보다 더 많이 announcement한 경우). 이 경우 해당 스트림에 대한 팔로워의 풀은 즉시 완료 상태로 표시됩니다.                                                                                                                        |
 | 3 | stream&#95;id | String                                                        | 이 응답이 대한 announcement의 `stream_id`를 그대로 반환합니다(split 토폴로지를 사용하는 경우 테이블 이름에 `#split_i` suffix가 붙음).                                                                                                                                                                                                                                            |
 
-<div id="rangesindatapartsdescription">
-  #### RangesInDataPartsDescription 본문
-</div>
+#### RangesInDataPartsDescription 본문 {#rangesindatapartsdescription}
 
 | # | 필드    | 유형                                                                      | 설명                                                                               |
 | - | ----- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | 1 | count | VarUInt                                                                 | 뒤에 오는 파트 디스크립터의 개수입니다. `decoder`는 `100'000'000'000`을 초과하는 값을 잘못된 형식으로 판단해 거부합니다. |
 | 2 | parts | [RangesInDataPartDescription](#rangesindatapartdescription) `count`회 반복 | coordinator의 등록 순서에 따른 디스크립터입니다.                                                 |
 
-<div id="rangesindatapartdescription">
-  #### RangesInDataPartDescription 본문
-</div>
+#### RangesInDataPartDescription 본문 {#rangesindatapartdescription}
 
 | # | Field                          | 유형                                      | Gate                                                                 | Description                                                                  |
 | - | ------------------------------ | --------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
@@ -960,9 +874,7 @@ SSH 인증을 사용하지 않는 외부 클라이언트는 패킷 11, 12, 18을
 | 4 | projection&#95;name            | String                                  | `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION` (PR v5)         | 프라이머리 파트의 행에는 비어 있으며, 그 외에는 projection의 이름입니다.                               |
 | 5 | min&#95;marks&#95;per&#95;task | VarUInt                                 | `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK` (PR v6) | 이 파트에 대해 팔로워의 풀이 단일 읽기 작업으로 묶어 처리해야 하는 마크 수의 하한입니다.                          |
 
-<div id="mergetreepartinfo">
-  #### MergeTreePartInfo 본문
-</div>
+#### MergeTreePartInfo 본문 {#mergetreepartinfo}
 
 | # | 필드                               | 유형              | 설명                                                                        |
 | - | -------------------------------- | --------------- | ------------------------------------------------------------------------- |
@@ -974,44 +886,36 @@ SSH 인증을 사용하지 않는 외부 클라이언트는 패킷 11, 12, 18을
 | 6 | mutation                         | Int64 (리틀 엔디언)  | 이 파트를 생성한 mutation 버전입니다(mutation이 적용되지 않은 경우 `0`).                       |
 | 7 | use&#95;legacy&#95;max&#95;level | Bool (텍스트)      | 단일 ASCII 바이트(`'1'` 또는 `'0'`)로 인코딩되며, 파트 이름 포맷의 과거 호환성을 위한 플래그입니다.         |
 
-<div id="markranges">
-  #### MarkRanges 본문
-</div>
+#### MarkRanges 본문 {#markranges}
 
 | # | 필드     | 유형                                                  | 설명                                                                   |
 | - | ------ | --------------------------------------------------- | -------------------------------------------------------------------- |
 | 1 | size   | UInt64 (리틀 엔디언)                                     | 뒤에 오는 mark-range 쌍의 개수입니다. 참고: 리틀 엔디언 고정 길이 형식이며, VarUInt가 **아닙니다**. |
 | 2 | ranges | 각각 리틀 엔디언인 `(UInt64 begin, UInt64 end)`를 `size`회 반복 | 반열린 `[begin, end)` mark 범위입니다.                                       |
 
-<div id="packet-type-reference">
-  ## 패킷 유형 참고
-</div>
+## 패킷 유형 참고 {#packet-type-reference}
 
-<div id="client-to-server">
-  ### 클라이언트 → 서버
-</div>
+### 클라이언트 → 서버 {#client-to-server}
 
-| Code | Name                                   | Body format                                                                       | Description                                                                                                                                                                                                                               |
-| ---- | -------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | Hello                                  | [ClientHello](#clienthello)                                                       | 핸드셰이크 시작                                                                                                                                                                                                                                  |
-| 1    | Query                                  | [Query](#query)                                                                   | 쿼리 실행 요청                                                                                                                                                                                                                                  |
-| 2    | Data                                   | [Data](#data)                                                                     | 데이터 블록 (INSERT 데이터, 외부 테이블(external table), 데이터 종료 마커)                                                                                                                                                                                    |
-| 3    | Cancel                                 | (본문 없음)                                                                           | 실행 중인 쿼리 취소                                                                                                                                                                                                                               |
-| 4    | Ping                                   | [Ping](#ping)                                                                     | 연결 상태 확인                                                                                                                                                                                                                                  |
-| 5    | TablesStatusRequest                    | 지정되지 않음                                                                           | 테이블 상태 확인                                                                                                                                                                                                                                 |
-| 6    | KeepAlive                              | 지정되지 않음                                                                           | 연결 keepalive                                                                                                                                                                                                                              |
-| 7    | Scalar                                 | 지정되지 않음                                                                           | 스칼라 데이터 블록                                                                                                                                                                                                                                |
-| 8    | IgnoredPartUUIDs                       | 지정되지 않음                                                                           | 쿼리에서 제외할 파트                                                                                                                                                                                                                               |
-| 9    | ReadTaskResponse                       | 지정되지 않음                                                                           | S3 cluster 읽기 응답                                                                                                                                                                                                                          |
-| 10   | MergeTreeReadTaskResponse              | 지정되지 않음                                                                           | 병렬 읽기 작업 응답                                                                                                                                                                                                                               |
-| 11   | SSHChallengeRequest                    | [SSH 인증](#ssh-authentication)                                                   | SSH 인증 챌린지 요청                                                                                                                                                                                                                           |
-| 12   | SSHChallengeResponse                   | [SSH 인증](#ssh-authentication)                                                   | SSH 인증 챌린지 응답                                                                                                                                                                                                                           |
-| 13   | QueryPlan                              | 지정되지 않음                                                                           | 쿼리 계획                                                                                                                                                                                                                                     |
+| Code | Name                                   | 본문 포맷                                                                       | Description                                                                                                                                                                                                                            |
+| ---- | -------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | Hello                                  | [ClientHello](#clienthello)                                                       | 핸드셰이크 시작                                                                                                                                                                                                                               |
+| 1    | Query                                  | [Query](#query)                                                                   | 쿼리 실행 요청                                                                                                                                                                                                                               |
+| 2    | Data                                   | [Data](#data)                                                                     | 데이터 블록 (INSERT 데이터, 외부 테이블(external table), 데이터 종료 마커)                                                                                                                                                                                 |
+| 3    | Cancel                                 | (본문 없음)                                                                           | 실행 중인 쿼리 취소                                                                                                                                                                                                                            |
+| 4    | Ping                                   | [Ping](#ping)                                                                     | 연결 상태 확인                                                                                                                                                                                                                               |
+| 5    | TablesStatusRequest                    | 지정되지 않음                                                                           | 테이블 상태 확인                                                                                                                                                                                                                              |
+| 6    | KeepAlive                              | 지정되지 않음                                                                           | 연결 keepalive                                                                                                                                                                                                                           |
+| 7    | Scalar                                 | 지정되지 않음                                                                           | 스칼라 데이터 블록                                                                                                                                                                                                                             |
+| 8    | IgnoredPartUUIDs                       | 지정되지 않음                                                                           | 쿼리에서 제외할 파트                                                                                                                                                                                                                            |
+| 9    | ReadTaskResponse                       | 지정되지 않음                                                                           | S3 cluster 읽기 응답                                                                                                                                                                                                                       |
+| 10   | MergeTreeReadTaskResponse              | 지정되지 않음                                                                           | 병렬 읽기 작업 응답                                                                                                                                                                                                                            |
+| 11   | SSHChallengeRequest                    | [SSH 인증](#ssh-authentication)                                                     | SSH 인증 챌린지 요청                                                                                                                                                                                                                          |
+| 12   | SSHChallengeResponse                   | [SSH 인증](#ssh-authentication)                                                     | SSH 인증 챌린지 응답                                                                                                                                                                                                                          |
+| 13   | QueryPlan                              | [QueryPlan](#queryplan)                                                           | 쿼리 계획                                                                                                                                                                                                                                  |
 | 14   | MergeTreeAllRangesAnnouncementResponse | [MergeTreeAllRangesAnnouncementResponse](#mergetreeallrangesannouncementresponse) | 팔로워의 [`MergeTreeAllRangesAnnouncement`](#packet-type-reference)에 대한 이니시에이터의 응답(`parallel_replicas_protocol_version ≥ 8`에서만 사용 — [VERSIONED&#95;PARALLEL&#95;REPLICAS&#95;PROTOCOL](#feature-table) 참고). 서버 간 전용이며 외부 클라이언트는 전송하지 않습니다. |
 
-<div id="server-to-client">
-  ### 서버 → 클라이언트
-</div>
+### 서버 → 클라이언트 {#server-to-client}
 
 | 코드 | 이름                             | 본문 포맷                             | 설명                     |
 | -- | ------------------------------ | --------------------------------- | ---------------------- |
@@ -1035,9 +939,20 @@ SSH 인증을 사용하지 않는 외부 클라이언트는 패킷 11, 12, 18을
 | 17 | TimezoneUpdate                 | [TimezoneUpdate](#timezoneupdate) | 서버 시간대 업데이트            |
 | 18 | SSHChallenge                   | [SSH 인증](#ssh-authentication)     | SSH 인증 챌린지             |
 
-<div id="configuration">
-  ## 구성
-</div>
+### QueryPlan {#queryplan}
+
+`QueryPlan`은 서버 간 통신에만 사용되는 클라이언트 패킷입니다. `stage`가 `QueryPlan` (`7`)인 [`Query`](#query) 다음에 오며, 직렬화된 계획 스트림 1개를 포함합니다.
+
+| # | 필드                        | 유형                | 게이트           | 설명                                                                                      |
+| - | ------------------------- | ----------------- | ------------- | --------------------------------------------------------------------------------------- |
+| 1 | serialization&#95;version | VarUInt           | 공통            | 쿼리 계획 직렬화 버전입니다. `ServerHello`에서 수신기가 알린 `query_plan_serialization_version`보다 클 수 없습니다. |
+| 2 | max&#95;threads           | VarUInt           | 직렬화 버전 ≥ `10` | 계획 수준의 스레드 제한입니다. `0`은 계획별 제한이 없음을 의미합니다.                                               |
+| 3 | concurrency&#95;control   | Bool              | 직렬화 버전 ≥ `10` | 계획이 동시성 제어에 참여하는지 여부입니다.                                                                |
+| 4 | plan                      | 버전이 지정된 쿼리 계획 스트림 | 공통            | 직렬화된 계획 트리, 단계 설정, 헤더 및 준비된 Set입니다. 내부 레이아웃은 쿼리 계획 직렬화 버전에 따라 결정됩니다.                    |
+
+버전 `10` 이전에는 필드 2와 3이 없습니다. 기본값이 아닌 실행 제한이 하나라도 있는 시작자는 이 이전 레이아웃을 전송해서는 안 됩니다. 대신 원본 SQL 쿼리를 전송하여 이전 수신기가 쿼리 설정에서 제한을 재구성하도록 합니다.
+
+## 구성 {#configuration}
 
 이 섹션에서는 네이티브 프로토콜 연결의 동작을 좌우하는 조정 가능한 설정을 설명합니다:
 
@@ -1047,13 +962,9 @@ SSH 인증을 사용하지 않는 외부 클라이언트는 패킷 11, 12, 18을
 
 아래 기본값은 최신 서버 release를 반영한 것이며, 버전과 배포에 따라 다를 수 있습니다.
 
-<div id="transport-layer-settings">
-  ### 전송 계층 설정
-</div>
+### 전송 계층 설정 {#transport-layer-settings}
 
-<div id="socket-options">
-  #### 소켓 옵션
-</div>
+#### 소켓 옵션 {#socket-options}
 
 | Option                    | Default                 | Side | Description                                                                                            |
 | ------------------------- | ----------------------- | ---- | ------------------------------------------------------------------------------------------------------ |
@@ -1061,9 +972,7 @@ SSH 인증을 사용하지 않는 외부 클라이언트는 패킷 11, 12, 18을
 | `SO_KEEPALIVE`            | 켜짐 (클라이언트), OS 기본값 (서버) | 비대칭  | 커널 수준의 TCP keepalive 프로브입니다. `tcp_keep_alive_timeout > 0`일 때 클라이언트가 이를 명시적으로 활성화합니다. 서버는 OS 기본값을 따릅니다. |
 | `SO_RCVBUF` / `SO_SNDBUF` | OS 기본값                  | —    | 소켓 버퍼 크기입니다. protocol에서 별도로 조정하지 않습니다.                                                                 |
 
-<div id="timeouts">
-  #### 타임아웃
-</div>
+#### 타임아웃 {#timeouts}
 
 | Setting                                   | Default | Unit | Side  | Description                                      |
 | ----------------------------------------- | ------- | ---- | ----- | ------------------------------------------------ |
@@ -1089,9 +998,7 @@ tcp_keep_alive_timeout (290s)
 
 OS keepalive가 먼저 동작하며, 커널 수준에서 응답이 없는 피어를 조용히 감지할 수 있습니다. 애플리케이션의 receive timeout은 그다음 방어선입니다. idle timeout은 오랫동안 사용되지 않은 연결을 정리하는 최후의 수단입니다.
 
-<div id="connection-limits">
-  #### 연결 제한
-</div>
+#### 연결 제한 {#connection-limits}
 
 | 설정                                           | 기본값     | 단위 | 측  | 설명                                   |
 | -------------------------------------------- | ------- | -- | -- | ------------------------------------ |
@@ -1102,26 +1009,20 @@ OS keepalive가 먼저 동작하며, 커널 수준에서 응답이 없는 피어
 
 정기적으로 쿼리를 실행하는 연결은 무기한 유지될 수 있습니다. 1시간 후 정리되는 것은 유휴 연결뿐이며, 기본 최대 연결 유지 시간은 없습니다.
 
-<div id="application-layer-settings">
-  ### 애플리케이션 계층 설정
-</div>
+### 애플리케이션 계층 설정 {#application-layer-settings}
 
 이 설정은 [Query 패킷의 설정 목록](#setting)을 통해 쿼리별로 전달됩니다. 이 설정은 서버가 wire로 전송하는 내용이나 해당 데이터의 프레이밍 방식을 변경합니다.
 
-<div id="compression-settings">
-  #### 압축
-</div>
+#### 압축 {#compression-settings}
 
-| 설정                               | 기본값     | 단위   | 설명                                                                                            |
-| -------------------------------- | ------- | ---- | --------------------------------------------------------------------------------------------- |
-| `network_compression_method`     | `"LZ4"` | 문자열  | Query 패킷의 `compression` 플래그가 설정된 경우 사용하는 압축 코덱입니다. 값: `"LZ4"`, `"LZ4HC"`, `"ZSTD"`, `"NONE"`. |
-| `network_zstd_compression_level` | 1       | 1–15 | `network_compression_method == "ZSTD"`일 때의 ZSTD 수준입니다.                                        |
+| 설정                               | 기본값      | 단위   | 설명                                                                                            |
+| -------------------------------- | -------- | ---- | --------------------------------------------------------------------------------------------- |
+| `network_compression_method`     | `"ZSTD"` | 문자열  | Query 패킷의 `compression` 플래그가 설정된 경우 사용하는 압축 코덱입니다. 값: `"LZ4"`, `"LZ4HC"`, `"ZSTD"`, `"NONE"`. |
+| `network_zstd_compression_level` | 3        | 1–15 | `network_compression_method == "ZSTD"`일 때의 ZSTD 수준입니다.                                        |
 
-[쿼리 패킷](#query)의 `compression` 플래그(필드 6)는 압축을 켜거나 끄며, 이 설정은 압축이 켜져 있을 때 사용할 코덱을 선택합니다.
+[Query 패킷](#query)의 `compression` 플래그(필드 6)는 압축을 켜거나 끄며, 이 설정은 압축이 켜져 있을 때 사용할 코덱을 선택합니다.
 
-<div id="log-streaming">
-  #### 로그 스트리밍
-</div>
+#### 로그 스트리밍 {#log-streaming}
 
 | 설정                        | 기본값       | 단위     | 설명                                                                                                            |
 | ------------------------- | --------- | ------ | ------------------------------------------------------------------------------------------------------------- |
@@ -1130,9 +1031,7 @@ OS keepalive가 먼저 동작하며, 커널 수준에서 응답이 없는 피어
 
 `send_logs_level`을 `"none"` 이외의 값으로 설정하면 서버가 쿼리 실행 중 [Log](#log) 패킷을 전송합니다.
 
-<div id="progress-reporting">
-  #### Progress 보고
-</div>
+#### Progress 보고 {#progress-reporting}
 
 | Setting             | Default | Unit         | Description                       |
 | ------------------- | ------- | ------------ | --------------------------------- |
@@ -1140,9 +1039,7 @@ OS keepalive가 먼저 동작하며, 커널 수준에서 응답이 없는 피어
 
 이는 엄격한 최대값이 아니라 목표 최소값입니다. 쿼리가 충분히 빠르게 처리되지 않으면 서버가 Progress 패킷을 이보다 덜 자주 보낼 수 있습니다.
 
-<div id="result-envelope">
-  #### 결과 엔벌로프
-</div>
+#### 결과 엔벌로프 {#result-envelope}
 
 | Setting                | Default       | Unit               | Description                                                                       |
 | ---------------------- | ------------- | ------------------ | --------------------------------------------------------------------------------- |
@@ -1151,9 +1048,7 @@ OS keepalive가 먼저 동작하며, 커널 수준에서 응답이 없는 피어
 | `max_result_bytes`     | 0 (unlimited) | uncompressed bytes | 전송되는 비압축 바이트 양 제한입니다. 동작은 `result_overflow_mode`로 제어됩니다.                          |
 | `result_overflow_mode` | `"throw"`     | string             | `"throw"`는 Exception을 발생시키며 스트림을 종료하고, `"break"`는 부분 결과를 전송한 뒤 EndOfStream을 보냅니다. |
 
-<div id="async-insert">
-  #### 비동기 INSERT
-</div>
+#### 비동기 INSERT {#async-insert}
 
 | Setting                         | Default | Unit    | Description                                                         |
 | ------------------------------- | ------- | ------- | ------------------------------------------------------------------- |
@@ -1161,17 +1056,13 @@ OS keepalive가 먼저 동작하며, 커널 수준에서 응답이 없는 피어
 | `wait_for_async_insert`         | true    | bool    | true이면 (`async_insert`가 활성화된 경우) 서버는 큐에 있는 데이터가 플러시될 때까지 응답을 보류합니다. |
 | `wait_for_async_insert_timeout` | 120     | seconds | 서버가 반환하기 전에 플러시를 기다리는 최대 시간입니다.                                     |
 
-<div id="distributed-tracing">
-  #### 분산 추적
-</div>
+#### 분산 추적 {#distributed-tracing}
 
 | 설정                                      | 기본값 | 단위     | 설명                                            |
 | --------------------------------------- | --- | ------ | --------------------------------------------- |
 | `opentelemetry_start_trace_probability` | 0.0 | 0–1 확률 | 응답 텔레메트리에 OpenTelemetry 컨텍스트를 연결할 서버 측 확률입니다. |
 
-<div id="settings-out-of-scope">
-  ### 범위 밖의 설정
-</div>
+### 범위 밖의 설정 {#settings-out-of-scope}
 
 이러한 설정은 때때로 프로토콜 수준 설정으로 오해되지만, `wire` 동작이 아니라 SQL 실행, 스토리지 또는 CPU 사용을 제어합니다. 프로토콜 구현에서 이를 특별히 처리할 필요는 없습니다.
 
@@ -1184,9 +1075,7 @@ OS keepalive가 먼저 동작하며, 커널 수준에서 응답이 없는 피어
 
 `*_native_*` 설정은 예외입니다. 이 설정은 네이티브 TCP `Data` 블록 내부의 바이트를 변경하므로, 프로토콜 구현에서 이를 반영해야 합니다. `output_format_native_encode_types_in_binary_format`은 컬럼 `type` 필드를 텍스트 문자열에서 바이너리 타입 인코딩으로 전환하고, `output_format_native_write_json_as_string`은 `JSON` 컬럼을 `String`으로 내보내며, `output_format_native_use_flattened_dynamic_and_json_serialization`은 FLATTENED `Dynamic`/`JSON` 레이아웃을 선택합니다. 이러한 설정은 패킷 엔벌로프가 아니라 블록 본문에 영향을 주므로, [Native 형식](/ko/reference/interfaces/specs/NativeFormat) 사양에 정의되어 있습니다. 자세한 내용은 [컬럼 wire 레이아웃](/ko/reference/interfaces/specs/NativeFormat#column-wire-layout) 및 [버전 지정 타입](/ko/reference/interfaces/specs/NativeFormat#versioned-types)을 참조하십시오.
 
-<div id="glossary">
-  ## 용어집
-</div>
+## 용어집 {#glossary}
 
 **Cancel** — 실행 중인 쿼리를 중단하는 클라이언트 시작 패킷(유형 3)입니다. 이 페이지에서는 자세히 설명하지 않습니다.
 

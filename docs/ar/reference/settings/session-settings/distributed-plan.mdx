@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="distributed_plan_default_reader_bucket_count">
-  ## distributed_plan_default_reader_bucket_count
-</div>
+## distributed_plan_default_reader_bucket_count {#distributed_plan_default_reader_bucket_count}
 
 <ExperimentalBadge />
 
@@ -27,9 +25,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 العدد الافتراضي للمهام اللازمة للقراءة المتوازية في استعلام موزّع. تُوزَّع المهام عبر النسخ المتماثلة.
 يستخدم المخطِّط الموزّع القائم على القواعد هذا الإعداد. ويختار محسن قائم على التكلفة مدى التوزيع للقراءة استنادًا إلى التكلفة المقدّرة، ولا يستخدم هذا الإعداد.
 
-<div id="distributed_plan_default_shuffle_join_bucket_count">
-  ## distributed_plan_default_shuffle_join_bucket_count
-</div>
+## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
 
 <ExperimentalBadge />
 
@@ -40,9 +36,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 العدد الافتراضي للحاويات لعملية distributed shuffle-hash-join.
 يستخدمه مخطط موزع قائم على القواعد. يحدد المُحسِّن القائم على التكلفة درجة التشعّب بناءً على التكلفة المقدّرة، ولا يستخدم هذا الإعداد.
 
-<div id="distributed_plan_execute_locally">
-  ## distributed_plan_execute_locally
-</div>
+## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
 <ExperimentalBadge />
 
@@ -52,9 +46,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 شغّل جميع مهام خطة الاستعلام الموزعة محليًا. هذا مفيد للاختبار وتصحيح الأخطاء.
 
-<div id="distributed_plan_force_exchange_kind">
-  ## distributed_plan_force_exchange_kind
-</div>
+## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
 
 <ExperimentalBadge />
 
@@ -68,9 +60,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * &#39;Persisted&#39; - استخدم ملفات مؤقتة في تخزين الكائنات،
 * &#39;Streaming&#39; - بثّ بيانات exchange عبر الشبكة.
 
-<div id="distributed_plan_force_shuffle_aggregation">
-  ## distributed_plan_force_shuffle_aggregation
-</div>
+## distributed_plan_force_shuffle_aggregation {#distributed_plan_force_shuffle_aggregation}
 
 <ExperimentalBadge />
 
@@ -80,9 +70,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 استخدم استراتيجية تجميع Shuffle بدلًا من PartialAggregation + Merge ضمن خطة الاستعلام الموزعة.
 
-<div id="distributed_plan_max_rows_to_broadcast">
-  ## distributed_plan_max_rows_to_broadcast
-</div>
+## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
 
 <ExperimentalBadge />
 
@@ -93,9 +81,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 الحد الأقصى لعدد الصفوف لاستخدام broadcast join بدلًا من shuffle join ضمن خطة الاستعلام الموزعة.
 آلية استدلالية للمخطط الموزع القائم على القواعد. عند تمكين المُحسِّن القائم على التكلفة، يُحدَّد الاختيار بين broadcast وshuffle بناءً على التكلفة المقدّرة، ولا يكون لهذا الإعداد أي تأثير.
 
-<div id="distributed_plan_optimize_exchanges">
-  ## distributed_plan_optimize_exchanges
-</div>
+## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -103,9 +89,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يزيل عمليات التبادل غير الضرورية في خطة الاستعلام الموزعة. عطِّله لأغراض تصحيح الأخطاء.
 
-<div id="distributed_plan_prefer_replicas_over_workers">
-  ## distributed_plan_prefer_replicas_over_workers
-</div>
+## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
 
 <ExperimentalBadge />
 
@@ -115,9 +99,22 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يُجري تسلسلًا لخطة الاستعلام الموزعة لتنفيذها على النسخ المتماثلة.
 
-<div id="distributed_plan_workers_num">
-  ## distributed_plan_workers_num
-</div>
+## distributed_plan_read_in_order {#distributed_plan_read_in_order}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لتفعيل تحسين القراءة بالترتيب لـ `ORDER BY` في خطة استعلام موزعة، بحيث تتجاوز القراءة المرتبة لمفتاح فرز الجدول عملية الفرز وتتوقف مبكرًا. يكون معطّلًا افتراضيًا: لا تكون آمنة حاليًا إلا البنى التي لا يبقى فيها أي تبادل بين القراءة والفرز."}]}]} />
+
+يتيح تحسين القراءة بالترتيب لـ `ORDER BY` في خطة استعلام موزعة، بحيث تتجاوز القراءة المرتبة لمفتاح فرز
+الجدول عملية الفرز وتتوقف مبكرًا بدلًا من الفحص والفرز.
+
+يكون معطّلًا افتراضيًا: إذ تفترض إعادة الكتابة التي توزّع عملية الفرز أن عملية الفرز التي تغلّفها لا تعتمد على كون
+مدخلاتها مرتبة مسبقًا، وقد تُغذّى عملية فرز تعتمد على ذلك بصفوف تمر عبر تبادل لا يحافظ على الترتيب. لا تكون
+آمنة حاليًا إلا البنى التي لا يبقى فيها أي تبادل بين القراءة والفرز.
+
+## distributed_plan_workers_num {#distributed_plan_workers_num}
 
 <ExperimentalBadge />
 
@@ -127,9 +124,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 عدد العمّال عديمي الحالة الذين سيُستخدمون لتنفيذ هذا الاستعلام. تؤدي القيمة صفر إلى تعطيل تخصيص العمّال عديمي الحالة لخطط التنفيذ الموزعة.
 
-<div id="distributed_plan_workers_provisioning_timeout_ms">
-  ## distributed_plan_workers_provisioning_timeout_ms
-</div>
+## distributed_plan_workers_provisioning_timeout_ms {#distributed_plan_workers_provisioning_timeout_ms}
 
 <ExperimentalBadge />
 

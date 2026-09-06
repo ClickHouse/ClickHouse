@@ -7,13 +7,9 @@ title: '高度なデータ挿入'
 doc_type: 'reference'
 ---
 
-<div id="inserting-data-with-clickhouse-connect--advanced-usage">
-  ## ClickHouse Connectを使ったデータの挿入: 高度な使い方
-</div>
+## ClickHouse Connectを使ったデータの挿入: 高度な使い方 {#inserting-data-with-clickhouse-connect--advanced-usage}
 
-<div id="insertcontexts">
-  ### InsertContexts
-</div>
+### InsertContexts {#insertcontexts}
 
 ClickHouse Connect は、Native-format の挿入である `insert` および `insert_df` メソッドを、`InsertContext` 内で実行します。`insert_arrow`、`insert_df_arrow`、`raw_insert` の各メソッドはペイロードを直接送信するため、これを使用しません。`InsertContext` には、クライアントの `insert` メソッドに引数として渡すすべての値が含まれます。さらに、`InsertContext` の初回作成時には、効率的な Native format での挿入に必要な対象カラムのデータ型を ClickHouse Connect が取得します。複数回の挿入で `InsertContext` を再利用すると、この&quot;事前クエリ&quot;を省略できるため、挿入をより高速かつ効率的に実行できます。
 
@@ -35,50 +31,47 @@ assert qr.first_row[0] == 113
 
 `InsertContext`には、挿入処理中に更新される可変状態が含まれているため、スレッドセーフではありません。
 
-<div id="write-formats">
-  ### 書き込みフォーマット
-</div>
+### 書き込みフォーマット {#write-formats}
 
 書き込みフォーマットは、一部の型に対してのみ実装されています。ほとんどの場合、ClickHouse Connect はカラムの最初の非 NULL 値に基づいて、適切な書き込みフォーマットを自動的に判定します。たとえば、`DateTime` カラムの最初の値が整数であれば、クライアントはそれをエポック秒として扱います。
 
 通常、書き込みフォーマットを上書きする必要はありませんが、`clickhouse_connect.datatypes.format` のメソッドを使うとグローバルに設定できます。`Array`、`Nullable`、`LowCardinality` などのコンテナーラッパーは、要素型のフォーマット動作を保持します。
 
-<div id="write-format-options">
-  #### 書き込みフォーマットのオプション
-</div>
+#### 書き込みフォーマットのオプション {#write-format-options}
 
-| ClickHouse Type       | Native Python Type      | 書き込みフォーマット     | Comments                                                                                                           |
-| --------------------- | ----------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Int[8-64], UInt[8-32] | int                     |                   |                                                                                                                    |
-| UInt64                | int                     |                   |                                                                                                                    |
-| [U]Int[128,256]       | int                     |                   |                                                                                                                    |
-| BFloat16              | float                   |                   |                                                                                                                    |
-| Float32               | float                   |                   |                                                                                                                    |
-| Float64               | float                   |                   |                                                                                                                    |
-| Decimal               | decimal.Decimal         |                   |                                                                                                                    |
-| String                | str or bytes            |                   | 1つのカラムには、テキストまたはバイト列のいずれか一方だけを一貫して含める必要があります。                                                                      |
-| FixedString           | bytes                   | string            | 文字列値はゼロバイトで埋められます。空のバイト列はすべてゼロバイトとして書き込まれます。                                                                       |
-| Enum[8,16]            | str or int              |                   | ラベルは文字列、または対応する整数値として挿入します。                                                                                        |
-| Date                  | datetime.date           | int               | 整数値は、1970-01-01 からの日数として解釈されます。                                                                                    |
-| Date32                | datetime.date           | int               | 整数値は、符号付きの日オフセットとして解釈されます。                                                                                         |
-| DateTime              | datetime.datetime       | int               | 整数値は、エポック秒として解釈されます。                                                                                               |
-| DateTime64            | datetime.datetime       | int               | 整数値は、カラムの精度におけるティックとして解釈されます。                                                                                      |
-| Time                  | datetime.timedelta      | int, string, time | 整数値は、秒として解釈されます。                                                                                                   |
-| Time64                | datetime.timedelta      | int, string, time | 整数値は、カラムの精度におけるティックとして解釈されます。                                                                                      |
-| IPv4                  | `ipaddress.IPv4Address` | string            | 正しい形式の文字列は IPv4 アドレスとして挿入できます                                                                                      |
-| IPv6                  | `ipaddress.IPv6Address` | string            | 正しい形式の文字列は IPv6 アドレスとして挿入できます                                                                                      |
-| Tuple                 | dict or tuple           |                   |                                                                                                                    |
-| Map                   | dict                    |                   |                                                                                                                    |
-| Nested                | Sequence[dict]          |                   |                                                                                                                    |
-| UUID                  | uuid.UUID               | string            | 正しい形式の文字列は ClickHouse UUID として挿入できます                                                                               |
-| JSON                  | dict                    | string            | 辞書および JSONオブジェクト文字列がサポートされます。従来の `Object('json')` 型はサポートされていません。                                                   |
-| Variant               | object                  |                   | 値には各メンバー型のネイティブなシリアライゼーションが使用されます。Python の型が曖昧な場合は `clickhouse_connect.datatypes.dynamic.typed_variant` を使用してください。 |
-| Dynamic               | object                  |                   | 値は現在、String 表現を介して挿入されます。                                                                                          |
-| QBit                  | Sequence[float]         |                   | インストールされている場合、より高速なビット転置のために NumPy が自動的に使用されます。                                                                    |
+| ClickHouse Type       | Native Python Type      | 書き込みフォーマット        | Comments                                                                                                                                    |
+| --------------------- | ----------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Int[8-64], UInt[8-32] | int                     |                   |                                                                                                                                             |
+| UInt64                | int                     |                   |                                                                                                                                             |
+| [U]Int[128,256]       | int                     |                   |                                                                                                                                             |
+| BFloat16              | float                   |                   |                                                                                                                                             |
+| Float32               | float                   |                   |                                                                                                                                             |
+| Float64               | float                   |                   |                                                                                                                                             |
+| Decimal               | decimal.Decimal         |                   |                                                                                                                                             |
+| Interval*             | int                     |                   | 値は、そのインターバル型の単位における符号付き64ビットのカウントです。                                                                                                        |
+| String                | str or bytes            |                   | 1つのカラムには、テキストまたはバイト列のいずれか一方だけを一貫して含める必要があります。                                                                                               |
+| FixedString           | bytes                   | string            | 文字列値はゼロバイトで埋められます。空のバイト列はすべてゼロバイトとして書き込まれます。                                                                                                |
+| Enum[8,16]            | str or int              |                   | ラベルは文字列、または対応する整数値として挿入します。                                                                                                                 |
+| Date                  | datetime.date           | int               | 整数値は、1970-01-01 からの日数として解釈されます。                                                                                                             |
+| Date32                | datetime.date           | int               | 整数値は、符号付きの日オフセットとして解釈されます。                                                                                                                  |
+| DateTime              | datetime.datetime       | int               | 整数値は、エポック秒として解釈されます。                                                                                                                        |
+| DateTime64            | datetime.datetime       | int               | 整数値は、カラムの精度におけるティックとして解釈されます。                                                                                                               |
+| Time                  | datetime.timedelta      | int, string, time | 整数値は、秒として解釈されます。                                                                                                                            |
+| Time64                | datetime.timedelta      | int, string, time | スケール 0 から 9 までがサポートされます。整数値は、カラムの精度におけるティックとして解釈されます。NumPy の timedelta 値および DataFrame からの挿入は、すべてのスケールで動作します。Python の time 型はマイクロ秒までに制限されます。 |
+| IPv4                  | `ipaddress.IPv4Address` | string            | 正しい形式の文字列は IPv4 アドレスとして挿入できます                                                                                                               |
+| IPv6                  | `ipaddress.IPv6Address` | string            | 正しい形式の文字列は IPv6 アドレスとして挿入できます                                                                                                               |
+| Tuple                 | dict or tuple           |                   | `Tuple()` には `()` を使用します。                                                                                                                   |
+| Map                   | dict                    |                   |                                                                                                                                             |
+| Nested                | Sequence[dict]          |                   |                                                                                                                                             |
+| UUID                  | uuid.UUID               | string            | 正しい形式の文字列は ClickHouse UUID として挿入できます                                                                                                        |
+| JSON                  | dict                    | string            | 辞書および JSONオブジェクト文字列がサポートされます。従来の `Object('json')` 型はサポートされていません。                                                                            |
+| Variant               | object                  |                   | 値には各メンバー型のネイティブなシリアライゼーションが使用されます。Python の型が曖昧な場合は `clickhouse_connect.datatypes.dynamic.typed_variant` を使用してください。                          |
+| Dynamic               | object                  |                   | 値は現在、String 表現を介して挿入されます。                                                                                                                   |
+| MultiPoint            | Sequence[tuple]         |                   | 各ポイントは2要素のタプルです。MultiPoint 値の挿入には ClickHouse 26.8 以降が必要です。                                                                                  |
+| Geometry              | tuple or list           |                   | Point の値は2要素のタプルです。MultiPoint を含むリストベースの値は、ジオメトリのメンバーを選択するために `typed_variant` でラップしてください。                                                   |
+| QBit                  | Sequence[float]         |                   | インストールされている場合、より高速なビット転置のために NumPy が自動的に使用されます。                                                                                             |
 
-<div id="specialized-insert-methods">
-  ### 専用の 挿入 メソッド
-</div>
+### 専用の 挿入 メソッド {#specialized-insert-methods}
 
 ClickHouse Connect では、一般的なデータフォーマット向けに専用の 挿入 メソッドが用意されています。
 
@@ -92,9 +85,7 @@ ClickHouse Connect では、一般的なデータフォーマット向けに専�
   NumPy 配列は有効な Sequence の Sequence であり、メインの `insert` メソッドの `data` 引数として使用できるため、専用メソッドは必要ありません。
 </Note>
 
-<div id="pandas-dataframe-insert">
-  #### Pandas DataFrame の挿入
-</div>
+#### Pandas DataFrame の挿入 {#pandas-dataframe-insert}
 
 ```python
 import clickhouse_connect
@@ -111,9 +102,7 @@ df = pd.DataFrame({
 client.insert_df("users", df)
 ```
 
-<div id="pyarrow-table-insert">
-  #### PyArrow Table を使った挿入
-</div>
+#### PyArrow Table を使った挿入 {#pyarrow-table-insert}
 
 ```python
 import clickhouse_connect
@@ -130,9 +119,7 @@ arrow_table = pa.table({
 client.insert_arrow("users", arrow_table)
 ```
 
-<div id="arrow-backed-dataframe-insert-pandas-2">
-  #### ArrowベースのDataFrame挿入 (pandas 2.x)
-</div>
+#### ArrowベースのDataFrame挿入 (pandas 2.x) {#arrow-backed-dataframe-insert-pandas-2}
 
 ```python
 import clickhouse_connect
@@ -150,9 +137,7 @@ df = pd.DataFrame({
 client.insert_df_arrow("users", df)
 ```
 
-<div id="create-table-from-pyarrow-schema">
-  ### PyArrow スキーマからテーブルを作成する
-</div>
+### PyArrow スキーマからテーブルを作成する {#create-table-from-pyarrow-schema}
 
 `create_table_from_arrow_schema` は、一般的なスカラー Arrow フィールドから `CREATE TABLE` ステートメントを生成します。このマッピングは、符号付き整数、符号なし整数、浮動小数点値、ブール値、文字列、日付、タイムスタンプをカバーします。意図的に NULL を許容しない ClickHouse カラムを作成し、サポートされていない Arrow 型に対しては `TypeError` を送出するため、実行前に生成された DDL を確認してください。
 
@@ -179,15 +164,11 @@ ddl = create_table_from_arrow_schema(
 client.command(ddl)
 ```
 
-<div id="time-zones">
-  ### タイムゾーン
-</div>
+### タイムゾーン {#time-zones}
 
 Python の `datetime` オブジェクトを `DateTime` または `DateTime64` カラムに挿入する際、ClickHouse Connect はそれらを epoch 値に変換します。
 
-<div id="timezone-aware-datetime-objects">
-  #### タイムゾーン対応の datetime オブジェクト
-</div>
+#### タイムゾーン対応の datetime オブジェクト {#timezone-aware-datetime-objects}
 
 タイムゾーン対応のオブジェクトは、表している時点を保持します。ソースのタイムゾーンは、ClickHouse のカラムで宣言されているタイムゾーンと一致している必要はありません。
 
@@ -216,9 +197,7 @@ assert [row[0].hour for row in results.result_rows] == [1, 10, 16]
   ClickHouse Connect は標準ライブラリの `zoneinfo` モジュールを使用します。ドライバーは `pytz` に依存しなくなっています。
 </Note>
 
-<div id="timezone-naive-datetime-objects">
-  #### タイムゾーン情報を持たない datetime オブジェクト
-</div>
+#### タイムゾーン情報を持たない datetime オブジェクト {#timezone-naive-datetime-objects}
 
 グローバル設定 `naive_datetime_insert` は、タイムゾーン情報を持たない `datetime` 値をネイティブ Python オブジェクトとして挿入する際の動作を制御します。また、`DateTime64` カラムで受け付けられるタイムゾーン情報を持たない ISO 文字列にも適用されます。
 
@@ -259,9 +238,7 @@ client.insert("events", [[epoch_timestamp]], column_names=["event_time"])
 
 タイムゾーン情報を持たない `datetime` のクエリパラメータには、個別の `naive_datetime_binding` 設定が使用されます。デフォルトの `"wall"` モードでは、ホストのローカル時刻への変換を行わずに日時フィールドが送信されます。[Parameters argument](/ja/integrations/language-clients/python/driver-api#parameters-argument) セクションを参照してください。
 
-<div id="datetime-columns-with-timezone-metadata">
-  #### タイムゾーン メタデータを持つ DateTime カラム
-</div>
+#### タイムゾーン メタデータを持つ DateTime カラム {#datetime-columns-with-timezone-metadata}
 
 ClickHouse のカラムでは、`DateTime('America/Denver')` や `DateTime64(3, 'Asia/Tokyo')` のようにタイムゾーン メタデータを宣言できます。このメタデータは、クエリ時に値がどのように表示されるかを制御します。
 
@@ -286,9 +263,7 @@ assert returned.hour == 7
 assert returned.tzinfo == ZoneInfo("America/Los_Angeles")
 ```
 
-<div id="file-inserts">
-  ## ファイルの挿入
-</div>
+## ファイルの挿入 {#file-inserts}
 
 `clickhouse_connect.driver.tools.insert_file` はローカルファイルを既存のテーブルにストリームで挿入し、パースは ClickHouse に委ねます。
 

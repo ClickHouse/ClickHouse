@@ -17,7 +17,7 @@ ClickHouse Connect は、中核となるデータベースドライバーであ�
 
 * 主なインターフェイスは、`clickhouse_connect.driver` にある同期 `Client` と、aiohttp ベースのネイティブな `AsyncClient` です。このドライバーパッケージは、クエリおよび insert のコンテキスト、streaming ヘルパー、DB-API サポート、さらに低レベルの HTTP メソッドも提供します。
 * `clickhouse_connect.datatypes` パッケージは、ClickHouse Native バイナリ列指向フォーマットを使用して、ClickHouse の型を serialize および deserialize します。
-* `clickhouse_connect.driverc` のオプションの Cython 拡張機能は、一般的なシリアライゼーション、変換、buffering の処理を高速化します。拡張機能をビルドできないプラットフォームでも、pure Python の経路は引き続き利用可能です。
+* `clickhouse_connect.driverc` のオプションの Cython 拡張機能は、一般的なシリアライゼーション、変換、buffering の処理を高速化します。拡張機能をビルドできないプラットフォームでも、pure Python の経路は引き続き利用可能です。実験的にオプトインで利用できる [Rust codec](/ja/integrations/language-clients/python/rust-codec) を使うと、Native format の processing を完全に置き換えることができます。
 * このパッケージには PEP 561 の型情報が含まれているため、下流の型チェッカーは、公開ドライバー、DB-API、SQLAlchemy の各インターフェイスに対する annotations を利用できます。
 * `clickhouse_connect.cc_sqlalchemy` の [SQLAlchemy](https://www.sqlalchemy.org/) dialect は、SQLAlchemy Core、スキーマ reflection、ClickHouse 固有のクエリ clauses と table engines、そして Alembic の移行をサポートします。基本的な ORM の reads と inserts は動作しますが、この dialect は完全な unit-of-work ORM の振る舞いではなく、分析ワークロード向けに設計されています。
 * 中核ドライバーと [ClickHouse Connect SQLAlchemy](/ja/integrations/language-clients/python/sqlalchemy) 実装は、ClickHouse を Apache Superset に接続するための推奨される方法です。`ClickHouse Connect` データベース接続、または `clickhousedb` SQLAlchemy dialect 接続文字列を使用してください。
@@ -28,9 +28,7 @@ ClickHouse Connect は、中核となるデータベースドライバーであ�
   標準の ClickHouse Connect クライアントは HTTPインターフェイス を使用します。これにより、HTTP ロードバランサー、プロキシ、および一般的なエンタープライズ向けネットワーク制御に対応できます。ClickHouse Connect には、実験的なインプロセスの [chDB](#embedded-chdb-backend) バックエンドもあります。
 </Note>
 
-<div id="requirements-and-compatibility">
-  ## 要件と互換性
-</div>
+## 要件と互換性 {#requirements-and-compatibility}
 
 | コンポーネント    | サポート対象バージョン                                                                   |
 | ---------- | ----------------------------------------------------------------------------- |
@@ -44,9 +42,7 @@ ClickHouse Connect は、中核となるデータベースドライバーであ�
 
 この package には、利用可能な環境向けのコンパイル済み wheel が含まれており、Cython 拡張機能をビルドできない場合は pure Python 実装にフォールバックします。PyArrow は Python 3.10 〜 3.14 をサポートしています。Python 3.14 では PyArrow 22 以降が必要です。
 
-<div id="installation">
-  ## インストール
-</div>
+## インストール {#installation}
 
 pip を使用して、[PyPI](https://pypi.org/project/clickhouse-connect/) から ClickHouse Connect をインストールします。
 
@@ -64,6 +60,7 @@ pip install "clickhouse-connect[polars]"     # Polars
 pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
+pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup
 pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal systems
 ```
 
@@ -72,36 +69,52 @@ ClickHouse Connect は、ソースコードからインストールすること�
 * [GitHub リポジトリ](https://github.com/ClickHouse/clickhouse-connect) を `git clone` します。
 * プロジェクトのルートディレクトリに移動し、`pip install .` を実行します。ビルドシステムにより、オプションの C 拡張機能をコンパイルするための Cython が自動的にインストールされます。
 
-インストールされたバージョンは、`clickhouse_connect.__version__` で確認できます。
+### ソースビルドモード {#source-build-modes}
 
-<div id="support-policy">
-  ## サポートポリシー
-</div>
+ソースビルドは3つのモードをサポートします。デフォルトモードと必須モードでは、Cythonが利用できない場合や `cythonize()` が失敗した場合にビルドが失敗します。スキップモードではCythonをインポートしません。
+
+| モード         | コマンド                                             | 動作                                                                    |
+| ----------- | ------------------------------------------------ | --------------------------------------------------------------------- |
+| デフォルト       | `pip install .`                                  | C拡張機能のコンパイルを試みます。コンパイラまたはリンカが失敗した場合、ビルドはpure Pythonインストールにフォールバックします。 |
+| pure Python | `CLICKHOUSE_CONNECT_SKIP_CYTHON=1 pip install .` | 拡張機能のビルドを試みずにpure Pythonでビルドします。                                      |
+| 必須          | `CLICKHOUSE_CONNECT_REQUIRE_C=1 pip install .`   | 拡張機能をコンパイルできない場合はビルドを失敗させます。CIや再配布可能なwheelのビルドに推奨されます。                |
+
+`CLICKHOUSE_CONNECT_SKIP_CYTHON=1` と `CLICKHOUSE_CONNECT_REQUIRE_C=1` を同時に設定するとエラーになります。
+
+デフォルトのフォールバックwheelにはコンパイル済み拡張機能は含まれませんが、プラットフォームとインタプリタのタグは保持されます。`py3-none-any` を生成するのはスキップモードのみです。`pip` はインデックスのsdistからビルドしたフォールバックwheelをキャッシュすることがあり、コンパイラの問題を解消した後も、互換性のあるPythonとプラットフォームに対してそのwheelを再利用してしまう場合があります。次のコマンドでキャッシュをクリアしてください:
+
+```bash
+pip cache remove clickhouse_connect
+```
+
+3つの拡張機能モジュールがすべて存在するかを確認します。存在する場合は `True` と出力されます:
+
+```bash
+python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in ('clickhouse_connect.driverc.buffer', 'clickhouse_connect.driverc.dataconv', 'clickhouse_connect.driverc.npconv')))"
+```
+
+`clickhouse_connect.driverc.npconv` を直接インポートする場合も、NumPy がインストールされている必要があります。
+
+インストールされているバージョンは `clickhouse_connect.__version__` で確認できます。
+
+## サポートポリシー {#support-policy}
 
 問題を報告する前に、ClickHouse Connect を最新リリースに更新してください。問題の報告は [GitHub project](https://github.com/ClickHouse/clickhouse-connect/issues) に登録してください。ClickHouse Connect は、各ドライバーのリリース時点で[アクティブにサポートされている ClickHouse リリース](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md)を対象としています。古いサーバーバージョンでも動作することはよくありますが、新しいデータ型やプロトコル機能では、より新しいサーバーが必要になる場合があります。
 
-<div id="basic-usage">
-  ## 基本的な使い方
-</div>
+## 基本的な使い方 {#basic-usage}
 
-<div id="gather-your-connection-details">
-  ### 接続情報を確認する
-</div>
+### 接続情報を確認する {#gather-your-connection-details}
 
 <ConnectionDetails />
 
-<div id="establish-a-connection">
-  ### 接続する
-</div>
+### 接続する {#establish-a-connection}
 
 ClickHouse に接続する方法として、次の 2 つの例を示します。
 
 * localhost 上の ClickHouse サーバーに接続する。
 * ClickHouse Cloud サービスに接続する。
 
-<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost">
-  #### ClickHouse Connect クライアントインスタンスを使用して、localhost 上の ClickHouseサーバーに接続します:
-</div>
+#### ClickHouse Connect クライアントインスタンスを使用して、localhost 上の ClickHouseサーバーに接続します: {#use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost}
 
 ```python
 import clickhouse_connect
@@ -113,9 +126,7 @@ client = clickhouse_connect.get_client(
 )
 ```
 
-<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service">
-  #### ClickHouse Connect クライアントインスタンスを使用して ClickHouse Cloud サービスに接続します。
-</div>
+#### ClickHouse Connect クライアントインスタンスを使用して ClickHouse Cloud サービスに接続します。 {#use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service}
 
 <Tip>
   先ほど取得した接続情報を使用します。ClickHouse Cloud サービスでは TLS が必要なため、ポート 8443 を使用してください。
@@ -132,9 +143,7 @@ client = clickhouse_connect.get_client(
 )
 ```
 
-<div id="interact-with-your-database">
-  ### データベースを操作する
-</div>
+### データベースを操作する {#interact-with-your-database}
 
 ClickHouse SQL コマンドを実行するには、クライアントの `command` メソッドを使用します。
 
@@ -165,9 +174,7 @@ print(result.result_rows)
 client.close()
 ```
 
-<div id="embedded-chdb-backend">
-  ## 埋め込み chDB バックエンド
-</div>
+## 埋め込み chDB バックエンド {#embedded-chdb-backend}
 
 Experimental の chDB バックエンドでは、HTTP サーバーを介さずに Python プロセス内で ClickHouse クエリを実行します。まず `chdb` extra をインストールし、`interface="chdb"` または `chdb://` DSN でバックエンドを選択します。
 

@@ -12,7 +12,7 @@ doc_type: 'reference'
 import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-Par défaut, ClickHouse utilise la compression `lz4` dans la version autogérée et `zstd` dans ClickHouse Cloud.
+Par défaut, ClickHouse utilise la compression `ZSTD(3)` dans la version autogérée et `zstd` dans ClickHouse Cloud. Pour la famille `MergeTree`, la valeur par défaut dépend de la taille : le codec plus rapide `LZ4` est utilisé en dessous de 100 Mo et `ZSTD(3)` à partir de ce seuil ; ainsi, les données fraîchement insérées commencent en `LZ4`, tandis que les parts plus volumineuses produites par les merges en arrière-plan passent à `ZSTD(3)`. Le seuil est appliqué à la taille de la part connue au moment où le codec doit être choisi, avant que les données ne soient écrites — `0` pour une part fraîchement insérée, et la taille des parts sources pour un merge ou une mutation — et non à la taille de la part résultante.
 
 Pour les tables utilisant un moteur de la famille `MergeTree`, vous pouvez modifier la méthode de compression par défaut dans la section [compression](/fr/reference/settings/server-settings/settings/other#compression) d’une configuration de serveur.
 
@@ -32,10 +32,10 @@ ENGINE = <Engine>
 ```
 
 Le codec `Default` peut être spécifié pour utiliser la compression par défaut, qui peut dépendre de différents paramètres (et des propriétés des données) au moment de l’exécution.
-Exemple : `value UInt64 CODEC(Default)` — équivaut à l’absence de spécification de codec.
+Exemple : `value UInt64 CODEC(Default)` — équivaut à l’absence de spécification de codec.
 Voir aussi [Sélection adaptative de codec](#adaptive-codec-selection).
 
-Vous pouvez également supprimer le CODEC actuel de la colonne et utiliser la compression par défaut définie dans config.xml :
+Vous pouvez également supprimer le CODEC actuel de la colonne et utiliser la compression par défaut définie dans config.xml :
 
 ```sql
 ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
@@ -47,48 +47,37 @@ Les codecs peuvent être combinés dans un pipeline de codecs, par exemple `CODE
   Vous ne pouvez pas décompresser les fichiers de base de données ClickHouse à l’aide d’utilitaires externes tels que `lz4`. Utilisez plutôt l’utilitaire dédié [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor).
 </Tip>
 
-La compression est prise en charge par les moteurs de table suivants :
+La compression est prise en charge par les moteurs de table suivants :
 
 * Famille [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree). Prend en charge les codecs de compression de colonnes et la sélection de la méthode de compression par défaut via les paramètres de [compression](/fr/reference/settings/server-settings/settings/other#compression).
-* Famille [Log](/fr/reference/engines/table-engines/log-family/index). Utilise par défaut la méthode de compression `lz4` et prend en charge les codecs de compression de colonnes.
+* Famille [Log](/fr/reference/engines/table-engines/log-family/index) — les moteurs `Log` et `TinyLog` utilisent par défaut la méthode de compression `ZSTD(3)` et prennent en charge les codecs de compression de colonnes.
+* [StripeLog](/fr/reference/engines/table-engines/log-family/index) écrit toutes les colonnes dans un unique flux de données partagé compressé avec la méthode `ZSTD(3)` par défaut ; les codecs de compression par colonne ne lui sont donc pas appliqués.
 * [Set](/fr/reference/engines/table-engines/special/set). Seule la compression par défaut est prise en charge.
 * [Join](/fr/reference/engines/table-engines/special/join). Seule la compression par défaut est prise en charge.
 
 ClickHouse prend en charge les codecs à usage général et les codecs spécialisés.
 
-<div id="general-purpose-codecs">
-  ## Codecs à usage général
-</div>
+## Codecs à usage général {#general-purpose-codecs}
 
-<div id="none">
-  ### NONE
-</div>
+### NONE {#none}
 
 `NONE` — Aucune compression.
 
-<div id="lz4">
-  ### LZ4
-</div>
+### LZ4 {#lz4}
 
-`LZ4` — [Algorithme de compression de données](https://github.com/lz4/lz4) sans perte utilisé par défaut. Utilise la compression rapide LZ4.
+`LZ4` — [Algorithme de compression de données](https://github.com/lz4/lz4) sans perte. Utilise la compression rapide LZ4.
 
-<div id="lz4hc">
-  ### LZ4HC
-</div>
+### LZ4HC {#lz4hc}
 
 `LZ4HC[(level)]` — algorithme LZ4 HC (haute compression) avec un niveau configurable. Niveau par défaut : 9. Si `level <= 0`, le niveau par défaut est appliqué. Niveaux possibles : [1, 12]. Plage de niveaux recommandée : [4, 9].
 
-<div id="zstd">
-  ### ZSTD
-</div>
+### ZSTD {#zstd}
 
-`ZSTD[(level)]` — [algorithme de compression ZSTD](https://en.wikipedia.org/wiki/Zstandard) avec un `level` configurable. Niveaux possibles : [1, 22]. Niveau par défaut : 1.
+`ZSTD[(level)]` — [algorithme de compression ZSTD](https://en.wikipedia.org/wiki/Zstandard) avec un `level` configurable. Niveaux possibles : [1, 22]. Niveau par défaut : 1. `ZSTD(3)` est le codec appliqué par défaut aux columns qui ne spécifient pas explicitement de codec (pour les parts `MergeTree`, cela s&#39;applique dès que la part size estimée au moment de l&#39;écriture atteint 100 Mo ; en dessous, `LZ4` est utilisé).
 
 Les niveaux de compression élevés sont utiles dans les scénarios asymétriques, par exemple lorsqu’on compresse une fois et qu’on décompresse plusieurs fois. Des niveaux plus élevés offrent une meilleure compression, mais entraînent une utilisation plus importante du CPU.
 
-<div id="zxc">
-  ### ZXC
-</div>
+### ZXC {#zxc}
 
 <ExperimentalBadge />
 
@@ -100,53 +89,37 @@ Les niveaux de compression élevés sont utiles dans les scénarios asymétrique
   Ce codec est expérimental et nécessite `SET enable_zxc_codec = 1` pour être utilisé.
 </Note>
 
-<div id="zstd_qat">
-  ### Obsolète : ZSTD_QAT
-</div>
+### Obsolète : ZSTD_QAT {#zstd_qat}
 
 <CloudNotSupportedBadge />
 
-<div id="deflate_qpl">
-  ### Obsolète : DEFLATE_QPL
-</div>
+### Obsolète : DEFLATE_QPL {#deflate_qpl}
 
 <CloudNotSupportedBadge />
 
-<div id="specialized-codecs">
-  ## Codecs spécialisés
-</div>
+## Codecs spécialisés {#specialized-codecs}
 
 Ces codecs sont conçus pour améliorer l&#39;efficacité de la compression en exploitant des caractéristiques spécifiques des données. Certains ne compressent pas directement les données, mais les prétraitent afin qu&#39;une seconde étape de compression utilisant un codec générique permette d&#39;atteindre un taux de compression plus élevé.
 
-<div id="delta">
-  ### Delta
-</div>
+### Delta {#delta}
 
 `Delta(delta_bytes)` — Méthode de compression dans laquelle les valeurs brutes sont remplacées par la différence entre deux valeurs consécutives, à l’exception de la première, qui reste inchangée. `delta_bytes` correspond à la taille maximale des valeurs brutes ; sa valeur par défaut est `sizeof(type)`. Indiquer `delta_bytes` comme argument est obsolète et sa prise en charge sera supprimée dans une prochaine version. Delta est un codec de préparation des données ; il ne peut donc pas être utilisé seul.
 
-<div id="doubledelta">
-  ### DoubleDelta
-</div>
+### DoubleDelta {#doubledelta}
 
 `DoubleDelta(bytes_size)` — Calcule le delta des deltas et l’écrit sous forme binaire compacte. `bytes_size` a une signification similaire à `delta_bytes` dans le codec [Delta](#delta). Indiquer `bytes_size` comme argument est obsolète et sa prise en charge sera supprimée dans une version ultérieure. Les meilleurs taux de compression sont obtenus pour les séquences monotones à pas constant, telles que les données de séries temporelles. Peut être utilisé avec tout type numérique. Implémente l’algorithme utilisé dans Gorilla TSDB, en l’étendant à la prise en charge des types 64 bits. Utilise 1 bit supplémentaire pour les deltas 32 bits : des préfixes de 5 bits au lieu de 4 bits. Pour plus d’informations, consultez l’article « Compressing Time Stamps » dans [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf). DoubleDelta est un codec de préparation des données, c’est-à-dire qu’il ne peut pas être utilisé seul.
 
-<div id="gcd">
-  ### GCD
-</div>
+### GCD {#gcd}
 
 `GCD()` - - Calcule le plus grand commun diviseur (GCD) des valeurs de la colonne, puis divise chaque valeur par le GCD. Peut être utilisé avec des colonnes d&#39;entiers, de nombres décimaux et de date/heure. Ce codec est bien adapté aux colonnes dont les valeurs varient (augmentent ou diminuent) par multiples du GCD, par exemple 24, 28, 16, 24, 8, 24 (GCD = 4). GCD est un codec de préparation des données, c&#39;est-à-dire qu&#39;il ne peut pas être utilisé seul.
 
-<div id="gorilla">
-  ### Gorilla
-</div>
+### Gorilla {#gorilla}
 
 `Gorilla(bytes_size)` — Calcule le XOR entre la valeur à virgule flottante courante et la précédente, puis l’écrit sous une forme binaire compacte. Plus la différence entre les valeurs consécutives est faible, c’est-à-dire plus les valeurs de la série évoluent lentement, meilleur est le taux de compression. Implémente l’algorithme utilisé dans Gorilla TSDB et l’étend pour prendre en charge les types sur 64 bits. Les valeurs possibles de `bytes_size` sont 1, 2, 4 et 8 ; la valeur par défaut est `sizeof(type)` si elle est égale à 1, 2, 4 ou 8. Dans tous les autres cas, elle est de 1. Pour plus d’informations, consultez la section 4.1 de [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
 
-<div id="alp">
-  ### ALP
-</div>
+### ALP {#alp}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 `ALP(variant)` — Compression adaptative sans perte pour les données à virgule flottante. Prend en charge `Float32` et `Float64`. Pour plus de détails, consultez [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
 
@@ -157,18 +130,14 @@ Le codec accepte un argument de variante facultatif :
 * `ALP(RD)` — Variante Real Doubles. Réinterprète la représentation binaire de chaque valeur et la divise en une partie haute (signe + exposant + bits de poids fort de la mantisse) et une partie basse. Les parties hautes sont encodées par dictionnaire (jusqu’à 8 entrées) et les parties basses sont empaquetées en bits. Fonctionne mieux lorsque de nombreuses valeurs partagent les mêmes bits de poids fort.
 
 <Note>
-  Ce codec est expérimental et nécessite `SET enable_alp_codec = 1` pour être utilisé.
+  Ce codec est en bêta et nécessite `SET enable_alp_codec = 1` pour être utilisé.
 </Note>
 
-<div id="fpc">
-  ### FPC
-</div>
+### FPC {#fpc}
 
 `FPC(level, float_size)` - Prédit de manière répétée la valeur à virgule flottante suivante de la séquence à l&#39;aide du meilleur de deux prédicteurs, puis applique l&#39;opération XOR entre la valeur réelle et la valeur prédite, avant de compresser le résultat en supprimant les zéros de tête. À l&#39;instar de Gorilla, ce codec est efficace pour stocker une série de valeurs à virgule flottante qui évoluent lentement. Pour les valeurs de 64 bits (double), FPC est plus rapide que Gorilla ; pour les valeurs de 32 bits, les performances peuvent varier. Valeurs possibles de `level` : 1-28 ; la valeur par défaut est 12. Valeurs possibles de `float_size` : 4, 8 ; la valeur par défaut est `sizeof(type)` si le type est Float. Dans tous les autres cas, elle est de 4. Pour une description détaillée de l&#39;algorithme, consultez [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
 
-<div id="sz3">
-  ### SZ3
-</div>
+### SZ3 {#sz3}
 
 <ExperimentalBadge />
 
@@ -178,9 +147,7 @@ Le codec accepte un argument de variante facultatif :
   Ce codec est expérimental et nécessite `SET enable_sz3_codec = 1` pour être utilisé.
 </Note>
 
-<div id="t64">
-  ### T64
-</div>
+### T64 {#t64}
 
 `T64` — Approche de compression qui élimine les bits de poids fort inutilisés des valeurs de types de données entiers (y compris `Enum`, `Date` et `DateTime`). À chaque étape de son algorithme, le codec prend un bloc de 64 valeurs, les place dans une matrice de bits 64x64, la transpose, élimine les bits inutilisés des valeurs et renvoie le reste sous forme de séquence. Les bits inutilisés sont ceux qui ne diffèrent pas entre les valeurs minimale et maximale de l’ensemble de la partie de données sur laquelle la compression est appliquée.
 
@@ -195,9 +162,7 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
-<div id="quantized">
-  ### Quantized
-</div>
+### Quantized {#quantized}
 
 <ExperimentalBadge />
 
@@ -226,23 +191,17 @@ CREATE TABLE vectors
 ENGINE = MergeTree ORDER BY id;
 ```
 
-<div id="encryption-codecs">
-  ## Codecs de chiffrement
-</div>
+## Codecs de chiffrement {#encryption-codecs}
 
 Ces codecs ne compressent pas réellement les données, mais les chiffrent sur le disque. Ils ne sont disponibles que lorsqu&#39;une clé de chiffrement est définie dans les paramètres [encryption](/fr/reference/settings/server-settings/settings/other#encryption). Notez que le chiffrement n&#39;a de sens qu&#39;à la fin des pipelines de codecs, car les données chiffrées ne peuvent généralement pas être compressées de manière pertinente.
 
 Codecs de chiffrement :
 
-<div id="aes_128_gcm_siv">
-  ### AES_128_GCM_SIV
-</div>
+### AES_128_GCM_SIV {#aes_128_gcm_siv}
 
 `CODEC('AES-128-GCM-SIV')` — Chiffre les données avec AES-128 en mode GCM-SIV, conformément à la [RFC 8452](https://tools.ietf.org/html/rfc8452).
 
-<div id="aes-256-gcm-siv">
-  ### AES-256-GCM-SIV
-</div>
+### AES-256-GCM-SIV {#aes-256-gcm-siv}
 
 `CODEC('AES-256-GCM-SIV')` — Chiffre les données avec AES-256 en mode GCM-SIV.
 
@@ -280,15 +239,17 @@ CREATE TABLE mytable
 ENGINE = MergeTree ORDER BY x;
 ```
 
-<div id="adaptive-codec-selection">
-  ## Sélection adaptative des codecs
-</div>
+## Sélection adaptative de codec {#adaptive-codec-selection}
 
 <ExperimentalBadge />
 
-Les codecs spécialisés ci-dessus peuvent considérablement réduire la taille des données, mais leur sélection exige une expertise, et aucun choix unique ne convient à une colonne dont les données évoluent au fil du temps. Lorsque le paramètre MergeTree [`allow_experimental_adaptive_codec_selection`](/fr/reference/settings/merge-tree-settings) est activé, ClickHouse effectue ce choix pour vous. Pour les colonnes qui utilisent le codec par défaut (`CODEC(Default)` ou aucune clause `CODEC`), chaque bloc est écrit avec le codec qui offre la compression la plus efficace, choisi parmi le codec par défaut de la table, `NONE` et les codecs spécialisés adaptés au type de la colonne.
+Les codecs spécialisés ci-dessus peuvent considérablement réduire la taille des données, mais leur sélection exige une expertise, et aucun choix unique ne convient à une colonne dont les données évoluent au fil du temps. Lorsque le paramètre MergeTree [`enable_adaptive_codec_selection`](/fr/reference/settings/merge-tree-settings) est activé, ClickHouse effectue ce choix pour vous. Pour les colonnes qui utilisent le codec par défaut (`CODEC(Default)` ou aucune clause `CODEC`), chaque bloc est écrit avec le codec qui offre la compression la plus efficace, choisi parmi le codec par défaut de la table, `NONE` et les codecs spécialisés adaptés au type de la colonne.
 
-Un bloc n&#39;est jamais plus volumineux qu&#39;il ne le serait avec le codec par défaut, et les données incompressibles sont stockées brutes (les compresser produirait un fichier légèrement plus volumineux et plus lent à lire). Ce travail s&#39;effectue en arrière-plan, lors des merges et des mutations, où les données sont de toute façon recompressées. La vitesse d&#39;insertion n&#39;est pas affectée. Les requêtes sont souvent plus rapides : moins de données sont lues sur le disque, chaque bloc lu par une requête doit d&#39;abord être décompressé, et les codecs spécialisés se décompressent plus rapidement que le codec par défaut `LZ4`. Chaque bloc enregistre le codec avec lequel il a été écrit, de sorte qu&#39;aucun paramètre n&#39;est nécessaire pour la lecture, et cette fonctionnalité peut être désactivée à tout moment sans compromettre la lisibilité des données.
+<Note>
+  Les codecs spécialisés sont actuellement sélectionnés pour les integers jusqu&#39;à 64 bits, les enums, les dates et heures, `Decimal32`/`Decimal64`, `IPv4` et `Float32`/`Float64`. Les autres colonnes font l&#39;objet d&#39;un choix entre le codec par défaut et `NONE`.
+</Note>
+
+Un bloc n&#39;est jamais plus volumineux qu&#39;il ne le serait avec le codec par défaut, et les données incompressibles sont stockées brutes (les compresser produirait un fichier légèrement plus volumineux et plus lent à lire). Ce travail s&#39;effectue en arrière-plan, lors des merges et des mutations, où les données sont de toute façon recompressées. La vitesse d&#39;insertion n&#39;est pas affectée. Les requêtes sont souvent plus rapides : moins de données sont lues sur le disque, chaque bloc lu par une requête doit d&#39;abord être décompressé, et les codecs spécialisés se décompressent plus rapidement que le codec par défaut `LZ4`. Chaque bloc enregistre le codec avec lequel il a été écrit, de sorte qu&#39;aucun paramètre n&#39;est nécessaire pour la lecture, et cette fonctionnalité peut être désactivée à tout moment sans compromettre la lisibilité des données.
 
 ```sql
 CREATE TABLE adaptive
@@ -298,13 +259,13 @@ CREATE TABLE adaptive
 )
 ENGINE = MergeTree
 ORDER BY time
-SETTINGS allow_experimental_adaptive_codec_selection = 1;
+SETTINGS enable_adaptive_codec_selection = 1;
 
 INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
 OPTIMIZE TABLE adaptive FINAL;
 ```
 
-Vous pouvez observer ce comportement avec la fonction de table [`mergeTreeCodecBlockCounts`](/fr/reference/functions/table-functions/mergeTreeCodecBlockCounts). Ici, `time` augmente régulièrement ; `T64`, qui ne stocke que les bits variant au sein d’un bloc, surpasse donc le codec par défaut dans chaque bloc. `user_id` contient des hashes qu’aucun codec ne peut compresser, ses blocs ont donc été stockés bruts :
+Vous pouvez observer ce comportement avec la fonction de table [`mergeTreeCodecBlockCounts`](/fr/reference/functions/table-functions/mergeTreeCodecBlockCounts). Ici, `time` augmente régulièrement ; `T64`, qui ne stocke que les bits variant au sein d’un bloc, surpasse donc le codec par défaut dans chaque bloc. `user_id` contient des hashes qu’aucun codec ne peut compresser, ses blocs ont donc été stockés bruts :
 
 ```sql
 SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase(), 'adaptive');
@@ -317,11 +278,7 @@ SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase
    └─────────┴────────────────────┘
 ```
 
-La sélection s&#39;applique actuellement aux colonnes de type entier : entiers, énumérations, dates et heures, `Decimal32`/`Decimal64` et `IPv4`.
-
-<div id="related-content">
-  ## Contenu connexe
-</div>
+## Contenu connexe {#related-content}
 
 * Blog : [Optimiser ClickHouse avec des schémas et des codecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 * Blog : [Travailler avec des données de séries temporelles dans ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

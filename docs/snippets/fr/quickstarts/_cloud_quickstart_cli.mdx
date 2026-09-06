@@ -4,9 +4,7 @@ title: Guide de démarrage rapide de Cloud CLI
 
 Cette page explique comment provisionner un service ClickHouse Cloud, s’y connecter et charger des données, le tout depuis la ligne de commande à l’aide de [ClickHouse CLI](/fr/products/cloud/features/cli) (`clickhousectl`). Les commandes sont non interactives ; `clickhousectl` génère du JSON avec `--json`.
 
-<div id="prerequisites">
-  ## Prérequis
-</div>
+## Prérequis {#prerequisites}
 
 Installez la ClickHouse CLI :
 
@@ -26,9 +24,7 @@ clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
 
 Vous pouvez également définir les variables d’environnement `CLICKHOUSE_CLOUD_API_KEY` et `CLICKHOUSE_CLOUD_API_SECRET`. Vérifiez avec `clickhousectl cloud auth status` : une entrée dont le scope est `read/write` doit s’afficher.
 
-<div id="create-service">
-  ## Créer un service ClickHouse
-</div>
+## Créer un service ClickHouse {#create-service}
 
 Créez le service et enregistrez la réponse ; le mot de passe de l’utilisateur `default` n’est affiché qu’une seule fois :
 
@@ -81,9 +77,7 @@ Si le mot de passe est perdu, générez-en un nouveau avec `clickhousectl cloud 
 
 Les services créés avec `clickhousectl` utilisent par défaut une liste d’accès IP autorisant toutes les adresses (`0.0.0.0/0`). Pour restreindre l’accès, transmettez `--ip-allow` lors de la création du service ; consultez [&quot;Définir des filtres IP&quot;](/fr/products/cloud/guides/security/connectivity/setting-ip-filters).
 
-<div id="wait-for-provisioning">
-  ## Attendez que le service soit provisionné
-</div>
+## Attendez que le service soit provisionné {#wait-for-provisioning}
 
 Le provisionnement prend environ une minute. Interrogez le service jusqu’à ce que son état soit `running` :
 
@@ -93,14 +87,12 @@ while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "
 done
 ```
 
-<div id="run-sql">
-  ## Exécuter du SQL avec la Query API
-</div>
+## Exécuter du SQL avec la Query API {#run-sql}
 
-`clickhousectl cloud service query` exécute des requêtes SQL via HTTP, sans nécessiter de binaire `clickhouse` local ni de mot de passe de service. Le premier appel provisionne automatiquement un endpoint de Query API et une clé API limitée au service :
+`clickhousectl cloud service query` exécute des requêtes SQL via HTTP, sans nécessiter de binaire `clickhouse` local ni de mot de passe de service. Le premier appel provisionne automatiquement un endpoint de Query API et une clé API limitée au service :
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --query "SHOW databases"
+clickhousectl cloud service query --id "$CH_ID" --json --query "SHOW databases"
 ```
 
 ```text
@@ -111,11 +103,9 @@ Provisioning Query API endpoint + key for service 'quickstart-ch'...
 {"name":"system"}
 ```
 
-La sortie redirigée via un pipe utilise par défaut le format `JSONEachRow` ; passez `--format PrettyCompact` pour obtenir une sortie au format tableau.
+La sortie utilise par défaut le format `PrettyCompact` dans un terminal et `TabSeparated` lorsqu&#39;elle est redirigée via un pipe. `--json`, utilisé ci-dessus, sélectionne `JSONEachRow` ; pour tout autre format, passez plutôt `--format` (`--json` et `--format` ne peuvent pas être combinés).
 
-<div id="create-database-and-table">
-  ## Créer une base de données et une table
-</div>
+## Créer une base de données et une table {#create-database-and-table}
 
 ```bash
 clickhousectl cloud service query --id "$CH_ID" \
@@ -131,7 +121,7 @@ clickhousectl cloud service query --id "$CH_ID" \
   PRIMARY KEY (user_id, timestamp)"
 ```
 
-Les deux commandes affichent `OK`. Insérez quelques lignes :
+Les deux commandes affichent `OK`. Insérez quelques lignes :
 
 ```bash
 clickhousectl cloud service query --id "$CH_ID" \
@@ -142,10 +132,10 @@ clickhousectl cloud service query --id "$CH_ID" \
     (101, 'Granules are the smallest chunks of data read', now() + 5, 3.14159)"
 ```
 
-Vérifiez que l’opération a réussi :
+Vérifiez que l’opération a réussi :
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query --id "$CH_ID" --json \
   --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp"
 ```
 
@@ -158,11 +148,9 @@ clickhousectl cloud service query --id "$CH_ID" \
 
 Les horodatages dépendent du moment où vous avez effectué l’insert ; les vôtres seront donc différents.
 
-<div id="load-csv-file">
-  ## Charger un fichier CSV
-</div>
+## Charger un fichier CSV {#load-csv-file}
 
-Supposons que le texte suivant se trouve dans un fichier CSV nommé `data.csv` :
+Supposons que le texte suivant se trouve dans un fichier CSV nommé `data.csv` :
 
 ```text title="data.csv"
 102,This is data in a file,2022-02-22 10:43:28,123.45
@@ -170,17 +158,17 @@ Supposons que le texte suivant se trouve dans un fichier CSV nommé `data.csv` 
 103,Use FORMAT to specify the format,2022-02-21 10:43:30,678.90
 ```
 
-`INSERT ... FORMAT` lit les données depuis stdin ; utilisez donc un pipe entre la requête et le fichier :
+`INSERT ... FORMAT` lit les données depuis stdin ; utilisez donc un pipe entre la requête et le fichier :
 
 ```bash
 printf 'INSERT INTO helloworld.my_first_table FORMAT CSV\n' | cat - data.csv \
   | clickhousectl cloud service query --id "$CH_ID"
 ```
 
-Vérifiez que les nouvelles lignes ont bien été insérées :
+Vérifiez que les nouvelles lignes ont bien été insérées :
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query --id "$CH_ID" --json \
   --query "SELECT count() FROM helloworld.my_first_table"
 ```
 
@@ -188,9 +176,7 @@ clickhousectl cloud service query --id "$CH_ID" \
 {"count()":7}
 ```
 
-<div id="native-client">
-  ## Se connecter avec clickhouse client
-</div>
+## Se connecter avec clickhouse client {#native-client}
 
 Vous pouvez également vous connecter via le protocole natif à l’aide de [**clickhouse client**](/fr/concepts/features/interfaces/client). La ClickHouse CLI gère le binaire `clickhouse` pour vous ; vous n’avez donc pas besoin d’installer un client séparément :
 
@@ -226,9 +212,7 @@ clickhouse client --host "$CH_HOST" --secure --port 9440 \
   --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
 ```
 
-<div id="cleanup">
-  ## Nettoyage
-</div>
+## Nettoyage {#cleanup}
 
 La suppression d’un service efface définitivement toutes ses données. `--force` arrête d’abord un service en cours d’exécution :
 

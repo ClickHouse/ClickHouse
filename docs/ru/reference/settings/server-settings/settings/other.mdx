@@ -14,21 +14,15 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 
 Эти настройки используются для настройки сервера ClickHouse и автоматически генерируются на основе исходного кода ClickHouse.
 
-<div id="abort_on_logical_error">
-  ## abort_on_logical_error
-</div>
+## abort_on_logical_error {#abort_on_logical_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Приводит к аварийному завершению работы сервера при исключениях LOGICAL&#95;ERROR. Только для опытных пользователей.
 
-<div id="allowed_disks_for_table_engines">
-  ## allowed_disks_for_table_engines
-</div>
+## allowed_disks_for_table_engines {#allowed_disks_for_table_engines}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Список дисков, разрешённых для использования с Iceberg
 
-<div id="auth_use_forwarded_address">
-  ## auth_use_forwarded_address
-</div>
+## auth_use_forwarded_address {#auth_use_forwarded_address}
 
 Использовать исходный адрес для аутентификации клиентов, подключающихся через прокси.
 
@@ -38,9 +32,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
   Этот параметр следует использовать с особой осторожностью, поскольку forwarded-адреса легко подделать: к серверам, принимающим такую аутентификацию, не следует обращаться напрямую — только через доверенный прокси.
 </Note>
 
-<div id="bcrypt_workfactor">
-  ## bcrypt_workfactor
-</div>
+## bcrypt_workfactor {#bcrypt_workfactor}
 
 Фактор сложности для типа аутентификации `bcrypt_password`, использующего [алгоритм Bcrypt](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 Фактор сложности определяет объём вычислений и время, необходимые для вычисления хэша и проверки пароля.
@@ -57,9 +49,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
   вычислительной нагрузки bcrypt при более высоких значениях фактора сложности.
 </Warning>
 
-<div id="blob_storage_log">
-  ## blob_storage_log
-</div>
+## blob_storage_log {#blob_storage_log}
 
 Настройки для системной таблицы [`blob_storage_log`](/ru/reference/system-tables/blob_storage_log).
 
@@ -77,9 +67,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 </blob_storage_log>
 ```
 
-<div id="builtin_dictionaries_reload_interval">
-  ## builtin_dictionaries_reload_interval
-</div>
+## builtin_dictionaries_reload_interval {#builtin_dictionaries_reload_interval}
 
 Интервал в секундах до перезагрузки встроенных словарей.
 
@@ -91,21 +79,15 @@ ClickHouse перезагружает встроенные словари каж
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
-<div id="cache_size_to_ram_max_ratio">
-  ## cache_size_to_ram_max_ratio
-</div>
+## cache_size_to_ram_max_ratio {#cache_size_to_ram_max_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Устанавливает максимальное соотношение размера кэша к объёму оперативной памяти. Позволяет уменьшить размер кэша на системах с небольшим объёмом памяти.
 
-<div id="cannot_allocate_thread_fault_injection_probability">
-  ## cannot_allocate_thread_fault_injection_probability
-</div>
+## cannot_allocate_thread_fault_injection_probability {#cannot_allocate_thread_fault_injection_probability}
 
 <SettingsInfoBlock type="Double" default_value="0" changeable_without_restart="No" />Для тестирования.
 
-<div id="cgroups_memory_usage_observer_wait_time">
-  ## cgroups_memory_usage_observer_wait_time
-</div>
+## cgroups_memory_usage_observer_wait_time {#cgroups_memory_usage_observer_wait_time}
 
 <SettingsInfoBlock type="UInt64" default_value="15" changeable_without_restart="No" />
 
@@ -113,9 +95,7 @@ ClickHouse перезагружает встроенные словари каж
 
 Чтобы отключить наблюдатель cgroups, установите это значение равным `0`.
 
-<div id="compression">
-  ## сжатие
-</div>
+## сжатие {#compression}
 
 Настройки сжатия данных для таблиц с движком [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -151,10 +131,10 @@ ClickHouse перезагружает встроенные словари каж
 **Действия при выполнении условий**:
 
 * Если часть данных соответствует набору условий, ClickHouse использует указанный метод сжатия.
-* Если часть данных соответствует нескольким наборам условий, ClickHouse использует первый из них.
+* Если часть данных соответствует нескольким наборам условий, ClickHouse использует последний из совпавших (разделы `<case>` проверяются по порядку, и каждый следующий совпавший переопределяет предыдущий выбор).
 
 <Note>
-  Если для части данных не выполняется ни одно условие, ClickHouse использует сжатие `lz4`.
+  Если для части данных не выполняется ни одно условие, ClickHouse использует встроенное значение по умолчанию, зависящее от размера: `LZ4` для частей меньше 100 МБ и `ZSTD(3)` для частей такого размера и больше. Как и в условиях `min_part_size` выше, учитывается размер, известный на момент выбора кодека, до записи данных: `0` для только что вставленной части и размер исходных частей для merge или mutation. Поэтому перезапись, уменьшающая свои входные данные, например `TTL DELETE` или схлопывающий merge, классифицируется по размеру входных данных и может дать часть меньше порога, которая всё равно будет сжата `ZSTD(3)`.
 </Note>
 
 **Пример**
@@ -165,28 +145,22 @@ ClickHouse перезагружает встроенные словари каж
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>1</level>
+        <level>10</level>
     </case>
 </compression>
 ```
 
-<div id="config-file">
-  ## файл конфигурации
-</div>
+## файл конфигурации {#config-file}
 
 <SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Указывает на файл конфигурации сервера.
 
-<div id="config_reload_interval_ms">
-  ## config_reload_interval_ms
-</div>
+## config_reload_interval_ms {#config_reload_interval_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="Yes" />
 
 Как часто ClickHouse будет перезагружать конфигурацию и проверять наличие изменений
 
-<div id="core_dump">
-  ## core_dump
-</div>
+## core_dump {#core_dump}
 
 Настраивает мягкое ограничение размера файла дампа памяти.
 
@@ -202,9 +176,7 @@ ClickHouse перезагружает встроенные словари каж
 </core_dump>
 ```
 
-<div id="crash_log">
-  ## crash_log
-</div>
+## crash_log {#crash_log}
 
 Настройки работы системной таблицы [crash&#95;log](/ru/reference/system-tables/crash_log).
 
@@ -241,9 +213,7 @@ ClickHouse перезагружает встроенные словари каж
 </crash_log>
 ```
 
-<div id="create_union_system_log_tables">
-  ## create_union_system_log_tables
-</div>
+## create_union_system_log_tables {#create_union_system_log_tables}
 
 Запрашивает создание таблиц `all_...` рядом с таблицами системных журналов (`system.all_query_log` для `system.query_log`, `system.all_text_log` для `system.text_log` и т. д.). Такая таблица объединяет соответствующую таблицу журналов, её ротированные версии (`query_log_0`, `query_log_1`, ...) и/или аналогичные таблицы на всех репликах кластера и позволяет выполнять запросы ко всем им одновременно, не используя конструкции вроде `clusterAllReplicas(default, merge(system, '^query_log'))`.
 
@@ -271,18 +241,14 @@ ClickHouse перезагружает встроенные словари каж
 </create_union_system_log_tables>
 ```
 
-<div id="database_atomic_delay_before_drop_table_sec">
-  ## database_atomic_delay_before_drop_table_sec
-</div>
+## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
 
 <SettingsInfoBlock type="UInt64" default_value="480" changeable_without_restart="No" />
 
 Задержка, в течение которой удалённую таблицу можно восстановить с помощью оператора [`UNDROP`](/ru/reference/statements/undrop). Если команда `DROP TABLE` была выполнена с модификатором `SYNC`, этот параметр игнорируется.
 Значение этого параметра по умолчанию — `480` (8 минут).
 
-<div id="dead_letter_queue">
-  ## dead_letter_queue
-</div>
+## dead_letter_queue {#dead_letter_queue}
 
 Настройка системной таблицы &#39;dead&#95;letter&#95;queue&#39;.
 
@@ -299,24 +265,18 @@ ClickHouse перезагружает встроенные словари каж
 </dead_letter_queue>
 ```
 
-<div id="dictionary_background_reconnect_interval">
-  ## dictionary_background_reconnect_interval
-</div>
+## dictionary_background_reconnect_interval {#dictionary_background_reconnect_interval}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />Интервал в миллисекундах между попытками повторного подключения для словарей MySQL и Postgres, завершившихся с ошибкой, у которых включен `background_reconnect`.
 
-<div id="disk_transaction_wait_for_blob_removal">
-  ## disk_transaction_wait_for_blob_removal
-</div>
+## disk_transaction_wait_for_blob_removal {#disk_transaction_wait_for_blob_removal}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
 Значение по умолчанию для настройки `wait_for_blob_removal` для каждого диска.
 Если настройка включена, сервер ожидает завершения фонового удаления blob, прежде чем подтвердить операцию.
 
-<div id="display_secrets_in_show_and_select">
-  ## display_secrets_in_show_and_select
-</div>
+## display_secrets_in_show_and_select {#display_secrets_in_show_and_select}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
@@ -333,9 +293,7 @@ ClickHouse перезагружает встроенные словари каж
 * `0` — Отключено.
 * `1` — Включено.
 
-<div id="dns_max_consecutive_failures">
-  ## dns_max_consecutive_failures
-</div>
+## dns_max_consecutive_failures {#dns_max_consecutive_failures}
 
 <SettingsInfoBlock type="UInt32" default_value="5" changeable_without_restart="No" />
 
@@ -345,9 +303,7 @@ ClickHouse перезагружает встроенные словари каж
 
 * [`SYSTEM DROP DNS CACHE`](/ru/reference/statements/system#drop-dns-cache)
 
-<div id="dynamic_user_defined_executable_functions_path">
-  ## dynamic_user_defined_executable_functions_path
-</div>
+## dynamic_user_defined_executable_functions_path {#dynamic_user_defined_executable_functions_path}
 
 <SettingsInfoBlock type="String" default_value="/var/lib/clickhouse/dynamic_user_defined_executable_functions/" changeable_without_restart="No" />
 
@@ -360,9 +316,7 @@ ClickHouse перезагружает встроенные словари каж
 <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
 ```
 
-<div id="encryption">
-  ## шифрование
-</div>
+## шифрование {#encryption}
 
 Задает команду для получения ключа, который будет использоваться [кодеками шифрования](/ru/reference/statements/create/table/codec#encryption-codecs). Ключ (или ключи) должен храниться в переменных окружения или задаваться в конфигурационном файле.
 
@@ -444,17 +398,13 @@ ClickHouse перезагружает встроенные словари каж
   Всё, что сказано выше, можно применить и к `aes_256_gcm_siv` (но ключ должен быть длиной 32 байта).
 </Note>
 
-<div id="enforce_keeper_component_tracking">
-  ## enforce_keeper_component_tracking
-</div>
+## enforce_keeper_component_tracking {#enforce_keeper_component_tracking}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
 Если параметр включен, для каждого запроса к ZooKeeper должно быть задано имя компонента через `Coordination::setCurrentComponent`. Если компонент отсутствует, генерируется исключение `LOGICAL_ERROR`.
 
-<div id="error_log">
-  ## error_log
-</div>
+## error_log {#error_log}
 
 По умолчанию отключено.
 
@@ -489,9 +439,7 @@ ClickHouse перезагружает встроенные словари каж
 
 <SystemLogParameters />
 
-<div id="filesystem_caches_path">
-  ## filesystem_caches_path
-</div>
+## filesystem_caches_path {#filesystem_caches_path}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 
@@ -503,9 +451,7 @@ ClickHouse перезагружает встроенные словари каж
 <filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>
 ```
 
-<div id="google_protos_path">
-  ## google_protos_path
-</div>
+## google_protos_path {#google_protos_path}
 
 <SettingsInfoBlock type="String" default_value="/usr/share/clickhouse/protos/" changeable_without_restart="No" />
 
@@ -517,21 +463,15 @@ ClickHouse перезагружает встроенные словари каж
 <google_protos_path>/usr/share/clickhouse/protos/</google_protos_path>
 ```
 
-<div id="handshake_timeout_milliseconds">
-  ## handshake_timeout_milliseconds
-</div>
+## handshake_timeout_milliseconds {#handshake_timeout_milliseconds}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" changeable_without_restart="No" />Тайм-аут по реальному времени в миллисекундах для всей фазы TCP-рукопожатия (Hello + Addendum). Ограничивает время, в течение которого неаутентифицированное соединение может занимать поток. Установите значение 0, чтобы отключить.
 
-<div id="hdfs.libhdfs3_conf">
-  ## hdfs.libhdfs3_conf
-</div>
+## hdfs.libhdfs3_conf {#hdfs.libhdfs3_conf}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Указывает libhdfs3 правильное расположение его конфигурации.
 
-<div id="hsts_max_age">
-  ## hsts_max_age
-</div>
+## hsts_max_age {#hsts_max_age}
 
 Время действия HSTS в секундах.
 
@@ -545,15 +485,11 @@ ClickHouse перезагружает встроенные словари каж
 <hsts_max_age>600000</hsts_max_age>
 ```
 
-<div id="iceberg_background_schedule_pool_size">
-  ## iceberg_background_schedule_pool_size
-</div>
+## iceberg_background_schedule_pool_size {#iceberg_background_schedule_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10" changeable_without_restart="No" />Размер пула потоков для асинхронного получения актуальных метаданных из удалённого каталога Iceberg; этот пул используется совместно всеми активными таблицами.
 
-<div id="ignore_empty_sql_security_in_create_view_query">
-  ## ignore_empty_sql_security_in_create_view_query
-</div>
+## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
@@ -567,9 +503,7 @@ Refreshable materialized views всегда получают значения п
   Изменение этой настройки влияет только на представления, созданные после этого; сохранённые определения существующих представлений остаются без изменений.
 </Note>
 
-<div id="include_from">
-  ## include_from
-</div>
+## include_from {#include_from}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
 
@@ -586,15 +520,11 @@ Refreshable materialized views всегда получают значения п
 <include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 ```
 
-<div id="insert_deduplication_version">
-  ## insert_deduplication_version
-</div>
+## insert_deduplication_version {#insert_deduplication_version}
 
-<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />Устаревший защитный механизм миграции. Эта версия поддерживает только единый хеш дедупликации вставки (`new_unified_hash`); сервер откажется запускаться, если этот параметр указан с любым другим значением (например, `old_separate_hashes` или `compatible_double_hashes`). Перед обновлением завершите миграцию дедупликации в предыдущей версии, запустив `compatible_double_hashes` (он записывает и устаревшие, и унифицированные хеши). Для реплицированных таблиц запускайте его как минимум в течение `replicated_deduplication_window_seconds` (по умолчанию один час); окна по умолчанию хранят унифицированные хеши всех вставок за этот период, и этого считается достаточно, чтобы покрыть цикл повторных попыток вставки. Для нереплицируемых таблиц с `non_replicated_deduplication_window` &gt; 0 окно определяется количеством, а не временем, поэтому перед обновлением запускайте `compatible_double_hashes` как минимум для такого числа вставок.
+<SettingsInfoBlock type="String" default_value="new_unified_hash" changeable_without_restart="No" />Устаревший защитный механизм миграции. ClickHouse версий 26.7 и новее поддерживает только единый хеш дедупликации вставки (`new_unified_hash`); сервер откажется запускаться, если этот параметр указан с любым другим значением (например, `old_separate_hashes` или `compatible_double_hashes`). Перед обновлением завершите миграцию дедупликации в предыдущей версии, запустив `compatible_double_hashes` (он записывает и устаревшие, и унифицированные хеши). Для реплицированных таблиц запускайте его как минимум в течение `replicated_deduplication_window_seconds` (по умолчанию один час); окна по умолчанию хранят унифицированные хеши всех вставок за этот период, и этого считается достаточно, чтобы покрыть цикл повторных попыток вставки. Для нереплицируемых таблиц с `non_replicated_deduplication_window` &gt; 0 окно определяется количеством, а не временем, поэтому перед обновлением запускайте `compatible_double_hashes` как минимум для такого числа вставок.
 
-<div id="io_thread_pool_queue_size">
-  ## io_thread_pool_queue_size
-</div>
+## io_thread_pool_queue_size {#io_thread_pool_queue_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
 
@@ -604,9 +534,7 @@ Refreshable materialized views всегда получают значения п
   Значение `0` означает отсутствие ограничений.
 </Note>
 
-<div id="keep_alive_timeout">
-  ## keep_alive_timeout
-</div>
+## keep_alive_timeout {#keep_alive_timeout}
 
 <SettingsInfoBlock type="Секунды" default_value="30" changeable_without_restart="No" />
 
@@ -618,9 +546,7 @@ Refreshable materialized views всегда получают значения п
 <keep_alive_timeout>30</keep_alive_timeout>
 ```
 
-<div id="ldap_servers">
-  ## ldap_servers
-</div>
+## ldap_servers {#ldap_servers}
 
 Здесь перечисляются LDAP-серверы с параметрами подключения, чтобы:
 
@@ -687,9 +613,7 @@ Refreshable materialized views всегда получают значения п
 </my_ad_server>
 ```
 
-<div id="logger">
-  ## logger
-</div>
+## logger {#logger}
 
 Расположение и формат сообщений лога.
 
@@ -882,81 +806,55 @@ Refreshable materialized views всегда получают значения п
 
 Свойства журнала можно исключить, закомментировав соответствующее свойство. Например, если вы не хотите, чтобы в журнале выводился `query_id`, можно закомментировать тег `<query_id>`.
 
-<div id="logger.count">
-  ## logger.count
-</div>
+## logger.count {#logger.count}
 
 <SettingsInfoBlock type="UInt64" default_value="1" changeable_without_restart="No" />Политика ротации: максимальное количество хранимых исторических файлов журнала ClickHouse.
 
-<div id="logger.errorlog">
-  ## logger.errorlog
-</div>
+## logger.errorlog {#logger.errorlog}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Путь к файлу журнала ошибок.
 
-<div id="logger.formatting.type">
-  ## logger.formatting.type
-</div>
+## logger.formatting.type {#logger.formatting.type}
 
 <SettingsInfoBlock type="String" default_value="json" changeable_without_restart="No" />Формат логирования для вывода в консоль. На данный момент поддерживается только `<json>`.
 
-<div id="logger.level">
-  ## logger.level
-</div>
+## logger.level {#logger.level}
 
 <SettingsInfoBlock type="String" default_value="trace" changeable_without_restart="No" />Уровень логирования. Допустимые значения: `<none>` (отключает логирование), `<fatal>`, `<critical>`, `<error>`, `<warning>`, `<notice>`, `<information>`, `<debug>`, `<trace>`, `<test>`.
 
-<div id="logger.log">
-  ## logger.log
-</div>
+## logger.log {#logger.log}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Путь к файлу журнала.
 
-<div id="logger.rotation">
-  ## logger.rotation
-</div>
+## logger.rotation {#logger.rotation}
 
 <SettingsInfoBlock type="String" default_value="100M" changeable_without_restart="No" />Политика ротации: определяет, когда ротируются файлы журналов. Ротация может выполняться по размеру, по времени или по их сочетанию. Примеры: 100M, daily, 100M,daily. Когда файл журнала превышает указанный размер или истекает указанный интервал времени, он переименовывается и архивируется, после чего создаётся новый файл журнала.
 
-<div id="logger.shutdown_level">
-  ## logger.shutdown_level
-</div>
+## logger.shutdown_level {#logger.shutdown_level}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Shutdown level используется для задания уровня корневого логгера при завершении работы server.
 
-<div id="logger.size">
-  ## logger.size
-</div>
+## logger.size {#logger.size}
 
 <SettingsInfoBlock type="String" default_value="100M" changeable_without_restart="No" />Политика ротации: максимальный размер файлов журнала в байтах. Когда размер файла журнала превышает этот порог, файл переименовывается и архивируется, а затем создаётся новый файл журнала.
 
-<div id="logger.startup_level">
-  ## logger.startup_level
-</div>
+## logger.startup_level {#logger.startup_level}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Уровень при запуске используется для установки уровня корневого логгера во время запуска сервера. После завершения запуска уровень логирования возвращается к значению, заданному в настройке `<level>`.
 
-<div id="logger.stream_compress">
-  ## logger.stream_compress
-</div>
+## logger.stream_compress {#logger.stream_compress}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Сжимает сообщения лога с помощью LZ4. Для включения установите значение `<1>` или `<true>`.
 
-<div id="logger.syslog_level">
-  ## logger.syslog_level
-</div>
+## logger.syslog_level {#logger.syslog_level}
 
 <SettingsInfoBlock type="String" default_value="trace" changeable_without_restart="No" />Уровень логирования для syslog.
 
-<div id="logger.use_syslog">
-  ## logger.use_syslog
-</div>
+## logger.use_syslog {#logger.use_syslog}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Также направляет вывод логов в syslog.
 
-<div id="macros">
-  ## macros
-</div>
+## macros {#macros}
 
 Подстановки параметров для реплицированных таблиц.
 
@@ -970,15 +868,11 @@ Refreshable materialized views всегда получают значения п
 <macros incl="macros" optional="true" />
 ```
 
-<div id="message_queue_disable_insertion">
-  ## message_queue_disable_insertion
-</div>
+## message_queue_disable_insertion {#message_queue_disable_insertion}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Отключает вставку из движков очередей сообщений (Kafka, RabbitMQ, NATS) в присоединенные materialized view
 
-<div id="metric_log">
-  ## metric_log
-</div>
+## metric_log {#metric_log}
 
 По умолчанию отключено.
 
@@ -1013,9 +907,7 @@ Refreshable materialized views всегда получают значения п
 
 <SystemLogParameters />
 
-<div id="mmap_cache_size">
-  ## mmap_cache_size
-</div>
+## mmap_cache_size {#mmap_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" changeable_without_restart="Yes" />
 
@@ -1032,9 +924,7 @@ Refreshable materialized views всегда получают значения п
   Этот параметр можно изменять во время работы, и он вступает в силу немедленно.
 </Note>
 
-<div id="mutation_workload">
-  ## mutation_workload
-</div>
+## mutation_workload {#mutation_workload}
 
 <SettingsInfoBlock type="String" default_value="default" changeable_without_restart="Да" />
 
@@ -1044,9 +934,7 @@ Refreshable materialized views всегда получают значения п
 
 * [Планирование рабочих нагрузок](/ru/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="named_collections_storage.type">
-  ## named_collections_storage.type
-</div>
+## named_collections_storage.type {#named_collections_storage.type}
 
 <SettingsInfoBlock type="String" default_value="local" changeable_without_restart="No" />
 
@@ -1054,44 +942,42 @@ Refreshable materialized views всегда получают значения п
 `keeper_encrypted`, `zookeeper` и `zookeeper_encrypted`.
 Задаётся параметром `named_collections_storage.type` (в XML — `<named_collections_storage><type>`).
 
-<div id="oom_score">
-  ## oom_score
-</div>
+## oom_score {#oom_score}
 
 <SettingsInfoBlock type="Int32" default_value="0" changeable_without_restart="No" />В системах Linux этот параметр позволяет управлять поведением OOM killer.
 
-<div id="openssl">
-  ## openSSL
-</div>
+## openSSL {#openssl}
 
 Настройка SSL для клиента и сервера.
 
 Поддержка SSL обеспечивается библиотекой `libpoco`. Доступные параметры конфигурации описаны в [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h). Значения по умолчанию приведены в [SSLManager.cpp](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/src/SSLManager.cpp).
 
+Файлы, указанные в `certificateFile`, `privateKeyFile` и `caConfig`, перезагружаются без перезапуска при их изменении или по команде `SYSTEM RELOAD CONFIG`. Новые соединения используют перезагруженные сертификаты, на уже установленные соединения это не влияет.
+
 Ключи настроек сервера/клиента:
 
-| Параметр                      | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Значение по умолчанию                                                                      |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `cacheSessions`               | Включает или отключает кэширование сеансов. Используется только в сочетании с `sessionIdContext`. Допустимые значения: `true`, `false`.                                                                                                                                                                                                                                                                                                                      | `false`                                                                                    |
-| `caConfig`                    | Путь к файлу или каталогу с доверенными CA‑сертификатами. Если указан файл, он должен быть в формате PEM и может содержать несколько CA‑сертификатов. Если указан каталог, в нём должен быть один файл .pem для каждого CA‑сертификата. Имена файлов ищутся по хеш-значению имени субъекта CA. Подробности см. на man-странице [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). |                                                                                            |
-| `certificateFile`             | Путь к файлу сертификата клиента/сервера в формате PEM. Можно не указывать, если `privateKeyFile` содержит сертификат.                                                                                                                                                                                                                                                                                                                                       |                                                                                            |
-| `cipherList`                  | Поддерживаемые алгоритмы шифрования OpenSSL.                                                                                                                                                                                                                                                                                                                                                                                                                 | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`                                                  |
-| `disableProtocols`            | Протоколы, использование которых не допускается.                                                                                                                                                                                                                                                                                                                                                                                                             |                                                                                            |
-| `extendedVerification`        | Если включено, проверяет, что CN или SAN сертификата соответствует имени хоста peer.                                                                                                                                                                                                                                                                                                                                                                         | `false`                                                                                    |
-| `fips`                        | Включает режим FIPS в OpenSSL. Поддерживается, если версия OpenSSL в библиотеке supports FIPS.                                                                                                                                                                                                                                                                                                                                                               | `false`                                                                                    |
-| `invalidCertificateHandler`   | Класс (подкласс CertificateHandler) для проверки недействительных сертификатов. Например: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>`.                                                                                                                                                                                                                                                                  | `RejectCertificateHandler`                                                                 |
-| `loadDefaultCAFile`           | Будут ли использоваться встроенные CA‑сертификаты OpenSSL. ClickHouse исходит из того, что встроенные CA‑сертификаты находятся в файле `/etc/ssl/cert.pem` (соответственно, в каталоге `/etc/ssl/certs`) или в файле (соответственно, каталоге), указанном в переменной окружения `SSL_CERT_FILE` (соответственно, `SSL_CERT_DIR`).                                                                                                                          | `true`                                                                                     |
-| `preferServerCiphers`         | Наборы шифров сервера, предпочтительные для клиента.                                                                                                                                                                                                                                                                                                                                                                                                         | `false`                                                                                    |
-| `privateKeyFile`              | Путь к файлу с закрытым ключом PEM-сертификата. Файл может одновременно содержать ключ и сертификат.                                                                                                                                                                                                                                                                                                                                                         |                                                                                            |
-| `privateKeyPassphraseHandler` | Класс (подкласс PrivateKeyPassphraseHandler), запрашивающий парольную фразу для доступа к закрытому ключу. Например: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.                                                                                                                                                                                       | `KeyConsoleHandler`                                                                        |
-| `requireTLSv1`                | Требуется соединение по TLSv1. Допустимые значения: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                         | `false`                                                                                    |
-| `requireTLSv1_1`              | Требуется соединение по TLSv1.1. Допустимые значения: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                       | `false`                                                                                    |
-| `requireTLSv1_2`              | Требуется соединение по TLSv1.2. Допустимые значения: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                       | `false`                                                                                    |
-| `sessionCacheSize`            | Максимальное количество сеансов, хранимых сервером в кэше. Значение `0` означает неограниченное количество сеансов.                                                                                                                                                                                                                                                                                                                                          | [1024*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978) |
-| `sessionIdContext`            | Уникальный набор случайных символов, который сервер добавляет к каждому сгенерированному идентификатору. Длина строки не должна превышать `SSL_MAX_SSL_SESSION_ID_LENGTH`. Этот параметр рекомендуется указывать всегда, так как он помогает избежать проблем как при кэшировании сеанса на сервере, так и при запросе кэширования со стороны клиента.                                                                                                       | `$\{application.name\}`                                                                    |
-| `sessionTimeout`              | Время кэширования сеанса на сервере в часах.                                                                                                                                                                                                                                                                                                                                                                                                                 | `2`                                                                                        |
-| `verificationDepth`           | Максимальная длина цепочки проверки. Проверка завершится ошибкой, если длина цепочки сертификатов превышает заданное значение.                                                                                                                                                                                                                                                                                                                               | `9`                                                                                        |
-| `verificationMode`            | Режим проверки сертификатов узла. Подробности приведены в описании класса [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). Возможные значения: `none`, `relaxed`, `strict`, `once`.                                                                                                                                                                                                               | `relaxed`                                                                                  |
+| Параметр                      | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Значение по умолчанию                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `cacheSessions`               | Включает или отключает кэширование сеансов. Используется только в сочетании с `sessionIdContext`. Допустимые значения: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `false`                                                                                    |
+| `caConfig`                    | Путь к файлу или каталогу с доверенными CA‑сертификатами. Если указан файл, он должен быть в формате PEM и может содержать несколько CA‑сертификатов. Если указан каталог, в нём должен быть один файл .pem для каждого CA‑сертификата. Имена файлов ищутся по хеш-значению имени субъекта CA. Подробности см. на man-странице [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). Как и `certificateFile` и `privateKeyFile`, CA‑сертификаты перезагружаются без перезапуска при изменении файла или по команде `SYSTEM RELOAD CONFIG`. |                                                                                            |
+| `certificateFile`             | Путь к файлу сертификата клиента/сервера в формате PEM. Можно не указывать, если `privateKeyFile` содержит сертификат.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |                                                                                            |
+| `cipherList`                  | Поддерживаемые алгоритмы шифрования OpenSSL.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`                                                  |
+| `disableProtocols`            | Протоколы, использование которых не допускается.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |                                                                                            |
+| `extendedVerification`        | Если включено, проверяет, что CN или SAN сертификата соответствует имени хоста peer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `false`                                                                                    |
+| `fips`                        | Включает режим FIPS в OpenSSL. Поддерживается, если версия OpenSSL в библиотеке supports FIPS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `false`                                                                                    |
+| `invalidCertificateHandler`   | Класс (подкласс CertificateHandler) для проверки недействительных сертификатов. Например: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>`.                                                                                                                                                                                                                                                                                                                                                                                                                        | `RejectCertificateHandler`                                                                 |
+| `loadDefaultCAFile`           | Будут ли использоваться встроенные CA‑сертификаты OpenSSL. ClickHouse исходит из того, что встроенные CA‑сертификаты находятся в файле `/etc/ssl/cert.pem` (соответственно, в каталоге `/etc/ssl/certs`) или в файле (соответственно, каталоге), указанном в переменной окружения `SSL_CERT_FILE` (соответственно, `SSL_CERT_DIR`).                                                                                                                                                                                                                                                                                | `true`                                                                                     |
+| `preferServerCiphers`         | Наборы шифров сервера, предпочтительные для клиента.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `false`                                                                                    |
+| `privateKeyFile`              | Путь к файлу с закрытым ключом PEM-сертификата. Файл может одновременно содержать ключ и сертификат.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |                                                                                            |
+| `privateKeyPassphraseHandler` | Класс (подкласс PrivateKeyPassphraseHandler), запрашивающий парольную фразу для доступа к закрытому ключу. Например: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.                                                                                                                                                                                                                                                                                                                                             | `KeyConsoleHandler`                                                                        |
+| `requireTLSv1`                | Требуется соединение по TLSv1. Допустимые значения: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `false`                                                                                    |
+| `requireTLSv1_1`              | Требуется соединение по TLSv1.1. Допустимые значения: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `false`                                                                                    |
+| `requireTLSv1_2`              | Требуется соединение по TLSv1.2. Допустимые значения: `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `false`                                                                                    |
+| `sessionCacheSize`            | Максимальное количество сеансов, хранимых сервером в кэше. Значение `0` означает неограниченное количество сеансов.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | [1024*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978) |
+| `sessionIdContext`            | Уникальный набор случайных символов, который сервер добавляет к каждому сгенерированному идентификатору. Длина строки не должна превышать `SSL_MAX_SSL_SESSION_ID_LENGTH`. Этот параметр рекомендуется указывать всегда, так как он помогает избежать проблем как при кэшировании сеанса на сервере, так и при запросе кэширования со стороны клиента.                                                                                                                                                                                                                                                             | `$\{application.name\}`                                                                    |
+| `sessionTimeout`              | Время кэширования сеанса на сервере в часах.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `2`                                                                                        |
+| `verificationDepth`           | Максимальная длина цепочки проверки. Проверка завершится ошибкой, если длина цепочки сертификатов превышает заданное значение.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `9`                                                                                        |
+| `verificationMode`            | Режим проверки сертификатов узла. Подробности приведены в описании класса [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). Возможные значения: `none`, `relaxed`, `strict`, `once`.                                                                                                                                                                                                                                                                                                                                                                     | `relaxed`                                                                                  |
 
 **Пример настроек:**
 
@@ -1123,195 +1009,131 @@ Refreshable materialized views всегда получают значения п
 </openSSL>
 ```
 
-<div id="openssl.client.caconfig">
-  ## openSSL.client.caConfig
-</div>
+## openSSL.client.caConfig {#openssl.client.caconfig}
 
-<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Путь к файлу или каталогу с доверенными CA‑сертификатами. Если указан файл, он должен быть в формате PEM и может содержать несколько CA‑сертификатов. Если указан каталог, в нём должен быть один файл `.pem` на каждый CA‑сертификат. Имена файлов определяются по хеш-значению имени субъекта CA. Подробности см. на man‑странице [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Путь к файлу или каталогу с доверенными CA‑сертификатами. Если указан файл, он должен быть в формате PEM и может содержать несколько CA‑сертификатов. Если указан каталог, в нём должен быть один файл `.pem` на каждый CA‑сертификат. Имена файлов определяются по хеш-значению имени субъекта CA. Подробности см. на man‑странице [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/). CA‑сертификаты перезагружаются без перезапуска при изменении файла или по команде `SYSTEM RELOAD CONFIG`; новые соединения проверяются по перезагруженным сертификатам.
 
-<div id="openssl.client.cachesessions">
-  ## openSSL.client.cacheSessions
-</div>
+## openSSL.client.cacheSessions {#openssl.client.cachesessions}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Включает или отключает кэширование сеансов. Должно использоваться вместе с `<sessionIdContext>`. Допустимые значения: `<true>`, `<false>`.
 
-<div id="openssl.client.certificatefile">
-  ## openSSL.client.certificateFile
-</div>
+## openSSL.client.certificateFile {#openssl.client.certificatefile}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Путь к файлу сертификата клиента или сервера в формате PEM. Этот параметр можно опустить, если `<privateKeyFile>` содержит сертификат.
 
-<div id="openssl.client.cipherlist">
-  ## openSSL.client.cipherList
-</div>
+## openSSL.client.cipherList {#openssl.client.cipherlist}
 
 <SettingsInfoBlock type="String" default_value="ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" changeable_without_restart="No" />Поддерживаемые шифры OpenSSL.
 
-<div id="openssl.client.disableprotocols">
-  ## openSSL.client.disableProtocols
-</div>
+## openSSL.client.disableProtocols {#openssl.client.disableprotocols}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Протоколы, которые нельзя использовать.
 
-<div id="openssl.client.extendedverification">
-  ## openSSL.client.extendedVerification
-</div>
+## openSSL.client.extendedVerification {#openssl.client.extendedverification}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Если включено, проверяет, что значение CN или SAN в сертификате соответствует имени хоста peer.
 
-<div id="openssl.client.fips">
-  ## openSSL.client.fips
-</div>
+## openSSL.client.fips {#openssl.client.fips}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Включает режим FIPS в OpenSSL. Поддерживается, если используемая библиотекой версия OpenSSL поддерживает FIPS.
 
-<div id="openssl.client.invalidcertificatehandler.name">
-  ## openSSL.client.invalidCertificateHandler.name
-</div>
+## openSSL.client.invalidCertificateHandler.name {#openssl.client.invalidcertificatehandler.name}
 
 <SettingsInfoBlock type="String" default_value="RejectCertificateHandler" changeable_without_restart="No" />Класс (подкласс CertificateHandler), используемый для проверки недействительных сертификатов. Например: `<<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>>`.
 
-<div id="openssl.client.loaddefaultcafile">
-  ## openSSL.client.loadDefaultCAFile
-</div>
+## openSSL.client.loadDefaultCAFile {#openssl.client.loaddefaultcafile}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Определяет, использовать ли встроенные CA‑сертификаты OpenSSL. ClickHouse предполагает, что встроенные CA‑сертификаты находятся в файле `</etc/ssl/cert.pem>` (соответственно, в каталоге `</etc/ssl/certs>`) либо в файле (или каталоге), указанном в переменной окружения `<SSL_CERT_FILE>` (или `<SSL_CERT_DIR>` соответственно).
 
-<div id="openssl.client.preferserverciphers">
-  ## openSSL.client.preferServerCiphers
-</div>
+## openSSL.client.preferServerCiphers {#openssl.client.preferserverciphers}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Предпочитаемые клиентом шифры сервера.
 
-<div id="openssl.client.privatekeyfile">
-  ## openSSL.client.privateKeyFile
-</div>
+## openSSL.client.privateKeyFile {#openssl.client.privatekeyfile}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Путь к файлу с закрытым ключом PEM-сертификата. Файл также может одновременно содержать и ключ, и сертификат.
 
-<div id="openssl.client.privatekeypassphrasehandler.name">
-  ## openSSL.client.privateKeyPassphraseHandler.name
-</div>
+## openSSL.client.privateKeyPassphraseHandler.name {#openssl.client.privatekeypassphrasehandler.name}
 
 <SettingsInfoBlock type="String" default_value="KeyConsoleHandler" changeable_without_restart="No" />Класс (подкласс PrivateKeyPassphraseHandler), запрашивающий парольную фразу для доступа к закрытому ключу. Например: `<<privateKeyPassphraseHandler>>`, `<<name>KeyFileHandler</name>>`, `<<options><password>test</password></options>>`, `<</privateKeyPassphraseHandler>>`
 
-<div id="openssl.client.verificationdepth">
-  ## openSSL.client.verificationDepth
-</div>
+## openSSL.client.verificationDepth {#openssl.client.verificationdepth}
 
 <SettingsInfoBlock type="UInt64" default_value="9" changeable_without_restart="No" />Максимальная длина цепочки проверки. Если длина цепочки сертификатов превышает заданное значение, проверка завершится ошибкой.
 
-<div id="openssl.client.verificationmode">
-  ## openSSL.client.verificationMode
-</div>
+## openSSL.client.verificationMode {#openssl.client.verificationmode}
 
 <SettingsInfoBlock type="String" default_value="relaxed" changeable_without_restart="No" />Способ проверки сертификатов узла. Подробности см. в описании класса [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). Возможные значения: `<none>`, `<relaxed>`, `<strict>`, `<once>`.
 
-<div id="openssl.server.caconfig">
-  ## openSSL.server.caConfig
-</div>
+## openSSL.server.caConfig {#openssl.server.caconfig}
 
-<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Путь к файлу или каталогу, содержащему доверенные CA‑сертификаты. Если указан файл, он должен быть в формате PEM и может содержать несколько CA‑сертификатов. Если указан каталог, в нём должен быть один файл `.pem` на каждый CA‑сертификат. Имена файлов определяются по хеш-значению имени субъекта CA. Подробности см. на man-странице [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Путь к файлу или каталогу, содержащему доверенные CA‑сертификаты. Если указан файл, он должен быть в формате PEM и может содержать несколько CA‑сертификатов. Если указан каталог, в нём должен быть один файл `.pem` на каждый CA‑сертификат. Имена файлов определяются по хеш-значению имени субъекта CA. Подробности см. на man-странице [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/). CA‑сертификаты перезагружаются без перезапуска при изменении файла или по команде `SYSTEM RELOAD CONFIG`; новые соединения проверяются с использованием перезагруженных сертификатов.
 
-<div id="openssl.server.cachesessions">
-  ## openSSL.server.cacheSessions
-</div>
+## openSSL.server.cacheSessions {#openssl.server.cachesessions}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Включает или отключает кэширование сеансов. Следует использовать вместе с `<sessionIdContext>`. Допустимые значения: `<true>`, `<false>`.
 
-<div id="openssl.server.certificatefile">
-  ## openSSL.server.certificateFile
-</div>
+## openSSL.server.certificateFile {#openssl.server.certificatefile}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Путь к файлу сертификата клиента или сервера в формате PEM. Этот параметр можно не указывать, если `<privateKeyFile>` содержит сертификат.
 
-<div id="openssl.server.cipherlist">
-  ## openSSL.server.cipherList
-</div>
+## openSSL.server.cipherList {#openssl.server.cipherlist}
 
 <SettingsInfoBlock type="String" default_value="ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" changeable_without_restart="No" />Список поддерживаемых шифров OpenSSL.
 
-<div id="openssl.server.disableprotocols">
-  ## openSSL.server.disableProtocols
-</div>
+## openSSL.server.disableProtocols {#openssl.server.disableprotocols}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Протоколы, использование которых запрещено.
 
-<div id="openssl.server.extendedverification">
-  ## openSSL.server.extendedVerification
-</div>
+## openSSL.server.extendedVerification {#openssl.server.extendedverification}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Если включено, проверяет, что CN или SAN сертификата соответствует имени хоста peer.
 
-<div id="openssl.server.fips">
-  ## openSSL.server.fips
-</div>
+## openSSL.server.fips {#openssl.server.fips}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Включает режим FIPS в OpenSSL. Поддерживается, если версия библиотеки OpenSSL поддерживает FIPS.
 
-<div id="openssl.server.invalidcertificatehandler.name">
-  ## openSSL.server.invalidCertificateHandler.name
-</div>
+## openSSL.server.invalidCertificateHandler.name {#openssl.server.invalidcertificatehandler.name}
 
 <SettingsInfoBlock type="String" default_value="RejectCertificateHandler" changeable_without_restart="No" />Класс (подкласс CertificateHandler) для проверки недействительных сертификатов. Например: `<<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>>`.
 
-<div id="openssl.server.loaddefaultcafile">
-  ## openSSL.server.loadDefaultCAFile
-</div>
+## openSSL.server.loadDefaultCAFile {#openssl.server.loaddefaultcafile}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Определяет, будут ли использоваться встроенные CA‑сертификаты OpenSSL. ClickHouse исходит из того, что встроенные CA‑сертификаты находятся в файле `</etc/ssl/cert.pem>` (соответственно, в каталоге `</etc/ssl/certs>`) либо в файле (соответственно, каталоге), указанном в переменной окружения `<SSL_CERT_FILE>` (соответственно, `<SSL_CERT_DIR>`).
 
-<div id="openssl.server.preferserverciphers">
-  ## openSSL.server.preferServerCiphers
-</div>
+## openSSL.server.preferServerCiphers {#openssl.server.preferserverciphers}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Наборы шифров сервера, предпочитаемые клиентом.
 
-<div id="openssl.server.privatekeyfile">
-  ## openSSL.server.privateKeyFile
-</div>
+## openSSL.server.privateKeyFile {#openssl.server.privatekeyfile}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Путь к файлу с закрытым ключом PEM-сертификата. Файл может одновременно содержать ключ и сертификат.
 
-<div id="openssl.server.privatekeypassphrasehandler.name">
-  ## openSSL.server.privateKeyPassphraseHandler.name
-</div>
+## openSSL.server.privateKeyPassphraseHandler.name {#openssl.server.privatekeypassphrasehandler.name}
 
 <SettingsInfoBlock type="String" default_value="KeyConsoleHandler" changeable_without_restart="No" />Класс (подкласс PrivateKeyPassphraseHandler), запрашивающий парольную фразу для доступа к закрытому ключу. Например: `<<privateKeyPassphraseHandler>>`, `<<name>KeyFileHandler</name>>`, `<<options><password>test</password></options>>`, `<</privateKeyPassphraseHandler>>`
 
-<div id="openssl.server.sessioncachesize">
-  ## openSSL.server.sessionCacheSize
-</div>
+## openSSL.server.sessionCacheSize {#openssl.server.sessioncachesize}
 
 <SettingsInfoBlock type="UInt64" default_value="20480" changeable_without_restart="No" />Максимальное количество сеансов, кэшируемых сервером. Значение 0 означает неограниченное количество сеансов.
 
-<div id="openssl.server.sessionidcontext">
-  ## openSSL.server.sessionIdContext
-</div>
+## openSSL.server.sessionIdContext {#openssl.server.sessionidcontext}
 
 <SettingsInfoBlock type="String" default_value="application.name" changeable_without_restart="No" />Уникальный набор случайных символов, который сервер добавляет к каждому создаваемому идентификатору. Длина строки не должна превышать `<SSL_MAX_SSL_SESSION_ID_LENGTH>`. Этот параметр рекомендуется указывать всегда, поскольку он помогает избежать проблем как в случае, если сервер кэширует сеанс, так и в случае, если клиент запросил кэширование.
 
-<div id="openssl.server.sessiontimeout">
-  ## openSSL.server.sessionTimeout
-</div>
+## openSSL.server.sessionTimeout {#openssl.server.sessiontimeout}
 
 <SettingsInfoBlock type="UInt64" default_value="2" changeable_without_restart="No" />Время кэширования сеанса на сервере, в часах.
 
-<div id="openssl.server.verificationdepth">
-  ## openSSL.server.verificationDepth
-</div>
+## openSSL.server.verificationDepth {#openssl.server.verificationdepth}
 
 <SettingsInfoBlock type="UInt64" default_value="9" changeable_without_restart="No" />Максимальная длина цепочки проверки. Проверка завершится ошибкой, если длина цепочки сертификатов превысит заданное значение.
 
-<div id="openssl.server.verificationmode">
-  ## openSSL.server.verificationMode
-</div>
+## openSSL.server.verificationMode {#openssl.server.verificationmode}
 
 <SettingsInfoBlock type="String" default_value="relaxed" changeable_without_restart="No" />Способ проверки сертификатов узла. Подробности приведены в описании класса [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). Возможные значения: `<none>`, `<relaxed>`, `<strict>`, `<once>`.
 
-<div id="opentelemetry_span_log">
-  ## opentelemetry_span_log
-</div>
+## opentelemetry_span_log {#opentelemetry_span_log}
 
 Настройки для системной таблицы [`opentelemetry_span_log`](/ru/reference/system-tables/opentelemetry_span_log).
 
@@ -1336,9 +1158,7 @@ Refreshable materialized views всегда получают значения п
 </opentelemetry_span_log>
 ```
 
-<div id="part_log">
-  ## part_log
-</div>
+## part_log {#part_log}
 
 Журнал событий, связанных с [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree), например добавления данных или их слияния. Этот лог можно использовать для моделирования алгоритмов слияния и сравнения их характеристик. Также можно визуализировать процесс слияния.
 
@@ -1361,9 +1181,7 @@ Refreshable materialized views всегда получают значения п
 </part_log>
 ```
 
-<div id="path">
-  ## path
-</div>
+## path {#path}
 
 <SettingsInfoBlock type="String" default_value="/var/lib/clickhouse/" changeable_without_restart="No" />
 
@@ -1379,17 +1197,13 @@ Refreshable materialized views всегда получают значения п
 <path>/var/lib/clickhouse/</path>
 ```
 
-<div id="per_cpu_untracked_memory_thread_buffer">
-  ## per_cpu_untracked_memory_thread_buffer
-</div>
+## per_cpu_untracked_memory_thread_buffer {#per_cpu_untracked_memory_thread_buffer}
 
 <SettingsInfoBlock type="UInt64" default_value="32768" changeable_without_restart="Да" />
 
 Объём неотслеживаемой памяти в байтах, который каждый поток может удерживать, не затрагивая общий per-CPU-бюджет. Это позволяет снизить накладные расходы на per-CPU-учёт для небольших выделений памяти и представляет собой запас, добавляемый сверх `max_per_cpu_untracked_memory * number_of_cpus` в худшем случае. Значение `0` убирает этот запас: каждое выделение памяти обновляет общий per-CPU-счётчик (максимальная точность, но выше конкуренция). Только Linux.
 
-<div id="point_in_polygon_cache_size">
-  ## point_in_polygon_cache_size
-</div>
+## point_in_polygon_cache_size {#point_in_polygon_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Yes" />
 
@@ -1402,9 +1216,7 @@ Refreshable materialized views всегда получают значения п
   Этот параметр можно изменять в процессе работы, и он вступает в силу немедленно.
 </Note>
 
-<div id="prefixes_deserialization_thread_pool_thread_pool_queue_size">
-  ## prefixes_deserialization_thread_pool_thread_pool_queue_size
-</div>
+## prefixes_deserialization_thread_pool_thread_pool_queue_size {#prefixes_deserialization_thread_pool_thread_pool_queue_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
 
@@ -1414,17 +1226,13 @@ Refreshable materialized views всегда получают значения п
   Значение `0` означает отсутствие ограничений.
 </Note>
 
-<div id="prepare_system_log_tables_on_startup">
-  ## prepare_system_log_tables_on_startup
-</div>
+## prepare_system_log_tables_on_startup {#prepare_system_log_tables_on_startup}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
 Если значение равно true, ClickHouse создаёт все настроенные таблицы `system.*_log` до запуска. Это может быть полезно, если от этих таблиц зависят некоторые скрипты запуска.
 
-<div id="process_query_plan_packet">
-  ## process_query_plan_packet
-</div>
+## process_query_plan_packet {#process_query_plan_packet}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
@@ -1437,9 +1245,7 @@ Refreshable materialized views всегда получают значения п
 <process_query_plan_packet>true</process_query_plan_packet>
 ```
 
-<div id="processors_profile_log">
-  ## processors_profile_log
-</div>
+## processors_profile_log {#processors_profile_log}
 
 Настройки системной таблицы [`processors_profile_log`](/ru/reference/system-tables/processors_profile_log).
 
@@ -1460,9 +1266,7 @@ Refreshable materialized views всегда получают значения п
 </processors_profile_log>
 ```
 
-<div id="prometheus">
-  ## prometheus
-</div>
+## prometheus {#prometheus}
 
 Экспорт данных метрик для сбора с помощью [Prometheus](https://prometheus.io).
 
@@ -1472,9 +1276,9 @@ Refreshable materialized views всегда получают значения п
 * `port` – Порт для `endpoint`.
 * `metrics` – Экспортировать метрики из таблицы [system.metrics](/ru/reference/system-tables/metrics).
 * `events` – Экспортировать метрики из таблицы [system.events](/ru/reference/system-tables/events).
-* `asynchronous_metrics` – Экспортировать текущие значения метрик из таблицы [system.asynchronous&#95;metrics](/ru/reference/system-tables/asynchronous_metrics).
+* `asynchronous_metrics` – Экспортировать текущие значения метрик из таблицы [system.asynchronous&#95;metrics](/ru/reference/system-tables/asynchronous_metrics). Метрики вида ключ-значение (те, что разбиты по ядрам CPU, блочным устройствам, сетевым интерфейсам или дискам) экспортируются как одна выборка на ключ, при этом ключ передаётся как метка: `ClickHouseAsyncMetrics_BlockReadBytes{device="sda"}`. Настройка сервера [`asynchronous_metrics_key_values_mode`](/ru/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) позволяет вместо этого экспортировать их под искажёнными именами, как до версии 26.8 (`ClickHouseAsyncMetrics_BlockReadBytes_sda`), либо обоими способами одновременно.
 * `errors` - Экспортировать количество ошибок по кодам, произошедших с момента последнего перезапуска сервера. Эту информацию также можно получить из [system.errors](/ru/reference/system-tables/errors).
-* `labels` – Постоянные метки, добавляемые к каждой экспортируемой метрике. Каждый дочерний элемент определяет одну метку: имя элемента является именем метки (должно соответствовать `[a-zA-Z_][a-zA-Z0-9_]*`), а значение элемента — значением метки. Значения меток поддерживают стандартные подстановки конфигурации, такие как атрибут `from_env`. Имя метки отклоняется, если оно начинается с `__` (зарезервировано Prometheus) или совпадает с меткой, которую эта конечная точка уже записывает для одного из включенных разделов, — иначе одна выборка содержала бы одно и то же имя метки дважды. Таким образом, набор зарезервированных меток определяется активным набором экспортируемых данных конечной точки: `le`, когда включен `histograms`; метки `ClickHouse_Info` (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`), когда включен `info`; а также любая метка, используемая экспортируемым семейством гистограмм или многомерных метрик (например, `group`, `direction` или `operation_type`), когда включен `histograms`/`dimensional_metrics`. Поскольку это зависит от того, что фактически экспортирует конечная точка, имя может быть допустимым для одной конечной точки, но отклоняться для другой — например, конечная точка Keeper `keeper_metrics_only` экспортирует только семейства `keeper_*`, поэтому метки, используемые только семействами сервера, там принимаются.
+* `labels` – Постоянные метки, добавляемые к каждой экспортируемой метрике. Каждый дочерний элемент определяет одну метку: имя элемента является именем метки (должно соответствовать `[a-zA-Z_][a-zA-Z0-9_]*`), а значение элемента — значением метки. Значения меток поддерживают стандартные подстановки конфигурации, такие как атрибут `from_env`. Имя метки отклоняется, если оно начинается с `__` (зарезервировано Prometheus) или совпадает с меткой, которую эта конечная точка уже записывает для одного из включенных разделов, — иначе одна выборка содержала бы одно и то же имя метки дважды. Таким образом, набор зарезервированных меток определяется активным набором экспортируемых данных конечной точки: `le`, когда включен `histograms`; метки `ClickHouse_Info` (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`), когда включен `info`; ключевые метки асинхронных метрик вида ключ-значение (`channel`, `cpu`, `device`, `disk`, `interface`, `mc`, `sensor`), когда включен `asynchronous_metrics` и они публикуются в форме ключ-значение, что определяется настройкой сервера [`asynchronous_metrics_key_values_mode`](/ru/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode); а также любая метка, используемая экспортируемым семейством гистограмм или многомерных метрик (например, `group`, `direction` или `operation_type`), когда включен `histograms`/`dimensional_metrics`. Поскольку это зависит от того, что фактически экспортирует конечная точка, имя может быть допустимым для одной конечной точки, но отклоняться для другой — например, конечная точка Keeper `keeper_metrics_only` экспортирует только семейства `keeper_*`, поэтому метки, используемые только семействами сервера, там принимаются. Постоянные метки проверяются по этому же правилу при загрузке конфигурации, в том числе при `SYSTEM RELOAD CONFIG`: перезагрузка, которая привела бы к конфликту постоянной метки — из-за добавления такой метки или из-за изменения `asynchronous_metrics_key_values_mode`, после которого начинают записываться ключевые метки, — отклоняется целиком до вступления в силу, вместо того чтобы экспортировать одну и ту же метку дважды. Принятое изменение режима пересоздаёт конечные точки, экспортирующие метрики, чтобы новая форма и метки одной и той же конфигурации публиковались вместе.
 
 **Пример**
 
@@ -1504,15 +1308,11 @@ Refreshable materialized views всегда получают значения п
 curl 127.0.0.1:9363/metrics
 ```
 
-<div id="prometheus.keeper_metrics_only">
-  ## prometheus.keeper_metrics_only
-</div>
+## prometheus.keeper_metrics_only {#prometheus.keeper_metrics_only}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Показывает метрики, относящиеся к Keeper
 
-<div id="proxy">
-  ## прокси
-</div>
+## прокси {#proxy}
 
 Определите прокси-серверы для HTTP- и HTTPS-запросов; сейчас это поддерживается для хранилища S3, табличных функций S3 и URL-функций.
 
@@ -1651,9 +1451,7 @@ ClickHouse проверяет тип резолвера с наивысшим п
 проверяется следующий по приоритету тип резолвера, и так далее, пока не дойдёт до резолвера среды.
 Это также позволяет использовать сочетание разных типов резолвера.
 
-<div id="remap_executable">
-  ## remap_executable
-</div>
+## remap_executable {#remap_executable}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
@@ -1669,9 +1467,7 @@ ClickHouse проверяет тип резолвера с наивысшим п
 <remap_executable>false</remap_executable>
 ```
 
-<div id="replica_group_name">
-  ## replica_group_name
-</div>
+## replica_group_name {#replica_group_name}
 
 Имя группы реплик для базы данных Replicated.
 
@@ -1686,9 +1482,7 @@ DDL-запросы будут ожидать только реплики из т
 <replica_group_name>backups</replica_group_name>
 ```
 
-<div id="replicated_merge_tree">
-  ## replicated_merge_tree
-</div>
+## replicated_merge_tree {#replicated_merge_tree}
 
 Параметры тонкой настройки для таблиц [ReplicatedMergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree). Эта настройка имеет более высокий приоритет.
 
@@ -1702,15 +1496,11 @@ DDL-запросы будут ожидать только реплики из т
 </replicated_merge_tree>
 ```
 
-<div id="restore_threads">
-  ## restore_threads
-</div>
+## restore_threads {#restore_threads}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16" changeable_without_restart="No" />Максимальное количество потоков для выполнения запросов RESTORE.
 
-<div id="send_crash_reports">
-  ## send_crash_reports
-</div>
+## send_crash_reports {#send_crash_reports}
 
 Настройки отправки отчетов о сбоях команде основных разработчиков ClickHouse.
 
@@ -1732,17 +1522,13 @@ DDL-запросы будут ожидать только реплики из т
 </send_crash_reports>
 ```
 
-<div id="series_keeper_path">
-  ## series_keeper_path
-</div>
+## series_keeper_path {#series_keeper_path}
 
 <SettingsInfoBlock type="String" default_value="/clickhouse/series" changeable_without_restart="No" />
 
 Путь в Keeper с автоинкрементными номерами, создаваемыми функцией `generateSerialID`. Каждая серия будет представлена узлом в этом пути.
 
-<div id="ssh_server">
-  ## ssh_server
-</div>
+## ssh_server {#ssh_server}
 
 Открытая часть ключа хоста будет записана в файл known&#95;hosts
 на стороне SSH-клиента при первом подключении.
@@ -1760,9 +1546,7 @@ DDL-запросы будут ожидать только реплики из т
 </ssh_server>
 ```
 
-<div id="table_engines_require_grant">
-  ## table_engines_require_grant
-</div>
+## table_engines_require_grant {#table_engines_require_grant}
 
 <CloudNotSupportedBadge />
 
@@ -1774,9 +1558,7 @@ DDL-запросы будут ожидать только реплики из т
   По умолчанию из соображений обратной совместимости при создании таблицы с определённым движком таблицы grant игнорируется, однако это поведение можно изменить, установив для этого параметра значение true.
 </Note>
 
-<div id="tcp_ssh_port">
-  ## tcp_ssh_port
-</div>
+## tcp_ssh_port {#tcp_ssh_port}
 
 Порт SSH-сервера, через который пользователь может подключаться и выполнять запросы в интерактивном режиме с помощью встроенного клиента через PTY.
 
@@ -1786,9 +1568,7 @@ DDL-запросы будут ожидать только реплики из т
 <tcp_ssh_port>9022</tcp_ssh_port>
 ```
 
-<div id="text_log">
-  ## text_log
-</div>
+## text_log {#text_log}
 
 Настройки системной таблицы [text&#95;log](/ru/reference/system-tables/text_log) для журналирования текстовых сообщений.
 
@@ -1819,9 +1599,7 @@ DDL-запросы будут ожидать только реплики из т
 </clickhouse>
 ```
 
-<div id="thread_pool_queue_size">
-  ## thread_pool_queue_size
-</div>
+## thread_pool_queue_size {#thread_pool_queue_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />
 
@@ -1837,9 +1615,7 @@ DDL-запросы будут ожидать только реплики из т
 <thread_pool_queue_size>12000</thread_pool_queue_size>
 ```
 
-<div id="throw_on_unknown_workload">
-  ## throw_on_unknown_workload
-</div>
+## throw_on_unknown_workload {#throw_on_unknown_workload}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />
 
@@ -1858,9 +1634,7 @@ DDL-запросы будут ожидать только реплики из т
 
 * [Планирование рабочих нагрузок](/ru/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="timezone">
-  ## timezone
-</div>
+## timezone {#timezone}
 
 Часовой пояс сервера.
 
@@ -1878,9 +1652,7 @@ DDL-запросы будут ожидать только реплики из т
 
 * [session&#95;timezone](/ru/reference/settings/session-settings/other#session_timezone)
 
-<div id="trace_log">
-  ## trace_log
-</div>
+## trace_log {#trace_log}
 
 Настройки для работы системной таблицы [trace&#95;log](/ru/reference/system-tables/trace_log).
 
@@ -1902,9 +1674,7 @@ DDL-запросы будут ожидать только реплики из т
 </trace_log>
 ```
 
-<div id="url_scheme_mappers">
-  ## url_scheme_mappers
-</div>
+## url_scheme_mappers {#url_scheme_mappers}
 
 Настройка для преобразования сокращённых или символьных префиксов URL в полные URL.
 
@@ -1924,9 +1694,7 @@ DDL-запросы будут ожидать только реплики из т
 </url_scheme_mappers>
 ```
 
-<div id="validate_tcp_client_information">
-  ## validate_tcp_client_information
-</div>
+## validate_tcp_client_information {#validate_tcp_client_information}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Определяет, включена ли проверка информации о клиенте при получении пакета запроса.
 
@@ -1936,9 +1704,7 @@ DDL-запросы будут ожидать только реплики из т
 <validate_tcp_client_information>false</validate_tcp_client_information>
 ```
 
-<div id="wait_dictionaries_load_at_startup">
-  ## wait_dictionaries_load_at_startup
-</div>
+## wait_dictionaries_load_at_startup {#wait_dictionaries_load_at_startup}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
@@ -1960,15 +1726,11 @@ DDL-запросы будут ожидать только реплики из т
 <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
 ```
 
-<div id="webassembly_udf_engine">
-  ## webassembly_udf_engine
-</div>
+## webassembly_udf_engine {#webassembly_udf_engine}
 
-<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />Движок, используемый для исполнения WebAssembly UDF. Поддерживаются значения &#39;wasmtime&#39; и &#39;wasmedge&#39;.
+<SettingsInfoBlock type="String" default_value="wasmtime" changeable_without_restart="No" />Движок, используемый для исполнения WebAssembly UDF. Единственное поддерживаемое значение — &#39;wasmtime&#39;.
 
-<div id="webterminal_allowed_origins">
-  ## webterminal_allowed_origins
-</div>
+## webterminal_allowed_origins {#webterminal_allowed_origins}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Разделённый запятыми список полных origin-адресов (схема + хост + необязательный порт), которым разрешено открывать WebSocket-сеансы `/webterminal`. Если список пуст, политика same-origin применяется строго (Origin должен совпадать со схемой, хостом и портом запроса). Задайте этот параметр для развертываний за обратным прокси с терминацией TLS, где `request.isSecure()` имеет значение `false`, хотя браузер использует `https`. Пример: `https://example.com,https://app.example.com:8443`.
 

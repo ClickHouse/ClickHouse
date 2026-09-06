@@ -21,9 +21,7 @@ Cenários de uso:
   No momento, este motor não está disponível no ClickHouse Cloud. Em vez disso, [use a função de tabela S3](/pt-BR/reference/functions/table-functions/s3).
 </Note>
 
-<div id="usage-in-clickhouse-server">
-  ## Uso no Servidor ClickHouse
-</div>
+## Uso no Servidor ClickHouse {#usage-in-clickhouse-server}
 
 ```sql
 File(Format)
@@ -44,9 +42,7 @@ Você pode criar manualmente esse subdiretório e arquivo no sistema de arquivos
   Tenha cuidado com essa funcionalidade, porque o ClickHouse não acompanha alterações externas nesses arquivos. O resultado de gravações simultâneas via ClickHouse e fora do ClickHouse é indefinido.
 </Note>
 
-<div id="example">
-  ## Exemplo
-</div>
+## Exemplo {#example}
 
 **1.** Configure a tabela `file_engine_table`:
 
@@ -77,11 +73,9 @@ SELECT * FROM file_engine_table
 └──────┴───────┘
 ```
 
-<div id="usage-in-clickhouse-local">
-  ## Uso no ClickHouse-local
-</div>
+## Uso no ClickHouse-local {#usage-in-clickhouse-local}
 
-No [clickhouse-local](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local), o motor File aceita o caminho do arquivo além de `Format`. Os fluxos padrão de entrada/saída podem ser especificados usando nomes numéricos ou legíveis por pessoas, como `0` ou `stdin`, `1` ou `stdout`. É possível ler e gravar arquivos comprimidos com base em um parâmetro adicional do motor ou na extensão do arquivo (`gz`, `br` ou `xz`).
+No [clickhouse-local](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local), o motor File aceita o caminho do arquivo além de `Format`. Os fluxos padrão de entrada/saída podem ser especificados usando nomes numéricos ou legíveis por pessoas, como `0` ou `stdin`, `1` ou `stdout`. É possível ler e gravar arquivos comprimidos com base em um parâmetro adicional do motor ou na extensão do arquivo. Os valores suportados são `none` (sem compressão), `gzip/gz`, `deflate`, `brotli/br`, `lzma/xz`, `zstd/zst`, `lz4`, `bz2` e `snappy`. Para `snappy`, o wire format é selecionado pela configuração [snappy&#95;mode](/pt-BR/reference/settings/session-settings/other#snappy_mode) (`basic` por padrão).
 
 **Exemplo:**
 
@@ -89,9 +83,7 @@ No [clickhouse-local](/pt-BR/concepts/features/tools-and-utilities/clickhouse-lo
 $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
 ```
 
-<div id="details-of-implementation">
-  ## Detalhes da implementação
-</div>
+## Detalhes da implementação {#details-of-implementation}
 
 * Várias consultas `SELECT` podem ser executadas concorrentemente, mas as consultas `INSERT` aguardam umas às outras.
 * Há suporte para criar um novo arquivo por meio de uma consulta `INSERT`.
@@ -102,26 +94,20 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
   * Índices
   * Replicação
 
-<div id="partition-by">
-  ## PARTITION BY
-</div>
+## PARTITION BY {#partition-by}
 
 `PARTITION BY` — Opcional. É possível criar arquivos separados particionando os dados com base em uma chave de partição. Na maioria dos casos, você não precisa de uma chave de partição e, mesmo quando ela é necessária, em geral não precisa ser mais granular do que por mês. O particionamento não acelera as consultas (ao contrário da expressão `ORDER BY`). Você nunca deve usar um particionamento granular demais. Não particione seus dados por identificadores ou nomes de clientes (em vez disso, use o identificador ou nome do cliente como a primeira coluna na expressão `ORDER BY`).
 
 Para particionar por mês, use a expressão `toYYYYMM(date_column)`, em que `date_column` é uma coluna com uma data do tipo [Date](/pt-BR/reference/data-types/date). Os nomes das partições aqui seguem o formato `"YYYYMM"`.
 
-<div id="virtual-columns">
-  ## Colunas virtuais
-</div>
+## Colunas virtuais {#virtual-columns}
 
 * `_path` — Caminho do arquivo. Tipo: `LowCardinality(String)`.
 * `_file` — Nome do arquivo. Tipo: `LowCardinality(String)`.
 * `_size` — Tamanho do arquivo em bytes. Tipo: `Nullable(UInt64)`. Se o tamanho for desconhecido, o valor é `NULL`.
 * `_time` — Horário da última modificação do arquivo. Tipo: `Nullable(DateTime)`. Se o horário for desconhecido, o valor é `NULL`.
 
-<div id="settings">
-  ## Configurações
-</div>
+## Configurações {#settings}
 
 * [engine&#95;file&#95;empty&#95;if&#95;not&#95;exists](/pt-BR/reference/settings/session-settings/engine-file#engine_file_empty_if_not_exists) - permite selecionar dados vazios de um arquivo inexistente. Desativado por padrão.
 * [engine&#95;file&#95;truncate&#95;on&#95;insert](/pt-BR/reference/settings/session-settings/engine-file#engine_file_truncate_on_insert) - permite truncar o arquivo antes de inserir dados nele. Desativado por padrão.

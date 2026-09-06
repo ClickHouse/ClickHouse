@@ -15,29 +15,23 @@ doc_type: 'reference'
   이 파일들이 노드마다 다르면 반환값은 미리 정해질 수 없으며, worker 노드가 initiator에 작업을 요청하는 순서에 따라 달라집니다.
 </Note>
 
-<div id="syntax">
-  ## 구문
-</div>
+## 구문 {#syntax}
 
 ```sql
 fileCluster(cluster_name, path[, format, structure, compression_method])
 ```
 
-<div id="arguments">
-  ## 인수
-</div>
+## 인수 {#arguments}
 
-| 인수                   | 설명                                                                                                                                                    |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster_name`       | 원격 및 로컬 서버의 주소 집합과 연결 매개변수를 구성하는 데 사용되는 클러스터의 이름입니다.                                                                                                  |
-| `path`               | [user&#95;files&#95;path](/ko/reference/settings/server-settings/settings/user#user_files_path)에 있는 파일의 상대 경로입니다. 파일 경로는 [글롭 패턴](#globs-in-path)도 지원합니다. |
-| `format`             | 파일의 [포맷](/ko/reference/formats/index)입니다. 유형: [String](/ko/reference/data-types/string).                                                                    |
-| `structure`          | `'UserID UInt64, Name String'` 포맷의 테이블 구조입니다. 컬럼 이름과 타입을 결정합니다. 유형: [String](/ko/reference/data-types/string).                                           |
-| `compression_method` | 압축 방법입니다. 지원되는 압축 타입은 `gz`, `br`, `xz`, `zst`, `lz4`, `bz2`입니다.                                                                                       |
+| 인수                   | 설명                                                                                                                                                                                                                                              |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`       | 원격 및 로컬 서버의 주소 집합과 연결 매개변수를 구성하는 데 사용되는 클러스터의 이름입니다.                                                                                                                                                                                            |
+| `path`               | [user&#95;files&#95;path](/ko/reference/settings/server-settings/settings/user#user_files_path)에 있는 파일의 상대 경로입니다. 파일 경로는 [글롭 패턴](#globs-in-path)도 지원합니다.                                                                                           |
+| `format`             | 파일의 [포맷](/ko/reference/formats/index)입니다. 유형: [String](/ko/reference/data-types/string).                                                                                                                                                              |
+| `structure`          | `'UserID UInt64, Name String'` 포맷의 테이블 구조입니다. 컬럼 이름과 타입을 결정합니다. 유형: [String](/ko/reference/data-types/string).                                                                                                                                     |
+| `compression_method` | 압축 방법입니다. 지원되는 값은 `none`(압축 없음), `gzip/gz`, `deflate`, `brotli/br`, `lzma/xz`, `zstd/zst`, `lz4`, `bz2`, `snappy`입니다. `snappy`의 경우 wire 형식은 [snappy&#95;mode](/ko/reference/settings/session-settings/other#snappy_mode) 설정으로 선택합니다(기본값은 `basic`). |
 
-<div id="returned-value">
-  ## 반환 값
-</div>
+## 반환 값 {#returned-value}
 
 지정된 포맷과 구조를 가지며, 지정된 경로와 일치하는 파일의 데이터를 포함하는 테이블입니다.
 
@@ -86,15 +80,11 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 └────┴────────┘
 ```
 
-<div id="globs-in-path">
-  ## 경로 내 글롭 패턴
-</div>
+## 경로 내 글롭 패턴 {#globs-in-path}
 
 [File](/ko/reference/functions/table-functions/file#globs-in-path) 테이블 함수에서 지원하는 모든 패턴은 FileCluster에서도 지원됩니다.
 
-<div id="related">
-  ## 관련 항목
-</div>
+## 관련 항목 {#related}
 
 * [File 테이블 함수](/ko/reference/functions/table-functions/file)
 

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="validate_enum_literals_in_operators">
-  ## validate_enum_literals_in_operators
-</div>
+## validate_enum_literals_in_operators {#validate_enum_literals_in_operators}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,21 +21,17 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Если настройка включена, литералы enum в операторах `IN`, `NOT IN`, `==`, `!=` проверяются на соответствие типу enum; если литерал не является допустимым значением enum, генерируется исключение.
 
-<div id="validate_mutation_query">
-  ## validate_mutation_query
-</div>
+## validate_mutation_query {#validate_mutation_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "Новая настройка: по умолчанию проверять запросы мутации."}]}]} />
 
-Проверять запросы мутации перед их принятием. Мутации выполняются в фоновом режиме, и запуск некорректного запроса приведёт к тому, что мутации зависнут и потребуется ручное вмешательство.
+Проверять запросы мутации перед их принятием. Мутации выполняются в фоновом режиме, и запуск некорректного запроса может привести к тому, что мутации зависнут и потребуется ручное вмешательство.
 
 Изменяйте эту настройку только если столкнулись с ошибкой, нарушающей обратную совместимость.
 
-<div id="validate_polygons">
-  ## validate_polygons
-</div>
+## validate_polygons {#validate_polygons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

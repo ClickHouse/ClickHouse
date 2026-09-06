@@ -7,13 +7,9 @@ title: '高级插入'
 doc_type: 'reference'
 ---
 
-<div id="inserting-data-with-clickhouse-connect--advanced-usage">
-  ## 使用 ClickHouse Connect 插入数据：高级用法
-</div>
+## 使用 ClickHouse Connect 插入数据：高级用法 {#inserting-data-with-clickhouse-connect--advanced-usage}
 
-<div id="insertcontexts">
-  ### InsertContexts
-</div>
+### InsertContexts {#insertcontexts}
 
 ClickHouse Connect 的 Native-format 插入操作，以及 `insert` 和 `insert_df` 方法，都在 `InsertContext` 中执行。`insert_arrow`、`insert_df_arrow` 和 `raw_insert` 方法会直接发送其载荷，而不会使用 `InsertContext`。`InsertContext` 包含传递给客户端 `insert` 方法的所有参数值。此外，在初次构造 `InsertContext` 时，ClickHouse Connect 还会获取插入列的数据类型，以便高效地进行 Native format 插入。复用同一个 `InsertContext` 执行多次插入时，就可以避免这类“预查询”，从而让插入更快、更高效。
 
@@ -35,50 +31,47 @@ assert qr.first_row[0] == 113
 
 `InsertContext`s 包含会在 insert 过程中更新的可变状态，因此不具备线程安全性。
 
-<div id="write-formats">
-  ### 写入格式
-</div>
+### 写入格式 {#write-formats}
 
 只有少数类型实现了写入格式。在大多数情况下，ClickHouse Connect 会根据列中第一个非 NULL 的数据值自动判断正确的写入格式。例如，当 `DateTime` 列的第一个值是整数时，client 会将其视为纪元秒。
 
 通常无需覆盖写入格式，但 `clickhouse_connect.datatypes.format` 中的方法可以在全局范围内进行设置。像 `Array`、`Nullable` 和 `LowCardinality` 这样的容器包装器会保留其元素类型的格式行为。
 
-<div id="write-format-options">
-  #### 写入格式选项
-</div>
+#### 写入格式选项 {#write-format-options}
 
-| ClickHouse 类型         | 原生 Python 类型            | 写入格式              | 注释                                                                                    |
-| --------------------- | ----------------------- | ----------------- | ------------------------------------------------------------------------------------- |
-| Int[8-64], UInt[8-32] | int                     |                   |                                                                                       |
-| UInt64                | int                     |                   |                                                                                       |
-| [U]Int[128,256]       | int                     |                   |                                                                                       |
-| BFloat16              | float                   |                   |                                                                                       |
-| Float32               | float                   |                   |                                                                                       |
-| Float64               | float                   |                   |                                                                                       |
-| Decimal               | decimal.Decimal         |                   |                                                                                       |
-| String                | str or bytes            |                   | 同一列中的值必须始终统一为文本或字节类型。                                                                 |
-| FixedString           | bytes                   | string            | 字符串值会以零字节填充。空字节会写入为全零字节。                                                              |
-| Enum[8,16]            | str or int              |                   | 可将标签作为字符串插入，或插入其底层整数值。                                                                |
-| Date                  | datetime.date           | int               | 整数值会被解释为自 1970-01-01 起的天数。                                                            |
-| Date32                | datetime.date           | int               | 整数值会被解释为有符号的天数偏移。                                                                     |
-| DateTime              | datetime.datetime       | int               | 整数值会被解释为纪元秒。                                                                          |
-| DateTime64            | datetime.datetime       | int               | 整数值会被解释为按列精度表示的 tick。                                                                 |
-| Time                  | datetime.timedelta      | int, string, time | 整数值会被解释为秒。                                                                            |
-| Time64                | datetime.timedelta      | int, string, time | 整数值会被解释为按列精度表示的 tick。                                                                 |
-| IPv4                  | `ipaddress.IPv4Address` | string            | 格式正确的字符串可作为 IPv4 地址插入                                                                 |
-| IPv6                  | `ipaddress.IPv6Address` | string            | 格式正确的字符串可作为 IPv6 地址插入                                                                 |
-| Tuple                 | dict or tuple           |                   |                                                                                       |
-| Map                   | dict                    |                   |                                                                                       |
-| Nested                | Sequence[dict]          |                   |                                                                                       |
-| UUID                  | uuid.UUID               | string            | 格式正确的字符串可作为 ClickHouse UUID 插入                                                        |
-| JSON                  | dict                    | string            | 支持字典和 JSON 对象字符串。旧版 `Object('json')` 类型不受支持。                                          |
-| Variant               | object                  |                   | 值使用原生成员序列化。在 Python 类型存在歧义时，请使用 `clickhouse_connect.datatypes.dynamic.typed_variant`。 |
-| Dynamic               | object                  |                   | 当前值通过其 String 表示形式插入。                                                                 |
-| QBit                  | Sequence[float]         |                   | 安装 NumPy 后，会自动使用它来更快地进行比特转置。                                                          |
+| ClickHouse 类型         | 原生 Python 类型            | 写入格式              | 注释                                                                                                  |
+| --------------------- | ----------------------- | ----------------- | --------------------------------------------------------------------------------------------------- |
+| Int[8-64], UInt[8-32] | int                     |                   |                                                                                                     |
+| UInt64                | int                     |                   |                                                                                                     |
+| [U]Int[128,256]       | int                     |                   |                                                                                                     |
+| BFloat16              | float                   |                   |                                                                                                     |
+| Float32               | float                   |                   |                                                                                                     |
+| Float64               | float                   |                   |                                                                                                     |
+| Decimal               | decimal.Decimal         |                   |                                                                                                     |
+| Interval*             | int                     |                   | 值为以该时间间隔类型单位计量的有符号 64 位计数。                                                                          |
+| String                | str or bytes            |                   | 同一列中的值必须始终统一为文本或字节类型。                                                                               |
+| FixedString           | bytes                   | string            | 字符串值会以零字节填充。空字节会写入为全零字节。                                                                            |
+| Enum[8,16]            | str or int              |                   | 可将标签作为字符串插入，或插入其底层整数值。                                                                              |
+| Date                  | datetime.date           | int               | 整数值会被解释为自 1970-01-01 起的天数。                                                                          |
+| Date32                | datetime.date           | int               | 整数值会被解释为有符号的天数偏移。                                                                                   |
+| DateTime              | datetime.datetime       | int               | 整数值会被解释为纪元秒。                                                                                        |
+| DateTime64            | datetime.datetime       | int               | 整数值会被解释为按列精度表示的 tick。                                                                               |
+| Time                  | datetime.timedelta      | int, string, time | 整数值会被解释为秒。                                                                                          |
+| Time64                | datetime.timedelta      | int, string, time | 支持 0 到 9 的标度。整数值会被解释为按列精度表示的 tick。NumPy timedelta 值和 DataFrame 插入在所有标度下均可正常工作。Python time 类型仅支持到微秒。 |
+| IPv4                  | `ipaddress.IPv4Address` | string            | 格式正确的字符串可作为 IPv4 地址插入                                                                               |
+| IPv6                  | `ipaddress.IPv6Address` | string            | 格式正确的字符串可作为 IPv6 地址插入                                                                               |
+| Tuple                 | dict or tuple           |                   | 对于 `Tuple()`，请使用 `()`。                                                                              |
+| Map                   | dict                    |                   |                                                                                                     |
+| Nested                | Sequence[dict]          |                   |                                                                                                     |
+| UUID                  | uuid.UUID               | string            | 格式正确的字符串可作为 ClickHouse UUID 插入                                                                      |
+| JSON                  | dict                    | string            | 支持字典和 JSON 对象字符串。旧版 `Object('json')` 类型不受支持。                                                        |
+| Variant               | object                  |                   | 值使用原生成员序列化。在 Python 类型存在歧义时，请使用 `clickhouse_connect.datatypes.dynamic.typed_variant`。               |
+| Dynamic               | object                  |                   | 当前值通过其 String 表示形式插入。                                                                               |
+| MultiPoint            | Sequence[tuple]         |                   | 每个点为一个二元组。插入 MultiPoint 值需要 ClickHouse 26.8 或更高版本。                                                  |
+| Geometry              | tuple or list           |                   | Point 值为二元组。对于基于列表的值 (包括 MultiPoint) ，请使用 `typed_variant` 包装以选择相应的几何成员类型。                           |
+| QBit                  | Sequence[float]         |                   | 安装 NumPy 后，会自动使用它来更快地进行比特转置。                                                                        |
 
-<div id="specialized-insert-methods">
-  ### 专用插入方法
-</div>
+### 专用插入方法 {#specialized-insert-methods}
 
 ClickHouse Connect 为常见数据格式提供了专用的插入方法：
 
@@ -92,9 +85,7 @@ ClickHouse Connect 为常见数据格式提供了专用的插入方法：
   NumPy array 是合法的 Sequence of Sequences，因此可作为主 `insert` 方法的 `data` 参数使用，无需专用方法。
 </Note>
 
-<div id="pandas-dataframe-insert">
-  #### 插入 Pandas DataFrame
-</div>
+#### 插入 Pandas DataFrame {#pandas-dataframe-insert}
 
 ```python
 import clickhouse_connect
@@ -111,9 +102,7 @@ df = pd.DataFrame({
 client.insert_df("users", df)
 ```
 
-<div id="pyarrow-table-insert">
-  #### PyArrow Table 插入操作
-</div>
+#### PyArrow Table 插入操作 {#pyarrow-table-insert}
 
 ```python
 import clickhouse_connect
@@ -130,9 +119,7 @@ arrow_table = pa.table({
 client.insert_arrow("users", arrow_table)
 ```
 
-<div id="arrow-backed-dataframe-insert-pandas-2">
-  #### 基于 Arrow 的 DataFrame 插入 (pandas 2.x)
-</div>
+#### 基于 Arrow 的 DataFrame 插入 (pandas 2.x) {#arrow-backed-dataframe-insert-pandas-2}
 
 ```python
 import clickhouse_connect
@@ -150,9 +137,7 @@ df = pd.DataFrame({
 client.insert_df_arrow("users", df)
 ```
 
-<div id="create-table-from-pyarrow-schema">
-  ### 根据 PyArrow schema 创建表
-</div>
+### 根据 PyArrow schema 创建表 {#create-table-from-pyarrow-schema}
 
 `create_table_from_arrow_schema` 会根据常见的标量 Arrow field 构建 `CREATE TABLE` 语句。该映射涵盖有符号和无符号整数、浮点值、布尔值、字符串、日期和时间戳。它会刻意创建不可为 NULL 的 ClickHouse 列，并在遇到不受支持的 Arrow type 时引发 `TypeError`，因此请在执行前先检查生成的 DDL。
 
@@ -179,15 +164,11 @@ ddl = create_table_from_arrow_schema(
 client.command(ddl)
 ```
 
-<div id="time-zones">
-  ### 时区
-</div>
+### 时区 {#time-zones}
 
 将 Python `datetime` 对象插入 `DateTime` 或 `DateTime64` 列时，ClickHouse Connect 会将其转换为自纪元开始计数的值。
 
-<div id="timezone-aware-datetime-objects">
-  #### 带时区信息的 datetime 对象
-</div>
+#### 带时区信息的 datetime 对象 {#timezone-aware-datetime-objects}
 
 带时区信息的对象会保留其所表示的时刻。源时区无需与 ClickHouse 列中声明的时区一致。
 
@@ -216,9 +197,7 @@ assert [row[0].hour for row in results.result_rows] == [1, 10, 16]
   ClickHouse Connect 使用标准库中的 `zoneinfo` 模块。该驱动不再依赖 `pytz`。
 </Note>
 
-<div id="timezone-naive-datetime-objects">
-  #### 不带时区的 datetime 对象
-</div>
+#### 不带时区的 datetime 对象 {#timezone-naive-datetime-objects}
 
 全局 `naive_datetime_insert` 设置用于控制插入不带时区的原生 Python `datetime` 对象。它也适用于 `DateTime64` 列接受的不带时区的 ISO 字符串。
 
@@ -259,9 +238,7 @@ client.insert("events", [[epoch_timestamp]], column_names=["event_time"])
 
 不含时区信息的 `datetime` 查询参数使用独立的 `naive_datetime_binding` 设置。默认的 `"wall"` 模式会按原样发送日期时间字段，不进行主机本地时区转换。请参阅[参数 argument](/zh/integrations/language-clients/python/driver-api#parameters-argument)部分。
 
-<div id="datetime-columns-with-timezone-metadata">
-  #### 带有时区元数据的 DateTime 列
-</div>
+#### 带有时区元数据的 DateTime 列 {#datetime-columns-with-timezone-metadata}
 
 ClickHouse 列可以声明时区元数据，例如 `DateTime('America/Denver')` 或 `DateTime64(3, 'Asia/Tokyo')`。这些元数据决定了值在查询时的显示方式。
 
@@ -286,9 +263,7 @@ assert returned.hour == 7
 assert returned.tzinfo == ZoneInfo("America/Los_Angeles")
 ```
 
-<div id="file-inserts">
-  ## File 插入
-</div>
+## File 插入 {#file-inserts}
 
 `clickhouse_connect.driver.tools.insert_file` 会以流式方式将本地文件插入现有表中，并由 ClickHouse 负责解析。
 

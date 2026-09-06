@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="enable_join_fixed_hash_table_conversion">
-  ## enable_join_fixed_hash_table_conversion
-</div>
+## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,15 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Permite converter a tabela hash em um array linear em junções quando a chave é um único inteiro com um pequeno intervalo de valores.
 
-<div id="enable_join_runtime_filters">
-  ## enable_join_runtime_filters
-</div>
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nova configuração para armazenar apenas as chaves de junção, sem referência a uma linha da direita, nas tabelas hash de junções cujo resultado nunca pode conter um valor obtido de uma linha da direita (`LEFT ANTI` e `LEFT SEMI` quando nenhuma coluna da direita é selecionada)."}]}]} />
+
+Usa tabelas hash que armazenam apenas as chaves de junção, sem referência a uma linha da direita, para junções cujo resultado nunca pode conter um valor obtido de uma linha da direita: `LEFT ANTI` e `LEFT SEMI` quando nenhuma coluna da direita é selecionada. Essa tabela tem uma célula menor e permite que os blocos da direita sejam descartados em vez de armazenados.
+
+## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <BetaBadge />
 
@@ -37,9 +41,7 @@ Permite converter a tabela hash em um array linear em junções quando a chave �
 
 Filtra o lado esquerdo usando o conjunto de chaves de JOIN coletado do lado direito em tempo de execução.
 
-<div id="enable_join_runtime_filters_index_analysis">
-  ## enable_join_runtime_filters_index_analysis
-</div>
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
 <ExperimentalBadge />
 
@@ -49,9 +51,7 @@ Filtra o lado esquerdo usando o conjunto de chaves de JOIN coletado do lado dire
 
 Execute uma segunda etapa de análise de índices (via `use_skip_indexes_on_data_read`) para descartar grânulos no lado esquerdo (LHS) de um join.
 
-<div id="enable_join_transitive_predicates">
-  ## enable_join_transitive_predicates
-</div>
+## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
 <BetaBadge />
 

@@ -12,13 +12,13 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并根据 [源码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="network_compression_method">
-  ## network_compression_method
-</div>
+## network_compression_method {#network_compression_method}
 
-<SettingsInfoBlock type="String" default_value="LZ4" />
+<SettingsInfoBlock type="String" default_value="ZSTD" />
 
-用于压缩客户端/服务器端以及服务器/服务器之间通信的编解码器。
+用于压缩通过 native protocol 进行的客户端/服务器端以及服务器/服务器之间通信的编解码器。
+
+该设置不适用于 distributed queries 的流式 exchange 通道，该通道始终使用服务器的 default codec：每个压缩帧都是 self-describing 的，因此 receiver 会自动检测所用的编解码器。
 
 可能的值：
 
@@ -31,11 +31,9 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 * [network&#95;zstd&#95;compression&#95;level](/zh/reference/settings/session-settings/network#network_zstd_compression_level)
 
-<div id="network_zstd_compression_level">
-  ## network_zstd_compression_level
-</div>
+## network_zstd_compression_level {#network_zstd_compression_level}
 
-<SettingsInfoBlock type="Int64" default_value="1" />
+<SettingsInfoBlock type="Int64" default_value="3" />
 
 调整 ZSTD 的压缩级别。仅在 [network&#95;compression&#95;method](/zh/reference/settings/session-settings/network#network_compression_method) 设置为 `ZSTD` 时使用。
 

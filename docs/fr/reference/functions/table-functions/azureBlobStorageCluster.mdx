@@ -12,17 +12,13 @@ doc_type: 'reference'
 Permet de traiter des fichiers depuis [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) en parallèle sur plusieurs nœuds d’un cluster spécifié. Sur l’initiateur, elle établit une connexion à tous les nœuds du cluster, développe les astérisques dans le chemin de fichier S3 et répartit dynamiquement chaque fichier. Sur le nœud worker, elle demande à l’initiateur la tâche suivante à traiter, puis l’exécute. Ce processus se répète jusqu’à ce que toutes les tâches soient terminées.
 Cette fonction de table est similaire à la [fonction s3Cluster](/fr/reference/functions/table-functions/s3Cluster).
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 ```sql
 azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
 ```
 
-<div id="arguments">
-  ## Arguments
-</div>
+## Arguments {#arguments}
 
 | Argument            | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -33,18 +29,14 @@ azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, con
 | `account_name`      | si `storage_account_url` est utilisé, le nom du compte peut être indiqué ici                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `account_key`       | si `storage_account_url` est utilisé, la clé du compte peut être indiquée ici                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `format`            | Le [format](/fr/reference/formats/index) du fichier.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `compression`       | Valeurs prises en charge : `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Par défaut, la compression est détectée automatiquement à partir de l’extension du fichier. (équivaut à définir `auto`.)                                                                                                                                                                                                                                                                                                                                                         |
+| `compression`       | Valeurs prises en charge : `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. Par défaut, la compression est détectée automatiquement à partir de l’extension du fichier. (équivaut à définir `auto`.) Pour `snappy`, le format filaire est sélectionné par le paramètre [snappy&#95;mode](/fr/reference/settings/session-settings/other#snappy_mode) (`basic` par défaut).                                                                                                                                                    |
 | `structure`         | Structure de la table. Format : `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
-<div id="returned-value">
-  ## Valeur renvoyée
-</div>
+## Valeur renvoyée {#returned-value}
 
 Une table dotée de la structure spécifiée pour lire ou écrire des données dans le fichier indiqué.
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
 À l’instar du moteur de table [AzureBlobStorage](/fr/reference/engines/table-engines/integrations/azureBlobStorage), les utilisateurs peuvent utiliser l’émulateur Azurite pour le développement local avec Azure Storage. Plus de détails [ici](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). Ci-dessous, nous supposons qu’Azurite est accessible sous le nom d’hôte `azurite1`.
 
@@ -57,15 +49,11 @@ SELECT count(*) FROM azureBlobStorageCluster(
         'auto', 'key UInt64')
 ```
 
-<div id="using-shared-access-signatures-sas-sas-tokens">
-  ## Utilisation des signatures d’accès partagé (SAS)
-</div>
+## Utilisation des signatures d’accès partagé (SAS) {#using-shared-access-signatures-sas-sas-tokens}
 
 Consultez [azureBlobStorage](/fr/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) pour voir des exemples.
 
-<div id="related">
-  ## Voir aussi
-</div>
+## Voir aussi {#related}
 
 * [moteur AzureBlobStorage](/fr/reference/engines/table-engines/integrations/azureBlobStorage)
 * [fonction de table AzureBlobStorage](/fr/reference/functions/table-functions/azureBlobStorage)

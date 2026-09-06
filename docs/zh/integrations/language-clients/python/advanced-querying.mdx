@@ -7,9 +7,7 @@ title: '高级查询'
 doc_type: 'reference'
 ---
 
-<div id="querycontexts">
-  ## QueryContexts
-</div>
+## QueryContexts {#querycontexts}
 
 ClickHouse Connect 在 `QueryContext` 中执行标准查询。`QueryContext` 包含用于针对 ClickHouse 数据库构建查询的关键结构，以及用于将结果处理为 `QueryResult` 或其他响应数据结构的配置。其中包括查询本身、参数、settings、读取格式以及其他属性。
 
@@ -32,9 +30,7 @@ assert result.first_row == (79,)
 
 请注意，`QueryContext` 不是线程安全的；但在多线程环境中，可以通过调用 `QueryContext.updated_copy` 方法获取其副本。
 
-<div id="streaming-queries">
-  ## 流式查询
-</div>
+## 流式查询 {#streaming-queries}
 
 ClickHouse Connect 客户端提供了多种以流形式检索数据的方法 (实现为 Python 生成器) ：
 
@@ -48,9 +44,7 @@ ClickHouse Connect 客户端提供了多种以流形式检索数据的方法 (�
 
 每个方法都会返回一个 `StreamContext`，必须使用 `with` 语句打开。async 客户端的流式方法需要先使用 await 等待，再通过 `async with` 打开。
 
-<div id="data-blocks">
-  ### 数据块
-</div>
+### 数据块 {#data-blocks}
 
 ClickHouse Connect 会将主要 `query` 方法返回的所有数据，作为从 ClickHouse 服务器 接收的块流进行处理。这些块以自定义的 “Native” 格式在客户端与 ClickHouse 之间传输。“块”本质上就是一系列二进制数据列，其中每一列都包含数量相同、且具有指定数据类型的数据值。 (作为列式数据库，ClickHouse 也以类似的形式存储这些数据。) 查询返回的块大小由两个用户设置控制，这两个设置可在多个级别上设定 (用户 profile、用户、会话或查询) 。它们是：
 
@@ -61,15 +55,11 @@ ClickHouse Connect 会将主要 `query` 方法返回的所有数据，作为从 
 
 使用 Client 的 `query_*_stream` 方法之一时，结果会按块返回。ClickHouse Connect 一次只加载一个块。这样就能在无需将整个大型结果集全部加载到内存中的情况下处理大量数据。请注意，应用程序应能够处理任意数量的块，并且无法精确控制每个块的大小。
 
-<div id="http-data-buffer-for-slow-processing">
-  ### 用于慢速处理的 HTTP 数据缓冲区
-</div>
+### 用于慢速处理的 HTTP 数据缓冲区 {#http-data-buffer-for-slow-processing}
 
 如果应用程序消费块的速度远慢于服务器生成块的速度，HTTP 连接可能会在处理完成前关闭。如果应用程序有足够的内存来缓冲更多响应数据，请增大通用的 `http_buffer_size` 设置。默认值为 10 MiB。`lz4` 和 `zstd` 的响应字节在此缓冲区中会保持压缩状态，从而提高其有效容量。
 
-<div id="streamcontexts">
-  ### StreamContexts
-</div>
+### StreamContexts {#streamcontexts}
 
 每个 `query_*_stream` 方法 (例如 `query_row_block_stream`) 都会返回一个 ClickHouse `StreamContext` 对象，它结合了 Python 的上下文管理器和生成器。基本用法如下：
 
@@ -88,9 +78,7 @@ with client.query_row_block_stream(
 
 你可以使用 `StreamContext` 的 `source` 属性来访问父结果对象，其中包含列名和类型。对于大多数 stream，该对象是 `QueryResult`；但 `query_np_stream` 和 `query_df_stream` 方法返回的则是 `NumpyResult`。
 
-<div id="stream-types">
-  ### stream 类型
-</div>
+### stream 类型 {#stream-types}
 
 `query_column_block_stream` 方法将块作为序列返回，其中包含以原生 Python 数据类型存储的列数据。使用上面的 `taxi_trips` 查询时，返回的数据将是一个列表，其中每个元素都是另一个列表 (或元组) ，包含对应列的全部数据。因此，`block[0]` 会是一个只包含字符串的元组。面向列的格式最常用于对某一列中的所有值执行聚合操作，例如计算总车费。
 
@@ -114,13 +102,9 @@ with df_stream:
 
 最后，`query_arrow_stream` 会将 ClickHouse `ArrowStream` 响应封装为 `StreamContext`。每次迭代都会返回一个 PyArrow `RecordBatch`。
 
-<div id="streaming-examples">
-  ### 流式示例
-</div>
+### 流式示例 {#streaming-examples}
 
-<div id="stream-rows">
-  #### 流式传输行数据
-</div>
+#### 流式传输行数据 {#stream-rows}
 
 ```python
 import clickhouse_connect
@@ -138,9 +122,7 @@ with client.query_rows_stream("SELECT number, number * 2 as doubled FROM system.
         # Additional rows follow
 ```
 
-<div id="stream-row-blocks">
-  #### 流式传输行数据块
-</div>
+#### 流式传输行数据块 {#stream-row-blocks}
 
 ```python
 import clickhouse_connect
@@ -153,9 +135,7 @@ with client.query_row_block_stream("SELECT number, number * 2 FROM system.number
         print(f"Received block with {len(block)} rows")
 ```
 
-<div id="stream-pandas-dataframes">
-  #### 流式传输 Pandas DataFrames
-</div>
+#### 流式传输 Pandas DataFrames {#stream-pandas-dataframes}
 
 ```python
 import clickhouse_connect
@@ -170,9 +150,7 @@ with client.query_df_stream("SELECT number, toString(number) AS str FROM system.
         print(df.head(3))
 ```
 
-<div id="stream-arrow-batches">
-  #### 流式传输 Arrow 批次数据
-</div>
+#### 流式传输 Arrow 批次数据 {#stream-arrow-batches}
 
 ```python
 import clickhouse_connect
@@ -186,9 +164,7 @@ with client.query_arrow_stream("SELECT * FROM large_table") as stream:
         print(f"Received Arrow batch with {arrow_batch.num_rows} rows")
 ```
 
-<div id="async-stream-rows">
-  #### 异步流式返回行
-</div>
+#### 异步流式返回行 {#async-stream-rows}
 
 ```python
 import asyncio
@@ -208,15 +184,11 @@ async def main():
 asyncio.run(main())
 ```
 
-<div id="numpy-pandas-and-arrow-queries">
-  ## NumPy、Pandas 和 Arrow 查询
-</div>
+## NumPy、Pandas 和 Arrow 查询 {#numpy-pandas-and-arrow-queries}
 
 ClickHouse Connect 提供了专门的查询方法，用于处理 NumPy、Pandas 和 Arrow 数据结构。借助这些方法，您可以直接以这些常用数据格式获取查询结果，无需手动转换。
 
-<div id="numpy-queries">
-  ### NumPy 查询
-</div>
+### NumPy 查询 {#numpy-queries}
 
 `query_np` 方法返回的是 NumPy 数组形式的查询结果，而不是 ClickHouse Connect 的 `QueryResult`。
 
@@ -241,9 +213,7 @@ print(np_array)
 #  [4 8]]
 ```
 
-<div id="pandas-queries">
-  ### Pandas 查询
-</div>
+### Pandas 查询 {#pandas-queries}
 
 `query_df` 方法会将查询结果以 Pandas DataFrame 的形式返回，而不是返回 ClickHouse Connect 的 `QueryResult`。
 
@@ -267,9 +237,7 @@ print(df)
 # 4       4        8
 ```
 
-<div id="pyarrow-queries">
-  ### PyArrow 查询
-</div>
+### PyArrow 查询 {#pyarrow-queries}
 
 `query_arrow` 方法会直接使用 ClickHouse 的 `Arrow` 输出格式返回一个 PyArrow Table。它接受 `query`、`parameters`、`settings`、`external_data` 和 `transport_settings`。`use_strings` 选项用于控制 ClickHouse `String` 列输出为 Arrow 字符串还是二进制值。
 
@@ -295,9 +263,7 @@ print(arrow_table)
 # str: [["0","1","2"]]
 ```
 
-<div id="arrow-backed-dataframes">
-  ### 基于 Arrow 的 DataFrames
-</div>
+### 基于 Arrow 的 DataFrames {#arrow-backed-dataframes}
 
 ClickHouse Connect 支持通过 `query_df_arrow` 和 `query_df_arrow_stream` 根据 Arrow 结果高效创建 DataFrame。这些方法避免了经由 Python 行对象进行转换，并在目标库支持的情况下复用 Arrow 缓冲区：
 
@@ -306,9 +272,7 @@ ClickHouse Connect 支持通过 `query_df_arrow` 和 `query_df_arrow_stream` 根
   * `dataframe_library="polars"`：返回通过 `pl.from_arrow` 创建的 Polars DataFrame。
 * `query_df_arrow_stream`：将 Arrow 批次以 Pandas 或 Polars DataFrame 的形式流式返回。
 
-<div id="query-to-arrow-backed-dataframe">
-  #### 查询到基于 Arrow 的 DataFrame
-</div>
+#### 查询到基于 Arrow 的 DataFrame {#query-to-arrow-backed-dataframe}
 
 ```python
 import clickhouse_connect
@@ -344,18 +308,14 @@ with client.query_df_arrow_stream(
         print(f"Received {type(df_batch)} batch with {len(df_batch)} rows and dtypes: {df_batch.dtypes}")
 ```
 
-<div id="notes-and-caveats">
-  #### 注意事项和局限性
-</div>
+#### 注意事项和局限性 {#notes-and-caveats}
 
 * Arrow schema 由 ClickHouse 控制。对于没有直接 Arrow 表示的类型，可以使用兼容的物理类型返回，包括二进制字段。在执行特定于应用程序的转换之前，请先检查 `table.schema` 或 DataFrame 的 dtype。
 * 基于 Arrow 的 Pandas 结果需要 Pandas 2.0 或更高版本。
 * `use_strings` 用于控制在服务端支持 `output_format_arrow_string_as_string` 时，ClickHouse `String` 列使用 Arrow 字符串字段还是二进制字段。
 * 基于 Arrow 的查询方法暂不支持 `tz_mode="schema"`。它们会发出警告，并保留 Arrow 响应提供的时区元数据。
 
-<div id="read-formats">
-  ## 读取格式
-</div>
+## 读取格式 {#read-formats}
 
 读取格式控制 `query`、`query_np` 和 `query_df` 返回的值。它们不适用于 raw 或 Arrow 方法，因为这些方法会直接使用服务器输出格式。例如，将 UUID 的读取格式设置为 `"string"` 会返回 UUID 字符串，而不是 `uuid.UUID` 对象。
 
@@ -395,42 +355,43 @@ client.query(
 )
 ```
 
-<div id="read-format-options-python-types">
-  ### 读取格式选项 (Python 类型)
-</div>
+### 读取格式选项 (Python 类型) {#read-format-options-python-types}
 
-| ClickHouse 类型         | 原生 Python 类型            | 读取格式              | 说明                                                      |
-| --------------------- | ----------------------- | ----------------- | ------------------------------------------------------- |
-| Int[8-64], UInt[8-32] | int                     | string            |                                                         |
-| UInt64                | int                     | signed            | Superset 目前还无法处理较大的无符号 UInt64 值                         |
-| [U]Int[128,256]       | int                     | string            | Pandas 和 NumPy 的 int 值最大仅支持 64 位，因此这些值可以作为字符串返回         |
-| BFloat16              | float                   | -                 | 所有 Python float 在内部都是 64 位                              |
-| Float32               | float                   | string            | 所有 Python float 在内部都是 64 位                              |
-| Float64               | float                   | string            |                                                         |
-| Decimal               | decimal.Decimal         | -                 |                                                         |
-| String                | str                     | bytes             | ClickHouse 的 String 列本身不带编码信息，因此也可用于存储可变长度的二进制数据        |
-| FixedString           | bytes                   | string            | FixedString 是固定大小的字节数组，但有时也会被当作 Python 字符串处理            |
-| Enum[8,16]            | str                     | int               | 原生格式返回标签；`int` 返回底层整数值。                                 |
-| Date                  | datetime.date           | int               | 整数格式返回自 1970-01-01 起的天数。                                |
-| Date32                | datetime.date           | int               | 整数格式返回更大范围的有符号天数偏移。                                     |
-| DateTime              | datetime.datetime       | int               | 整数格式返回纪元秒。                                              |
-| DateTime64            | datetime.datetime       | int               | 整数格式返回该列精度下的 ticks。Python `datetime` 仅支持到微秒。            |
-| Time                  | datetime.timedelta      | int, string, time | 整数格式返回秒数。`time` 格式仅适用于可放入 `datetime.time` 的值。           |
-| Time64                | datetime.timedelta      | int, string, time | 整数格式返回该列精度下的 ticks。Python `timedelta` 仅支持到微秒。           |
-| IPv4                  | `ipaddress.IPv4Address` | string, int       | IP 地址可以读取为字符串或整数。                                       |
-| IPv6                  | `ipaddress.IPv6Address` | string            | IP 地址可以读取为字符串；格式正确时，也可以作为 IP 地址插入                       |
-| Tuple                 | dict or tuple           | tuple, dict, json | 命名元组默认返回字典；未命名元组返回元组。                                   |
-| Map                   | dict                    | -                 |                                                         |
-| Nested                | Sequence[dict]          | -                 |                                                         |
-| UUID                  | uuid.UUID               | string            | UUID 可以读取为符合 RFC 4122 格式的字符串<br />                      |
-| JSON                  | dict                    | string            | 默认返回 Python 字典。`string` 格式会返回 JSON string               |
-| Variant               | object                  | typed             | `typed` 返回 `TypedVariant(value, type_name)`，从而保留原始成员类型。 |
-| Dynamic               | object                  | -                 | 返回与该值中存储的 ClickHouse 数据类型相对应的 Python 类型                 |
-| QBit                  | list[float]             | -                 | 安装 NumPy 后，会自动使用它来加快位转置。                                |
+| ClickHouse 类型         | 原生 Python 类型            | 读取格式              | 说明                                                                                              |
+| --------------------- | ----------------------- | ----------------- | ----------------------------------------------------------------------------------------------- |
+| Int[8-64], UInt[8-32] | int                     | string            |                                                                                                 |
+| UInt64                | int                     | signed            | Superset 目前还无法处理较大的无符号 UInt64 值                                                                 |
+| [U]Int[128,256]       | int                     | string            | Pandas 和 NumPy 的 int 值最大仅支持 64 位，因此这些值可以作为字符串返回                                                 |
+| BFloat16              | float                   | -                 | 所有 Python float 在内部都是 64 位                                                                      |
+| Float32               | float                   | string            | 所有 Python float 在内部都是 64 位                                                                      |
+| Float64               | float                   | string            |                                                                                                 |
+| Decimal               | decimal.Decimal         | -                 |                                                                                                 |
+| Interval*             | int                     | string            | 值为该时间间隔类型单位下的有符号 64 位计数。                                                                        |
+| String                | str                     | bytes             | ClickHouse 的 String 列本身不带编码信息，因此也可用于存储可变长度的二进制数据                                                |
+| FixedString           | bytes                   | string            | FixedString 是固定大小的字节数组，但有时也会被当作 Python 字符串处理                                                    |
+| Enum[8,16]            | str                     | int               | 原生格式返回标签；`int` 返回底层整数值。                                                                         |
+| Date                  | datetime.date           | int               | 整数格式返回自 1970-01-01 起的天数。                                                                        |
+| Date32                | datetime.date           | int               | 整数格式返回更大范围的有符号天数偏移。                                                                             |
+| DateTime              | datetime.datetime       | int               | 整数格式返回纪元秒。                                                                                      |
+| DateTime64            | datetime.datetime       | int               | 整数格式返回该列精度下的 ticks。Python `datetime` 仅支持到微秒。                                                    |
+| Time                  | datetime.timedelta      | int, string, time | 整数格式返回秒数。`time` 格式仅适用于可放入 `datetime.time` 的值。                                                   |
+| Time64                | datetime.timedelta      | int, string, time | 支持标度 0 到 9。整数格式返回该列精度下的 ticks。Python `timedelta` 仅支持到微秒。                                        |
+| IPv4                  | `ipaddress.IPv4Address` | string, int       | IP 地址可以读取为字符串或整数。                                                                               |
+| IPv6                  | `ipaddress.IPv6Address` | string            | IP 地址可以读取为字符串；格式正确时，也可以作为 IP 地址插入                                                               |
+| Tuple                 | dict or tuple           | tuple, dict, json | 命名元组默认返回字典；未命名元组返回元组。`Tuple()` 值返回 `()`。                                                        |
+| Map                   | dict                    | -                 |                                                                                                 |
+| Nested                | Sequence[dict]          | -                 |                                                                                                 |
+| UUID                  | uuid.UUID               | string            | UUID 可以读取为符合 RFC 4122 格式的字符串<br />                                                              |
+| JSON                  | dict                    | string            | 默认返回 Python 字典。`string` 格式会返回 JSON string                                                       |
+| Variant               | object                  | typed             | `typed` 返回 `TypedVariant(value, type_name)`，从而保留原始成员类型。                                         |
+| Dynamic               | object                  | -                 | 返回与该值中存储的 ClickHouse 数据类型相对应的 Python 类型                                                         |
+| MultiPoint            | list[tuple]             | -                 | 每个点以 2 元组形式返回。                                                                                  |
+| Geometry              | tuple or list           | typed             | Point 值为 2 元组。其他成员 (包括 MultiPoint) 使用嵌套列表。使用 `Geometry` 键选择 `typed` 可保留成员类型。`Variant` 的格式设置不适用。 |
+| QBit                  | list[float]             | -                 | 安装 NumPy 后，会自动使用它来加快位转置。                                                                        |
 
-<div id="external-data">
-  ## 外部数据
-</div>
+`query_np`、`query_np_stream`、`query_df` 和 `query_df_stream` 支持 `Time64` 的标度 0、3、6 和 9。其他标度会引发 `ProgrammingError`，因为它们没有对应的 NumPy 时间单位。请使用标准的 Python 查询并配合 `int` 或 `string` 读取格式，以保留这些精度。实验性的 [Rust codec](/zh/integrations/language-clients/python/rust-codec#known-behavior-differences) 记录了存储于 `Dynamic` 中的 `Time64` 的一个例外情况。
+
+## 外部数据 {#external-data}
 
 ClickHouse 查询可以接收任何受支持输入格式的外部数据。客户端会将数据作为请求的一部分发送，查询可将其作为临时外部表引用。请参阅 [ClickHouse 外部数据文档](/zh/reference/engines/table-engines/special/external-data)。客户端查询方法可通过 `external_data` 参数接收一个 `clickhouse_connect.driver.external.ExternalData` 对象。
 
@@ -473,9 +434,7 @@ result = client.query(
 
 chDB backend 不支持外部数据。
 
-<div id="time-zones">
-  ## 时区
-</div>
+## 时区 {#time-zones}
 
 ClickHouse `DateTime` 和 `DateTime64` 值会以基于纪元的数值形式传输。ClickHouse Connect 会根据列元数据、查询 override 以及客户端的时区策略，将它们转换为 Python `datetime` 对象。
 

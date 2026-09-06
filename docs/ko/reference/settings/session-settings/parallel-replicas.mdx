@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)로부터 자동으로 생성됩니다.
 
-<div id="parallel_replicas_allow_in_with_subquery">
-  ## parallel_replicas_allow_in_with_subquery
-</div>
+## parallel_replicas_allow_in_with_subquery {#parallel_replicas_allow_in_with_subquery}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 값이 true이면 IN용 서브쿼리가 모든 팔로워 레플리카에서 실행됩니다.
 
-<div id="parallel_replicas_allow_materialized_views">
-  ## parallel_replicas_allow_materialized_views
-</div>
+## parallel_replicas_allow_materialized_views {#parallel_replicas_allow_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,9 +31,17 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 병렬 레플리카에서 materialized view를 사용할 수 있도록 허용합니다
 
-<div id="parallel_replicas_allow_view_over_mergetree">
-  ## parallel_replicas_allow_view_over_mergetree
-</div>
+## parallel_replicas_allow_merge_tables {#parallel_replicas_allow_merge_tables}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`Merge` 테이블 읽기를 기반 `MergeTree` 테이블들에 대한 읽기의 union으로 확장하여, 계획 기반 병렬 레플리카로 `Merge` 테이블을 읽을 수 있도록 허용하는 새로운 설정. `parallel_replicas_plan_based`와 함께 사용할 때만 효과가 있습니다."}]}]} />
+
+병렬 레플리카로 `Merge` 테이블을 읽을 수 있도록 허용합니다. [parallel&#95;replicas&#95;plan&#95;based](/ko/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based)와 함께 사용할 때만 유효하며, 이때 `Merge` 테이블 읽기는 기반 `MergeTree` 테이블들에 대한 읽기의 union으로 확장되고, 이후 다른 union과 동일한 방식으로 분산됩니다. 기반 테이블 중 하나라도 이러한 방식으로 읽을 수 없는 경우(`MergeTree`가 아닌 테이블, `FINAL` 읽기)에는 해당 `Merge` 테이블이 단일 레플리카에서만 처리됩니다. 이 기능이 추가되기 이전처럼 모든 `Merge` 테이블을 단일 레플리카에서 읽으려면 `false`로 설정하십시오. 실험적 기능.
+
+## parallel_replicas_allow_view_over_mergetree {#parallel_replicas_allow_view_over_mergetree}
 
 <BetaBadge />
 
@@ -47,9 +51,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 병렬 레플리카가 `MergeTree` 테이블 기반의 단순 뷰에서 뷰의 내부 쿼리 대신 바깥쪽 쿼리를 실행하도록 허용하여, 노드 간 병렬화를 향상합니다. 이 설정은 모든 분기가 서로 다른 `MergeTree` 테이블을 읽는 `UNION ALL` 뷰에도 적용됩니다.
 
-<div id="parallel_replicas_connect_timeout_ms">
-  ## parallel_replicas_connect_timeout_ms
-</div>
+## parallel_replicas_connect_timeout_ms {#parallel_replicas_connect_timeout_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="300" />
 
@@ -57,9 +59,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 병렬 레플리카를 사용해 쿼리를 실행할 때 원격 레플리카에 연결하는 데 적용되는 밀리초 단위 타임아웃입니다. 타임아웃이 초과되면 해당 레플리카는 쿼리 실행에 사용되지 않습니다.
 
-<div id="parallel_replicas_count">
-  ## parallel_replicas_count
-</div>
+## parallel_replicas_count {#parallel_replicas_count}
 
 <BetaBadge />
 
@@ -67,9 +67,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 이 설정은 내부용이므로 직접 사용해서는 안 되며, &#39;병렬 레플리카&#39; 모드의 구현 세부 사항입니다. 분산 쿼리에서는 쿼리 처리에 참여하는 병렬 레플리카 수에 맞춰 initiator server가 이 설정을 자동으로 지정합니다.
 
-<div id="parallel_replicas_custom_key">
-  ## parallel_replicas_custom_key
-</div>
+## parallel_replicas_custom_key {#parallel_replicas_custom_key}
 
 <BetaBadge />
 
@@ -81,9 +79,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 이 설정을 여러 레플리카를 가진 단일 세그먼트로 구성된 클러스터에서 사용하면, 해당 레플리카는 가상 세그먼트로 변환됩니다.
 그렇지 않으면 `SAMPLE` 키와 동일하게 동작하며, 각 세그먼트의 여러 레플리카를 사용합니다.
 
-<div id="parallel_replicas_custom_key_range_lower">
-  ## parallel_replicas_custom_key_range_lower
-</div>
+## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
 
 <BetaBadge />
 
@@ -97,9 +93,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 참고: 이 설정은 쿼리 처리 중 추가 데이터를 필터링하지 않습니다. 대신 병렬 처리를 위해 range 필터가 `[0, INT_MAX]` 범위를 분할하는 지점을 변경합니다.
 
-<div id="parallel_replicas_custom_key_range_upper">
-  ## parallel_replicas_custom_key_range_upper
-</div>
+## parallel_replicas_custom_key_range_upper {#parallel_replicas_custom_key_range_upper}
 
 <BetaBadge />
 
@@ -113,9 +107,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 참고: 이 설정은 쿼리 처리 중 추가 데이터를 필터링하지 않습니다. 대신 병렬 처리를 위해 range 필터가 범위 `[0, INT_MAX]`를 분할하는 지점을 변경합니다.
 
-<div id="parallel_replicas_filter_pushdown">
-  ## parallel_replicas_filter_pushdown
-</div>
+## parallel_replicas_filter_pushdown {#parallel_replicas_filter_pushdown}
 
 <BetaBadge />
 
@@ -125,9 +117,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 병렬 레플리카가 실행하도록 선택한 쿼리 부분에 필터를 푸시다운할 수 있도록 허용합니다
 
-<div id="parallel_replicas_for_cluster_engines">
-  ## parallel_replicas_for_cluster_engines
-</div>
+## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -135,17 +125,13 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 테이블 함수 엔진을 해당 -Cluster 버전으로 대체합니다
 
-<div id="parallel_replicas_for_non_replicated_merge_tree">
-  ## parallel_replicas_for_non_replicated_merge_tree
-</div>
+## parallel_replicas_for_non_replicated_merge_tree {#parallel_replicas_for_non_replicated_merge_tree}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 레플리카 알고리즘을 사용합니다
 
-<div id="parallel_replicas_index_analysis_only_on_coordinator">
-  ## parallel_replicas_index_analysis_only_on_coordinator
-</div>
+## parallel_replicas_index_analysis_only_on_coordinator {#parallel_replicas_index_analysis_only_on_coordinator}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -153,9 +139,7 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 
 인덱스 분석은 레플리카 코디네이터에서만 수행되며 다른 레플리카에서는 생략됩니다. `parallel_replicas_local_pla`가 활성화된 경우에만 적용됩니다.
 
-<div id="parallel_replicas_insert_select_local_pipeline">
-  ## parallel_replicas_insert_select_local_pipeline
-</div>
+## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -163,9 +147,7 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 
 병렬 레플리카를 사용하는 분산 INSERT SELECT에서 로컬 파이프라인을 사용합니다
 
-<div id="parallel_replicas_local_plan">
-  ## parallel_replicas_local_plan
-</div>
+## parallel_replicas_local_plan {#parallel_replicas_local_plan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -173,9 +155,7 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 
 로컬 레플리카용 로컬 계획을 생성합니다
 
-<div id="parallel_replicas_mark_segment_size">
-  ## parallel_replicas_mark_segment_size
-</div>
+## parallel_replicas_mark_segment_size {#parallel_replicas_mark_segment_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -183,17 +163,13 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 
 병렬 읽기를 위해 레플리카 간에 분배할 수 있도록 파트를 가상으로 세그먼트로 나눕니다. 이 설정은 해당 세그먼트의 크기를 제어합니다. 수행 중인 작업을 완전히 이해하고 확신하는 경우가 아니라면 변경하지 않는 것이 좋습니다. 값은 [128; 16384] 범위여야 합니다.
 
-<div id="parallel_replicas_min_number_of_rows_per_replica">
-  ## parallel_replicas_min_number_of_rows_per_replica
-</div>
+## parallel_replicas_min_number_of_rows_per_replica {#parallel_replicas_min_number_of_rows_per_replica}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 쿼리에서 사용할 레플리카 수를 (읽을 것으로 예상되는 행 수 / min&#95;number&#95;of&#95;rows&#95;per&#95;replica)로 제한합니다. 최대값은 여전히 &#39;max&#95;parallel&#95;replicas&#39;로 제한됩니다.
 
-<div id="parallel_replicas_mode">
-  ## parallel_replicas_mode
-</div>
+## parallel_replicas_mode {#parallel_replicas_mode}
 
 <SettingsInfoBlock type="ParallelReplicasMode" default_value="read_tasks" />
 
@@ -201,9 +177,7 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 
 병렬 레플리카에서 사용자 지정 키와 함께 사용할 필터의 유형입니다. default - 사용자 지정 키에 modulo 연산을 사용합니다. range - 사용자 지정 키의 값 유형에서 가능한 모든 값을 사용해 사용자 지정 키에 범위 필터를 적용합니다.
 
-<div id="parallel_replicas_only_with_analyzer">
-  ## parallel_replicas_only_with_analyzer
-</div>
+## parallel_replicas_only_with_analyzer {#parallel_replicas_only_with_analyzer}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -211,9 +185,7 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 
 병렬 레플리카를 사용하려면 분석기가 활성화되어 있어야 합니다. 분석기가 비활성화되어 있으면 레플리카의 병렬 읽기가 활성화되어 있더라도 쿼리 실행은 로컬 실행으로 폴백됩니다. 분석기가 활성화되지 않은 상태에서 병렬 레플리카를 사용하는 것은 지원되지 않습니다.
 
-<div id="parallel_replicas_plan_based">
-  ## parallel_replicas_plan_based
-</div>
+## parallel_replicas_plan_based {#parallel_replicas_plan_based}
 
 <ExperimentalBadge />
 
@@ -223,9 +195,7 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 
 쿼리 트리 기반 분석 대신 쿼리 계획을 분석하여 병렬 레플리카를 사용할지와 사용할 위치를 결정합니다. 그 결과 SQL 쿼리 대신 계획 프래그먼트가 원격 레플리카로 전송됩니다. 실험적 기능입니다.
 
-<div id="parallel_replicas_prefer_local_join">
-  ## parallel_replicas_prefer_local_join
-</div>
+## parallel_replicas_prefer_local_join {#parallel_replicas_prefer_local_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -233,9 +203,7 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 
 true이고 JOIN을 병렬 레플리카 알고리즘으로 실행할 수 있으며, 오른쪽 JOIN 부분의 모든 스토리지가 *MergeTree인 경우 GLOBAL JOIN 대신 로컬 JOIN을 사용합니다.
 
-<div id="parallel_replicas_prefer_local_replica">
-  ## parallel_replicas_prefer_local_replica
-</div>
+## parallel_replicas_prefer_local_replica {#parallel_replicas_prefer_local_replica}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -245,9 +213,7 @@ true이고 JOIN을 병렬 레플리카 알고리즘으로 실행할 수 있으�
 비활성화된 경우 로컬 레플리카에는 우선권이 부여되지 않으며, 레플리카는 부하 분산 알고리즘에 따라서만 선택됩니다.
 이렇게 하면 `max_parallel_replicas = 1`인 쿼리를 다른 호스트로 보낼 수 있으므로, 많은 짧은 쿼리가 클러스터 전체에 분산될 때 캐시 지역성을 개선할 수 있습니다.
 
-<div id="parallel_replicas_support_projection">
-  ## parallel_replicas_support_projection
-</div>
+## parallel_replicas_support_projection {#parallel_replicas_support_projection}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

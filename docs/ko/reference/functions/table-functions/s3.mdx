@@ -19,9 +19,7 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
 
 [`INSERT INTO...SELECT`](/ko/reference/statements/insert-into#inserting-the-results-of-select)와 함께 `s3 테이블 함수`를 사용하면 데이터가 스트리밍 방식으로 읽히고 삽입됩니다. 일부 데이터 블록만 메모리에 유지되며, 블록은 S3에서 계속 읽혀 대상 테이블로 전달됩니다.
 
-<div id="syntax">
-  ## 구문
-</div>
+## 구문 {#syntax}
 
 ```sql
 s3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method],[,headers], [,extra_credentials], [,partition_strategy], [,partition_columns_in_data_file])
@@ -40,7 +38,7 @@ s3(named_collection[, option=value [,..]])
 
 `s3` 테이블 함수는 다음과 같은 일반 매개변수를 지원합니다.
 
-| Parameter                               | 설명                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Parameter                               | 설명                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `url`                                   | 파일 경로가 포함된 버킷 URL입니다. 읽기 전용 모드에서 `*`, `**`, `?`, `{abc,def}`, `{N..M}` 와일드카드를 지원합니다. 여기서 `N`, `M`은 숫자이고 `'abc'`, `'def'`는 문자열입니다. 자세한 내용은 [여기](/ko/reference/engines/table-engines/integrations/s3#wildcards-in-path)를 참조하십시오.                                                                                                                                                                                                                                   |
 | `NOSIGN`                                | 자격 증명 대신 이 키워드를 지정하면 모든 요청이 서명되지 않습니다.                                                                                                                                                                                                                                                                                                                                                                                                                        |
@@ -48,7 +46,7 @@ s3(named_collection[, option=value [,..]])
 | `session_token`                         | 지정된 키와 함께 사용할 세션 토큰입니다. 키를 전달하는 경우 선택 사항입니다.                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `format`                                | 파일의 [포맷](/ko/reference/formats/index)입니다.                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `structure`                             | 테이블 구조입니다. 형식은 `'column1_name column1_type, column2_name column2_type, ...'`입니다.                                                                                                                                                                                                                                                                                                                                                                              |
-| `compression_method`                    | 선택 사항인 매개변수입니다. 지원되는 값은 `none`, `gzip` 또는 `gz`, `brotli` 또는 `br`, `xz` 또는 `LZMA`, `zstd` 또는 `zst`입니다. 기본적으로 파일 확장자를 기준으로 압축 방식을 자동 감지합니다.                                                                                                                                                                                                                                                                                                                     |
+| `compression_method`                    | 선택 사항인 매개변수입니다. 지원되는 값은 `none`, `gzip` 또는 `gz`, `deflate`, `brotli` 또는 `br`, `xz` 또는 `LZMA`, `zstd` 또는 `zst`, `lz4`, `bz2`, `snappy`입니다. 기본적으로 파일 확장자를 기준으로 압축 방식을 자동 감지합니다. `snappy`의 경우 와이어 포맷은 [snappy&#95;mode](/ko/reference/settings/session-settings/other#snappy_mode) 설정으로 선택됩니다(기본값은 `basic`).                                                                                                                                                         |
 | `headers`                               | 선택 사항인 매개변수입니다. S3 요청에 헤더를 전달할 수 있습니다. `headers(key=value)` 형식으로 전달하십시오. 예: `headers('x-amz-request-payer' = 'requester')`.                                                                                                                                                                                                                                                                                                                                   |
 | `partition_strategy`                    | 선택 사항인 매개변수입니다. 지원되는 값은 `wildcard` 또는 `hive`입니다. `wildcard`는 경로에 `{_partition_id}`가 있어야 하며, 이 값은 파티션 키로 대체됩니다. `hive`는 와일드카드를 허용하지 않고, 경로를 테이블 루트로 간주하며, 파일 이름으로 Snowflake ID를 사용하고 파일 포맷을 확장자로 하여 Hive 스타일의 파티션 디렉터리를 생성합니다. 명시적인 전략이 없으면 `{_partition_id}`가 포함된 경로는 `wildcard`를 사용합니다. 다른 글롭이 포함된 경로는 파티션 전략을 사용하지 않으며 `PARTITION BY`를 무시합니다. 글롭이 없는 경로는 `file_like_engine_default_partition_strategy`가 `hive`인 경우 `hive`를 사용하며, 그렇지 않으면 파티션 전략을 사용하지 않습니다. |
 | `partition_columns_in_data_file`        | 선택 사항인 매개변수입니다. `hive` 파티션 전략에서만 사용됩니다. 데이터 파일에 파티션 컬럼이 기록되어 있다고 ClickHouse가 예상할지 여부를 지정합니다. 기본값은 `false`입니다.                                                                                                                                                                                                                                                                                                                                                 |
@@ -58,13 +56,13 @@ s3(named_collection[, option=value [,..]])
 <Info>
   **GCS**
 
-  Google XML API의 엔드포인트는 JSON API와 다르므로 GCS URL은 다음 형식이어야 합니다.
+  Google XML API의 엔드포인트는 JSON API와 다르므로 GCS URL은 다음 형식입니다:
 
   ```text
     https://storage.googleapis.com/<bucket>/<folder>/<filename(s)>
   ```
 
-  ~~https://storage.cloud.google.com~~ 형식은 사용할 수 없습니다.
+  ~~https://storage.cloud.google.com~~ 형식이 아닙니다.
 </Info>
 
 인수는 [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 사용해 전달할 수도 있습니다. 이 경우 `url`, `access_key_id`, `secret_access_key`, `format`, `structure`, `compression_method`는 동일하게 작동하며, 몇 가지 추가 매개변수가 지원됩니다:
@@ -76,15 +74,11 @@ s3(named_collection[, option=value [,..]])
 | `no_sign_request`             | 기본적으로 비활성화되어 있습니다.                                                                                                                                                                                |
 | `expiration_window_seconds`   | 기본값은 120입니다.                                                                                                                                                                                      |
 
-<div id="returned-value">
-  ## 반환 값
-</div>
+## 반환 값 {#returned-value}
 
 지정된 파일에서 데이터를 읽거나 쓰는 데 사용되는, 지정된 구조의 테이블입니다.
 
-<div id="examples">
-  ## 예시
-</div>
+## 예시 {#examples}
 
 S3 파일 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv`의 테이블에서 처음 5개 행을 선택하는 예시:
 
@@ -139,20 +133,18 @@ LIMIT 5;
   ```
 </Note>
 
-<div id="usage">
-  ## 사용법
-</div>
+## 사용법 {#usage}
 
-S3에 다음 URI를 가진 파일이 여러 개 있다고 가정해 보겠습니다.
+S3에 다음과 같은 URI를 가진 파일들이 여러 개 있다고 가정해 보겠습니다:
 
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
 
 1부터 3까지의 숫자로 끝나는 파일의 행 수를 계산합니다:
 
@@ -181,7 +173,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucke
 ```
 
 <Tip>
-  파일 목록에 앞에 0이 붙은 숫자 범위가 포함된 경우, 각 자릿수별로 중괄호를 사용하는 구문 또는 `?`를 사용하십시오.
+  파일 목록에 앞에 0이 붙은 숫자 범위가 포함된 경우, 각 자릿수에 대해 중괄호를 사용하는 구문 또는 `?`를 사용하십시오.
 </Tip>
 
 `file-1.csv`, ..., `file-4.csv` 파일들의 전체 행 수를 계산합니다:
@@ -211,27 +203,25 @@ INSERT INTO FUNCTION s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-
 SELECT name, value FROM existing_table;
 ```
 
-Glob **는 재귀적으로 디렉터리를 탐색하는 데 사용할 수 있습니다. 아래 예시는 `my-test-bucket-768` 디렉터리의 모든 파일을 재귀적으로 가져옵니다:
+`**` 글롭은 재귀적으로 디렉터리를 탐색하는 데 사용할 수 있습니다. 다음 쿼리는 `my-test-bucket-768` 아래의 `some_file_1.csv` 파일을 모두 읽습니다:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-아래 예시는 `my-test-bucket` 디렉터리 내 모든 하위 폴더에서 `test-data.csv.gz` 파일의 데이터를 재귀적으로 가져옵니다:
+중괄호를 `**`와 함께 사용하여 여러 파일 이름을 재귀적으로 일치시킬 수 있습니다:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-참고. 서버 설정 파일에서 사용자 정의 URL 매퍼를 지정할 수 있습니다. 예시:
+동일한 재귀 패턴은 `s3://` URL에서도 작동합니다:
 
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://datasets-documentation/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'`은 `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`으로 대체됩니다.
-
-사용자 지정 매퍼는 `config.xml`에 추가할 수 있습니다:
+`config.xml`에 사용자 정의 URL 매퍼를 추가할 수 있습니다:
 
 ```xml
 <url_scheme_mappers>
@@ -258,13 +248,9 @@ SELECT count(*)
 FROM s3(creds, url='https://s3-object-url.csv')
 ```
 
-<div id="partitioned-write">
-  ## 파티션별 쓰기
-</div>
+## 파티션별 쓰기 {#partitioned-write}
 
-<div id="partition-strategy">
-  ### 파티션 전략
-</div>
+### 파티션 전략 {#partition-strategy}
 
 `INSERT` 쿼리에서만 지원됩니다.
 
@@ -310,9 +296,7 @@ INSERT INTO TABLE FUNCTION
 
 그 결과 데이터는 서로 다른 3개의 버킷에 있는 다음 3개 파일에 기록됩니다: `my_bucket_1/file.csv`, `my_bucket_10/file.csv`, `my_bucket_20/file.csv`.
 
-<div id="accessing-public-buckets">
-  ## 공개 버킷에 액세스하기
-</div>
+## 공개 버킷에 액세스하기 {#accessing-public-buckets}
 
 ClickHouse는 여러 유형의 소스에서 자격 증명을 가져오려고 시도합니다.
 경우에 따라 공개 버킷에 액세스할 때 이로 인해 문제가 발생하여 클라이언트가 `403` 오류 코드를 반환할 수 있습니다.
@@ -328,9 +312,7 @@ FROM s3(
 LIMIT 5;
 ```
 
-<div id="using-s3-credentials-clickhouse-cloud">
-  ## S3 자격 증명 사용하기 (ClickHouse Cloud)
-</div>
+## S3 자격 증명 사용하기 (ClickHouse Cloud) {#using-s3-credentials-clickhouse-cloud}
 
 공개되지 않은 버킷의 경우 함수에 `aws_access_key_id`와 `aws_secret_access_key`를 전달할 수 있습니다. 예시는 다음과 같습니다:
 
@@ -356,9 +338,7 @@ SELECT count() FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.co
 
 추가 예시는 [여기](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely#access-your-s3-bucket-with-the-clickhouseaccess-role)에서 확인할 수 있습니다.
 
-<div id="working-with-archives">
-  ## 아카이브 다루기
-</div>
+## 아카이브 다루기 {#working-with-archives}
 
 S3에 다음 URI의 여러 아카이브 파일이 있다고 가정합니다.
 
@@ -384,24 +364,18 @@ FROM s3(
   ZIP 및 TAR 아카이브는 지원되는 모든 저장소 위치에서 액세스할 수 있지만, 7Z 아카이브는 ClickHouse가 설치된 로컬 파일 시스템에서만 읽을 수 있습니다.
 </Note>
 
-<div id="inserting-data">
-  ## 데이터 삽입
-</div>
+## 데이터 삽입 {#inserting-data}
 
 행은 새 파일에만 삽입할 수 있습니다. 머지 사이클이나 파일 분할 작업은 없습니다. 파일이 한 번 쓰이고 나면 이후 삽입은 실패합니다. 자세한 내용은 [여기](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data)를 참조하십시오.
 
-<div id="virtual-columns">
-  ## 가상 컬럼
-</div>
+## 가상 컬럼 {#virtual-columns}
 
 * `_path` — 파일 경로입니다. 유형: `LowCardinality(String)`. 아카이브인 경우 `"{path_to_archive}::{path_to_file_inside_archive}"` 포맷의 경로를 표시합니다.
 * `_file` — 파일 이름입니다. 유형: `LowCardinality(String)`. 아카이브인 경우 아카이브 내부 파일의 이름을 표시합니다.
 * `_size` — 파일 크기(바이트)입니다. 유형: `Nullable(UInt64)`. 파일 크기를 알 수 없으면 값은 `NULL`입니다. 아카이브인 경우 아카이브 내부 파일의 비압축 크기를 표시합니다.
 * `_time` — 파일의 마지막 수정 시각입니다. 유형: `Nullable(DateTime)`. 시각을 알 수 없으면 값은 `NULL`입니다.
 
-<div id="hive-style-partitioning">
-  ## use_hive_partitioning 설정
-</div>
+## use_hive_partitioning 설정 {#hive-style-partitioning}
 
 이 설정은 읽기 시점에 ClickHouse가 Hive 스타일로 파티셔닝된 파일을 파싱하도록 하는 힌트입니다. 쓰기에는 영향을 주지 않습니다. 읽기와 쓰기를 대칭적으로 처리하려면 `partition_strategy` 인수를 사용하십시오.
 
@@ -413,9 +387,7 @@ FROM s3(
 SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="accessing-requester-pays-buckets">
-  ## 요청자 부담 버킷 액세스
-</div>
+## 요청자 부담 버킷 액세스 {#accessing-requester-pays-buckets}
 
 요청자 부담 버킷에 액세스하려면 모든 요청에 `x-amz-request-payer = requester` 헤더를 포함해야 합니다. 이는 s3 함수에 `headers('x-amz-request-payer' = 'requester')` 매개변수를 전달하여 설정할 수 있습니다. 예시:
 
@@ -433,9 +405,7 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 Peak memory usage: 192.27 KiB.
 ```
 
-<div id="resolving-relative-urls">
-  ## 상대 URL 해석
-</div>
+## 상대 URL 해석 {#resolving-relative-urls}
 
 [s3&#95;base](/ko/reference/settings/session-settings/s3#s3_base) 설정을 사용하면 `s3` 함수에 상대 URL을 전달할 수 있습니다. `s3_base`가 설정되어 있고 함수 인수에 스킴이 없으면 [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986)에 따라 기준 URL을 기준으로 해석됩니다. 이때 [url](/ko/reference/functions/table-functions/url#resolving-relative-urls) 함수의 [url&#95;base](/ko/reference/settings/session-settings/url#url_base) 설정과 동일한 규칙이 적용됩니다. 절대 URL은 변경하지 않고 그대로 전달됩니다.
 
@@ -448,18 +418,14 @@ SET s3_base = 's3://clickhouse-public-datasets/';
 SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
-<div id="storage-settings">
-  ## 스토리지 설정
-</div>
+## 스토리지 설정 {#storage-settings}
 
 * [s3&#95;truncate&#95;on&#95;insert](/ko/reference/settings/session-settings/s3#s3_truncate_on_insert) - 파일에 삽입하기 전에 해당 파일을 TRUNCATE할 수 있습니다. 기본적으로 비활성화됩니다.
 * [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/ko/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - 포맷에 접미사가 있는 경우, 삽입할 때마다 새 파일을 생성할 수 있습니다. 기본적으로 비활성화됩니다.
 * [s3&#95;skip&#95;empty&#95;files](/ko/reference/settings/session-settings/s3#s3_skip_empty_files) - 읽는 동안 빈 파일을 건너뛸 수 있습니다. 기본적으로 활성화됩니다.
 * [s3&#95;base](/ko/reference/settings/session-settings/s3#s3_base) - `s3` 함수에 전달된 상대 URL을 해석하기 위한 기준 URL입니다. 기본값은 비어 있으며(비활성화됨)입니다.
 
-<div id="nested-avro-schemas">
-  ## 중첩된 Avro 스키마
-</div>
+## 중첩된 Avro 스키마 {#nested-avro-schemas}
 
 파일마다 서로 다른 **중첩 레코드**를 포함한 Avro 파일을 읽을 때(예를 들어 일부 파일의 중첩 객체 내부에 추가 필드가 있는 경우), ClickHouse는 다음과 같은 오류를 반환할 수 있습니다:
 
@@ -489,9 +455,7 @@ FROM s3('https://bucket-name/*.avro', 'Avro')
 SETTINGS schema_inference_mode='union';
 ```
 
-<div id="related">
-  ## 관련
-</div>
+## 관련 {#related}
 
 * [S3 engine](/ko/reference/engines/table-engines/integrations/s3)
 * [Integrating S3 with ClickHouse](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

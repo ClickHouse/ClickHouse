@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="enable_join_fixed_hash_table_conversion">
-  ## enable_join_fixed_hash_table_conversion
-</div>
+## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,15 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает преобразование хеш-таблицы в плоский массив для JOIN, когда ключ представляет собой одно целое число с небольшим диапазоном значений.
 
-<div id="enable_join_runtime_filters">
-  ## enable_join_runtime_filters
-</div>
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая настройка, позволяющая хранить в хеш-таблицах только ключи JOIN, без ссылки на правую строку, для тех JOIN, результат которых заведомо не может содержать значение из правой строки (`LEFT ANTI`, а также `LEFT SEMI`, когда не выбран ни один правый столбец)."}]}]} />
+
+Использовать хеш-таблицы, в которых хранятся только ключи JOIN, без ссылки на правую строку, для тех JOIN, результат которых заведомо не может содержать значение из правой строки: `LEFT ANTI`, а также `LEFT SEMI`, когда не выбран ни один правый столбец. У такой таблицы меньше размер ячейки, и она позволяет отбрасывать правые блоки вместо их хранения.
+
+## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <BetaBadge />
 
@@ -37,9 +41,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Фильтровать левую часть по набору ключей JOIN, собранному из правой части во время выполнения.
 
-<div id="enable_join_runtime_filters_index_analysis">
-  ## enable_join_runtime_filters_index_analysis
-</div>
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
 <ExperimentalBadge />
 
@@ -49,9 +51,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Выполняет повторный анализ индексов (через use&#95;skip&#95;indexes&#95;on&#95;data&#95;read), чтобы отсечь гранулы в левой части JOIN.
 
-<div id="enable_join_transitive_predicates">
-  ## enable_join_transitive_predicates
-</div>
+## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
 <BetaBadge />
 

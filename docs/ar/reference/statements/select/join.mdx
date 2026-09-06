@@ -22,9 +22,7 @@ FROM <left_table>
 
 تُسمّى التعبيرات الواردة في عبارة `ON` والأعمدة الواردة في عبارة `USING` &quot;مفاتيح الربط&quot;. ما لم يُذكر خلاف ذلك، فإن `JOIN` يُنتج [حاصل ضرب ديكارتيًا](https://en.wikipedia.org/wiki/Cartesian_product) من الصفوف ذات &quot;مفاتيح الربط&quot; المتطابقة، وقد يؤدي ذلك إلى نتائج تضم عددًا من الصفوف أكبر بكثير من الجداول المصدرية.
 
-<div id="supported-types-of-join">
-  ## أنواع JOIN المدعومة
-</div>
+## أنواع JOIN المدعومة {#supported-types-of-join}
 
 جميع أنواع [SQL JOIN](https://en.wikipedia.org/wiki/Join_\(SQL\)) القياسية مدعومة:
 
@@ -56,9 +54,7 @@ FROM <left_table>
   عند ضبط [join&#95;algorithm](/ar/reference/settings/session-settings/join#join_algorithm) على `partial_merge`، لا يكون `RIGHT JOIN` و`FULL JOIN` مدعومَين إلا مع strictness من النوع `ALL` (`SEMI` و`ANTI` و`ANY` و`ASOF` غير مدعومة).
 </Note>
 
-<div id="settings">
-  ## الإعدادات
-</div>
+## الإعدادات {#settings}
 
 يمكن تجاوز نوع `JOIN` الافتراضي باستخدام الإعداد [`join_default_strictness`](/ar/reference/settings/session-settings/join#join_default_strictness).
 
@@ -75,9 +71,7 @@ FROM <left_table>
 
 استخدم الإعداد `cross_to_inner_join_rewrite` لتحديد السلوك عند فشل ClickHouse في إعادة كتابة `CROSS JOIN` إلى `INNER JOIN`. القيمة الافتراضية هي `1`، ما يسمح بمتابعة عملية `JOIN` ولكنها ستكون أبطأ. اضبط `cross_to_inner_join_rewrite` على `0` إذا كنت تريد ظهور خطأ، واضبطه على `2` لعدم تشغيل عمليات `cross joins`، وبدلًا من ذلك فرض إعادة كتابة جميع عمليات `comma/cross joins`. وإذا فشلت إعادة الكتابة عندما تكون القيمة `2`، فستتلقى رسالة خطأ تنص على: &quot;Please, try to simplify `WHERE` section&quot;.
 
-<div id="on-section-conditions">
-  ## شروط قسم `ON`
-</div>
+## شروط قسم `ON` {#on-section-conditions}
 
 يمكن أن يحتوي قسم `ON` على عدة شروط مدمجة باستخدام المعاملين `AND` و`OR`. ويجب أن تستوفي الشروط التي تحدد مفاتيح الربط ما يلي:
 
@@ -180,9 +174,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
 └───┴────┴─────┘
 ```
 
-<div id="join-with-inequality-conditions-for-columns-from-different-tables">
-  ## JOIN مع شروط عدم المساواة للأعمدة من جداول مختلفة
-</div>
+## JOIN مع شروط عدم المساواة للأعمدة من جداول مختلفة {#join-with-inequality-conditions-for-columns-from-different-tables}
 
 يدعم ClickHouse حاليًا `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` مع شروط عدم المساواة بالإضافة إلى شروط المساواة. ولا تُدعَم شروط عدم المساواة إلا مع خوارزميات JOIN ‏`hash` و`parallel_hash` و`grace_hash`. لا يجوز أن يحتوي شرط عدم مساواة يُقيَّم أثناء JOIN على `arrayJoin`، إذ يجب أن يحافظ هذا الشرط على عدد الصفوف؛ أما الشرط الذي ينطبق على جانب واحد فقط ومفتاح المساواة على `arrayJoin`، فيُستخرجان قبل JOIN ولا يتأثران؛ كما لا يتأثر شرط `ALL INNER JOIN` غير الانفصالي، لأن الشرط يُطبَّق هناك بعد JOIN بدلًا من ذلك. عندما يعتمد التوسيع على جانب واحد فقط، انقله إلى `ARRAY JOIN` في استعلام فرعي قبل JOIN؛ أما الشرط الذي يقرأ وسيط `arrayJoin` فيه أعمدة من كلا الجانبين، فيجب إعادة صياغته.
 
@@ -232,9 +224,7 @@ key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
 
-<div id="null-values-in-join-keys">
-  ## قيم `NULL` و`NaN` في مفاتيح الربط
-</div>
+## قيم `NULL` و`NaN` في مفاتيح الربط {#null-values-in-join-keys}
 
 لا تساوي `NULL` أي قيمة، بما في ذلك نفسها. وهذا يعني أنه إذا كانت قيمة مفتاح الربط هي `NULL` في أحد الجدولين، فلن تطابق قيمة `NULL` في الجدول الآخر.
 
@@ -295,9 +285,7 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 إذا كنت تحتاج إلى عدم تطابق الصفوف التي تحتوي على `NaN`، فحوّلها إلى قيم `NULL`: `ON if(isNaN(A.id), NULL, A.id) = B.id`.
 في `ASOF JOIN`، يُقارن العمود الخاص بأقرب تطابق وفق الترتيب، وهو ما لا تدعمه `NaN` — لذا رشّح هذه الصفوف من كلا الجانبين.
 
-<div id="asof-join-usage">
-  ## استخدام ASOF JOIN
-</div>
+## استخدام ASOF JOIN {#asof-join-usage}
 
 تُعد `ASOF JOIN` مفيدة عندما تحتاج إلى ربط سجلات لا يوجد بينها تطابق تام.
 
@@ -351,9 +339,7 @@ USING (equi_column1, ... equi_columnN, asof_column)
   وهو **غير** مدعوم في محرك الجدول [Join](/ar/reference/engines/table-engines/special/join).
 </Note>
 
-<div id="paste-join-usage">
-  ## استخدام PASTE JOIN
-</div>
+## استخدام PASTE JOIN {#paste-join-usage}
 
 نتيجة `PASTE JOIN` هي جدول يحتوي على جميع الأعمدة من الاستعلام الفرعي الأيسر، ثم جميع الأعمدة من الاستعلام الفرعي الأيمن.
 تُطابَق الصفوف بناءً على مواضعها في الجداول الأصلية (يجب أن يكون ترتيب الصفوف محددًا).
@@ -411,9 +397,7 @@ SETTINGS max_block_size = 2;
 └───┴──────┘
 ```
 
-<div id="distributed-join">
-  ## JOIN الموزّع
-</div>
+## JOIN الموزّع {#distributed-join}
 
 توجد طريقتان لتنفيذ `JOIN` يتضمن جداول موزعة:
 
@@ -422,9 +406,7 @@ SETTINGS max_block_size = 2;
 
 توخَّ الحذر عند استخدام `GLOBAL`. لمزيد من المعلومات، راجع قسم [الاستعلامات الفرعية الموزعة](/ar/reference/statements/in#distributed-subqueries).
 
-<div id="implicit-type-conversion">
-  ## تحويل النوع الضمني
-</div>
+## تحويل النوع الضمني {#implicit-type-conversion}
 
 تدعم استعلامات `INNER JOIN` و`LEFT JOIN` و`RIGHT JOIN` و`FULL JOIN` تحويل النوع الضمني لـ &quot;join keys&quot;. ومع ذلك، لا يمكن تنفيذ الاستعلام إذا تعذر تحويل مفاتيح الربط في الجدولين الأيسر والأيمن إلى نوع واحد (على سبيل المثال، لا يوجد نوع بيانات يمكنه استيعاب جميع القيم من كلٍّ من `UInt64` و`Int64`، أو `String` و`Int32`).
 
@@ -466,29 +448,21 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 └────┴──────┴───────────────┴─────────────────┘
 ```
 
-<div id="usage-recommendations">
-  ## توصيات الاستخدام
-</div>
+## توصيات الاستخدام {#usage-recommendations}
 
-<div id="processing-of-empty-or-null-cells">
-  ### معالجة الخلايا الفارغة أو NULL
-</div>
+### معالجة الخلايا الفارغة أو NULL {#processing-of-empty-or-null-cells}
 
 أثناء ربط الجداول، قد تظهر خلايا فارغة. يحدّد الإعداد [join&#95;use&#95;nulls](/ar/reference/settings/session-settings/join#join_use_nulls) كيفية ملء ClickHouse لهذه الخلايا.
 
 إذا كانت مفاتيح الربط `JOIN` حقولًا من النوع [Nullable](/ar/reference/data-types/nullable)، فلن تُربط الصفوف التي تكون قيمة واحد على الأقل من هذه المفاتيح فيها [NULL](/ar/reference/syntax#null).
 
-<div id="syntax">
-  ### البنية
-</div>
+### البنية {#syntax}
 
 يجب أن تحمل الأعمدة المحددة في `USING` الأسماء نفسها في كلا الاستعلامين الفرعيين، وأن تختلف أسماء الأعمدة الأخرى. يمكنك استخدام الأسماء المستعارة لتغيير أسماء الأعمدة في الاستعلامات الفرعية.
 
 تحدّد عبارة `USING` عمودًا واحدًا أو أكثر للربط، وبذلك تفرض تساوي هذه الأعمدة. تُكتب قائمة الأعمدة من دون أقواس. ولا تُدعَم شروط ربط أكثر تعقيدًا.
 
-<div id="syntax-limitations">
-  ### قيود الصياغة
-</div>
+### قيود الصياغة {#syntax-limitations}
 
 بالنسبة إلى عبارات `JOIN` المتعددة ضمن استعلام `SELECT` واحد:
 
@@ -500,9 +474,7 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 
 * لا يمكن استخدام تعبيرات عشوائية في عبارات `ON` و`WHERE` و`GROUP BY`، ولكن يمكنك تعريف تعبير في عبارة `SELECT` ثم استخدامه في هذه العبارات عبر اسم مستعار.
 
-<div id="performance">
-  ### الأداء
-</div>
+### الأداء {#performance}
 
 عند تنفيذ `JOIN`، لا يوجد تحسين لترتيب التنفيذ بالنسبة إلى المراحل الأخرى من الاستعلام. ويُنفَّذ الـ join (أي البحث في الجدول الأيمن) قبل التصفية في `WHERE` وقبل التجميع.
 
@@ -512,9 +484,7 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 
 إذا كنت بحاجة إلى `JOIN` للربط مع جداول الأبعاد (وهي جداول صغيرة نسبيًا تحتوي على خصائص الأبعاد، مثل أسماء الحملات الإعلانية)، فقد لا يكون `JOIN` مناسبًا جدًا لأن الجدول الأيمن يُعاد الوصول إليه مع كل استعلام. في مثل هذه الحالات، توجد ميزة &quot;Dictionaries&quot; ينبغي استخدامها بدلًا من `JOIN`. لمزيد من المعلومات، راجع قسم [Dictionaries](/ar/reference/statements/create/dictionary).
 
-<div id="memory-limitations">
-  ### قيود الذاكرة
-</div>
+### قيود الذاكرة {#memory-limitations}
 
 افتراضيًا، يستخدم ClickHouse خوارزمية [hash join](https://en.wikipedia.org/wiki/Hash_join). يأخذ ClickHouse الجدول الأيمن `right_table` وينشئ له جدول تجزئة في RAM. إذا كان `join_algorithm = 'auto'` مفعّلًا، فبعد تجاوز عتبة معيّنة من استهلاك الذاكرة، يعود ClickHouse إلى خوارزمية [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join. للاطلاع على وصف خوارزميات `JOIN`، راجع الإعداد [join&#95;algorithm](/ar/reference/settings/session-settings/join#join_algorithm).
 
@@ -525,9 +495,7 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 
 عند بلوغ أيٍّ من هذه الحدود، يتصرّف ClickHouse وفقًا لما يحدّده الإعداد [join&#95;overflow&#95;mode](/ar/reference/settings/session-settings/join#join_overflow_mode).
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
 مثال:
 
@@ -570,9 +538,7 @@ LIMIT 10
 └───────────┴────────┴────────┘
 ```
 
-<div id="related-content">
-  ## محتوى ذو صلة
-</div>
+## محتوى ذو صلة {#related-content}
 
 * مدونة: [ClickHouse: نظام إدارة قواعد بيانات فائق السرعة مع دعم كامل لعمليات JOIN في SQL - الجزء 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
 * مدونة: [ClickHouse: نظام إدارة قواعد بيانات فائق السرعة مع دعم كامل لعمليات JOIN في SQL - خلف الكواليس - الجزء 2](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)

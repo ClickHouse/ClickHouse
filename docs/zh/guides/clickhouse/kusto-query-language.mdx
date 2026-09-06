@@ -1,0 +1,178 @@
+---
+title: 'ClickHouse 中的 Kusto 查询语言 (KQL)'
+description: '实验性 KQL 方言支持的功能，以及有意不支持的功能'
+keywords: ['KQL', 'Kusto', '方言']
+sidebarTitle: 'Kusto 查询语言 (KQL)'
+slug: /guides/kusto-query-language
+doc_type: 'guide'
+---
+
+ClickHouse 可以解析 [Kusto 查询语言](https://learn.microsoft.com/en-us/kusto/query/) 的一个子集，
+而非 SQL。该方言为 **Experimental**，默认未启用：
+
+```sql
+SET allow_experimental_kusto_dialect = 1;
+SET dialect = 'kusto';
+
+StormEvents
+| where State == 'FLORIDA' and DamageProperty > 0
+| summarize Total = sum(DamageProperty) by EventType
+| top 5 by Total
+```
+
+`SET dialect = 'clickhouse'` 可切换回 ClickHouse 方言。KQL 方言处于启用状态时，`SET` 是唯一可识别的 SQL 语句，因此会话始终可以退出该方言。
+
+<div id="what-is-supported">
+  ## 支持的内容
+</div>
+
+这是一个有意限定的小型子集。KQL 构造要么按 Kusto 文档描述的语义进行转换，
+要么按名称拒绝并报出解析错误——绝不会进行静默的近似处理。
+如果查询能够解析，其结果应与 Kusto 的结果一致。
+
+**数据源**：表名、`print`、`datatable`、`range`、括号括起的管道以及 `union`。
+`range` 可以从一个数值按数值递增、从日期时间按时间跨度递增，或从时间跨度按
+时间跨度递增。
+
+**运算符**：`where` / `filter`、`extend`、`project`、`project-away`、`project-keep`、
+`project-rename`、`summarize`、`sort by` / `order by`、`take` / `limit`、`top`、`distinct`、
+`count`、`mv-expand`、`join`、`union`、`as`、`render`。
+
+**标量运算符**：`==`、`!=`、`<`、`<=`、`>`、`>=`、`=~`、`!~`、`in`、`in~`、`between`、
+`contains`、`startswith`、`endswith`、`has`、`hasprefix`、`hassuffix`，以及它们的 `_cs`
+ (区分大小写) 和 `!` (取反) 形式，还有 `has_any`、`has_all` 和 `matches regex`。
+`in` 和 `!in` 还可接受表表达式，其第一列提供值
+ (`x in (T | project key)`) ；`in~` 仅接受列表。若 `in (...)` 中单独出现的名称未被任何
+`let` 绑定，则会被解析为列，因为解析器没有 schema 来区分列和表；
+请使用 `let` 绑定该表、对其进行限定 (`db.table`) ，或添加管道以使用表表达式形式。
+
+**语句**：`let`，用于绑定标量、完整的表表达式或**函数**：
+
+```sql
+let MultiplyByN = (val: long, n: long = 2) { val * n };
+let RecentErrors = (since: timespan) { Logs | where Level == 'Error' and Timestamp > ago(since) };
+
+RecentErrors(1h) | summarize Count = count() by Component
+```
+
+函数接受带可选字面量默认值的标量参数，以及声明为 `T: (*)` 或 `T: (col: type, ...)` 且必须置于前面的表格参数。指定列名的表格参数仅向函数体公开参数中的这些列，因此即使实际参数恰好包含某个未声明的列，函数体读取该列也会被拒绝；`T: (*)` 则会按原样传递参数。声明的类型会在调用边界处强制校验：类型不属于所声明 KQL 类型的参数 (或表格参数中声明的列) 会被拒绝；会应用无损转换，例如将 `long` 转换为 `real`；而不符合声明类型的值 (例如 `int` 溢出) 会报错，而不会被静默截断。参数可通过名称以任意顺序传递 (`f(c = 7, a = 12)`) 。函数体由任意数量的 `let` 语句和一个表达式组成，并且可以访问其外围作用域中的绑定。函数体为管道的函数返回的是表而非值，因此在需要表达式的位置会被拒绝，例如 `extend`、`where` 或 `print`。无参数函数可以带或不带括号调用。接受 `view ()`；由于此处不会解析 `union *` 通配符，它与 `()` 含义相同。与 Kusto 一样，不支持递归。
+
+`let` 仅在其后的那条语句中绑定名称，因为一条 KQL 语句对应一个 ClickHouse 查询——这也避免了绑定泄漏到并发查询中。两个语句都需要的名称必须绑定两次。
+
+**字面量**：字符串 (包括原样字符串 `@'...'`) 、数字、`datetime(...)`、`guid(...)`、时间跨度，如 `1d` / `2.5h` / `500ms`，以及 `dynamic([...])` 数组。
+
+约 130 个标量函数和聚合函数会被翻译。与 Kusto 一样，聚合函数只能在 `summarize` 的聚合列表中调用；`print count()` 会被拒绝，而不会传递给同名的 ClickHouse 聚合函数。
+
+**ClickHouse 函数**也可使用。KQL registry 不识别的名称会按你写下的拼写传递给 ClickHouse，因此查询可以使用 server 提供的任何功能：
+
+```sql
+SET dialect = 'kusto';
+
+StormEvents
+| extend Bucket = toStartOfHour(StartTime), Fingerprint = cityHash64(EventType)
+| summarize Events = count() by Bucket
+```
+
+例外情况是 Kusto 自身定义但此方言未实现的名称：这些名称会被拒绝，而不会直接透传，因此 Kusto 名称绝不会悄然被赋予其他含义。
+`range` 是最典型的例子——在 Kusto 中，`range(1, 3, 1)` 的结果是 `[1, 2, 3]`，而在
+ClickHouse 中则是 `[1, 2]`，因此在 KQL 中写出它会报错，而不是返回错误的结果。
+
+<div id="coverage-against-the-kusto-reference">
+  ## 与 Kusto 参考文档的覆盖对比
+</div>
+
+以 Microsoft 自身的索引为基准
+ ([表格运算符](https://learn.microsoft.com/en-us/kusto/query/queries)、
+[标量函数](https://learn.microsoft.com/en-us/kusto/query/scalar-functions)、
+[聚合函数](https://learn.microsoft.com/en-us/kusto/query/aggregation-functions)) ：
+
+|           | Kusto 文档 | 此处支持 |
+| --------- | -------- | ---- |
+| 表格运算符     | 52       | 20   |
+| 标量函数和聚合函数 | 307      | 162  |
+| 用户自定义函数   | 是        | 是    |
+
+支持的运算符包括 Microsoft 自身的 *Learn 常用运算符* 教程中介绍的运算符，
+以及 `datatable`、`range`、`print`、`union` 和 `join`——足以支持该教程和 KQL Quick Reference 中逐步构建的查询形态。
+
+<div id="what-is-not-supported">
+  ## 不支持的内容
+</div>
+
+会报解析错误而被拒绝，不会被错误翻译：
+
+* 运算符：`search`、`parse`、`mv-apply`、`lookup`、`evaluate`、`invoke`、`facet`、
+  `top-nested`、`make-series`、`sample`、`serialize`、`partition`，以及作为运算符的 `range`。
+* 函数：`series_*` 家族、`bag_*` / `pack_*`、`parse_url`、`parse_csv`、
+  `parse_json`、`todynamic`、`toscalar`、`format_timespan`、`format_datetime`、`extract_all`、
+  `range`、`percentiles*` 家族以及 `row_*` 窗口函数。
+   (`format_datetime` 和 `extract_all` 会被拒绝，而非近似转换：Kusto 的
+  `yyyy-MM-dd` 格式说明符不同于 ClickHouse，且 Kusto 的 `extract_all` 会为每个捕获组返回一个
+  数组。) 
+* 与含义不同的 ClickHouse 函数同名的 Kusto 名称：`range` (如上所述) 、
+  `repeat`、`replace`、`translate` 和 `materialize`。直接保留这些名称会在不显眼的情况下计算出不同结果——Kusto 的
+  `repeat(1, 3)` 返回数组 `[1, 1, 1]`，而 ClickHouse 的 `repeat` 用于重复字符串——因此会按名称拒绝这些函数。
+* 接受或返回 GeoJSON 的地理空间函数——所有 `geo_*_to_central_point`，以及
+  所有对多边形和线进行操作的函数。处理普通经度/纬度的 Point、geohash 和 H3 函数
+  *受支持*。`geo_point_to_s2cell` 不受支持：ClickHouse 不提供
+  S2 token 形式。
+* `dynamic` **对象** (`dynamic({"a": 1})`) 、成员访问 (`x.y`) 以及按键查找
+   (`x['k']`) 。仅支持将 `dynamic` 数组映射为 ClickHouse `Array`。作为
+  **声明类型**的 `dynamic`——用于 `datatable` schema、`typeof(...)` 或函数参数——
+  同样会被拒绝：该注解未携带元素类型，因此无法进行忠实映射。
+* 跨集群和跨数据库引用，例如 `cluster(...)` 和 `database(...)`。
+* 查询和 `join` 提示 (`hint.strategy`、`hint.shufflekey` 等) 。
+* 运算符选项：`mv-expand ... to typeof(T)` / `limit N` / `bagexpansion`、`summarize`
+  提示、`union kind=` / `withsource=` / `isfuzzy=`、`join hint.*`。
+* `project-away` 和 `project-keep` 中的 wildcard 列模式 (`project-away Tmp*`) ：
+  展开这类模式需要 schema，但在解析时 schema 不可见。请明确列出各列。
+* 完全不支持 `evaluate` 插件机制，因此 `bag_unpack`、`pivot`、`narrow`、
+  `python`、`R` 及其他插件也不支持。
+* Application 语句：`alias database`、`declare pattern`、
+  `declare query_parameters`、`restrict access to`。
+* 混淆字符串字面量 (`h"..."`) 和多行字面量 (三个反引号) 。
+
+<div id="behaviour-worth-knowing">
+  ## 值得了解的行为
+</div>
+
+* **时间跨度是 `Interval` 值。** `1d` 会变为 `toIntervalNanosecond(86400000000000)`。
+  设置 `interval_output_format = 'kusto'` 可按 Kusto 的格式将其呈现为 `1.00:00:00`，而非
+  数值。
+* **除法遵循 Kusto 的规则**：`7 / 2` 等于 `3`，因为两个操作数都是整数；时间跨度除以时间跨度则得到其实数比值
+   (`15ms / 10ms` 等于 `1.5`) 。这由 `kqlDivide` 实现，其根据参数类型作出判断。
+* **两个日期时间相减会得到秒数**，而 Kusto 会得到时间跨度。
+  时间跨度的加减则符合预期。
+* **`sort` 默认按降序排列**，与 SQL 不同，并会将 null 排在较小值的一端。
+* **`project-rename` 会将重命名后的列移至行末**。Kusto 会保留其
+  原始位置；要复现这一行为，需要在解析时获知 schema。
+* **`union` 要求操作数具有兼容的 schema。** Kusto 会扩展为所有列的并集，
+  并以 null 填充；ClickHouse 的 `UNION ALL` 则不会。
+* **字符串运算符是匹配函数，而非 `LIKE` 模式。** `contains '50%'` 会查找
+  字面量百分号。
+* **`geo_*` 与 Kusto 一样，先接受经度，再接受纬度。** `geo_distance_2points` 使用
+  ClickHouse 的 `greatCircleDistance`，这是一种快速近似算法，与 Kusto 的结果在
+  第四位有效数字上有所差异——在 1500 km 距离上约相差 600 m——而 `use_spheroid = true` 会选择
+  `geoDistance`，即椭球体公式，与 Kusto 相同。完全一致并非目标：
+  这些函数通常用于筛选，而非报告。请注意，超出 [-180, 180] 或 [-90, 90] 范围的坐标会产生
+  无意义的数值，而不是 Kusto 返回的 null：
+  两个 ClickHouse 函数都不会检查其参数是否在范围内，而进行检查每行需额外执行八次
+  比较。
+* **`dayofweek()` 返回时间跨度**，而非数值：星期一为 `1.00:00:00`。
+* **`tohex()` 会以 64 位宽度呈现负值。** Kusto 会按
+  参数自身类型的宽度呈现，而这一信息在解析时不可见。
+* **日期时间是真正的 `DateTime64` 值**，因此会按 ClickHouse 的方式打印
+  (`2017-01-01 00:00:00`)，而非 Kusto 的 `2017-01-01T00:00:00.0000000`。之前的
+  实现会生成格式化的*字符串*，看起来像 Kusto，但无法像日期时间一样进行比较
+  或排序。
+* **ClickHouse 的参数化聚合函数** (`quantileExact(0.5)(x)`) 没有对应的 KQL 写法。
+  请使用命名替代方案，例如 `medianExact(x)`。
+
+<div id="reporting-a-problem">
+  ## 报告问题
+</div>
+
+如果查询能够解析，但返回了 Kusto 不会返回的结果，这就是 bug——请报告该问题，并同时提供
+两种结果。被拒绝但您确实需要的查询属于功能请求；上面的列表
+只是大致划定边界，并未列出所有被拒绝的名称——对于任何特定查询，解析错误
+本身才是权威答案——而且这些都不是一成不变的。

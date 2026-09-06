@@ -54,6 +54,8 @@ doc_type: 'reference'
         </auth_methods>
 
         <access_management>0|1</access_management>
+        <named_collection_control>0|1</named_collection_control>
+        <show_named_collections_secrets>0|1</show_named_collections_secrets>
 
         <networks incl="networks" replace="replace">
         </networks>
@@ -78,9 +80,7 @@ doc_type: 'reference'
 </users>
 ```
 
-<div id="user-namepassword">
-  ### user_name/password
-</div>
+### user_name/password {#user-namepassword}
 
 يمكن تحديد كلمة المرور بصيغة نص صريح أو بصيغة SHA256 (بتنسيق hex).
 
@@ -116,9 +116,7 @@ doc_type: 'reference'
 
   السطر الأول من الناتج هو كلمة المرور. والسطر الثاني هو تجزئة double SHA1 المقابلة لها.
 
-<div id="totp-authentication-configuration">
-  ### تهيئة مصادقة TOTP
-</div>
+### تهيئة مصادقة TOTP {#totp-authentication-configuration}
 
 يمكن استخدام كلمة المرور لمرة واحدة المستندة إلى الوقت (TOTP) لمصادقة مستخدمي ClickHouse، وذلك عبر إنشاء رموز وصول مؤقتة صالحة لمدة محدودة.
 تتوافق طريقة المصادقة هذه باستخدام TOTP مع معايير [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238)، مما يجعلها متوافقة مع تطبيقات TOTP الشائعة مثل Google Authenticator و1Password وأدوات مماثلة.
@@ -299,6 +297,46 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj
 * 1 — مفعّل.
 
 القيمة الافتراضية: 0.
+
+### named_collection_control
+
+يُمكّن هذا الإعداد إدارة [named collections](/ar/concepts/features/configuration/server-config/named-collections) للمستخدم أو يعطّلها.
+وهو يقابل امتياز `NAMED COLLECTION ADMIN`، باستثناء `SHOW NAMED COLLECTIONS SECRETS` التي يتم التحكم بها بشكل منفصل عبر [`show_named_collections_secrets`](#show_named_collections_secrets-user-setting).
+
+ويُقبل `named_collection_admin` كمرادف لهذا الإعداد.
+
+القيم الممكنة:
+
+* 0 — معطّل.
+* 1 — مفعّل.
+
+القيمة الافتراضية: 0.
+
+### show_named_collections_secrets
+
+يُمكِّن هذا الإعداد أو يعطِّل امتياز `SHOW NAMED COLLECTIONS SECRETS` للمستخدم، وهو ما يتيح له الاطلاع على القيم المخزَّنة في [named collections](/ar/concepts/features/configuration/server-config/named-collections)، على سبيل المثال في جدول [`system.named_collections`](/ar/reference/system-tables/named_collections).
+
+وهو معطَّل افتراضيًا: فالقدرة على إدارة named collections لا تعني القدرة على قراءة بيانات الاعتماد المخزَّنة فيها.
+
+ولا يكون لهذا الإعداد أثر إلا مقترنًا بـ `named_collection_control`، إذ عند تعطيل `named_collection_control` تُلغى على أي حال جميع امتيازات named collections، بما فيها `SHOW NAMED COLLECTIONS SECRETS`.
+
+القيم الممكنة:
+
+* 0 — معطَّل.
+* 1 — مفعَّل.
+
+القيمة الافتراضية: 0.
+
+<Note>
+  لا يستطيع المستخدم منح سوى الامتيازات التي يمتلكها هو نفسه، لذا فإن المستخدم المعطَّل لديه أي من `access_management` أو `named_collection_control` أو `show_named_collections_secrets` لا يمتلك مجموعة الامتيازات الكاملة ولا يمكنه تمريرها إلى غيره. على سبيل المثال، يُرفض تنفيذ `GRANT ALL ON *.* TO another_user WITH GRANT OPTION` لمستخدم مفعَّل لديه `access_management` و`named_collection_control` فقط:
+
+  ```text
+  Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+  (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+  ```
+
+  فعِّل الإعدادات الثلاثة جميعها لجعل المستخدم مسؤولًا كامل الصلاحيات.
+</Note>
 
 ### grants
 

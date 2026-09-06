@@ -103,7 +103,7 @@ Quando um recurso atinge a disponibilidade geral, ele deixa de ter o marcador be
 
 O número de réplicas com que cada serviço será criado é, por padrão, 3 para os tiers Scale e Enterprise, enquanto para o tier Basic o padrão é 1.
 Para os tiers Scale e Enterprise, é possível ajustá-lo informando o campo `numReplicas` na solicitação de criação do serviço.
-O valor do campo `numReplicas` deve estar entre 2 e 20 para o primeiro serviço em um warehouse. Services criados em um warehouse existente podem ter apenas 1 réplica.
+O valor do campo `numReplicas` deve ser de no mínimo 2 para o primeiro serviço em um warehouse. Serviços criados em um warehouse existente podem ter apenas 1 réplica. Para saber o número máximo de réplicas, consulte [Limites de uso](/pt-BR/cloud/bestpractices/usage-limits).
 
 <div id="support">
   ## Suporte

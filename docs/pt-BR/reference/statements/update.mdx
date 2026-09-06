@@ -23,14 +23,16 @@ Ela é chamada de &quot;atualização leve&quot; em contraste com a consulta [`A
 Ela está disponível apenas para a família de motores de tabela [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
 
 ```sql
-UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr;
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr;
 ```
 
 O `filter_expr` deve ser do tipo `UInt8`. Esta consulta atualiza os valores das colunas especificadas para os valores das expressões correspondentes nas linhas em que o `filter_expr` assume um valor não zero.
 Os valores são convertidos para o tipo da coluna usando o operador `CAST`. Não há suporte para a atualização de colunas usadas no cálculo das chaves primária ou de partição.
 
+A cláusula `IN PARTITION` limita a atualização às partições listadas. Sem ela, em tabelas da família `ReplicatedMergeTree`, quando a configuração [optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/pt-BR/reference/settings/session-settings/optimize) está habilitada (o padrão), o ClickHouse detecta automaticamente condições de chave de partição em `filter_expr` e atualiza apenas as partições afetadas. Em tabelas `MergeTree` não replicadas, use uma cláusula `IN PARTITION` explícita para limitar uma atualização a partições específicas.
+
 <div id="examples">
-  ## Exemplos
+  ## Exemplos {#examples}
 </div>
 
 ```sql
@@ -40,7 +42,7 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ```
 
 <div id="lightweight-update-does-not-update-data-immediately">
-  ## As atualizações leves não atualizam os dados imediatamente
+  ## As atualizações leves não atualizam os dados imediatamente {#lightweight-update-does-not-update-data-immediately}
 </div>
 
 O `UPDATE` leve é implementado usando **patch parts** — um tipo especial de parte de dados que contém apenas as colunas e linhas atualizadas.
@@ -53,22 +55,18 @@ Os valores atualizados são:
 * **Materializados fisicamente** apenas durante mesclagens e mutações subsequentes
 * **Removidos automaticamente** assim que todas as partes ativas tiverem os patches materializados
 
-<div id="lightweight-update-requirements">
-  ## Requisitos para atualizações leves
-</div>
+## Requisitos para atualizações leves {#lightweight-update-requirements}
 
 As atualizações leves são suportadas pelos motores [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/collapsingmergetree), [`VersionedCollapsingMergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) e por suas versões [`Replicated`](/pt-BR/reference/engines/table-engines/mergetree-family/replication) e [`Shared`](/pt-BR/products/cloud/features/infrastructure/shared-merge-tree).
 
 Para usar atualizações leves, a materialização das colunas `_block_number` e `_block_offset` deve estar habilitada por meio das configurações da tabela [`enable_block_number_column`](/pt-BR/reference/settings/merge-tree-settings/enable-block#enable_block_number_column) e [`enable_block_offset_column`](/pt-BR/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column).
 
-<div id="lightweight-delete">
-  ## Exclusões leves
-</div>
+## Exclusões leves {#lightweight-delete}
 
 Uma consulta de [`DELETE` leve](/pt-BR/reference/statements/delete) pode ser executada como um `UPDATE` leve em vez de uma mutação `ALTER UPDATE`. A implementação de `DELETE` leve é controlada pela configuração [`lightweight_delete_mode`](/pt-BR/reference/settings/session-settings/lightweight#lightweight_delete_mode).
 
 <div id="performance-considerations">
-  ## Considerações de desempenho
+  ## Considerações de desempenho {#performance-considerations}
 </div>
 
 **Vantagens das atualizações leves:**
@@ -85,15 +83,13 @@ Uma consulta de [`DELETE` leve](/pt-BR/reference/statements/delete) pode ser exe
 * Atualizações pequenas, se frequentes demais, podem levar ao erro &quot;too many parts&quot;. Recomenda-se agrupar várias atualizações em uma única consulta, por exemplo, colocando os IDs a serem atualizados em uma única cláusula `IN` na cláusula `WHERE`
 * As atualizações leves foram projetadas para atualizar pequenas quantidades de linhas (até cerca de 10% da tabela). Se você precisar atualizar uma quantidade maior, recomenda-se usar a mutação [`ALTER TABLE ... UPDATE`](/pt-BR/reference/statements/alter/update)
 
-<div id="concurrent-operations">
-  ## Operações concorrentes
-</div>
+## Operações concorrentes {#concurrent-operations}
 
 As atualizações leves não esperam a conclusão de mesclagens/mutações em execução, ao contrário das mutações pesadas.
 A consistência das atualizações leves concorrentes é controlada pelas configurações [`update_sequential_consistency`](/pt-BR/reference/settings/session-settings/update#update_sequential_consistency) e [`update_parallel_mode`](/pt-BR/reference/settings/session-settings/update#update_parallel_mode).
 
 <div id="update-permissions">
-  ## Permissões de `UPDATE`
+  ## Permissões de `UPDATE` {#update-permissions}
 </div>
 
 `UPDATE` requer o privilégio `ALTER UPDATE`. Para habilitar instruções `UPDATE` em uma tabela específica para um determinado usuário, execute:
@@ -103,7 +99,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 ```
 
 <div id="details-of-the-implementation">
-  ## Detalhes da implementação
+  ## Detalhes da implementação {#details-of-the-implementation}
 </div>
 
 As patch parts são iguais às partes regulares, mas contêm apenas colunas atualizadas e várias colunas de sistema:
@@ -142,9 +138,7 @@ Para esses dois casos, há duas maneiras correspondentes de aplicar patch parts:
 
 O modo join é mais lento e requer mais memória do que o modo de merge, mas é usado com menos frequência.
 
-<div id="related-content">
-  ## Conteúdo relacionado
-</div>
+## Conteúdo relacionado {#related-content}
 
 * [`ALTER UPDATE`](/pt-BR/reference/statements/alter/update) - Operações de `UPDATE` pesadas
 * [exclusão leve](/pt-BR/reference/statements/delete) - Operações leves de `DELETE`

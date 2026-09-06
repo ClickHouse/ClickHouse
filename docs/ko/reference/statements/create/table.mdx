@@ -12,15 +12,11 @@ doc_type: '참고'
 새로운 테이블을 생성합니다. 기본적으로 테이블은 현재 서버에서만 생성됩니다.
 분산 DDL 쿼리는 `ON CLUSTER` 절로 구현되며, 이에 대해서는 [별도로 설명합니다](/ko/reference/statements/distributed-ddl).
 
-<div id="syntax-forms">
-  ## 구문 형식
-</div>
+## 구문 형식 {#syntax-forms}
 
 이 쿼리는 사용 사례에 따라 다양한 구문 형식을 가질 수 있습니다.
 
-<div id="with-explicit-schema">
-  ### 명시적 스키마로 테이블 생성
-</div>
+### 명시적 스키마로 테이블 생성 {#with-explicit-schema}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -45,9 +41,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 컬럼과 테이블에 주석을 추가할 수 있습니다.
 
-<div id="with-a-schema-similar-to-other-table">
-  ### 기존 테이블 스키마를 사용하여 테이블 생성
-</div>
+### 기존 테이블 스키마를 사용하여 테이블 생성 {#with-a-schema-similar-to-other-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
@@ -59,9 +53,7 @@ ClickHouse는 기존 테이블의 스키마와 데이터를 복사할 수 있습
 
 이 구문은 다른 테이블과 동일한 구조의 테이블을 생성합니다.
 
-<div id="with-a-schema-and-data-cloned-from-another-table">
-  ### 기존 테이블의 스키마와 데이터로 테이블 생성
-</div>
+### 기존 테이블의 스키마와 데이터로 테이블 생성 {#with-a-schema-and-data-cloned-from-another-table}
 
 기존 테이블의 스키마와 데이터를 복제하려면:
 
@@ -78,9 +70,7 @@ ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 
 두 기능 모두에서 테이블에 다른 엔진을 지정할 수 있습니다. 엔진을 지정하지 않으면 원본 테이블(`db.table`)과 동일한 엔진이 사용됩니다.
 
-<div id="from-a-table-function">
-  ### 테이블 함수를 사용하여 테이블 생성
-</div>
+### 테이블 함수를 사용하여 테이블 생성 {#from-a-table-function}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
@@ -88,9 +78,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 
 지정된 [테이블 함수](/ko/reference/functions/table-functions/index)와 동일한 결과를 반환하는 테이블을 생성합니다. 생성된 테이블은 지정한 해당 테이블 함수와 동일한 방식으로 동작합니다.
 
-<div id="from-select-query">
-  ### SELECT 쿼리로 테이블 생성
-</div>
+### SELECT 쿼리로 테이블 생성 {#from-select-query}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
@@ -115,9 +103,7 @@ SELECT x, toTypeName(x) FROM t1;
 └───┴───────────────┘
 ```
 
-<div id="default_values">
-  ## 컬럼 기본값 지정
-</div>
+## 컬럼 기본값 지정 {#default_values}
 
 컬럼 설명에는 `DEFAULT expr`, `MATERIALIZED expr` 또는 `ALIAS expr` 형태의 기본값 표현식을 지정할 수 있습니다. 예시: `URLDomain String DEFAULT domain(URL)`.
 
@@ -129,9 +115,7 @@ SELECT x, toTypeName(x) FROM t1;
 
 기본값 표현식 `expr`은 임의의 테이블 컬럼과 상수를 참조할 수 있습니다. ClickHouse는 테이블 구조 변경으로 인해 표현식 계산에 루프가 생기지 않는지 확인합니다. INSERT에서는 표현식을 해석할 수 있는지, 즉 해당 표현식을 계산하는 데 필요한 모든 컬럼이 전달되었는지 확인합니다.
 
-<div id="default">
-  ### DEFAULT
-</div>
+### DEFAULT {#default}
 
 `DEFAULT expr`
 
@@ -157,9 +141,7 @@ SELECT * FROM test;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-<div id="materialized">
-  ### MATERIALIZED
-</div>
+### MATERIALIZED {#materialized}
 
 `MATERIALIZED expr`
 
@@ -197,9 +179,7 @@ SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-<div id="ephemeral">
-  ### EPHEMERAL
-</div>
+### EPHEMERAL {#ephemeral}
 
 `EPHEMERAL [expr]`
 
@@ -235,9 +215,7 @@ hexed:      Z��
 hex(hexed): 5A90B714
 ```
 
-<div id="alias">
-  ### ALIAS
-</div>
+### ALIAS {#alias}
 
 `ALIAS expr`
 
@@ -274,9 +252,7 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 └────┴────────────┴──────────┘
 ```
 
-<div id="null-or-not-null-modifiers">
-  ## `NULL` 또는 `NOT NULL` 수정자 사용
-</div>
+## `NULL` 또는 `NOT NULL` 수정자 사용 {#null-or-not-null-modifiers}
 
 컬럼 정의에서 데이터 타입 뒤에 오는 `NULL` 및 `NOT NULL` 수정자는 해당 타입을 [널 허용(Nullable)](/ko/reference/data-types/nullable)으로 만들거나 그렇지 않게 만듭니다.
 
@@ -284,9 +260,7 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 
 관련 항목: [data&#95;type&#95;default&#95;nullable](/ko/reference/settings/session-settings/other#data_type_default_nullable) 설정.
 
-<div id="primary-key">
-  ## 기본 키
-</div>
+## 기본 키 {#primary-key}
 
 테이블을 생성할 때 [기본 키](/ko/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries)를 정의할 수 있습니다. 기본 키는 다음 두 가지 방식으로 지정할 수 있습니다.
 
@@ -322,15 +296,11 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
   하나의 쿼리에서 두 방식을 함께 사용할 수는 없습니다.
 </Tip>
 
-<div id="constraints">
-  ## 테이블 제약 조건 지정
-</div>
+## 테이블 제약 조건 지정 {#constraints}
 
 컬럼 설명과 함께 제약 조건을 정의할 수도 있습니다:
 
-<div id="constraint">
-  ### CONSTRAINT
-</div>
+### CONSTRAINT {#constraint}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -348,9 +318,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 모든 테이블의 기존 제약 조건은 [`system.constraints`](/ko/reference/system-tables/constraints) 테이블에서 확인할 수 있습니다.
 
-<div id="assume">
-  ### ASSUME
-</div>
+### ASSUME {#assume}
 
 `ASSUME` 절은 테이블에서 참이라고 가정하는 `CONSTRAINT`를 정의하는 데 사용됩니다. 이렇게 정의한 제약 조건은 이후 최적화기가 SQL 쿼리 성능을 향상하는 데 활용할 수 있습니다.
 
@@ -374,17 +342,13 @@ ORDER BY (name_len, name);
 
 `ASSUME CONSTRAINT`는 **제약 조건을 강제하지 않으며**, 단지 해당 제약 조건이 참이라고 최적화기에 알려 줄 뿐입니다. 제약 조건이 실제로 참이 아니면 쿼리 결과가 올바르지 않을 수 있습니다. 따라서 제약 조건이 참이라고 확신할 때만 `ASSUME CONSTRAINT`를 사용해야 합니다.
 
-<div id="ttl-expression">
-  ## TTL로 보관 기간 정의
-</div>
+## TTL로 보관 기간 정의 {#ttl-expression}
 
 값의 보관 기간을 정의합니다. MergeTree 계열 테이블에만 지정할 수 있습니다. 자세한 내용은 [컬럼 및 테이블의 TTL](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)을 참조하십시오.
 
-<div id="column_compression_codec">
-  ## 컬럼 압축 코덱 선택
-</div>
+## 컬럼 압축 코덱 선택 {#column_compression_codec}
 
-{/* /reference/statements/create/table/codec로 이동한 섹션 링크를 위한 앵커 */}
+{/* /reference/statements/create/table/codec로 이동된 섹션 링크용 앵커 */}
 
 <a id="general-purpose-codecs" />
 
@@ -430,7 +394,7 @@ ORDER BY (name_len, name);
 
 <a id="adaptive-codec-selection" />
 
-기본적으로 ClickHouse는 자가 관리형 버전에서 `lz4` 압축을 사용하고, ClickHouse Cloud에서는 `zstd`를 사용합니다. `CREATE TABLE` 쿼리에서 각 컬럼의 압축 메서드를 지정할 수도 있습니다:
+기본적으로 ClickHouse는 자가 관리형 버전에서 `ZSTD(3)` 압축을 사용하고, ClickHouse Cloud에서는 `zstd`를 사용합니다. MergeTree 엔진 계열에서는 기본값이 크기에 따라 결정됩니다. 100MB 미만에서는 더 빠른 `LZ4`가, 100MB 이상에서는 `ZSTD(3)`가 사용됩니다. 따라서 새로 삽입된 데이터는 `LZ4`로 시작하고, 백그라운드 머지로 생성된 더 큰 파트는 `ZSTD(3)`로 전환됩니다. 이 임계값은 결과 파트의 크기가 아니라, 데이터가 기록되기 전 코덱을 선택해야 하는 시점에 알려진 파트 크기에 적용됩니다. 새로 삽입된 파트는 `0`이며, 머지나 mutation에서는 source 파트의 크기가 사용됩니다. `CREATE TABLE` 쿼리에서 각 컬럼의 압축 메서드를 지정할 수도 있습니다:
 
 ```sql
 CREATE TABLE codec_example
@@ -447,15 +411,11 @@ ENGINE = <Engine>
 
 사용 가능한 범용, 특수 용도 및 암호화 코덱은 [컬럼 압축 코덱](/ko/reference/statements/create/table/codec)을 참조하십시오.
 
-<div id="temporary-tables">
-  ## 임시 테이블 만들기
-</div>
+## 임시 테이블 만들기 {#temporary-tables}
 
 ClickHouse는 세션이 종료되면 자동으로 삭제되는 임시 테이블을 지원합니다. 자세한 내용은 [CREATE TEMPORARY TABLE](/ko/reference/statements/create/table/temporary-table)을 참조하십시오.
 
-<div id="replace-table">
-  ## REPLACE TABLE로 테이블을 원자적으로 업데이트하기
-</div>
+## REPLACE TABLE로 테이블을 원자적으로 업데이트하기 {#replace-table}
 
 {/* /reference/statements/create/table/replace-table로 이동한 섹션 링크의 앵커 */}
 
@@ -465,9 +425,7 @@ ClickHouse는 세션이 종료되면 자동으로 삭제되는 임시 테이블�
 
 `REPLACE` 문을 사용하면 테이블을 [원자적으로](/ko/concepts/core-concepts/glossary#atomicity) 업데이트할 수 있습니다. 자세한 내용은 [REPLACE TABLE](/ko/reference/statements/create/table/replace-table)을 참조하십시오.
 
-<div id="comment-clause">
-  ## 테이블 주석 추가
-</div>
+## 테이블 주석 추가 {#comment-clause}
 
 테이블을 생성할 때 COMMENT를 추가할 수 있습니다.
 
@@ -508,9 +466,7 @@ SELECT name, comment FROM system.tables WHERE name = 't1';
 └──────┴─────────────────────┘
 ```
 
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
 * 블로그: [스키마와 코덱으로 ClickHouse 최적화하기](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 * 블로그: [ClickHouse에서 시계열 데이터 다루기](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

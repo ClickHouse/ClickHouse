@@ -19,9 +19,7 @@ Esta página describe el protocolo en sí: el encapsulado de paquetes, la máqui
 
 Hay varias propiedades que se mantienen en todo el protocolo. Es binario y posicional: no hay etiquetas de campo salvo dentro de `BlockInfo`, así que un solo byte fuera de lugar desincroniza todo lo que viene después. Tiene estado, y cada conexión TCP procesa una consulta cada vez; no hay multiplexación. Los enteros de ancho fijo están en formato little-endian.
 
-<div id="overview">
-  ## Descripción general
-</div>
+## Descripción general {#overview}
 
 | Propiedad            | Valor                                                                                        |
 | -------------------- | -------------------------------------------------------------------------------------------- |
@@ -68,19 +66,13 @@ sequenceDiagram
 
 El protocolo TCP nativo siempre transporta datos tabulares en el formato Native, independientemente de cualquier cláusula `FORMAT` en SQL. Volver a formatear en `RowBinary`, `CSV`, `JSON`, etc. es tarea del Client, y se hace después de decodificar los bloques Native. (La interfaz HTTP sigue una ruta de código distinta que *sí* respeta la cláusula `FORMAT`; HTTP queda fuera del alcance de esta explicación.)
 
-<div id="security">
-  ## Seguridad
-</div>
+## Seguridad {#security}
 
-<div id="transport-security">
-  ### Seguridad de transporte (TLS)
-</div>
+### Seguridad de transporte (TLS) {#transport-security}
 
 TLS opera en la capa de transporte, por debajo del protocolo. Cuando está habilitado, se cifra todo el flujo TCP, y los mensajes del protocolo son idénticos byte por byte, tanto si se usa TLS como si no.
 
-<div id="authentication">
-  ### Autenticación
-</div>
+### Autenticación {#authentication}
 
 La autenticación se realiza durante el handshake, en el mensaje [`ClientHello`](#clienthello). Los campos `user` y `password` se transmiten como cadenas de texto en claro, por lo que el cifrado a nivel de transporte (TLS) es lo que protege las credenciales durante el tránsito.
 
@@ -88,19 +80,13 @@ El servidor interpreta un campo `user` vacío como el usuario de sesión predete
 
 La autenticación SSH de desafío-respuesta está disponible a partir de la versión 54466 del protocolo; consulta [Autenticación SSH de desafío-respuesta](#ssh-authentication).
 
-<div id="inter-server-secret">
-  ### Secreto entre servidores
-</div>
+### Secreto entre servidores {#inter-server-secret}
 
 Para la ejecución distribuida de consultas, los servidores se autentican entre sí demostrando que conocen un secreto compartido, sin transmitir el secreto por la red. Cada Query incluye un `auth_hash` SHA-256 de 32 bytes en el campo 4 de [`Query`](#query), calculado a partir de una sal, un nonce, el secreto configurado y la consulta; el servidor receptor lo vuelve a calcular y lo compara. Esto está controlado por la funcionalidad `INTERSERVER_SECRET` (v54441). Los Clients externos siempre envían aquí una cadena vacía. Consulte [Autenticación entre servidores](#inter-server-authentication).
 
-<div id="versioning-and-feature-gates">
-  ## Versionado y control de funcionalidad
-</div>
+## Versionado y control de funcionalidad {#versioning-and-feature-gates}
 
-<div id="version-negotiation">
-  ### Negociación de versiones
-</div>
+### Negociación de versiones {#version-negotiation}
 
 Tanto el Client como el servidor indican la versión máxima del protocolo que admiten durante el handshake. La **versión negociada** es la menor de las dos:
 
@@ -110,9 +96,7 @@ negotiated_version = min(client_version, server_version)
 
 Cada mensaje posterior usa la versión negociada para determinar qué campos están presentes en el wire.
 
-<div id="feature-gates">
-  ### Controles de funcionalidad
-</div>
+### Controles de funcionalidad {#feature-gates}
 
 Una funcionalidad se identifica por la versión del protocolo en la que se introdujo y está **activa** cuando la versión negociada es mayor o igual a ese número.
 
@@ -120,9 +104,7 @@ Una funcionalidad se identifica por la versión del protocolo en la que se intro
   Cuando una funcionalidad está activa, sus campos **deben** estar presentes en la representación binaria transmitida. El protocolo es estrictamente posicional, por lo que omitir un campo protegido por un control de funcionalidad corrompe el flujo de bytes de todos los campos posteriores.
 </Warning>
 
-<div id="feature-table">
-  ### Tabla de funcionalidades
-</div>
+### Tabla de funcionalidades {#feature-table}
 
 | Funcionalidad                                                | Versión | Afecta                           | Impacto a nivel wire                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ------------------------------------------------------------ | ------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -162,7 +144,7 @@ Una funcionalidad se identifica por la versión del protocolo en la que se intro
 | SERVER&#95;SETTINGS                                          | 54474   | ServerHello                      | El server difunde sus settings distintos de los predeterminados como una lista al final de ServerHello, después de `nonce`. Formato: triples `(key, flags, value)` terminados por una key vacía, igual que la lista de settings del paquete Query.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | QUERY&#95;AND&#95;LINE&#95;NUMBERS                           | 54475   | ClientInfo                       | Añade `script_query_number` (VarUInt) y `script_line_number` (VarUInt) al final de ClientInfo. Lo usa clickhouse-client para atribuir errores en scripts con múltiples sentencias; los clients externos envían `0, 0`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | JWT&#95;IN&#95;INTERSERVER                                   | 54476   | ClientInfo                       | Añade un UInt8 que indica la presencia de JWT más un `String jwt` opcional al final de ClientInfo. Los clients externos (sin JWT) envían el byte `0x00`. (En C++ se escribe `DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER`; observa la errata en el nombre de la constante).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| QUERY&#95;PLAN&#95;SERIALIZATION                             | 54477   | ServerHello, QueryPlan packet    | ServerHello añade `VarUInt query_plan_serialization_version` después de los settings del server. También introduce `ClientPacket::QueryPlan` (código `13`) para el envío entre servers de planes de consulta preconstruidos; los clients externos nunca lo envían.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| QUERY&#95;PLAN&#95;SERIALIZATION                             | 54477   | ServerHello, QueryPlan packet    | ServerHello añade `VarUInt query_plan_serialization_version` después de los settings del server. También introduce `ClientPacket::QueryPlan` (código `13`) para el envío entre servers de planes de consulta preconstruidos; los clients externos nunca lo envían. La versión `10` de serialización de planes de consulta antepone al plan serializado `VarUInt max_threads` y `Bool concurrency_control`; cuando cualquiera de ellos no es predeterminado, los iniciadores usan envío de SQL para peers por debajo de la versión `10` a fin de que el peer construya su plan a partir de los settings de consulta transmitidos.                                                                                                                                                                                                |
 | PARALLEL&#95;BLOCK&#95;MARSHALLING                           | 54478   | Block (Column)                   | El server puede encapsular columnas en `ColumnBLOB` (comprimido en línea) para procesamiento paralelo. Se activa solo si la consulta tiene la compresión habilitada Y `rows > 1`; de lo contrario, se aplica el formato wire normal de columna. Los clients que nunca habilitan la compresión en paquetes Query salientes no ven ningún cambio en wire.                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | VERSIONED&#95;CLUSTER&#95;FUNCTION&#95;PROTOCOL              | 54479   | ServerHello                      | Añade `VarUInt cluster_function_protocol_version` al final de ServerHello. Se usa para funciones de tabla `*Cluster` (`s3Cluster`, etc.). Valor actual: `8` (`DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION`); la versión `7` está reservada para una funcionalidad de repositorio privado (compactación de Iceberg), y `8` añade un `read_source_index` opcional a la carga útil de la tarea de lectura de clúster entre servidores (el cuerpo de `ReadTaskResponse`, que sigue sin especificarse aquí — consulta más abajo). Los clients externos lo decodifican y lo ignoran.                                                                                                                                                                                                                                                     |
 | OUT&#95;OF&#95;ORDER&#95;BUCKETS&#95;IN&#95;AGGREGATION      | 54480   | BlockInfo                        | Añade el campo 3 (`out_of_order_buckets: Vec<Int32>`) al flujo etiquetado por campos de BlockInfo. Se decodifica como `[VarUInt count][Int32]*count`. Los clients externos no emiten esto por sí mismos; el decodificador lee cualquier lista no vacía que envíe el server.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -178,9 +160,7 @@ Una funcionalidad se identifica por la versión del protocolo en la que se intro
 | QUANTILE&#95;DETERMINISTIC&#95;SKIP&#95;DEGREE               | 54491   | Block (Column)                   | Incrementa la versión de estado de `AggregateFunction(quantileDeterministic, ...)` (y de sus variantes `quantiles`/`median`) de `0` a `1`, lo que añade un `UInt8 skip_degree` al final de cada estado serializado. Solo cambia la carga útil de estado de esa función de agregación; el framing de columna no se modifica y todas las demás funciones de agregación conservan su propia versión. Por debajo de esta revisión, el escritor emite estados de versión `0`, por lo que un peer anterior no se ve afectado.                                                                                                                                                                                                                                                                                                         |
 | STRING&#95;WITH&#95;SIZE&#95;STREAM&#95;SERIALIZATION        | 54492   | Block (Column)                   | Las columnas `String` pasan del diseño con prefijo de longitud por valor a un flujo independiente de offsets de bytes acumulados (el mismo diseño de offsets que usa un `Array`), enviado tal cual: `[UInt64 × num_rows offsets][data blob]`. Depende de la revisión negociada; por debajo de 54492, el escritor usa los prefijos de longitud por valor. El wire no transporta ningún marcador por columna para esto: ambos peers lo derivan únicamente de la revisión. Consulta [String column layout](/es/reference/interfaces/specs/NativeFormat#string-type).                                                                                                                                                                                                                                                                  |
 
-<div id="packet-envelope">
-  ## Encapsulado del paquete
-</div>
+## Encapsulado del paquete {#packet-envelope}
 
 Todos los mensajes transmitidos comparten la misma estructura externa en ambos sentidos:
 
@@ -195,9 +175,7 @@ El tipo de paquete es un `VarUInt`, no un byte de ancho fijo. Para valores infer
 
 La [referencia de mensajes](#message-reference) documenta solo el **cuerpo** de cada paquete: los bytes que vienen después del código de tipo de paquete. La numeración de los campos comienza en 1 con el primer campo del cuerpo.
 
-<div id="chunked-framing">
-  ### Enmarcado por fragmentos (v54470+)
-</div>
+### Enmarcado por fragmentos (v54470+) {#chunked-framing}
 
 Cuando se **negocia** la funcionalidad `CHUNKED_PROTOCOL` (ver [el handshake](#handshake-phase)), cada paquete en el wire se encapsula con enmarcado por fragmentos. Este encapsulado es **por dirección**: Client→servidor y servidor→Client se negocian por separado y pueden quedar en modos distintos (por fragmentos o sin enmarcar).
 
@@ -240,15 +218,11 @@ En el lado del Client, la preferencia de ENVÍO del Client se negocia frente a l
 
 **Temporización.** Las cadenas de negociación viajan por el wire sin enmarcado: ClientHello → ServerHello (preferencias del servidor) → Addendum (valores negociados del Client). El cambio al enmarcado se aplica a cada byte enviado *después* de que se vacíe el Addendum. El propio Addendum, ClientHello y ServerHello siempre van sin enmarcado.
 
-<div id="connection-lifecycle">
-  ## Ciclo de vida de la conexión
-</div>
+## Ciclo de vida de la conexión {#connection-lifecycle}
 
 En cualquier momento, una conexión está exactamente en uno de cuatro estados: `HANDSHAKE`, `READY`, `READING_RESPONSE` o terminada. Como el protocolo no multiplexa, un Client que envía una nueva solicitud antes de terminar de leer la respuesta anterior intercala bytes en tránsito y corrompe el flujo.
 
-<div id="states">
-  ### Estados
-</div>
+### Estados {#states}
 
 ```mermaid
 stateDiagram-v2
@@ -274,9 +248,7 @@ El flujo nominal sigue una línea recta — `HANDSHAKE → READY → READING_RES
 | `READING_RESPONSE` | Se entra en este estado cuando el Client envía una consulta. El Client debe consumir por completo el flujo de respuesta del servidor antes de volver a `READY`. El único paquete Client→servidor permitido aquí es Cancel (no se especifica en esta página).   |
 | Terminated         | Ya no se puede usar. El Client debe abrir una nueva conexión TCP y reiniciar el handshake.                                                                                                                                                                 |
 
-<div id="handshake-phase">
-  ### Fase de handshake
-</div>
+### Fase de handshake {#handshake-phase}
 
 En ella se autentica y se negocia la versión del protocolo. Ocurre exactamente una vez por conexión, antes de cualquier otra cosa.
 
@@ -314,9 +286,7 @@ sequenceDiagram
 
 Si la operación tiene éxito, la conexión pasa a `READY`; ante cualquier error, se termina.
 
-<div id="ping-phase">
-  ### Fase de Ping
-</div>
+### Fase de Ping {#ping-phase}
 
 Una comprobación de liveness a nivel de aplicación, independiente del keepalive de TCP. Un intercambio de Ping/Pong completado con éxito confirma que la conexión TCP está activa en ambas direcciones y que el servidor responde. Ping es sin estado y no está correlacionado con ninguna consulta, por lo que varios Pings secuenciales son independientes.
 
@@ -345,9 +315,7 @@ sequenceDiagram
    | `Exception` (2)      | Decodificar [`Exception`](#exception) y devolverla como error. |
    | cualquier otro valor | Violación del protocolo.                                       |
 
-<div id="query-phase">
-  ### Fase de consulta
-</div>
+### Fase de consulta {#query-phase}
 
 El Client envía una sentencia SQL; el servidor devuelve en streaming los bloques de resultados y la telemetría de ejecución. La respuesta es una secuencia de paquetes terminada por un único `EndOfStream` o una `Exception`.
 
@@ -401,9 +369,7 @@ Con `EndOfStream` o una `Exception` controlada, la conexión vuelve a `READY`. U
   El caso `num_rows == 0` suele confundir a las implementaciones nuevas. Un bloque de cero filas es un marcador de límite o una cabecera de esquema, no una señal de fin de stream. Solo `EndOfStream` o `Exception` pone fin a la respuesta.
 </Note>
 
-<div id="insert-phase">
-  ### Fase INSERT
-</div>
+### Fase INSERT {#insert-phase}
 
 La fase INSERT es la [fase de consulta](#query-phase) con dos intercambios adicionales. El Client envía una instrucción `INSERT`; el servidor responde con un **bloque de esquema** que describe la tabla de destino; el Client transmite paquetes Data con las filas y, después, el marcador Data vacío; el servidor finaliza con `EndOfStream` o `Exception`.
 
@@ -447,9 +413,7 @@ sequenceDiagram
 
 La conexión vuelve a `READY` en `EndOfStream` o tras una `Exception` controlada. Las infracciones del protocolo y los errores de I/O la terminan.
 
-<div id="message-reference">
-  ## Referencia de mensajes
-</div>
+## Referencia de mensajes {#message-reference}
 
 Los campos se enumeran en el orden del wire. La columna `Type` usa:
 
@@ -466,9 +430,7 @@ La columna `Role` indica quién usa cada campo:
 
 Estas tablas documentan solo el body de cada paquete, después del código de tipo de paquete.
 
-<div id="clienthello">
-  ### ClientHello (tipo de paquete 0)
-</div>
+### ClientHello (tipo de paquete 0) {#clienthello}
 
 Client → servidor. El primer mensaje tras abrirse la conexión TCP.
 
@@ -482,9 +444,7 @@ Client → servidor. El primer mensaje tras abrirse la conexión TCP.
 | 6 | user                 | String  | universal | Nombre de usuario para la autenticación. Si está vacío, se usa el usuario de sesión predeterminado del servidor (la configuración del servidor `default_session_user`; rechazado por servidores anteriores a 26.8). Consulte [Autenticación](#authentication). |
 | 7 | password             | String  | universal | Contraseña (en texto no cifrado)                                                                                                                                                                                                                               |
 
-<div id="serverhello">
-  ### ServerHello (tipo de paquete 0)
-</div>
+### ServerHello (tipo de paquete 0) {#serverhello}
 
 Servidor → Client. La respuesta a ClientHello tras una autenticación correcta.
 
@@ -519,9 +479,7 @@ La lista refleja la configuración de la política de contraseñas del operador 
   Para limitar el uso de recursos frente a un servidor hostil o mal configurado, limite el `count` decodificado a 256 entradas y cada String `pattern` y `message` a 4096 bytes. Un `count` de `0` (sin pares posteriores) es el caso habitual en servidores sin ninguna política de contraseñas configurada.
 </Note>
 
-<div id="addendum">
-  ### Apéndice (sin tipo de paquete)
-</div>
+### Apéndice (sin tipo de paquete) {#addendum}
 
 Client → Server, controlado por `ADDENDUM` (v54458). Se envía inmediatamente después de que se completa el intercambio de handshake. No es un tipo de paquete distinto: los campos van por el wire en bruto, sin prefijo de byte de tipo de paquete.
 
@@ -534,21 +492,15 @@ Client → Server, controlado por `ADDENDUM` (v54458). Se envía inmediatamente 
 
 El cambio al enmarcado por fragmentos se aplica *después* de que este Apéndice se haya enviado por completo; el propio Apéndice no lleva enmarcado.
 
-<div id="ping">
-  ### Ping (tipo de paquete 4)
-</div>
+### Ping (tipo de paquete 4) {#ping}
 
 Client → Server. Sin cuerpo: el paquete consta de un único byte `0x04` antes del enmarcado por fragmentos; cuando se negocia la fragmentación, el byte pasa a ser el payload de un byte de un fragmento (consulte [enmarcado por fragmentos](#chunked-framing)).
 
-<div id="pong">
-  ### Pong (tipo de paquete 4)
-</div>
+### Pong (tipo de paquete 4) {#pong}
 
 Servidor → client. Sin body: el paquete es un solo byte `0x04` antes del enmarcado por fragmentos; cuando se negocia la fragmentación, el byte pasa a ser el payload de un byte de un fragmento (consulta el [enmarcado por fragmentos](#chunked-framing)).
 
-<div id="exception">
-  ### Exception (tipo de paquete 2)
-</div>
+### Exception (tipo de paquete 2) {#exception}
 
 Servidor → client. Se envía cuando el servidor detecta un error en cualquier fase.
 
@@ -560,9 +512,7 @@ Servidor → client. Se envía cuando el servidor detecta un error en cualquier 
 | 4 | stack&#95;trace           | String | universal | Stack trace del servidor                                                   |
 | 5 | has&#95;nested (obsoleto) | Bool   | universal | Byte de compatibilidad obsoleto. El server siempre lo escribe como `false` |
 
-<div id="query">
-  ### Consulta (tipo de paquete 1)
-</div>
+### Consulta (tipo de paquete 1) {#query}
 
 Cliente → servidor.
 
@@ -578,9 +528,7 @@ Cliente → servidor.
 | 7  | query&#95;body     | String      | universal        | siempre                                                   | Texto SQL                                                                                                                                                                                                                                                                                                                                                               |
 | 8  | parameters         | Parameter[] | client           | PARAMETERS (v54459)                                       | Consulte [Parameter](#parameter). Terminado por una clave vacía.                                                                                                                                                                                                                                                                                                        |
 
-<div id="clientinfo">
-  ### ClientInfo (incluido en consulta)
-</div>
+### ClientInfo (incluido en consulta) {#clientinfo}
 
 Client → Server, incluido en el cuerpo de consulta (campo 2). Condicionado por `CLIENT_INFO` (v54032). (Algunos campos dentro de ClientInfo están condicionados por versiones posteriores, como se indica más abajo en cada campo.)
 
@@ -637,9 +585,7 @@ If has_trace == 1:
   [UInt8:    trace_flags]       W3C trace flags
 ```
 
-<div id="inter-server-authentication">
-  ### Autenticación entre servidores
-</div>
+### Autenticación entre servidores {#inter-server-authentication}
 
 El campo 4 de consulta (`auth_hash`) **no** es el secreto compartido del clúster en la representación wire. Enviar el secreto en bruto haría que la autenticación fallara y además lo expondría. En su lugar, un servidor que actúa como Client entre servidores demuestra que conoce el secreto con un hash SHA-256 con salt:
 
@@ -650,9 +596,7 @@ El campo 4 de consulta (`auth_hash`) **no** es el secreto compartido del clúste
 
 Los clientes externos (no entre servidores) nunca entran en este modo y siempre envían un `auth_hash` vacío.
 
-<div id="setting">
-  ### Configuración
-</div>
+### Configuración {#setting}
 
 Codificada en línea en la lista de configuraciones del cuerpo de Query (el paquete [Query](#query), campo 3). La lista **siempre está presente**, independientemente de la versión negociada, y termina con una SETTING con `key` vacía: un único `VarUInt 0`, sin indicadores ni valor a continuación. Solo la codificación de cada configuración depende de la versión negociada, controlada por `SETTINGS_SERIALIZED_AS_STRINGS` (v54429).
 
@@ -675,9 +619,7 @@ El campo `flags` contiene:
 * `0x0c` — un campo **tier** de 2 bits, no un indicador independiente: `0x00` = Production, `0x04` = Obsolete, `0x08` = Experimental, `0x0c` = Beta. Lea los 2 bits completos (`flags & 0x0c`) — una comprobación ingenua de `flags & 0x04` clasificaría erróneamente Beta (`0x0c`) como Obsolete.
 * `0x80` — **HotReload** (recarga de configuración sin reinicio; definido en el enum de indicadores, presente principalmente en configuraciones de coordinación).
 
-<div id="parameter">
-  ### Parámetro
-</div>
+### Parámetro {#parameter}
 
 Parámetros de consulta para consultas parametrizadas como `SELECT {x:UInt64}`. Se codifican de forma idéntica a un [SETTING](#setting) con el indicador `Custom` (`0x02`) activado, y terminan con una clave vacía de la misma forma.
 
@@ -691,9 +633,7 @@ Parámetros de consulta para consultas parametrizadas como `SELECT {x:UInt64}`. 
   El valor del parámetro es la representación SQL del valor, no un literal sin procesar. Los parámetros de tipo cadena deben pasarse ya entre comillas simples (por ejemplo, el valor de `{name:String}` es `'Alice'`, no `Alice`); de lo contrario, el analizador de valores del servidor los rechazará.
 </Note>
 
-<div id="data">
-  ### Data (tipo de paquete 1 servidor→client, tipo de paquete 2 client→servidor)
-</div>
+### Data (tipo de paquete 1 servidor→client, tipo de paquete 2 client→servidor) {#data}
 
 En ambas direcciones. Transporta bloques de resultados, datos de INSERT, tablas externas y marcadores de fin de datos.
 
@@ -714,9 +654,7 @@ El **marcador de fin de datos** es un paquete cuyo Block está vacío: `0` colum
 
 Las variantes de bloque y su significado se documentan en [Block variants](/es/reference/interfaces/specs/NativeFormat#block-variants).
 
-<div id="progress">
-  ### Progress (tipo de paquete 3)
-</div>
+### Progress (tipo de paquete 3) {#progress}
 
 Servidor → Cliente. Se envía periódicamente durante la ejecución de la consulta. Todos los campos son VarUInt, y cada paquete contiene **incrementos desde el paquete `Progress` anterior**, no totales acumulados. Antes de enviarlo, el server lee sus contadores, los restablece atómicamente a cero y calcula `elapsed_ns` como la diferencia de tiempo desde el último envío. Por lo tanto, un client **debe acumular** localmente los paquetes sucesivos para obtener totales acumulados; tratar un paquete como un valor absoluto hace que la visualización del progreso retroceda o cuente de menos cuando llega más de un paquete.
 
@@ -730,9 +668,7 @@ Servidor → Cliente. Se envía periódicamente durante la ejecución de la cons
 | 6 | wrote&#95;bytes | VarUInt | universal | WRITE&#95;CLIENT&#95;INFO (v54420)                     | Bytes escritos desde el paquete anterior (para INSERT); acumular                                                   |
 | 7 | elapsed&#95;ns  | VarUInt | universal | SERVER&#95;QUERY&#95;TIME&#95;IN&#95;PROGRESS (v54460) | Nanosegundos transcurridos desde el paquete anterior (una diferencia, no el tiempo total de la consulta); acumular |
 
-<div id="profileinfo">
-  ### ProfileInfo (tipo de paquete 6)
-</div>
+### ProfileInfo (tipo de paquete 6) {#profileinfo}
 
 Servidor → client. Se envía una vez por consulta, hacia el final de la ejecución.
 
@@ -747,9 +683,7 @@ Servidor → client. Se envía una vez por consulta, hacia el final de la ejecuc
 | 7 | applied&#95;aggregation         | Bool    | universal | ROWS&#95;BEFORE&#95;AGGREGATION (v54469) | Indica si se aplicó GROUP BY                                                                                                                                                                                                                                                                            |
 | 8 | rows&#95;before&#95;aggregation | VarUInt | universal | ROWS&#95;BEFORE&#95;AGGREGATION (v54469) | Recuento de filas antes de la agregación                                                                                                                                                                                                                                                                |
 
-<div id="totals">
-  ### Totales (tipo de paquete 7)
-</div>
+### Totales (tipo de paquete 7) {#totals}
 
 Servidor → client. Se envía para consultas con `WITH TOTALS`. El formato de transmisión es idéntico a [Data](#data): una cadena `table_name` (siempre vacía) seguida de un Block. Solo cambia el byte del tipo de paquete.
 
@@ -759,9 +693,7 @@ Servidor → client. Se envía para consultas con `WITH TOTALS`. El formato de t
 [Block]                     see the Native Format spec
 ```
 
-<div id="extremes">
-  ### Extremes (tipo de paquete 8)
-</div>
+### Extremes (tipo de paquete 8) {#extremes}
 
 Servidor → client. Se envía cuando la configuración `extremes` está habilitada. El formato de transmisión es idéntico a [Data](#data). El bloque tiene exactamente 2 filas: la fila 0 contiene el mínimo de cada columna y la fila 1, el máximo.
 
@@ -771,9 +703,7 @@ Servidor → client. Se envía cuando la configuración `extremes` está habilit
 [Block]                     num_rows = 2
 ```
 
-<div id="log">
-  ### Log (tipo de paquete 10)
-</div>
+### Log (tipo de paquete 10) {#log}
 
 Servidor → Client. Se envía cuando la consulta tiene una cola de logs activa (la configuración `send_logs_level`; consulte [streaming de logs](#log-streaming)).
 
@@ -798,9 +728,7 @@ Las 8 columnas, en este orden exacto:
 | 7 | source                          | String   | Nombre del logger                                                       |
 | 8 | text                            | String   | Texto del mensaje de log                                                |
 
-<div id="profileevents">
-  ### ProfileEvents (tipo de paquete 14)
-</div>
+### ProfileEvents (tipo de paquete 14) {#profileevents}
 
 Servidor → cliente. Contiene contadores de rendimiento por consulta.
 
@@ -827,9 +755,7 @@ Las 6 columnas:
   El tipo de elemento de la columna `value` no es fijo entre paquetes: los servidores antiguos emiten `UInt64` y los más nuevos, `Int64`. Lee la cadena de tipo de la columna desde la cabecera del bloque en lugar de asumir un tamaño fijo.
 </Note>
 
-<div id="tablecolumns">
-  ### TableColumns (tipo de paquete 11)
-</div>
+### TableColumns (tipo de paquete 11) {#tablecolumns}
 
 Server → client, condicionado por `COLUMN_DEFAULTS_METADATA` (v54410). El server lo envía antes del bloque de esquema de `INSERT` para transportar metadatos de valores predeterminados de las columnas, pero solo cuando la versión negociada es ≥ 54410 **y** la configuración `input_format_defaults_for_omitted_fields` está habilitada. Por debajo de 54410, el paquete no se envía nunca, por lo que un client más antiguo **no** debe esperarlo: el bloque de esquema `Data` llega directamente. Un client v54410+ debe estar preparado para cualquiera de estas dos secuencias: un `TableColumns` opcional y luego el bloque de esquema.
 
@@ -844,9 +770,7 @@ Server → client, condicionado por `COLUMN_DEFAULTS_METADATA` (v54410). El serv
   Con una versión negociada ≥ 54481 (`COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS`), el server escribe **ambos** campos a través de la misma ruta de salida con compresión opcional, de modo que, cuando la consulta tiene `compression = true`, todo el cuerpo de `TableColumns` (`external_table` + `columns_description`) va dentro del [frame de compresión](/es/reference/interfaces/specs/NativeFormat#compression-frame); el client lo lee a través del flujo descomprimido correspondiente. Cuando la consulta no tiene compresión, el cuerpo se transmite sin comprimir, exactamente como muestra la tabla anterior. Esto es importante para las respuestas de esquema de `INSERT`: un client que cambie el manejo de la compresión para `Log` y `ProfileEvents`, pero no para `TableColumns`, interpretará mal la respuesta cuando la compresión de la consulta esté habilitada.
 </Info>
 
-<div id="timezoneupdate">
-  ### TimezoneUpdate (tipo de paquete 17)
-</div>
+### TimezoneUpdate (tipo de paquete 17) {#timezoneupdate}
 
 Server → Client, controlado por `TIMEZONE_UPDATES` (v54464). Se envía exactamente en un lugar: el inicializador de la table function `input` (una consulta de la forma `INSERT INTO <table> SELECT ... FROM input('<structure>')`, que transmite filas desde el client). Justo después de que el servidor envía el bloque `Data` del esquema de entrada (consulta la [fase INSERT](#insert-phase)), emite `TimezoneUpdate` con la `session_timezone` actual del contexto de la consulta para que el client procese las filas que está a punto de enviar con la misma zona horaria. El servidor **no** emite este paquete para cambios arbitrarios de `SET session_timezone` a mitad de consulta, ni para indicarle al client cómo debe dar formato a bloques de resultados posteriores.
 
@@ -856,9 +780,7 @@ Server → Client, controlado por `TIMEZONE_UPDATES` (v54464). Se envía exactam
 
 El paquete llega una sola vez, inmediatamente después del bloque del esquema de entrada y antes de que el client empiece a enviar bloques de filas. Un decodificador que ignore `TimezoneUpdate` DEBE igualmente consumir el `String` final para mantener alineado el wire.
 
-<div id="ssh-authentication">
-  ### Autenticación SSH de desafío-respuesta (tipos de paquete 11, 12, 18)
-</div>
+### Autenticación SSH de desafío-respuesta (tipos de paquete 11, 12, 18) {#ssh-authentication}
 
 Controlada por `SSH_AUTHENTICATION` (v54466) y disponible solo mediante activación explícita. Una conexión entra en el flujo SSH cuando ClientHello envía `user = " SSH KEY AUTHENTICATION " + <real_user>` (con los espacios inicial y final) y `password = ""`. El servidor lee el prefijo, lo elimina para recuperar el usuario real y cambia al modo de desafío-respuesta.
 
@@ -915,9 +837,7 @@ sequenceDiagram
 
 Los clientes externos que no usan autenticación SSH nunca ven los paquetes 11, 12 o 18; no aparecen en el wire a menos que el usuario lo habilite explícitamente mediante el prefijo del nombre de usuario.
 
-<div id="mergetreeallrangesannouncementresponse">
-  ### MergeTreeAllRangesAnnouncementResponse (tipo de paquete 14)
-</div>
+### MergeTreeAllRangesAnnouncementResponse (tipo de paquete 14) {#mergetreeallrangesannouncementresponse}
 
 Client → Server, solo inter-server. Está condicionado por `parallel_replicas_protocol_version ≥ 8` (consulta [VERSIONED&#95;PARALLEL&#95;REPLICAS&#95;PROTOCOL](#feature-table)). Los Client externos nunca envían este paquete.
 
@@ -929,9 +849,7 @@ Cuando la versión negociada de réplicas paralelas es `≥ 8`, cambia el ciclo 
 
 Por debajo de la versión `8`, el announcement es fire-and-forget independientemente del modo, y el follower construye orígenes sobre todas las partes conocidas localmente (el comportamiento heredado).
 
-<div id="mergetreeallrangesannouncementresponse-body">
-  #### Cuerpo
-</div>
+#### Cuerpo {#mergetreeallrangesannouncementresponse-body}
 
 | # | Campo         | Tipo                                                          | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | - | ------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -939,18 +857,14 @@ Por debajo de la versión `8`, el announcement es fire-and-forget independientem
 | 2 | parts         | [RangesInDataPartsDescription](#rangesindatapartsdescription) | Conjunto de referencia de partes que el coordinador ha registrado para el flujo del anuncio. Una lista vacía significa que el flujo no existe en el coordinador (p. ej., el seguidor anunció más divisiones de las que creó el iniciador); el grupo del seguidor para ese flujo se da por finalizado de inmediato.                                                                                                                                     |
 | 3 | stream&#95;id | String                                                        | Repite el `stream_id` del anuncio al que responde esta respuesta (nombre de la tabla más el sufijo `#split_i` cuando se usa una topología con split).                                                                                                                                                                                                                                                                                                  |
 
-<div id="rangesindatapartsdescription">
-  #### RangesInDataPartsDescription cuerpo
-</div>
+#### RangesInDataPartsDescription cuerpo {#rangesindatapartsdescription}
 
 | # | Campo | Tipo                                                                               | Descripción                                                                                                                            |
 | - | ----- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | 1 | count | VarUInt                                                                            | Número de descriptores de partes a continuación. El decodificador rechaza como malformados los valores superiores a `100'000'000'000`. |
 | 2 | parts | [RangesInDataPartDescription](#rangesindatapartdescription) repetido `count` veces | Los descriptores, en el orden de registro del coordinador.                                                                             |
 
-<div id="rangesindatapartdescription">
-  #### cuerpo de RangesInDataPartDescription
-</div>
+#### cuerpo de RangesInDataPartDescription {#rangesindatapartdescription}
 
 | # | Campo                          | Tipo                                    | Condición                                                            | Descripción                                                                                                                                                         |
 | - | ------------------------------ | --------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -960,9 +874,7 @@ Por debajo de la versión `8`, el announcement es fire-and-forget independientem
 | 4 | projection&#95;name            | String                                  | `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION` (PR v5)         | Vacío para las filas de la parte principal; de lo contrario, el nombre de la proyección.                                                                            |
 | 5 | min&#95;marks&#95;per&#95;task | VarUInt                                 | `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK` (PR v6) | Número mínimo de marcas que el grupo del seguidor debe agrupar en una sola tarea de lectura para esta parte.                                                        |
 
-<div id="mergetreepartinfo">
-  #### Cuerpo de MergeTreePartInfo
-</div>
+#### Cuerpo de MergeTreePartInfo {#mergetreepartinfo}
 
 | # | Campo                            | Tipo                   | Descripción                                                                                                                                       |
 | - | -------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -974,22 +886,16 @@ Por debajo de la versión `8`, el announcement es fire-and-forget independientem
 | 6 | mutation                         | Int64 (little-endian)  | Versión de la mutación que produjo esta parte (`0` para no mutada).                                                                               |
 | 7 | use&#95;legacy&#95;max&#95;level | Bool (text)            | Codificado como un único byte ASCII (`'1'` o `'0'`) — indicador de compatibilidad histórica para el formato del nombre de la parte.               |
 
-<div id="markranges">
-  #### Cuerpo de MarkRanges
-</div>
+#### Cuerpo de MarkRanges {#markranges}
 
 | # | Campo  | Tipo                                                                           | Descripción                                                                                                       |
 | - | ------ | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
 | 1 | size   | UInt64 (little-endian)                                                         | Número de pares de rangos de marcas que vienen a continuación. Nota: little-endian de ancho fijo, **no** VarUInt. |
 | 2 | ranges | `size` repeticiones de `(UInt64 begin, UInt64 end)`, cada una en little-endian | Intervalos de marcas semiabiertos `[begin, end)`.                                                                 |
 
-<div id="packet-type-reference">
-  ## Referencia de tipos de paquete
-</div>
+## Referencia de tipos de paquete {#packet-type-reference}
 
-<div id="client-to-server">
-  ### Client → Servidor
-</div>
+### Client → Servidor {#client-to-server}
 
 | Code | Name                                   | Formato del cuerpo                                                                | Descripción                                                                                                                                                                                                                                                                                               |
 | ---- | -------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -997,7 +903,7 @@ Por debajo de la versión `8`, el announcement es fire-and-forget independientem
 | 1    | Query                                  | [Query](#query)                                                                   | Solicitud de ejecución de consulta                                                                                                                                                                                                                                                                        |
 | 2    | Data                                   | [Data](#data)                                                                     | Bloque de datos (datos de `INSERT`, tablas externas, marcador de fin de datos)                                                                                                                                                                                                                            |
 | 3    | Cancel                                 | (sin cuerpo)                                                                      | Cancelar una consulta en ejecución                                                                                                                                                                                                                                                                        |
-| 4    | Ping                                   | [Ping](#ping)                                                                     | Comprobación de actividad                                                                                                                                                                                                                                                                                 |
+| 4    | Ping                                   | [Ping](#ping)                                                                     | Comprobación de liveness                                                                                                                                                                                                                                                                                 |
 | 5    | TablesStatusRequest                    | no especificado                                                                   | Comprobación del estado de las tablas                                                                                                                                                                                                                                                                     |
 | 6    | KeepAlive                              | no especificado                                                                   | Keepalive de la conexión                                                                                                                                                                                                                                                                                  |
 | 7    | Scalar                                 | no especificado                                                                   | Bloque de datos escalar                                                                                                                                                                                                                                                                                   |
@@ -1006,12 +912,10 @@ Por debajo de la versión `8`, el announcement es fire-and-forget independientem
 | 10   | MergeTreeReadTaskResponse              | no especificado                                                                   | Respuesta de tarea de lectura paralela                                                                                                                                                                                                                                                                    |
 | 11   | SSHChallengeRequest                    | [autenticación SSH](#ssh-authentication)                                          | Solicitud de desafío de autenticación SSH                                                                                                                                                                                                                                                                 |
 | 12   | SSHChallengeResponse                   | [autenticación SSH](#ssh-authentication)                                          | Respuesta al desafío de autenticación SSH                                                                                                                                                                                                                                                                 |
-| 13   | QueryPlan                              | no especificado                                                                   | Plan de consulta                                                                                                                                                                                                                                                                                          |
-| 14   | MergeTreeAllRangesAnnouncementResponse | [MergeTreeAllRangesAnnouncementResponse](#mergetreeallrangesannouncementresponse) | Respuesta del iniciador al [`MergeTreeAllRangesAnnouncement`](#packet-type-reference) de un follower (condicionado a `parallel_replicas_protocol_version ≥ 8`; consulte [VERSIONED&#95;PARALLEL&#95;REPLICAS&#95;PROTOCOL](#feature-table)). Solo para inter-server; los Client externos nunca lo envían. |
+| 13   | QueryPlan                              | [QueryPlan](#queryplan)                                                           | Plan de consulta                                                                                                                                                                                                                                                                                          |
+| 14   | MergeTreeAllRangesAnnouncementResponse | [MergeTreeAllRangesAnnouncementResponse](#mergetreeallrangesannouncementresponse) | Respuesta del initiator al [`MergeTreeAllRangesAnnouncement`](#packet-type-reference) de un follower (condicionado a `parallel_replicas_protocol_version ≥ 8`; consulte [VERSIONED&#95;PARALLEL&#95;REPLICAS&#95;PROTOCOL](#feature-table)). Solo para inter-server; los Client externos nunca lo envían. |
 
-<div id="server-to-client">
-  ### Servidor → Cliente
-</div>
+### Servidor → Cliente {#server-to-client}
 
 | Code | Name                           | Formato del cuerpo                       | Descripción                                            |
 | ---- | ------------------------------ | ---------------------------------------- | ------------------------------------------------------ |
@@ -1035,9 +939,20 @@ Por debajo de la versión `8`, el announcement es fire-and-forget independientem
 | 17   | TimezoneUpdate                 | [TimezoneUpdate](#timezoneupdate)        | Actualización de la zona horaria del servidor          |
 | 18   | SSHChallenge                   | [Autenticación SSH](#ssh-authentication) | Desafío de autenticación SSH                           |
 
-<div id="configuration">
-  ## Configuración
-</div>
+### QueryPlan {#queryplan}
+
+`QueryPlan` es un paquete Client exclusivo para la comunicación inter-server. Sigue a una [`Query`](#query) cuyo `stage` es `QueryPlan` (`7`) y contiene un stream de plan serializado.
+
+| # | Campo                     | Tipo                                  | Puerta                          | Descripción                                                                                                                                                      |
+| - | ------------------------- | ------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | serialization&#95;version | VarUInt                               | universal                       | Versión de serialización del plan de consulta, no superior a la `query_plan_serialization_version` del receptor anunciada en `ServerHello`.                      |
+| 2 | max&#95;threads           | VarUInt                               | versión de serialización ≥ `10` | Límite de threads a nivel de plan. `0` significa que no hay ningún límite específico del plan.                                                                   |
+| 3 | concurrency&#95;control   | Bool                                  | versión de serialización ≥ `10` | Indica si el plan participa en el control de concurrencia.                                                                                                       |
+| 4 | plan                      | stream de plan de consulta versionado | universal                       | Árbol de plan serializado, ajustes de pasos, headers y sets preparados. Su layout interno está determinado por la versión de serialización del plan de consulta. |
+
+Antes de la versión `10`, los campos 2 y 3 no están presentes. Un iniciador con cualquiera de los límites de ejecución no predeterminados no debe enviar ese layout anterior; en su lugar, envía la consulta SQL original para que el receptor anterior reconstruya los límites a partir de los ajustes de consulta.
+
+## Configuración {#configuration}
 
 Esta sección abarca los parámetros ajustables que definen las conexiones del protocolo nativo:
 
@@ -1047,13 +962,9 @@ Esta sección abarca los parámetros ajustables que definen las conexiones del p
 
 Los valores predeterminados que se muestran a continuación reflejan una versión reciente del servidor; pueden variar según la versión y el despliegue.
 
-<div id="transport-layer-settings">
-  ### Ajustes de la capa de transporte
-</div>
+### Ajustes de la capa de transporte {#transport-layer-settings}
 
-<div id="socket-options">
-  #### Opciones de socket
-</div>
+#### Opciones de socket {#socket-options}
 
 | Option                    | Default                                                   | Side       | Description                                                                                                                                                            |
 | ------------------------- | --------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1061,9 +972,7 @@ Los valores predeterminados que se muestran a continuación reflejan una versió
 | `SO_KEEPALIVE`            | activado (client), valor predeterminado del SO (servidor) | asimétrico | Sondeos TCP keepalive a nivel del kernel. El client lo habilita explícitamente cuando `tcp_keep_alive_timeout > 0`. El servidor hereda el valor predeterminado del SO. |
 | `SO_RCVBUF` / `SO_SNDBUF` | valores predeterminados del SO                            | —          | Tamaños del búfer del socket. El protocolo no los ajusta.                                                                                                              |
 
-<div id="timeouts">
-  #### Tiempos de espera
-</div>
+#### Tiempos de espera {#timeouts}
 
 | Ajuste                                    | Predeterminado | Unidad       | Lado   | Descripción                                                                                |
 | ----------------------------------------- | -------------- | ------------ | ------ | ------------------------------------------------------------------------------------------ |
@@ -1089,9 +998,7 @@ tcp_keep_alive_timeout (290s)
 
 El keepalive del sistema operativo se activa primero y puede detectar silenciosamente peers caídos a nivel del kernel. El tiempo de espera de recepción de la aplicación es la siguiente línea de defensa. El tiempo de espera de inactividad es el último recurso, y elimina las conexiones que llevan mucho tiempo sin usarse.
 
-<div id="connection-limits">
-  #### Límites de conexión
-</div>
+#### Límites de conexión {#connection-limits}
 
 | Configuración                                | Predeterminado | Unidad   | Lado     | Descripción                                                                     |
 | -------------------------------------------- | -------------- | -------- | -------- | ------------------------------------------------------------------------------- |
@@ -1102,26 +1009,20 @@ El keepalive del sistema operativo se activa primero y puede detectar silenciosa
 
 Una conexión que ejecuta consultas con regularidad puede permanecer activa indefinidamente. Solo las conexiones inactivas se cierran al cabo de una hora, y no existe un tiempo de vida máximo predeterminado.
 
-<div id="application-layer-settings">
-  ### Ajustes de la capa de aplicación
-</div>
+### Ajustes de la capa de aplicación {#application-layer-settings}
 
 Estos ajustes se envían con cada consulta en la [lista de ajustes del paquete Query](#setting). Cambian lo que el servidor envía por la red o cómo se estructura.
 
-<div id="compression-settings">
-  #### Compresión
-</div>
+#### Compresión {#compression-settings}
 
 | Configuración                    | Predeterminado | Unidad | Descripción                                                                                                                                   |
 | -------------------------------- | -------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `network_compression_method`     | `"LZ4"`        | cadena | Códec de compresión utilizado cuando el campo `compression` del paquete Query está activado. Valores: `"LZ4"`, `"LZ4HC"`, `"ZSTD"`, `"NONE"`. |
-| `network_zstd_compression_level` | 1              | 1–15   | Nivel de ZSTD cuando `network_compression_method == "ZSTD"`.                                                                                  |
+| `network_compression_method`     | `"ZSTD"`       | cadena | Códec de compresión utilizado cuando el campo `compression` del paquete Query está activado. Valores: `"LZ4"`, `"LZ4HC"`, `"ZSTD"`, `"NONE"`. |
+| `network_zstd_compression_level` | 3              | 1–15   | Nivel de ZSTD cuando `network_compression_method == "ZSTD"`.                                                                                  |
 
 El campo `compression` del [paquete Query](#query) (campo 6) activa o desactiva la compresión; estos ajustes seleccionan qué códec se usa cuando está activada.
 
-<div id="log-streaming">
-  #### Streaming de logs
-</div>
+#### Streaming de logs {#log-streaming}
 
 | Setting                   | Default   | Unit   | Description                                                                                                                  |
 | ------------------------- | --------- | ------ | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -1130,9 +1031,7 @@ El campo `compression` del [paquete Query](#query) (campo 6) activa o desactiva 
 
 Establecer `send_logs_level` en cualquier valor distinto de `"none"` hace que el servidor emita paquetes [Log](#log) durante la ejecución de la consulta.
 
-<div id="progress-reporting">
-  #### Reporte de Progress
-</div>
+#### Reporte de Progress {#progress-reporting}
 
 | Configuración       | Valor predeterminado | Unidad        | Descripción                                                     |
 | ------------------- | -------------------- | ------------- | --------------------------------------------------------------- |
@@ -1140,9 +1039,7 @@ Establecer `send_logs_level` en cualquier valor distinto de `"none"` hace que el
 
 Este es un mínimo objetivo, no un máximo estricto: el servidor puede enviar paquetes Progress con menor frecuencia cuando la consulta no genera trabajo con suficiente rapidez.
 
-<div id="result-envelope">
-  #### Envolvente del resultado
-</div>
+#### Envolvente del resultado {#result-envelope}
 
 | Configuración          | Predeterminado | Unidad              | Descripción                                                                                                   |
 | ---------------------- | -------------- | ------------------- | ------------------------------------------------------------------------------------------------------------- |
@@ -1151,9 +1048,7 @@ Este es un mínimo objetivo, no un máximo estricto: el servidor puede enviar pa
 | `max_result_bytes`     | 0 (ilimitado)  | bytes sin comprimir | Límite del volumen de bytes sin comprimir. El comportamiento se controla con `result_overflow_mode`.          |
 | `result_overflow_mode` | `"throw"`      | string              | `"throw"` finaliza el flujo con Exception; `"break"` envía resultados parciales seguidos de EndOfStream.      |
 
-<div id="async-insert">
-  #### INSERT asíncrono
-</div>
+#### INSERT asíncrono {#async-insert}
 
 | Configuración                   | Predeterminado | Unidad  | Descripción                                                                                                       |
 | ------------------------------- | -------------- | ------- | ----------------------------------------------------------------------------------------------------------------- |
@@ -1161,17 +1056,13 @@ Este es un mínimo objetivo, no un máximo estricto: el servidor puede enviar pa
 | `wait_for_async_insert`         | true           | bool    | Si es true (con `async_insert` activado), el servidor retiene la respuesta hasta que se vacían los datos en cola. |
 | `wait_for_async_insert_timeout` | 120            | seconds | Tiempo máximo que el servidor espera a que se vacíen los datos antes de devolver la respuesta.                    |
 
-<div id="distributed-tracing">
-  #### Trazabilidad distribuida
-</div>
+#### Trazabilidad distribuida {#distributed-tracing}
 
 | Configuración                           | Predeterminado | Unidad           | Descripción                                                                                           |
 | --------------------------------------- | -------------- | ---------------- | ----------------------------------------------------------------------------------------------------- |
 | `opentelemetry_start_trace_probability` | 0.0            | probabilidad 0–1 | Probabilidad en el servidor de adjuntar el contexto de OpenTelemetry a la telemetría de la respuesta. |
 
-<div id="settings-out-of-scope">
-  ### Ajustes fuera del alcance
-</div>
+### Ajustes fuera del alcance {#settings-out-of-scope}
 
 A veces estos ajustes se confunden con ajustes a nivel de protocolo, pero controlan la ejecución de SQL, el almacenamiento o el uso de CPU, en lugar del comportamiento en el wire. Una implementación del protocolo no necesita tratarlos de forma especial.
 
@@ -1184,9 +1075,7 @@ A veces estos ajustes se confunden con ajustes a nivel de protocolo, pero contro
 
 Los ajustes `*_native_*` son la excepción: cambian los bytes dentro de los bloques `Data` del TCP nativo, por lo que una implementación del protocolo debe tenerlos en cuenta. `output_format_native_encode_types_in_binary_format` cambia el campo `type` de la columna de una cadena de texto a una codificación binaria de tipos, `output_format_native_write_json_as_string` emite las columnas `JSON` como `String`, y `output_format_native_use_flattened_dynamic_and_json_serialization` selecciona el layout FLATTENED de `Dynamic`/`JSON`. Como afectan al cuerpo del bloque y no a la envoltura del paquete, se especifican en la especificación [Native Format](/es/reference/interfaces/specs/NativeFormat); consulta [column wire layout](/es/reference/interfaces/specs/NativeFormat#column-wire-layout) y [versioned types](/es/reference/interfaces/specs/NativeFormat#versioned-types).
 
-<div id="glossary">
-  ## Glosario
-</div>
+## Glosario {#glossary}
 
 **Cancel** — un paquete iniciado por el client (tipo 3) que aborta una consulta en ejecución. No se detalla en esta página.
 

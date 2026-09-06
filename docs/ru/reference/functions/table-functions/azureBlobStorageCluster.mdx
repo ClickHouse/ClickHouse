@@ -12,17 +12,13 @@ doc_type: 'reference'
 Позволяет параллельно обрабатывать файлы из [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) с помощью множества узлов в указанном кластере. На initiator создаётся connection ко всем узлам кластера, раскрываются звёздочки в path к файлу S3, после чего каждый файл динамически распределяется. На узле-воркере запрашивается у initiator следующая task для processing, и она обрабатывается. Это повторяется, пока не будут завершены все tasks.
 Эта табличная функция похожа на [функцию s3Cluster](/ru/reference/functions/table-functions/s3Cluster).
 
-<div id="syntax">
-  ## Синтаксис
-</div>
+## Синтаксис {#syntax}
 
 ```sql
 azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
 ```
 
-<div id="arguments">
-  ## Аргументы
-</div>
+## Аргументы {#arguments}
 
 | Аргумент            | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -33,18 +29,14 @@ azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, con
 | `account_name`      | если используется `storage_account_url`, здесь можно указать имя учётной записи                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `account_key`       | если используется `storage_account_url`, здесь можно указать ключ учётной записи                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `format`            | [Формат](/ru/reference/formats/index) файла.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `compression`       | Поддерживаемые значения: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. По умолчанию сжатие определяется автоматически по расширению файла. (то же самое, что установить значение `auto`.)                                                                                                                                                                                                                                                                                                                                                        |
+| `compression`       | Поддерживаемые значения: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. По умолчанию сжатие определяется автоматически по расширению файла. (то же самое, что установить значение `auto`.) Для `snappy` формат передачи данных выбирается параметром [snappy&#95;mode](/ru/reference/settings/session-settings/other#snappy_mode) (`basic` по умолчанию).                                                                                                                                                         |
 | `structure`         | Структура таблицы. Формат: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
-<div id="returned-value">
-  ## Возвращаемое значение
-</div>
+## Возвращаемое значение {#returned-value}
 
 Таблица с указанной структурой для чтения или записи данных в указанный файл.
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
 Аналогично движку таблицы [AzureBlobStorage](/ru/reference/engines/table-engines/integrations/azureBlobStorage), для локальной разработки с Azure Storage можно использовать эмулятор Azurite. Подробности [здесь](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). Ниже предполагается, что Azurite доступен по имени хоста `azurite1`.
 
@@ -57,15 +49,11 @@ SELECT count(*) FROM azureBlobStorageCluster(
         'auto', 'key UInt64')
 ```
 
-<div id="using-shared-access-signatures-sas-sas-tokens">
-  ## Использование подписей общего доступа (SAS)
-</div>
+## Использование подписей общего доступа (SAS) {#using-shared-access-signatures-sas-sas-tokens}
 
 Примеры см. в разделе [azureBlobStorage](/ru/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens).
 
-<div id="related">
-  ## См. также
-</div>
+## См. также {#related}
 
 * [Движок AzureBlobStorage](/ru/reference/engines/table-engines/integrations/azureBlobStorage)
 * [Табличная функция azureBlobStorage](/ru/reference/functions/table-functions/azureBlobStorage)

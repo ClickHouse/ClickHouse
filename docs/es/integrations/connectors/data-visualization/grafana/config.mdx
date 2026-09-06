@@ -162,11 +162,22 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showLogLinks: true # set to false to hide the "View logs" data links on trace ID fields.
+
     # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
     timeColumn:       <string> # the primary time column for the log.
     levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
     messageColumn: <string> # the log's message/content.
 ```
+
+<div id="disabling-view-logs-links">
+  #### Desactivación de los enlaces «Ver logs»
+</div>
+
+La sección **Correlación de ID de traza** de la configuración de logs contiene el interruptor **Mostrar enlaces «Ver logs»**.
+Este interruptor controla si el plugin adjunta enlaces «Ver logs» [enlaces de datos](/es/integrations/connectors/data-visualization/grafana/query-builder#data-links) a los campos de ID de traza de los resultados de las consultas.
+El interruptor está activado de forma predeterminada. Un enlace «Ver logs» para el mismo tipo de consulta no requiere valores predeterminados de logs configurados; en cambio, un enlace «Ver logs» entre señales desde los resultados de consultas de trazas sí los requiere.
+Desactive el interruptor o establezca `showLogLinks: false` en YAML para ocultarlos.
 
 <div id="traces">
   ### Trazas
@@ -193,6 +204,8 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showTraceLinks: true # set to false to hide the "View trace" data links on trace ID fields.
+
     # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
     traceIdColumn:       <string>    # trace ID column.
     spanIdColumn:        <string>    # span ID column.
@@ -205,6 +218,15 @@ jsonData:
     tagsColumn:          <string>    # tags column. This is expected to be a map type.
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
+
+<div id="disabling-view-trace-links">
+  #### Desactivar los enlaces &quot;Ver traza&quot;
+</div>
+
+La sección **Correlación de ID de traza** de la configuración de trazas contiene el interruptor **Mostrar enlaces &quot;Ver traza&quot;**.
+Este interruptor determina si el plugin adjunta enlaces de datos de &quot;Ver traza&quot; [enlace de datos](/es/integrations/connectors/data-visualization/grafana/query-builder#data-links) a los campos de ID de traza de los resultados de las consultas.
+El interruptor está activado de forma predeterminada. Un enlace &quot;Ver traza&quot; para el mismo tipo de consulta no requiere valores predeterminados de traza configurados; uno entre señales desde los resultados de consultas de logs sí los requiere.
+Desactive el interruptor o establezca `showTraceLinks: false` en YAML para ocultarlos.
 
 <div id="column-aliases">
   ### Alias de columnas
@@ -288,7 +310,7 @@ Ambos tipos de alias pueden usarse para realizar conversiones de tipos complejas
   ## Todas las opciones de YAML
 </div>
 
-Estas son todas las opciones de configuración en YAML que ofrece el complemento.
+Estas son todas las opciones de configuración en YAML que ofrece el plugin.
 Algunos campos incluyen valores de ejemplo, mientras que otros simplemente muestran el tipo de campo.
 
 Consulta la [documentación de Grafana](https://grafana.com/docs/grafana/latest/administration/provisioning/#data-sources) para obtener más información sobre el aprovisionamiento de fuentes de datos con YAML.
@@ -323,6 +345,7 @@ datasources:
         defaultTable: otel_logs
         otelEnabled: false
         otelVersion: latest
+        showLogLinks: <boolean>
         timeColumn: <string>
         levelColumn: <string>
         messageColumn: <string>
@@ -331,6 +354,7 @@ datasources:
         defaultTable: otel_traces
         otelEnabled: false
         otelVersion: latest
+        showTraceLinks: <boolean>
         traceIdColumn: <string>
         spanIdColumn: <string>
         operationNameColumn: <string>

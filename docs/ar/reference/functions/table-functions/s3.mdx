@@ -20,9 +20,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 عند استخدام `s3 table function` مع [`INSERT INTO...SELECT`](/ar/reference/statements/insert-into#inserting-the-results-of-select)، تُقرأ البيانات وتُدرج بأسلوب تدفقي. ولا يبقى في الذاكرة إلا عدد قليل من كتل البيانات، بينما تُقرأ الكتل باستمرار من S3 وتُرسَل إلى الجدول الوجهة.
 
-<div id="syntax">
-  ## الصيغة
-</div>
+## الصيغة {#syntax}
 
 ```sql
 s3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method],[,headers], [,extra_credentials], [,partition_strategy], [,partition_columns_in_data_file])
@@ -49,7 +47,7 @@ s3(named_collection[, option=value [,..]])
 | `session_token`                         | رمز جلسة لاستخدامه مع المفاتيح المحددة. وهو اختياري عند تمرير المفاتيح.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `format`                                | [التنسيق](/ar/reference/formats/index) الخاص بالملف.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `structure`                             | بنية الجدول. بالتنسيق `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `compression_method`                    | هذه المعلمة اختيارية. القيم المدعومة: `none` و`gzip` أو `gz` و`brotli` أو `br` و`xz` أو `LZMA` و`zstd` أو `zst`. افتراضيًا، سيُكتشَف طريقة الضغط تلقائيًا من امتداد الملف.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `compression_method`                    | هذه المعلمة اختيارية. القيم المدعومة: `none` و`gzip` أو `gz` و`deflate` و`brotli` أو `br` و`xz` أو `LZMA` و`zstd` أو `zst` و`lz4` و`bz2` و`snappy`. افتراضيًا، سيُكتشَف طريقة الضغط تلقائيًا من امتداد الملف. بالنسبة إلى `snappy`، يُحدد تنسيق النقل بواسطة إعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (وتكون قيمته `basic` افتراضيًا).                                                                                                                                                                                                                                                                               |
 | `headers`                               | هذه المعلمة اختيارية. تتيح تمرير الترويسات في طلب S3. مرّرها بالتنسيق `headers(key=value)`، مثل `headers('x-amz-request-payer' = 'requester')`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `partition_strategy`                    | هذه المعلمة اختيارية. القيم المدعومة: `wildcard` أو `hive`. تتطلب `wildcard` وجود `{_partition_id}` في المسار، ويُستبدل بمفتاح التقسيم. أما `hive` فلا تسمح بأحرف البدل، وتفترض أن المسار هو جذر الجدول، وتُنشئ أدلة partition بنمط Hive مع Snowflake IDs كأسماء ملفات وتنسيق الملف كامتداد. من دون استراتيجية صريحة، يستخدم المسار الذي يحتوي على `{_partition_id}` استراتيجية `wildcard`. أما المسار الذي يحتوي على glob آخر فلا يستخدم أي استراتيجية تقسيم ويتجاهل `PARTITION BY`. ويستخدم المسار الذي لا يحتوي على glob استراتيجية `hive` عندما تكون قيمة `file_like_engine_default_partition_strategy` هي `hive`؛ وإلا فلا يستخدم أي استراتيجية تقسيم. |
 | `partition_columns_in_data_file`        | هذه المعلمة اختيارية. تُستخدم فقط مع استراتيجية التقسيم من نوع `hive`. وتُخبر ClickHouse ما إذا كان ينبغي توقّع كتابة أعمدة التقسيم داخل ملف البيانات. والقيمة الافتراضية هي `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -59,7 +57,7 @@ s3(named_collection[, option=value [,..]])
 <Info>
   **GCS**
 
-  يكون URL الخاص بـ GCS بهذا التنسيق لأن نقطة النهاية الخاصة بـ Google XML API تختلف عن JSON API:
+  يكون عنوان URL لـ GCS بهذا التنسيق، إذ تختلف نقطة نهاية Google XML API عن JSON API:
 
   ```text
     https://storage.googleapis.com/<bucket>/<folder>/<filename(s)>
@@ -77,15 +75,11 @@ s3(named_collection[, option=value [,..]])
 | `no_sign_request`             | مُعطَّل افتراضيًا.                                                                                                                                                                                                     |
 | `expiration_window_seconds`   | القيمة الافتراضية هي 120.                                                                                                                                                                                              |
 
-<div id="returned-value">
-  ## القيمة المعادة
-</div>
+## القيمة المعادة {#returned-value}
 
 جدول ذو البنية المحددة لقراءة البيانات أو كتابتها في الملف المحدد.
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
 تحديد أول 5 صفوف من الجدول من ملف S3 ‏`https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv`:
 
@@ -140,20 +134,18 @@ LIMIT 5;
   ```
 </Note>
 
-<div id="usage">
-  ## الاستخدام
-</div>
+## الاستخدام {#usage}
 
 لنفترض أن لدينا عدة ملفات بعناوين URI التالية على S3:
 
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
-* &#39;https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;4.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv&#39;
+* &#39;https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;4.csv&#39;
 
 احسب عدد الصفوف في الملفات التي تنتهي بأرقام من 1 إلى 3:
 
@@ -212,27 +204,25 @@ INSERT INTO FUNCTION s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-
 SELECT name, value FROM existing_table;
 ```
 
-يمكن استخدام `**` في Glob للاجتياز التعاودي للأدلة. انظر المثال أدناه، إذ سيجلب جميع الملفات من دليل `my-test-bucket-768` بشكل تعاودي:
+يمكن استخدام `**` في نمط glob للاجتياز التكراري للمجلدات. يقرأ الاستعلام التالي كل ملف باسم `some_file_1.csv` ضمن `my-test-bucket-768`:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-يجلب ما يلي البيانات من جميع ملفات `test-data.csv.gz` الموجودة في أي دليل داخل دليل `my-test-bucket` بشكل تعاودي:
+يمكن دمج الأقواس المعقوفة مع `**` لمطابقة عدة أسماء ملفات بشكل تعاودي:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/**/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-ملاحظة. يمكن تحديد محوّلات URL مخصصة في ملف تكوين الخادم. مثال:
+يعمل النمط التعاودي نفسه أيضًا مع عنوان URL ‏`s3://`:
 
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://datasets-documentation/my-test-bucket-768/**/some_file_1.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
-سيُستبدل URL ‏`'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` بـ `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
-
-يمكن إضافة محوّل مخصّص إلى `config.xml`:
+يمكنك إضافة محوّل URL مخصص في `config.xml`:
 
 ```xml
 <url_scheme_mappers>
@@ -259,13 +249,9 @@ SELECT count(*)
 FROM s3(creds, url='https://s3-object-url.csv')
 ```
 
-<div id="partitioned-write">
-  ## الكتابة المُقسَّمة إلى أجزاء
-</div>
+## الكتابة المُقسَّمة إلى أجزاء {#partitioned-write}
 
-<div id="partition-strategy">
-  ### استراتيجية التقسيم
-</div>
+### استراتيجية التقسيم {#partition-strategy}
 
 مدعومة فقط لاستعلامات INSERT.
 
@@ -311,9 +297,7 @@ INSERT INTO TABLE FUNCTION
 
 ونتيجةً لذلك، تُكتب البيانات في ثلاثة ملفات ضمن حاويات تخزين مختلفة: `my_bucket_1/file.csv` و`my_bucket_10/file.csv` و`my_bucket_20/file.csv`.
 
-<div id="accessing-public-buckets">
-  ## الوصول إلى حاويات التخزين العامة
-</div>
+## الوصول إلى حاويات التخزين العامة {#accessing-public-buckets}
 
 يحاول ClickHouse جلب بيانات الاعتماد من أنواع متعددة من المصادر.
 وقد يؤدي ذلك أحيانًا إلى حدوث مشكلات عند الوصول إلى بعض حاويات التخزين العامة، ما يتسبب في أن يعيد العميل رمز الخطأ `403`.
@@ -329,9 +313,7 @@ FROM s3(
 LIMIT 5;
 ```
 
-<div id="using-s3-credentials-clickhouse-cloud">
-  ## استخدام بيانات اعتماد S3 ‏(ClickHouse Cloud)
-</div>
+## استخدام بيانات اعتماد S3 ‏(ClickHouse Cloud) {#using-s3-credentials-clickhouse-cloud}
 
 بالنسبة إلى حاويات التخزين غير العامة، يمكن للمستخدمين تمرير `aws_access_key_id` و`aws_secret_access_key` إلى الدالة. على سبيل المثال:
 
@@ -357,9 +339,7 @@ SELECT count() FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.co
 
 يمكنك العثور على المزيد من الأمثلة [هنا](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely#access-your-s3-bucket-with-the-clickhouseaccess-role)
 
-<div id="working-with-archives">
-  ## العمل مع الأرشيفات
-</div>
+## العمل مع الأرشيفات {#working-with-archives}
 
 لنفترض أن لدينا عدة ملفات أرشيف بعناوين URI التالية على S3:
 
@@ -385,24 +365,18 @@ FROM s3(
   وبينما يمكن الوصول إلى أرشيفات ZIP وTAR من أي موقع تخزين مدعوم، فلا يمكن قراءة أرشيفات 7Z إلا من نظام الملفات المحلي الذي ثُبّت عليه ClickHouse.
 </Note>
 
-<div id="inserting-data">
-  ## إدراج البيانات
-</div>
+## إدراج البيانات {#inserting-data}
 
 لاحظ أن الصفوف لا يمكن إدراجها إلا في الملفات الجديدة. ولا توجد دورات دمج أو عمليات تقسيم للملفات. وما إن يُكتَب ملف حتى تفشل عمليات الإدراج اللاحقة. اطّلع على مزيد من التفاصيل [هنا](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
-<div id="virtual-columns">
-  ## الأعمدة الافتراضية
-</div>
+## الأعمدة الافتراضية {#virtual-columns}
 
 * `_path` — مسار الملف. النوع: `LowCardinality(String)`. في حالة الأرشيف، يعرض المسار بالتنسيق: `"{path_to_archive}::{path_to_file_inside_archive}"`
 * `_file` — اسم الملف. النوع: `LowCardinality(String)`. في حالة الأرشيف، يعرض اسم الملف داخل الأرشيف.
 * `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان حجم الملف غير معروف، تكون القيمة `NULL`. في حالة الأرشيف، يعرض حجم الملف غير المضغوط للملف الموجود داخل الأرشيف.
 * `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
 
-<div id="hive-style-partitioning">
-  ## إعداد use_hive_partitioning
-</div>
+## إعداد use_hive_partitioning {#hive-style-partitioning}
 
 هذا تلميح لـ ClickHouse لتحليل الملفات المُقسَّمة بنمط Hive عند القراءة. ولا يؤثر في الكتابة. ولتحقيق تماثل بين القراءة والكتابة، استخدم الوسيطة `partition_strategy`.
 
@@ -414,9 +388,7 @@ FROM s3(
 SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="accessing-requester-pays-buckets">
-  ## الوصول إلى حاويات التخزين requester-pays
-</div>
+## الوصول إلى حاويات التخزين requester-pays {#accessing-requester-pays-buckets}
 
 للوصول إلى حاوية التخزين requester-pays، يجب تمرير الترويسة `x-amz-request-payer = requester` مع أي طلب. ويتم ذلك بتمرير المعلمة `headers('x-amz-request-payer' = 'requester')` إلى الدالة `s3`. على سبيل المثال:
 
@@ -434,9 +406,7 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 Peak memory usage: 192.27 KiB.
 ```
 
-<div id="resolving-relative-urls">
-  ## تحليل عناوين URL النسبية
-</div>
+## تحليل عناوين URL النسبية {#resolving-relative-urls}
 
 يتيح الإعداد [s3&#95;base](/ar/reference/settings/session-settings/s3#s3_base) تمرير عنوان URL نسبي إلى الدالة `s3`. عند تعيين `s3_base` وعدم احتواء وسيطة الدالة على مخطط، يُحل عنوان URL بالاستناد إلى عنوان URL الأساسي وفقًا لـ [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986)، باستخدام القواعد نفسها التي يستخدمها الإعداد [url&#95;base](/ar/reference/settings/session-settings/url#url_base) في الدالة [url](/ar/reference/functions/table-functions/url#resolving-relative-urls). وتُمرَّر عناوين URL المطلقة دون تغيير.
 
@@ -449,18 +419,14 @@ SET s3_base = 's3://clickhouse-public-datasets/';
 SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
-<div id="storage-settings">
-  ## إعدادات التخزين
-</div>
+## إعدادات التخزين {#storage-settings}
 
 * [s3&#95;truncate&#95;on&#95;insert](/ar/reference/settings/session-settings/s3#s3_truncate_on_insert) - يتيح تفريغ الملف قبل الإدراج فيه. معطّل افتراضيًا.
 * [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/ar/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - يتيح إنشاء ملف جديد عند كل عملية إدراج إذا كان للتنسيق لاحقة. معطّل افتراضيًا.
 * [s3&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings/s3#s3_skip_empty_files) - يتيح تخطي الملفات الفارغة أثناء القراءة. مفعّل افتراضيًا.
 * [s3&#95;base](/ar/reference/settings/session-settings/s3#s3_base) - عنوان URL الأساسي لحل عناوين URL النسبية المُمرَّرة إلى الدالة `s3`. فارغ (معطّل) افتراضيًا.
 
-<div id="nested-avro-schemas">
-  ## مخططات Avro المتداخلة
-</div>
+## مخططات Avro المتداخلة {#nested-avro-schemas}
 
 عند قراءة ملفات Avro التي تحتوي على **سجلات متداخلة** تختلف من ملف إلى آخر (على سبيل المثال، تحتوي بعض الملفات على حقل إضافي داخل كائن متداخل)، فقد يُرجع ClickHouse خطأً مثل:
 
@@ -490,9 +456,7 @@ FROM s3('https://bucket-name/*.avro', 'Avro')
 SETTINGS schema_inference_mode='union';
 ```
 
-<div id="related">
-  ## Related
-</div>
+## Related {#related}
 
 * [S3 engine](/ar/reference/engines/table-engines/integrations/s3)
 * [Integrating S3 with ClickHouse](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

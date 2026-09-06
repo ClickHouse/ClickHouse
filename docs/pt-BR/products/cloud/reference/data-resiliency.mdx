@@ -67,19 +67,16 @@ Esta seção também mostra o status de sucesso/falha de cada backup.
 2. Os backups externos (no armazenamento de objetos do cliente) podem ser restaurados em um novo serviço na mesma região ou em outra região.
 
 <div id="backup-and-restore-duration-guidance">
-  ## Orientações sobre o tempo de backup e restauração
+  ## Orientações sobre a duração de backups e restaurações
 </div>
 
-Os tempos de backup e restauração dependem de vários fatores, como o tamanho do banco de dados, o schema e o número de tabelas no banco de dados.
+A duração de backups e restaurações varia significativamente conforme o volume de dados, a complexidade do schema e o número de tabelas. Os números abaixo são observações de testes internos e não constituem compromissos de desempenho.
 
-Em nossos testes, vimos backups menores, de ~1 TB, levarem de 10 a 15 minutos ou mais para serem concluídos.
-Backups com menos de 20 TB geralmente são concluídos em até uma hora, e o backup de ~50 TB de dados deve levar de 2 a 3 horas.
-Backups se beneficiam de economias de escala em tamanhos maiores, e já vimos backups de até 1 PB, em alguns serviços internos, serem concluídos em menos de 10 horas.
+Em nossos testes, um backup de aproximadamente 1 TB levou cerca de 10 a 15 minutos, e um de 20 TB, cerca de uma hora. Conjuntos de dados maiores levam proporcionalmente mais tempo, e backups de várias centenas de TB ou mais podem levar muitas horas, embora economias de escala ajudem em volumes maiores.
 
-Recomendamos testar com seu próprio banco de dados ou com dados de amostra para obter estimativas mais precisas, já que a duração real depende de vários fatores, conforme descrito acima.
+As restaurações geralmente são mais lentas que o backup equivalente, especialmente quando incluem uma longa cadeia de backups incrementais, pois o backup completo e todos os backups incrementais subsequentes da cadeia precisam ser aplicados. Restaurar um serviço muito grande pode levar mais de um dia.
 
-Os tempos de restauração são semelhantes aos tempos de backup para volumes equivalentes.
-Como mencionado acima, recomendamos testar com seu próprio banco de dados para ter uma ideia de quanto tempo levará para restaurar o backup.
+Como a duração depende muito dos seus dados, schema e configuração de backup, recomendamos fortemente testar uma restauração com seus próprios dados antes de se basear em qualquer tempo-alvo de recuperação.
 
 <Note>
   Atualmente, NÃO há suporte para failover automático entre 2 instâncias do ClickHouse Cloud, seja na mesma região ou em regiões diferentes.

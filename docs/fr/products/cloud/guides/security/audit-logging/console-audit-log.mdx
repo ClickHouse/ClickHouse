@@ -9,11 +9,15 @@ keywords: ['journal d’audit']
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-Les activités de la Console sont consignées dans le journal d’audit. Si vous avez le rôle Admin ou Developer au niveau de l’organisation, vous pouvez consulter ce journal et l’intégrer à vos systèmes de journalisation.
+Les activités de la Console sont consignées dans le journal d’audit. Les utilisateurs disposant d’un accès peuvent consulter ce journal et l’intégrer à leurs systèmes de journalisation. L’accès au journal d’audit est régi par la permission **View audit logs** (`control-plane:organization:view-activities`) :
 
-<div id="console-audit-log-ui">
-  ## Accéder au journal d’audit de la console via l’interface utilisateur
-</div>
+* Les utilisateurs ayant le rôle Admin au niveau de l’organisation y ont accès par défaut.
+* Les autres utilisateurs de la console doivent disposer d’un accès à l’organisation ainsi que d’un [rôle personnalisé](/fr/products/cloud/guides/security/cloud-access-management/manage-custom-roles) incluant la permission **View audit logs**.
+* Les API keys doivent disposer d’un rôle incluant cette même permission.
+
+Pour une description de toutes les permissions, consultez [Rôles et permissions de la console](/fr/products/cloud/reference/security/console-roles).
+
+## Accéder au journal d’audit de la console via l’interface utilisateur {#console-audit-log-ui}
 
 <Steps>
   <Step title="Sélectionnez l’organisation" id="select-org">
@@ -49,15 +53,13 @@ Les activités de la Console sont consignées dans le journal d’audit. Si vous
 </div>
 
 <div id="console-audit-log-api">
-  ## Accéder au journal d’audit de la console via l’API
+  ## Accéder au journal d’audit de la console via l’API {#console-audit-log-api}
 </div>
 
 Vous pouvez utiliser le endpoint `activity` de la ClickHouse Cloud API pour obtenir une exportation
 des événements d’audit. Vous trouverez plus d’informations dans la [référence de l’API](/fr/products/cloud/api-reference/organization/get-list-of-available-organizations).
 
-<div id="log-integrations">
-  ## Intégrations de logs
-</div>
+## Intégrations de logs {#log-integrations}
 
 Vous pouvez utiliser l’API pour vous connecter à la plateforme de journalisation de votre choix. Les solutions suivantes disposent de connecteurs prêts à l’emploi pris en charge :
 

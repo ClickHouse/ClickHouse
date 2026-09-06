@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) で利用でき、ClickHouseのソースコードから自動生成されています。
 
-<div id="number_of_free_entries_in_pool_to_execute_mutation">
-  ## number_of_free_entries_in_pool_to_execute_mutation
-</div>
+## number_of_free_entries_in_pool_to_execute_mutation {#number_of_free_entries_in_pool_to_execute_mutation}
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
@@ -34,9 +32,7 @@ part mutation は実行されません。これは、通常のマージ用の空
 と [`background_merges_mutations_concurrency_ratio`](/ja/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio) の積を超えてはなりません。
 そうしないと、ClickHouse は例外をスローします。
 
-<div id="number_of_free_entries_in_pool_to_execute_optimize_entire_partition">
-  ## number_of_free_entries_in_pool_to_execute_optimize_entire_partition
-</div>
+## number_of_free_entries_in_pool_to_execute_optimize_entire_partition {#number_of_free_entries_in_pool_to_execute_optimize_entire_partition}
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
@@ -50,15 +46,11 @@ part mutation は実行されません。これは、通常のマージ用の空
 * 正の整数。
 
 `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
-設定の値は、
-[background&#95;pool&#95;size](/ja/reference/settings/server-settings/settings/background#background_pool_size)
+設定の値は、[`background_pool_size`](/ja/reference/settings/server-settings/settings/background#background_pool_size)
+と [`background_merges_mutations_concurrency_ratio`](/ja/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio) の積を超えてはなりません。
+そうでない場合、ClickHouse は例外をスローします。
 
-* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/ja/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio) の値より小さくする必要があります。
-  そうでない場合、ClickHouse は例外をスローします。
-
-<div id="number_of_free_entries_in_pool_to_lower_max_size_of_merge">
-  ## number_of_free_entries_in_pool_to_lower_max_size_of_merge
-</div>
+## number_of_free_entries_in_pool_to_lower_max_size_of_merge {#number_of_free_entries_in_pool_to_lower_max_size_of_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
@@ -73,9 +65,7 @@ part mutation は実行されません。これは、通常のマージ用の空
 
 * 任意の正の整数。
 
-<div id="number_of_mutations_to_delay">
-  ## number_of_mutations_to_delay
-</div>
+## number_of_mutations_to_delay {#number_of_mutations_to_delay}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -83,18 +73,14 @@ part mutation は実行されません。これは、通常のマージ用の空
 この数の未完了の mutation がある場合、テーブルの mutation を意図的に遅くします。
 0 に設定すると無効になります
 
-<div id="number_of_mutations_to_throw">
-  ## number_of_mutations_to_throw
-</div>
+## number_of_mutations_to_throw {#number_of_mutations_to_throw}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 table に少なくともこの数の未完了の mutation がある場合、&#39;Too many mutations&#39;
 例外をスローします。0 に設定すると無効になります
 
-<div id="number_of_partitions_to_consider_for_merge">
-  ## number_of_partitions_to_consider_for_merge
-</div>
+## number_of_partitions_to_consider_for_merge {#number_of_partitions_to_consider_for_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 

@@ -37,9 +37,7 @@ SQL-driven ワークフローの使用を推奨します。これら 2 つの設
 
 すべてのユーザー、ロール、プロファイルなどと、それらに付与されているすべての grant を確認するには、[`SHOW ACCESS`](/ja/reference/statements/show#show-access) ステートメントを使用します。
 
-<div id="access-control-usage">
-  ## 概要
-</div>
+## 概要 {#access-control-usage}
 
 デフォルトでは、ClickHouse server には `default` ユーザーアカウントが用意されています。このアカウントでは SQL ベースのアクセス制御とアカウント管理 は使用できませんが、すべての権限を持っています。`default` ユーザーアカウントは、ユーザー名が定義されていないあらゆる場合に使用されます。たとえば、クライアントからのログイン時や分散クエリで使用されます。分散クエリ処理では、server またはクラスター の設定で [user and password](/ja/reference/engines/table-engines/special/distributed) プロパティが指定されていない場合、デフォルトのユーザーアカウントが使用されます。
 
@@ -49,17 +47,13 @@ ClickHouse を使い始めたばかりであれば、次の手順を検討して
 2. `default` ユーザーアカウントにログインし、必要なユーザーをすべて作成します。管理者アカウント (`GRANT ALL ON *.* TO admin_user_account WITH GRANT OPTION`) の作成も忘れないでください。
 3. `default` ユーザーの [権限を制限し](/ja/concepts/features/configuration/settings/permissions-for-queries)、そのユーザーに対する SQL ベースのアクセス制御とアカウント管理 を無効にします。
 
-<div id="access-control-properties">
-  ### 現行ソリューションの特性
-</div>
+### 現行ソリューションの特性 {#access-control-properties}
 
 * データベースやテーブルが存在しなくても、それらに対する権限を付与できます。
 * テーブルが削除されても、そのテーブルに対応するすべての権限は取り消されません。つまり、後で同じ名前の新しいテーブルを作成した場合でも、すべての権限は引き続き有効です。削除されたテーブルに対応する権限を取り消すには、たとえば `REVOKE ALL PRIVILEGES ON db.table FROM ALL` クエリを実行する必要があります。
 * 権限に有効期限の設定はありません。
 
-<div id="user-account-management">
-  ### ユーザーアカウント
-</div>
+### ユーザーアカウント {#user-account-management}
 
 ユーザーアカウントは、ClickHouse でユーザーを認可するためのアクセスエンティティです。ユーザーアカウントには、次の情報が含まれます。
 
@@ -80,9 +74,7 @@ ClickHouse を使い始めたばかりであれば、次の手順を検討して
 * [SHOW CREATE USER](/ja/reference/statements/show#show-create-user)
 * [SHOW USERS](/ja/reference/statements/show#show-users)
 
-<div id="access-control-settings-applying">
-  ### 適用される設定
-</div>
+### 適用される設定 {#access-control-settings-applying}
 
 設定は、ユーザーアカウント、付与されたロール、設定プロファイルごとにそれぞれ異なる内容を構成できます。ユーザーのログイン時に、同じ設定が複数のアクセスエンティティに対して構成されている場合、その設定の値と制約は次の順序で適用されます (優先度の高い順) :
 
@@ -91,9 +83,7 @@ ClickHouse を使い始めたばかりであれば、次の手順を検討して
 3. ユーザーまたはそのデフォルトロールに割り当てられた設定プロファイルの設定。ある設定が複数のプロファイルで構成されている場合、その設定の適用順序は未定義です。
 4. サーバー全体に既定で適用される設定、または [default profile](/ja/reference/settings/server-settings/settings/default#default_profile) で適用される設定。
 
-<div id="role-management">
-  ### ロール
-</div>
+### ロール {#role-management}
 
 ロールは、アクセスエンティティをまとめたもので、ユーザーアカウントに付与できます。
 
@@ -115,9 +105,7 @@ ClickHouse を使い始めたばかりであれば、次の手順を検討して
 
 権限は、[GRANT](/ja/reference/statements/grant) クエリを使用してロールに付与できます。ロールから権限を取り消すには、ClickHouse では [REVOKE](/ja/reference/statements/revoke) クエリを使用します。
 
-<div id="row-policy-management">
-  #### ROW POLICY
-</div>
+#### ROW POLICY {#row-policy-management}
 
 ROW POLICY は、ユーザーまたはロールがアクセスできる行を定義するフィルターです。ROW POLICY には、特定のテーブルに対するフィルターに加えて、この ROW POLICY を適用するロールやユーザーの一覧が含まれます。
 
@@ -135,9 +123,7 @@ ROW POLICY は、テーブルデータがローカルで読み取られる場合
 * [SHOW CREATE ROW POLICY](/ja/reference/statements/show#show-create-row-policy)
 * [SHOW POLICIES](/ja/reference/statements/show#show-policies)
 
-<div id="settings-profiles-management">
-  ### SETTINGS PROFILE
-</div>
+### SETTINGS PROFILE {#settings-profiles-management}
 
 SETTINGS PROFILE は、[設定](/ja/reference/settings/index)の集合です。SETTINGS PROFILE には、設定や制約に加え、このプロファイルが適用されるロールやユーザーの一覧が含まれます。
 
@@ -149,9 +135,7 @@ SETTINGS PROFILE は、[設定](/ja/reference/settings/index)の集合です。S
 * [SHOW CREATE SETTINGS PROFILE](/ja/reference/statements/show#show-create-settings-profile)
 * [SHOW PROFILES](/ja/reference/statements/show#show-profiles)
 
-<div id="quotas-management">
-  ### QUOTA
-</div>
+### QUOTA {#quotas-management}
 
 QUOTA はリソース使用量を制限します。詳細は [Quotas](/ja/concepts/features/configuration/server-config/quotas) を参照してください。
 
@@ -166,9 +150,7 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
 * [SHOW QUOTA](/ja/reference/statements/show#show-quota)
 * [SHOW QUOTAS](/ja/reference/statements/show#show-quotas)
 
-<div id="enabling-access-control">
-  ### SQL ベースのアクセス制御とアカウント管理を有効にする
-</div>
+### SQL ベースのアクセス制御とアカウント管理を有効にする {#enabling-access-control}
 
 * 設定の保存先となるディレクトリを用意します。
 
@@ -176,11 +158,18 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
 
 * 少なくとも 1 つのユーザーアカウントで、SQL ベースのアクセス制御とアカウント管理を有効にします。
 
-  デフォルトでは、SQL ベースのアクセス制御とアカウント管理はすべてのユーザーで無効になっています。`users.xml` 設定ファイルで少なくとも 1 人のユーザーを設定し、[`access_management`](/ja/concepts/features/configuration/settings/settings-users#access_management-user-setting)、`named_collection_control`、`show_named_collections`、`show_named_collections_secrets` の各設定を 1 に設定する必要があります。
+  ClickHouse に同梱されている `users.xml` 設定ファイルでは、[`access_management`](/ja/concepts/features/configuration/settings/settings-users#access_management-user-setting) と [`named_collection_control`](/ja/concepts/features/configuration/settings/settings-users#named_collection_control-user-setting) が 1 に設定されており、`default` ユーザーに対して SQL ベースのアクセス制御とアカウント管理が有効になっています。それ以外のすべてのユーザーでは、いずれの設定もデフォルトで 0 のため、明示的に設定する必要があります。
 
-<div id="defining-sql-users-and-roles">
-  ## SQLユーザーとロールの定義
-</div>
+  [`show_named_collections_secrets`](/ja/concepts/features/configuration/settings/settings-users#show_named_collections_secrets-user-setting) は、`default` ユーザーであってもデフォルトで 0 です。named collections を管理できることと、そこにすでに保存されている認証情報を読み出せることは同義ではないためです。ユーザーは自分が持っている権限しか付与できないため、この設定が 0 である限り、そのユーザーは完全な権限のセットを持たず、`GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION` のようなクエリは拒否されます:
+
+  ```text
+  Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+  (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+  ```
+
+  3 つの設定すべてを 1 に設定すると、そのユーザーは完全な管理者になります。
+
+## SQLユーザーとロールの定義 {#defining-sql-users-and-roles}
 
 <Tip>
   ClickHouse Cloud を利用している場合は、[クラウドアクセス管理](/ja/products/cloud/reference/security/console-roles)を参照してください。
@@ -188,17 +177,19 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
 
 この記事では、SQLユーザーとロールを定義する基本と、それらの権限をデータベース、テーブル、行、カラムに適用する方法を説明します。
 
-<div id="enabling-sql-user-mode">
-  ### SQL ユーザーモードを有効にする
-</div>
+### SQL ユーザーモードを有効にする {#enabling-sql-user-mode}
 
 1. `users.xml` ファイルの `<default>` ユーザー配下で SQL ユーザーモードを有効にします。
+
    ```xml
    <access_management>1</access_management>
    <named_collection_control>1</named_collection_control>
-   <show_named_collections>1</show_named_collections>
+   <!-- ユーザーを完全な管理者にするために必要です。
+        これがないと、以下の `GRANT ALL ... WITH GRANT OPTION` は拒否されます。 -->
    <show_named_collections_secrets>1</show_named_collections_secrets>
    ```
+
+   最初の 2 つの設定は、ClickHouse に同梱されている `users.xml` ファイル内で `default` ユーザーに対してすでに有効になっています。`show_named_collections_secrets` はコメントアウトされているため、コメントを解除する必要があります。
 
 <Note>
   `default` ユーザーは、新規インストール時に作成される唯一のユーザーであり、デフォルトではノード間通信に使用されるアカウントでもあります。
@@ -213,9 +204,7 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
    clickhouse-client --user default --password <password>
    ```
 
-<div id="defining-users">
-  ### ユーザーの作成
-</div>
+### ユーザーの作成 {#defining-users}
 
 1. SQL 管理者アカウントを作成します。
    ```sql
@@ -226,9 +215,7 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
    GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION;
    ```
 
-<div id="alter-permissions">
-  ## ALTER の権限
-</div>
+## ALTER の権限 {#alter-permissions}
 
 この記事では、権限の定義方法と、特権ユーザーが `ALTER` ステートメントを使用する際に権限がどのように機能するかについて理解を深めることを目的としています。
 

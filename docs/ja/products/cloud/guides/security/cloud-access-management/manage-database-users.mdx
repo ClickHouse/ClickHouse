@@ -12,16 +12,14 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 このガイドでは、データベースユーザーを管理する方法として、SQLコンソール上で行う方法と、データベースで直接行う方法の2つを紹介します。
 
 <div id="sql-console-passwordless-authentication">
-  ### SQL コンソールのパスワードレス認証
+  ### SQL コンソールのパスワードレス認証 {#sql-console-passwordless-authentication}
 </div>
 
 SQL コンソールのユーザーはセッションごとに作成され、自動的に更新される X.509 証明書を使用して認証されます。セッションが終了すると、そのユーザーは削除されます。監査用のアクセスリストを作成する際は、コンソールで該当サービスの Settings タブに移動し、データベース内に存在するデータベースユーザーに加えて、SQL コンソールのアクセス権も確認してください。カスタムロールが設定されている場合、ユーザーのアクセス権は、そのユーザーのユーザー名で終わるロールに表示されます。
 
-<div id="sql-console-users-and-roles">
-  ## SQL コンソールのユーザーとロール
-</div>
+## SQL コンソールのユーザーとロール {#sql-console-users-and-roles}
 
-基本的な SQL コンソールのロールは、Service Read Only および Service Admin の権限を持つユーザーに割り当てることができます。詳細については、[SQL Console ロール割り当ての管理](/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)を参照してください。このガイドでは、SQL コンソールのユーザー用のカスタムロールを作成する方法を説明します。
+基本的な SQL コンソールのロールは、Service Read Only および Service Admin の権限を持つユーザーに割り当てることができます。詳細については、[クラウドユーザーの管理](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments)を参照してください。このガイドでは、SQL コンソールのユーザー用のカスタムロールを作成する方法を説明します。
 
 <Tip>
   コンソールからデータベースアクセスを管理するには、[Cloud 管理のデータベースロール](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (ベータ) の使用をお勧めします。`sql-console-role:<email>` ロールは、[JWT 認証](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) と互換性がありません。
@@ -57,11 +55,11 @@ SQL コンソールのユーザー用のカスタムロールを作成し、そ�
 </Steps>
 
 <div id="database-authentication">
-  ## データベース認証
+  ## データベース認証 {#database-authentication}
 </div>
 
 <div id="database-user-id--password">
-  ### データベースユーザー ID とパスワード
+  ### データベースユーザー ID とパスワード {#database-user-id--password}
 </div>
 
 パスワードを安全に保護するため、[ユーザーアカウントを作成する](/ja/reference/statements/create/user)際は、SHA256&#95;hash 方式を使用してください。ClickHouse のデータベースパスワードは、12 文字以上で、複雑さの要件を満たしている必要があります。つまり、大文字、小文字、数字、特殊文字のうち必要な種類を含める必要があります。
@@ -77,7 +75,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 ```
 
 <div id="database-ssh">
-  ### Secure Shell (SSH) 認証を使用するデータベースユーザー
+  ### Secure Shell (SSH) 認証を使用するデータベースユーザー {#database-ssh}
 </div>
 
 ClickHouse Cloud のデータベースユーザーに SSH 認証を設定するには、次の手順を実行します。
@@ -90,7 +88,7 @@ ClickHouse Cloud のデータベースユーザーに SSH 認証を設定する�
 例を含む詳しい手順については、ナレッジベースの [SSH 鍵を使用して ClickHouse Cloud に接続する方法](/ja/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys) を参照してください。
 
 <div id="database-permissions">
-  ## データベース権限
+  ## データベース権限 {#database-permissions}
 </div>
 
 SQLの[GRANT](/ja/reference/statements/grant)ステートメントを使用して、サービスおよびデータベースで以下を設定します。
@@ -109,7 +107,7 @@ SQLの[GRANT](/ja/reference/statements/grant)ステートメントを使用し�
 <Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="ユーザーに権限を付与するさまざまな方法を示す図" size="md" background="black" />
 
 <div id="initial-settings">
-  ### 初期設定
+  ### 初期設定 {#initial-settings}
 </div>
 
 データベースには `default` というアカウントがあり、サービスの作成時に自動的に追加され、default&#95;role が付与されます。サービスを作成したユーザーには、サービス作成時に `default` アカウントに割り当てられる、自動生成されたランダムなパスワードが表示されます。このパスワードは初期設定後には表示されませんが、後からコンソールで Service Admin 権限を持つユーザーであれば変更できます。また、このアカウント、またはコンソール内で Service Admin 権限を持つアカウントを使用して、追加のデータベースユーザーやロールをいつでも設定できます。
@@ -127,9 +125,7 @@ SQLの[GRANT](/ja/reference/statements/grant)ステートメントを使用し�
 
 適切な複雑さを備えた12文字以上のパスワードは、SHA256ハッシュジェネレーターや Python の `hashlib` などの関数を使って SHA256 文字列に変換し、その文字列をパスワードとしてシステム管理者に渡すことができます。これにより、管理者が平文のパスワードを見たり取り扱ったりせずに済みます。
 
-<div id="database-access-listings-with-sql-console-users">
-  ### SQL コンソールのユーザーのデータベースアクセス一覧
-</div>
+### SQL コンソールのユーザーのデータベースアクセス一覧 {#database-access-listings-with-sql-console-users}
 
 以下の手順で、組織内の SQL コンソール とデータベース全体にわたる完全なアクセス一覧を生成できます。
 
@@ -175,8 +171,6 @@ SQLの[GRANT](/ja/reference/statements/grant)ステートメントを使用し�
   </Step>
 </Steps>
 
-<div id="warehouse-users">
-  ## Warehouse ユーザー
-</div>
+## Warehouse ユーザー {#warehouse-users}
 
 Warehouse ユーザーは、同じ Warehouse 内のサービス間で共有されます。詳しくは、[Warehouse のアクセス制御](/ja/products/cloud/features/infrastructure/warehouses#access-controls)を参照してください。

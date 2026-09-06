@@ -19,9 +19,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * 构建容错存储。
 * 在流可用时立即处理。
 
-<div id="creating-a-table">
-  ## 创建表
-</div>
+## 创建表 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -154,9 +152,7 @@ CREATE TABLE queue3 (
   Kafka 表引擎不支持带有[默认值](/zh/reference/statements/create/table#default_values)的列。如果需要带默认值的列，可以在 materialized view 层添加它们 (见下文) 。
 </Info>
 
-<div id="description">
-  ## 说明
-</div>
+## 说明 {#description}
 
 已传递的消息会被自动跟踪，因此组中的每条消息只会被计数一次。如果你希望将数据获取两次，请使用另一个组名创建一个表副本。
 
@@ -214,9 +210,7 @@ ATTACH TABLE consumer;
 
 如果你想使用 `ALTER` 修改目标表，我们建议先禁用materialized view，以避免目标表与视图数据之间出现不一致。
 
-<div id="configuration">
-  ## 配置
-</div>
+## 配置 {#configuration}
 
 与 GraphiteMergeTree 类似，Kafka 引擎支持通过 ClickHouse 配置文件进行扩展配置。可使用两类配置键：全局级别 (位于 `<kafka>` 下) 和 topic 级别 (位于 `<kafka><kafka_topic>` 下) 。系统会先应用全局配置，再应用 topic 级别的配置 (如果存在) 。
 
@@ -262,9 +256,7 @@ ATTACH TABLE consumer;
 
 有关可用配置项的完整列表，请参阅 [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)。在 ClickHouse 配置中，请使用下划线 (`_`) 而非点号 (`.`) 。例如，`check.crcs=true` 应写为 `<check_crcs>true</check_crcs>`。
 
-<div id="kafka-aws-msk-iam">
-  ### AWS MSK IAM 身份验证
-</div>
+### AWS MSK IAM 身份验证 {#kafka-aws-msk-iam}
 
 <Note>
   AWS MSK IAM 身份验证要求 ClickHouse 在构建时启用 AWS S3 支持。
@@ -372,9 +364,7 @@ SETTINGS
 }
 ```
 
-<div id="kafka-kerberos-support">
-  ### Kerberos 支持
-</div>
+### Kerberos 支持 {#kafka-kerberos-support}
 
 要处理支持 Kerberos 的 Kafka，请添加值为 `sasl_plaintext` 的 `security_protocol` 子元素。只要操作系统机制已获取并缓存 Kerberos ticket-granting ticket 即可。
 ClickHouse 还可以使用 keytab 文件维护 Kerberos 凭据。请考虑使用 `sasl_kerberos_service_name`、`sasl_kerberos_keytab` 和 `sasl_kerberos_principal` 子元素。
@@ -390,9 +380,7 @@ ClickHouse 还可以使用 keytab 文件维护 Kerberos 凭据。请考虑使用
 </kafka>
 ```
 
-<div id="virtual-columns">
-  ## 虚拟列
-</div>
+## 虚拟列 {#virtual-columns}
 
 * `_topic` — Kafka topic。数据类型：`LowCardinality(String)`。
 * `_key` — 消息的键。数据类型：`String`。
@@ -410,9 +398,7 @@ ClickHouse 还可以使用 keytab 文件维护 Kerberos 凭据。请考虑使用
 
 注意：`_raw_message` 和 `_error` 这两个虚拟列仅在解析过程中发生异常时才会填充；消息成功解析时，它们始终为空。
 
-<div id="mapping-columns-to-kafka-message-metadata">
-  ## 将列映射到 Kafka 消息元数据
-</div>
+## 将列映射到 Kafka 消息元数据 {#mapping-columns-to-kafka-message-metadata}
 
 使用 `INSERT INTO` 生成消息时，如果表中存在名为 `_key` (类型为 `String`) 的列，Kafka 引擎始终会将其用作 Kafka 消息键；如果存在名为 `_timestamp` (类型为 `DateTime`) 的列，则会将其用作 Kafka 消息时间戳。默认情况下，这些列也会和其他列一起出现在生成的消息载荷中。
 
@@ -449,9 +435,7 @@ INSERT INTO kafka_out VALUES
 
 生成的 Kafka 消息包含载荷 `{"event_json":"{\"a\":1}"}`、键 `session-42`、当前时间戳，以及两个请求头 `source=api` 和 `trace_id=abc-123`。
 
-<div id="data-formats-support">
-  ## 数据格式支持
-</div>
+## 数据格式支持 {#data-formats-support}
 
 Kafka 引擎支持 ClickHouse 支持的所有[格式](/zh/reference/formats/index)。
 单条 Kafka 消息中的行数取决于所用格式是基于行还是基于块：
@@ -459,9 +443,7 @@ Kafka 引擎支持 ClickHouse 支持的所有[格式](/zh/reference/formats/inde
 * 对于基于行的格式，单条 Kafka 消息中的行数可通过设置 `kafka_max_rows_per_message` 进行控制。
 * 对于基于块的格式，我们无法将块拆分为更小的部分，但单个块中的行数可通过通用设置 [max&#95;block&#95;size](/zh/reference/settings/session-settings/max#max_block_size) 进行控制。
 
-<div id="engine-to-store-committed-offsets-in-clickhouse-keeper">
-  ## 在 ClickHouse Keeper 中存储已提交偏移量的引擎
-</div>
+## 在 ClickHouse Keeper 中存储已提交偏移量的引擎 {#engine-to-store-committed-offsets-in-clickhouse-keeper}
 
 <ExperimentalBadge />
 
@@ -472,9 +454,7 @@ Kafka 引擎支持 ClickHouse 支持的所有[格式](/zh/reference/formats/inde
 
 这两个设置要么都指定，要么都不指定。当两者都指定时，将使用一个新的 Experimental Kafka 引擎。这个新引擎不依赖将已提交偏移量存储在 Kafka 中，而是将其存储在 ClickHouse Keeper 中。它仍会尝试将偏移量提交到 Kafka，但只有在创建表时才会依赖这些偏移量。在其他任何情况下 (例如表重启，或在发生错误后恢复) ，都会使用存储在 ClickHouse Keeper 中的偏移量继续消费消息。除了已提交偏移量外，它还会存储上一批次消费的消息数量，因此如果插入失败，就会再次消费相同数量的消息，从而在需要时实现去重。
 
-<div id="static-partition-to-shard-affinity">
-  ### 静态分区与分片亲和性
-</div>
+### 静态分区与分片亲和性 {#static-partition-to-shard-affinity}
 
 使用 `StorageKafka2` 时，可通过指定 `kafka_partition_shard_num` 和 `kafka_shard_count` 选择性启用静态分区与分片亲和性。这样，多个 ClickHouse 实例 (分片) 可以从同一 Kafka topic 消费数据，并且每个分片仅根据以下公式处理确定的分区子集：
 
@@ -523,9 +503,7 @@ kafka_replica_name = '{replica}'
 SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 ```
 
-<div id="known-limitations">
-  ### 已知限制
-</div>
+### 已知限制 {#known-limitations}
 
 由于这个新引擎仍处于 Experimental 阶段，因此尚未准备好用于生产环境。目前该实现存在一些已知限制：
 
@@ -533,7 +511,13 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 * 为了实现可重复读取，单个线程不能从多个分区消费消息。另一方面，Kafka 消费者又必须定期执行 poll 才能保持存活。基于这两个目标，我们决定只有在启用 `kafka_thread_per_consumer` 时才允许创建多个消费者，否则很难避免与定期 poll 消费者相关的问题。
 * 使用分区亲和性时，所有分片必须使用相同的 `kafka_shard_count`；否则，某些分区可能被多个分片消费，或始终未被消费。
 
-**另请参见**
+## 数据持久性 {#data-durability}
+
+如果已插入的数据尚未写入磁盘，OS 页面缓存就被丢弃，`Kafka` 引擎可能会静默丢失已消费的行。批次推送到依赖的 materialized view 后，已消费的偏移量会被提交 (提交到 broker，或者在设置了 `kafka_keeper_path` 时提交到 ClickHouse Keeper) ，消费者因此会从这些消息之后继续消费。但是，只有目标 part 完成 fsync 后，插入的行才会持久化；默认情况下，此操作不会同步执行 (`fsync_after_insert = 0`) 。如果偏移量已提交但目标 part 尚未完成 fsync 时页面缓存丢失，消费者重启后会跳过这些消息继续消费，因此这些行会在不报错的情况下丢失，`count()` 的结果只会变小。普通的进程终止不会暴露此问题，因为内核会保留页面缓存并最终将其写回。页面缓存丢失则会暴露此问题，例如设备级断电、主机或内核异常重置。
+
+对于推荐的 materialized view 消费路径 (仅在整个插入管道完成后才提交偏移量) ，在目标 `MergeTree` 表上设置 `fsync_after_insert = 1` (以及 `fsync_part_directory = 1`) ，可确保在提交偏移量前插入的 parts 已持久化，从而大幅缩小这一风险窗口。必须在批次写入的每个 `MergeTree` 表上启用此设置，包括级联 materialized view 的目标表；任何仍保留默认设置的此类表仍可能丢失其 part。异步中间层不会仅因该设置而获得持久性保证：例如，当 `distributed_foreground_insert = 0` 时，`Distributed` 目标会在后台插入；这是 ClickHouse Cloud 之外的默认设置，因此它需要单独配置持久性设置或使用同步插入。对于在插入完成前提交偏移量的情况，此缓解措施同样不适用。这包括直接使用 `INSERT ... SELECT ... FROM <kafka_table>` 并设置 `kafka_commit_on_select = 1` 的情况，以及在基于 broker 的引擎上设置 `kafka_commit_every_batch = 1` 的情况；设置了 `kafka_keeper_path` 时，后一个设置会被忽略，因此不会在该情况下导致中间提交。
+
+**另请参阅**
 
 * [虚拟列](/zh/reference/engines/table-engines/index#table_engines-virtual_columns)
 * [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/zh/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size)

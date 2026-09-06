@@ -60,9 +60,7 @@ two    : [3]
 
 검색 토큰이 주어지면, 이 인덱스 구조를 사용해 일치하는 모든 행을 빠르게 찾을 수 있습니다.
 
-<div id="creating-a-text-index">
-  ## 텍스트 인덱스 생성
-</div>
+## 텍스트 인덱스 생성 {#creating-a-text-index}
 
 텍스트 인덱스는 ClickHouse 버전 26.2 이상에서 일반 제공(GA)됩니다.
 이 버전에서는 텍스트 인덱스를 사용하기 위해 별도의 설정을 구성할 필요가 없습니다.
@@ -83,7 +81,7 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -123,7 +121,7 @@ ALTER TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | splitByRegexp(re)
+                                            | splitByRegexp(regexp[, match_tokens])
                                             | asciiCJK
                                             | chinese[(granularity)]
                                             | icu(locale)
@@ -163,9 +161,12 @@ ALTER TABLE table DROP INDEX text_idx;
   구분자는 선택적 매개변수로 지정할 수 있습니다. 예: `tokenizer = splitByString([', ', '; ', '\n', '\\'])`.
   각 문자열은 여러 문자로 구성될 수 있습니다(예시의 `', '`).
   명시적으로 지정하지 않으면(예: `tokenizer = splitByString`) 기본 구분자 목록은 공백 1개인 `[' ']`입니다.
-* `splitByRegexp(re)`는 사용자가 정의한 정규식 구분자 `re`를 기준으로 문자열을 분할합니다(함수 [splitByRegexp](/ko/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp) 참조).
-  `re` 인수는 필수입니다. 예: `tokenizer = splitByRegexp('[^\p{L}\p{N}#+]+')`.
-  `splitByString`의 고정 구분자 문자열과 달리, 정규식 구분자는 다른 토크나이저가 분할하는 `C++` 또는 `C#` 같은 특수 문자가 포함된 토큰을 보존할 수 있습니다.
+* `splitByRegexp(regexp[, match_tokens])`는 사용자가 정의한 정규식 `regexp`에 따라 문자열을 분할합니다.
+  `regexp` 인수는 필수입니다. 예: `tokenizer = splitByRegexp('[a-zA-Z]+[0-9]')`.
+  선택적 `match_tokens` 인수(기본값 `false`, `0`/`1`도 허용됨)는 `regexp`가 무엇을 나타내는지를 제어합니다.
+  * `match_tokens = false`(기본값)인 경우 `regexp`는 구분자를 나타냅니다. 즉, 연속된 일치 항목 사이의 (비어 있지 않은) 텍스트 조각이 토큰이 됩니다(함수 [splitByRegexp](/ko/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)와 동일한 의미).
+  * `match_tokens = true`인 경우 `regexp`가 직접 매칭됩니다. 각 일치 항목은 최대 하나의 토큰(첫 번째 캡처 그룹, 또는 `regexp`에 캡처 그룹이 없으면 일치 항목 전체)만 생성하며, 일치 항목 밖의 모든 내용은 버려집니다. 예를 들어 `tokenizer = splitByRegexp('tag:(\w+)', true)`는 `tag:hello tag:world`에서 `tag:` 접두사를 제외하고 `hello`와 `world`를 인덱싱합니다. 매칭에는 ClickHouse의 모든 정규식 기반 함수가 사용하는 것과 동일한 엔진인 [RE2](https://github.com/google/re2)가 사용됩니다. 항상 첫 번째 캡처 그룹만 사용되므로, 이후의 그룹은 무엇이 일치할지를 제한하는 역할만 합니다. 매칭에 참여하지 않았거나 빈 문자열과 일치한 캡처 그룹은 토큰을 생성하지 않으며, 스캔은 캡처된 스팬 이후가 아니라 항상 일치 항목 전체 이후부터 재개됩니다(따라서 일치 항목은 서로 겹치지 않습니다).
+    `match_tokens = true`인 경우, 텍스트 검색 함수의 검색 니들은 해당 인덱스 자체의 토크나이저로 토큰화된다는 점에 유의하십시오. 따라서 `regexp`와 일치하지 않는 일반 문자열 니들은 토큰을 생성하지 않으므로 결과도 반환되지 않습니다. 텍스트 검색 함수에 배열로 전달된 니들은 토큰화되지 않으므로, regexp 토크나이저와 함께 사용하는 것을 권장합니다.
 * `asciiCJK`는 유니코드 단어 경계 규칙을 사용해 문자열을 토큰으로 분할합니다([Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)와 유사). ASCII 영숫자와 밑줄은 연결 문자와 함께 토큰을 이룹니다(문자의 경우 ASCII `:`, 같은 유형의 문자에는 `.` 및 `'`). [CJK](https://en.wikipedia.org/wiki/CJK_characters) 문자를 포함한 비ASCII 유니코드 문자는 한 글자 토큰이 됩니다.
 * `chinese[(granularity)]`는 딕셔너리와 은닉 마르코프 모델을 사용해 중국어 텍스트를 단어로 세분화합니다(알고리즘은 [jieba](https://github.com/fxsjy/jieba)를 따르며, 내장 딕셔너리와 모델 데이터는 [cppjieba](https://github.com/yanyiwu/cppjieba)에서 파생되었습니다). 모든 비ASCII 문자를 한 글자 토큰으로 처리하는 `asciiCJK`와 달리, `chinese`는 연속된 중국어 문자를 단어로 그룹화합니다(예: `北京大学`는 한 글자 토큰 4개가 아니라 하나의 토큰 `北京大学`가 됩니다). 이를 통해 중국어 텍스트에 더 의미 있는 토큰과 더 높은 검색 품질을 제공합니다. 일반/혼합 텍스트에는 `asciiCJK`를 사용하고, 중국어 전용 텍스트에는 `chinese`를 사용하십시오. 선택적 `granularity` 인수는 `'coarse_grained'`(지정하지 않은 경우 기본값) 또는 `'fine_grained'`입니다. 후자는 겹치는 하위 단어도 추가로 열거하므로, 예를 들어 `北京邮电大学`에서는 `北京`, `邮电`, `大学`도 생성됩니다. 세분화 수준이 높은 토큰화는 더 큰 인덱스를 사용하는 대신 재현율을 높입니다.
   `chinese` 텍스트 인덱스는 ASCII 구분자만 기준으로 분할하는 `hasToken`이 아니라, 니들을 `chinese` 토크나이저로 토큰화하는 [hasAnyTokens](/ko/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/ko/reference/functions/regular-functions/string-search-functions#hasAllTokens)로 검색하십시오.
@@ -185,9 +186,7 @@ ALTER TABLE table DROP INDEX text_idx;
 
 사용 가능한 모든 토크나이저는 [system.tokenizers](/ko/reference/system-tables/tokenizers)에 나열되어 있습니다.
 
-<div id="japanese-tokenizer-dictionary">
-  ### 일본어 토크나이저 딕셔너리
-</div>
+### 일본어 토크나이저 딕셔너리 {#japanese-tokenizer-dictionary}
 
 <CloudNotSupportedBadge />
 
@@ -536,8 +535,8 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 | [hasAnyTokens(col, arr)](/ko/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | 아니요 (배열 요소가 토큰으로 있는 그대로 사용됨) | 모두                                                                                | 예       |
 | [hasAllTokens(col, arr)](/ko/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | 아니요 (배열 요소가 토큰으로 있는 그대로 사용됨) | 모두                                                                                | 예       |
 | [hasPhrase](/ko/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | 예                            | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | 예³      |
-| [startsWith](/ko/reference/functions/regular-functions/string-functions#startsWith)                        | 예                            | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | 예       |
-| [endsWith](/ko/reference/functions/regular-functions/string-functions#endsWith)                            | 예                            | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`                            | 예       |
+| [startsWith](/ko/reference/functions/regular-functions/string-functions#startsWith)                        | 예⁴                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴                  | 예⁴      |
+| [endsWith](/ko/reference/functions/regular-functions/string-functions#endsWith)                            | 예⁴                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴                  | 예⁴      |
 | [like](/ko/reference/functions/regular-functions/string-search-functions#like)                             | 예¹                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | 예¹      |
 | [match](/ko/reference/functions/regular-functions/string-search-functions#match)                           | 예¹                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹                           | 예¹      |
 | [ilike](/ko/reference/functions/regular-functions/string-search-functions#like)                            | 예² (`lower`/`upper`만)        | `splitByNonAlpha`, `array`²                                                       | 아니요²    |
@@ -550,15 +549,20 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 | [hasAll](/ko/reference/functions/regular-functions/array-functions#hasAll)                                 | 예                            | `array`                                                                           | 예       |
 
 ¹ `LIKE`와 `match`는 나열된 토크나이저에서 힌트로 직접 읽기를 사용하며, 그렇지 않으면 브루트 포스(전체 스캔)으로 폴백됩니다.
-또한 `LIKE`는 전처리기나 후처리기 없이 `splitByNonAlpha` 및 `array` 토크나이저에 대해 *직접 읽기(힌트 없이)*도 지원합니다(`use_text_index_like_evaluation_by_dictionary_scan`으로 활성화).
+또한 `LIKE`는 전처리기나 후처리기 없이 `splitByNonAlpha` 및 `array` 토크나이저에 대해 dictionary scan을 통한 평가도 지원합니다(`use_text_index_like_evaluation_by_dictionary_scan`으로 활성화).
+이때 `%value%` 패턴은 *직접 읽기(힌트 없이)*가 되며, `value%` 및 `%value` 패턴은 힌트로 남습니다. [LIKE/ILIKE 쿼리](#like-ilike-queries-perf)를 참조하십시오.
 
-² `ILIKE`는 *직접 읽기(힌트 없이)*를 통해서만 지원됩니다(`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` 또는 `array` 토크나이저).
-인덱스를 힌트로 사용하는 폴백은 지원되지 않습니다. 즉, 설정이 비활성화되어 있거나 토크나이저가 지원되는 집합에 없으면 `ILIKE`에는 인덱스가 사용되지 않습니다.
+² `ILIKE`는 dictionary scan을 통한 평가로만 지원됩니다(`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` 또는 `array` 토크나이저).
+dictionary scan이 지원하지 않는 패턴에 대해 인덱스를 힌트로 사용하는 폴백은 없습니다. 즉, 설정이 비활성화되어 있거나 토크나이저가 지원되는 집합에 없으면 `ILIKE`에는 인덱스가 사용되지 않습니다.
 전처리기가 있는 경우 `lower` 또는 `upper`여야 하며, 후처리기는 지원되지 않습니다.
 
-³ `splitByRegexp` 텍스트 인덱스에서 `hasPhrase`는 후처리기를 지원하지 **않습니다**. 후처리기 행 수준 재작성은 공백으로 분할하는 `splitByNonAlpha` 스타일 토큰을 전제로 하므로, 이 조합은 예외와 함께 거부됩니다. 후처리기가 없으면 `splitByRegexp`는 `hasPhrase`에서 완전히 지원됩니다.
+³ `splitByRegexp` 텍스트 인덱스에 대한 `hasPhrase`는 후처리기를 지원하지 **않습니다**. 후처리기의 행 수준 재작성이 공백으로 분할하는 `splitByNonAlpha` 방식의 토큰을 전제로 하기 때문에, 이 조합은 예외와 함께 거부됩니다. 후처리기가 없다면 `splitByRegexp`는 `hasPhrase`에서 완전히 지원됩니다.
 
-**실험적: 구문 검색 인수 지원(선택 사항)**.
+⁴ `startsWith`와 `endsWith`는 needle의 완전한 토큰을 검색하며, needle의 열린 쪽 끝에 있는 토큰은 값이 그 지점에서 계속 이어지므로 불완전합니다. `startsWith(col, 'ClickHouse is')`는 토큰 `ClickHouse`를 검색하지만, `startsWith(col, 'ClickHouse')`에는 검색할 완전한 토큰이 없습니다.
+후자는 대신 dictionary scan(`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` 또는 `array` 토크나이저, 전처리기 및 후처리기 없음)으로 평가되며, 분석기 패스 [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ko/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix)가 `col LIKE 'ClickHouse%'`를 `startsWith`로 재작성하기 때문에 이 쿼리 역시 동일한 경로를 따릅니다.
+[LIKE/ILIKE 쿼리](#like-ilike-queries-perf)를 참조하십시오.
+
+**실험적: 구문 검색 지원 인수(선택 사항)**.
 
 실험적 매개변수 `support_phrase_search`(기본값: `0`)는 인덱스가 토큰 위치를 저장할지 제어합니다.
 `1`로 설정하면 인덱스는 위치 데이터(`.pos` 파일에 저장됨)를 추가로 저장하며, 이를 통해 [`hasPhrase`](#functions-example-hasphrase) 함수에서 직접 읽기를 사용한 정확한 구문 일치가 가능해집니다.
@@ -642,12 +646,10 @@ SHOW CREATE TABLE table;
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-매우 큰 인덱스 세분화 수준을 사용하면 텍스트 인덱스가 파트 전체에 생성됩니다.
-명시적으로 지정한 인덱스 세분화 수준은 무시됩니다.
+매우 큰 인덱스 세분화 수준은 텍스트 인덱스가 파트 전체에 대해 생성되도록 보장합니다.
+명시적으로 지정된 인덱스 세분화 수준은 무시됩니다.
 
-<div id="using-a-text-index">
-  ## 텍스트 인덱스 사용
-</div>
+## 텍스트 인덱스 사용 {#using-a-text-index}
 
 SELECT 쿼리에서 텍스트 인덱스를 사용하는 방법은 간단합니다. 일반적인 문자열 검색 함수가 자동으로 인덱스를 활용하기 때문입니다.
 컬럼 또는 테이블 파트에 인덱스가 없으면 문자열 검색 함수는 느린 브루트 포스(전체 스캔)로 대체됩니다.
@@ -658,9 +660,7 @@ SELECT 쿼리에서 텍스트 인덱스를 사용하는 방법은 간단합니�
   그 외의 지원 함수는 역사적으로 텍스트 인덱스보다 먼저 도입되었기 때문에, 많은 경우 기존 동작을 유지해야 했습니다(예: 전처리기 또는 후처리기 미지원).
 </Note>
 
-<div id="functions-support">
-  ### 지원되는 함수
-</div>
+### 지원되는 함수 {#functions-support}
 
 `WHERE` 절 또는 `PREWHERE` 절에서 텍스트 함수를 사용하는 경우 텍스트 인덱스를 사용할 수 있습니다:
 
@@ -670,9 +670,7 @@ FROM [...]
 WHERE string_search_function(column_with_text_index)
 ```
 
-<div id="functions-example-equals">
-  #### `=`
-</div>
+#### `=` {#functions-example-equals}
 
 `=` ([equals](/ko/reference/functions/regular-functions/comparison-functions#equals))은 지정된 검색어 전체와 일치합니다.
 
@@ -682,9 +680,7 @@ WHERE string_search_function(column_with_text_index)
 SELECT * from table WHERE str = 'Hello';
 ```
 
-<div id="functions-example-in">
-  #### `IN`
-</div>
+#### `IN` {#functions-example-in}
 
 `IN` ([in](/ko/reference/functions/regular-functions/in-functions))은 `equals`와 비슷하지만, 모든 검색어를 일치 대상으로 합니다.
 
@@ -698,9 +694,7 @@ SELECT * from table WHERE str IN ('Hello', 'World');
   텍스트 인덱스에서는 `NOT IN` (`notIn`)을 지원하지 않습니다.
 </Note>
 
-<div id="functions-example-like-match">
-  #### `LIKE` 및 `match`
-</div>
+#### `LIKE` 및 `match` {#functions-example-like-match}
 
 <Note>
   현재 이러한 함수는 인덱스 토크나이저가 `splitByNonAlpha`, `ngrams` 또는 `sparseGrams`인 경우에만 필터링에 텍스트 인덱스(text index)를 사용합니다.
@@ -734,9 +728,7 @@ SELECT count() FROM table WHERE comment LIKE ' support %'; -- 또는 `% support 
 
 자세한 내용은 [LIKE/ILIKE 성능 튜닝 섹션](#like-ilike-queries-perf)을 참조하십시오.
 
-<div id="functions-example-multisearchany-multimatchany">
-  #### `multiSearchAny` and `multiMatchAny`
-</div>
+#### `multiSearchAny` and `multiMatchAny` {#functions-example-multisearchany-multimatchany}
 
 [multiSearchAny](/ko/reference/functions/regular-functions/string-search-functions#multiSearchAny) 및 해당 UTF-8 변형인 [multiSearchAnyUTF8](/ko/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)는 여러 리터럴 부분 문자열 중 하나라도 검색 대상 문자열에 포함되는지 확인하고, [multiMatchAny](/ko/reference/functions/regular-functions/string-search-functions#multiMatchAny)는 여러 정규식 중 하나라도 일치하는지 확인합니다.
 이 함수들은 `LIKE` 및 `match`와 동일한 조건에서 텍스트 인덱스를 사용합니다(위 참조). 즉, ClickHouse가 각 검색 패턴에서 완전한 토큰을 추출할 수 있어야 하며, 검색 패턴 목록은 상수여야 합니다.
@@ -764,9 +756,7 @@ needle은 단어의 중간에서 시작하거나 끝날 수 있으므로, ClickH
 SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' support ']);
 ```
 
-<div id="functions-example-startswith-endswith">
-  #### `startsWith` and `endsWith`
-</div>
+#### `startsWith` and `endsWith` {#functions-example-startswith-endswith}
 
 `LIKE`와 마찬가지로, [startsWith](/ko/reference/functions/regular-functions/string-functions#startsWith) 및 [endsWith](/ko/reference/functions/regular-functions/string-functions#endsWith) 함수는 검색어에서 완전한 토큰을 추출할 수 있을 때만 텍스트 인덱스를 사용할 수 있습니다.
 `ngrams` 토크나이저를 사용하는 인덱스에서는 와일드카드 사이의 검색 문자열 길이가 ngram 길이와 같거나 더 길면 이에 해당합니다.
@@ -793,9 +783,7 @@ startsWith(comment, 'clickhouse supports ')`
 SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 ```
 
-<div id="functions-example-hastoken">
-  #### `hasToken`
-</div>
+#### `hasToken` {#functions-example-hastoken}
 
 <Note>
   `hasToken`은 `splitByNonAlpha`가 아닌 토크나이저 및/또는 전처리기/후처리기 표현식이 있는 텍스트 인덱스에서 조회에 사용할 때 몇 가지 주의할 점이 있습니다.
@@ -806,7 +794,7 @@ SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 
 함수 [hasToken](/ko/reference/functions/regular-functions/string-search-functions#hasToken)은 주어진 단일 토큰과 일치하는지 확인합니다.
 
-앞서 설명한 함수들과 달리, 이 함수들은 검색어를 토큰화하지 않습니다(입력이 단일 토큰이라고 가정합니다).
+`hasAnyTokens` 및 `hasAllTokens`와 달리, 이 함수는 검색어를 토큰화하지 않습니다(입력이 단일 토큰이라고 가정합니다).
 
 예시:
 
@@ -814,9 +802,7 @@ SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 SELECT count() FROM table WHERE hasToken(comment, 'clickhouse');
 ```
 
-<div id="functions-example-hasanytokens-hasalltokens">
-  #### `hasAnyTokens` 및 `hasAllTokens`
-</div>
+#### `hasAnyTokens` 및 `hasAllTokens` {#functions-example-hasanytokens-hasalltokens}
 
 함수 [hasAnyTokens](/ko/reference/functions/regular-functions/string-search-functions#hasAnyTokens) 및 [hasAllTokens](/ko/reference/functions/regular-functions/string-search-functions#hasAllTokens)는 지정된 토큰 중 하나 이상 또는 전체와 일치하는지 확인합니다.
 
@@ -835,9 +821,7 @@ SELECT count() FROM table WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 ```
 
-<div id="functions-example-hasphrase">
-  #### `hasPhrase`
-</div>
+#### `hasPhrase` {#functions-example-hasphrase}
 
 함수 [hasPhrase](/ko/reference/functions/regular-functions/string-search-functions#hasPhrase)는 구(phrase)와 일치하는지 확인합니다. 즉, 모든 토큰이 검색 문자열에 있는 순서 그대로 연속해서 나타나야 합니다.
 
@@ -856,9 +840,7 @@ SELECT count() FROM table WHERE hasPhrase(comment, 'clickhouse olap');
 -- Does NOT match a row containing 'clickhouse fast olap' (non-consecutive)
 ```
 
-<div id="functions-example-has">
-  #### `has`
-</div>
+#### `has` {#functions-example-has}
 
 배열 함수 [has](/ko/reference/functions/regular-functions/array-functions#has)는 문자열 배열에서 단일 토큰과 일치하는지 확인합니다.
 
@@ -868,9 +850,7 @@ SELECT count() FROM table WHERE hasPhrase(comment, 'clickhouse olap');
 SELECT count() FROM table WHERE has(array, 'clickhouse');
 ```
 
-<div id="functions-example-hasany-hasall">
-  #### `hasAny` 및 `hasAll`
-</div>
+#### `hasAny` 및 `hasAll` {#functions-example-hasany-hasall}
 
 배열 함수 [hasAny](/ko/reference/functions/regular-functions/array-functions#hasAny) 및 [hasAll](/ko/reference/functions/regular-functions/array-functions#hasAll)는 인덱스가 적용된 배열 컬럼에 상수 검색 문자열 집합의 일부 또는 전체가 포함되어 있는지 확인합니다.
 
@@ -881,9 +861,7 @@ SELECT count() FROM table WHERE hasAny(tags, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
 ```
 
-<div id="functions-example-mapcontains">
-  #### `mapContains`
-</div>
+#### `mapContains` {#functions-example-mapcontains}
 
 함수 [mapContains](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)는 맵의 키에서 검색 문자열로부터 추출한 토큰과 일치하는지 확인합니다.
 동작은 `String` 컬럼에 대한 `equals` 함수와 유사합니다.
@@ -897,9 +875,7 @@ SELECT count() FROM table WHERE mapContainsKey(map, 'clickhouse');
 SELECT count() FROM table WHERE mapContains(map, 'clickhouse');
 ```
 
-<div id="functions-example-mapcontainsvalue">
-  #### `mapContainsValue`
-</div>
+#### `mapContainsValue` {#functions-example-mapcontainsvalue}
 
 함수 [mapContainsValue](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)는 맵의 값에서 검색 문자열로부터 추출된 토큰과 일치하는지 확인합니다.
 동작은 `String` 컬럼에 사용하는 `equals` 함수와 유사합니다.
@@ -911,9 +887,7 @@ SELECT count() FROM table WHERE mapContains(map, 'clickhouse');
 SELECT count() FROM table WHERE mapContainsValue(map, 'clickhouse');
 ```
 
-<div id="functions-example-mapcontainslike">
-  #### `mapContainsKeyLike` and `mapContainsValueLike`
-</div>
+#### `mapContainsKeyLike` and `mapContainsValueLike` {#functions-example-mapcontainslike}
 
 함수 [mapContainsKeyLike](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)와 [mapContainsValueLike](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)는 맵의 모든 키 또는 값에 대해 각각 패턴 일치 여부를 확인합니다.
 
@@ -924,9 +898,7 @@ SELECT count() FROM table WHERE mapContainsKeyLike(map, '% clickhouse %');
 SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 ```
 
-<div id="functions-example-access-operator">
-  #### `operator[]`
-</div>
+#### `operator[]` {#functions-example-access-operator}
 
 접근 [operator[]](/ko/reference/operators/index#access-operators)를 텍스트 인덱스와 함께 사용하면 키와 값을 필터링할 수 있습니다. 텍스트 인덱스는 `mapKeys(map)` 또는 `mapValues(map)` 표현식에 생성되었거나, 두 표현식 모두에 생성된 경우에만 사용됩니다.
 
@@ -938,9 +910,7 @@ SELECT count() FROM table WHERE map['engine'] = 'clickhouse';
 
 텍스트 인덱스에서 `Array(T)` 및 `맵(K, V)` 유형의 컬럼을 사용하는 예시는 다음과 같습니다.
 
-<div id="text-index-example-array">
-  ### Array(String) 컬럼 인덱싱
-</div>
+### Array(String) 컬럼 인덱싱 {#text-index-example-array}
 
 작성자가 키워드로 블로그 게시물을 분류하는 블로깅 플랫폼을 생각해 보겠습니다.
 사용자가 주제를 검색하거나 클릭해 관련 콘텐츠를 찾을 수 있도록 하려 합니다.
@@ -973,9 +943,7 @@ ALTER TABLE posts ADD INDEX keywords_idx(keywords) TYPE text(tokenizer = splitBy
 ALTER TABLE posts MATERIALIZE INDEX keywords_idx; -- 기존 데이터에 대한 인덱스를 반드시 재구성하세요
 ```
 
-<div id="text-index-example-map">
-  ### 맵 컬럼 인덱싱
-</div>
+### 맵 컬럼 인덱싱 {#text-index-example-map}
 
 관측성 관련 많은 사용 사례에서 로그 메시지는 &quot;구성 요소&quot;로 분리되어 적절한 데이터 타입에 저장됩니다. 예를 들어 타임스탬프에는 날짜 및 시간, 로그 레벨에는 enum과 같은 타입이 사용됩니다.
 메트릭 필드는 key-value 쌍으로 저장하는 것이 가장 적합합니다.
@@ -1035,9 +1003,7 @@ SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- 빠름
 SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- 빠름
 ```
 
-<div id="text-index-example-json">
-  ### JSON 컬럼 인덱싱
-</div>
+### JSON 컬럼 인덱싱 {#text-index-example-json}
 
 텍스트 인덱스는 `JSON` 컬럼에 다음 3가지 방식으로 사용할 수 있습니다:
 
@@ -1045,9 +1011,7 @@ SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- 빠�
 2. **[JSONAllPaths](/ko/reference/functions/regular-functions/json-functions#JSONAllPaths)를 사용하는 경로 기반 인덱스** — 각 그래뉼에 있는 *모든 경로*를 인덱싱하여, 쿼리한 경로를 포함할 수 없는 그래뉼을 건너뜁니다. `맵` 컬럼과 유사합니다.
 3. **[JSONAllValues](/ko/reference/functions/regular-functions/json-functions#JSONAllValues)를 사용하는 값 기반 인덱스** — 모든 JSON 경로에 걸친 *모든 값*을 인덱싱하여, 단일 인덱스로 모든 JSON 서브컬럼의 전문 검색을 가속화합니다.
 
-<div id="json-indexes-on-subcolumns">
-  #### 특정 서브컬럼의 인덱스
-</div>
+#### 특정 서브컬럼의 인덱스 {#json-indexes-on-subcolumns}
 
 일반 컬럼과 동일한 구문으로 모든 JSON 서브컬럼에 스킵 인덱스를 생성할 수 있습니다.
 
@@ -1107,9 +1071,7 @@ EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'roo
         Granules: 1/8
 ```
 
-<div id="json-indexes-jsonallpaths">
-  #### JSONAllPaths를 사용한 경로 기반 인덱스
-</div>
+#### JSONAllPaths를 사용한 경로 기반 인덱스 {#json-indexes-jsonallpaths}
 
 `Map` 컬럼과 마찬가지로 [JSON](/ko/reference/data-types/newjson) 컬럼에서도 [`JSONAllPaths`](/ko/reference/functions/regular-functions/json-functions#JSONAllPaths)를 사용해 텍스트 인덱스를 생성할 수 있습니다.
 이 인덱스는 각 그래뉼에 존재하는 JSON 경로 집합을 저장하며, 질의한 경로가 없는 그래뉼을 건너뛰는 데 이를 사용합니다.
@@ -1187,9 +1149,7 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
         Granules: 1/2
 ```
 
-<div id="json-indexes-jsonallvalues">
-  #### JSONAllValues를 사용한 값 기반 인덱스
-</div>
+#### JSONAllValues를 사용한 값 기반 인덱스 {#json-indexes-jsonallvalues}
 
 텍스트 인덱스는 [`JSONAllValues`](/ko/reference/functions/regular-functions/json-functions#JSONAllValues) 함수를 사용해 [JSON](/ko/reference/data-types/newjson) 컬럼 검색을 가속할 수 있습니다.
 
@@ -1206,9 +1166,7 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
   이는 인덱스가 빠른 사전 필터로 동작하는 다른 텍스트 인덱스 사용 사례와 동일합니다.
 </Note>
 
-<div id="json-all-values-creating-the-index">
-  ##### 인덱스 생성
-</div>
+##### 인덱스 생성 {#json-all-values-creating-the-index}
 
 인덱스 정의 예시:
 
@@ -1223,9 +1181,7 @@ ENGINE = MergeTree
 ORDER BY id;
 ```
 
-<div id="json-all-values-supported-query-patterns">
-  ##### 지원되는 쿼리 패턴
-</div>
+##### 지원되는 쿼리 패턴 {#json-all-values-supported-query-patterns}
 
 인덱스가 생성되면 `String` 컬럼에 사용하는 것과 동일한 함수와 모든 컬럼에 사용할 수 있는 `equals` 함수를 사용해 JSON 서브컬럼 쿼리 속도를 높일 수 있습니다.
 
@@ -1252,9 +1208,7 @@ SELECT * FROM events WHERE has(data.tags::Array(String), 'bug')
 SELECT * FROM events WHERE data.level IN ('error', 'critical');
 ```
 
-<div id="text-index-phrase-search">
-  ### 구문 검색
-</div>
+### 구문 검색 {#text-index-phrase-search}
 
 예를 들어, 일반적인 텍스트 인덱스 검색은
 
@@ -1287,9 +1241,7 @@ WHERE hasPhrase(col, 'weather in Tokyo')
 지정된 구문 문자열은 인덱스의 토크나이저를 사용해 토큰화됩니다.
 구문 내 구분자 문자는 무시됩니다. `splitByNonAlpha`를 토크나이저로 사용한다고 가정하면 `hasPhrase(text, 'quick+brown')`는 `hasPhrase(text, 'quick brown')`와 동일합니다.
 
-<div id="text-index-phrase-search-example">
-  #### 예시
-</div>
+#### 예시 {#text-index-phrase-search-example}
 
 ```sql
 CREATE TABLE tab (
@@ -1319,13 +1271,9 @@ SELECT id, text FROM tab WHERE hasPhrase(text, 'weather in New York');
 2행(`'New weather in York'`)은 토큰 순서가 올바르지 않아 일치하지 않습니다.
 3행(`'weather in New Orleans'`)은 토큰 `'York'`를 포함하지 않아 일치하지 않습니다。
 
-<div id="performance-tuning">
-  ## 성능 최적화
-</div>
+## 성능 최적화 {#performance-tuning}
 
-<div id="direct-read">
-  ### 직접 읽기
-</div>
+### 직접 읽기 {#direct-read}
 
 일부 타입의 텍스트 쿼리는 &quot;직접 읽기&quot;라는 최적화를 사용하면 속도를 크게 높일 수 있습니다.
 
@@ -1456,13 +1404,22 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 이 쿼리의 적용 순서는 `__text_index_...`, 그다음 `greaterOrEquals(...)`, 마지막으로 `like(...)`입니다.
 이 순서를 사용하면 텍스트 인덱스와 원래 필터가 스키핑하는 그래뉼보다 더 많은 데이터 그래뉼을 스키핑할 수 있으며, `WHERE` 절 뒤에 있는 쿼리에서 사용되는 비용이 큰 컬럼을 읽기 전에 이를 수행하므로 읽어야 하는 데이터 양이 더욱 줄어듭니다.
 
-<div id="like-ilike-queries-perf">
-  ### LIKE/ILIKE 쿼리
-</div>
+### LIKE/ILIKE 쿼리 {#like-ilike-queries-perf}
 
-LIKE/ILIKE 쿼리 패턴이 `%<alpha-numeric-characters-without-spaces>%`이고 텍스트 인덱스 토크나이저가 `splitByNonAlpha` 또는 `array`인 경우, ClickHouse는 역색인을 활용해 LIKE/ILIKE 쿼리 속도를 크게 높입니다. 이를 위해 ClickHouse는 일치하는 패턴을 찾을 때 전체 테이블 스캔 대신 역색인 딕셔너리를 스캔합니다.
+LIKE/ILIKE 쿼리 패턴이 `%<alpha-numeric-characters-without-spaces>%`, `<alpha-numeric-characters-without-spaces>%` 또는 `%<alpha-numeric-characters-without-spaces>` 형태이고 text index 토크나이저가 `splitByNonAlpha` 또는 `array`이면, ClickHouse는 inverted index를 활용해 LIKE/ILIKE 쿼리를 크게 가속합니다. 이때 ClickHouse는 full-table scan 대신 inverted index 딕셔너리를 스캔하여 일치하는 패턴을 찾습니다.
 
-이 최적화가 활성화되면 LIKE/ILIKE 쿼리는 전체 테이블 스캔보다 훨씬 빨라집니다. 하지만 패턴이 딕셔너리 토큰 대부분과 일치하면 전체 테이블 스캔보다 성능이 더 나빠질 수 있습니다. 다행히 이를 방지하는 폴백 메커니즘이 있습니다.
+딕셔너리 scan의 결과를 어떻게 활용하는지는 needle이 어디에 고정되는지에 따라 달라집니다:
+
+* `%value%`는 행의 토큰 중 하나와 일치할 때에만 그 행과 일치하므로, 인덱스만으로 쿼리 결과를 확정할 수 있습니다. 즉, 원래의 프레디케이트를 제거하는 [직접 읽기(hint 없음)](#direct-read)가 됩니다.
+* `value%`와 `%value`는 needle을 값 전체에 고정하지만 딕셔너리 scan은 토큰 단위로만 고정할 수 있으므로, 스캔 결과는 일치하는 행의 superset이 되며 [힌트로 사용하는 직접 읽기](#direct-read)로 사용됩니다.
+
+needle에 검색할 완전한 토큰이 없을 때는 `startsWith(col, 'value')`와 `endsWith(col, 'value')`에도 동일한 딕셔너리 scan이 사용됩니다.
+분석기 패스 [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ko/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix)(기본적으로 enabled)가 `col LIKE 'value%'`를 `startsWith(col, 'value')`로, `col LIKE '%value'`를 `endsWith(col, 'value')`로 재작성하므로, 대부분의 `value%` 및 `%value` 패턴은 실제로 이 경로를 거칩니다.
+여러 토큰에 걸쳐 있는 needle은 needle의 완전한 토큰을 그대로 사용하므로 딕셔너리 scan이 필요하지 않습니다.
+
+이 최적화를 활성화하면 LIKE/ILIKE 쿼리가 full-table scan보다 훨씬 빨라집니다. 다만 패턴이 딕셔너리 토큰 대부분과 일치하는 경우에는 오히려 full-table scan보다 성능이 떨어질 수 있습니다. 다행히 이를 방지하는 폴백 메커니즘이 마련되어 있습니다.
+
+`value%` 또는 `%value` 패턴의 속도 향상은 그래뉼 스키핑에서 비롯되므로, 일치하는 행이 어떻게 분포되어 있는지에 따라 효과가 달라집니다. 모든 그래뉼에서 행이 일치하는 needle은 아무것도 프루닝하지 못하며, 결국 어차피 수행해야 할 full scan 비용에 딕셔너리 scan 비용까지 추가로 부담하게 됩니다. 이러한 workload에서는 [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ko/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)을 비활성화하십시오.
 
 이 최적화는 다음 설정으로 제어됩니다:
 
@@ -1473,11 +1430,9 @@ LIKE/ILIKE 쿼리 패턴이 `%<alpha-numeric-characters-without-spaces>%`이고 
 * [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ko/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ko/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-이 최적화는 `like` 및 `ilike` 함수만 지원합니다.
+이 최적화는 `like`, `ilike`, `startsWith`, `endsWith` 함수만 지원합니다.
 
-<div id="count-queries-perf">
-  ### 단순 count 쿼리
-</div>
+### 단순 count 쿼리 {#count-queries-perf}
 
 텍스트 검색 프레디케이트와 일치하는 행의 수만 계산하는 쿼리
 
@@ -1509,9 +1464,7 @@ Aggregating
 
 이 최적화는 [query&#95;plan&#95;optimize&#95;count&#95;from&#95;text&#95;index](/ko/reference/settings/session-settings/query-plan#query_plan_optimize_count_from_text_index)로 제어되며, 기본적으로 활성화되어 있습니다. 이 기능은 [직접 읽기](#direct-read)를 기반으로 하므로 [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ko/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index), [use&#95;skip&#95;indexes](/ko/reference/settings/session-settings/use-skip-indexes#use_skip_indexes), [optimize&#95;trivial&#95;count&#95;query](/ko/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query)도 활성화되어 있어야 합니다. 이들 설정도 모두 기본적으로 활성화되어 있습니다.
 
-<div id="caching">
-  ### 캐싱
-</div>
+### 캐싱 {#caching}
 
 메모리에서 텍스트 인덱스의 일부를 버퍼링하기 위한 서버 전역 캐시가 여러 가지 있습니다(섹션 [구현 세부 사항](#implementation) 참조).
 현재는 I/O를 줄이기 위해 텍스트 인덱스의 역직렬화된 헤더, 토큰, 포스팅 리스트에 대한 캐시가 제공됩니다.
@@ -1522,9 +1475,7 @@ Aggregating
 
 캐시를 구성하려면 다음 server settings를 참조하십시오.
 
-<div id="caching-tokens">
-  #### 토큰 캐시 설정
-</div>
+#### 토큰 캐시 설정 {#caching-tokens}
 
 | 설정                                                                                                                                                     | 설명                                     |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
@@ -1533,9 +1484,7 @@ Aggregating
 | [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/ko/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_max_entries) | 캐시에 저장할 수 있는 역직렬화된 토큰의 최대 개수입니다.       |
 | [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/ko/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size_ratio)   | 전체 캐시 크기 대비 텍스트 인덱스 토큰 캐시의 보호 큐 크기입니다. |
 
-<div id="caching-header">
-  #### 헤더 캐시 설정
-</div>
+#### 헤더 캐시 설정 {#caching-header}
 
 | Setting                                                                                                                                                | Description                             |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
@@ -1544,9 +1493,7 @@ Aggregating
 | [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/ko/reference/settings/server-settings/settings/text-index#text_index_header_cache_max_entries) | 캐시에 저장할 수 있는 역직렬화된 헤더의 최대 개수입니다.        |
 | [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/ko/reference/settings/server-settings/settings/text-index#text_index_header_cache_size_ratio)   | 텍스트 인덱스 헤더 캐시의 전체 크기 대비 보호 큐 크기의 비율입니다. |
 
-<div id="caching-posting-lists">
-  #### 포스팅 리스트 캐시 설정
-</div>
+#### 포스팅 리스트 캐시 설정 {#caching-posting-lists}
 
 | 설정                                                                                                                                                         | 설명                                               |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
@@ -1555,9 +1502,7 @@ Aggregating
 | [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/ko/reference/settings/server-settings/settings/text-index#text_index_postings_cache_max_entries) | 캐시에 저장할 수 있는 역직렬화된 포스팅의 최대 개수입니다.                |
 | [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/ko/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size_ratio)   | 텍스트 인덱스 포스팅 리스트 캐시에서 전체 캐시 크기 대비 보호 큐의 크기 비율입니다. |
 
-<div id="limitations">
-  ## 제한 사항
-</div>
+## 제한 사항 {#limitations}
 
 현재 텍스트 인덱스에는 다음과 같은 제한 사항이 있습니다.
 
@@ -1565,17 +1510,13 @@ Aggregating
   인덱스 머티리얼라이즈는 직접(`ALTER TABLE <table> MATERIALIZE INDEX <index>`) 수행할 수도 있고, 파트 병합 중에 간접적으로 발생할 수도 있습니다.
 * 4,294,967,296개(= 2^32 = 약 42억)보다 많은 행이 있는 파트에서는 텍스트 인덱스를 구체화할 수 없습니다. 구체화된 텍스트 인덱스가 없으면 쿼리는 해당 파트 내에서 느린 브루트포스 검색으로 폴백됩니다. 최악의 경우를 가정해 보겠습니다. 파트에 String 유형의 단일 컬럼만 포함되어 있고, MergeTree 설정 `max_bytes_to_merge_at_max_space_in_pool`(기본값: 150 GB)이 변경되지 않았다고 가정합니다. 이 경우 해당 컬럼의 행당 평균 문자 수가 29.5자 미만이면 이런 상황이 발생합니다. 실제로는 테이블에 다른 컬럼도 포함되므로 임계값은 이보다 몇 배 더 작아집니다(다른 컬럼의 개수, 유형, 크기에 따라 달라집니다).
 
-<div id="upgrade-notes">
-  ## 업그레이드 참고 사항
-</div>
+## 업그레이드 참고 사항 {#upgrade-notes}
 
 텍스트 인덱스의 디스크 저장 포맷 버전은 테이블 수준 설정인 [`text_index_serialization_version`](/ko/reference/settings/merge-tree-settings/text-index)(기본값: `v2_with_positions`)으로 제어됩니다.
 이 설정은 엄격한 제약 조건이 아니라 우선순위입니다. 구성된 버전으로 인덱스를 표현할 수 없으면 이를 표현할 수 있는 더 최신 버전이 자동으로 선택되므로, 이 설정으로 인해 텍스트 인덱스 쓰기가 실패하지는 않습니다.
 롤링 업그레이드 중에는 이미 업그레이드된 서버에서 [`compatibility`](/ko/reference/settings/session-settings/compatibility#compatibility) 설정을 사용해 포맷을 고정하십시오. 해당 포맷이 도입된 버전보다 이전 버전으로 설정하면 `text_index_serialization_version`이 자동으로 이전 값으로 되돌아가고, 최신 서버는 이전 서버에서도 계속 읽을 수 있는 포맷으로 기록합니다.
 
-<div id="text-index-vs-bloom-filter-indexes">
-  ## 텍스트 인덱스와 블룸 필터 기반 인덱스 비교
-</div>
+## 텍스트 인덱스와 블룸 필터 기반 인덱스 비교 {#text-index-vs-bloom-filter-indexes}
 
 String 프레디케이트는 텍스트 인덱스와 블룸 필터 기반 인덱스(인덱스 유형 `bloom_filter`, `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`)를 사용해 더 빠르게 처리할 수 있지만, 두 방식은 설계와 의도된 사용 사례 측면에서 근본적으로 다릅니다.
 
@@ -1606,9 +1547,7 @@ String 프레디케이트는 텍스트 인덱스와 블룸 필터 기반 인덱�
 * `hasAllTokens`, `LIKE`, `match` 및 유사한 텍스트 검색 함수를 효율적으로 지원합니다.
 * 대규모 텍스트 코퍼스에서 훨씬 뛰어난 확장성을 제공합니다.
 
-<div id="implementation">
-  ## 구현 세부 사항
-</div>
+## 구현 세부 사항 {#implementation}
 
 각 텍스트 인덱스는 두 개의 (추상적인) 데이터 구조로 구성됩니다:
 
@@ -1654,9 +1593,7 @@ String 프레디케이트는 텍스트 인덱스와 블룸 필터 기반 인덱�
 
 테이블 함수 [mergeTreeTextIndex](/ko/reference/functions/table-functions/mergeTreeTextIndex)를 사용해 텍스트 인덱스를 검사할 수 있습니다.
 
-<div id="hacker-news-dataset">
-  ## 예시: Hacker News 데이터셋
-</div>
+## 예시: Hacker News 데이터셋 {#hacker-news-dataset}
 
 텍스트가 많은 대규모 데이터셋에서 텍스트 인덱스의 성능 향상을 살펴보겠습니다.
 인기 있는 Hacker News 웹사이트의 댓글 2,870만 행을 사용합니다.
@@ -1723,9 +1660,7 @@ ALTER TABLE hackernews MATERIALIZE INDEX comment_idx SETTINGS mutations_sync = 2
 이제 `hasToken`, `hasAnyTokens`, `hasAllTokens` 함수를 사용해 쿼리를 실행해 보겠습니다.
 다음 예시에서는 일반적인 인덱스 스캔과 직접 읽기 최적화 사이의 성능 차이가 얼마나 큰지 보여줍니다.
 
-<div id="using-hasToken">
-  ### 1. `hasToken` 사용하기
-</div>
+### 1. `hasToken` 사용하기 {#using-hasToken}
 
 `hasToken`은 텍스트에 특정 단일 토큰이 포함되어 있는지 확인합니다.
 대소문자를 구분하는 토큰인 &#39;ClickHouse&#39;를 검색하겠습니다.
@@ -1765,9 +1700,7 @@ SETTINGS query_plan_direct_read_from_text_index = 1;
 
 직접 읽기 쿼리는 인덱스만 읽기 때문에 45배 이상 더 빠르며(0.362초 대 0.008초), 처리하는 데이터 양도 훨씬 적습니다(9.51 GB 대 3.15 MB).
 
-<div id="using-hasAnyTokens">
-  ### 2. `hasAnyTokens` 사용하기
-</div>
+### 2. `hasAnyTokens` 사용하기 {#using-hasAnyTokens}
 
 `hasAnyTokens`는 텍스트에 지정된 토큰이 하나 이상 포함되어 있는지 확인합니다.
 &#39;love&#39; 또는 &#39;ClickHouse&#39;가 포함된 댓글을 검색해 보겠습니다.
@@ -1805,9 +1738,7 @@ SETTINGS query_plan_direct_read_from_text_index = 1;
 이 일반적인 &quot;OR&quot; 검색에서는 속도 향상이 훨씬 더 크게 나타납니다.
 전체 컬럼 스캔을 피하면 쿼리 속도가 거의 89배 빨라집니다(1.329초 대비 0.015초).
 
-<div id="using-hasAllTokens">
-  ### 3. `hasAllTokens` 사용
-</div>
+### 3. `hasAllTokens` 사용 {#using-hasAllTokens}
 
 `hasAllTokens`는 텍스트에 지정된 모든 토큰이 포함되어 있는지 확인합니다.
 &#39;love&#39;와 &#39;ClickHouse&#39;가 모두 포함된 댓글을 검색하겠습니다.
@@ -1847,9 +1778,7 @@ SETTINGS query_plan_direct_read_from_text_index = 1;
 
 이 &quot;AND&quot; 검색에서는 직접 읽기 최적화가 일반적인 스킵 인덱스 스캔보다 26배 이상 빠릅니다(0.184초 대비 0.007초).
 
-<div id="compound-search">
-  ### 4. 복합 검색: OR, AND, NOT, ...
-</div>
+### 4. 복합 검색: OR, AND, NOT, ... {#compound-search}
 
 직접 읽기 최적화는 복합 불리언 표현식에도 적용됩니다.
 여기서는 &#39;ClickHouse&#39; OR &#39;clickhouse&#39;를 대소문자를 구분하지 않고 검색합니다.
@@ -1887,9 +1816,7 @@ SETTINGS query_plan_direct_read_from_text_index = 1;
 인덱스 결과를 조합하면 직접 읽기 쿼리는 34배 더 빨라지고(0.450초 대비 0.013초), 9.58 GB의 컬럼 데이터를 읽지 않아도 됩니다.
 이 경우에는 `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` 구문이 더 적합하고 효율적입니다.
 
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
 * 블로그: [ClickHouse 전문 검색 일반 제공 발표](https://clickhouse.com/blog/full-text-search-ga-release)
 * 블로그: [객체 스토리지를 위한 고성능 전문 검색 구축](https://clickhouse.com/blog/clickhouse-full-text-search-object-storage)

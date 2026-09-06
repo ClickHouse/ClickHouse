@@ -31,7 +31,7 @@ onde:
 * path — URL do bucket com o caminho para o arquivo. Isso oferece suporte aos seguintes curingas no modo somente leitura: `*`, `?`, `{abc,def}` e `{N..M}`, em que `N`, `M` são números e `'abc'`, `'def'` são strings. Para mais informações, consulte a documentação sobre [uso de curingas no caminho](/pt-BR/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * format — O [formato](/pt-BR/reference/formats/index#formats-overview) do arquivo.
 * structure — Estrutura da tabela. Formato `'column1_name column1_type, column2_name column2_type, ...'`.
-* compression — O parâmetro é opcional. Valores compatíveis: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Por padrão, a compressão será detectada automaticamente pela extensão do arquivo.
+* compression — O parâmetro é opcional. Valores compatíveis: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. Por padrão, a compressão será detectada automaticamente pela extensão do arquivo. Para `snappy`, o formato wire é selecionado pela configuração [snappy&#95;mode](/pt-BR/reference/settings/session-settings/other#snappy_mode) (`basic` por padrão).
 
 O uso de curingas na expressão do caminho permite referenciar vários arquivos e abre espaço para paralelismo.
 
@@ -359,7 +359,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `path` — URL do bucket com o caminho para o arquivo. Oferece suporte aos seguintes curingas no modo somente leitura: `*`, `?`, `{abc,def}` e `{N..M}`, em que N e M são números, e &#39;abc&#39; e &#39;def&#39; são strings. Para mais informações, consulte [aqui](/pt-BR/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * `format` — O [formato](/pt-BR/reference/formats/index#formats-overview) do arquivo.
 * `aws_access_key_id`, `aws_secret_access_key` - Credenciais de longo prazo do usuário da conta AWS. Você pode usá-las para autenticar suas solicitações. O parâmetro é opcional. Se as credenciais não forem especificadas, serão usados os valores do arquivo de configuração. Para mais informações, consulte [Gerenciamento de credenciais](#managing-credentials).
-* `compression` — Tipo de compressão. Valores compatíveis: none, gzip/gz, brotli/br, xz/LZMA, zstd/zst. O parâmetro é opcional. Por padrão, a compressão será detectada automaticamente pela extensão do arquivo.
+* `compression` — Tipo de compressão. Valores compatíveis: none, gzip/gz, deflate, brotli/br, xz/LZMA, zstd/zst, lz4, bz2, snappy. O parâmetro é opcional. Por padrão, a compressão será detectada automaticamente pela extensão do arquivo. Para `snappy`, o formato wire é selecionado pela configuração [snappy&#95;mode](/pt-BR/reference/settings/session-settings/other#snappy_mode) (`basic` por padrão).
 
 <div id="reading-data">
   ### Leitura de dados

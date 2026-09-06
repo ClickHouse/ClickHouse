@@ -12,7 +12,7 @@ doc_type: 'reference'
 import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-기본적으로 ClickHouse는 자가 관리형 버전에서 `lz4` 압축을 사용하고, ClickHouse Cloud에서는 `zstd`를 사용합니다.
+기본적으로 ClickHouse는 자가 관리형 버전에서 `ZSTD(3)` 압축을 사용하고, ClickHouse Cloud에서는 `zstd`를 사용합니다. `MergeTree` 계열에서는 기본값이 크기에 따라 결정됩니다. 100 MB 미만에서는 더 빠른 `LZ4`가 사용되고 그 이상에서는 `ZSTD(3)`가 사용되므로, 새로 삽입된 데이터는 `LZ4`로 시작하고 백그라운드 머지로 생성된 더 큰 파트는 `ZSTD(3)`로 전환됩니다. 이 임계값은 결과 파트의 크기가 아니라, 데이터가 기록되기 전 코덱을 선택해야 하는 시점에 알려진 파트 크기(새로 삽입된 파트는 `0`, 머지나 뮤테이션은 소스 파트의 크기)에 적용됩니다.
 
 `MergeTree` 엔진 패밀리에서는 서버 구성의 [compression](/ko/reference/settings/server-settings/settings/other#compression) 섹션에서 기본 압축 메서드를 변경할 수 있습니다.
 
@@ -50,45 +50,34 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 다음 테이블 엔진에서 압축을 지원합니다.
 
 * [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 계열. 컬럼 압축 코덱을 지원하며 [compression](/ko/reference/settings/server-settings/settings/other#compression) 설정에서 기본 압축 메서드를 선택할 수 있습니다.
-* [Log](/ko/reference/engines/table-engines/log-family/index) 계열. 기본적으로 `lz4` 압축 메서드를 사용하며 컬럼 압축 코덱을 지원합니다.
+* [Log](/ko/reference/engines/table-engines/log-family/index) 계열 — `Log` 및 `TinyLog` 엔진은 기본 `ZSTD(3)` 압축 메서드를 사용하며 컬럼 압축 코덱을 지원합니다.
+* [StripeLog](/ko/reference/engines/table-engines/log-family/index)는 모든 컬럼을 기본 `ZSTD(3)` 메서드로 압축된 하나의 공유 데이터 스트림에 기록하므로, 컬럼별 압축 코덱이 적용되지 않습니다.
 * [Set](/ko/reference/engines/table-engines/special/set). 기본 압축만 지원합니다.
 * [Join](/ko/reference/engines/table-engines/special/join). 기본 압축만 지원합니다.
 
 ClickHouse는 범용 코덱과 특수 코덱을 지원합니다.
 
-<div id="general-purpose-codecs">
-  ## 범용 코덱
-</div>
+## 범용 코덱 {#general-purpose-codecs}
 
-<div id="none">
-  ### NONE
-</div>
+### NONE {#none}
 
 `NONE` — 압축 없음.
 
-<div id="lz4">
-  ### LZ4
-</div>
+### LZ4 {#lz4}
 
-`LZ4` — 기본적으로 사용되는 무손실 [데이터 압축 알고리즘](https://github.com/lz4/lz4)입니다. LZ4의 고속 압축을 적용합니다.
+`LZ4` — 무손실 [데이터 압축 알고리즘](https://github.com/lz4/lz4)입니다. LZ4의 고속 압축을 적용합니다.
 
-<div id="lz4hc">
-  ### LZ4HC
-</div>
+### LZ4HC {#lz4hc}
 
 `LZ4HC[(level)]` — 수준을 구성할 수 있는 LZ4 HC(고압축) 알고리즘입니다. 기본 수준은 9입니다. `level <= 0`으로 설정하면 기본 수준이 적용됩니다. 설정 가능한 수준: [1, 12]. 권장 수준 범위: [4, 9].
 
-<div id="zstd">
-  ### ZSTD
-</div>
+### ZSTD {#zstd}
 
-`ZSTD[(level)]` — `level`을 구성할 수 있는 [ZSTD 압축 알고리즘](https://en.wikipedia.org/wiki/Zstandard)입니다. 설정 가능한 수준: [1, 22]. 기본 수준: 1.
+`ZSTD[(level)]` — `level`을 구성할 수 있는 [ZSTD 압축 알고리즘](https://en.wikipedia.org/wiki/Zstandard)입니다. 설정 가능한 수준: [1, 22]. 기본 수준: 1. `ZSTD(3)`은 코덱을 명시적으로 지정하지 않은 컬럼에 기본으로 적용되는 코덱입니다(`MergeTree` 파트에서는 쓰기 시점에 추정된 파트 크기가 100 MB에 도달하면 적용되며, 그 미만에서는 `LZ4`가 사용됩니다).
 
 높은 압축 수준은 한 번 압축한 뒤 반복적으로 압축을 해제하는 비대칭 시나리오에서 유용합니다. 수준이 높을수록 압축률은 향상되지만 CPU 사용량도 증가합니다.
 
-<div id="zxc">
-  ### ZXC
-</div>
+### ZXC {#zxc}
 
 <ExperimentalBadge />
 
@@ -100,53 +89,37 @@ ClickHouse는 범용 코덱과 특수 코덱을 지원합니다.
   이 코덱은 실험적 기능이며, 사용하려면 `SET enable_zxc_codec = 1`을 설정해야 합니다.
 </Note>
 
-<div id="zstd_qat">
-  ### 더 이상 사용되지 않음: ZSTD_QAT
-</div>
+### 더 이상 사용되지 않음: ZSTD_QAT {#zstd_qat}
 
 <CloudNotSupportedBadge />
 
-<div id="deflate_qpl">
-  ### 더 이상 사용되지 않음: DEFLATE_QPL
-</div>
+### 더 이상 사용되지 않음: DEFLATE_QPL {#deflate_qpl}
 
 <CloudNotSupportedBadge />
 
-<div id="specialized-codecs">
-  ## 특수 코덱
-</div>
+## 특수 코덱 {#specialized-codecs}
 
 이러한 코덱은 데이터의 특정 특성을 활용해 압축 효율을 높이도록 설계되었습니다. 일부 코덱은 데이터를 직접 압축하지 않고, 범용 코덱을 사용하는 두 번째 압축 단계에서 더 높은 압축률을 얻을 수 있도록 데이터를 전처리합니다.
 
-<div id="delta">
-  ### Delta
-</div>
+### Delta {#delta}
 
 `Delta(delta_bytes)` — 첫 번째 값은 그대로 두고 원시 값을 인접한 두 값의 차이로 대체하는 압축 방식입니다. `delta_bytes`는 원시 값의 최대 크기이며, 기본값은 `sizeof(type)`입니다. `delta_bytes`를 인수로 지정하는 방식은 더 이상 사용되지 않으며 향후 릴리스에서 지원이 제거될 예정입니다. Delta는 데이터 전처리 코덱이므로 단독으로 사용할 수 없습니다.
 
-<div id="doubledelta">
-  ### DoubleDelta
-</div>
+### DoubleDelta {#doubledelta}
 
 `DoubleDelta(bytes_size)` — 델타의 델타를 계산하여 압축된 바이너리 형식으로 기록합니다. `bytes_size`는 [Delta](#delta) 코덱의 `delta_bytes`와 유사한 의미를 갖습니다. `bytes_size`를 인수로 지정하는 방식은 더 이상 권장되지 않으며 향후 릴리스에서 지원이 제거될 예정입니다. 시계열 데이터처럼 스트라이드가 일정한 단조 시퀀스에서 최적의 압축률을 얻을 수 있습니다. 모든 숫자 타입에 사용할 수 있습니다. Gorilla TSDB에서 사용되는 알고리즘을 구현하고, 이를 확장하여 64비트 타입을 지원합니다. 32비트 델타에는 추가로 1비트를 사용합니다. 즉, 4비트 프리픽스 대신 5비트 프리픽스를 사용합니다. 자세한 내용은 [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf)의 「Compressing Time Stamps」를 참조하십시오. DoubleDelta는 데이터 전처리 코덱이므로 단독으로 사용할 수 없습니다.
 
-<div id="gcd">
-  ### GCD
-</div>
+### GCD {#gcd}
 
 `GCD()` - - 컬럼 값의 최대공약수(GCD)를 계산한 후 각 값을 GCD로 나눕니다. 정수, Decimal 및 날짜/시간 컬럼에 사용할 수 있습니다. 이 코덱은 값이 GCD의 배수 단위로 증가하거나 감소하는 컬럼에 적합합니다. 예: 24, 28, 16, 24, 8, 24(GCD = 4). GCD는 데이터 전처리 코덱이므로 단독으로 사용할 수 없습니다.
 
-<div id="gorilla">
-  ### Gorilla
-</div>
+### Gorilla {#gorilla}
 
 `Gorilla(bytes_size)` — 현재 부동 소수점 값과 이전 부동 소수점 값의 XOR을 계산하여 압축된 바이너리 형식으로 기록합니다. 연속된 값 간의 차이가 작을수록, 즉 시리즈 값의 변화가 느릴수록 압축률이 높아집니다. Gorilla TSDB에서 사용하는 알고리즘을 구현하며, 64비트 타입을 지원하도록 확장했습니다. `bytes_size`에 지정할 수 있는 값은 1, 2, 4, 8이며, `sizeof(type)`가 1, 2, 4 또는 8인 경우 기본값은 `sizeof(type)`입니다. 그 밖의 경우 기본값은 1입니다. 자세한 내용은 [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078)의 4.1절을 참조하십시오.
 
-<div id="alp">
-  ### ALP
-</div>
+### ALP {#alp}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 `ALP(variant)` — 부동 소수점 데이터용 적응형 무손실 압축입니다. `Float32` 및 `Float64`를 지원합니다. 자세한 내용은 [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334)을 참조하십시오.
 
@@ -157,18 +130,14 @@ ClickHouse는 범용 코덱과 특수 코덱을 지원합니다.
 * `ALP(RD)` — Real Doubles variant입니다. 각 값의 비트 패턴을 재해석하여 상위 부분(부호 + 지수 + 상위 가수 비트)과 하위 부분으로 나눕니다. 상위 부분은 딕셔너리 인코딩(최대 8개 항목)하고, 하위 부분은 비트 패킹합니다. 많은 값이 동일한 상위 비트를 공유할 때 가장 적합합니다.
 
 <Note>
-  이 코덱은 실험적 기능이며, 사용하려면 `SET enable_alp_codec = 1`을 설정해야 합니다.
+  이 코덱은 베타 기능이며, 사용하려면 `SET enable_alp_codec = 1`을 설정해야 합니다.
 </Note>
 
-<div id="fpc">
-  ### FPC
-</div>
+### FPC {#fpc}
 
 `FPC(level, float_size)` - 두 예측기 중 더 정확한 예측기를 사용하여 시퀀스의 다음 부동 소수점 값을 반복적으로 예측한 후, 실제 값과 예측 값에 XOR 연산을 수행하고 결과에 선행 0 압축을 적용합니다. Gorilla와 마찬가지로 천천히 변하는 부동 소수점 값 시리즈를 저장할 때 효율적입니다. 64비트 값(double)에서는 FPC가 Gorilla보다 빠르지만, 32비트 값에서는 성능이 상황에 따라 달라질 수 있습니다. `level`에는 1~28 값을 지정할 수 있으며 기본값은 12입니다. `float_size`에는 4 또는 8을 지정할 수 있으며, 유형이 Float이면 기본값은 `sizeof(type)`입니다. 그 외의 모든 경우에는 4입니다. 알고리즘에 대한 자세한 설명은 [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf)를 참조하십시오.
 
-<div id="sz3">
-  ### SZ3
-</div>
+### SZ3 {#sz3}
 
 <ExperimentalBadge />
 
@@ -178,9 +147,7 @@ ClickHouse는 범용 코덱과 특수 코덱을 지원합니다.
   이 코덱은 실험적 기능이며, 사용하려면 `SET enable_sz3_codec = 1`을 설정해야 합니다.
 </Note>
 
-<div id="t64">
-  ### T64
-</div>
+### T64 {#t64}
 
 `T64` — 정수 데이터 타입(`Enum`, `Date`, `DateTime` 포함)의 값에서 사용되지 않는 상위 비트를 잘라내는 압축 방식입니다. 알고리즘의 각 단계에서 코덱은 64개 값으로 구성된 블록을 64x64 비트 매트릭스에 배치하고 전치한 다음, 값에서 사용되지 않는 비트를 잘라내고 나머지를 시퀀스로 반환합니다. 사용되지 않는 비트는 압축이 적용되는 전체 데이터 파트에서 최댓값과 최솟값 사이에 차이가 없는 비트입니다.
 
@@ -195,9 +162,7 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
-<div id="quantized">
-  ### 양자화
-</div>
+### 양자화 {#quantized}
 
 <ExperimentalBadge />
 
@@ -226,23 +191,17 @@ CREATE TABLE vectors
 ENGINE = MergeTree ORDER BY id;
 ```
 
-<div id="encryption-codecs">
-  ## 암호화 코덱
-</div>
+## 암호화 코덱 {#encryption-codecs}
 
 이 코덱은 데이터를 실제로 압축하지 않고 디스크에 저장된 데이터를 암호화합니다. [encryption](/ko/reference/settings/server-settings/settings/other#encryption) 설정에서 암호화 키를 지정한 경우에만 사용할 수 있습니다. 암호화된 데이터는 일반적으로 의미 있게 압축할 수 없으므로, 암호화는 코덱 파이프라인의 마지막 단계에서만 사용하는 것이 적절합니다.
 
 암호화 코덱:
 
-<div id="aes_128_gcm_siv">
-  ### AES_128_GCM_SIV
-</div>
+### AES_128_GCM_SIV {#aes_128_gcm_siv}
 
 `CODEC('AES-128-GCM-SIV')` — [RFC 8452](https://tools.ietf.org/html/rfc8452)의 GCM-SIV 모드를 사용하여 AES-128로 데이터를 암호화합니다.
 
-<div id="aes-256-gcm-siv">
-  ### AES-256-GCM-SIV
-</div>
+### AES-256-GCM-SIV {#aes-256-gcm-siv}
 
 `CODEC('AES-256-GCM-SIV')` — GCM-SIV 모드의 AES-256으로 데이터를 암호화합니다.
 
@@ -280,15 +239,17 @@ CREATE TABLE mytable
 ENGINE = MergeTree ORDER BY x;
 ```
 
-<div id="adaptive-codec-selection">
-  ## 적응형 코덱 선택
-</div>
+## 적응형 코덱 선택 {#adaptive-codec-selection}
 
 <ExperimentalBadge />
 
-위의 특수 코덱은 적절한 데이터를 크게 줄일 수 있지만, 이를 선택하려면 전문 지식이 필요합니다. 또한 시간이 지남에 따라 데이터가 변하는 컬럼에는 하나의 선택지가 항상 적합하지는 않습니다. MergeTree 설정 [`allow_experimental_adaptive_codec_selection`](/ko/reference/settings/merge-tree-settings)을 활성화하면 ClickHouse가 대신 선택합니다. 기본 코덱(`CODEC(Default)` 또는 `CODEC`을 전혀 지정하지 않은 경우)을 사용하는 컬럼에서는 각 블록을 테이블의 기본 코덱, `NONE`, 컬럼 타입에 적합한 특수 코덱 중 가장 작은 크기로 압축되는 코덱으로 기록합니다.
+위의 특수 코덱은 적절한 데이터를 크게 줄일 수 있지만, 이를 선택하려면 전문 지식이 필요합니다. 또한 시간이 지남에 따라 데이터가 변하는 컬럼에는 하나의 선택지가 항상 적합하지는 않습니다. MergeTree 설정 [`enable_adaptive_codec_selection`](/ko/reference/settings/merge-tree-settings)을 활성화하면 ClickHouse가 대신 선택합니다. 기본 코덱(`CODEC(Default)` 또는 `CODEC`을 전혀 지정하지 않은 경우)을 사용하는 컬럼에서는 각 블록을 테이블의 기본 코덱, `NONE`, 컬럼 타입에 적합한 특수 코덱 중 가장 작은 크기로 압축되는 코덱으로 기록합니다.
 
-블록은 기본 코덱으로 압축했을 때보다 절대 커지지 않으며, 압축할 수 없는 데이터는 원본 그대로 저장됩니다(압축하면 읽기 속도가 더 느린 약간 더 큰 파일이 생성됩니다). 이 작업은 어차피 데이터가 다시 압축되는 머지와 뮤테이션 과정에서 백그라운드로 수행됩니다. 삽입 속도에는 영향이 없습니다. 쿼리는 더 빨라지는 경우가 많습니다. 디스크에서 읽어오는 데이터가 줄어들고, 쿼리가 읽는 모든 블록은 먼저 압축을 해제해야 하며, 특수 코덱은 기본 `LZ4`보다 압축 해제 속도가 빠르기 때문입니다. 각 블록에는 기록할 때 사용한 코덱이 저장되므로 읽을 때 별도 설정이 필요하지 않습니다. 또한 모든 데이터를 계속 읽을 수 있으므로 언제든지 이 기능을 끌 수 있습니다.
+<Note>
+  현재 특수 코덱은 최대 64비트 정수, enum, 날짜 및 시간, `Decimal32`/`Decimal64`, `IPv4`, `Float32`/`Float64`에 대해 선택됩니다. 그 외 컬럼에서는 기본 코덱과 `NONE` 중에서 선택합니다.
+</Note>
+
+블록은 기본 코덱으로 압축했을 때보다 절대 커지지 않으며, 압축할 수 없는 데이터는 원시 형식으로 저장됩니다(압축하면 읽기 속도가 더 느린 약간 더 큰 파일이 생성됩니다). 이 작업은 어차피 데이터가 다시 압축되는 머지와 뮤테이션 과정에서 백그라운드로 수행됩니다. 삽입 속도에는 영향이 없습니다. 쿼리는 더 빨라지는 경우가 많습니다. 디스크에서 읽어오는 데이터가 줄어들고, 쿼리가 읽는 모든 블록은 먼저 압축을 해제해야 하며, 특수 코덱은 기본 `LZ4`보다 압축 해제 속도가 빠르기 때문입니다. 각 블록에는 기록할 때 사용한 코덱이 저장되므로 읽을 때 별도 설정이 필요하지 않습니다. 또한 모든 데이터를 계속 읽을 수 있으므로 언제든지 이 기능을 끌 수 있습니다.
 
 ```sql
 CREATE TABLE adaptive
@@ -298,7 +259,7 @@ CREATE TABLE adaptive
 )
 ENGINE = MergeTree
 ORDER BY time
-SETTINGS allow_experimental_adaptive_codec_selection = 1;
+SETTINGS enable_adaptive_codec_selection = 1;
 
 INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
 OPTIMIZE TABLE adaptive FINAL;
@@ -317,11 +278,7 @@ SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase
    └─────────┴────────────────────┘
 ```
 
-현재 선택 기능은 정수형 컬럼, 즉 정수, enum, 날짜 및 시간, `Decimal32`/`Decimal64`, `IPv4`를 지원합니다.
-
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
 * 블로그: [스키마와 코덱을 활용한 ClickHouse 최적화](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 * 블로그: [ClickHouse에서 시계열 데이터 다루기](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

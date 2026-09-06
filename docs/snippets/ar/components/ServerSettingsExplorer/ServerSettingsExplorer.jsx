@@ -74,10 +74,11 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "asynchronous_metrics_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "asynchronous_metrics_enable_heavy_metrics", path: "/asynchronous-metrics#asynchronous_metrics_enable_heavy_metrics", default: "0" },
         { name: "asynchronous_metrics_keeper_metrics_only", path: "/asynchronous-metrics#asynchronous_metrics_keeper_metrics_only", default: "0" },
+        { name: "asynchronous_metrics_key_values_mode", path: "/asynchronous-metrics#asynchronous_metrics_key_values_mode", default: "key_values" },
         { name: "asynchronous_metrics_update_period_s", path: "/asynchronous-metrics#asynchronous_metrics_update_period_s", default: "1" }
       ],
       children: []
@@ -176,10 +177,11 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "database_catalog_*",
-      count: 5,
+      count: 6,
       settings: [
         { name: "database_catalog_drop_error_cooldown_sec", path: "/database-catalog#database_catalog_drop_error_cooldown_sec", default: "5" },
         { name: "database_catalog_drop_table_concurrency", path: "/database-catalog#database_catalog_drop_table_concurrency", default: "16" },
+        { name: "database_catalog_shutdown_table_concurrency", path: "/database-catalog#database_catalog_shutdown_table_concurrency", default: "0" },
         { name: "database_catalog_unused_dir_cleanup_period_sec", path: "/database-catalog#database_catalog_unused_dir_cleanup_period_sec", default: "86400" },
         { name: "database_catalog_unused_dir_hide_timeout_sec", path: "/database-catalog#database_catalog_unused_dir_hide_timeout_sec", default: "3600" },
         { name: "database_catalog_unused_dir_rm_timeout_sec", path: "/database-catalog#database_catalog_unused_dir_rm_timeout_sec", default: "2592000" }
@@ -1536,7 +1538,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "setting" : "settings"}`
+    const countLabel = `${entry.count} ${entry.count === 1 ? "إعداد" : "إعدادات"}`
 
     return (
       <div key={key} className="min-w-max">
@@ -1620,7 +1622,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="ابحث في الإعدادات، مثل parallel replicas أو ‎%materialized%"
+          placeholder="ابحث في الإعدادات، مثل parallel replicas أو %materialized%"
           className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
         />
       </div>

@@ -14,9 +14,7 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 
 [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) 内のファイルに対して select/insert を行うためのテーブル形式インターフェイスを提供します。このテーブル関数は [s3 関数](/ja/reference/functions/table-functions/s3) に似ています。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 <Tabs>
   <Tab title="接続文字列">
@@ -44,9 +42,7 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
   </Tab>
 </Tabs>
 
-<div id="arguments">
-  ## 引数
-</div>
+## 引数 {#arguments}
 
 | Argument                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -57,15 +53,13 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 | `account_name`                   | ストレージアカウント名。SAS なしで `storage_account_url` を使用する場合は**必須**です。`connection_string` を使用する場合は渡しては**なりません**。                                                                                                                                                                                                                                                                                                                                                  |
 | `account_key`                    | ストレージアカウントキー。SAS なしで `storage_account_url` を使用する場合は**必須**です。`connection_string` を使用する場合は渡しては**なりません**。                                                                                                                                                                                                                                                                                                                                                 |
 | `format`                         | ファイルの[フォーマット](/ja/reference/formats/index)です。                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `compression`                    | サポートされる値: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`。デフォルトでは、ファイル拡張子から圧縮方式を自動判定します (`auto` を設定した場合と同じです) 。                                                                                                                                                                                                                                                                                                                                  |
+| `compression`                    | サポートされる値: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`。デフォルトでは、ファイル拡張子から圧縮方式を自動判定します (`auto` を設定した場合と同じです) 。`snappy` の場合、ワイヤ形式は [snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定によって選択されます (デフォルトは `basic`) 。                                                                                                                                                                  |
 | `structure`                      | テーブルの構造です。形式: `'column1_name column1_type, column2_name column2_type, ...'`。                                                                                                                                                                                                                                                                                                                                                                           |
-| `partition_strategy`             | 任意。サポートされる値: `WILDCARD` または `HIVE`。`WILDCARD` では、パス内に `{_partition_id}` が必要で、これはパーティションキーに置き換えられます。`HIVE` ではワイルドカードは使用できず、パスがテーブルのルートであることを前提とし、ファイル名に Snowflake IDs、拡張子にファイルフォーマットを使用した Hive 形式のパーティションディレクトリを生成します。明示的な方式を指定しない場合、`{_partition_id}` を含むパスでは `WILDCARD` が使用されます。別の glob を含むパスではパーティション方式は使用されず、`PARTITION BY` は無視されます。glob を含まないパスでは、`file_like_engine_default_partition_strategy` が `HIVE` の場合は `HIVE` を使用し、それ以外ではパーティション方式は使用されません。 |
+| `partition_strategy`             | 任意。サポートされる値: `WILDCARD` または `HIVE`。`WILDCARD` では、パス内に `{_partition_id}` が必要で、これはパーティションキーに置き換えられます。`HIVE` ではワイルドカードは使用できず、パスがテーブルのルートであることを前提とし、ファイル名に Snowflake IDs、拡張子にファイルフォーマットを使用した Hive スタイルのパーティションディレクトリを生成します。明示的な方式を指定しない場合、`{_partition_id}` を含むパスでは `WILDCARD` が使用されます。別の glob を含むパスではパーティション方式は使用されず、`PARTITION BY` は無視されます。glob を含まないパスでは、`file_like_engine_default_partition_strategy` が `HIVE` の場合は `HIVE` を使用し、それ以外ではパーティション方式は使用されません。 |
 | `partition_columns_in_data_file` | 任意。`HIVE` パーティション方式でのみ使用されます。データファイル内にパーティションカラムが書き込まれているものとして扱うかどうかを ClickHouse に指示します。デフォルトは `false` です。                                                                                                                                                                                                                                                                                                                                             |
 | `extra_credentials`              | 認証には `client_id` と `tenant_id` を使用します。`extra_credentials` が指定されている場合、`account_name` と `account_key` よりも優先されます。                                                                                                                                                                                                                                                                                                                                         |
 
-<div id="named-collections">
-  ## 名前付きコレクション
-</div>
+## 名前付きコレクション {#named-collections}
 
 引数は [名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を使って渡すこともできます。この場合、次のキーを使用できます。
 
@@ -111,19 +105,13 @@ FROM azureBlobStorage(azure_my_data, blob_path = 'other_data/*.csv', format = 'C
 LIMIT 5;
 ```
 
-<div id="returned-value">
-  ## 戻り値
-</div>
+## 戻り値 {#returned-value}
 
 指定されたファイル内のデータの読み書きに使用する、指定された構造のテーブル。
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
-<div id="reading-with-storage-account-url">
-  ### `storage_account_url` 形式での読み込み
-</div>
+### `storage_account_url` 形式での読み込み {#reading-with-storage-account-url}
 
 ```sql
 SELECT *
@@ -138,9 +126,7 @@ FROM azureBlobStorage(
 LIMIT 5;
 ```
 
-<div id="reading-with-connection-string">
-  ### `connection_string` 形式を使った読み取り
-</div>
+### `connection_string` 形式を使った読み取り {#reading-with-connection-string}
 
 ```sql
 SELECT *
@@ -153,9 +139,7 @@ FROM azureBlobStorage(
 LIMIT 5;
 ```
 
-<div id="writing-with-partitions">
-  ### パーティションを指定して書き込む
-</div>
+### パーティションを指定して書き込む {#writing-with-partitions}
 
 `{_partition_id}` を含むパスでは、`WILDCARD` パーティション方式が暗黙的に指定されます。別の glob を含むパスではパーティション方式は使用されず、`PARTITION BY` は無視されます。glob を含まないパスでは、`file_like_engine_default_partition_strategy` が `HIVE` の場合は `HIVE` を使用し、それ以外の場合はパーティション方式を使用しません。
 
@@ -192,22 +176,16 @@ FROM azureBlobStorage(
 └─────────┴─────────┴─────────┘
 ```
 
-<div id="virtual-columns">
-  ## 仮想カラム
-</div>
+## 仮想カラム {#virtual-columns}
 
 * `_path` — ファイルのパス。型: `LowCardinality(String)`。
 * `_file` — ファイル名。型: `LowCardinality(String)`。
 * `_size` — ファイルサイズ (バイト単位) 。型: `Nullable(UInt64)`。ファイルサイズが不明な場合、値は `NULL` です。
 * `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`。時刻が不明な場合、値は `NULL` です。
 
-<div id="partitioned-write">
-  ## パーティション分割での書き込み
-</div>
+## パーティション分割での書き込み {#partitioned-write}
 
-<div id="partition-strategy">
-  ### パーティション方式
-</div>
+### パーティション方式 {#partition-strategy}
 
 `INSERT` クエリでのみサポートされています。
 
@@ -247,9 +225,7 @@ SELECT _path, * FROM azureBlobStorage(
    └─────────────────────────────────────────────────────────────────────────────────┴────┴──────┴─────────┘
 ```
 
-<div id="hive-style-partitioning">
-  ## use_hive_partitioning 設定
-</div>
+## use_hive_partitioning 設定 {#hive-style-partitioning}
 
 これは、読み取り時に Hive スタイルでパーティション化されたファイルを ClickHouse が解析するためのヒントです。書き込みには影響しません。読み取りと書き込みで対称性を持たせるには、`partition_strategy` 引数を使用します。
 
@@ -263,9 +239,7 @@ Hive スタイルのパーティション化で作成された仮想カラムを
 SELECT * FROM azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="using-shared-access-signatures-sas-sas-tokens">
-  ## Shared Access Signatures (SAS) の使用
-</div>
+## Shared Access Signatures (SAS) の使用 {#using-shared-access-signatures-sas-sas-tokens}
 
 Shared Access Signature (SAS) は、Azure Storage のコンテナーまたはファイルに対する制限付きアクセスを許可する URI です。これを使用すると、ストレージ アカウント キーを共有することなく、ストレージ アカウントのリソースに期限付きでアクセスを許可できます。詳細は[こちら](https://learn.microsoft.com/en-us/rest/api/storageservices/delegate-access-with-shared-access-signature)を参照してください。
 
@@ -297,9 +271,7 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 1 行 in set. Elapsed: 0.153 sec.
 ```
 
-<div id="related">
-  ## 関連
-</div>
+## 関連 {#related}
 
 * [AzureBlobStorage テーブルエンジン](/ja/reference/engines/table-engines/integrations/azureBlobStorage)
 

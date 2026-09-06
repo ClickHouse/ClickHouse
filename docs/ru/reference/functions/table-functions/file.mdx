@@ -15,9 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 
 Функцию `file` можно использовать в запросах `SELECT` и `INSERT` для чтения из файлов и записи в них.
 
-<div id="syntax">
-  ## Синтаксис
-</div>
+## Синтаксис {#syntax}
 
 ```sql
 file([path_to_archive ::] path [,format] [,structure] [,compression])
@@ -29,17 +27,15 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
 ```
 
-<div id="arguments">
-  ## Аргументы
-</div>
+## Аргументы {#arguments}
 
-| Параметр          | Описание                                                                                                                                                                                                                                                                                                                                                 |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`            | Относительный путь к файлу из [user&#95;files&#95;path](/ru/reference/settings/server-settings/settings/user#user_files_path) или `Array(String)` путей в запросах `SELECT`. В режиме только для чтения поддерживаются следующие [глоб-шаблоны](#globs-in-path): `*`, `?`, `{abc,def}` (где `'abc'` и `'def'` — строки) и `{N..M}` (где `N` и `M` — числа). |
-| `path_to_archive` | Относительный путь к архиву zip/tar/7z. Поддерживает те же глоб-шаблоны, что и `path`.                                                                                                                                                                                                                                                                   |
-| `format`          | [Формат](/ru/reference/formats/index) файла.                                                                                                                                                                                                                                                                                                                |
-| `structure`       | Структура таблицы. Формат: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                |
-| `compression`     | Существующий тип сжатия при использовании в запросе `SELECT` или требуемый тип сжатия при использовании в запросе `INSERT`. Поддерживаемые типы сжатия: `gz`, `br`, `xz`, `zst`, `lz4` и `bz2`.                                                                                                                                                          |
+| Параметр          | Описание                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`            | Относительный путь к файлу из [user&#95;files&#95;path](/ru/reference/settings/server-settings/settings/user#user_files_path) или `Array(String)` путей в запросах `SELECT`. В режиме только для чтения поддерживаются следующие [глоб-шаблоны](#globs-in-path): `*`, `?`, `{abc,def}` (где `'abc'` и `'def'` — строки) и `{N..M}` (где `N` и `M` — числа).                                                                 |
+| `path_to_archive` | Относительный путь к архиву zip/tar/7z. Поддерживает те же глоб-шаблоны, что и `path`.                                                                                                                                                                                                                                                                                                                                   |
+| `format`          | [Формат](/ru/reference/formats/index) файла.                                                                                                                                                                                                                                                                                                                                                                                |
+| `structure`       | Структура таблицы. Формат: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                |
+| `compression`     | Существующий тип сжатия при использовании в запросе `SELECT` или требуемый тип сжатия при использовании в запросе `INSERT`. Поддерживаемые значения: `none` (без сжатия), `gzip/gz`, `deflate`, `brotli/br`, `lzma/xz`, `zstd/zst`, `lz4`, `bz2` и `snappy`. Для `snappy` формат передачи данных выбирается настройкой [snappy&#95;mode](/ru/reference/settings/session-settings/other#snappy_mode) (`basic` по умолчанию). |
 
 <Tip>
   Если аргумент `structure` опущен, ClickHouse определяет схему по самому формату.
@@ -59,19 +55,13 @@ file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
   ```
 </Tip>
 
-<div id="returned-value">
-  ## Возвращаемое значение
-</div>
+## Возвращаемое значение {#returned-value}
 
 Таблица для чтения данных из файла или записи данных в файл.
 
-<div id="examples-for-writing-to-a-file">
-  ## Примеры записи в файл
-</div>
+## Примеры записи в файл {#examples-for-writing-to-a-file}
 
-<div id="write-to-a-tsv-file">
-  ### Запись в файл в формате TSV
-</div>
+### Запись в файл в формате TSV {#write-to-a-tsv-file}
 
 ```sql
 INSERT INTO TABLE FUNCTION
@@ -88,9 +78,7 @@ VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
 1    3    2
 ```
 
-<div id="partitioned-write-to-multiple-tsv-files">
-  ### Запись в несколько файлов в формате TSV с разбиением на партиции
-</div>
+### Запись в несколько файлов в формате TSV с разбиением на партиции {#partitioned-write-to-multiple-tsv-files}
 
 Если при вставке данных в табличную функцию типа `file` указать выражение `PARTITION BY`, для каждой партиции будет создан отдельный файл. Разбиение данных на отдельные файлы помогает повысить производительность операций чтения.
 
@@ -114,13 +102,9 @@ VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
 1    2    3
 ```
 
-<div id="examples-for-reading-from-a-file">
-  ## Примеры чтения из файла
-</div>
+## Примеры чтения из файла {#examples-for-reading-from-a-file}
 
-<div id="select-from-a-csv-file">
-  ### SELECT из CSV-файла
-</div>
+### SELECT из CSV-файла {#select-from-a-csv-file}
 
 Сначала задайте `user_files_path` в конфигурации сервера и подготовьте файл `test.csv`:
 
@@ -149,9 +133,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-<div id="inserting-data-from-a-file-into-a-table">
-  ### Вставка данных из файла в таблицу
-</div>
+### Вставка данных из файла в таблицу {#inserting-data-from-a-file-into-a-table}
 
 ```sql
 INSERT INTO FUNCTION
@@ -177,9 +159,7 @@ file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
-<div id="globs-in-path">
-  ## Глоб-шаблоны в пути
-</div>
+## Глоб-шаблоны в пути {#globs-in-path}
 
 В путях можно использовать глоб-шаблоны. Файлы должны соответствовать всему шаблону пути, а не только суффиксу или префиксу. Есть одно исключение: если путь указывает на существующий
 каталог и не содержит глоб-шаблонов, к пути неявно добавляется `*`, чтобы
@@ -193,9 +173,7 @@ SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 
 Конструкции с `{}` аналогичны конструкциям в табличной функции [remote](/ru/reference/functions/table-functions/remote) и [hdfs](/ru/reference/functions/table-functions/hdfs).
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
 **Пример**
 
@@ -254,18 +232,14 @@ SELECT count(*) FROM file('big_dir/**', 'CSV', 'name String, value UInt32');
 SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
 ```
 
-<div id="virtual-columns">
-  ## Виртуальные столбцы
-</div>
+## Виртуальные столбцы {#virtual-columns}
 
 * `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
 * `_file` — Имя файла. Тип: `LowCardinality(String)`.
 * `_size` — Размер файла в байтах. Тип: `Nullable(UInt64)`. Если размер файла неизвестен, значение — `NULL`.
 * `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
 
-<div id="hive-style-partitioning">
-  ## Настройка use_hive_partitioning
-</div>
+## Настройка use_hive_partitioning {#hive-style-partitioning}
 
 Когда параметр `use_hive_partitioning` установлен в 1, ClickHouse определяет партиционирование в стиле Hive в пути (`/name=value/`) и позволяет использовать столбцы партиции в запросе как виртуальные столбцы. Эти виртуальные столбцы будут иметь те же имена, что и в пути с партициями.
 
@@ -277,9 +251,7 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="settings">
-  ## Настройки
-</div>
+## Настройки {#settings}
 
 | Настройка                                                                                                                                               | Описание                                                                                                                                                                                                |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -289,9 +261,7 @@ SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '
 | [engine&#95;file&#95;skip&#95;empty&#95;files](/ru/reference/settings/session-settings/engine-file#engine_file_skip_empty_files)                           | позволяет пропускать пустые файлы при чтении. По умолчанию отключено.                                                                                                                                   |
 | [storage&#95;file&#95;read&#95;method](/ru/reference/settings/session-settings/storage#storage_file_read_method)                                           | метод чтения данных из файла хранилища; одно из следующих значений: read, pread, mmap (только для clickhouse-local). Значение по умолчанию: `pread` для clickhouse-server, `mmap` для clickhouse-local. |
 
-<div id="related">
-  ## См. также
-</div>
+## См. также {#related}
 
 * [Виртуальные столбцы](/ru/reference/engines/table-engines/index#table_engines-virtual_columns)
 * [Переименование файлов после обработки](/ru/reference/settings/session-settings/other#rename_files_after_processing)

@@ -147,11 +147,11 @@ jsonData:
 
 مع أن OpenTelemetry ليس مطلوبًا للسجلات، فإن استخدام مجموعة بيانات واحدة للسجلات/التتبعات يساعد في توفير سير عمل أكثر سلاسة لـ observability باستخدام [رابط البيانات](/ar/integrations/connectors/data-visualization/grafana/query-builder#data-links).
 
-مثال على شاشة إعداد السجلات:
+مثال على شاشة تهيئة السجلات:
 
 <Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="إعداد السجلات" border />
 
-مثال على YAML لإعداد السجلات:
+مثال على YAML لتهيئة السجلات:
 
 ```yaml
 jsonData:
@@ -162,11 +162,22 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showLogLinks: true # set to false to hide the "View logs" data links on trace ID fields.
+
     # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
     timeColumn:       <string> # the primary time column for the log.
     levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
     messageColumn: <string> # the log's message/content.
 ```
+
+<div id="disabling-view-logs-links">
+  #### تعطيل روابط &quot;View logs&quot;
+</div>
+
+يتضمن قسم **ربط معرّف التتبّع** في تهيئة السجلات مفتاح التبديل **إظهار روابط &quot;View logs&quot;**.
+يتحكم هذا المفتاح في ما إذا كان المكوّن الإضافي تُرفق روابط &quot;View logs&quot; [لروابط البيانات](/ar/integrations/connectors/data-visualization/grafana/query-builder#data-links) بحقول معرّف التتبّع في نتائج الاستعلام.
+يكون مفتاح التبديل مفعّلًا افتراضيًا. لا يتطلب رابط &quot;View logs&quot; لنوع الاستعلام نفسه إعدادات افتراضية للسجلات، بينما يتطلبها رابط &quot;View logs&quot; متعدد الإشارات من نتائج استعلامات التتبّع.
+أوقف مفتاح التبديل، أو اضبط `showLogLinks: false` في YAML لإخفائها.
 
 <div id="traces">
   ### التتبعات
@@ -175,14 +186,14 @@ jsonData:
 لتسريع [إنشاء الاستعلامات للتتبعات](/ar/integrations/connectors/data-visualization/grafana/query-builder#traces)، يمكنك تعيين قاعدة بيانات/جدول افتراضيين، بالإضافة إلى الأعمدة الخاصة باستعلام التتبع. سيؤدي ذلك إلى التحميل المسبق لمنشئ الاستعلام باستعلام بحث عن تتبع قابل للتشغيل، مما يسرّع التصفح في صفحة Explore لأغراض observability.
 
 إذا كنت تستخدم OpenTelemetry، فيجب تفعيل مفتاح &quot;**Use OTel**&quot;، وتعيين **جدول التتبع الافتراضي** إلى `otel_traces`.
-وسيؤدي ذلك تلقائيًا إلى استبدال الأعمدة الافتراضية لاستخدام إصدار مخطط OTel المحدد.
+وسيؤدي ذلك تلقائيًا إلى تجاوز الأعمدة الافتراضية لاستخدام إصدار مخطط OTel المحدد.
 ورغم أن OpenTelemetry ليس مطلوبًا، فإن هذه الميزة تعمل بأفضل شكل عند استخدام مخططه للتتبعات.
 
-مثال على شاشة إعداد التتبعات:
+مثال على شاشة تهيئة التتبعات:
 
 <Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="إعداد التتبعات" border />
 
-مثال على YAML لإعداد التتبعات:
+مثال على YAML لتهيئة التتبعات:
 
 ```yaml
 jsonData:
@@ -192,6 +203,8 @@ jsonData:
 
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
+
+    showTraceLinks: true # set to false to hide the "View trace" data links on trace ID fields.
 
     # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
     traceIdColumn:       <string>    # trace ID column.
@@ -205,6 +218,15 @@ jsonData:
     tagsColumn:          <string>    # tags column. This is expected to be a map type.
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
+
+<div id="disabling-view-trace-links">
+  #### تعطيل روابط &quot;View trace&quot;
+</div>
+
+يحتوي قسم **ربط معرّف التتبّع** في تهيئة التتبعات على مفتاح التبديل **إظهار روابط &quot;View trace&quot;**.
+يتحكم هذا المفتاح في إرفاق المكوّن الإضافي لروابط &quot;View trace&quot; من [روابط البيانات](/ar/integrations/connectors/data-visualization/grafana/query-builder#data-links) بحقول معرّف التتبّع في نتائج الاستعلامات.
+يكون مفتاح التبديل مفعّلًا افتراضيًا. لا يتطلب رابط &quot;View trace&quot; للاستعلام من النوع نفسه إعدادات تتبّع افتراضية، بينما يتطلبها رابط &quot;View trace&quot; متعدد الإشارات من نتائج استعلامات السجلات.
+أوقف مفتاح التبديل، أو اضبط `showTraceLinks: false` في YAML، لإخفائها.
 
 <div id="column-aliases">
   ### الأسماء المستعارة للأعمدة
@@ -323,6 +345,7 @@ datasources:
         defaultTable: otel_logs
         otelEnabled: false
         otelVersion: latest
+        showLogLinks: <boolean>
         timeColumn: <string>
         levelColumn: <string>
         messageColumn: <string>
@@ -331,6 +354,7 @@ datasources:
         defaultTable: otel_traces
         otelEnabled: false
         otelVersion: latest
+        showTraceLinks: <boolean>
         traceIdColumn: <string>
         spanIdColumn: <string>
         operationNameColumn: <string>

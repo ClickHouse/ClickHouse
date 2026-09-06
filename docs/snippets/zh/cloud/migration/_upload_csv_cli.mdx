@@ -1,0 +1,152 @@
+---
+title: 通过 命令行客户端 上传 CSV
+---
+
+本页介绍如何使用 [ClickHouse 命令行客户端](/zh/products/cloud/features/cli) (`clickhousectl`) 从命令行将本地文件 (例如 CSV) 上传到 ClickHouse Cloud 服务中的表。整个流程与控制台的文件上传向导一致：先查看文件的 schema，再创建目标表，然后通过 Query API 以 HTTP 方式插入文件——无需 `clickhouse` binary，也无需服务密码。
+
+## 前置条件 {#cli-prerequisites}
+
+安装 ClickHouse 命令行客户端：
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+你还需要 `jq`。
+
+写操作需要 [API key 身份验证](/zh/products/cloud/features/admin-features/api/openapi)；OAuth 登录仅具有只读权限：
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+使用 `clickhousectl cloud auth status` 进行验证；应当看到一条 scope 为 `read/write` 的记录。
+
+## 选择一个 服务 {#pick-a-service}
+
+本指南假设你已有一个正在运行的 服务。如果还没有，请参阅 [Cloud 快速入门](/zh/get-started/setup/cloud)，了解如何通过命令行客户端创建。按名称查找 服务 的 ID：
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json \
+  | jq -r '.[] | select(.name=="my-service") | .id')
+```
+
+## 准备文件 {#prepare-the-file}
+
+假设以下文本保存在名为 `data.csv` 的 CSV 文件中。第一行是表头，因此对应的输入格式为 `CSVWithNames`：
+
+```text title="data.csv"
+user_id,url,visited_at,duration_ms
+101,https://clickhouse.com/docs,2026-08-14 09:15:32,4210
+102,https://clickhouse.com/pricing,2026-08-14 09:16:01,1830
+101,https://clickhouse.com/cloud,2026-08-14 09:17:45,2650
+103,https://clickhouse.com/blog,2026-08-15 11:02:10,980
+102,https://clickhouse.com/docs/cloud,2026-08-15 11:05:44,3120
+```
+
+## 检查 schema {#inspect-the-schema}
+
+控制台向导会显示每个 source 字段的推断类型 (inferred type) ，而在命令行客户端中，与之等价的做法是对 [`format`](/zh/reference/functions/table-functions/format) table function 执行 `DESCRIBE`，并内联传入文件的一个样本：
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+  --query "DESCRIBE format(CSVWithNames, '$(head -n 3 data.csv)')"
+```
+
+首次调用 `query` 时，系统会自动为该 服务 预配一个 Query API endpoint 和一个 服务 范围的 API key：
+
+```text
+Provisioning Query API endpoint + key for service 'my-service'...
+   ┌─name────────┬─type───────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+1. │ user_id     │ Nullable(Int64)    │              │                    │         │                  │                │
+2. │ url         │ Nullable(String)   │              │                    │         │                  │                │
+3. │ visited_at  │ Nullable(DateTime) │              │                    │         │                  │                │
+4. │ duration_ms │ Nullable(Int64)    │              │                    │         │                  │                │
+   └─────────────┴────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+该样本会被拼接进 SQL 字符串字面量中，因此不能包含单引号或反斜杠；若文件中确实含有这些字符，请先对其进行转义，或干脆手动编写 `CREATE TABLE`。
+
+## 创建表 {#create-the-table}
+
+向导「Configure table」步骤中提供的一切功能——调整推断类型、可空性、默认值、排除字段、表引擎，以及排序、分区和主键表达式——在这里都只是一条普通的 [`CREATE TABLE`](/zh/reference/statements/create/table)。例如，收紧推断类型并指定排序键：
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "CREATE TABLE default.website_visits (
+    user_id UInt32,
+    url String,
+    visited_at DateTime,
+    duration_ms UInt32
+  ) ENGINE = MergeTree
+  ORDER BY (user_id, visited_at)"
+```
+
+该命令会输出 `OK`。若要改为加载到已有表中，请跳过此步骤。
+
+## 上传文件 {#upload-the-file}
+
+`INSERT ... FORMAT` 会从 stdin 读取数据，因此需要通过管道将查询和文件一并传入：
+
+```bash
+printf 'INSERT INTO default.website_visits FORMAT CSVWithNames\n' | cat - data.csv \
+  | clickhousectl cloud service query --id "$CH_ID"
+```
+
+该命令会输出 `OK`。
+
+<Warning>
+  **将查询与数据一并通过管道传入**
+
+  通过 `--query` 传入 `INSERT`，同时把文件重定向或通过管道送入 stdin (`--query "INSERT ..." < data.csv`) 是行不通的：`--query` 从不读取 stdin，因此这些数据无处可去。命令行客户端不会悄无声息地什么都不插入，而是直接拒绝这种组合——它会以 `1` 退出，不插入任何行，并输出：
+
+  ```text
+  Error: --query cannot be combined with SQL or data on stdin. The Query API sends one request body, so redirected data is never read. Pipe the statement and its data together on stdin instead: printf 'INSERT INTO t FORMAT CSV\n' | cat - data.csv | clickhousectl cloud service query --id <id>. Or read a whole statement from stdin with --queries-file -.
+  ```
+
+  请始终按上文所示，将查询和数据作为同一个数据流通过 stdin 发送。只有真正携带数据的 stdin 才会与 `--query` 冲突，因此在 stdin 并非 terminal 的脚本和管道中，单独使用 `--query` 仍然有效。
+</Warning>
+
+验证行已成功写入：
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --json \
+  --query "SELECT count() FROM default.website_visits"
+```
+
+```text
+{"count()":5}
+```
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+  --query "SELECT * FROM default.website_visits ORDER BY visited_at"
+```
+
+```text
+   ┌─user_id─┬─url───────────────────────────────┬──────────visited_at─┬─duration_ms─┐
+1. │     101 │ https://clickhouse.com/docs       │ 2026-08-14 09:15:32 │        4210 │
+2. │     102 │ https://clickhouse.com/pricing    │ 2026-08-14 09:16:01 │        1830 │
+3. │     101 │ https://clickhouse.com/cloud      │ 2026-08-14 09:17:45 │        2650 │
+4. │     103 │ https://clickhouse.com/blog       │ 2026-08-15 11:02:10 │         980 │
+5. │     102 │ https://clickhouse.com/docs/cloud │ 2026-08-15 11:05:44 │        3120 │
+   └─────────┴───────────────────────────────────┴─────────────────────┴─────────────┘
+```
+
+## 其他文件格式 {#other-file-formats}
+
+同样的方式适用于 ClickHouse 支持的任何[输入格式](/zh/reference/formats/index)——包括控制台上传向导所接受的全部格式，例如 `CSV`、`JSONEachRow` 和 `TabSeparatedWithNames`。若要改用其他格式，请在 `DESCRIBE format(...)` schema 推断步骤和 `INSERT ... FORMAT` 语句中同步修改格式名称，并使用与该格式相匹配的样本文件 (`TabSeparatedWithNames` 对应 TSV 样本，`JSONEachRow` 对应 JSON lines 样本，依此类推) 。例如，TSV 文件的上传步骤如下：
+
+```bash
+printf 'INSERT INTO default.website_visits FORMAT TabSeparatedWithNames\n' | cat - data.tsv \
+  | clickhousectl cloud service query --id "$CH_ID"
+```
+
+## 清理 {#cleanup}
+
+如果这只是一次试运行，可以删除该表以清除导入的数据：
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "DROP TABLE default.website_visits"
+```

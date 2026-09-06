@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并根据 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="text_index_hint_max_selectivity">
-  ## text_index_hint_max_selectivity
-</div>
+## text_index_hint_max_selectivity {#text_index_hint_max_selectivity}
 
 <SettingsInfoBlock type="Float" default_value="0.2" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 使用基于倒排文本索引构建的 hint 时，过滤器允许的最大选择性。
 
-<div id="text_index_lazy_intersection_density_threshold">
-  ## text_index_lazy_intersection_density_threshold
-</div>
+## text_index_lazy_intersection_density_threshold {#text_index_lazy_intersection_density_threshold}
 
 **别名**: `text_index_density_threshold`
 
@@ -36,9 +32,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 在惰性倒排列表应用模式 (`text_index_posting_list_apply_mode = 'lazy'`) 下，用于选择交集算法的倒排列表密度阈值。
 低于该阈值：leapfrog 交集 (更适合稀疏倒排列表) 。等于或高于该阈值：穷举 bitmap 交集 (更适合稠密倒排列表) 。
 
-<div id="text_index_like_max_postings_to_read">
-  ## text_index_like_max_postings_to_read
-</div>
+## text_index_like_max_postings_to_read {#text_index_like_max_postings_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -48,22 +42,18 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 要求启用 `use_text_index_like_evaluation_by_dictionary_scan`。
 
-<div id="text_index_like_min_pattern_length">
-  ## text_index_like_min_pattern_length
-</div>
+## text_index_like_min_pattern_length {#text_index_like_min_pattern_length}
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4"},{"label": "新增设置"}]}]} />
 
-在 LIKE/ILIKE 模式中，要使用通过字典扫描进行的文本索引 LIKE 评估，字母数字 `needle` 需要达到的最小长度。
+要使用通过字典扫描进行的文本索引 LIKE 评估，LIKE/ILIKE 模式中的字母数字 `needle`，或 `startsWith`/`endsWith` 的 `needle` 需要达到的最小长度。
 短于此阈值的模式会匹配过多字典标记，因此会被跳过，以避免代价高昂的扫描。
 
 要求启用 `use_text_index_like_evaluation_by_dictionary_scan`。
 
-<div id="text_index_posting_list_apply_mode">
-  ## text_index_posting_list_apply_mode
-</div>
+## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}
 
 <SettingsInfoBlock type="TextIndexPostingListApplyMode" default_value="lazy" />
 

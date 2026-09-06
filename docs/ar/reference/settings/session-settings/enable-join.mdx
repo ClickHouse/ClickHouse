@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="enable_join_fixed_hash_table_conversion">
-  ## enable_join_fixed_hash_table_conversion
-</div>
+## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,15 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 تمكين تحويل جدول التجزئة إلى مصفوفة مسطحة في عمليات الربط عندما يكون المفتاح عددًا صحيحًا واحدًا ضمن نطاق قيم صغير.
 
-<div id="enable_join_runtime_filters">
-  ## enable_join_runtime_filters
-</div>
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "إعداد جديد لتخزين مفاتيح الربط وحدها، دون مرجع إلى صف أيمن، في جداول التجزئة الخاصة بعمليات الربط التي لا يمكن أن تتضمّن نتيجتها أي قيمة مأخوذة من صف أيمن (`LEFT ANTI`، و`LEFT SEMI` عندما لا يُحدَّد أي عمود أيمن)."}]}]} />
+
+استخدم جداول تجزئة تخزّن مفاتيح الربط وحدها، دون مرجع إلى صف أيمن، في عمليات الربط التي لا يمكن أن تتضمّن نتيجتها أي قيمة مأخوذة من صف أيمن: `LEFT ANTI`، و`LEFT SEMI` عندما لا يُحدَّد أي عمود أيمن. يتميّز هذا النوع من الجداول بخلية أصغر حجمًا، ويسمح بإسقاط الكتل اليمنى بدلًا من تخزينها.
+
+## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <BetaBadge />
 
@@ -37,9 +41,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 صفِّ الجانب الأيسر باستخدام مجموعة مفاتيح JOIN التي جُمعت من الجانب الأيمن وقت التشغيل.
 
-<div id="enable_join_runtime_filters_index_analysis">
-  ## enable_join_runtime_filters_index_analysis
-</div>
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
 <ExperimentalBadge />
 
@@ -49,9 +51,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 شغّل تمريرةً ثانية من تحليل الفهارس (عبر use&#95;skip&#95;indexes&#95;on&#95;data&#95;read) بهدف استبعاد granules على الجانب الأيسر من الربط.
 
-<div id="enable_join_transitive_predicates">
-  ## enable_join_transitive_predicates
-</div>
+## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
 <BetaBadge />
 

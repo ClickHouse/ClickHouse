@@ -3,7 +3,7 @@ slug: /use-cases/observability/clickstack/instrument-application
 title: 'Instrumenter une application en 5 min avec Managed ClickStack'
 description: 'Instrumenter une application Node.js avec OpenTelemetry et envoyer ses logs, ses métriques et ses traces dans Managed ClickStack'
 doc_type: 'guide'
-keywords: ['clickstack', 'instrumentation', 'opentelemetry', 'managed', 'observability', 'sdk', 'nodejs']
+keywords: ['clickstack', 'instrumentation', 'opentelemetry', 'managed', 'observability', 'sdk', 'nodejs', 'agent']
 unlisted: true
 custom_edit_url: null
 hide_advert: true
@@ -11,19 +11,34 @@ hide_advert: true
 
 import InstrumentApplication from '/snippets/fr/clickstack/_instrument_application.mdx';
 
-Ce guide explique comment instrumenter une petite application Node.js avec OpenTelemetry et envoyer ses logs, métriques et traces vers Managed ClickStack. Le backend est instrumenté sans modifier le code source de l’application.
+Ce guide explique comment instrumenter une petite application Node.js avec OpenTelemetry et envoyer ses logs, métriques, traces et relectures de sessions vers Managed ClickStack. Le backend est instrumenté sans modifier le code source de l’application.
 
 Le [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) est une application Node.js qui interroge le jeu de données HackerNews hébergé dans la démo publique de ClickHouse. Chaque graphique, tableau et champ de recherche repose sur une véritable requête ClickHouse, de sorte que chaque interaction produit une trace dont le span principal correspond à l’appel HTTPS émis par le backend vers ClickHouse.
 
-Ce guide suppose que vous avez terminé [Configuration de votre OpenTelemetry Collector](/fr/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) et qu’un collecteur ClickStack est en cours d’exécution et accessible depuis la machine sur laquelle vous exécutez cette application. **Assurez-vous d’avoir noté son endpoint OTLP** ainsi que le `OTLP_AUTH_TOKEN` que vous avez défini lors de son déploiement.
+Ce guide suppose que vous avez terminé [Configuration de votre OpenTelemetry Collector](/fr/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) et qu’un collecteur ClickStack est en cours d’exécution et accessible depuis la machine sur laquelle vous exécutez cette application. **Assurez-vous d’avoir noté son endpoint OTLP** ainsi que le `OTLP_AUTH_TOKEN` que vous avez défini lors de son déploiement. Vous placerez ces valeurs dans `.env` avant l’instrumentation.
 
 <div id="prerequisites">
   ## Prérequis
 </div>
 
-* Un collecteur ClickStack accessible depuis cette machine. Si vous n&#39;en avez pas encore déployé un, suivez d&#39;abord [Configurer votre OpenTelemetry Collector](/fr/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector).
-* L&#39;endpoint OTLP de ce collecteur et le `OTLP_AUTH_TOKEN` que vous y avez configuré.
+* Un collecteur ClickStack accessible depuis cette machine. Si vous n&#39;en avez pas encore déployé un, suivez d&#39;abord [configuration de votre OpenTelemetry Collector](/fr/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector).
+* L&#39;endpoint OTLP/HTTP de ce collecteur (généralement le port `4318`) et le `OTLP_AUTH_TOKEN` que vous y avez configuré. Utilisez-les pour définir `OTEL_EXPORTER_OTLP_ENDPOINT` et `OTEL_EXPORTER_OTLP_HEADERS=authorization=<token>`.
 * Node 18+ et npm.
+
+<div id="clone-the-repository">
+  ## Cloner le dépôt
+</div>
+
+Clonez [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer), installez les dépendances et copiez le modèle de fichier d&#39;environnement :
+
+```bash
+git clone https://github.com/ClickHouse/hn-news-analyzer.git
+cd hn-news-analyzer
+npm install
+cp .env.example .env
+```
+
+Vous renseignerez le fichier `.env` dans les prochaines étapes, puis instrumenterez l’application depuis ce répertoire.
 
 <InstrumentApplication />
 

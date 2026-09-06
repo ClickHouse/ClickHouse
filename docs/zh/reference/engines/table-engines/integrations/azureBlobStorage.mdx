@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 此引擎可与 [Azure Blob 存储](https://azure.microsoft.com/en-us/products/storage/blobs) 生态系统集成。
 
-<div id="create-table">
-  ## 创建表
-</div>
+## 创建表 {#create-table}
 
 ```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
@@ -21,19 +19,17 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-<div id="engine-parameters">
-  ### 引擎参数
-</div>
+### 引擎参数 {#engine-parameters}
 
-* `endpoint` — 带有 container 和 prefix 的 AzureBlobStorage 端点 URL。也可选择包含 account&#95;name (如果所使用的身份验证方法需要) 。 (`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`) 这些参数也可以通过 storage&#95;account&#95;url、account&#95;name 和 container 分别提供。若要指定 prefix，应使用 endpoint。
-* `endpoint_contains_account_name` - 此标志用于指定 endpoint 是否包含 account&#95;name，因为只有某些身份验证方法才需要它。 (默认值：true)
+* `endpoint` — 带有 container 和 prefix 的 AzureBlobStorage 端点 URL。也可选择包含 account&#95;name (如果所使用的身份验证方法需要) 。 (`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`) 这些参数也可以通过 storage&#95;account&#95;url、account&#95;name 和 container 分别提供。若要指定 prefix，应使用端点。
+* `endpoint_contains_account_name` - 此标志用于指定端点是否包含 account&#95;name，因为只有某些身份验证方法才需要它。 (默认值：true)
 * `connection_string|storage_account_url` — connection&#95;string 包含 account name 和 key ([Create connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)) ；你也可以在此提供 storage account url，并将 account name 和 account key 作为单独参数提供 (参见参数 account&#95;name 和 account&#95;key)
 * `container_name` - Container 名称
 * `blobpath` - 文件路径。在 readonly 模式下支持以下通配符：`*`、`**`、`?`、`{abc,def}` 和 `{N..M}`，其中 `N`、`M` 表示数字，`'abc'`、`'def'` 表示字符串。
 * `account_name` - 如果使用了 storage&#95;account&#95;url，则可在此指定 account name
 * `account_key` - 如果使用了 storage&#95;account&#95;url，则可在此指定 account key
 * `format` — 文件的 [format](/zh/reference/formats/index)。
-* `compression` — 支持的值：`none`、`gzip/gz`、`brotli/br`、`xz/LZMA`、`zstd/zst`。默认会根据文件扩展名自动检测压缩方式。 (等同于设置为 `auto`) 。
+* `compression` — 支持的值：`none`、`gzip/gz`、`deflate`、`brotli/br`、`xz/LZMA`、`zstd/zst`、`lz4`、`bz2`、`snappy`。默认会根据文件扩展名自动检测压缩方式。 (等同于设置为 `auto`) 。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置决定 (默认为 `basic`) 。
 * `partition_strategy` – 可选值：`wildcard` 或 `hive`。`wildcard` 要求路径中包含 `{_partition_id}`，其会被替换为分区键。`hive` 不允许使用通配符，假定该路径为表根目录，并生成 Hive 风格的分区目录，以 Snowflake ID 作为文件名、文件格式作为扩展名。未显式指定策略时，包含 `{_partition_id}` 的路径使用 `wildcard`。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不含 glob 的路径会在 `file_like_engine_default_partition_strategy` 为 `hive` 时使用 `hive`；否则不使用分区策略。
 * `partition_columns_in_data_file` - 仅在 `hive` 分区策略下使用。用于告知 ClickHouse 是否应预期分区列会写入数据文件中。默认为 `false`。
 * `extra_credentials` - 使用 `client_id` 和 `tenant_id` 进行身份验证。如果提供了 extra&#95;credentials，则其优先级高于 `account_name` 和 `account_key`。
@@ -59,18 +55,14 @@ SELECT * FROM test_table;
 └──────┴───────┘
 ```
 
-<div id="virtual-columns">
-  ## 虚拟列
-</div>
+## 虚拟列 {#virtual-columns}
 
 * `_path` — 文件路径。类型：`LowCardinality(String)`。
 * `_file` — 文件名。类型：`LowCardinality(String)`。
 * `_size` — 文件大小 (字节) 。类型：`Nullable(UInt64)`。如果大小未知，则值为 `NULL`。
 * `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
 
-<div id="authentication">
-  ## 身份验证
-</div>
+## 身份验证 {#authentication}
 
 目前有 3 种身份验证方式：
 
@@ -78,9 +70,7 @@ SELECT * FROM test_table;
 * `SAS Token` - 可通过提供 `endpoint`、`connection_string` 或 `storage_account_url` 使用。可通过 URL 中是否包含 `?` 来识别。示例请参见 [azureBlobStorage](/zh/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens)。
 * `Workload Identity` - 可通过提供 `endpoint` 或 `storage_account_url` 使用。如果在 config 中设置了 `use_workload_identity` 参数，则会使用 [workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications) 进行身份验证。
 
-<div id="data-cache">
-  ### 数据缓存
-</div>
+### 数据缓存 {#data-cache}
 
 `Azure` 表引擎支持将数据缓存到本地磁盘。
 有关文件系统缓存的配置选项和用法，请参见此[章节](/zh/concepts/features/configuration/server-config/storing-data#using-local-cache)。
@@ -109,17 +99,13 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 
 2. 复用 ClickHouse `storage_configuration` 部分中的缓存配置 (以及相应的缓存存储) ，[此处有详细说明](/zh/concepts/features/configuration/server-config/storing-data#using-local-cache)
 
-<div id="partition-by">
-  ### PARTITION BY
-</div>
+### PARTITION BY {#partition-by}
 
 `PARTITION BY` —— 可选。在大多数情况下，你不需要分区键；即使需要，通常也不需要比按月分区更细的粒度。分区不会加快查询速度 (这与 ORDER BY 表达式不同) 。绝不要使用粒度过细的分区方式。不要按客户端标识符或名称对数据进行分区 (而应将客户端标识符或名称作为 ORDER BY 表达式中的第一列) 。
 
 按月分区时，请使用 `toYYYYMM(date_column)` 表达式，其中 `date_column` 是一个类型为 [Date](/zh/reference/data-types/date) 的日期列。这里的分区名称采用 `"YYYYMM"` 格式。
 
-<div id="partition-strategy">
-  #### 分区策略
-</div>
+#### 分区策略 {#partition-strategy}
 
 `wildcard`：将文件路径中的 `{_partition_id}` 通配符替换为实际的分区键。不支持读取。当路径包含 `{_partition_id}` 时默认选用。
 
@@ -146,9 +132,7 @@ select _path, * from azure_table;
 └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
-<div id="see-also">
-  ## 另请参见
-</div>
+## 另请参见 {#see-also}
 
 [Azure Blob 存储表函数](/zh/reference/functions/table-functions/azureBlobStorage)
 

@@ -32,9 +32,13 @@ devolver Ok durante la comprobación de estado.
 
 Permite reducir el uso de memoria en tablas con muchas columnas mediante búferes de escritura adaptativos.
 
+Se compara con el número de flujos de escritura de una parte wide, que puede superar considerablemente su número
+de columnas: un `Map` con muchos buckets o un `Array` o `Tuple` profundamente anidado escribe muchos flujos
+para una sola columna, y se asigna un búfer de escritura por flujo.
+
 Valores posibles:
 
-* 0 - ilimitado
+* 0 - deshabilitado
 * 1 - siempre habilitado
 
 <div id="min_compress_block_size">

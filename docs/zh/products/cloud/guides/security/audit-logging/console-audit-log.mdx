@@ -9,11 +9,15 @@ keywords: ['审计日志']
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-控制台中的活动会记录到审计日志中。如果您拥有 Admin 或 Developer 组织角色，则可以查看该日志，并将其与您的日志系统集成。
+控制台中的活动会记录到审计日志中。拥有访问权限的用户可以查看该日志，并将其与自己的日志系统集成。对审计日志的访问由 **View audit logs** 权限 (`control-plane:organization:view-activities`) 控制：
 
-<div id="console-audit-log-ui">
-  ## 通过用户界面访问控制台审计日志
-</div>
+* 拥有 Admin 组织角色的用户默认具有访问权限。
+* 其他控制台用户需要具备组织访问权限，以及一个包含 **View audit logs** 权限的[自定义角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles)。
+* API 密钥需要具备包含相同权限的角色。
+
+有关所有权限的说明，请参见[控制台角色和权限](/zh/products/cloud/reference/security/console-roles)。
+
+## 通过用户界面访问控制台审计日志 {#console-audit-log-ui}
 
 <Steps>
   <Step title="选择组织" id="select-org">
@@ -49,15 +53,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </div>
 
 <div id="console-audit-log-api">
-  ## 通过 API 访问控制台审计日志
+  ## 通过 API 访问控制台审计日志 {#console-audit-log-api}
 </div>
 
 您可以使用 ClickHouse Cloud API 的 `activity` 端点导出审计事件。
 更多详细信息请参阅 [API 参考文档](/zh/products/cloud/api-reference/organization/get-list-of-available-organizations)。
 
-<div id="log-integrations">
-  ## 日志集成
-</div>
+## 日志集成 {#log-integrations}
 
 您可以使用 API 与所选的日志平台集成。以下平台提供开箱即用的连接器支持：
 

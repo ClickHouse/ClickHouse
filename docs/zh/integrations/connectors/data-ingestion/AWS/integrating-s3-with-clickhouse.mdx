@@ -31,7 +31,7 @@ s3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] [format, [structur
 * path — 包含文件路径的 存储桶 URL。在只读模式下，支持以下路径通配符：`*`、`?`、`{abc,def}` 和 `{N..M}`，其中 `N`、`M` 为数字，`'abc'`、`'def'` 为字符串。更多信息，请参阅[在路径中使用通配符](/zh/reference/engines/table-engines/integrations/s3#wildcards-in-path)文档。
 * format — 文件的[格式](/zh/reference/formats/index#formats-overview)。
 * structure — 表的结构。格式为 `'column1_name column1_type, column2_name column2_type, ...'`。
-* compression — 该参数为可选。支持的值包括：`none`、`gzip/gz`、`brotli/br`、`xz/LZMA`、`zstd/zst`。默认情况下，会根据文件扩展名自动检测压缩方式。
+* compression — 该参数为可选。支持的值包括：`none`、`gzip/gz`、`deflate`、`brotli/br`、`xz/LZMA`、`zstd/zst`、`lz4`、`bz2`、`snappy`。默认情况下，会根据文件扩展名自动检测压缩方式。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置决定 (默认为 `basic`) 。
 
 在路径表达式中使用通配符可以引用多个文件，从而支持并行处理。
 
@@ -359,7 +359,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `path` — 存储桶 URL 及文件路径。在只读模式下支持以下通配符：`*`、`?`、`{abc,def}` 和 `{N..M}`，其中 N、M 表示数字，&#39;abc&#39;、&#39;def&#39; 表示字符串。更多信息，请参见[此处](/zh/reference/engines/table-engines/integrations/s3#wildcards-in-path)。
 * `format` — 文件的[格式](/zh/reference/formats/index#formats-overview)。
 * `aws_access_key_id`, `aws_secret_access_key` - AWS 账户用户的长期凭证。您可以使用它们对请求进行身份验证。该参数为可选。如果未指定凭证，则使用配置文件中的值。更多信息，请参见[管理凭证](#managing-credentials)。
-* `compression` — 压缩类型。支持的值：none、gzip/gz、brotli/br、xz/LZMA、zstd/zst。该参数为可选。默认情况下，会根据文件扩展名自动检测压缩类型。
+* `compression` — 压缩类型。支持的值：none、gzip/gz、deflate、brotli/br、xz/LZMA、zstd/zst、lz4、bz2、snappy。该参数为可选。默认情况下，会根据文件扩展名自动检测压缩类型。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置选择 (默认值为 `basic`) 。
 
 <div id="reading-data">
   ### 读取数据

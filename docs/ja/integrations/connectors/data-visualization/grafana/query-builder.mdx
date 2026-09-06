@@ -211,7 +211,9 @@ Grafana の [データリンク](https://grafana.com/docs/grafana/latest/panels-
 
 [ログ](#logs) または [トレース](#traces) のクエリで OpenTelemetry が有効になっている場合、トレース ID カラムが自動的に含まれます。
 
-トレース ID カラムを含めると、データに「**View Trace**」および「**View Logs**」のリンクが追加されます。
+トレース ID カラムが存在する場合、プラグインはデータに「**View Trace**」および「**View Logs**」のリンクを追加できます。
+
+トグルはデフォルトで有効になっています。現在のクエリタイプのリンクにはデフォルトを設定する必要はありませんが、クロスシグナルリンクは、データソースにターゲットシグナル用のデフォルトが設定されている場合にのみ表示されます。データソースの[トレース](/ja/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links)および[ログ](/ja/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links)設定セクションにある **Show &quot;View trace&quot; links** と **Show &quot;View logs&quot; links** のトグルで非表示にできます。
 
 <div id="linking-abilities">
   ### リンク機能

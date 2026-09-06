@@ -15,9 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 
 Для отзыва привилегий используйте оператор [REVOKE](/ru/reference/statements/revoke). Список выданных привилегий также можно вывести с помощью оператора [SHOW GRANTS](/ru/reference/statements/show#show-grants).
 
-<div id="granting-privilege-syntax">
-  ## Синтаксис предоставления привилегий
-</div>
+## Синтаксис предоставления привилегий {#granting-privilege-syntax}
 
 ```sql
 GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
@@ -30,9 +28,7 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 Условие `WITH GRANT OPTION` дает `user` или `role` разрешение выполнять запрос `GRANT`. Пользователи могут предоставлять привилегии того же или более узкого уровня действия, чем у них самих.
 Условие `WITH REPLACE OPTION` заменяет старые привилегии новыми для `user` или `role`; если оно не указано, привилегии добавляются.
 
-<div id="assigning-role-syntax">
-  ## Синтаксис назначения роли
-</div>
+## Синтаксис назначения роли {#assigning-role-syntax}
 
 ```sql
 GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
@@ -44,9 +40,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 Предложение `WITH ADMIN OPTION` предоставляет привилегию [ADMIN OPTION](#admin-option) пользователю `user` или роли `role`.
 Предложение `WITH REPLACE OPTION` заменяет старые роли новой ролью для `user` или `role`; если оно не указано, роли добавляются.
 
-<div id="grant-current-grants-syntax">
-  ## Синтаксис GRANT CURRENT GRANTS
-</div>
+## Синтаксис GRANT CURRENT GRANTS {#grant-current-grants-syntax}
 
 ```sql
 GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}) | ON {db.table|db.*|*.*|table|*}} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
@@ -59,9 +53,7 @@ GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*
 Использование оператора `CURRENT GRANTS` позволяет предоставить все указанные привилегии указанному пользователю или роли.
 Если не указана ни одна привилегия, указанный пользователь или роль получит все доступные привилегии для `CURRENT_USER`.
 
-<div id="usage">
-  ## Использование
-</div>
+## Использование {#usage}
 
 Чтобы использовать `GRANT`, у вашей учетной записи должна быть привилегия `GRANT OPTION`. Вы можете выдавать привилегии только в пределах привилегий своей учетной записи.
 
@@ -90,9 +82,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 
 В одном запросе можно предоставить несколько привилегий нескольким учётным записям. Запрос `GRANT SELECT, INSERT ON *.* TO john, robin` позволяет учётным записям `john` и `robin` выполнять запросы `INSERT` и `SELECT` для всех таблиц во всех базах данных на сервере.
 
-<div id="wildcard-grants">
-  ## Привилегии с подстановочными знаками
-</div>
+## Привилегии с подстановочными знаками {#wildcard-grants}
 
 При указании привилегий можно использовать звёздочку (`*`) вместо имени таблицы или базы данных. Например, запрос `GRANT SELECT ON db.* TO john` позволяет `john` выполнять запрос `SELECT` для всех таблиц в базе данных `db`.
 Также можно опустить имя базы данных. В этом случае привилегии выдаются для текущей базы данных.
@@ -143,9 +133,7 @@ GRANT SELECT ON *suffix TO john -- неверно
 GRANT SELECT(foo) ON db.table* TO john -- неверно
 ```
 
-<div id="privileges">
-  ## Привилегии
-</div>
+## Привилегии {#privileges}
 
 Привилегия — это разрешение, предоставляемое пользователю для выполнения определённых видов запросов.
 
@@ -271,6 +259,7 @@ GRANT SELECT(foo) ON db.table* TO john -- неверно
   * [`SOURCES`](#sources)
     * `AZURE`
     * `BIGQUERY`
+    * `DISK`
     * `FILE`
     * `HDFS`
     * `HIVE`
@@ -389,9 +378,7 @@ GRANT SELECT(foo) ON db.table* TO john -- неверно
 
 Некоторые запросы по своей реализации требуют набора привилегий. Например, чтобы выполнить запрос [RENAME](/ru/reference/statements/optimize), нужны следующие привилегии: `SELECT`, `CREATE TABLE`, `INSERT` и `DROP TABLE`.
 
-<div id="select">
-  ### SELECT
-</div>
+### SELECT {#select}
 
 Позволяет выполнять запросы [SELECT](/ru/reference/statements/select/index).
 
@@ -409,9 +396,7 @@ GRANT SELECT(x,y) ON db.table TO john
 
 Эта привилегия позволяет `john` выполнять любой запрос `SELECT`, который использует данные из столбцов `x` и/или `y` в `db.table`, например `SELECT x FROM db.table`. `john` не может выполнить `SELECT z FROM db.table`. Запрос `SELECT * FROM db.table` также недоступен. При обработке этого запроса ClickHouse не возвращает никаких данных, даже `x` и `y`. Единственное исключение — если таблица содержит только столбцы `x` и `y`, в этом случае ClickHouse возвращает все данные.
 
-<div id="insert">
-  ### INSERT
-</div>
+### INSERT {#insert}
 
 Позволяет выполнять запросы [INSERT](/ru/reference/statements/insert-into).
 
@@ -429,9 +414,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 Предоставленная привилегия позволяет `john` вставлять данные в столбцы `x` и/или `y` таблицы `db.table`.
 
-<div id="alter">
-  ### ALTER
-</div>
+### ALTER {#alter}
 
 Разрешает выполнять запросы [ALTER](/ru/reference/statements/alter/index) в соответствии со следующей иерархией привилегий:
 
@@ -481,15 +464,11 @@ GRANT INSERT(x,y) ON db.table TO john
 * Для операции `DETACH` требуется привилегия [DROP](#drop).
 * Чтобы остановить мутацию запросом [KILL MUTATION](/ru/reference/statements/kill#kill-mutation), необходимо иметь привилегию, позволяющую запускать эту мутацию. Например, если вы хотите остановить запрос `ALTER UPDATE`, вам нужна привилегия `ALTER UPDATE`, `ALTER TABLE` или `ALTER`.
 
-<div id="backup">
-  ### BACKUP
-</div>
+### BACKUP {#backup}
 
 Разрешает выполнение [`BACKUP`] в запросах. Подробнее о резервном копировании см. в разделе [&quot;Резервное копирование и восстановление&quot;](/ru/concepts/features/backup-restore/overview).
 
-<div id="create">
-  ### CREATE
-</div>
+### CREATE {#create}
 
 Разрешает выполнять DDL-запросы [CREATE](/ru/reference/statements/create/index) и [ATTACH](/ru/reference/statements/attach) в соответствии со следующей иерархией привилегий:
 
@@ -505,9 +484,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 * Чтобы удалить созданную таблицу, пользователю нужна привилегия [DROP](#drop).
 
-<div id="cluster">
-  ### CLUSTER
-</div>
+### CLUSTER {#cluster}
 
 Позволяет выполнять запросы с предложением `ON CLUSTER`.
 
@@ -530,9 +507,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 </access_control_improvements>
 ```
 
-<div id="drop">
-  ### DROP
-</div>
+### DROP {#drop}
 
 Позволяет выполнять запросы [DROP](/ru/reference/statements/drop) и [DETACH](/ru/reference/statements/detach) в соответствии со следующей иерархией привилегий:
 
@@ -542,25 +517,19 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   * `DROP VIEW`. Уровень: `VIEW`
   * `DROP DICTIONARY`. Уровень: `DICTIONARY`
 
-<div id="truncate">
-  ### TRUNCATE
-</div>
+### TRUNCATE {#truncate}
 
 Позволяет выполнять оператор [TRUNCATE](/ru/reference/statements/truncate).
 
 Уровень привилегии: `TABLE`.
 
-<div id="optimize">
-  ### OPTIMIZE
-</div>
+### OPTIMIZE {#optimize}
 
 Позволяет выполнять запросы [OPTIMIZE TABLE](/ru/reference/statements/optimize).
 
 Уровень привилегии: `TABLE`.
 
-<div id="show">
-  ### SHOW
-</div>
+### SHOW {#show}
 
 Позволяет выполнять запросы `SHOW`, `DESCRIBE`, `USE` и `EXISTS` в соответствии со следующей иерархией привилегий:
 
@@ -574,9 +543,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 Пользователь имеет привилегию `SHOW`, если у него есть любая другая привилегия, относящаяся к указанной таблице, словарю или базе данных.
 
-<div id="kill-query">
-  ### KILL QUERY
-</div>
+### KILL QUERY {#kill-query}
 
 Позволяет выполнять запросы [KILL](/ru/reference/statements/kill#kill-query) согласно следующей иерархии привилегий:
 
@@ -586,9 +553,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 Привилегия `KILL QUERY` позволяет одному пользователю завершать запросы других пользователей.
 
-<div id="access-management">
-  ### УПРАВЛЕНИЕ ДОСТУПОМ
-</div>
+### УПРАВЛЕНИЕ ДОСТУПОМ {#access-management}
 
 Позволяет пользователю выполнять запросы для управления пользователями, ролями и политиками строк.
 
@@ -619,9 +584,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 Привилегия `ROLE ADMIN` позволяет пользователю назначать и отзывать любые роли, включая те, которые не назначены этому пользователю с опцией admin.
 
-<div id="system">
-  ### SYSTEM
-</div>
+### SYSTEM {#system}
 
 Позволяет пользователю выполнять запросы [SYSTEM](/ru/reference/statements/system) в соответствии со следующей иерархией привилегий.
 
@@ -656,9 +619,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 Привилегия `SYSTEM RELOAD EMBEDDED DICTIONARIES` неявно предоставляется привилегией `SYSTEM RELOAD DICTIONARY ON *.*`.
 
-<div id="introspection">
-  ### INTROSPECTION
-</div>
+### INTROSPECTION {#introspection}
 
 Позволяет использовать [функции интроспекции](/ru/concepts/features/performance/troubleshoot/sampling-query-profiler).
 
@@ -668,11 +629,10 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   * `addressToSymbol`. Уровень: `GLOBAL`
   * `demangle`. Уровень: `GLOBAL`
 
-<div id="sources">
-  ### SOURCES
-</div>
+### SOURCES {#sources}
 
 Разрешает использовать внешние источники данных. Применяется к [движкам таблиц](/ru/reference/engines/table-engines/index) и [табличным функциям](/ru/reference/functions/table-functions/index).
+Также требуется для расположений резервных копий: `BACKUP`/`RESTORE` и `ENGINE = Backup` проверяют права доступа к своему расположению по этим привилегиям.
 
 * `READ`. Уровень: `GLOBAL_WITH_PARAMETER`
 * `WRITE`. Уровень: `GLOBAL_WITH_PARAMETER`
@@ -681,6 +641,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 * `AZURE`
 * `BIGQUERY`
+* `DISK`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -710,9 +671,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 * Чтобы создать таблицу с [движком таблицы MySQL](/ru/reference/engines/table-engines/integrations/mysql), требуются привилегии `CREATE TABLE (ON db.table_name)` и `MYSQL`.
 * Чтобы использовать [табличную функцию mysql](/ru/reference/functions/table-functions/mysql), требуются привилегии `CREATE TEMPORARY TABLE` и `MYSQL`.
 
-<div id="source-filter-grants">
-  ### Привилегии для фильтрации источников
-</div>
+### Привилегии для фильтрации источников {#source-filter-grants}
 
 <Note>
   Эта возможность доступна начиная с версии 25.8 и только при включённой настройке сервера
@@ -781,9 +740,7 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 * **Частичный отзыв не допускается:** Нельзя отозвать только часть ранее выданного шаблона фильтра. При необходимости нужно отозвать весь grant и выдать его заново с новыми шаблонами.
 * **grant с подстановочными знаками не допускается:** Нельзя использовать `GRANT READ ON *('regexp')` или аналогичные шаблоны, состоящие только из подстановочных знаков. Необходимо указать конкретный источник.
 
-<div id="dictget">
-  ### dictGet
-</div>
+### dictGet {#dictget}
 
 * `dictGet`. Псевдонимы: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
@@ -796,18 +753,14 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 * `GRANT dictGet ON mydb.mydictionary TO john`
 * `GRANT dictGet ON mydictionary TO john`
 
-<div id="displaysecretsinshowandselect">
-  ### displaySecretsInShowAndSelect
-</div>
+### displaySecretsInShowAndSelect {#displaysecretsinshowandselect}
 
 Позволяет пользователю просматривать секреты в запросах `SHOW` и `SELECT`, если включены и
 [`display_secrets_in_show_and_select` настройка сервера](/ru/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select),
 и
 [`format_display_secrets_in_show_and_select` настройка формата](/ru/reference/settings/formats/format#format_display_secrets_in_show_and_select).
 
-<div id="named-collection-admin">
-  ### NAMED COLLECTION ADMIN
-</div>
+### NAMED COLLECTION ADMIN {#named-collection-admin}
 
 Разрешает выполнять определённую операцию с указанной именованной коллекцией. До версии 23.7 эта привилегия называлась NAMED COLLECTION CONTROL, а в версии 23.7 была добавлена NAMED COLLECTION ADMIN, при этом NAMED COLLECTION CONTROL сохранён как псевдоним.
 
@@ -827,9 +780,7 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 
 * `GRANT CREATE NAMED COLLECTION ON abc TO john`
 
-<div id="table-engine">
-  ### ДВИЖОК ТАБЛИЦЫ
-</div>
+### ДВИЖОК ТАБЛИЦЫ {#table-engine}
 
 <CloudNotSupportedBadge />
 
@@ -852,9 +803,7 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 
 * `GRANT READ, WRITE ON AZURE TO john`
 
-<div id="all">
-  ### ALL
-</div>
+### ALL {#all}
 
 <CloudNotSupportedBadge />
 
@@ -865,15 +814,11 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   Пользователи также могут использовать `GRANT CURRENT GRANTS` от имени пользователя `default`, чтобы добиться эффекта, аналогичного `ALL`.
 </Note>
 
-<div id="none">
-  ### NONE
-</div>
+### NONE {#none}
 
 Не предоставляет никаких привилегий.
 
-<div id="admin-option">
-  ### ADMIN OPTION
-</div>
+### ADMIN OPTION {#admin-option}
 
 Привилегия `ADMIN OPTION` позволяет пользователю назначить свою роль другому пользователю.
 

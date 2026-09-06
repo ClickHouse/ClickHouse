@@ -31,7 +31,7 @@ donde:
 * path — URL del bucket con la ruta al archivo. Admite los siguientes comodines en modo de solo lectura: `*`, `?`, `{abc,def}` y `{N..M}`, donde `N` y `M` son números, y `'abc'` y `'def'` son cadenas. Para más información, consulta la documentación sobre el [uso de comodines en la ruta](/es/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * format — El [formato](/es/reference/formats/index#formats-overview) del archivo.
 * structure — Estructura de la tabla. Formato: `'column1_name column1_type, column2_name column2_type, ...'`.
-* compression — El parámetro es opcional. Valores admitidos: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. De forma predeterminada, la compresión se detecta automáticamente según la extensión del archivo.
+* compression — El parámetro es opcional. Valores admitidos: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. De forma predeterminada, la compresión se detecta automáticamente según la extensión del archivo. Para `snappy`, la codificación wire se selecciona mediante la configuración [snappy&#95;mode](/es/reference/settings/session-settings/other#snappy_mode) (`basic` de forma predeterminada).
 
 El uso de comodines en la expresión de ruta permite hacer referencia a varios archivos y posibilita el paralelismo.
 
@@ -359,7 +359,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `path` — URL del bucket con la ruta del archivo. Admite los siguientes comodines en modo de solo lectura: `*`, `?`, `{abc,def}` y `{N..M}`, donde N y M son números, y &#39;abc&#39; y &#39;def&#39; son cadenas. Para más información, consulte [aquí](/es/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * `format` — El [formato](/es/reference/formats/index#formats-overview) del archivo.
 * `aws_access_key_id`, `aws_secret_access_key` - Credenciales de larga duración para el usuario de la cuenta de AWS. Puede usarlas para autenticar sus solicitudes. El parámetro es opcional. Si no se especifican credenciales, se usan los valores del archivo de configuración. Para más información, consulte [Gestión de credenciales](#managing-credentials).
-* `compression` — Tipo de compresión. Valores admitidos: none, gzip/gz, brotli/br, xz/LZMA, zstd/zst. El parámetro es opcional. De forma predeterminada, la compresión se detecta automáticamente según la extensión del archivo.
+* `compression` — Tipo de compresión. Valores admitidos: none, gzip/gz, deflate, brotli/br, xz/LZMA, zstd/zst, lz4, bz2, snappy. El parámetro es opcional. De forma predeterminada, la compresión se detecta automáticamente según la extensión del archivo. Para `snappy`, la codificación wire se selecciona mediante la configuración [snappy&#95;mode](/es/reference/settings/session-settings/other#snappy_mode) (`basic` de forma predeterminada).
 
 <div id="reading-data">
   ### Lectura de datos

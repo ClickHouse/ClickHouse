@@ -13,17 +13,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически формируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="optimize_aggregators_of_group_by_keys">
-  ## optimize_aggregators_of_group_by_keys
-</div>
+## optimize_aggregators_of_group_by_keys {#optimize_aggregators_of_group_by_keys}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Исключает агрегаторы min/max/any/anyLast для ключей GROUP BY в разделе SELECT
 
-<div id="optimize_append_index">
-  ## optimize_append_index
-</div>
+## optimize_append_index {#optimize_append_index}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,17 +29,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 * true, false
 
-<div id="optimize_arithmetic_operations_in_aggregate_functions">
-  ## optimize_arithmetic_operations_in_aggregate_functions
-</div>
+## optimize_arithmetic_operations_in_aggregate_functions {#optimize_arithmetic_operations_in_aggregate_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Вынести арифметические операции из агрегатных функций
 
-<div id="optimize_const_name_size">
-  ## optimize_const_name_size
-</div>
+## optimize_const_name_size {#optimize_const_name_size}
 
 <SettingsInfoBlock type="Int64" default_value="256" />
 
@@ -57,9 +49,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — всегда,
 * отрицательное целое число — никогда.
 
-<div id="optimize_count_from_files">
-  ## optimize_count_from_files
-</div>
+## optimize_count_from_files {#optimize_count_from_files}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -70,9 +60,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Оптимизация отключена.
 * 1 — Оптимизация включена.
 
-<div id="optimize_dictget_tuple_element">
-  ## optimize_dictget_tuple_element
-</div>
+## optimize_dictget_tuple_element {#optimize_dictget_tuple_element}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -80,17 +68,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Заменяет `tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` на `dictGet('dict', 'b', key)`, чтобы не извлекать лишние атрибуты словаря. Поддерживает позиционный (`.1`, `.2`, ...) и именованный (`.b`) доступ, а также применяется к `dictGetOrDefault`, если аргумент значения по умолчанию — константный кортеж или `tuple(...)` из констант.
 
-<div id="optimize_distinct_in_order">
-  ## optimize_distinct_in_order
-</div>
+## optimize_distinct_in_order {#optimize_distinct_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Включает оптимизацию DISTINCT, если некоторые столбцы в DISTINCT являются префиксом сортировки. Например, префиксом ключа сортировки в MergeTree или оператора ORDER BY.
 
-<div id="optimize_distributed_group_by_sharding_key">
-  ## optimize_distributed_group_by_sharding_key
-</div>
+## optimize_distributed_group_by_sharding_key {#optimize_distributed_group_by_sharding_key}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -126,9 +110,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
   Сейчас требуется `optimize_skip_unused_shards` (это связано с тем, что в будущем данный параметр может быть включен по умолчанию, и корректно он будет работать только в том случае, если данные были вставлены через distributed таблицу, то есть распределены в соответствии с `sharding_key`).
 </Note>
 
-<div id="optimize_dry_run_check_part">
-  ## optimize_dry_run_check_part
-</div>
+## optimize_dry_run_check_part {#optimize_dry_run_check_part}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -136,9 +118,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 При включении `OPTIMIZE ... DRY RUN` проверяет получившуюся слитую часть с помощью `checkDataPart`. Если проверка не проходит, генерируется исключение.
 
-<div id="optimize_empty_string_comparisons">
-  ## optimize_empty_string_comparisons
-</div>
+## optimize_empty_string_comparisons {#optimize_empty_string_comparisons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -147,9 +127,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Преобразует выражения вида col = &#39;&#39; или &#39;&#39; = col в empty(col), а col != &#39;&#39; или &#39;&#39; != col — в notEmpty(col)
 только в случаях, когда col имеет тип String или FixedString.
 
-<div id="optimize_extract_common_expressions">
-  ## optimize_extract_common_expressions
-</div>
+## optimize_extract_common_expressions {#optimize_extract_common_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -160,9 +138,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * индексы в простых выражениях фильтрации
 * оптимизацию преобразования CROSS JOIN в INNER JOIN
 
-<div id="optimize_functions_to_subcolumns">
-  ## optimize_functions_to_subcolumns
-</div>
+## optimize_functions_to_subcolumns {#optimize_functions_to_subcolumns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -186,9 +162,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Оптимизация отключена.
 * 1 — Оптимизация включена.
 
-<div id="optimize_inverse_dictionary_lookup">
-  ## optimize_inverse_dictionary_lookup
-</div>
+## optimize_inverse_dictionary_lookup {#optimize_inverse_dictionary_lookup}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -196,17 +170,28 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Позволяет избежать повторных обратных обращений к словарю за счёт более быстрого поиска в предварительно вычисленном наборе возможных значений ключей.
 
-<div id="optimize_multiif_to_if">
-  ## optimize_multiif_to_if
-</div>
+## optimize_multiif_to_if {#optimize_multiif_to_if}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Заменяет &#39;multiIf&#39; с одним условием на &#39;if&#39;.
 
-<div id="optimize_normalize_count_variants">
-  ## optimize_normalize_count_variants
-</div>
+## optimize_mutations_with_partition_pruning {#optimize_mutations_with_partition_pruning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая настройка для автоматического отсечения партиций для мутаций на основе предложения WHERE"}]}]} />
+
+Если включено, ClickHouse автоматически определяет условия по ключу партиционирования в предложении WHERE мутаций `ALTER TABLE UPDATE`/`DELETE` и операторов легковесного `UPDATE`/`DELETE` для таблиц семейства `ReplicatedMergeTree` и обрабатывает только затронутые партиции, а не все партиции.
+
+В настоящее время автоматическое отсечение применяется только к реплицируемым таблицам. Для нереплицируемых таблиц `MergeTree` используйте явное предложение `IN PARTITION`, чтобы ограничить мутацию конкретными партициями.
+
+Возможные значения:
+
+* 0 — Отключено. Мутации и легковесные обновления обрабатывают все партиции.
+* 1 — Включено. Мутации и легковесные обновления обрабатывают только партиции, соответствующие условию WHERE.
+
+## optimize_normalize_count_variants {#optimize_normalize_count_variants}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -214,9 +199,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Переписывает агрегатные функции, семантически эквивалентные count(), в count().
 
-<div id="optimize_on_insert">
-  ## optimize_on_insert
-</div>
+## optimize_on_insert {#optimize_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -272,9 +255,7 @@ SELECT * FROM test2;
 
 Обратите внимание, что эта настройка влияет на поведение [Materialized view](/ru/reference/statements/create/view#materialized-view).
 
-<div id="optimize_prewhere_after_pushdown">
-  ## optimize_prewhere_after_pushdown
-</div>
+## optimize_prewhere_after_pushdown {#optimize_prewhere_after_pushdown}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -285,9 +266,7 @@ SELECT * FROM test2;
 `JOIN`, переписывание projection). Если `PREWHERE` уже есть, новый
 фильтр объединяется с ним через `AND`, а не остаётся отдельным шагом фильтрации.
 
-<div id="optimize_qbit_distance_function_reads">
-  ## optimize_qbit_distance_function_reads
-</div>
+## optimize_qbit_distance_function_reads {#optimize_qbit_distance_function_reads}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -295,9 +274,7 @@ SELECT * FROM test2;
 
 Заменяет функции расстояния для типа данных `QBit` на эквивалентные, которые считывают из хранилища только столбцы, необходимые для вычисления.
 
-<div id="optimize_read_in_order">
-  ## optimize_read_in_order
-</div>
+## optimize_read_in_order {#optimize_read_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -312,25 +289,32 @@ SELECT * FROM test2;
 
 * [Предложение ORDER BY](/ru/reference/statements/select/order-by#optimization-of-data-reading)
 
-<div id="optimize_respect_aliases">
-  ## optimize_respect_aliases
-</div>
+## optimize_read_in_reverse_order_final {#optimize_read_in_reverse_order_final}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая настройка, включающая оптимизацию чтения в порядке сортировки при чтении в обратном порядке ключа сортировки с модификатором `FINAL` из таблиц `ReplacingMergeTree`."}]}]} />
+
+Включает чтение данных в обратном порядке ключа сортировки в запросах `SELECT` с модификатором `FINAL` из таблиц [ReplacingMergeTree](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree). Работает, только если также включена настройка [optimize&#95;read&#95;in&#95;order](/ru/reference/settings/session-settings/optimize#optimize_read_in_order).
+
+Возможные значения:
+
+* 0 — Чтение в обратном порядке с `FINAL` отключено.
+* 1 — Чтение в обратном порядке с `FINAL` включено.
+
+## optimize_respect_aliases {#optimize_respect_aliases}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Если задано значение true, будут учитываться псевдонимы в WHERE/GROUP BY/ORDER BY, что поможет при отсечении партиций/использовании вторичных индексов/optimize&#95;aggregation&#95;in&#95;order/optimize&#95;read&#95;in&#95;order/optimize&#95;trivial&#95;count
 
-<div id="optimize_sorting_by_input_stream_properties">
-  ## optimize_sorting_by_input_stream_properties
-</div>
+## optimize_sorting_by_input_stream_properties {#optimize_sorting_by_input_stream_properties}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Оптимизирует сортировку с учетом свойств сортировки входного потока
 
-<div id="optimize_substitute_columns">
-  ## optimize_substitute_columns
-</div>
+## optimize_substitute_columns {#optimize_substitute_columns}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -340,9 +324,7 @@ SELECT * FROM test2;
 
 * true, false
 
-<div id="optimize_syntax_fuse_functions">
-  ## optimize_syntax_fuse_functions
-</div>
+## optimize_syntax_fuse_functions {#optimize_syntax_fuse_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -376,9 +358,7 @@ SELECT
 FROM default.fuse_tbl AS __table1
 ```
 
-<div id="optimize_throw_if_noop">
-  ## optimize_throw_if_noop
-</div>
+## optimize_throw_if_noop {#optimize_throw_if_noop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -391,9 +371,7 @@ FROM default.fuse_tbl AS __table1
 * 1 — Генерация исключения включена.
 * 0 — Генерация исключения отключена.
 
-<div id="optimize_time_filter_with_preimage">
-  ## optimize_time_filter_with_preimage
-</div>
+## optimize_time_filter_with_preimage {#optimize_time_filter_with_preimage}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -401,9 +379,7 @@ FROM default.fuse_tbl AS __table1
 
 Оптимизирует предикаты Date и DateTime, преобразуя функции в эквивалентные сравнения без преобразований (например, `toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31'`)
 
-<div id="optimize_truncate_order_by_after_group_by_keys">
-  ## optimize_truncate_order_by_after_group_by_keys
-</div>
+## optimize_truncate_order_by_after_group_by_keys {#optimize_truncate_order_by_after_group_by_keys}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -411,17 +387,13 @@ FROM default.fuse_tbl AS __table1
 
 Удалять элементы в конце ORDER BY, когда все ключи GROUP BY уже входят в префикс ORDER BY.
 
-<div id="optimize_uniq_to_count">
-  ## optimize_uniq_to_count
-</div>
+## optimize_uniq_to_count {#optimize_uniq_to_count}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Преобразует uniq и его варианты (кроме uniqUpTo) в count, если подзапрос содержит DISTINCT или предложение GROUP BY.
 
-<div id="optimize_using_constraints">
-  ## optimize_using_constraints
-</div>
+## optimize_using_constraints {#optimize_using_constraints}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

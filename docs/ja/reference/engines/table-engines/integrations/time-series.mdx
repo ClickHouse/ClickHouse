@@ -29,14 +29,13 @@ metric_name2[...] = ...
   `set allow_experimental_time_series_table = 1` コマンドを実行します。
 </Info>
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 CREATE TABLE name [(columns)] ENGINE=TimeSeries
 [SETTINGS var1=value1, ...]
 [SAMPLES db.samples_table_name | [SAMPLES INNER COLUMNS (...)] [SAMPLES INNER ENGINE engine(arguments)]]
+[RECENT SAMPLES db.recent_samples_table_name | [RECENT SAMPLES INNER COLUMNS (...)] [RECENT SAMPLES INNER ENGINE engine(arguments)]]
 [TAGS db.tags_table_name | [TAGS INNER COLUMNS (...)] [TAGS INNER ENGINE engine(arguments)]]
 [METRICS db.metrics_table_name | [METRICS INNER COLUMNS (...)] [METRICS INNER ENGINE engine(arguments)]]
 ```
@@ -45,9 +44,7 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
   キーワード `SAMPLES` には、後方互換性のために `DATA` というエイリアスが残されています。
 </Note>
 
-<div id="usage">
-  ## 使い方
-</div>
+## 使い方 {#usage}
 
 まずは、すべてデフォルト設定のままで始めるのが簡単です (カラムの一覧を指定しなくても `TimeSeries` テーブルを作成できます) :
 
@@ -60,9 +57,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 * [prometheus remote-write](/ja/concepts/features/interfaces/prometheus#remote-write)
 * [prometheus remote-read](/ja/concepts/features/interfaces/prometheus#remote-read)
 
-<div id="outer-columns">
-  ### 外部カラム
-</div>
+### 外部カラム {#outer-columns}
 
 TimeSeries テーブルのカラムは自動的に自動生成されます。これらは外部カラムであり、データ自体は保持せず、`SELECT`/`INSERT` のためのインターフェイスだけを提供します。実際のデータは[ターゲットテーブル](#target-tables)に格納されます。外部カラムの一覧は次のとおりです。
 
@@ -100,9 +95,7 @@ INSERT INTO my_table (metric_name, tags, time_series, metric_family, type, unit,
      'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
 ```
 
-<div id="specifying-outer-columns">
-  ### 外部カラムの指定
-</div>
+### 外部カラムの指定 {#specifying-outer-columns}
 
 外部 `time_series` カラムは、デフォルトの `Array(タプル(DateTime64(3), Float64))` 型をオーバーライドするために、`CREATE TABLE` ステートメントで明示的に指定できます。ClickHouse はその タプル から timestamp 型と scalar 型を抽出し、それらを内部の Samples テーブルに反映します：
 
@@ -119,44 +112,49 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 
 両方の形式を同じ `CREATE TABLE` ステートメント内で使用する場合、宣言する型は一致していなければなりません。
 
-<div id="target-tables">
-  ## ターゲットテーブル
-</div>
+## ターゲットテーブル {#target-tables}
 
 `TimeSeries` テーブル自体はデータを持たず、すべてのデータはそのターゲットテーブルに格納されます。
 これは [materialized view](/ja/reference/statements/create/view#materialized-view) の仕組みに似ていますが、
 materialized view ではターゲットテーブルは 1 つであるのに対し、
-`TimeSeries` テーブルには [samples](#samples-table)、[tags](#tags-table)、[metrics](#metrics-table) という 3 つのターゲットテーブルがあります。
+`TimeSeries` テーブルには [samples](#samples-table)、[tags](#tags-table)、[metrics](#metrics-table) という 3 つの必須のターゲットテーブルと、
+デフォルトで有効になっている任意の [recent samples](#recent-samples-table) ターゲットテーブルがあります
+([recent&#95;samples&#95;ttl&#95;seconds](#settings) 設定を参照してください) 。
 
 ターゲットテーブルは `CREATE TABLE` クエリで明示的に指定することもできますし、
 `TimeSeries` テーブルエンジンが内部ターゲットテーブルを自動生成することもできます。
 
-`TimeSeries` テーブルに挿入された行は変換され、ブロックに分割されたうえで、これら 3 つのターゲットテーブルに挿入されます。
+`TimeSeries` テーブルに挿入された行は変換され、ブロックに分割されたうえで、これらのターゲットテーブルに挿入されます。
 
 ターゲットテーブルは次のとおりです:
 
-<div id="samples-table">
-  ### samples テーブル
-</div>
+### samples テーブル {#samples-table}
 
 *samples* テーブルには、識別子に関連付けられた時系列が格納されます。
 
 *samples* テーブルには、次のカラムが必要です。
 
-| Name        | 必須? | デフォルト型          | 使用可能な型         | Description           |
-| ----------- | ---------- | --------------------- | ---------------------- | --------------------- |
-| `id`        | [x]        | `Tuple(UInt64, UUID)` | any                    | メトリクス名とタグの組み合わせを識別します |
-| `timestamp` | [x]        | `DateTime64(3)`       | `DateTime64(X)`        | 時点                    |
-| `value`     | [x]        | `Float64`             | `Float32` or `Float64` | `timestamp` に対応する値    |
+| Name        | 必須? | デフォルト型                                | 使用可能な型                 | Description           |
+| ----------- | --- | ------------------------------------- | ---------------------- | --------------------- |
+| `id`        | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any                    | メトリクス名とタグの組み合わせを識別します |
+| `timestamp` | [x] | `DateTime64(3)`                       | `DateTime64(X)`        | 時点                    |
+| `value`     | [x] | `Float64`                             | `Float32` or `Float64` | `timestamp` に対応する値    |
 
 エンジンが自動作成するカラムには、時系列圧縮コーデックが設定されます。
 `timestamp CODEC(DoubleDelta, ZSTD(1))` および `value CODEC(ZSTD(3))`。ほぼ単調なタイムスタンプは汎用コーデックではほとんど
 圧縮されず、samples テーブルのディスク上のサイズの大部分を占める可能性があります。
 [カラムの型の調整](#adjusting-column-types)も参照してください。
 
-<div id="tags-table">
-  ### Tags テーブル
-</div>
+### Recent samples テーブル {#recent-samples-table}
+
+*recent samples* テーブルは任意であり、デフォルトで有効になっています ([recent&#95;samples&#95;ttl&#95;seconds](#settings) 設定を参照してください。この値をゼロに設定するとテーブルは無効になります) 。このテーブルには、当該設定で定義された有効期限 (TTL) より新しいサンプルのコピーが格納され、[samples](#samples-table) テーブルと同じカラムを持つ必要があります。
+
+挿入されたサンプルはすべて、samples テーブルと recent samples テーブルの両方に書き込まれます。
+時間範囲が TTL の期間内に収まるクエリは、メインの samples テーブルではなく recent samples テーブルから読み取ります。recent samples テーブルの方がはるかに小さいためです (この動作はクエリレベルの設定 `time_series_prefer_recent_samples_table` で無効化できます) 。
+
+内部の recent samples テーブルの有効期限 (TTL) は、常に [recent&#95;samples&#95;ttl&#95;seconds](#settings) 設定から導出されます。
+
+### Tags テーブル {#tags-table}
 
 *tags* テーブルには、メトリクス名とタグの各組み合わせに対して計算された識別子が格納されます。
 
@@ -164,16 +162,14 @@ materialized view ではターゲットテーブルは 1 つであるのに対�
 
 | 名前                   | 必須? | デフォルト型                                | 使用可能な型                                                                                                                    | 説明                                                                                                                                                                                          |
 | -------------------- | --- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                 | [x] | `Tuple(UInt64, UUID)`                 | 任意 ([samples](#samples-table) テーブルの `id` の型と一致している必要があります)                                                                | `id` は、メトリクス名とタグの組み合わせを識別します。DEFAULT 式は、この識別子の計算方法を指定します                                                                                                                                    |
+| `id`                 | [x] | `Tuple(UInt64, LowCardinality(UUID))` | 任意 ([samples](#samples-table) テーブルの `id` の型と一致している必要があります)                                                                | `id` は、メトリクス名とタグの組み合わせを識別します。DEFAULT 式は、この識別子の計算方法を指定します                                                                                                                                    |
 | `metric_name`        | [x] | `LowCardinality(String)`              | `String` または `LowCardinality(String)`                                                                                     | メトリクス名                                                                                                                                                                                      |
 | `<tag_value_column>` | [ ] | `String`                              | `String` または `LowCardinality(String)` または `LowCardinality(Nullable(String))`                                              | 特定のタグの値。タグ名と対応するカラム名は、[tags&#95;to&#95;columns](#settings) 設定で指定します                                                                                                                         |
 | `tags`               | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` または `Map(LowCardinality(String), String)` または `Map(LowCardinality(String), LowCardinality(String))` | メトリクス名を含むタグ `__name__` および [tags&#95;to&#95;columns](#settings) 設定で列挙された名前のタグを含む、すべてのタグのマップ。古いバージョンの ClickHouse で作成されたテーブルでは、このカラムには専用カラムを持たずメトリクス名も含まないタグのみが格納されていました。読み取り時にはどちらの場合も処理されます |
 | `min_time`           | [ ] | `Nullable(DateTime64(3))`             | `DateTime64(X)` または `Nullable(DateTime64(X))`                                                                             | その `id` を持つ時系列の最小タイムスタンプ。このカラムは [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) が `true` の場合に作成されます                                                                            |
 | `max_time`           | [ ] | `Nullable(DateTime64(3))`             | `DateTime64(X)` または `Nullable(DateTime64(X))`                                                                             | その `id` を持つ時系列の最大タイムスタンプ。このカラムは [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) が `true` の場合に作成されます                                                                            |
 
-<div id="metrics-table">
-  ### Metrics テーブル
-</div>
+### Metrics テーブル {#metrics-table}
 
 *metrics* テーブルには、収集されるメトリクスに関する情報、各メトリクスのタイプ、および説明が格納されます。
 
@@ -186,18 +182,16 @@ materialized view ではターゲットテーブルは 1 つであるのに対�
 | `unit`               | [x] | `LowCardinality(String)` | `String` または `LowCardinality(String)` | メトリクスで使用される単位                                                                                                                                        |
 | `help`               | [x] | `String`                 | `String` または `LowCardinality(String)` | メトリクスの説明                                                                                                                                             |
 
-<div id="creation">
-  ## 作成
-</div>
+## 作成 {#creation}
 
-`TimeSeries` テーブルエンジンを使ってテーブルを作成する方法はいくつかあります。
-最も簡単なステートメントは
+`TimeSeries` テーブルエンジンを使用してテーブルを作成する方法は複数あります。
+最もシンプルなステートメントは次のとおりです
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
-実際には、次のテーブルが作成されます (`SHOW CREATE TABLE my_table` を実行すると確認できます) :
+は、実際には次のようなテーブルを作成します (`SHOW CREATE TABLE my_table` を実行すると確認できます) :
 
 ```sql
 CREATE TABLE my_table
@@ -211,16 +205,24 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
+SETTINGS recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
+(
+    `id` Tuple(UInt64, LowCardinality(UUID)),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
+)
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
+RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(ZSTD(3))
 )
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
+RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
+    `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
@@ -237,17 +239,17 @@ METRICS INNER COLUMNS
 METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
-したがって、カラムは自動的に生成されており、`INNER COLUMNS` 句には
-それぞれ独自のカラム定義を持つ 3 つの内部ターゲットテーブルも格納されています。
+このように、カラムは自動的に生成され、さらに `INNER COLUMNS` 句に格納された独自のカラム定義を持つ 4 つの内部ターゲットテーブルも作成されます。`recent_samples_ttl_seconds` SETTING はデフォルト値のまま `SETTINGS` 句に書き込まれています。この SETTING は recent samples テーブルの有効期限 (TTL) を定義するもので、その実効値はテーブル作成時に固定されます。
 
-内部ターゲットテーブルの名前は `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
-`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-のようになっており、各ターゲットテーブルはそれぞれ独自のカラムセットを持っています:
+内部ターゲットテーブルには `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
+`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
+`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+のような名前が付けられ、各ターゲットテーブルはそれぞれ独自のカラムの集合を持ちます:
 
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` Tuple(UInt64, UUID),
+    `id` Tuple(UInt64, LowCardinality(UUID)),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(ZSTD(3))
 )
@@ -257,9 +259,23 @@ SETTINGS index_granularity = 32768
 ```
 
 ```sql
+CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+(
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
+ORDER BY (id, timestamp)
+TTL toDateTime(timestamp) + toIntervalSecond(345600)
+SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
+```
+
+```sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
+    `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
@@ -284,9 +300,7 @@ ORDER BY metric_family_name
 SETTINGS index_granularity = 8192
 ```
 
-<div id="create-as">
-  ## 既存のテーブルを AS で指定してテーブルを作成する
-</div>
+## 既存のテーブルを AS で指定してテーブルを作成する {#create-as}
 
 ステートメント `CREATE TABLE new_table AS existing_table` は、`existing_table` から以下をコピーします。
 
@@ -297,9 +311,7 @@ SETTINGS index_granularity = 8192
 `existing_table` に外部ターゲットがある場合、このステートメントは使用できません。
 外側のカラム一覧はコピーされず、再生成されます。
 
-<div id="adjusting-column-types">
-  ## カラム型の調整
-</div>
+## カラム型の調整 {#adjusting-column-types}
 
 `INNER COLUMNS` 句を使用すると、内部ターゲットテーブルのカラム型を調整できます。たとえば、timestamp をマイクロ秒単位で保存し、値を `Float32` として保存するには、次のようにします。
 
@@ -315,9 +327,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
 ```
 
-<div id="id-column">
-  ## `id` カラム
-</div>
+## `id` カラム {#id-column}
 
 `id` カラムには識別子が格納されており、各識別子はメトリクス名とタグの組み合わせごとに計算されます。
 識別子の生成に使用される型と `DEFAULT` 式は、`TAGS INNER COLUMNS` 句でカスタマイズできます。
@@ -329,7 +339,9 @@ TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(tags))
 
 `id` カラムには任意の比較可能な非 Nullable 型を使用できます。`samples` および `tags` の内部テーブルで宣言される `id` の型は一致している必要があります。
 
-`id` カラムに `DEFAULT` 式が指定されておらず、かつ `id_generator` 設定がされていない場合、`id` の型が `UUID`、`UInt64`、`UInt128`、`FixedString(16)`、またはこれらの型のうち2つからなるタプルである場合に限り、ClickHouse は `id` の型に基づいて `DEFAULT` 式を自動的に選択します。このようなタプルでは、自動的に選択される式により、最初の部分でメトリクス名のハッシュが、2番目の部分ですべてのタグのハッシュが計算されます。
+`id` カラムに `DEFAULT` 式が指定されておらず、かつ `id_generator` 設定がされていない場合、`id` の型が `UUID`、`UInt64`、`UInt128`、`FixedString(16)`、これらと同じ型を `LowCardinality` でラップしたもの、またはこれらの型のうち2つからなるタプルである場合に限り、ClickHouse は `id` の型に基づいて `DEFAULT` 式を自動的に選択します。このようなタプルでは、自動的に選択される式により、最初の部分でメトリクス名のハッシュが、2番目の部分ですべてのタグのハッシュが計算されます。
+
+`Tuple(UInt64, LowCardinality(UUID))` のような `LowCardinality` の識別子型を使用すると、識別子は辞書エンコードされた状態で保持されます。Samples テーブルは、すべての行に完全な識別子を繰り返して格納する代わりに、ブロックごとの小さな辞書と辞書索引を格納するため、クエリが読み取るデータ量が削減されます。
 
 `id_generator` 設定では、`INNER COLUMNS` 句を使用せずに同じカスタマイズを行えます。
 
@@ -340,9 +352,7 @@ SETTINGS id_generator = 'sipHash64(tags)'
 
 この設定が有効な場合、カラムの`DEFAULT`に別の式が含まれていても、`id`の生成にはこの設定が使用されます。
 
-<div id="tags-column">
-  ## `tags` カラム
-</div>
+## `tags` カラム {#tags-column}
 
 `tags` カラムには、メトリクス名を持つ `__name__` タグを含む、時系列のすべてのタグが格納されます。
 
@@ -361,22 +371,33 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
   古いバージョンの ClickHouse で作成されたテーブルでは、`tags` カラムには専用のカラムを持たないタグのみが含まれ、メトリクス名は含まれません。また、`all_tags` カラムは一時的なカラムであり、INSERT 時にメトリクス名以外のすべてのタグで補完されます。
 </Note>
 
-<div id="inner-table-engines">
-  ## 内部ターゲットテーブルのテーブルエンジン
-</div>
+## 内部ターゲットテーブルのテーブルエンジン {#inner-table-engines}
 
 デフォルトでは、内部ターゲットテーブルでは次のテーブルエンジンを使用します。
 
 * [samples](#samples-table) テーブルでは [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) を使用します。
+* [recent samples](#recent-samples-table) テーブルでは、5 時間単位の bucket でパーティション化された ([recent&#95;samples&#95;partition&#95;by](#settings) 設定を参照) [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) を使用します。この際、[recent&#95;samples&#95;ttl&#95;seconds](#settings) 設定から導出された `TTL` が設定され、
+  `ttl_only_drop_parts` が有効になっているため、期限切れのパーツはまとめて drop されます。
 * [tags](#tags-table) テーブルでは [AggregatingMergeTree](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree) を使用します。これは、同じデータがこのテーブルに複数回挿入されることが多いため、重複を除去する手段が必要であり、
   また、カラム `min_time` と `max_time` の集約にも必要だからです。
 * [metrics](#metrics-table) テーブルでは [ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) を使用します。これは、同じデータがこのテーブルに複数回挿入されることが多いため、重複を除去する手段が必要だからです。
+
+生成される内部テーブルのエンジンファミリーは、クエリレベルの設定 `default_table_engine` に従います。
+`default_table_engine = ReplicatedMergeTree` または `SharedMergeTree` の場合、内部テーブルは対応する
+`Replicated` または `Shared` エンジンを使用します。`default_table_engine = None` (またはその他の値) の場合、内部テーブルのエンジンは
+明示的に指定する必要があります。
+
+すべての内部テーブルは同じレプリケーション種別でなければなりません。いずれか 1 つが replicated (または shared) である場合、他の内部
+テーブルも replicated (または shared) でなければなりません。そうでなければ、レプリカ間でその内容が乖離してしまいます。たとえば、
+`SAMPLES INNER ENGINE = ReplicatedMergeTree(...)` を宣言する場合、他の内部エンジンも replicated である必要があります。
+明示的に宣言するか、`default_table_engine = ReplicatedMergeTree` で生成するかのいずれかです。
 
 指定すれば、内部ターゲットテーブルで他のテーブルエンジンを使用することもできます。
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES ENGINE=ReplicatedMergeTree
+RECENT SAMPLES ENGINE=ReplicatedMergeTree
 TAGS ENGINE=ReplicatedAggregatingMergeTree
 METRICS ENGINE=ReplicatedReplacingMergeTree
 ```
@@ -388,9 +409,7 @@ METRICS ENGINE=ReplicatedReplacingMergeTree
 エンジンがインラインで指定される場合、`TimeSeries` は自動的にそのテーブルに `allow_dimensions_outside_sorting_key = 1` を設定します。
 手動で作成した[外部](#external-target-tables)の集約 tags テーブルでは、自分でこれを設定する必要があります。
 
-<div id="external-target-tables">
-  ## 外部ターゲットテーブル
-</div>
+## 外部ターゲットテーブル {#external-target-tables}
 
 `TimeSeries` テーブルでは、手動で作成したテーブルを使用することもできます:
 
@@ -411,13 +430,15 @@ CREATE TABLE metrics_for_my_table ...
 CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_for_my_table METRICS metrics_for_my_table;
 ```
 
+外部テーブルは [recent samples](#recent-samples-table) のターゲット (`RECENT SAMPLES my_recent_samples_table` 句) としても使用できます。
+そのようなテーブルは外部 samples テーブルと同じカラムを持つ必要があり、少なくとも
+[recent&#95;samples&#95;ttl&#95;seconds](#settings) 秒分のデータを保持しなければなりません。これはユーザーの責任です。
+
 外部テーブルのカラム型 (`id`、`timestamp`、`value`、および [`tags_to_columns`](#settings) に記載された `<tag_value_column>`) は、`TimeSeries` テーブルが通常内部的に生成する型と一致している必要があります (型の制約については、[Samples テーブル](#samples-table)、[Tags テーブル](#tags-table)、および [Metrics テーブル](#metrics-table) を参照してください) 。型の不一致は `CREATE` 時に報告されます。
 
 外部タグターゲットの id 生成式は、INSERT 時に次の順序で決定されます。まず [`id_generator`](#settings) 設定 (設定されている場合) 、次に外部テーブルの `id` カラムで宣言された `DEFAULT` (存在する場合) 、最後に `id` 型から導出される正規のジェネレーターです。したがって、この設定は外部テーブルで宣言された `DEFAULT` より優先されます。詳細は [The `id` column](#id-column) を参照してください。
 
-<div id="altering-settings">
-  ## 設定の変更
-</div>
+## 設定の変更 {#altering-settings}
 
 `CREATE` 実行後に変更できる設定は、次の 2 つです。
 
@@ -427,15 +448,14 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
-データがすでに Tags テーブルに存在する状態で `id_generator` を変更すると、同じ metric+tag の組み合わせに対して異なる ID が生成される可能性がある点に注意してください。古い行は従来の ID のまま残り、新しい行では新しいジェネレーターが使用されます。
+データがすでに Tags テーブルに存在する状態で `id_generator` を変更すると、同じメトリクス+タグ の組み合わせに対して異なる ID が生成される可能性がある点に注意してください。古い行は従来の ID のまま残り、新しい行では新しいジェネレーターが使用されます。
 
 他の設定は、`CREATE` 時に内部テーブルのスキーマに組み込まれるため、`ALTER ... MODIFY SETTING` では変更できません。
 
-<div id="settings">
-  ## 設定
-</div>
+## 設定 {#settings}
 
 以下は、`TimeSeries` テーブルの定義時に指定できる設定の一覧です。
 
@@ -448,14 +468,12 @@ ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 | `aggregate_min_time_and_max_time`    | Bool       | true                                                          | 内部ターゲット `tags` テーブルの作成時に、このフラグを有効にすると、`min_time` カラムの型として単なる `Nullable(DateTime64(3))` ではなく `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` を使用し、`max_time` カラムにも同様に適用されます                                                                                                                                                                                                                                                                                                 |
 | `filter_by_min_time_and_max_time`    | Bool       | true                                                          | true に設定すると、テーブルは時系列のフィルタリングに `min_time` カラムと `max_time` カラムを使用します                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `samples_index_granularity`          | UInt64     | 32768                                                         | 内部 [samples](#samples-table) テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。外部 samples テーブルおよび MergeTree 以外のエンジンでは無視されます                                                                                                                                                                                                                                                                                                                      |
+| `recent_samples_ttl_seconds`         | UInt64     | 345600                                                        | 挿入されたすべてのサンプルも書き込まれる追加の `recent samples` ターゲットテーブルの保持期間。内部 recent samples テーブルには、この設定に基づいて常に `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` が設定されます (エンジン宣言の有効期限 (TTL) はオーバーライドされます) 。外部 recent samples テーブルでは、少なくともこの秒数分のデータを保持する必要があります。時間範囲が有効期限 (TTL) ウィンドウ内に収まるクエリでは、メインの samples テーブルより recent samples テーブルが優先されます (クエリレベルの設定 `time_series_prefer_recent_samples_table` を参照) 。デフォルトは 4 日です。有効な値は CREATE 時にテーブル定義に固定されます。recent samples テーブルを無効にするには 0 に設定します |
+| `recent_samples_partition_by`        | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | 内部 `recent samples` テーブルのパーティションキー。例: `toStartOfHour(timestamp)`。明示的に設定した場合、エンジン宣言のパーティションキーをオーバーライドします。いずれも設定されていない場合は、5 時間ごとに 1 パーティションが使用されます。外部 recent samples テーブルでは無視されます。`recent_samples_ttl_seconds` は 0 以外である必要があります                                                                                                                                                                                                                                                      |
+| `recent_samples_index_granularity`   | UInt64     | 8192                                                          | 内部 `recent samples` テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。外部 recent samples テーブルおよび MergeTree 以外のエンジンでは無視されます。`recent_samples_ttl_seconds` は 0 以外である必要があります                                                                                                                                                                                                                                                                          |
 | `tags_index_granularity`             | UInt64     | 8192                                                          | 内部 [tags](#tags-table) テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。外部 tags テーブルおよび MergeTree 以外のエンジンでは無視されます                                                                                                                                                                                                                                                                                                                               |
-| `recent_samples_ttl_seconds`         | UInt64     | 345600                                                        | 挿入されたすべてのサンプルも書き込まれる追加の `recent samples` ターゲットテーブルの保持期間。内部 recent samples テーブルには、この設定に基づいて常に `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` が設定されます (エンジン宣言の TTL はオーバーライドされます) 。外部 recent samples テーブルでは、少なくともこの秒数分のデータを保持する必要があります。時間範囲が TTL ウィンドウ内に収まるクエリでは、メインの samples テーブルより recent samples テーブルが優先されます (クエリレベルの設定 `time_series_prefer_recent_samples_table` を参照) 。デフォルトは 4 日です。有効な値は CREATE 時にテーブル定義に固定されます。recent samples テーブルを無効にするには 0 に設定します |
-| `recent_samples_partition_by`        | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | 内部 `recent samples` テーブルのパーティションキー。例: `toStartOfHour(timestamp)`。`recent_samples_ttl_seconds` は 0 以外である必要があります                                                                                                                                                                                                                                                                                                                                                                     |
-| `recent_samples_index_granularity`   | UInt64     | 8192                                                          | 内部 `recent samples` テーブルの `index_granularity` を設定します。`recent_samples_ttl_seconds` は 0 以外である必要があります                                                                                                                                                                                                                                                                                                                                                                                 |
 
-<div id="functions">
-  # 関数
-</div>
+# 関数 {#functions}
 
 以下は、`TimeSeries` テーブルを引数としてサポートする関数の一覧です。
 

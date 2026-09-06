@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متوفّرة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="function_base58_max_input_size">
-  ## function_base58_max_input_size
-</div>
+## function_base58_max_input_size {#function_base58_max_input_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحد الأقصى للحجم، بالبايت، لقيمة إدخال واحدة للدوال `base58Encode` و`base58Decode` و`tryBase58Decode`. يكون تحويل `base58` العام تربيعيًا بالنسبة إلى طول الإدخال، لذا قد تستغرق قيمة كبيرة واحدة وقتًا طويلًا جدًا في المعالجة. صُمم `base58` للبيانات القصيرة (المفاتيح، وقيم التجزئة، والعناوين)، لذا فإن القيمة الافتراضية البالغة 10 كيلوبايت تُعد هامش أمان مريحًا. تُطلق `base58Encode` و`base58Decode` الخطأ `TOO_LARGE_STRING_SIZE` عند الإدخالات الأكبر، بينما تُرجع `tryBase58Decode` سلسلة فارغة. تؤدي القيمة `0` إلى تعطيل هذا القيد (وكان هذا هو السلوك قبل تقديم هذا الإعداد). ولا تتأثر الدالتان الخطيّتان `base32` و`base64`.
 
-<div id="function_date_trunc_return_type_behavior">
-  ## function_date_trunc_return_type_behavior
-</div>
+## function_date_trunc_return_type_behavior {#function_date_trunc_return_type_behavior}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -38,15 +34,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 - عندما تكون الوسيطة الثانية `DateTime64/Date32`، يكون نوع الإرجاع `DateTime64/Date32` بغض النظر عن وحدة الوقت في الوسيطة الأولى.
 * 1 - بالنسبة إلى `Date32`، تكون النتيجة دائمًا `Date`. وبالنسبة إلى `DateTime64`، تكون النتيجة `DateTime` لوحدات الوقت `second` وما أعلى.
 
-<div id="function_implementation">
-  ## function_implementation
-</div>
-
-اختر تنفيذ الدالة لهدف أو Variant محدد (تجريبي). إذا تُرك فارغًا، فسيتم تفعيلها كلها.
-
-<div id="function_locate_has_mysql_compatible_argument_order">
-  ## function_locate_has_mysql_compatible_argument_order
-</div>
+## function_locate_has_mysql_compatible_argument_order {#function_locate_has_mysql_compatible_argument_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -59,9 +47,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 — تقبل الدالة `locate` الوسيطات `(haystack, needle[, start_pos])`.
 * 1 — تقبل الدالة `locate` الوسيطات `(needle, haystack, [, start_pos])` (سلوك متوافق مع MySQL)
 
-<div id="function_range_max_elements_in_block">
-  ## function_range_max_elements_in_block
-</div>
+## function_range_max_elements_in_block {#function_range_max_elements_in_block}
 
 <SettingsInfoBlock type="UInt64" default_value="500000000" />
 
@@ -76,9 +62,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * [`max_block_size`](/ar/reference/settings/session-settings/max#max_block_size)
 * [`min_insert_block_size_rows`](/ar/reference/settings/session-settings/min-insert#min_insert_block_size_rows)
 
-<div id="function_sleep_max_microseconds_per_block">
-  ## function_sleep_max_microseconds_per_block
-</div>
+## function_sleep_max_microseconds_per_block {#function_sleep_max_microseconds_per_block}
 
 <SettingsInfoBlock type="UInt64" default_value="3000000" />
 
@@ -86,9 +70,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحد الأقصى لعدد الميكروثواني المسموح للدالة `sleep` بالتوقف خلالها لكل كتلة. وإذا استدعاها مستخدم بقيمة أكبر، فسيتم طرح استثناء. هذا حد أمان.
 
-<div id="function_visible_width_behavior">
-  ## function_visible_width_behavior
-</div>
+## function_visible_width_behavior {#function_visible_width_behavior}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 

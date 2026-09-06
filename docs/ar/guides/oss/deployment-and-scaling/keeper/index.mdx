@@ -15,7 +15,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 يوفّر ClickHouse Keeper نظام التنسيق اللازم للنسخ المتماثل للبيانات وتنفيذ استعلامات [replication](/ar/reference/engines/table-engines/mergetree-family/replication) و[distributed DDL](/ar/reference/statements/distributed-ddl). كما أن ClickHouse Keeper متوافق مع ZooKeeper.
 
 <div id="implementation-details">
-  ### تفاصيل التنفيذ
+  ### تفاصيل التنفيذ {#implementation-details}
 </div>
 
 يُعد ZooKeeper من أوائل أنظمة التنسيق المفتوحة المصدر المعروفة على نطاق واسع. وهو مكتوب بلغة Java ويعتمد نموذج بيانات بسيطًا وقويًا. ولا توفّر خوارزمية التنسيق في ZooKeeper، وهي ZooKeeper Atomic Broadcast ‏(ZAB)، ضمانات الاتساق الخطي لعمليات القراءة، لأن كل عقدة في ZooKeeper تخدم عمليات القراءة محليًا. وعلى عكس ZooKeeper، فإن ClickHouse Keeper مكتوب بلغة C++ ويستخدم [تنفيذًا](https://github.com/eBay/NuRaft) لخوارزمية [RAFT](https://raft.github.io/). وتتيح هذه الخوارزمية الاتساق الخطي لعمليات القراءة والكتابة، كما تتوفر لها عدة تطبيقات مفتوحة المصدر بلغات مختلفة.
@@ -29,13 +29,13 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 </Note>
 
 <div id="configuration">
-  ### التهيئة
+  ### التهيئة {#configuration}
 </div>
 
 يمكن استخدام ClickHouse Keeper كبديل مستقل لـ ZooKeeper أو كجزء داخلي من ClickHouse server. وفي كلتا الحالتين، تكون التهيئة في ملف `.xml` متطابقة تقريبًا.
 
 <div id="keeper-configuration-settings">
-  #### إعدادات تهيئة Keeper
+  #### إعدادات تهيئة Keeper {#keeper-configuration-settings}
 </div>
 
 وسم التهيئة الرئيسي لـ ClickHouse Keeper هو `<keeper_server>`، ويتضمن المعلمات التالية:
@@ -60,9 +60,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 
 تُورَّث المعلمات الشائعة الأخرى من config الخاص بـ ClickHouse server (`listen_host` و`logger` وما إلى ذلك).
 
-<div id="internal-coordination-settings">
-  #### إعدادات التنسيق الداخلية
-</div>
+#### إعدادات التنسيق الداخلية {#internal-coordination-settings}
 
 توجد إعدادات التنسيق الداخلية في القسم `<keeper_server>.<coordination_settings>`، وتتضمن المعلمات التالية:
 
@@ -75,12 +73,14 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 | `heart_beat_interval_ms`                  | مدى تكرار إرسال قائد ClickHouse Keeper إشارات نبض إلى العُقد التابعة (مللي ثانية)                                                                                                                                                                                                                                                | `500`             |
 | `election_timeout_lower_bound_ms`         | إذا لم تستقبل العقدة التابعة إشارة نبض من القائد خلال هذه الفترة، فيمكنها بدء انتخاب القائد. يجب أن تكون هذه القيمة أقل من أو مساوية لـ `election_timeout_upper_bound_ms`. ومن الأفضل ألّا تكونا متساويتين.                                                                                                                      | `1000`            |
 | `election_timeout_upper_bound_ms`         | إذا لم تستقبل العقدة التابعة إشارة نبض من القائد خلال هذه الفترة، فيجب عليها بدء انتخاب القائد.                                                                                                                                                                                                                                  | `2000`            |
-| `rotate_log_storage_interval`             | عدد سجلات Log التي تُخزَّن في ملف واحد.                                                                                                                                                                                                                                                                                          | `100000`          |
+| `rotate_log_storage_interval`             | عدد سجلات Log التي تُخزَّن في ملف واحد.                                                                                                                                                                                                                                                                                          | `100000`          |
 | `reserved_log_items`                      | عدد سجلات التنسيق التي تُحفَظ قبل إجراء compaction.                                                                                                                                                                                                                                                                              | `100000`          |
 | `snapshot_distance`                       | مدى تكرار إنشاء ClickHouse Keeper لقطات جديدة (بحسب عدد السجلات في الـ logs).                                                                                                                                                                                                                                                    | `100000`          |
 | `snapshots_to_keep`                       | عدد اللقطات المطلوب الاحتفاظ بها.                                                                                                                                                                                                                                                                                                | `3`               |
+| `compress_snapshots_with_zstd_format`     | كتابة اللقطات بتنسيق ZSTD بدلًا من تنسيق كتل LZ4 المخصص الخاص بـ ClickHouse.                                                                                                                                                                                                                                                     | `true`            |
+| `snapshot_zstd_compression_level`         | مستوى ضغط ZSTD للقطات. تستهلك المستويات الأدنى قدرًا أقل من CPU لكنها تنتج لقطات أكبر. تختار القيم السالبة مستويات ZSTD السريعة. يُستخدم فقط عند تمكين `compress_snapshots_with_zstd_format`.                                                                                                                                    | `3`               |
 | `stale_log_gap`                           | العتبة التي عندها يعتبر القائد العقدة التابعة stale ويرسل إليها لقطة بدلًا من logs.                                                                                                                                                                                                                                              | `10000`           |
-| `fresh_log_gap`                           | الفجوة التي عندها تُعدّ العقدة محدَّثة.                                                                                                                                                                                                                                                                                          | `200`             |
+| `fresh_log_gap`                           | الفجوة التي عندها تُعدّ العقدة محدَّثة.                                                                                                                                                                                                                                                                                          | `200`             |
 | `max_requests_batch_size`                 | الحد الأقصى لحجم Batch محسوبًا بعدد الطلبات قبل إرسالها إلى RAFT.                                                                                                                                                                                                                                                                | `100`             |
 | `force_sync`                              | استدعاء `fsync` عند كل عملية كتابة في سجل التنسيق.                                                                                                                                                                                                                                                                               | `true`            |
 | `quorum_reads`                            | تنفيذ طلبات القراءة كطلبات كتابة عبر توافق RAFT بالكامل وبسرعة مماثلة.                                                                                                                                                                                                                                                           | `false`           |
@@ -98,10 +98,10 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 | `log_readahead_eviction_timeout_ms`       | مهلة الخمول التي بعدها يُزال قارئ قراءة استباقية غير نشط لكل peer، أو قارئ commit، من cache (وتُنشئه عملية إخفاق لاحقة من جديد).                                                                                                                                                                                                 | `30000`           |
 | `log_readahead_pool_threads`              | عدد threads في thread pool المخصص للقراءة الاستباقية. تستمد القيمة `0` من `log_readahead_max_peer_readers`.                                                                                                                                                                                                                      | `0`               |
 | `log_readahead_serve_wait_timeout_ms`     | الحد الأقصى لوقت انتظار تعبئة القراءة الاستباقية في Background قبل الرجوع إلى قراءة مباشرة.                                                                                                                                                                                                                                      | `200`             |
-| `log_readahead_chunk_size`                | عدد إدخالات Log التي تُفك شفرتها لكل фрагмент في مهمة ملء القراءة الاستباقية.                                                                                                                                                                                                                                                    | `16`              |
+| `log_readahead_chunk_size`                | عدد إدخالات Log التي تُفك شفرتها لكل фрагمент في مهمة ملء القراءة الاستباقية.                                                                                                                                                                                                                                                    | `16`              |
 | `log_readahead_commit_window_bytes`       | الحد الأقصى للحجم الإجمالي لإدخالات Log المفككة الشيفرة والمخزنة مؤقتًا مسبقًا أمام خيط تنفيذ commit. تُعطّل `0` القراءة الاستباقية لعملية commit (تقرأ commit الإدخالات من القرص واحدًا تلو الآخر).                                                                                                                             | `500MiB`          |
-| `log_startup_read_max_streams`            | الحد الأقصى لعدد ملفات changelog التي تُقرأ بالتزامن عند بدء تشغيل Keeper. `0` = استخدام عدد أنوية CPU تلقائيًا. `1` = استخدام قراءة بدء التشغيل التسلسلية (قبل التوازي). يُقيَّد التوازي الفعلي بعدد ملفات changelog المطلوب قراءتها؛ فكّر في خفضه عند استخدام تخزين مقيّد بعمليات seek (HDD، ووحدات التخزين المقيّدة بـ IOPS). | `0`               |
-| `log_startup_read_buffer_size`            | حجم مخزن القراءة المؤقت لكل stream (بالبايت) المستخدم عند قراءة changelogs أثناء بدء تشغيل Keeper. يجب أن يكون أكبر من `0`. كما يُقيَّد المخزن المؤقت بحجم الملف.                                                                                                                                                                | `8MiB`            |
+| `log_startup_read_max_streams`            | الحد الأقصى لعدد ملفات changelog التي تُقرأ بالتزامن عند بدء تشغيل Keeper. `0` = استخدام عدد أنوية CPU تلقائيًا. `1` = استخدام قراءة بدء التشغيل التسلسلية (قبل التوازي). يُقيَّد التوازي الفعلي بعدد ملفات changelog المطلوب قراءتها؛ فكّر في خفضه عند استخدام تخزين مقيّد بعمليات seek (HDD، ووحدات التخزين المقيّدة بـ IOPS). | `0`               |
+| `log_startup_read_buffer_size`            | حجم مخزن القراءة المؤقت لكل stream (بالبايت) المستخدم عند قراءة changelogs أثناء بدء تشغيل Keeper. يجب أن يكون أكبر من `0`. كما يُقيَّد المخزن المؤقت بحجم الملف.                                                                                                                                                                | `8MiB`            |
 | `disk_move_retries_wait_ms`               | مدة الانتظار بين retries بعد حدوث فشل أثناء نقل ملف بين disks                                                                                                                                                                                                                                                                    | `1000`            |
 | `disk_move_retries_during_init`           | عدد retries بعد حدوث فشل أثناء نقل ملف بين disks خلال التهيئة                                                                                                                                                                                                                                                                    | `100`             |
 | `experimental_use_rocksdb`                | استخدام rocksdb كتخزين خلفي                                                                                                                                                                                                                                                                                                      | `0`               |
@@ -163,7 +163,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 ```
 
 <div id="how-to-run">
-  ### كيفية التشغيل
+  ### كيفية التشغيل {#how-to-run}
 </div>
 
 يأتي ClickHouse Keeper مضمّنًا في حزمة ClickHouse server؛ ما عليك سوى إضافة إعدادات `<keeper_server>` إلى `/etc/your_path_to_config/clickhouse-server/config.xml` وتشغيل ClickHouse server كالمعتاد. وإذا أردت تشغيل standalone ClickHouse Keeper، فيمكنك تشغيله بطريقة مماثلة باستخدام:
@@ -178,9 +178,7 @@ clickhouse-keeper --config /etc/your_path_to_config/config.xml
 clickhouse keeper --config /etc/your_path_to_config/config.xml
 ```
 
-<div id="four-letter-word-commands">
-  ### أوامر الكلمات ذات الأحرف الأربعة
-</div>
+### أوامر الكلمات ذات الأحرف الأربعة {#four-letter-word-commands}
 
 يوفّر ClickHouse Keeper أيضًا أوامر 4lw، وهي تكاد تكون مماثلة للأوامر الموجودة في ZooKeeper. يتكوّن كل أمر من أربعة أحرف، مثل `mntr` و`stat` وما إلى ذلك. وهناك بعض الأوامر اللافتة الأخرى: يوفّر `stat` معلومات عامة عن الخادم والعملاء المتصلين، ويقدّم `srvr` تفاصيل موسّعة عن الخادم، ويقدّم `cons` تفاصيل موسّعة عن الاتصالات.
 
@@ -300,10 +298,11 @@ quorum_reads=false
 force_sync=false
 compress_logs=true
 compress_snapshots_with_zstd_format=true
+snapshot_zstd_compression_level=3
 configuration_change_tries_count=20
 ```
 
-* `cons`: يعرض تفاصيل الاتصال/الجلسة الكاملة لجميع العملاء المتصلين بهذا الخادم. ويتضمن معلومات عن عدد الحزم المستلمة/المرسلة، ومعرّف الجلسة، وزمن استجابة العمليات، وآخر عملية نُفِّذت، إلخ...
+* `cons`: يعرض تفاصيل الاتصال/الجلسة الكاملة لجميع العملاء المتصلين بهذا الخادم. ويتضمن معلومات عن عدد الحزم المستلمة/المرسلة، ومعرّف الجلسة، وزمن استجابة العمليات، وآخر عملية نُفِّذت، إلخ...
 
 ```response
  192.168.1.1:52163(recved=0,sent=0,sid=0xffffffffffffffff,lop=NA,est=1636454787393,to=30000,lzxid=0xffffffffffffffff,lresp=0,llat=0,minlat=0,avglat=0,maxlat=0)
@@ -440,7 +439,7 @@ AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interf
 ```
 
 <div id="http-control">
-  ### HTTP control
+  ### HTTP control {#http-control}
 </div>
 
 يوفّر ClickHouse Keeper واجهة HTTP للتحقق مما إذا كانت النسخة المتماثلة جاهزة لاستقبال حركة المرور. ويمكن استخدام ذلك في البيئات السحابية، مثل [Kubernetes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-readiness-probes).
@@ -461,7 +460,7 @@ AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interf
 ```
 
 <div id="feature-flags">
-  ### علامات الميزات
+  ### علامات الميزات {#feature-flags}
 </div>
 
 يتوافق Keeper توافقًا كاملًا مع ZooKeeper وعملائه، لكنه يقدّم أيضًا بعض الميزات وأنواع الطلبات الفريدة التي يمكن لعميل ClickHouse استخدامها.
@@ -498,13 +497,13 @@ AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interf
 </Note>
 
 <div id="migration-from-zookeeper">
-  ### الترحيل من ZooKeeper
+  ### الترحيل من ZooKeeper {#migration-from-zookeeper}
 </div>
 
 لا يمكن إجراء ترحيل سلس من ZooKeeper إلى ClickHouse Keeper. يجب عليك إيقاف عنقود ZooKeeper، وتحويل البيانات، ثم تشغيل ClickHouse Keeper. تحوّل أداة `clickhouse-keeper-converter` السجلات ولقطات الخاصة بـ ZooKeeper إلى لقطة لـ ClickHouse Keeper. وتتطلب ZooKeeper 3.4 أو إصدارًا أحدث.
 
 <div id="pre-migration-preparation">
-  #### التحضير قبل الترحيل
+  #### التحضير قبل الترحيل {#pre-migration-preparation}
 </div>
 
 يتطلّب الترحيل إيقاف استيعاب البيانات. حدّد فترة صيانة قبل البدء.
@@ -517,9 +516,7 @@ SYSTEM STOP MERGES;
 
 سجّل مقاييس المقارنة قبل الترحيل حتى تتمكن من التحقق من الاتساق لاحقًا.
 
-<div id="migration-steps">
-  #### خطوات الترحيل
-</div>
+#### خطوات الترحيل {#migration-steps}
 
 1. أوقف استيعاب البيانات إلى جميع عقد ClickHouse.
 
@@ -549,7 +546,7 @@ clickhouse-keeper-converter \
 10. استأنف المهام الخلفية، وأعد تشغيل استيعاب البيانات.
 
 <div id="consolidating-multiple-zookeeper-clusters">
-  #### دمج عدة عناقيد ZooKeeper
+  #### دمج عدة عناقيد ZooKeeper {#consolidating-multiple-zookeeper-clusters}
 </div>
 
 إذا كنت تشغّل عدة عناقيد ZooKeeper — على سبيل المثال، مجموعة واحدة لكل مجموعة shard — فيمكنك دمجها في عنقود ClickHouse Keeper واحد. لا تدعم أداة `clickhouse-keeper-converter` الرسمية سوى التحويلات من واحد إلى واحد (عنقود ZooKeeper واحد إلى لقطة Keeper واحدة)، لذلك يتطلب الدمج تعديل الشيفرة المصدرية للمحوّل لدمج عدة لقطات:
@@ -559,7 +556,7 @@ clickhouse-keeper-converter \
 3. اكتب الناتج المدمج في دليل لقطات ClickHouse Keeper الهدف.
 
 <div id="handling-encryption-and-acls">
-  #### التعامل مع التشفير وقوائم ACL
+  #### التعامل مع التشفير وقوائم ACL {#handling-encryption-and-acls}
 </div>
 
 يدعم ClickHouse Keeper مخططات ACL نفسها التي يدعمها ZooKeeper (`world`, `auth`, `digest`). وتعتمد طريقة التعامل مع قوائم ACL أثناء التحويل على إعداد ZooKeeper لديك:
@@ -568,7 +565,7 @@ clickhouse-keeper-converter \
 * **مشفَّر جزئيًا**: قبل التحويل، امنح حساب مسؤول فائق الصلاحيات وامسح قوائم ACL باستخدام `setAcl -R` على المسارات المتأثرة. حوِّل، ثم أعد تمكين التشفير في ClickHouse Keeper إذا لزم الأمر.
 
 <div id="verifying-the-migration">
-  #### التحقق من الترحيل
+  #### التحقق من الترحيل {#verifying-the-migration}
 </div>
 
 بعد تشغيل ClickHouse Keeper وإعادة تشغيل ClickHouse، قارن المقاييس الرئيسية لديك بخط الأساس السابق للترحيل للتأكد من نجاح الترحيل.
@@ -581,22 +578,23 @@ clickhouse-keeper-converter \
 تجنّب استعراض أشجار ZooKeeper الكبيرة مباشرةً لأغراض المقارنة. وبدلاً من ذلك، اطبع جميع المسارات المحوّلة إلى ملف أثناء التحويل.
 
 <div id="post-migration-tuning">
-  #### الضبط بعد الترحيل
+  #### الضبط بعد الترحيل {#post-migration-tuning}
 </div>
 
-بعد الترحيل، فكّر في ضبط هذه الإعدادات للمجموعات العنقودية الأكبر أو لتحقيق إنتاجية أعلى:
+بعد الترحيل، فكّر في ضبط هذه الإعدادات للعناقيد الأكبر أو لتحقيق إنتاجية أعلى:
 
 | الإعداد                               | الافتراضي | الموصى به | ملاحظات                                                                                               |
 | ------------------------------------- | --------- | --------- | ----------------------------------------------------------------------------------------------------- |
-| `max_requests_batch_size`             | `100`     | `10000`   | زِد هذه القيمة للمجموعات العنقودية ذات الأعداد الكبيرة من الأجزاء أو التي تضم عددًا كبيرًا من الشظايا |
+| `max_requests_batch_size`             | `100`     | `10000`   | زِد هذه القيمة للعناقيد ذات الأعداد الكبيرة من الأجزاء أو التي تضم عددًا كبيرًا من الشاردات |
 | `force_sync`                          | `true`    | `false`   | تُحسّن عمليات كتابة السجلات غير المتزامنة الإنتاجية                                                   |
 | `compress_logs`                       | `false`   | `true`    | يضغط ملفات سجلات Raft لتقليل عمليات الإدخال/الإخراج على القرص                                         |
 | `compress_snapshots_with_zstd_format` | `true`    | —         | مفعّل بالفعل افتراضيًا؛ ويضغط اللقطات باستخدام zstd                                                   |
+| `snapshot_zstd_compression_level`     | `3`       | —         | تقلّل القيم الأدنى استهلاك المعالج في ضغط اللقطات مقابل الحصول على لقطات أكبر حجمًا                   |
 
 تُضبط هذه الإعدادات ضمن `coordination_settings` في [تهيئة Keeper](#internal-coordination-settings).
 
 <div id="recovering-after-losing-quorum">
-  ### الاستعادة بعد فقدان النصاب
+  ### الاستعادة بعد فقدان النصاب {#recovering-after-losing-quorum}
 </div>
 
 نظرًا لأن ClickHouse Keeper يستخدم Raft، فإنه يستطيع تحمّل عدد معيّن من تعطل العُقد بحسب حجم العنقود.
@@ -625,7 +623,7 @@ clickhouse-keeper-converter \
 7. بعد تحقيق النصاب، ستعود عقدة القائد إلى وضع التشغيل العادي، وتبدأ في قبول جميع الطلبات باستخدام Raft — ويمكنك التحقق من ذلك عبر `mntr`، إذ ينبغي أن يعيد `leader` في `zk_server_state`.
 
 <div id="using-disks-with-keeper">
-  ## استخدام الأقراص مع Keeper
+  ## استخدام الأقراص مع Keeper {#using-disks-with-keeper}
 </div>
 
 يدعم Keeper مجموعة فرعية من [الأقراص الخارجية](/ar/concepts/features/configuration/server-config/storing-data) لتخزين اللقطات وملفات السجل وملف الحالة.
@@ -706,7 +704,7 @@ clickhouse-keeper-converter \
 وينطبق المنطق نفسه على اللقطات؛ إذ ستُخزَّن جميع اللقطات ما عدا أحدث اللقطات على `snapshot_s3_plain`، بينما سيُحفَظ أحدث لقطة على القرص `snapshot_local`.
 
 <div id="changing-disk-setup">
-  ### تغيير إعداد الأقراص
+  ### تغيير إعداد الأقراص {#changing-disk-setup}
 </div>
 
 <Warning>
@@ -738,9 +736,7 @@ clickhouse-keeper-converter \
 عند بدء التشغيل، ستُنقل جميع ملفات السجل من `log_local` و`log_s3_plain` إلى القرص `log_local2`.
 كما ستُنقل جميع ملفات اللقطات من `snapshot_local` و`snapshot_s3_plain` إلى القرص `snapshot_local2`.
 
-<div id="configuring-logs-cache">
-  ## تهيئة ذاكرة التخزين المؤقت للسجلات
-</div>
+## تهيئة ذاكرة التخزين المؤقت للسجلات {#configuring-logs-cache}
 
 لتقليل كمية البيانات المقروءة من القرص، يخزّن Keeper إدخالات السجل مؤقتًا في الذاكرة.
 إذا كانت الطلبات كبيرة، ستستهلك إدخالات السجل قدرًا كبيرًا من الذاكرة، لذا يُفرض حدّ على كمية السجلات المخزنة مؤقتًا.
@@ -767,7 +763,7 @@ clickhouse-keeper-converter \
 </Note>
 
 <div id="prometheus">
-  ## Prometheus
+  ## Prometheus {#prometheus}
 </div>
 
 يمكن لـ Keeper كشف بيانات المقاييس ليتمكّن [Prometheus](https://prometheus.io) من سحبها.
@@ -806,7 +802,7 @@ curl 127.0.0.1:9363/metrics
 راجع أيضًا [تكامل Prometheus](/ar/products/cloud/features/monitoring/prometheus) في ClickHouse Cloud.
 
 <div id="clickhouse-keeper-user-guide">
-  ## دليل المستخدم لـ ClickHouse Keeper
+  ## دليل المستخدم لـ ClickHouse Keeper {#clickhouse-keeper-user-guide}
 </div>
 
 يوفّر هذا الدليل إعدادات بسيطة ومختصرة لتهيئة ClickHouse Keeper، مع مثال يوضّح كيفية اختبار العمليات الموزعة. يُنفَّذ هذا المثال باستخدام 3 عقد على Linux.
@@ -1073,19 +1069,19 @@ curl 127.0.0.1:9363/metrics
 </Steps>
 
 <div id="summary">
-  ### الملخص
+  ### الملخص {#summary}
 </div>
 
 يشرح هذا الدليل كيفية إعداد عنقود باستخدام ClickHouse Keeper. وباستخدام ClickHouse Keeper، يمكنك تهيئة العناقيد وتعريف الجداول الموزعة التي يمكن نسخها متماثلًا عبر الشوارد.
 
 <div id="configuring-clickhouse-keeper-with-unique-paths">
-  ## تهيئة ClickHouse Keeper بمسارات فريدة
+  ## تهيئة ClickHouse Keeper بمسارات فريدة {#configuring-clickhouse-keeper-with-unique-paths}
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### الوصف
+  ### الوصف {#description}
 </div>
 
 تشرح هذه المقالة كيفية استخدام إعداد الماكرو المضمّن `{uuid}`
@@ -1096,7 +1092,7 @@ curl 127.0.0.1:9363/metrics
 في كل مرة يُنشأ فيها مسار؛ ولا يُعاد استخدام المسارات مطلقًا.
 
 <div id="example-environment">
-  ### بيئة مثال
+  ### بيئة مثال {#example-environment}
 </div>
 
 عنقود مكوّن من ثلاث عقد سيُهيَّأ بحيث يعمل ClickHouse Keeper
@@ -1136,7 +1132,7 @@ curl 127.0.0.1:9363/metrics
 ```
 
 <div id="procedures-to-set-up-tables-to-use-uuid">
-  ### إجراءات إعداد الجداول لاستخدام `{uuid}`
+  ### إجراءات إعداد الجداول لاستخدام `{uuid}` {#procedures-to-set-up-tables-to-use-uuid}
 </div>
 
 1. اضبط وحدات الماكرو على كل خادم
@@ -1230,7 +1226,7 @@ Query id: 3bc7f339-ab74-4c7d-a752-1ffe54219c0e
 ```
 
 <div id="testing">
-  ### الاختبار
+  ### الاختبار {#testing}
 </div>
 
 1. أدرِج البيانات في العقدة الأولى (مثل `chnode1`)
@@ -1294,7 +1290,7 @@ Query id: 6cbab449-9e7f-40fe-b8c2-62d46ba9f5c8
 ```
 
 <div id="alternatives">
-  ### بدائل
+  ### بدائل {#alternatives}
 </div>
 
 يمكن تحديد مسار النسخ المتماثل الافتراضي مسبقًا باستخدام وحدات الماكرو و`{uuid}` أيضًا
@@ -1362,7 +1358,7 @@ ORDER BY id
 ```
 
 <div id="troubleshooting">
-  ### استكشاف الأخطاء وإصلاحها
+  ### استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
 مثال لأمر يعرض معلومات الجدول ومعرّف UUID الخاص به:
@@ -1409,13 +1405,13 @@ Query id: b047d459-a1d2-4016-bcf9-3e97e30e49c2
 ```
 
 <div id="reconfiguration">
-  ## إعادة التهيئة الديناميكية لـ ClickHouse Keeper
+  ## إعادة التهيئة الديناميكية لـ ClickHouse Keeper {#reconfiguration}
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### الوصف
+  ### الوصف {#description-1}
 </div>
 
 يدعم ClickHouse Keeper جزئيًا أمر ZooKeeper [`reconfig`](https://zookeeper.apache.org/doc/r3.5.3-beta/zookeeperReconfig.html#sc_reconfig_modifying)
@@ -1507,7 +1503,7 @@ reconfig(joining="server.5=localhost:5123;participant;8", leaving=None)
   قد طُبِّق.
 
 <div id="converting-a-single-node-keeper-into-a-cluster">
-  ## تحويل Keeper أحادي العقدة إلى عنقود
+  ## تحويل Keeper أحادي العقدة إلى عنقود {#converting-a-single-node-keeper-into-a-cluster}
 </div>
 
 أحيانًا تكون هناك حاجة إلى توسيع عقدة Keeper تجريبية لتصبح عنقودًا. فيما يلي مخطط يوضح كيفية القيام بذلك خطوة بخطوة لعنقود من 3 عقد:
@@ -1523,7 +1519,7 @@ reconfig(joining="server.5=localhost:5123;participant;8", leaving=None)
 ولفهم العملية عمليًا بشكل أفضل، إليك [sandbox repository](https://github.com/ClickHouse/keeper-extend-cluster).
 
 <div id="unsupported-features">
-  ## الميزات غير المدعومة
+  ## الميزات غير المدعومة {#unsupported-features}
 </div>
 
 مع أن ClickHouse Keeper يهدف إلى تحقيق توافق كامل مع ZooKeeper، فلا تزال هناك بعض الميزات غير المُنفَّذة حتى الآن (مع استمرار العمل على تطويرها):

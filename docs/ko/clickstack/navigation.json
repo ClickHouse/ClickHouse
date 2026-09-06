@@ -109,24 +109,50 @@
             {
               "group": "2026",
               "pages": [
-                "ko/clickstack/demo-days/2026/2026-08-15",
-                "ko/clickstack/demo-days/2026/2026-08-07",
-                "ko/clickstack/demo-days/2026/2026-07-31",
-                "ko/clickstack/demo-days/2026/2026-07-24",
-                "ko/clickstack/demo-days/2026/2026-07-17",
-                "ko/clickstack/demo-days/2026/2026-07-10",
-                "ko/clickstack/demo-days/2026/2026-07-02",
-                "ko/clickstack/demo-days/2026/2026-06-26",
-                "ko/clickstack/demo-days/2026/2026-06-18",
-                "ko/clickstack/demo-days/2026/2026-06-12",
-                "ko/clickstack/demo-days/2026/2026-06-05",
-                "ko/clickstack/demo-days/2026/2026-05-29",
-                "ko/clickstack/demo-days/2026/2026-05-22",
-                "ko/clickstack/demo-days/2026/2026-05-15",
-                "ko/clickstack/demo-days/2026/2026-05-08",
-                "ko/clickstack/demo-days/2026/2026-04-17",
-                "ko/clickstack/demo-days/2026/2026-04-10",
-                "ko/clickstack/demo-days/2026/2026-04-03"
+                {
+                  "group": "August",
+                  "pages": [
+                    "ko/clickstack/demo-days/2026/2026-08-21",
+                    "ko/clickstack/demo-days/2026/2026-08-15",
+                    "ko/clickstack/demo-days/2026/2026-08-07"
+                  ]
+                },
+                {
+                  "group": "July",
+                  "pages": [
+                    "ko/clickstack/demo-days/2026/2026-07-31",
+                    "ko/clickstack/demo-days/2026/2026-07-24",
+                    "ko/clickstack/demo-days/2026/2026-07-17",
+                    "ko/clickstack/demo-days/2026/2026-07-10",
+                    "ko/clickstack/demo-days/2026/2026-07-02"
+                  ]
+                },
+                {
+                  "group": "June",
+                  "pages": [
+                    "ko/clickstack/demo-days/2026/2026-06-26",
+                    "ko/clickstack/demo-days/2026/2026-06-18",
+                    "ko/clickstack/demo-days/2026/2026-06-12",
+                    "ko/clickstack/demo-days/2026/2026-06-05"
+                  ]
+                },
+                {
+                  "group": "May",
+                  "pages": [
+                    "ko/clickstack/demo-days/2026/2026-05-29",
+                    "ko/clickstack/demo-days/2026/2026-05-22",
+                    "ko/clickstack/demo-days/2026/2026-05-15",
+                    "ko/clickstack/demo-days/2026/2026-05-08"
+                  ]
+                },
+                {
+                  "group": "April",
+                  "pages": [
+                    "ko/clickstack/demo-days/2026/2026-04-17",
+                    "ko/clickstack/demo-days/2026/2026-04-10",
+                    "ko/clickstack/demo-days/2026/2026-04-03"
+                  ]
+                }
               ]
             }
           ]

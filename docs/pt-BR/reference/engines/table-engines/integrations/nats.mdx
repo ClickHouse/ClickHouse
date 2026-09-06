@@ -16,9 +16,7 @@ Este engine permite integrar o ClickHouse ao [NATS](https://nats.io/).
 * Publicar em ou assinar subjects de mensagens.
 * Processar novas mensagens à medida que se tornem disponíveis.
 
-<div id="creating-a-table">
-  ## Criando uma tabela
-</div>
+## Criando uma tabela {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -134,9 +132,7 @@ Mais especificamente, você pode adicionar sua senha para o engine NATS:
 </nats>
 ```
 
-<div id="description">
-  ## Descrição
-</div>
+## Descrição {#description}
 
 `SELECT` não é particularmente útil para ler mensagens (exceto para depuração), porque cada mensagem pode ser lida apenas uma vez. É mais prático criar fluxos em tempo real usando [visões materializadas](/pt-BR/reference/statements/create/view). Para fazer isso:
 
@@ -177,9 +173,7 @@ ATTACH TABLE consumer;
 
 Se quiser alterar a tabela de destino com `ALTER`, recomendamos desabilitar a visão materializada para evitar discrepâncias entre a tabela de destino e os dados da view.
 
-<div id="virtual-columns">
-  ## Colunas virtuais
-</div>
+## Colunas virtuais {#virtual-columns}
 
 * `_subject` - subject da mensagem no NATS. Tipo de dado: `String`.
 
@@ -190,9 +184,7 @@ Colunas virtuais adicionais quando `nats_handle_error_mode='stream'`:
 
 Observação: as colunas virtuais `_raw_message` e `_error` são preenchidas apenas em caso de exceção durante o processamento; elas são sempre `NULL` quando a mensagem é processada com sucesso.
 
-<div id="data-formats-support">
-  ## Suporte a formatos de dados
-</div>
+## Suporte a formatos de dados {#data-formats-support}
 
 O engine NATS oferece suporte a todos os [formatos](/pt-BR/reference/formats/index) compatíveis com o ClickHouse.
 O número de linhas em uma mensagem NATS depende de o formato ser baseado em linhas ou em blocos:
@@ -200,9 +192,7 @@ O número de linhas em uma mensagem NATS depende de o formato ser baseado em lin
 * Para formatos baseados em linhas, o número de linhas em uma mensagem NATS pode ser controlado pela configuração `nats_max_rows_per_message`.
 * Para formatos baseados em blocos, não é possível dividir um bloco em partes menores, mas o número de linhas em um bloco pode ser controlado pela configuração geral [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max#max_block_size).
 
-<div id="using-jetstream">
-  ## Usando o JetStream
-</div>
+## Usando o JetStream {#using-jetstream}
 
 Antes de usar o engine NATS com o NATS JetStream, você deve criar um stream NATS e um consumer pull durável. Para isso, você pode usar, por exemplo, o utilitário `nats` do pacote [NATS CLI](https://github.com/nats-io/natscli):
 
@@ -316,5 +306,13 @@ CREATE TABLE nats_jet_stream (
 ```
 
 As tabelas JetStream oferecem entrega de pelo menos uma vez: uma mensagem só é confirmada após ser inserida nas visões materializadas dependentes; portanto, uma mensagem cuja inserção falha ou é interrompida permanece sem confirmação e é entregue novamente. O NATS Core (sem JetStream) não oferece confirmação nem reprocessamento; portanto, tem entrega de no máximo uma vez, e uma mensagem interrompida é perdida.
+
+## Durabilidade dos dados {#data-durability}
+
+Esta seção se aplica somente ao JetStream. O NATS Core não tem confirmações e opera no modo de entrega no máximo uma vez, conforme descrito acima. Portanto, não há uma janela em que uma mensagem confirmada possa ser perdida.
+
+Uma tabela JetStream pode perder silenciosamente linhas já consumidas se o cache de páginas do SO for descartado antes que os dados inseridos sejam gravados em disco. Depois que um lote é enviado às visões materializadas dependentes, o consumidor confirma essas mensagens, o que permite que o stream avance além delas. No entanto, as linhas inseridas só se tornam duráveis quando a parte de destino recebe `fsync`, o que, por padrão, não ocorre de forma síncrona (`fsync_after_insert = 0`). Se o cache de páginas for perdido após a confirmação, mas antes de a parte de destino receber `fsync`, as mensagens não serão mais reenviadas; portanto, as linhas serão perdidas sem erro e `count()` será simplesmente menor. Encerrar um processo normalmente não expõe esse problema, pois o kernel mantém o cache de páginas e acaba gravando-o em disco. Já a perda do cache de páginas o expõe; exemplos incluem perda de energia no nível do dispositivo e uma reinicialização não limpa do host ou do kernel.
+
+No caminho recomendado de consumo por visão materializada (a confirmação só é enviada após a conclusão de todo o pipeline de inserção), definir `fsync_after_insert = 1` (e `fsync_part_directory = 1`) nas tabelas `MergeTree` de destino torna as partes inseridas duráveis antes do envio da confirmação, reduzindo substancialmente essa janela. A configuração deve ser ativada em todas as tabelas `MergeTree` nas quais o lote é inserido, incluindo os destinos de visões materializadas em cascata; qualquer tabela desse tipo mantida com a configuração padrão ainda pode perder sua parte. Intermediários assíncronos não ganham durabilidade apenas com essa configuração: por exemplo, um destino `Distributed` insere em segundo plano quando `distributed_foreground_insert = 0`, que é o padrão fora do ClickHouse Cloud, portanto, ele precisa de suas próprias configurações de durabilidade ou de inserção síncrona. Essa mitigação também não se aplica a um `INSERT ... SELECT ... FROM <nats_table>` direto com `nats_commit_on_select = 1`, em que as mensagens são confirmadas quando a leitura chega ao fim, e não após o destino gravar uma parte durável.
 
 {/*AUTOGENERATED_END*/}

@@ -16,19 +16,15 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 تتوفّر هذه الإعدادات في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="adaptive_aggregator_freeze_threshold">
-  ## adaptive_aggregator_freeze_threshold
-</div>
+## adaptive_aggregator_freeze_threshold {#adaptive_aggregator_freeze_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "16384"},{"label": "إعداد جديد لتحديد عدد المفاتيح الذي عنده يجمّد المُجمِّع التكيفي (`enable_adaptive_aggregator`) جدول التجزئة المحلي الخاص بالخيط."}]}]} />
 
-عدد المفاتيح الذي عنده يجمّد المُجمِّع التكيفي جدول التجزئة المحلي الخاص بالخيط (راجع `enable_adaptive_aggregator`). تُبقي القيم الأصغر الجداول المجمّدة ضمن الذاكرة المخبئية، بينما تتيح القيم الأكبر لها استيعاب قدر أكبر من المفاتيح المتكررة. تؤدي القيمة 0 إلى تجميد الجداول عند أول فرصة، مما يجعل الخوارزمية تعمل بصورة مشابهة للمُجمِّع المُجزّأ (`enable_sharding_aggregator`): يُوجَّه كل مفتاح وفقًا لتجزئته ويُجمَّع لدى مالك واحد، لكن يُؤجَّل ذلك إلى مرحلة الدمج بدلًا من تبادله بين الخيوط أثناء الفحص.
+عدد المفاتيح الذي عنده يجمّد المُجمِّع التكيفي جدول التجزئة المحلي الخاص بالخيط (راجع `enable_adaptive_aggregator`). تُبقي القيم الأصغر الجداول المجمّدة ضمن ذاكرة التخزين المؤقت، بينما تتيح القيم الأكبر لها استيعاب قدر أكبر من المفاتيح المتكررة. تؤدي القيمة 0 إلى تجميد الجداول عند أول فرصة، مما يجعل الخوارزمية تعمل كتجزئة خالصة وفقًا لتجزئة المفتاح: يُوجَّه كل مفتاح وفقًا لتجزئته ويُجمَّع لدى مالك واحد، لكن يُؤجَّل ذلك إلى مرحلة الدمج بدلًا من تبادله بين الخيوط أثناء الفحص.
 
-<div id="adaptive_aggregator_freeze_threshold_bytes">
-  ## adaptive_aggregator_freeze_threshold_bytes
-</div>
+## adaptive_aggregator_freeze_threshold_bytes {#adaptive_aggregator_freeze_threshold_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
@@ -36,25 +32,19 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 حجم الذاكرة الذي عنده يُجمِّد المُجمِّع التكيفي جدول التجزئة المحلي لخيط (انظر `enable_adaptive_aggregator`). يُجمَّد الجدول عند بلوغ أيٍّ من هذه القيمة و`adaptive_aggregator_freeze_threshold` أولًا. الحجم هو عدد البايتات التي خصصها الجدول المحلي نفسه (مخزن جدول التجزئة وساحاته)، ويُتحقق منه بين الكتل. يصبح حد البايتات مهمًا عندما تكون المفاتيح أو حالات التجميع عريضة، إذ إن عتبة عدد المفاتيح وحدها قد تسمح لهذه الجداول بتجاوز سعة ذاكرات التخزين المؤقت في CPU. عند القيمة الافتراضية، تستمر الجداول ذات عروض المفاتيح والحالات العادية في التجميد وفقًا لعدد المفاتيح. تعطل القيمة 0 حد البايتات، لذا تحدد عتبة عدد المفاتيح وحدها وقت التجميد.
 
-<div id="add_http_cors_header">
-  ## add_http_cors_header
-</div>
+## add_http_cors_header {#add_http_cors_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 كتابة ترويسة CORS لـ HTTP.
 
-<div id="analyze_index_with_space_filling_curves">
-  ## analyze_index_with_space_filling_curves
-</div>
+## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 إذا كان فهرس جدول ما يتضمن منحنىً مالئًا للفراغ، مثل `ORDER BY mortonEncode(x, y)` أو `ORDER BY hilbertEncode(x, y)`، وكان الاستعلام يتضمن شروطًا على وسائطه، مثل `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`، فسيُستخدم المنحنى المالئ للفراغ في تحليل الفهرس.
 
-<div id="analyzer_inline_views">
-  ## analyzer_inline_views
-</div>
+## analyzer_inline_views {#analyzer_inline_views}
 
 <ExperimentalBadge />
 
@@ -64,9 +54,7 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 عند تمكينه، يستبدل analyzer طرق العرض العادية (غير المُجسَّدة وغير المعلَّمة بمعلمات) بالاستعلامات الفرعية التي تعرّفها، مما يتيح تحسينات عابرة للحدود مثل دفع عبارات التصفية وتشذيب الأعمدة.
 
-<div id="any_join_distinct_right_table_keys">
-  ## any_join_distinct_right_table_keys
-</div>
+## any_join_distinct_right_table_keys {#any_join_distinct_right_table_keys}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -97,9 +85,7 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 * [صرامة JOIN](/ar/reference/statements/select/join#settings)
 
-<div id="archive_adaptive_buffer_max_size_bytes">
-  ## archive_adaptive_buffer_max_size_bytes
-</div>
+## archive_adaptive_buffer_max_size_bytes {#archive_adaptive_buffer_max_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="8388608" />
 
@@ -107,9 +93,7 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 يحدّد الحجم الأقصى للمخزن المؤقت المتكيّف المستخدم عند الكتابة إلى ملفات الأرشيف (على سبيل المثال، أرشيفات tar
 
-<div id="arrow_flight_request_descriptor_type">
-  ## arrow_flight_request_descriptor_type
-</div>
+## arrow_flight_request_descriptor_type {#arrow_flight_request_descriptor_type}
 
 <SettingsInfoBlock type="ArrowFlightDescriptorType" default_value="path" />
 
@@ -122,9 +106,7 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 * &#39;path&#39; — استخدم FlightDescriptor::Path (الافتراضي، ويعمل مع معظم خوادم Arrow Flight)
 * &#39;command&#39; — استخدم FlightDescriptor::Command مع استعلام SELECT (مطلوب لـ Dremio)
 
-<div id="backup_slow_all_threads_after_retryable_s3_error">
-  ## backup_slow_all_threads_after_retryable_s3_error
-</div>
+## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -134,9 +116,7 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 إذا واجه أي طلب S3 واحد خطأ S3 قابلاً لإعادة المحاولة، مثل &#39;Slow Down&#39;.
 وعند ضبطه على `false`، يتعامل كل خيط مع التراجع بين محاولات طلبات S3 بشكل مستقل عن الخيوط الأخرى.
 
-<div id="cache_warmer_threads">
-  ## cache_warmer_threads
-</div>
+## cache_warmer_threads {#cache_warmer_threads}
 
 <CloudOnlyBadge />
 
@@ -144,17 +124,13 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 لا يكون لهذا الإعداد تأثير إلا في ClickHouse Cloud. عدد الخيوط الخلفية المخصّصة لتنزيل أجزاء البيانات الجديدة استباقيًا إلى ذاكرة التخزين المؤقت لنظام الملفات عند تمكين [cache&#95;populated&#95;by&#95;fetch](/ar/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch). استخدم القيمة صفر للتعطيل.
 
-<div id="calculate_text_stack_trace">
-  ## calculate_text_stack_trace
-</div>
+## calculate_text_stack_trace {#calculate_text_stack_trace}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 احسب تتبّع المكدس النصي عند حدوث استثناءات أثناء تنفيذ الاستعلام. هذا هو السلوك الافتراضي. ويتطلب ذلك عمليات بحث عن الرموز، ما قد يبطئ اختبارات التشويش عند تنفيذ عدد كبير جدًا من الاستعلامات الخاطئة. وفي الحالات العادية، ينبغي ألا تعطّل هذا الخيار.
 
-<div id="cancel_http_readonly_queries_on_client_close">
-  ## cancel_http_readonly_queries_on_client_close
-</div>
+## cancel_http_readonly_queries_on_client_close {#cancel_http_readonly_queries_on_client_close}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -162,17 +138,13 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 القيمة الافتراضية في Cloud: `1`.
 
-<div id="checksum_on_read">
-  ## checksum_on_read
-</div>
+## checksum_on_read {#checksum_on_read}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 تحقّق من قيم التحقّق عند القراءة. يكون هذا الإعداد مفعّلًا افتراضيًا، ويجب أن يظل مفعّلًا دائمًا في بيئة الإنتاج. لا يُرجى توقّع أي فائدة من تعطيل هذا الإعداد. وقد يُستخدم فقط لأغراض التجربة واختبارات الأداء. لا ينطبق هذا الإعداد إلا على الجداول من عائلة MergeTree. أمّا في محركات الجداول الأخرى، وعند تلقّي البيانات عبر الشبكة، فيُجرى دائمًا التحقّق من قيم التحقّق.
 
-<div id="compression">
-  ## الضغط
-</div>
+## الضغط {#compression}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "إعداد جديد لتطبيق ضغط عام على جسم الاستجابة."}]}]} />
 
@@ -180,30 +152,38 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 هذا إعداد لتشكيل الاستجابة ضمن واجهة HTTP: يُطبَّق قبل تنفيذ الاستعلام (إذ تُعَدّ مخازن الاستجابة المؤقتة مسبقًا)، لذا يجب توفيره عبر معلمة HTTP URL، أو امتداد الملف في مسار URL، أو ملف تعريف المستخدم، وليس عبر عبارة `SETTINGS` داخل الاستعلام (إذ لا يكون لها أي تأثير ويُرفَض استخدامها).
 
-<div id="connection_pool_max_wait_ms">
-  ## connection_pool_max_wait_ms
-</div>
+## connection_pool_max_wait_ms {#connection_pool_max_wait_ms}
 
-<SettingsInfoBlock type="مللي ثانية" default_value="0" />
+<SettingsInfoBlock type="Milliseconds" default_value="0" />
 
-زمن الانتظار بالمللي ثانية للحصول على اتصال عندما يكون مجمّع الاتصالات ممتلئًا.
+مدة الانتظار بالمللي ثانية للحصول على اتصال عندما يكون تجمع الاتصالات ممتلئًا.
+
+يُطبَّق الانتظار على كل نسخة متماثلة على حدة، إذ يوجد تجمع اتصالات واحد لكل نسخة متماثلة. وعند انتهاء المهلة،
+تفشل المحاولة بالخطأ `NO_FREE_CONNECTION`. في مسار تجاوز الفشل المستخدم مع استعلامات `SELECT` الموزعة، يُعامل ذلك
+كأي نسخة متماثلة أخرى غير صالحة للاستخدام: يحاول الاستعلام النسخ المتماثلة المتبقية، ولا يفشل بالخطأ
+`ALL_CONNECTION_TRIES_FAILED` إلا بعد تجربة جميعها. لذلك، لا يفرض هذا الإعداد حدًا على
+الاستعلام ككل؛ فمع `N` نسخة متماثلة و`T` محاولات لكل منها، قد يصل إجمالي وقت الانتظار إلى
+`connection_pool_max_wait_ms` مضروبًا في `N` مضروبًا في `T`، حيث إن `T` هو
+[connections&#95;with&#95;failover&#95;max&#95;tries](/ar/reference/settings/session-settings/other#connections_with_failover_max_tries)، لكنه لا يقل أبدًا عن واحد،
+لأن النسخة المتماثلة تُجرَّب دائمًا مرة واحدة قبل استبعادها. استخدم
+[max&#95;execution&#95;time](/ar/reference/settings/session-settings/max-execution#max_execution_time) لفرض حد على
+الاستعلام نفسه.
 
 القيم الممكنة:
 
 * عدد صحيح موجب.
-* 0 — مهلة انتظار لا نهائية.
+* 0 — مهلة انتظار لا نهائية. يظل الانتظار قابلاً للمقاطعة بواسطة `KILL QUERY`، وبواسطة `max_execution_time` عند استخدام
+  [timeout&#95;overflow&#95;mode](/ar/reference/settings/session-settings/timeout-overflow-mode#timeout_overflow_mode) الافتراضي `throw`.
+  في وضع `break`، لا يلغي الحد الزمني الاستعلام، لذا يستمر الانتظار حتى يتم
+  تحرير اتصال؛ بينما يظل `KILL QUERY` قادرًا على مقاطعته.
 
-<div id="connections_with_failover_max_tries">
-  ## connections_with_failover_max_tries
-</div>
+## connections_with_failover_max_tries {#connections_with_failover_max_tries}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
 الحد الأقصى لعدد محاولات الاتصال بكل نسخة متماثلة لمحرك الجدول Distributed.
 
-<div id="convert_query_to_cnf">
-  ## convert_query_to_cnf
-</div>
+## convert_query_to_cnf {#convert_query_to_cnf}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -271,9 +251,7 @@ SETTINGS convert_query_to_cnf = true;
 
 القيم الممكنة: true, false
 
-<div id="count_matches_stop_at_empty_match">
-  ## count_matches_stop_at_empty_match
-</div>
+## count_matches_stop_at_empty_match {#count_matches_stop_at_empty_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -281,17 +259,13 @@ SETTINGS convert_query_to_cnf = true;
 
 يتوقف العدّ بمجرد أن يطابق النمط طولًا صفريًا في الدالة `countMatches`.
 
-<div id="cross_to_inner_join_rewrite">
-  ## cross_to_inner_join_rewrite
-</div>
+## cross_to_inner_join_rewrite {#cross_to_inner_join_rewrite}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 استخدم INNER JOIN بدلًا من الربط بالفاصلة/‏CROSS JOIN إذا كانت هناك تعبيرات ربط في قسم WHERE. القيم: 0 - بدون إعادة كتابة، 1 - طبّق ذلك عند الإمكان على الربط بالفاصلة/‏CROSS JOIN، 2 - افرض إعادة كتابة جميع عمليات الربط بالفاصلة، وCROSS JOIN عند الإمكان
 
-<div id="data_type_default_nullable">
-  ## data_type_default_nullable
-</div>
+## data_type_default_nullable {#data_type_default_nullable}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -302,17 +276,13 @@ SETTINGS convert_query_to_cnf = true;
 * 1 — تُضبط أنواع البيانات في تعريفات الأعمدة على `Nullable` افتراضيًا.
 * 0 — تُضبط أنواع البيانات في تعريفات الأعمدة على أنها غير `Nullable` افتراضيًا.
 
-<div id="decimal_check_overflow">
-  ## decimal_check_overflow
-</div>
+## decimal_check_overflow {#decimal_check_overflow}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 التحقق من تجاوز السعة في عمليات الحساب/المقارنة العشرية
 
-<div id="deduplicate_blocks_in_dependent_materialized_views">
-  ## deduplicate_blocks_in_dependent_materialized_views
-</div>
+## deduplicate_blocks_in_dependent_materialized_views {#deduplicate_blocks_in_dependent_materialized_views}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -332,9 +302,7 @@ SETTINGS convert_query_to_cnf = true;
 
 * [معالجة NULL في عوامل التشغيل `IN`](/ar/concepts/features/operations/insert/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
 
-<div id="defer_partition_pruning_after_final">
-  ## defer_partition_pruning_after_final
-</div>
+## defer_partition_pruning_after_final {#defer_partition_pruning_after_final}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -360,17 +328,13 @@ SETTINGS convert_query_to_cnf = true;
 * 0 — طبّق تقليم الأقسام قبل `FINAL` (سلوك ما قبل 26.3، أسرع لكنه غير آمن في الحالة العامة).
 * 1 — أجّل تقليم الأقسام إلى ما بعد `FINAL` (الافتراضي، آمن من ناحية الصحة).
 
-<div id="describe_compact_output">
-  ## describe_compact_output
-</div>
+## describe_compact_output {#describe_compact_output}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 إذا كانت القيمة true، فأدرِج فقط أسماء الأعمدة وأنواعها في نتيجة الاستعلام DESCRIBE
 
-<div id="dialect">
-  ## dialect
-</div>
+## dialect {#dialect}
 
 <SettingsInfoBlock type="Dialect" default_value="clickhouse" />
 
@@ -385,9 +349,7 @@ SETTINGS convert_query_to_cnf = true;
 * `promql` — PromQL (لغة استعلام Prometheus)، ويُقيَّم على جدول TimeSeries ويُضبط من خلال الإعدادات `promql_database` و`promql_table` و`promql_evaluation_time`.
 * `clickhouse_json` — بدلًا من نص SQL، يُفسَّر الاستعلام على أنه JSON AST (ناتج `parseQueryToJSON`). يظل استعلام `SET` معروفًا بصيغته العادية، بحيث يمكن التبديل مجددًا إلى لهجة أخرى. يتطلب الإعداد التجريبي `enable_json_ast_dialect`.
 
-<div id="discard_query_data">
-  ## discard_query_data
-</div>
+## discard_query_data {#discard_query_data}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -401,9 +363,7 @@ SETTINGS convert_query_to_cnf = true;
 
 يؤثر فقط في بروتوكول TCP الأصلي.
 
-<div id="distinct_overflow_mode">
-  ## distinct_overflow_mode
-</div>
+## distinct_overflow_mode {#distinct_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -415,9 +375,7 @@ SETTINGS convert_query_to_cnf = true;
 * `break`: إيقاف تنفيذ الاستعلام وإرجاع نتيجة جزئية، كما لو أن
   بيانات المصدر قد نفدت.
 
-<div id="do_not_merge_across_partitions_select_final">
-  ## do_not_merge_across_partitions_select_final
-</div>
+## do_not_merge_across_partitions_select_final {#do_not_merge_across_partitions_select_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -425,9 +383,7 @@ SETTINGS convert_query_to_cnf = true;
 
 عند تفعيل هذا الإعداد، لن تُدمَج الأجزاء من أقسام مختلفة معًا أثناء استعلامات SELECT FINAL. وبدلًا من ذلك، سيقتصر الدمج على الأجزاء داخل كل قسم على حدة. ويمكن أن يحسّن ذلك أداء الاستعلام بشكل كبير عند العمل مع الجداول المُقسّمة.
 
-<div id="dynamic_throw_on_type_mismatch">
-  ## dynamic_throw_on_type_mismatch
-</div>
+## dynamic_throw_on_type_mismatch {#dynamic_throw_on_type_mismatch}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -439,9 +395,7 @@ SETTINGS convert_query_to_cnf = true;
 * `true` (الافتراضي) — طرح استثناء.
 * `false` — إرجاع `NULL` لتلك الصفوف بدلًا من ذلك.
 
-<div id="enforce_strict_identifier_format">
-  ## enforce_strict_identifier_format
-</div>
+## enforce_strict_identifier_format {#enforce_strict_identifier_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -449,9 +403,7 @@ SETTINGS convert_query_to_cnf = true;
 
 عند تمكينه، يُسمح فقط بالمعرّفات التي تحتوي على أحرف وأرقام وشرطات سفلية.
 
-<div id="engine_url_skip_empty_files">
-  ## engine_url_skip_empty_files
-</div>
+## engine_url_skip_empty_files {#engine_url_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -462,25 +414,19 @@ SETTINGS convert_query_to_cnf = true;
 * 0 — يُطلق `SELECT` استثناءً إذا كان الملف الفارغ غير متوافق مع التنسيق المطلوب.
 * 1 — يعيد `SELECT` نتيجة فارغة للملف الفارغ.
 
-<div id="exact_rows_before_limit">
-  ## exact_rows_before_limit
-</div>
+## exact_rows_before_limit {#exact_rows_before_limit}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 عند تفعيل هذا الإعداد، سيقدّم ClickHouse قيمة دقيقة لإحصائية rows&#95;before&#95;limit&#95;at&#95;least، ولكن سيكون ذلك على حساب ضرورة قراءة البيانات التي تسبق الحد بالكامل
 
-<div id="except_default_mode">
-  ## except_default_mode
-</div>
+## except_default_mode {#except_default_mode}
 
 <SettingsInfoBlock type="SetOperationMode" default_value="ALL" />
 
 يضبط الوضع الافتراضي في استعلام EXCEPT. القيم الممكنة: سلسلة فارغة، &#39;ALL&#39;، &#39;DISTINCT&#39;. إذا كانت فارغة، فسيؤدي الاستعلام من دون وضع إلى إطلاق استثناء.
 
-<div id="exclude_materialize_skip_indexes_on_insert">
-  ## exclude_materialize_skip_indexes_on_insert
-</div>
+## exclude_materialize_skip_indexes_on_insert {#exclude_materialize_skip_indexes_on_insert}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "إعداد جديد."}]}]} />
 
@@ -514,9 +460,7 @@ ALTER TABLE tab MATERIALIZE INDEX idx_a; -- this query can be used to explicitly
 SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
 ```
 
-<div id="execute_exists_as_scalar_subquery">
-  ## execute_exists_as_scalar_subquery
-</div>
+## execute_exists_as_scalar_subquery {#execute_exists_as_scalar_subquery}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -526,9 +470,7 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 
 القيمة الافتراضية في Cloud: `0`.
 
-<div id="explain_query_plan_default">
-  ## explain_query_plan_default
-</div>
+## explain_query_plan_default {#explain_query_plan_default}
 
 <SettingsInfoBlock type="ExplainQueryPlanDefault" default_value="pretty" />
 
@@ -545,9 +487,7 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 
 يحتفظ `EXPLAIN PLAN` مع `json = 1` أو `distributed = 1` بالقيم الافتراضية القديمة (قبل 26.7) بغض النظر عن هذا الإعداد، ما لم يتم ضبط `actions` أو `compact` أو `pretty` صراحةً. ولا يمكن لمخرجات `pretty` تمثيل نتائج JSON أو المخططات الموزعة لكل shard، لذا لا تُعرض هذه الأوضاع بشكل صحيح إلا بصيغة `legacy`.
 
-<div id="explain_syntax_single_record">
-  ## explain_syntax_single_record
-</div>
+## explain_syntax_single_record {#explain_syntax_single_record}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -559,9 +499,7 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 
 اضبطه على `false` لاستعادة المخرجات السابقة للإصدار 26.8، بسجل لكل سطر، أو اضبط `compatibility` على أي إصدار أقدم من `26.8`.
 
-<div id="extract_key_value_pairs_max_pairs_per_row">
-  ## extract_key_value_pairs_max_pairs_per_row
-</div>
+## extract_key_value_pairs_max_pairs_per_row {#extract_key_value_pairs_max_pairs_per_row}
 
 **الأسماء البديلة**: `extract_kvp_max_pairs_per_row`
 
@@ -571,18 +509,14 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 
 الحد الأقصى لعدد الأزواج التي يمكن أن تُنتجها الدالة `extractKeyValuePairs`. يُستخدم كإجراء احترازي لمنع استهلاك قدر كبير جدًا من الذاكرة.
 
-<div id="extremes">
-  ## extremes
-</div>
+## extremes {#extremes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 ما إذا كان سيتم احتساب القيم القصوى (القيم الصغرى والكبرى في أعمدة نتيجة استعلام). يقبل 0 أو 1. القيمة الافتراضية هي 0 (معطّل).
 لمزيد من المعلومات، راجع قسم &quot;القيم القصوى&quot;.
 
-<div id="fallback_to_stale_replicas_for_distributed_queries">
-  ## fallback_to_stale_replicas_for_distributed_queries
-</div>
+## fallback_to_stale_replicas_for_distributed_queries {#fallback_to_stale_replicas_for_distributed_queries}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -594,9 +528,7 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 
 افتراضيًا، 1 (مُمكّن).
 
-<div id="file_like_engine_default_partition_strategy">
-  ## file_like_engine_default_partition_strategy
-</div>
+## file_like_engine_default_partition_strategy {#file_like_engine_default_partition_strategy}
 
 <SettingsInfoBlock type="FileLikeEngineDefaultPartitionStrategy" default_value="hive" />
 
@@ -604,17 +536,13 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 
 استراتيجية التقسيم الافتراضية للمحركات المشابهة للملفات. تُطبّق فقط على استعلامات `CREATE` التي يكون مسارها خاليًا من نمط glob وعنصر النائب `{_partition_id}`. يستخدم المسار الذي يحتوي على `{_partition_id}` استراتيجية `wildcard` دائمًا. أما المسار الذي يحتوي على نمط glob آخر، فلا يستخدم أي استراتيجية تقسيم ويتجاهل `PARTITION BY`. إذا كان هذا الإعداد هو `wildcard` ولم يحتوِ المسار على `{_partition_id}`، فلن تُستخدم أي استراتيجية تقسيم؛ وترفض محركات الجداول التي لا تستطيع حفظ هذا القرار في وسيطات محركها (مثل `HDFS`) استعلام `CREATE` هذا.
 
-<div id="filesystem_prefetches_limit">
-  ## filesystem_prefetches_limit
-</div>
+## filesystem_prefetches_limit {#filesystem_prefetches_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="200" />
 
 الحد الأقصى لعمليات الجلب المسبق. يشير الصفر إلى عدم وجود حد. ويُوصى باستخدام الإعداد `filesystem_prefetches_max_memory_usage` بدلًا من ذلك إذا كنت تريد تقييد عدد عمليات الجلب المسبق
 
-<div id="filter">
-  ## filter
-</div>
+## filter {#filter}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "إعداد جديد لإضافة عبارة `WHERE` حول استعلام."}]}]} />
 
@@ -628,9 +556,7 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
   لا يُعد `filter` آلية للتحكم في الوصول، ويجب عدم استخدامه بديلاً عن [سياسات الأمان على مستوى الصفوف](/ar/concepts/features/security/access-rights#row-policy-management) أو إعداد `additional_table_filters`. فهو لا يفعل سوى إضافة عبارة `WHERE` إلى الاستعلام الفرعي المغلّف، لذلك تظل البيانات الأساسية مقروءة ومُعالجة قبل تطبيق عامل التصفية — ويمكن للاستعلام الاطلاع على الصفوف المُستبعَدة أثناء المعالجة، مثلاً باستخدام `throwIf` لتسريب المعلومات عبر مسار الخطأ. استخدم الأمان على مستوى الصفوف أو `additional_table_filters` عندما يكون الهدف تقييد الصفوف التي يمكن للمستخدم الوصول إليها.
 </Danger>
 
-<div id="final">
-  ## final
-</div>
+## final {#final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -675,9 +601,7 @@ SELECT * FROM test;
 └─────┴────────┘
 ```
 
-<div id="finalize_projection_parts_synchronously">
-  ## finalize_projection_parts_synchronously
-</div>
+## finalize_projection_parts_synchronously {#finalize_projection_parts_synchronously}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -685,9 +609,7 @@ SELECT * FROM test;
 
 عند تمكين هذا الإعداد، تُنهى أجزاء الإسقاط بشكل متزامن أثناء INSERT، مما يقلل استخدام الذاكرة عند الذروة، ولكن على حساب تقليل توازي الرفع إلى S3. افتراضيًا، يظل تدفق المخرجات لكل إسقاط نشطًا إلى أن يُنهى الجزء بالكامل (بما في ذلك جميع الإسقاطات)، مما يتيح تداخل عمليات الرفع إلى S3، لكنه يزيد استخدام الذاكرة عند الذروة بما يتناسب مع عدد الإسقاطات. لا يؤثر هذا الإعداد إلا في مسار INSERT؛ أما الدمج وعمليات mutation فتُنهي الإسقاطات بشكل متزامن بالفعل.
 
-<div id="flatten_nested">
-  ## flatten_nested
-</div>
+## flatten_nested {#flatten_nested}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -752,17 +674,13 @@ SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="format">
-  ## format
-</div>
+## format {#format}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "إعداد جديد لتجاوز FORMAT الاستعلام لكلٍّ من الإدخال والإخراج."}]}]} />
 
 يتجاوز `FORMAT` الاستعلام لكلٍّ من الإدخال والإخراج. وله أولوية على التنسيق المحدد في الاستعلام وفي امتداد الملف. وتكون لإعدادات `input_format` و`output_format` الأكثر تحديدًا أولوية على إعداد `format` العام هذا، كلٌّ في اتجاهه المعني.
 
-<div id="framing_output_format">
-  ## framing_output_format
-</div>
+## framing_output_format {#framing_output_format}
 
 <BetaBadge />
 
@@ -809,9 +727,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 {"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
 ```
 
-<div id="fsync_metadata">
-  ## fsync_metadata
-</div>
+## fsync_metadata {#fsync_metadata}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -819,9 +735,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 قد يكون من المنطقي تعطيله إذا كان لدى الخادم ملايين الجداول الصغيرة التي تُنشأ وتُحذف باستمرار.
 
-<div id="functions_h3_default_if_invalid">
-  ## functions_h3_default_if_invalid
-</div>
+## functions_h3_default_if_invalid {#functions_h3_default_if_invalid}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -829,9 +743,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 إذا كانت القيمة false، فستُصدر دوال h3، مثل h3CellAreaM2، استثناءً إذا كان الإدخال غير صالح. وإذا كانت القيمة true، فستُرجع 0 أو القيمة الافتراضية.
 
-<div id="geo_distance_returns_float64_on_float64_arguments">
-  ## geo_distance_returns_float64_on_float64_arguments
-</div>
+## geo_distance_returns_float64_on_float64_arguments {#geo_distance_returns_float64_on_float64_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -839,9 +751,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 إذا كانت الوسيطات الأربع للدوال `geoDistance` و`greatCircleDistance` و`greatCircleAngle` كلها من النوع Float64، فستُرجِع Float64 وتستخدم دقة مضاعفة في العمليات الحسابية الداخلية. في إصدارات ClickHouse السابقة، كانت هذه الدوال تُرجِع دائمًا Float32.
 
-<div id="geotoh3_argument_order">
-  ## geotoh3_argument_order
-</div>
+## geotoh3_argument_order {#geotoh3_argument_order}
 
 <BetaBadge />
 
@@ -851,17 +761,13 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 تقبل الدالة &#39;geoToH3&#39; ‎(lon, lat)‎ إذا ضُبطت على &#39;lon&#95;lat&#39;، و‎(lat, lon)‎ إذا ضُبطت على &#39;lat&#95;lon&#39;.
 
-<div id="glob_expansion_max_elements">
-  ## glob_expansion_max_elements
-</div>
+## glob_expansion_max_elements {#glob_expansion_max_elements}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 الحد الأقصى لعدد العناوين المسموح بها (مثل وحدات التخزين الخارجية ودوال الجداول وغيرها).
 
-<div id="h3togeo_lon_lat_result_order">
-  ## h3togeo_lon_lat_result_order
-</div>
+## h3togeo_lon_lat_result_order {#h3togeo_lon_lat_result_order}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -869,17 +775,13 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 تعيد الدالة &#39;h3ToGeo&#39; القيمة ‎(lon, lat) إذا كانت القيمة true، وإلا فتُعيد ‎(lat, lon).
 
-<div id="handshake_timeout_ms">
-  ## handshake_timeout_ms
-</div>
+## handshake_timeout_ms {#handshake_timeout_ms}
 
 <SettingsInfoBlock type="مللي ثانية" default_value="10000" />
 
 مهلة الانتظار بالمللي ثانية لاستلام حزمة Hello من النسخ المتماثلة أثناء المصافحة.
 
-<div id="hedged_connection_timeout_ms">
-  ## hedged_connection_timeout_ms
-</div>
+## hedged_connection_timeout_ms {#hedged_connection_timeout_ms}
 
 <SettingsInfoBlock type="مللي ثانية" default_value="50" />
 
@@ -887,9 +789,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 مهلة الاتصال لإنشاء اتصال مع نسخة متماثلة لطلبات Hedged
 
-<div id="highlight_max_matches_per_row">
-  ## highlight_max_matches_per_row
-</div>
+## highlight_max_matches_per_row {#highlight_max_matches_per_row}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -901,9 +801,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 * عدد صحيح موجب.
 
-<div id="hnsw_candidate_list_size_for_search">
-  ## hnsw_candidate_list_size_for_search
-</div>
+## hnsw_candidate_list_size_for_search {#hnsw_candidate_list_size_for_search}
 
 <SettingsInfoBlock type="UInt64" default_value="256" />
 
@@ -911,17 +809,13 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 حجم قائمة المرشحين الديناميكية عند البحث في فهرس تشابه المتجهات، ويُعرف أيضًا باسم &#39;ef&#95;search&#39;.
 
-<div id="hsts_max_age">
-  ## hsts_max_age
-</div>
+## hsts_max_age {#hsts_max_age}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 مدة انتهاء صلاحية HSTS. تعني القيمة 0 تعطيل HSTS.
 
-<div id="idle_connection_timeout">
-  ## idle_connection_timeout
-</div>
+## idle_connection_timeout {#idle_connection_timeout}
 
 <SettingsInfoBlock type="UInt64" default_value="3600" />
 
@@ -931,9 +825,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 * عدد صحيح موجب (0 - إغلاق فوري، بعد 0 ثانية).
 
-<div id="inject_random_order_for_select_without_order_by">
-  ## inject_random_order_for_select_without_order_by
-</div>
+## inject_random_order_for_select_without_order_by {#inject_random_order_for_select_without_order_by}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -944,33 +836,25 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 إذا كان التركيب على المستوى الأعلى هو UNION، فسيُدرج &#39;ORDER BY rand()&#39; في جميع الفروع بشكل مستقل.
 هذا مفيد فقط لأغراض الاختبار والتطوير (إذ إن غياب ORDER BY يُعدّ مصدرًا لنتائج استعلام غير حتمية).
 
-<div id="input_format">
-  ## input_format
-</div>
+## input_format {#input_format}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "إعداد جديد لتجاوز تنسيق الإدخال للاستعلام."}]}]} />
 
 يتجاوز تنسيق الإدخال للاستعلام، وله الأولوية على التنسيق المحدد فيه.
 
-<div id="interactive_delay">
-  ## interactive_delay
-</div>
+## interactive_delay {#interactive_delay}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
 الفاصل الزمني بالميكروثانية للتحقق مما إذا كان تنفيذ الطلب قد أُلغي وإرسال معلومات التقدّم.
 
-<div id="intersect_default_mode">
-  ## intersect_default_mode
-</div>
+## intersect_default_mode {#intersect_default_mode}
 
 <SettingsInfoBlock type="SetOperationMode" default_value="ALL" />
 
 يُعيّن الوضع الافتراضي في استعلام INTERSECT. القيم الممكنة: سلسلة فارغة، &#39;ALL&#39;، &#39;DISTINCT&#39;. إذا كانت القيمة فارغة، فسيؤدي الاستعلام بدون وضع إلى إثارة استثناء.
 
-<div id="least_greatest_legacy_null_behavior">
-  ## least_greatest_legacy_null_behavior
-</div>
+## least_greatest_legacy_null_behavior {#least_greatest_legacy_null_behavior}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -978,9 +862,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 إذا كان هذا الإعداد ممكّنًا، فستُرجِع الدالتان &#39;least&#39; و &#39;greatest&#39; القيمة NULL إذا كانت إحدى وسيطاتهما NULL.
 
-<div id="legacy_column_name_of_tuple_literal">
-  ## legacy_column_name_of_tuple_literal
-</div>
+## legacy_column_name_of_tuple_literal {#legacy_column_name_of_tuple_literal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -988,9 +870,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 أدرِج أسماء جميع عناصر قيم Tuple الحرفية الكبيرة في أسماء الأعمدة بدلًا من hash. هذا الإعداد موجود فقط لأسباب التوافق. من المنطقي ضبطه على &#39;true&#39; أثناء إجراء تحديث متدرّج للعنقود من إصدار أقل من 21.7 إلى إصدار أعلى.
 
-<div id="limit">
-  ## limit
-</div>
+## limit {#limit}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -1007,9 +887,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 يؤثر هذا الإعداد في استعلامات `SELECT` / `UNION` التي تُنتج نتائج. بالنسبة إلى استعلام كتابة (`INSERT … SELECT`، `CREATE … AS SELECT`)، لا يسري مفعوله إلا إذا تضمّنه `SELECT` المصدر في عبارة `SETTINGS` الخاصة به؛ أما القيمة الموروثة من ملف تعريف أو جلسة، أو المعيّنة في تعليمة `INSERT` / `CREATE` نفسها، فلا تُنقل إلى `SELECT` المصدر — وهي قاعدة عدم النقل نفسها التي تنطبق على أي إعداد آخر.
 
-<div id="load_marks_asynchronously">
-  ## load_marks_asynchronously
-</div>
+## load_marks_asynchronously {#load_marks_asynchronously}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1017,9 +895,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 القيمة الافتراضية في Cloud: `1`.
 
-<div id="lock_acquire_timeout">
-  ## lock_acquire_timeout
-</div>
+## lock_acquire_timeout {#lock_acquire_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="120" />
 
@@ -1032,9 +908,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 * عدد صحيح موجب (بالثواني).
 * 0 — لا توجد مهلة للقفل.
 
-<div id="low_priority_query_wait_time_ms">
-  ## low_priority_query_wait_time_ms
-</div>
+## low_priority_query_wait_time_ms {#low_priority_query_wait_time_ms}
 
 <BetaBadge />
 
@@ -1044,9 +918,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 عند استخدام آلية تحديد أولويات الاستعلامات (راجع الإعداد `priority`)، تنتظر الاستعلامات منخفضة الأولوية حتى تنتهي الاستعلامات ذات الأولوية الأعلى. يحدّد هذا الإعداد مدة هذا الانتظار.
 
-<div id="make_distributed_plan">
-  ## make_distributed_plan
-</div>
+## make_distributed_plan {#make_distributed_plan}
 
 <ExperimentalBadge />
 
@@ -1064,9 +936,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 * `compile_expressions = 0`;
 * `query_plan_direct_read_from_text_index = 0`.
 
-<div id="merge_table_max_tables_to_look_for_schema_inference">
-  ## merge_table_max_tables_to_look_for_schema_inference
-</div>
+## merge_table_max_tables_to_look_for_schema_inference {#merge_table_max_tables_to_look_for_schema_inference}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1075,9 +945,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 عند إنشاء جدول `Merge` من دون مخطط صريح، أو عند استخدام دالة الجدول `merge`، يُستنتج المخطط باعتباره اتحادًا لما لا يزيد على العدد المحدد من الجداول المطابقة.
 إذا كان عدد الجداول أكبر من ذلك، فسيُستنتج المخطط من أول عدد محدد من الجداول.
 
-<div id="mongodb_throw_on_unsupported_query">
-  ## mongodb_throw_on_unsupported_query
-</div>
+## mongodb_throw_on_unsupported_query {#mongodb_throw_on_unsupported_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1085,17 +953,13 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 إذا كان هذا الخيار مُمكّنًا، فستُرجِع جداول MongoDB خطأً عند تعذّر إنشاء استعلام MongoDB. وإلا، فسيقرأ ClickHouse الجدول بالكامل ويعالجه محليًا. لا ينطبق هذا الخيار عند تعيين &#39;allow&#95;experimental&#95;analyzer=0&#39;.
 
-<div id="multiple_joins_try_to_keep_original_names">
-  ## multiple_joins_try_to_keep_original_names
-</div>
+## multiple_joins_try_to_keep_original_names {#multiple_joins_try_to_keep_original_names}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 لا تُضِف أسماءً مستعارة إلى قائمة التعبيرات على المستوى الأعلى عند إعادة كتابة عمليات الربط المتعددة
 
-<div id="normalize_function_names">
-  ## normalize_function_names
-</div>
+## normalize_function_names {#normalize_function_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1103,9 +967,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 تطبيع أسماء الدوال إلى صيغها القياسية
 
-<div id="offset">
-  ## offset
-</div>
+## offset {#offset}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -1149,9 +1011,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 يؤثر هذا الإعداد في استعلامات `SELECT` / `UNION` التي تُنتج نتائج. بالنسبة إلى استعلام كتابة (`INSERT … SELECT`, `CREATE … AS SELECT`)، لا يسري مفعوله إلا إذا تضمّنه `SELECT` المصدر في عبارة `SETTINGS` الخاصة به؛ أما القيمة الموروثة من ملف تعريف أو جلسة، أو المضبوطة في عبارة `INSERT` / `CREATE` نفسها، فلا تُنقل إلى `SELECT` المصدر — وهي قاعدة عدم النقل نفسها المطبقة على أي إعداد آخر.
 
-<div id="order">
-  ## order
-</div>
+## order {#order}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "إعداد جديد لإضافة عبارة `ORDER BY` حول استعلام."}]}]} />
 
@@ -1161,17 +1021,13 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 يؤثر في استعلامات `SELECT` / `UNION` التي تُنتج نتائج. أما في استعلامات الكتابة (`INSERT … SELECT` و`CREATE … AS SELECT`)، فلا يسري مفعوله إلا إذا تضمّن `SELECT` المصدر هذا الإعداد في عبارة `SETTINGS` الخاصة به. ولا يُنقل إلى `SELECT` المصدر أيٌّ من القيم الموروثة من ملف تعريف أو جلسة، أو المضبوطة في عبارة `INSERT` / `CREATE` نفسها، وهي قاعدة عدم النقل ذاتها التي تنطبق على أي إعداد آخر.
 
-<div id="output_format">
-  ## output_format
-</div>
+## output_format {#output_format}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "إعداد جديد لتجاوز تنسيق إخراج الاستعلام."}]}]} />
 
 يتجاوز تنسيق إخراج الاستعلام، ويكون له الأولوية على التنسيق المحدد في الاستعلام أو امتداد الملف أو عبر `default_format`.
 
-<div id="page">
-  ## صفحة
-</div>
+## صفحة {#page}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -1183,9 +1039,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 ويؤثر في استعلامات `SELECT` / `UNION` التي تُنتج نتائج. أما في استعلامات الكتابة (`INSERT … SELECT` و`CREATE … AS SELECT`)، فلا يسري إلا إذا تضمّن `SELECT` المصدر هذا الإعداد في عبارة `SETTINGS` الخاصة به؛ إذ لا تُنقل القيمة الموروثة من ملف تعريف أو جلسة، أو المعيّنة في عبارة `INSERT` / `CREATE` نفسها، إلى `SELECT` المصدر — وهي قاعدة عدم النقل ذاتها المطبقة على أي إعداد آخر.
 
-<div id="paimon_target_snapshot_id">
-  ## paimon_target_snapshot_id
-</div>
+## paimon_target_snapshot_id {#paimon_target_snapshot_id}
 
 <ExperimentalBadge />
 
@@ -1197,9 +1051,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 للـ snapshot&#95;id المحدد دون تقديم المؤشر المائي المعتمد.
 القيمة الافتراضية: -1 (معطّل)
 
-<div id="parallelize_output_from_storages">
-  ## parallelize_output_from_storages
-</div>
+## parallelize_output_from_storages {#parallelize_output_from_storages}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1207,17 +1059,13 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 موازاة المخرجات في خطوة القراءة من وحدات التخزين. يتيح هذا إجراء معالجة الاستعلامات بالتوازي مباشرةً بعد القراءة من وحدة التخزين، إذا أمكن ذلك
 
-<div id="partial_result_on_first_cancel">
-  ## partial_result_on_first_cancel
-</div>
+## partial_result_on_first_cancel {#partial_result_on_first_cancel}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 يسمح بإرجاع نتيجة جزئية للاستعلام بعد الإلغاء.
 
-<div id="per_part_index_stats">
-  ## per_part_index_stats
-</div>
+## per_part_index_stats {#per_part_index_stats}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1225,17 +1073,13 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 يسجّل إحصاءات الفهرس لكل جزء
 
-<div id="poll_interval">
-  ## poll_interval
-</div>
+## poll_interval {#poll_interval}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
 يُعلّق التنفيذ في حلقة انتظار الاستعلام على الخادم لعدد الثواني المحدد.
 
-<div id="polyglot_dialect">
-  ## polyglot_dialect
-</div>
+## polyglot_dialect {#polyglot_dialect}
 
 <ExperimentalBadge />
 
@@ -1243,9 +1087,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 لهجة SQL المصدر لمحوّل polyglot (مثل: &#39;sqlite&#39; و&#39;mysql&#39; و&#39;postgresql&#39; و&#39;snowflake&#39; و&#39;duckdb&#39;).
 
-<div id="postgresql_fault_injection_probability">
-  ## postgresql_fault_injection_probability
-</div>
+## postgresql_fault_injection_probability {#postgresql_fault_injection_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -1253,9 +1095,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 الاحتمال التقريبي لفشل استعلامات PostgreSQL الداخلية (المستخدمة في النسخ المتماثل). القيمة الصالحة ضمن النطاق [0.0f, 1.0f]
 
-<div id="predicate_statistics_sample_rate">
-  ## predicate_statistics_sample_rate
-</div>
+## predicate_statistics_sample_rate {#predicate_statistics_sample_rate}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -1263,17 +1103,13 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 يجمع إحصاءات انتقائية عبارات الشرط في `system.predicate_statistics_log`. عند تعيينه إلى N &gt; 0، تُؤخذ عيّنة من نحو 1/N من الاستعلامات (استنادًا إلى معرّف الاستعلام). 0 يعني تعطيله.
 
-<div id="prefetch_buffer_size">
-  ## prefetch_buffer_size
-</div>
+## prefetch_buffer_size {#prefetch_buffer_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 الحد الأقصى لحجم مخزن الجلب المسبق المؤقت المستخدم للقراءة من نظام الملفات. تُقيَّد القيم التي تتجاوز 256 MiB عند 256 MiB، لأن مخزن القراءة المؤقت لا يحتاج مطلقًا إلى حجم أكبر.
 
-<div id="print_pretty_type_names">
-  ## print_pretty_type_names
-</div>
+## print_pretty_type_names {#print_pretty_type_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1310,17 +1146,13 @@ a   Tuple(
 )
 ```
 
-<div id="priority">
-  ## priority
-</div>
+## priority {#priority}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 priority الاستعلام. 1 هي الأعلى، وكلما زادت القيمة انخفضت priority؛ 0 يعني عدم استخدام الأولويات.
 
-<div id="push_external_roles_in_interserver_queries">
-  ## push_external_roles_in_interserver_queries
-</div>
+## push_external_roles_in_interserver_queries {#push_external_roles_in_interserver_queries}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1328,9 +1160,7 @@ priority الاستعلام. 1 هي الأعلى، وكلما زادت القي�
 
 تمكين تمرير أدوار المستخدم من العقدة المُرسِلة إلى العُقد الأخرى أثناء تنفيذ استعلام.
 
-<div id="query_metric_log_interval">
-  ## query_metric_log_interval
-</div>
+## query_metric_log_interval {#query_metric_log_interval}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -1344,33 +1174,25 @@ priority الاستعلام. 1 هي الأعلى، وكلما زادت القي�
 
 القيمة الافتراضية: -1
 
-<div id="queue_max_wait_ms">
-  ## queue_max_wait_ms
-</div>
+## queue_max_wait_ms {#queue_max_wait_ms}
 
 <SettingsInfoBlock type="ميلي ثانية" default_value="0" />
 
 مدة الانتظار في قائمة انتظار الطلبات، إذا تجاوز عدد الطلبات المتزامنة الحد الأقصى.
 
-<div id="rabbitmq_max_wait_ms">
-  ## rabbitmq_max_wait_ms
-</div>
+## rabbitmq_max_wait_ms {#rabbitmq_max_wait_ms}
 
 <SettingsInfoBlock type="مللي ثانية" default_value="5000" />
 
 مدة الانتظار لقراءة البيانات من RabbitMQ قبل إعادة المحاولة.
 
-<div id="readonly">
-  ## readonly
-</div>
+## readonly {#readonly}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 0 - لا توجد أي قيود على وضع القراءة فقط. 1 - يُسمح فقط بطلبات القراءة، وكذلك بتغيير الإعدادات المسموح بها صراحةً. 2 - يُسمح فقط بطلبات القراءة، وكذلك بتغيير الإعدادات، باستثناء الإعداد &#39;readonly&#39;.
 
-<div id="recursive_cte_max_steps_in_type_inference">
-  ## recursive_cte_max_steps_in_type_inference
-</div>
+## recursive_cte_max_steps_in_type_inference {#recursive_cte_max_steps_in_type_inference}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -1378,9 +1200,7 @@ priority الاستعلام. 1 هي الأعلى، وكلما زادت القي�
 
 الحد الأقصى لعدد التكرارات لاستنتاج أنواع الأعمدة في تعبيرات الجدول الشائعة التعاودية. تُحدَّد أنواع الأعمدة عبر تطبيق `getLeastSupertype` تكراريًا على الطرفين غير التعاودي والتعاودي من UNION ALL حتى الوصول إلى حالة الاستقرار. اضبط القيمة على 0 لتعطيل توسيع الأنواع والاكتفاء بالأنواع من الجزء غير التعاودي فقط.
 
-<div id="regexp_max_matches_per_row">
-  ## regexp_max_matches_per_row
-</div>
+## regexp_max_matches_per_row {#regexp_max_matches_per_row}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1390,33 +1210,25 @@ priority الاستعلام. 1 هي الأعلى، وكلما زادت القي�
 
 * عدد صحيح موجب.
 
-<div id="reject_expensive_hyperscan_regexps">
-  ## reject_expensive_hyperscan_regexps
-</div>
+## reject_expensive_hyperscan_regexps {#reject_expensive_hyperscan_regexps}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 استبعِد الأنماط التي يُحتمل أن يكون تقييمها مكلفًا باستخدام hyperscan (بسبب التضخم في حالات NFA)
 
-<div id="remerge_sort_lowered_memory_bytes_ratio">
-  ## remerge_sort_lowered_memory_bytes_ratio
-</div>
+## remerge_sort_lowered_memory_bytes_ratio {#remerge_sort_lowered_memory_bytes_ratio}
 
 <SettingsInfoBlock type="Float" default_value="2" />
 
 إذا لم ينخفض استهلاك الذاكرة بعد إعادة الدمج بهذه النسبة، فسيتم تعطيل إعادة الدمج.
 
-<div id="remote_read_min_bytes_for_seek">
-  ## remote_read_min_bytes_for_seek
-</div>
+## remote_read_min_bytes_for_seek {#remote_read_min_bytes_for_seek}
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
 الحد الأدنى من البايتات المطلوب للقراءة عن بُعد (URL، S3) لإجراء seek بدلًا من القراءة مع ignore.
 
-<div id="rename_files_after_processing">
-  ## rename_files_after_processing
-</div>
+## rename_files_after_processing {#rename_files_after_processing}
 
 * **النوع:** String
 
@@ -1444,9 +1256,7 @@ priority الاستعلام. 1 هي الأعلى، وكلما زادت القي�
 
 إذا تمت قراءة `sample.csv` بنجاح، فسيُعاد تسمية الملف إلى `processed_sample_1683473210851438.csv`
 
-<div id="replication_wait_for_inactive_replica_timeout">
-  ## replication_wait_for_inactive_replica_timeout
-</div>
+## replication_wait_for_inactive_replica_timeout {#replication_wait_for_inactive_replica_timeout}
 
 <SettingsInfoBlock type="Int64" default_value="120" />
 
@@ -1458,9 +1268,7 @@ priority الاستعلام. 1 هي الأعلى، وكلما زادت القي�
 * عدد صحيح سالب — الانتظار لمدة غير محدودة.
 * عدد صحيح موجب — عدد الثواني المطلوب انتظارها.
 
-<div id="reserve_memory">
-  ## reserve_memory
-</div>
+## reserve_memory {#reserve_memory}
 
 <ExperimentalBadge />
 
@@ -1473,9 +1281,7 @@ priority الاستعلام. 1 هي الأعلى، وكلما زادت القي�
 تعني القيمة `0` عدم وجود حجز.
 لا يسري هذا الإعداد إلا إذا تم إنشاء مورد MEMORY RESERVATION.
 
-<div id="restore_replicated_merge_tree_to_shared_merge_tree">
-  ## restore_replicated_merge_tree_to_shared_merge_tree
-</div>
+## restore_replicated_merge_tree_to_shared_merge_tree {#restore_replicated_merge_tree_to_shared_merge_tree}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1485,9 +1291,7 @@ priority الاستعلام. 1 هي الأعلى، وكلما زادت القي�
 
 القيمة الافتراضية في Cloud: `1`.
 
-<div id="result_overflow_mode">
-  ## result_overflow_mode
-</div>
+## result_overflow_mode {#result_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1519,9 +1323,7 @@ FORMAT Null;
 6666 rows in set. ...
 ```
 
-<div id="resumable_backup_from_snapshot">
-  ## resumable_backup_from_snapshot
-</div>
+## resumable_backup_from_snapshot {#resumable_backup_from_snapshot}
 
 <ExperimentalBadge />
 
@@ -1534,9 +1336,7 @@ FORMAT Null;
 `S3` و`AzureBlobStorage` بنمط الدليل. يؤدي تمكينه في إصدارات ClickHouse مفتوحة المصدر، حيث لا يتوفر
 `BACKUP FROM SNAPSHOT` نفسه، إلى فشل `BACKUP` مع `WRONG_BACKUP_SETTINGS`.
 
-<div id="rows_before_aggregation">
-  ## rows_before_aggregation
-</div>
+## rows_before_aggregation {#rows_before_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1544,9 +1344,7 @@ FORMAT Null;
 
 عند التمكين، يوفّر ClickHouse قيمة دقيقة لإحصائية rows&#95;before&#95;aggregation، التي تمثل عدد الصفوف المقروءة قبل التجمي
 
-<div id="run_query_in_background">
-  ## run_query_in_background
-</div>
+## run_query_in_background {#run_query_in_background}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1562,9 +1360,7 @@ FORMAT Null;
 
 حالة الاستخدام الرئيسية هي عملية `INSERT ... SELECT` طويلة يجب ألا تضيع عند انقطاع اتصال العميل.
 
-<div id="secondary_indices_enable_bulk_filtering">
-  ## secondary_indices_enable_bulk_filtering
-</div>
+## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1572,9 +1368,7 @@ FORMAT Null;
 
 يُفعِّل خوارزمية التصفية المجمّعة للفهارس. ومن المتوقع أن تكون أفضل دائمًا، لكن هذا الإعداد متاح لأغراض التوافق والتحكم.
 
-<div id="select">
-  ## select
-</div>
+## select {#select}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "إعداد جديد لتغليف استعلام داخل `SELECT <expr_list> FROM (<query>)`."}]}]} />
 
@@ -1584,9 +1378,7 @@ FORMAT Null;
 
 يحدّد بنية استعلامات `SELECT` / `UNION` التي تُنتج نتائج. أما في استعلامات الكتابة (`INSERT … SELECT`، `CREATE … AS SELECT`)، فلا يسري إلا إذا تضمّنه `SELECT` المصدر في عبارة `SETTINGS` الخاصة به. ولا تُنقل إلى `SELECT` المصدر قيمة موروثة من ملف تعريف أو جلسة، أو قيمة محددة في عبارة `INSERT` / `CREATE` نفسها، وهي قاعدة عدم النقل ذاتها التي تنطبق على أي إعداد آخر.
 
-<div id="select_sequential_consistency">
-  ## select_sequential_consistency
-</div>
+## select_sequential_consistency {#select_sequential_consistency}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -1613,9 +1405,7 @@ FORMAT Null;
 * [insert&#95;quorum&#95;timeout](/ar/reference/settings/session-settings/insert-quorum#insert_quorum_timeout)
 * [insert&#95;quorum&#95;parallel](/ar/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)
 
-<div id="session_timezone">
-  ## session_timezone
-</div>
+## session_timezone {#session_timezone}
 
 <BetaBadge />
 
@@ -1678,9 +1468,7 @@ SELECT *, timeZone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 
 * [timezone](/ar/reference/settings/server-settings/settings/other#timezone)
 
-<div id="set_overflow_mode">
-  ## set_overflow_mode
-</div>
+## set_overflow_mode {#set_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1692,17 +1480,13 @@ SELECT *, timeZone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 * `break`: إيقاف تنفيذ الاستعلام وإرجاع نتيجة جزئية، كما لو أن
   بيانات المصدر قد نفدت.
 
-<div id="single_join_prefer_left_table">
-  ## single_join_prefer_left_table
-</div>
+## single_join_prefer_left_table {#single_join_prefer_left_table}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 عند وجود JOIN واحدة، وفي حال التباس المعرّف، فَضِّل الجدول الأيسر
 
-<div id="skip_redundant_aliases_in_udf">
-  ## skip_redundant_aliases_in_udf
-</div>
+## skip_redundant_aliases_in_udf {#skip_redundant_aliases_in_udf}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1749,17 +1533,13 @@ EXPLAIN SYNTAX SELECT test_03274(4 + 2);
 SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 ```
 
-<div id="sleep_after_receiving_query_ms">
-  ## sleep_after_receiving_query_ms
-</div>
+## sleep_after_receiving_query_ms {#sleep_after_receiving_query_ms}
 
 <SettingsInfoBlock type="مللي ثانية" default_value="0" />
 
 مدة الانتظار بعد استلام الاستعلام في TCPHandler
 
-<div id="snappy_mode">
-  ## snappy_mode
-</div>
+## snappy_mode {#snappy_mode}
 
 <SettingsInfoBlock type="SnappyMode" default_value="basic" />
 
@@ -1774,9 +1554,7 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 * `basic` — تنسيق كتل Hadoop snappy. متوافق مع الملفات التي يقرأها Hadoop ويكتبها. يدعم القراءة والكتابة.
 * `framed` — تنسيق framing لـ Snappy، وهو تنسيق البث القياسي الذي تحدده Google. يدعم القراءة والكتابة.
 
-<div id="sort">
-  ## sort
-</div>
+## sort {#sort}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "إعداد جديد لإضافة عبارة ORDER BY بسيطة حول استعلام."}]}]} />
 
@@ -1786,9 +1564,7 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 
 يؤثر في استعلامات `SELECT` / `UNION` التي تُنتج نتائج. أما في استعلامات الكتابة (`INSERT … SELECT`، `CREATE … AS SELECT`)، فلا يسري إلا إذا كان `SELECT` المصدر يتضمنه في عبارة `SETTINGS` الخاصة به؛ ولا تُنقل إلى `SELECT` المصدر قيمة موروثة من ملف تعريف أو جلسة، أو قيمة محددة في عبارة `INSERT` / `CREATE` نفسها — وهي قاعدة عدم النقل ذاتها التي تنطبق على أي إعداد آخر.
 
-<div id="sort_overflow_mode">
-  ## sort_overflow_mode
-</div>
+## sort_overflow_mode {#sort_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1799,9 +1575,7 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 * `throw`: إثارة استثناء.
 * `break`: إيقاف تنفيذ الاستعلام وإرجاع نتيجة جزئية.
 
-<div id="splitby_max_substrings_includes_remaining_string">
-  ## splitby_max_substrings_includes_remaining_string
-</div>
+## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1812,9 +1586,7 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 * `0` - لن تُضمَّن السلسلة المتبقية في العنصر الأخير من مصفوفة النتيجة.
 * `1` - ستُضمَّن السلسلة المتبقية في العنصر الأخير من مصفوفة النتيجة. هذا هو سلوك الدالة [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) في Spark والطريقة [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) في بايثون.
 
-<div id="statistics_max_set_size_for_exact_selectivity_estimation">
-  ## statistics_max_set_size_for_exact_selectivity_estimation
-</div>
+## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -1822,9 +1594,7 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 
 الحد الأقصى لحجم المجموعة في الطرف الأيمن من عامل التشغيل `IN` الذي يمكن لمقدِّر الانتقائية عنده اشتقاق النطاقات الدقيقة التي تغطيها المجموعة. يتطلب اشتقاق هذه النطاقات `Field` لكل عنصر، وفرزًا، ومسبار إحصاءات واحدًا لكل عنصر، وهي تكلفة تهيمن على تخطيط الاستعلام عند استخدام مجموعة كبيرة. فوق هذا الحد، يستمد المقدِّر الانتقائية من حجم المجموعة ونطاقها الحدي بدلًا من ذلك، وذلك بتمرير خطي واحد على المجموعة دون فرز أو مسابير إحصاءات لكل عنصر. يشير الصفر إلى عدم وجود حد.
 
-<div id="stop_refreshable_materialized_views_on_startup">
-  ## stop_refreshable_materialized_views_on_startup
-</div>
+## stop_refreshable_materialized_views_on_startup {#stop_refreshable_materialized_views_on_startup}
 
 <ExperimentalBadge />
 
@@ -1832,17 +1602,13 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 
 عند بدء تشغيل الخادم، يمنع جدولة طرق العرض المادية القابلة للتحديث، كما لو تم استخدام SYSTEM STOP VIEWS. ويمكنك تشغيلها يدويًا بعد ذلك باستخدام `SYSTEM START VIEWS` أو `SYSTEM START VIEW <name>`. وينطبق ذلك أيضًا على طرق العرض المنشأة حديثًا. ولا يؤثر هذا في طرق العرض المادية غير القابلة للتحديث.
 
-<div id="tcp_keep_alive_timeout">
-  ## tcp_keep_alive_timeout
-</div>
+## tcp_keep_alive_timeout {#tcp_keep_alive_timeout}
 
 <SettingsInfoBlock type="ثوانٍ" default_value="290" />
 
 الوقت بالثواني الذي يجب أن يبقى فيه الاتصال خاملاً قبل أن يبدأ TCP في إرسال مجسّات keepalive
 
-<div id="temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds">
-  ## temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds
-</div>
+## temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds {#temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds}
 
 <SettingsInfoBlock type="UInt64" default_value="600000" />
 
@@ -1850,17 +1616,13 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 
 مدة الانتظار لقفل ذاكرة التخزين المؤقت لنظام الملفات عند حجز مساحة للبيانات المؤقتة
 
-<div id="throw_if_no_data_to_insert">
-  ## throw_if_no_data_to_insert
-</div>
+## throw_if_no_data_to_insert {#throw_if_no_data_to_insert}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-يسمح بعمليات INSERT الفارغة أو يمنعها، وهو مفعّل افتراضيًا (ويؤدي إلى ظهور خطأ عند تنفيذ عملية insert فارغة). لا ينطبق هذا إلا على عمليات INSERT التي تستخدم [`clickhouse-client`](/ar/concepts/features/interfaces/cli) أو [واجهة gRPC](/ar/concepts/features/interfaces/grpc).
+يسمح بعمليات INSERT الفارغة أو يمنعها، وهو مفعّل افتراضيًا (ويؤدي إلى ظهور خطأ عند تنفيذ عملية insert فارغة). لا ينطبق هذا إلا على عمليات INSERT التي تستخدم [`clickhouse-client`](/ar/concepts/features/interfaces/client) أو [واجهة gRPC](/ar/concepts/features/interfaces/grpc).
 
-<div id="time_series_prefer_recent_samples_table">
-  ## time_series_prefer_recent_samples_table
-</div>
+## time_series_prefer_recent_samples_table {#time_series_prefer_recent_samples_table}
 
 <ExperimentalBadge />
 
@@ -1870,18 +1632,14 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 
 اقرأ من جدول العينات الحديثة لجدول [TimeSeries](/ar/reference/engines/table-engines/integrations/time-series) بدلاً من جدول العينات الرئيسي عندما يقع النطاق الزمني المطلوب بالكامل ضمن نافذة TTL لجدول العينات الحديثة (راجع إعداد `recent_samples_ttl_seconds` لمحرك الجدول TimeSeries).
 
-<div id="timeout_before_checking_execution_speed">
-  ## timeout_before_checking_execution_speed
-</div>
+## timeout_before_checking_execution_speed {#timeout_before_checking_execution_speed}
 
 <SettingsInfoBlock type="ثوانٍ" default_value="10" />
 
 يتحقق من أن سرعة التنفيذ ليست منخفضة جدًا (أي لا تقل عن `min_execution_speed`)،
 وذلك بعد انقضاء الوقت المحدد بالثواني.
 
-<div id="transfer_overflow_mode">
-  ## transfer_overflow_mode
-</div>
+## transfer_overflow_mode {#transfer_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -1893,9 +1651,7 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 * `break`: إيقاف تنفيذ الاستعلام وإرجاع نتيجة جزئية، كما لو كانت
   بيانات المصدر قد نفدت.
 
-<div id="transform_null_in">
-  ## transform_null_in
-</div>
+## transform_null_in {#transform_null_in}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1953,9 +1709,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 * [معالجة NULL في عوامل التشغيل `IN`](/ar/reference/statements/in#null-processing)
 
-<div id="traverse_shadow_remote_data_paths">
-  ## traverse_shadow_remote_data_paths
-</div>
+## traverse_shadow_remote_data_paths {#traverse_shadow_remote_data_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1963,9 +1717,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 اجتز البيانات المجمّدة (دليل الظل) بالإضافة إلى بيانات الجدول الفعلية عند تنفيذ استعلام على system.remote&#95;data&#95;paths
 
-<div id="union_default_mode">
-  ## union_default_mode
-</div>
+## union_default_mode {#union_default_mode}
 
 يحدد وضعًا لدمج نتائج استعلام `SELECT`. لا يُستخدم هذا الإعداد إلا مع [UNION](/ar/reference/statements/select/union) عند عدم تحديد `UNION ALL` أو `UNION DISTINCT` صراحةً.
 
@@ -1977,17 +1729,13 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 راجع الأمثلة في [UNION](/ar/reference/statements/select/union).
 
-<div id="unknown_packet_in_send_data">
-  ## unknown_packet_in_send_data
-</div>
+## unknown_packet_in_send_data {#unknown_packet_in_send_data}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 أرسل حزمة غير معروفة بدلًا من حزمة البيانات رقم N
 
-<div id="variant_throw_on_type_mismatch">
-  ## variant_throw_on_type_mismatch
-</div>
+## variant_throw_on_type_mismatch {#variant_throw_on_type_mismatch}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1999,9 +1747,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 * `true` (الافتراضي) — طرح استثناء.
 * `false` — إرجاع `NULL` لهذه الصفوف بدلًا من ذلك.
 
-<div id="wait_changes_become_visible_after_commit_mode">
-  ## wait_changes_become_visible_after_commit_mode
-</div>
+## wait_changes_become_visible_after_commit_mode {#wait_changes_become_visible_after_commit_mode}
 
 <ExperimentalBadge />
 
@@ -2009,17 +1755,13 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 انتظر حتى تصبح التغييرات التي تم تثبيتها مرئية فعليًا في أحدث لقطة
 
-<div id="workload">
-  ## عبء العمل
-</div>
+## عبء العمل {#workload}
 
 <SettingsInfoBlock type="String" default_value="default" />
 
 اسم عبء العمل المُستخدَم للوصول إلى الموارد
 
-<div id="write_full_path_in_iceberg_metadata">
-  ## write_full_path_in_iceberg_metadata
-</div>
+## write_full_path_in_iceberg_metadata {#write_full_path_in_iceberg_metadata}
 
 <ExperimentalBadge />
 
@@ -2029,9 +1771,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 يكتب المسارات الكاملة (بما في ذلك s3://) في ملفات البيانات الوصفية لـ Iceberg.
 
-<div id="zstd_window_log_max">
-  ## zstd_window_log_max
-</div>
+## zstd_window_log_max {#zstd_window_log_max}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 

@@ -12,25 +12,19 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تم توليد هذه الإعدادات تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-<div id="type_json_allow_duplicated_key_with_literal_and_nested_object">
-  ## type_json_allow_duplicated_key_with_literal_and_nested_object
-</div>
+## type_json_allow_duplicated_key_with_literal_and_nested_object {#type_json_allow_duplicated_key_with_literal_and_nested_object}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 عند تفعيل هذا الإعداد، يُسمح بتحليل JSON مثل `{"a" : 42, "a" : {"b" : 42}}`، حيث يكون أحد المفاتيح مكررًا ولكن تكون إحدى قيمه كائنًا متداخلًا.
 
-<div id="type_json_skip_duplicated_paths">
-  ## type_json_skip_duplicated_paths
-</div>
+## type_json_skip_duplicated_paths {#type_json_skip_duplicated_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 عند التمكين، أثناء تحليل كائن JSON إلى نوع JSON، سيتم تجاهل المسارات المكررة ولن يُدرج سوى أولها بدلاً من حدوث استثنا
 
-<div id="type_json_skip_invalid_typed_paths">
-  ## type_json_skip_invalid_typed_paths
-</div>
+## type_json_skip_invalid_typed_paths {#type_json_skip_invalid_typed_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -43,9 +37,18 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 * 0 — تعطيل (إصدار خطأ عند عدم تطابق النوع).
 * 1 — تمكين (تخطي الحقل عند عدم تطابق النوع).
 
-<div id="type_json_use_partial_match_to_skip_paths_by_regexp">
-  ## type_json_use_partial_match_to_skip_paths_by_regexp
-</div>
+## type_json_skip_null_typed_paths {#type_json_skip_null_typed_paths}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+عند التمكين، تُعامل المسارات محددة النوع في أعمدة JSON التي تحتوي على قيم NULL على أنها غير موجودة، بما يتوافق مع سلوك المسارات الديناميكية. يؤثر ذلك في مخرجات تسلسل JSON ودوال الاستبطان مثل `JSONAllPaths` و`JSONHas` و`JSONExtractRaw`، وكذلك عمليات التحقق باستخدام `has` و`empty`/`notEmpty`.
+
+القيم الممكنة:
+
+* 0 — تعطيل (تُعتبر المسارات محددة النوع موجودة دائمًا، حتى عند احتوائها على قيم NULL).
+* 1 — تمكين (تُعامل المسارات محددة النوع ذات قيم NULL على أنها غير موجودة).
+
+## type_json_use_partial_match_to_skip_paths_by_regexp {#type_json_use_partial_match_to_skip_paths_by_regexp}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

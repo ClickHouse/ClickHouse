@@ -9,11 +9,15 @@ keywords: ['журнал аудита']
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-Действия в консоли записываются в журнал аудита. Если у вас есть роль организации Admin или Developer, вы можете просматривать журнал и интегрировать его со своими системами логирования.
+Действия в консоли записываются в журнал аудита. Пользователи, имеющие доступ, могут просматривать журнал и интегрировать его со своими системами логирования. Доступ к журналу аудита определяется разрешением **View audit logs** (`control-plane:organization:view-activities`):
 
-<div id="console-audit-log-ui">
-  ## Доступ к журналу консоли через интерфейс
-</div>
+* Пользователи с ролью организации Admin имеют доступ по умолчанию.
+* Остальным пользователям консоли требуется доступ к организации, а также [пользовательская роль](/ru/products/cloud/guides/security/cloud-access-management/manage-custom-roles), включающая разрешение **View audit logs**.
+* Ключам API требуется роль, включающая это же разрешение.
+
+Описание всех разрешений см. в разделе [Роли и разрешения в консоли](/ru/products/cloud/reference/security/console-roles).
+
+## Доступ к журналу консоли через интерфейс {#console-audit-log-ui}
 
 <Steps>
   <Step title="Выберите организацию" id="select-org">
@@ -49,15 +53,13 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </div>
 
 <div id="console-audit-log-api">
-  ## Доступ к журналу аудита консоли через API
+  ## Доступ к журналу аудита консоли через API {#console-audit-log-api}
 </div>
 
 Вы можете использовать конечную точку `activity` ClickHouse Cloud API, чтобы получить экспорт
 событий аудита. Подробнее см. в [справочнике API](/ru/products/cloud/api-reference/organization/get-list-of-available-organizations).
 
-<div id="log-integrations">
-  ## Интеграции логов
-</div>
+## Интеграции логов {#log-integrations}
 
 Вы можете использовать API для интеграции с выбранной вами платформой логирования. Ниже приведены поддерживаемые готовые коннекторы:
 

@@ -18,6 +18,8 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 
 指标要么是标量 (`value` 列中的单个数值) ，要么是键值指标：按实体细分，例如按 CPU 核心、块设备、网络接口或磁盘细分。键值指标以单行形式表示，`key_values` 列中包含一个 [Map](/zh/reference/data-types/map) (例如，`CPUFrequencyMHz` 将每个 CPU 核心编号映射到其频率) ，其 `value` 列为 `非数字`。
 
+在 26.8 版本之前，每个键都是一个独立的标量指标，键名被嵌入指标名称中 (`CPUFrequencyMHz_0`)。[`asynchronous_metrics_key_values_mode`](/zh/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) 服务器设置可切换回该形式 (`legacy_names`)，或在迁移监控时同时显示两种形式 (`both`)。
+
 <div id="columns">
   ## 列
 </div>

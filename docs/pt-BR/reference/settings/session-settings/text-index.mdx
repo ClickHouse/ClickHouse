@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="text_index_hint_max_selectivity">
-  ## text_index_hint_max_selectivity
-</div>
+## text_index_hint_max_selectivity {#text_index_hint_max_selectivity}
 
 <SettingsInfoBlock type="Float" default_value="0.2" />
 
@@ -23,9 +21,7 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Seletividade máxima do filtro para usar a indicação gerada a partir do índice de texto invertido.
 
-<div id="text_index_lazy_intersection_density_threshold">
-  ## text_index_lazy_intersection_density_threshold
-</div>
+## text_index_lazy_intersection_density_threshold {#text_index_lazy_intersection_density_threshold}
 
 **Aliases**: `text_index_density_threshold`
 
@@ -36,9 +32,7 @@ Seletividade máxima do filtro para usar a indicação gerada a partir do índic
 Limite de densidade de posting lists que seleciona o algoritmo de interseção no modo lazy de aplicação de posting lists (`text_index_posting_list_apply_mode = 'lazy'`).
 Abaixo do limite: interseção leapfrog (favorece posting lists esparsas). No limite ou acima dele: interseção de bitmap por força bruta (favorece posting lists densas).
 
-<div id="text_index_like_max_postings_to_read">
-  ## text_index_like_max_postings_to_read
-</div>
+## text_index_like_max_postings_to_read {#text_index_like_max_postings_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -48,22 +42,19 @@ Número máximo de postings grandes a serem lidos quando a avaliação de LIKE d
 
 Requer que `use_text_index_like_evaluation_by_dictionary_scan` esteja habilitado.
 
-<div id="text_index_like_min_pattern_length">
-  ## text_index_like_min_pattern_length
-</div>
+## text_index_like_min_pattern_length {#text_index_like_min_pattern_length}
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4"},{"label": "Nova configuração"}]}]} />
 
-Comprimento mínimo da substring alfanumérica em um padrão LIKE/ILIKE necessário para usar a avaliação de LIKE do índice de texto por varredura do dicionário.
+Comprimento mínimo da substring alfanumérica em um padrão LIKE/ILIKE, ou de uma substring de `startsWith`/`endsWith`,
+necessário para usar a avaliação de LIKE do índice de texto por varredura do dicionário.
 Padrões menores que esse limite correspondem a tokens demais no dicionário e são ignorados para evitar varreduras custosas.
 
 Requer que `use_text_index_like_evaluation_by_dictionary_scan` esteja habilitado.
 
-<div id="text_index_posting_list_apply_mode">
-  ## text_index_posting_list_apply_mode
-</div>
+## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}
 
 <SettingsInfoBlock type="TextIndexPostingListApplyMode" default_value="lazy" />
 

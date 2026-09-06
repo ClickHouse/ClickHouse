@@ -29,14 +29,13 @@ metric_name2[...] = ...
   输入命令 `set allow_experimental_time_series_table = 1`。
 </Info>
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 ```sql
 CREATE TABLE name [(columns)] ENGINE=TimeSeries
 [SETTINGS var1=value1, ...]
 [SAMPLES db.samples_table_name | [SAMPLES INNER COLUMNS (...)] [SAMPLES INNER ENGINE engine(arguments)]]
+[RECENT SAMPLES db.recent_samples_table_name | [RECENT SAMPLES INNER COLUMNS (...)] [RECENT SAMPLES INNER ENGINE engine(arguments)]]
 [TAGS db.tags_table_name | [TAGS INNER COLUMNS (...)] [TAGS INNER ENGINE engine(arguments)]]
 [METRICS db.metrics_table_name | [METRICS INNER COLUMNS (...)] [METRICS INNER ENGINE engine(arguments)]]
 ```
@@ -45,9 +44,7 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
   关键字 `SAMPLES` 有一个别名 `DATA`，保留它是为了保持向后兼容性。
 </Note>
 
-<div id="usage">
-  ## 用法
-</div>
+## 用法 {#usage}
 
 一开始先使用默认设置会更简单 (可以在不指定列列表的情况下创建 `TimeSeries` 表) ：
 
@@ -60,9 +57,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 * [Prometheus remote-write](/zh/concepts/features/interfaces/prometheus#remote-write)
 * [Prometheus remote-read](/zh/concepts/features/interfaces/prometheus#remote-read)
 
-<div id="outer-columns">
-  ### 外部列
-</div>
+### 外部列 {#outer-columns}
 
 TimeSeries 表的列会自动生成。这些列属于外部列，不存储任何数据，只为 SELECT/INSERT 提供接口。实际数据存储在[目标表](#target-tables)中。以下是外部列列表：
 
@@ -100,9 +95,7 @@ INSERT INTO my_table (metric_name, tags, time_series, metric_family, type, unit,
      'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
 ```
 
-<div id="specifying-outer-columns">
-  ### 指定外部列
-</div>
+### 指定外部列 {#specifying-outer-columns}
 
 可以在 `CREATE TABLE` 语句中显式列出外部 `time_series` 列，以覆盖其默认的 `Array(Tuple(DateTime64(3), Float64))` 类型。ClickHouse 会从该元组中提取时间戳类型和 scalar 类型，并将它们传递到内部samples表：
 
@@ -119,44 +112,50 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 
 如果在同一条 `CREATE TABLE` 语句中同时使用这两种形式，则声明的类型必须一致。
 
-<div id="target-tables">
-  ## 目标表
-</div>
+## 目标表 {#target-tables}
 
 `TimeSeries` 表本身不存储数据，所有数据都保存在其目标表中。
 这与 [materialized view](/zh/reference/statements/create/view#materialized-view) 的工作方式类似，
 区别在于 materialized view 只有一个目标表，
-而 `TimeSeries` 表有三个目标表，分别名为 [samples](#samples-table)、[标签](#tags-table) 和 [metrics](#metrics-table)。
+而 `TimeSeries` 表有三个必需的目标表，分别名为 [samples](#samples-table)、[标签](#tags-table) 和 [metrics](#metrics-table)，
+以及一个默认启用的可选 [最近样本](#recent-samples-table) 目标表
+(请参阅 [recent&#95;samples&#95;ttl&#95;seconds](#settings) 设置) 。
 
 这些目标表既可以在 `CREATE TABLE` 查询中显式指定，
 也可以由 `TimeSeries` 表引擎自动生成内部目标表。
 
-插入 `TimeSeries` 表的行会被转换、拆分为块，并写入这三个目标表。
+插入 `TimeSeries` 表的行会被转换、拆分为块，并写入这些目标表。
 
 目标表如下：
 
-<div id="samples-table">
-  ### Samples 表
-</div>
+### Samples 表 {#samples-table}
 
 *samples* 表包含与某个标识符关联的时间序列。
 
 *samples* 表必须包含以下列：
 
-| 名称          | 必填？ | 默认类型                  | 可能的类型                  | 描述                 |
-| ----------- | --- | --------------------- | --------------------- | ------------------ |
-| `id`        | [x] | `Tuple(UInt64, UUID)` | any                   | 标识一组指标名称和标签的组合     |
-| `timestamp` | [x] | `DateTime64(3)`       | `DateTime64(X)`       | 一个时间点              |
-| `value`     | [x] | `Float64`             | `Float32` 或 `Float64` | 与 `timestamp` 关联的值 |
+| 名称          | 必填？ | 默认类型                                  | 可能的类型                 | 描述                 |
+| ----------- | --- | ------------------------------------- | --------------------- | ------------------ |
+| `id`        | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any                   | 标识一组指标名称和标签的组合     |
+| `timestamp` | [x] | `DateTime64(3)`                       | `DateTime64(X)`       | 一个时间点              |
+| `value`     | [x] | `Float64`                             | `Float32` 或 `Float64` | 与 `timestamp` 关联的值 |
 
 引擎自行创建的列会使用时间序列压缩编解码器：
 `timestamp CODEC(DoubleDelta, ZSTD(1))` 和 `value CODEC(ZSTD(3))`。近乎单调的时间戳使用通用编解码器时几乎无法
 压缩，因而可能会占据 samples 表磁盘存储空间的大部分。
 另请参阅[调整列的类型](#adjusting-column-types)。
 
-<div id="tags-table">
-  ### 标签表
-</div>
+### 最近样本表 {#recent-samples-table}
+
+&#95;最近样本&#95;表是可选的，默认启用 (请参阅 [recent&#95;samples&#95;ttl&#95;seconds](#settings) 设置；将其设为零可禁用该表) 。该表包含 TTL 未超过该设置所定义时长的样本副本，并且必须与[样本](#samples-table)表具有相同的列。
+
+每个插入的样本都会同时写入样本表和最近样本表。
+时间范围落在 TTL 窗口内的查询会从最近样本表而非主样本表读取数据，
+因为前者小得多 (可通过查询级别设置 `time_series_prefer_recent_samples_table` 禁用此行为) 。
+
+内部最近样本表的 TTL 始终由 [recent&#95;samples&#95;ttl&#95;seconds](#settings) 设置决定。
+
+### 标签表 {#tags-table}
 
 *tags* 表包含针对每种指标名称与标签组合计算出的标识符。
 
@@ -164,16 +163,14 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 
 | 名称                   | 必填？ | 默认类型                                  | 可能的类型                                                                                                                 | 描述                                                                                                                                      |
 | -------------------- | --- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                 | [x] | `Tuple(UInt64, UUID)`                 | any (必须与 [samples](#samples-table) 表中 `id` 的类型匹配)                                                                     | `id` 用于标识一种指标名称与标签的组合。DEFAULT 表达式指定了如何计算该标识符                                                                                            |
+| `id`                 | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any (必须与 [samples](#samples-table) 表中 `id` 的类型匹配)                                                                     | `id` 用于标识一种指标名称与标签的组合。DEFAULT 表达式指定了如何计算该标识符                                                                                            |
 | `metric_name`        | [x] | `LowCardinality(String)`              | `String` 或 `LowCardinality(String)`                                                                                   | 指标名称                                                                                                                                    |
 | `<tag_value_column>` | [ ] | `String`                              | `String` 或 `LowCardinality(String)` 或 `LowCardinality(Nullable(String))`                                              | 特定标签的值；该标签的名称以及对应列的名称在 [tags&#95;to&#95;columns](#settings) 设置中指定                                                                       |
 | `tags`               | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` 或 `Map(LowCardinality(String), String)` 或 `Map(LowCardinality(String), LowCardinality(String))` | 所有标签的映射，包括表示指标名称的标签 `__name__`，以及 [tags&#95;to&#95;columns](#settings) 设置中枚举的标签名称。由旧版 ClickHouse 创建的表在此列中仅存储没有专用列且不含指标名称的标签；读取时会处理这两种情况 |
 | `min_time`           | [ ] | `Nullable(DateTime64(3))`             | `DateTime64(X)` 或 `Nullable(DateTime64(X))`                                                                           | 具有该 `id` 的时间序列的最小时间戳。如果 [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) 为 `true`，则会创建此列                                    |
 | `max_time`           | [ ] | `Nullable(DateTime64(3))`             | `DateTime64(X)` 或 `Nullable(DateTime64(X))`                                                                           | 具有该 `id` 的时间序列的最大时间戳。如果 [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) 为 `true`，则会创建此列                                    |
 
-<div id="metrics-table">
-  ### 指标表
-</div>
+### 指标表 {#metrics-table}
 
 *metrics* 表包含有关已采集指标、其类型及描述的信息。
 
@@ -186,18 +183,16 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 | `unit`               | [x] | `LowCardinality(String)` | `String` 或 `LowCardinality(String)` | 指标使用的单位                                                                                                                                      |
 | `help`               | [x] | `String`                 | `String` 或 `LowCardinality(String)` | 指标的描述                                                                                                                                        |
 
-<div id="creation">
-  ## 创建
-</div>
+## 创建 {#creation}
 
-可以通过多种方式使用 `TimeSeries` 表引擎创建表。
-最简单的语句
+可以通过多种方式创建使用 `TimeSeries` 表引擎的表。
+最简单的语句是
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
-实际上会创建下列表 (可通过执行 `SHOW CREATE TABLE my_table` 查看) ：
+实际上会创建如下表 (可执行 `SHOW CREATE TABLE my_table` 查看) ：
 
 ```sql
 CREATE TABLE my_table
@@ -211,16 +206,24 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
+SETTINGS recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
+(
+    `id` Tuple(UInt64, LowCardinality(UUID)),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
+)
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
+RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(ZSTD(3))
 )
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
+RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
+    `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
@@ -237,17 +240,18 @@ METRICS INNER COLUMNS
 METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
-因此，这些列是自动生成的，而且还有三个内部目标表，它们各自的列定义
-存储在 `INNER COLUMNS` 子句中。
+因此，列会自动生成。此外，还有四个内部目标表，各自的列定义存储在 `INNER COLUMNS` 子句中。
+`recent_samples_ttl_seconds` 设置以默认值写入 `SETTINGS` 子句：该设置定义 recent samples 表的生存时间 (TTL)，因此其实际值在创建时便已确定。
 
 内部目标表的名称类似于 `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
-`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`，
-并且每个目标表都有各自的一组列：
+`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`、
+`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+每个目标表都有各自的一组列：
 
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` Tuple(UInt64, UUID),
+    `id` Tuple(UInt64, LowCardinality(UUID)),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(ZSTD(3))
 )
@@ -257,9 +261,23 @@ SETTINGS index_granularity = 32768
 ```
 
 ```sql
+CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+(
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
+ORDER BY (id, timestamp)
+TTL toDateTime(timestamp) + toIntervalSecond(345600)
+SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
+```
+
+```sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
+    `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
@@ -284,9 +302,7 @@ ORDER BY metric_family_name
 SETTINGS index_granularity = 8192
 ```
 
-<div id="create-as">
-  ## 使用现有表创建表
-</div>
+## 使用现有表创建表 {#create-as}
 
 语句 `CREATE TABLE new_table AS existing_table` 会从 `existing_table` 复制以下内容：
 
@@ -297,9 +313,7 @@ SETTINGS index_granularity = 8192
 如果 `existing_table` 包含外部目标，则不允许使用该语句。
 外部列列表会重新生成，而不会被复制。
 
-<div id="adjusting-column-types">
-  ## 调整列类型
-</div>
+## 调整列类型 {#adjusting-column-types}
 
 你可以使用 `INNER COLUMNS` 子句来调整内部目标表中各列的类型。例如，要将时间戳以微秒存储，并将值存储为 `Float32`，请使用：
 
@@ -315,9 +329,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
 ```
 
-<div id="id-column">
-  ## `id` 列
-</div>
+## `id` 列 {#id-column}
 
 `id` 列包含标识符；每个标识符都是根据某个指标名称与标签的组合计算得出的。
 用于生成标识符的类型和 `DEFAULT` 表达式可通过 `TAGS INNER COLUMNS` 子句自定义：
@@ -329,7 +341,9 @@ TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(tags))
 
 `id` 列可以是任何可比较的非 `Nullable` 类型。samples 和 标签 内部表中声明的 `id` 类型必须保持一致。
 
-如果未为 `id` 列提供 `DEFAULT` 表达式且未设置 `id_generator` 设置，ClickHouse 会根据 `id` 类型自动选择 `DEFAULT` 表达式，但仅当 `id` 类型为 `UUID`、`UInt64`、`UInt128`、`FixedString(16)`，或由其中两种类型组成的元组时才会这样做。对于此类元组，自动选择的表达式会在第一个组件中计算指标名称的哈希值，并在第二个组件中计算所有标签的哈希值。
+如果未为 `id` 列提供 `DEFAULT` 表达式且未设置 `id_generator` 设置，ClickHouse 会根据 `id` 类型自动选择 `DEFAULT` 表达式，但仅当 `id` 类型为 `UUID`、`UInt64`、`UInt128`、`FixedString(16)`、这些类型包裹在 `LowCardinality` 中的形式，或由其中两种类型组成的元组时才会这样做。对于此类元组，自动选择的表达式会在第一个组件中计算指标名称的哈希值，并在第二个组件中计算所有标签的哈希值。
+
+使用 `LowCardinality` 标识符类型 (例如 `Tuple(UInt64, LowCardinality(UUID))`) 可使标识符保持字典编码：samples 表会按块存储小型字典并配合 dictionary indexes，而不是在每一行中重复完整的标识符，从而减少查询读取的数据量。
 
 `id_generator` 设置也支持相同的自定义，而无需使用 `INNER COLUMNS` 子句：
 
@@ -340,9 +354,7 @@ SETTINGS id_generator = 'sipHash64(tags)'
 
 如果设置了此项，即使该列的 `DEFAULT` 包含其他表达式，也会用它来生成 `id`。
 
-<div id="tags-column">
-  ## `tags` 列
-</div>
+## `tags` 列 {#tags-column}
 
 `tags` 列包含时间序列的所有标签，其中包括带有指标名称的 `__name__` 标签。
 
@@ -364,22 +376,33 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
   除指标名称外的所有标签。
 </Note>
 
-<div id="inner-table-engines">
-  ## 内部目标表的表引擎
-</div>
+## 内部目标表的表引擎 {#inner-table-engines}
 
 默认情况下，内部目标表使用以下表引擎：
 
 * [samples](#samples-table) 表使用 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree)；
+* [recent samples](#recent-samples-table) 表使用 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree)，按 5 小时分桶进行分区 (请参见 [recent&#95;samples&#95;partition&#95;by](#settings) 设置)，其 `TTL` 源自
+  [recent&#95;samples&#95;ttl&#95;seconds](#settings) 设置，并启用 `ttl_only_drop_parts`，因此会整体删除过期的 parts；
 * [标签](#tags-table) 表使用 [AggregatingMergeTree](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree)，因为相同的数据通常会多次插入该表，因此需要一种去重方式，
   同时还需要对列 `min_time` 和 `max_time` 进行聚合；
 * [metrics](#metrics-table) 表使用 [ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree)，因为相同的数据通常会多次插入该表，因此需要一种去重方式。
+
+生成的内部表的引擎家族遵循 `default_table_engine` 查询级别设置：
+当 `default_table_engine = ReplicatedMergeTree` 或 `SharedMergeTree` 时，内部表使用相应的
+`Replicated` 或 `Shared` 引擎。当 `default_table_engine = None` (或任何其他值) 时，内部表的引擎
+必须显式指定。
+
+所有内部表必须具有相同的复制类型：如果其中一个表采用复制 (或共享) 机制，其他内部
+表也必须采用复制 (或共享) 机制，否则其内容会在副本之间出现差异。例如，
+声明 `SAMPLES INNER ENGINE = ReplicatedMergeTree(...)` 要求其他内部引擎也使用复制引擎 -
+要么显式声明，要么通过 `default_table_engine = ReplicatedMergeTree` 生成。
 
 如果指定了其他表引擎，内部目标表也可以使用它们：
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES ENGINE=ReplicatedMergeTree
+RECENT SAMPLES ENGINE=ReplicatedMergeTree
 TAGS ENGINE=ReplicatedAggregatingMergeTree
 METRICS ENGINE=ReplicatedReplacingMergeTree
 ```
@@ -391,9 +414,7 @@ METRICS ENGINE=ReplicatedReplacingMergeTree
 `TimeSeries` 会自动为其设置 `allow_dimensions_outside_sorting_key = 1`；
 对于手动创建的[外部](#external-target-tables)聚合 标签 表，则必须自行设置。
 
-<div id="external-target-tables">
-  ## 外部目标表
-</div>
+## 外部目标表 {#external-target-tables}
 
 可以让 `TimeSeries` 表使用手动创建的目标表：
 
@@ -414,13 +435,15 @@ CREATE TABLE metrics_for_my_table ...
 CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_for_my_table METRICS metrics_for_my_table;
 ```
 
+外部表也可用作[最近样本](#recent-samples-table)目标 (`RECENT SAMPLES my_recent_samples_table` 子句) 。
+此类表必须与外部样本表具有相同的列，并且必须至少保留
+[recent&#95;samples&#95;ttl&#95;seconds](#settings) 秒的数据，这由用户负责。
+
 外部表的列类型 (`id`、`timestamp`、`value`，以及 [`tags_to_columns`](#settings) 中列出的各个 `<tag_value_column>`) 必须与 `TimeSeries` 表原本会在内部生成的类型一致 (类型约束请参见 [Samples 表](#samples-table)、[标签表](#tags-table) 和 [指标表](#metrics-table)) 。类型不匹配会在 `CREATE` 时报告。
 
 外部标签目标的 id 生成器表达式会在 INSERT 时按以下顺序解析：先是 [`id_generator`](#settings) 设置 (如果已设置) ，然后是外部表 `id` 列上声明的 `DEFAULT` (如果有) ，最后是根据 `id` 类型派生出的规范生成器) 。因此，该设置会覆盖外部表上声明的任何 `DEFAULT`——详见 [The `id` column](#id-column)。
 
-<div id="altering-settings">
-  ## 修改设置
-</div>
+## 修改设置 {#altering-settings}
 
 执行 `CREATE` 后，可更改以下两个设置：
 
@@ -430,15 +453,14 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
-请注意，如果在标签表中已有数据后更改 `id_generator`，同一指标+tag 组合可能会生成不同的 ID——旧行会保留原来的 ID，新行则会使用新的生成器。
+请注意，如果在标签表中已有数据后更改 `id_generator`，同一指标+标签组合可能会生成不同的 ID——旧行会保留原来的 ID，新行则会使用新的生成器。
 
 其他设置不能通过 `ALTER ... MODIFY SETTING` 更改，因为它们在 `CREATE` 时就已经固化在内部表的 schema 中。
 
-<div id="settings">
-  ## 设置
-</div>
+## 设置 {#settings}
 
 以下列出了在定义 `TimeSeries` 表时可指定的设置：
 
@@ -451,14 +473,12 @@ ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 | `aggregate_min_time_and_max_time`    | Bool   | true                                                          | 创建内部目标 `tags` 表时，此标志会启用将 `min_time` 列的类型设为 `SimpleAggregateFunction(min, Nullable(DateTime64(3)))`，而不是仅使用 `Nullable(DateTime64(3))`；`max_time` 列同样如此                                                                                                                                                                                                                         |
 | `filter_by_min_time_and_max_time`    | Bool   | true                                                          | 如果设置为 true，则该表会使用 `min_time` 和 `max_time` 列来过滤时间序列                                                                                                                                                                                                                                                                                                                           |
 | `samples_index_granularity`          | UInt64 | 32768                                                         | 设置内部 [samples](#samples-table) 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部 samples 表和非 MergeTree 引擎，此设置会被忽略                                                                                                                                                                                                                                              |
-| `tags_index_granularity`             | UInt64 | 8192                                                          | 设置内部 [标签](#tags-table) 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部标签表和非 MergeTree 引擎，此设置会被忽略                                                                                                                                                                                                                                                             |
 | `recent_samples_ttl_seconds`         | UInt64 | 345600                                                        | 附加 `recent samples` 目标表的保留期，每个插入的样本也会写入该表。内部 recent samples 表始终会根据此设置获得 `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` (覆盖引擎声明中的任何 TTL) ；外部 recent samples 表必须至少保留这么多秒的数据。时间范围落在 TTL 窗口内的查询会优先使用 recent samples 表，而非主 samples 表 (请参阅查询级别设置 `time_series_prefer_recent_samples_table`) 。默认值为 4 天；有效值会在 CREATE 时固定写入表定义。设置为 0 可禁用 recent samples 表 |
-| `recent_samples_partition_by`        | 表达式    | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | 内部 `recent samples` 表的分区键，例如 `toStartOfHour(timestamp)`。要求 `recent_samples_ttl_seconds` 非零                                                                                                                                                                                                                                                                                   |
-| `recent_samples_index_granularity`   | UInt64 | 8192                                                          | 设置内部 `recent samples` 表的 `index_granularity`。要求 `recent_samples_ttl_seconds` 非零                                                                                                                                                                                                                                                                                              |
+| `recent_samples_partition_by`        | 表达式    | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | 内部 `recent samples` 表的分区键，例如 `toStartOfHour(timestamp)`。显式设置时，会覆盖引擎声明中的分区键；如果两者均未设置，则每 5 小时使用一个分区。对于外部 recent samples 表，此设置会被忽略。要求 `recent_samples_ttl_seconds` 非零                                                                                                                                                                                                           |
+| `recent_samples_index_granularity`   | UInt64 | 8192                                                          | 设置内部 `recent samples` 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部 recent samples 表和非 MergeTree 引擎，此设置会被忽略。要求 `recent_samples_ttl_seconds` 非零                                                                                                                                                                                                             |
+| `tags_index_granularity`             | UInt64 | 8192                                                          | 设置内部 [标签](#tags-table) 表的 `index_granularity`。显式设置时，会覆盖引擎声明中的 `index_granularity`。对于外部标签表和非 MergeTree 引擎，此设置会被忽略                                                                                                                                                                                                                                                             |
 
-<div id="functions">
-  # 函数
-</div>
+# 函数 {#functions}
 
 以下列出了支持将 `TimeSeries` 表作为参数的函数：
 

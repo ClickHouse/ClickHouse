@@ -18,13 +18,11 @@ Les fichiers compressés sont pris en charge. Le type de compression est détect
 SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
 ```
 
-`file_name` et `type` sont des chaînes de caractères littérales. Les types de compression pris en charge sont : `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+`file_name` et `type` sont des chaînes de caractères littérales. Les types de compression pris en charge sont : `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`, `'snappy'`. Pour `snappy`, le format de transmission est sélectionné par le paramètre [snappy&#95;mode](/fr/reference/settings/session-settings/other#snappy_mode) (`basic` par défaut).
 
 `level` est un littéral numérique. Les entiers positifs des plages suivantes sont pris en charge : `1-12` pour les types `gzip`, `deflate` et `lz4`, `1-22` pour le type `zstd` et `1-9` pour les autres types de compression. Pour `gzip` et `deflate`, les niveaux supérieurs à `9` nécessitent la build par défaut avec `libdeflate` ; une build sans `libdeflate` prend en charge les niveaux `1-9`.
 
-<div id="implementation-details">
-  ## Détails d’implémentation
-</div>
+## Détails d’implémentation {#implementation-details}
 
 * Cette fonctionnalité est disponible dans le [client en ligne de commande](/fr/concepts/features/interfaces/client) et [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local). Par conséquent, une requête envoyée via l’[interface HTTP](/fr/concepts/features/interfaces/http) échouera.
 * La requête échouera si un fichier portant le même nom existe déjà.

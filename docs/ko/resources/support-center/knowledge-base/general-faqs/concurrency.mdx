@@ -8,8 +8,36 @@ doc_type: '참고'
 keywords: ['동시성', 'QPS']
 ---
 
-ClickHouse는 외부 사용자에게 직접 서비스를 제공하는 실시간 분석 애플리케이션을 위해 설계되었습니다. 과거 데이터와 실시간 삽입을 결합한 페타바이트 규모의 데이터베이스에서도 낮은 지연 시간(10밀리초 미만)과 높은 동시성(초당 10,000개 이상의 쿼리)으로 분석 쿼리를 처리할 수 있습니다.
+예. ClickHouse는 외부 사용자에게 직접 서비스를 제공하는 실시간 분석 애플리케이션을 위해 설계되었습니다. 과거 데이터와 실시간 삽입을 결합한 페타바이트 규모의 데이터베이스에서도 낮은 지연 시간(10밀리초 미만)과 높은 동시성(초당 10,000개 이상의 쿼리)으로 분석 쿼리를 처리할 수 있습니다.
 
-이는 효율적인 인덱스 구조, 유연한 Caching, 그리고 프로젝션과 materialized view 같은 구성을 활용할 수 있기 때문에 가능합니다.
+<div id="what-makes-high-concurrency-possible">
+  ## 높은 동시성을 가능하게 하는 요소
+</div>
 
-기본 제공되는 역할 기반 접근 제어, 리소스 사용 쿼터, 구성 가능한 쿼리 복잡도 제한, 워크로드 스케줄러 덕분에 ClickHouse는 분석 데이터 위의 서빙 계층으로 사용하기에 매우 적합합니다.
+개별 쿼리가 빠르게 실행되는 것은 높은 QPS의 기반입니다. 각 쿼리가 수행하는 작업이 적을수록 서버는 더 많은 쿼리를 동시에 실행할 수 있습니다. 쿼리당 작업량을 줄이는 주요 기능은 다음과 같습니다.
+
+* 쿼리 조건과 일치하지 않는 데이터의 읽기를 건너뛰는 MergeTree 테이블 엔진 계열의 [희소 프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)
+* 반복되는 `SELECT` 쿼리에 캐시된 결과를 직접 제공하는 [쿼리 캐시](/ko/concepts/features/performance/caches/query-cache) 등의 캐시
+* 삽입 시 데이터를 미리 계산하며 ClickHouse가 자동으로 선택할 수 있는 [프로젝션](/ko/concepts/features/projections/projections), 그리고 쿼리가 직접 읽을 수 있는 별도의 대상 테이블에 미리 계산된 결과를 저장하는 [materialized view](/ko/concepts/features/materialized-views/index)
+
+<div id="controlling-and-limiting-concurrency">
+  ## 동시성 제어 및 제한
+</div>
+
+기본적으로 ClickHouse OSS는 동시에 실행되는 쿼리 수를 제한하지 않습니다. ClickHouse Cloud에서는 `max_concurrent_queries_for_all_users`의 기본값이 `1000`으로 설정되어 있습니다. 여러 수준에서 제한을 구성할 수 있습니다.
+
+* [`max_concurrent_queries`](/ko/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries)는 서버에서 동시에 실행되는 전체 쿼리 수를 제한합니다. [`max_concurrent_insert_queries`](/ko/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries) 및 [`max_concurrent_select_queries`](/ko/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries)는 각각 `INSERT` 및 `SELECT` 쿼리에 동일한 제한을 적용합니다. 세 설정의 기본값은 모두 `0`(무제한)입니다.
+* [`max_concurrent_queries_for_user`](/ko/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user) 및 [`max_concurrent_queries_for_all_users`](/ko/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users)는 사용자별 또는 전체 사용자에 대해 동시성을 제한합니다.
+
+<div id="isolating-workloads">
+  ## 워크로드 격리
+</div>
+
+동시 실행되는 워크로드가 서로 간섭하지 않도록 ClickHouse는 다음 기능을 제공합니다.
+
+* 워크로드 간 CPU, 메모리 및 IO 공유 방식을 조절하는 [워크로드 스케줄링](/ko/concepts/features/configuration/server-config/workload-scheduling)
+* 사용자별 리소스 사용량을 일정 시간 인터벌 동안 제한하는 [쿼터](/ko/concepts/features/configuration/server-config/quotas)
+* 개별 쿼리가 과도한 리소스를 소비하지 않도록 하는 [쿼리 복잡성 제한](/ko/concepts/features/configuration/settings/query-complexity)
+* 각 사용자가 쿼리할 수 있는 범위를 제한하는 기본 제공 [역할 기반 접근 제어](/ko/concepts/features/security/access-rights)
+
+이러한 기능을 함께 사용하면 ClickHouse를 분석 데이터 위에서 동작하는 서빙 계층으로 활용할 수 있습니다.

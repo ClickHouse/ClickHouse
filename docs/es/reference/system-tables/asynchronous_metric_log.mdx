@@ -19,6 +19,8 @@ Contiene los valores históricos de `system.asynchronous_metrics`, que se guarda
 
 Las métricas de clave-valor de `system.asynchronous_metrics` (las desglosadas por núcleo de CPU, dispositivo de bloques, interfaz de red o disco) se registran en una fila por clave, con la clave en la columna `key`. En el caso de las métricas escalares, la columna `key` está vacía.
 
+Antes de la versión 26.8, cada clave era una métrica escalar independiente con la clave incorporada de forma modificada en su nombre (`BlockReadBytes_sda`). La configuración del servidor [`asynchronous_metrics_key_values_mode`](/es/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) vuelve a esa forma (`legacy_names`) o registra ambas formas simultáneamente (`both`) durante la migración de la monitorización.
+
 <div id="columns">
   ## Columnas
 </div>

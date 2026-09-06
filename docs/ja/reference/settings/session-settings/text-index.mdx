@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="text_index_hint_max_selectivity">
-  ## text_index_hint_max_selectivity
-</div>
+## text_index_hint_max_selectivity {#text_index_hint_max_selectivity}
 
 <SettingsInfoBlock type="Float" default_value="0.2" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 転置テキスト索引から構築されたヒントを使用する際の、フィルターの最大選択性です。
 
-<div id="text_index_lazy_intersection_density_threshold">
-  ## text_index_lazy_intersection_density_threshold
-</div>
+## text_index_lazy_intersection_density_threshold {#text_index_lazy_intersection_density_threshold}
 
 **別名**: `text_index_density_threshold`
 
@@ -36,9 +32,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 遅延ポスティングリスト適用モード (`text_index_posting_list_apply_mode = 'lazy'`) で、積集合アルゴリズムを選択するポスティングリスト密度のしきい値です。
 しきい値未満: leapfrog 積集合 (スパースなポスティングリストに適しています) 。しきい値以上: ブルートフォースのビットマップ積集合 (高密度のポスティングリストに適しています) 。
 
-<div id="text_index_like_max_postings_to_read">
-  ## text_index_like_max_postings_to_read
-</div>
+## text_index_like_max_postings_to_read {#text_index_like_max_postings_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -48,22 +42,18 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 `use_text_index_like_evaluation_by_dictionary_scan` を有効にする必要があります。
 
-<div id="text_index_like_min_pattern_length">
-  ## text_index_like_min_pattern_length
-</div>
+## text_index_like_min_pattern_length {#text_index_like_min_pattern_length}
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4"},{"label": "新しい設定"}]}]} />
 
-辞書スキャンによるテキスト索引の LIKE 評価を使用するために必要な、LIKE/ILIKE パターン内の英数字 needle の最小長です。
+辞書スキャンによるテキスト索引の LIKE 評価を使用するために必要な、LIKE/ILIKE パターン内の英数字 needle、または `startsWith`/`endsWith` の needle の最小長です。
 このしきい値より短いパターンは、一致する辞書トークンが多すぎるため、コストの高いスキャンを避ける目的でスキップされます。
 
 `use_text_index_like_evaluation_by_dictionary_scan` を有効にする必要があります。
 
-<div id="text_index_posting_list_apply_mode">
-  ## text_index_posting_list_apply_mode
-</div>
+## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}
 
 <SettingsInfoBlock type="TextIndexPostingListApplyMode" default_value="lazy" />
 

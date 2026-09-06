@@ -14,17 +14,27 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.merge&#95;tree&#95;settings](/pt-BR/reference/system-tables/merge_tree_settings) e são autogeradas a partir do código-fonte do ClickHouse.
 
-<div id="enable_index_granularity_compression">
-  ## enable_index_granularity_compression
-</div>
+## enable_adaptive_codec_selection {#enable_adaptive_codec_selection}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração."}]}]} />
+
+Quando habilitada, a execução de mesclagem e mutações escolhe um codec por bloco para colunas que usam o codec padrão (sem cláusula `CODEC` ou com `CODEC(Default)`).
+Os candidatos são o codec padrão da tabela (consulte a configuração `default_compression_codec`), `NONE` e codecs especializados adequados ao tipo da coluna.
+O menor resultado é escolhido. Portanto, a compressão nunca é pior que a padrão, e blocos incompressíveis são armazenados brutos.
+Uma coluna cujo codec padrão inclui criptografia (por exemplo, `AES_128_GCM_SIV`) nunca é selecionada de forma adaptativa, de modo que a criptografia é sempre aplicada.
+Os codecs por bloco são informados pela função de tabela [`mergeTreeCodecBlockCounts`](/pt-BR/reference/functions/table-functions/index).
+
+## enable_index_granularity_compression {#enable_index_granularity_compression}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Comprime na memória os valores da granularidade do índice, quando possível
 
-<div id="enable_max_bytes_limit_for_min_age_to_force_merge">
-  ## enable_max_bytes_limit_for_min_age_to_force_merge
-</div>
+## enable_max_bytes_limit_for_min_age_to_force_merge {#enable_max_bytes_limit_for_min_age_to_force_merge}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -39,9 +49,7 @@ Valores possíveis:
 * `true`
 * `false`
 
-<div id="enable_mixed_granularity_parts">
-  ## enable_mixed_granularity_parts
-</div>
+## enable_mixed_granularity_parts {#enable_mixed_granularity_parts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,9 +61,7 @@ selecionar dados de tabelas com linhas grandes (dezenas ou centenas de megabytes
 Se você tiver tabelas com linhas grandes, poderá ativar essa configuração para as tabelas
 a fim de melhorar a eficiência das consultas `SELECT`.
 
-<div id="enable_replacing_merge_with_cleanup_for_min_age_to_force_merge">
-  ## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge
-</div>
+## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge {#enable_replacing_merge_with_cleanup_for_min_age_to_force_merge}
 
 <ExperimentalBadge />
 
@@ -73,17 +79,13 @@ Valores possíveis:
 * `true`
 * `false`
 
-<div id="enable_the_endpoint_id_with_zookeeper_name_prefix">
-  ## enable_the_endpoint_id_with_zookeeper_name_prefix
-</div>
+## enable_the_endpoint_id_with_zookeeper_name_prefix {#enable_the_endpoint_id_with_zookeeper_name_prefix}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ativa o ID do endpoint com o prefixo do nome do zookeeper para a tabela ReplicatedMergeTree.
 
-<div id="enable_vertical_merge_algorithm">
-  ## enable_vertical_merge_algorithm
-</div>
+## enable_vertical_merge_algorithm {#enable_vertical_merge_algorithm}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 

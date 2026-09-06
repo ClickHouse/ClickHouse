@@ -12,13 +12,13 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="network_compression_method">
-  ## network_compression_method
-</div>
+## network_compression_method {#network_compression_method}
 
-<SettingsInfoBlock type="String" default_value="LZ4" />
+<SettingsInfoBlock type="String" default_value="ZSTD" />
 
-client/server 間および server/server 間の通信を圧縮するためのコーデックです。
+ネイティブプロトコル経由の client/server 間および server/server 間の通信を圧縮するためのコーデックです。
+
+この設定は distributed queries のストリーミング交換チャネルには適用されません。このチャネルでは常にサーバーの default コーデックが使用されます。圧縮された各 frame は self-describing であるため、receiver がコーデックを自動的に検出します。
 
 設定可能な値:
 
@@ -31,11 +31,9 @@ client/server 間および server/server 間の通信を圧縮するためのコ
 
 * [network&#95;zstd&#95;compression&#95;level](/ja/reference/settings/session-settings/network#network_zstd_compression_level)
 
-<div id="network_zstd_compression_level">
-  ## network_zstd_compression_level
-</div>
+## network_zstd_compression_level {#network_zstd_compression_level}
 
-<SettingsInfoBlock type="Int64" default_value="1" />
+<SettingsInfoBlock type="Int64" default_value="3" />
 
 ZSTD の圧縮レベルを調整します。[network&#95;compression&#95;method](/ja/reference/settings/session-settings/network#network_compression_method) が `ZSTD` に設定されている場合にのみ使用されます。
 

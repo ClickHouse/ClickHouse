@@ -30,14 +30,13 @@ metric_name2[...] = ...
   Execute o comando `set allow_experimental_time_series_table = 1`.
 </Info>
 
-<div id="syntax">
-  ## Sintaxe
-</div>
+## Sintaxe {#syntax}
 
 ```sql
 CREATE TABLE name [(columns)] ENGINE=TimeSeries
 [SETTINGS var1=value1, ...]
 [SAMPLES db.samples_table_name | [SAMPLES INNER COLUMNS (...)] [SAMPLES INNER ENGINE engine(arguments)]]
+[RECENT SAMPLES db.recent_samples_table_name | [RECENT SAMPLES INNER COLUMNS (...)] [RECENT SAMPLES INNER ENGINE engine(arguments)]]
 [TAGS db.tags_table_name | [TAGS INNER COLUMNS (...)] [TAGS INNER ENGINE engine(arguments)]]
 [METRICS db.metrics_table_name | [METRICS INNER COLUMNS (...)] [METRICS INNER ENGINE engine(arguments)]]
 ```
@@ -46,9 +45,7 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
   A palavra-chave `SAMPLES` tem um alias `DATA`, mantido por compatibilidade com versões anteriores.
 </Note>
 
-<div id="usage">
-  ## Uso
-</div>
+## Uso {#usage}
 
 É mais fácil começar com tudo configurado com os valores padrão (é permitido criar uma tabela `TimeSeries` sem especificar uma lista de colunas):
 
@@ -61,9 +58,7 @@ Essa tabela pode ser usada com os seguintes protocolos (uma porta deve ser atrib
 * [prometheus remote-write](/pt-BR/concepts/features/interfaces/prometheus#remote-write)
 * [prometheus remote-read](/pt-BR/concepts/features/interfaces/prometheus#remote-read)
 
-<div id="outer-columns">
-  ### Colunas externas
-</div>
+### Colunas externas {#outer-columns}
 
 As colunas de uma tabela TimeSeries são geradas automaticamente. São colunas externas: não armazenam dados, apenas fornecem a interface para SELECT/INSERT. Os dados reais são armazenados em [tabelas de destino](#target-tables). Aqui está a lista das colunas externas:
 
@@ -101,9 +96,7 @@ INSERT INTO my_table (metric_name, tags, time_series, metric_family, type, unit,
      'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
 ```
 
-<div id="specifying-outer-columns">
-  ### Especificando colunas externas
-</div>
+### Especificando colunas externas {#specifying-outer-columns}
 
 A coluna externa `time_series` pode ser listada explicitamente em uma instrução `CREATE TABLE` para substituir seu tipo padrão `Array(Tuple(DateTime64(3), Float64))`. O ClickHouse extrai, da tupla, os tipos de `timestamp` e do valor escalar e os propaga para a tabela samples:
 
@@ -120,44 +113,52 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float
 
 Se ambas as formas forem usadas na mesma instrução `CREATE TABLE`, os tipos declarados deverão coincidir.
 
-<div id="target-tables">
-  ## Tabelas de destino
-</div>
+## Tabelas de destino {#target-tables}
 
 Uma tabela `TimeSeries` não armazena dados próprios; tudo é armazenado em suas tabelas de destino.
 Isso é semelhante ao funcionamento de uma [visão materializada](/pt-BR/reference/statements/create/view#materialized-view),
 com a diferença de que uma visão materializada tem uma tabela de destino,
-enquanto uma tabela `TimeSeries` tem três tabelas de destino chamadas [samples](#samples-table), [tags](#tags-table) e [metrics](#metrics-table).
+enquanto uma tabela `TimeSeries` tem três tabelas de destino obrigatórias chamadas [samples](#samples-table), [tags](#tags-table) e [metrics](#metrics-table),
+e uma tabela de destino opcional [amostras recentes](#recent-samples-table), que vem habilitada por padrão
+(consulte a configuração [recent&#95;samples&#95;ttl&#95;seconds](#settings)).
 
 As tabelas de destino podem ser especificadas explicitamente na consulta `CREATE TABLE`
 ou o motor de tabela `TimeSeries` pode gerar automaticamente tabelas de destino internas.
 
-As linhas inseridas em uma tabela `TimeSeries` são transformadas, divididas em blocos e inseridas nessas três tabelas de destino.
+As linhas inseridas em uma tabela `TimeSeries` são transformadas, divididas em blocos e inseridas nessas tabelas de destino.
 
 As tabelas de destino são as seguintes:
 
-<div id="samples-table">
-  ### Tabela *samples*
-</div>
+### Tabela *samples* {#samples-table}
 
 A tabela *samples* contém séries temporais associadas a um identificador.
 
 A tabela *samples* deve ter as seguintes colunas:
 
-| Nome        | Obrigatória? | Tipo padrão           | Tipos possíveis        | Descrição                                             |
-| ----------- | ------------ | --------------------- | ---------------------- | ----------------------------------------------------- |
-| `id`        | [x]          | `Tuple(UInt64, UUID)` | qualquer               | Identifica uma combinação de nomes de métricas e tags |
-| `timestamp` | [x]          | `DateTime64(3)`       | `DateTime64(X)`        | Um ponto no tempo                                     |
-| `value`     | [x]          | `Float64`             | `Float32` ou `Float64` | Um valor associado ao `timestamp`                     |
+| Nome        | Obrigatória? | Tipo padrão                           | Tipos possíveis        | Descrição                                             |
+| ----------- | ------------ | ------------------------------------- | ---------------------- | ----------------------------------------------------- |
+| `id`        | [x]          | `Tuple(UInt64, LowCardinality(UUID))` | qualquer               | Identifica uma combinação de nomes de métricas e tags |
+| `timestamp` | [x]          | `DateTime64(3)`                       | `DateTime64(X)`        | Um ponto no tempo                                     |
+| `value`     | [x]          | `Float64`                             | `Float32` ou `Float64` | Um valor associado ao `timestamp`                     |
 
 As colunas que o motor cria por conta própria recebem codecs de compressão de séries temporais:
 `timestamp CODEC(DoubleDelta, ZSTD(1))` e `value CODEC(ZSTD(3))`. Timestamps quase monotônicos mal
 são comprimidos por codecs genéricos e podem, caso contrário, dominar o tamanho em disco da tabela samples.
 Consulte também [Ajustando os tipos das colunas](#adjusting-column-types).
 
-<div id="tags-table">
-  ### Tabela de tags
-</div>
+### Tabela de amostras recentes {#recent-samples-table}
+
+A tabela de *amostras recentes* é opcional e está habilitada por padrão (consulte a configuração [recent&#95;samples&#95;ttl&#95;seconds](#settings);
+defini-la como zero desabilita a tabela). Ela contém uma cópia das amostras mais recentes que o TTL definido por essa configuração
+e deve ter as mesmas colunas que a tabela [samples](#samples-table).
+
+Toda amostra inserida é gravada tanto na tabela de amostras quanto na tabela de amostras recentes.
+As consultas cujo intervalo de tempo se encaixa na janela do TTL leem da tabela de amostras recentes em vez da tabela de amostras principal,
+já que ela é muito menor (esse comportamento pode ser desabilitado com a configuração de nível de consulta `time_series_prefer_recent_samples_table`).
+
+O TTL da tabela interna de amostras recentes é sempre derivado da configuração [recent&#95;samples&#95;ttl&#95;seconds](#settings).
+
+### Tabela de tags {#tags-table}
 
 A tabela *tags* contém identificadores calculados para cada combinação de nome de métrica e tags.
 
@@ -165,16 +166,14 @@ A tabela *tags* deve ter as colunas:
 
 | Nome                 | Obrigatório? | Tipo padrão                           | Tipos possíveis                                                                                                         | Descrição                                                                                                                                                                                                                                                                                                                                                 |
 | -------------------- | ------------ | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                 | [x]          | `Tuple(UInt64, UUID)`                 | qualquer tipo (deve corresponder ao tipo de `id` na tabela [samples](#samples-table))                                   | Um `id` identifica uma combinação de nome de métrica e tags. A expressão DEFAULT especifica como calcular esse identificador                                                                                                                                                                                                                              |
+| `id`                 | [x]          | `Tuple(UInt64, LowCardinality(UUID))` | qualquer tipo (deve corresponder ao tipo de `id` na tabela [samples](#samples-table))                                   | Um `id` identifica uma combinação de nome de métrica e tags. A expressão DEFAULT especifica como calcular esse identificador                                                                                                                                                                                                                              |
 | `metric_name`        | [x]          | `LowCardinality(String)`              | `String` ou `LowCardinality(String)`                                                                                    | O nome de uma métrica                                                                                                                                                                                                                                                                                                                                     |
 | `<tag_value_column>` | [ ]          | `String`                              | `String` ou `LowCardinality(String)` ou `LowCardinality(Nullable(String))`                                              | O valor de uma tag específica; o nome da tag e o nome da coluna correspondente são especificados na configuração [tags&#95;to&#95;columns](#settings)                                                                                                                                                                                                     |
 | `tags`               | [x]          | `Map(LowCardinality(String), String)` | `Map(String, String)` ou `Map(LowCardinality(String), String)` ou `Map(LowCardinality(String), LowCardinality(String))` | map de todas as tags, incluindo a tag `__name__`, que contém o nome de uma métrica, e as tags com nomes listados na configuração [tags&#95;to&#95;columns](#settings). As tabelas criadas por versões mais antigas do ClickHouse armazenavam nesta coluna apenas as tags sem colunas dedicadas e sem o nome da métrica; a leitura lida com ambos os casos |
 | `min_time`           | [ ]          | `Nullable(DateTime64(3))`             | `DateTime64(X)` ou `Nullable(DateTime64(X))`                                                                            | timestamp mínimo da série temporal com esse `id`. A coluna é criada se [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) for `true`                                                                                                                                                                                                            |
 | `max_time`           | [ ]          | `Nullable(DateTime64(3))`             | `DateTime64(X)` ou `Nullable(DateTime64(X))`                                                                            | timestamp máximo da série temporal com esse `id`. A coluna é criada se [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) for `true`                                                                                                                                                                                                            |
 
-<div id="metrics-table">
-  ### Tabela de métricas
-</div>
+### Tabela de métricas {#metrics-table}
 
 A tabela *metrics* contém algumas informações sobre as métricas coletadas, os tipos dessas métricas e suas descrições.
 
@@ -187,18 +186,16 @@ A tabela *metrics* deve conter as colunas:
 | `unit`               | [x]          | `LowCardinality(String)` | `String` ou `LowCardinality(String)` | A unidade usada em uma métrica                                                                                                                                                |
 | `help`               | [x]          | `String`                 | `String` ou `LowCardinality(String)` | A descrição de uma métrica                                                                                                                                                    |
 
-<div id="creation">
-  ## Criação
-</div>
+## Criação {#creation}
 
-Há várias maneiras de criar uma tabela com o motor de tabela `TimeSeries`.
+Existem várias maneiras de criar uma table com o motor de tabela `TimeSeries`.
 A instrução mais simples
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
-na verdade, criará a tabela a seguir (você pode verificar isso executando `SHOW CREATE TABLE my_table`):
+na verdade criará a seguinte tabela (você pode verificar isso executando `SHOW CREATE TABLE my_table`):
 
 ```sql
 CREATE TABLE my_table
@@ -212,16 +209,24 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
+SETTINGS recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
+(
+    `id` Tuple(UInt64, LowCardinality(UUID)),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
+)
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
+RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(ZSTD(3))
 )
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
+RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
+    `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
@@ -238,17 +243,19 @@ METRICS INNER COLUMNS
 METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
-Assim, as colunas foram geradas automaticamente, e também há três tabelas de destino internas com suas próprias definições de colunas
-armazenadas nas cláusulas `INNER COLUMNS`.
+Portanto, as colunas foram geradas automaticamente e também existem quatro tabelas de destino internas com suas próprias definições de colunas
+armazenadas nas cláusulas `INNER COLUMNS`. A configuração `recent_samples_ttl_seconds` foi gravada na cláusula `SETTINGS`
+com seu valor padrão: essa configuração define o TTL da tabela de amostras recentes, de modo que seu valor efetivo é fixado na criação.
 
 As tabelas de destino internas têm nomes como `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
-`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
+`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 e cada tabela de destino tem seu próprio conjunto de colunas:
 
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` Tuple(UInt64, UUID),
+    `id` Tuple(UInt64, LowCardinality(UUID)),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(ZSTD(3))
 )
@@ -258,9 +265,23 @@ SETTINGS index_granularity = 32768
 ```
 
 ```sql
+CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+(
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
+ORDER BY (id, timestamp)
+TTL toDateTime(timestamp) + toIntervalSecond(345600)
+SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
+```
+
+```sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))),
+    `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
@@ -285,9 +306,7 @@ ORDER BY metric_family_name
 SETTINGS index_granularity = 8192
 ```
 
-<div id="create-as">
-  ## Criando uma tabela AS com base em uma tabela existente
-</div>
+## Criando uma tabela AS com base em uma tabela existente {#create-as}
 
 A instrução `CREATE TABLE new_table AS existing_table` copia da `existing_table`:
 
@@ -298,9 +317,7 @@ A instrução `CREATE TABLE new_table AS existing_table` copia da `existing_tabl
 A instrução não é permitida se a `existing_table` tiver alvos externos.
 A lista externa de colunas é regenerada, e não copiada.
 
-<div id="adjusting-column-types">
-  ## Ajustando os tipos das colunas
-</div>
+## Ajustando os tipos das colunas {#adjusting-column-types}
 
 Você pode ajustar os tipos das colunas nas tabelas de destino internas usando a cláusula `INNER COLUMNS`. Por exemplo, para armazenar timestamps em microssegundos e valores como `Float32`, use:
 
@@ -316,9 +333,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
 ```
 
-<div id="id-column">
-  ## A coluna `id`
-</div>
+## A coluna `id` {#id-column}
 
 A coluna `id` contém identificadores; cada identificador é calculado com base em uma combinação de nome de métrica e tags.
 O tipo e a expressão `DEFAULT` usados para gerar identificadores podem ser personalizados por meio da cláusula `TAGS INNER COLUMNS`:
@@ -330,7 +345,9 @@ TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(tags))
 
 A coluna `id` pode ser de qualquer tipo comparável que não seja Nullable. Os tipos de `id` declarados nas tabelas internas `samples` e `tags` devem corresponder.
 
-Se nenhuma expressão `DEFAULT` for fornecida para a coluna `id` e a configuração `id_generator` não estiver definida, ClickHouse escolherá a expressão `DEFAULT` automaticamente com base no tipo de `id`, mas apenas se o tipo de `id` for um dos seguintes: `UUID`, `UInt64`, `UInt128`, `FixedString(16)` ou uma tupla de dois desses tipos. Para essa tupla, a expressão escolhida automaticamente calcula um hash do nome de métrica no primeiro componente e um hash de todas as tags no segundo componente.
+Se nenhuma expressão `DEFAULT` for fornecida para a coluna `id` e a configuração `id_generator` não estiver definida, ClickHouse escolherá a expressão `DEFAULT` automaticamente com base no tipo de `id`, mas apenas se o tipo de `id` for um dos seguintes: `UUID`, `UInt64`, `UInt128`, `FixedString(16)`, os mesmos tipos encapsulados em `LowCardinality` ou uma tupla de dois desses tipos. Para essa tupla, a expressão escolhida automaticamente calcula um hash do nome de métrica no primeiro componente e um hash de todas as tags no segundo componente.
+
+Um tipo de identificador `LowCardinality`, por exemplo `Tuple(UInt64, LowCardinality(UUID))`, mantém os identificadores codificados por dicionário: a tabela `samples` armazena pequenos dicionários por bloco com dictionary indexes em vez de repetir o identificador completo em cada linha, o que reduz a quantidade de dados lidos pelas consultas.
 
 A configuração `id_generator` oferece a mesma personalização sem usar a cláusula `INNER COLUMNS`:
 
@@ -341,9 +358,7 @@ SETTINGS id_generator = 'sipHash64(tags)'
 
 Se essa configuração estiver definida, ela será usada para gerar o `id`, mesmo que o `DEFAULT` da coluna contenha uma expressão diferente.
 
-<div id="tags-column">
-  ## A coluna `tags`
-</div>
+## A coluna `tags` {#tags-column}
 
 A coluna `tags` contém todas as tags de uma série temporal, incluindo a tag `__name__` com o nome de uma métrica.
 
@@ -365,23 +380,34 @@ Os valores das tags `instance` e `job` serão armazenados tanto nessas colunas q
   com todas as tags, exceto o nome da métrica.
 </Note>
 
-<div id="inner-table-engines">
-  ## Motores de tabela das tabelas de destino internas
-</div>
+## Motores de tabela das tabelas de destino internas {#inner-table-engines}
 
 Por padrão, as tabelas de destino internas usam os seguintes motores de tabela:
 
 * a tabela [samples](#samples-table) usa [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree);
+* a tabela [amostras recentes](#recent-samples-table) usa [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) particionada em buckets de 5 horas (consulte a configuração [recent&#95;samples&#95;partition&#95;by](#settings)) com um `TTL` derivado da
+  configuração [recent&#95;samples&#95;ttl&#95;seconds](#settings) e com `ttl_only_drop_parts` habilitado, de modo que as partes expiradas são removidas por inteiro;
 * a tabela [tags](#tags-table) usa [AggregatingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/aggregatingmergetree) porque os mesmos dados costumam ser inseridos várias vezes nessa tabela, então precisamos de uma forma
   de remover duplicatas, além de ser necessário fazer agregação para as colunas `min_time` e `max_time`;
 * a tabela [metrics](#metrics-table) usa [ReplacingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree) porque os mesmos dados costumam ser inseridos várias vezes nessa tabela, então precisamos de uma forma
   de remover duplicatas.
+
+A família de motores das tabelas internas geradas segue a configuração de nível de consulta `default_table_engine`:
+com `default_table_engine = ReplicatedMergeTree` ou `SharedMergeTree`, as tabelas internas usam os motores
+`Replicated` ou `Shared` correspondentes. Com `default_table_engine = None` (ou qualquer outro valor), os motores das tabelas internas
+devem ser especificados explicitamente.
+
+Todas as tabelas internas devem ter o mesmo tipo de replicação: se uma delas for replicada (ou compartilhada), as demais tabelas
+internas também devem ser replicadas (ou compartilhadas); caso contrário, seus conteúdos divergiriam entre as réplicas. Por exemplo,
+declarar `SAMPLES INNER ENGINE = ReplicatedMergeTree(...)` exige que os demais motores internos também sejam replicados —
+seja declarados explicitamente ou gerados com `default_table_engine = ReplicatedMergeTree`.
 
 Outros motores de tabela também podem ser usados nas tabelas de destino internas, caso isso seja especificado:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES ENGINE=ReplicatedMergeTree
+RECENT SAMPLES ENGINE=ReplicatedMergeTree
 TAGS ENGINE=ReplicatedAggregatingMergeTree
 METRICS ENGINE=ReplicatedReplacingMergeTree
 ```
@@ -393,9 +419,7 @@ linhas que uma mesclagem em segundo plano combina compartilham os mesmos valores
 motor é especificado inline, como acima, `TimeSeries` define `allow_dimensions_outside_sorting_key = 1` nela automaticamente;
 para uma tabela [externa](#external-target-tables) de tags com agregação criada manualmente, você deve definir isso por conta própria.
 
-<div id="external-target-tables">
-  ## Tabelas de destino externas
-</div>
+## Tabelas de destino externas {#external-target-tables}
 
 É possível fazer com que uma tabela `TimeSeries` use uma tabela criada manualmente:
 
@@ -416,13 +440,15 @@ CREATE TABLE metrics_for_my_table ...
 CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_for_my_table METRICS metrics_for_my_table;
 ```
 
+Uma tabela externa também pode ser usada como destino de [amostras recentes](#recent-samples-table) (a cláusula `RECENT SAMPLES my_recent_samples_table`).
+Essa tabela deve ter as mesmas colunas de uma tabela samples externa e deve reter pelo menos
+[recent&#95;samples&#95;ttl&#95;seconds](#settings) segundos de dados, o que é responsabilidade do usuário.
+
 Os tipos de coluna das tabelas externas (`id`, `timestamp`, `value` e os `<tag_value_column>` listados em [`tags_to_columns`](#settings)) devem corresponder aos que a tabela `TimeSeries` geraria internamente (consulte [Tabela samples](#samples-table), [Tabela de Tags](#tags-table) e [Tabela de métrica](#metrics-table) para as restrições de tipo). Incompatibilidades de tipo são informadas no momento do `CREATE`.
 
 A expressão do gerador de ID para um destino externo de tags é resolvida no momento do `INSERT`, na seguinte ordem: a configuração [`id_generator`](#settings) (se definida), depois o `DEFAULT` declarado na coluna `id` da tabela externa (se houver) e, por fim, o gerador canônico derivado do tipo de `id`. Portanto, a configuração substitui qualquer `DEFAULT` declarado na tabela externa — consulte [A coluna `id`](#id-column) para mais detalhes.
 
-<div id="altering-settings">
-  ## Alterando configurações
-</div>
+## Alterando configurações {#altering-settings}
 
 Duas configurações podem ser alteradas após `CREATE`:
 
@@ -432,15 +458,14 @@ Duas configurações podem ser alteradas após `CREATE`:
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
 Observe que alterar `id_generator` quando já existem dados na tabela de tags pode gerar IDs diferentes para a mesma combinação de métrica+tag — as linhas antigas mantêm seus IDs antigos, e as linhas novas usam o novo gerador.
 
 As outras configurações não podem ser alteradas com `ALTER ... MODIFY SETTING` porque são incorporadas ao esquema das tabelas internas no momento do `CREATE`.
 
-<div id="settings">
-  ## Configurações
-</div>
+## Configurações {#settings}
 
 Aqui está uma lista de configurações que podem ser especificadas ao definir uma tabela `TimeSeries`:
 
@@ -453,14 +478,12 @@ Aqui está uma lista de configurações que podem ser especificadas ao definir u
 | `aggregate_min_time_and_max_time`    | Bool       | true                                                          | Ao criar uma tabela `tags` interna de destino, esta opção permite usar `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` em vez de apenas `Nullable(DateTime64(3))` como tipo da coluna `min_time`, e o mesmo para a coluna `max_time`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `filter_by_min_time_and_max_time`    | Bool       | true                                                          | Se definido como true, a tabela usará as colunas `min_time` e `max_time` para filtrar séries temporais                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `samples_index_granularity`          | UInt64     | 32768                                                         | Define `index_granularity` da tabela [samples](#samples-table) interna. Quando definido explicitamente, substitui `index_granularity` da declaração do motor. Ignorado para uma tabela samples externa e um motor que não seja MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `recent_samples_ttl_seconds`         | UInt64     | 345600                                                        | Retenção da tabela de destino adicional `amostras recentes`, na qual cada amostra inserida também é gravada. Uma tabela interna de amostras recentes sempre recebe `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derivado desta configuração (substituindo qualquer TTL da declaração do motor); uma tabela externa de amostras recentes deve reter pelo menos essa quantidade de segundos de dados. Consultas cujo intervalo de tempo está dentro da janela de TTL priorizam a tabela de amostras recentes em vez da tabela principal de amostras (consulte a configuração no nível da consulta `time_series_prefer_recent_samples_table`). O padrão é de 4 dias; o valor efetivo é fixado na definição da tabela no momento do CREATE. Defina como 0 para desabilitar a tabela de amostras recentes |
+| `recent_samples_partition_by`        | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Chave de partição da tabela interna `amostras recentes`, por exemplo, `toStartOfHour(timestamp)`. Quando definida explicitamente, substitui a chave de partição da declaração do motor; se nenhuma das duas for definida, é usada uma partição a cada 5 horas. Ignorado para uma tabela externa de amostras recentes. Requer que `recent_samples_ttl_seconds` seja diferente de zero                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `recent_samples_index_granularity`   | UInt64     | 8192                                                          | Define `index_granularity` da tabela interna `amostras recentes`. Quando definido explicitamente, substitui `index_granularity` da declaração do motor. Ignorado para uma tabela externa de amostras recentes e um motor que não seja MergeTree. Requer que `recent_samples_ttl_seconds` seja diferente de zero                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `tags_index_granularity`             | UInt64     | 8192                                                          | Define `index_granularity` da tabela [tags](#tags-table) interna. Quando definido explicitamente, substitui `index_granularity` da declaração do motor. Ignorado para uma tabela tags externa e um motor que não seja MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `recent_samples_ttl_seconds`         | UInt64     | 345600                                                        | Retenção da tabela de destino adicional `recent samples`, na qual cada amostra inserida também é gravada. Uma tabela interna de amostras recentes sempre recebe `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derivado desta configuração (substituindo qualquer TTL da declaração do motor); uma tabela externa de amostras recentes deve reter pelo menos essa quantidade de segundos de dados. Consultas cujo intervalo de tempo está dentro da janela de TTL priorizam a tabela de amostras recentes em vez da tabela principal de amostras (consulte a configuração no nível da consulta `time_series_prefer_recent_samples_table`). O padrão é de 4 dias; o valor efetivo é fixado na definição da tabela no momento do CREATE. Defina como 0 para desabilitar a tabela de amostras recentes |
-| `recent_samples_partition_by`        | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Chave de partição da tabela interna `recent samples`, por exemplo, `toStartOfHour(timestamp)`. Requer que `recent_samples_ttl_seconds` seja diferente de zero                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `recent_samples_index_granularity`   | UInt64     | 8192                                                          | Define `index_granularity` da tabela interna `recent samples`. Requer que `recent_samples_ttl_seconds` seja diferente de zero                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
-<div id="functions">
-  # Funções
-</div>
+# Funções {#functions}
 
 Aqui está uma lista de funções que aceitam uma tabela `TimeSeries` como argumento:
 

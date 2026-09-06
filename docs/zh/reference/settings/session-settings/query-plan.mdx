@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，且由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="query_plan_aggregation_bucket_top_k">
-  ## query_plan_aggregation_bucket_top_k
-</div>
+## query_plan_aggregation_bucket_top_k {#query_plan_aggregation_bucket_top_k}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,9 +28,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_aggregation_in_order">
-  ## query_plan_aggregation_in_order
-</div>
+## query_plan_aggregation_in_order {#query_plan_aggregation_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -50,9 +46,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_convert_any_join_to_semi_or_anti_join">
-  ## query_plan_convert_any_join_to_semi_or_anti_join
-</div>
+## query_plan_convert_any_join_to_semi_or_anti_join {#query_plan_convert_any_join_to_semi_or_anti_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -60,9 +54,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 如果 JOIN 之后的过滤器对未匹配行或已匹配行的求值结果始终为 false，则允许将 ANY JOIN 转换为 SEMI 或 ANTI JOIN
 
-<div id="query_plan_convert_join_to_in">
-  ## query_plan_convert_join_to_in
-</div>
+## query_plan_convert_join_to_in {#query_plan_convert_join_to_in}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -70,9 +62,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 如果输出列仅关联左表，则允许将 `JOIN` 转换为使用 `IN` 的子查询。对于非 ANY JOIN (例如默认的 ALL JOIN) ，这可能会导致结果错误。
 
-<div id="query_plan_convert_outer_join_to_inner_join">
-  ## query_plan_convert_outer_join_to_inner_join
-</div>
+## query_plan_convert_outer_join_to_inner_join {#query_plan_convert_outer_join_to_inner_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -80,9 +70,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 如果 `JOIN` 之后的过滤器总是会过滤掉默认值，则允许将 `OUTER JOIN` 转换为 `INNER JOIN`
 
-<div id="query_plan_direct_read_from_text_index">
-  ## query_plan_direct_read_from_text_index
-</div>
+## query_plan_direct_read_from_text_index {#query_plan_direct_read_from_text_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -90,9 +78,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 允许在查询计划中仅使用倒排文本索引进行全文检索筛选。
 
-<div id="query_plan_display_internal_aliases">
-  ## query_plan_display_internal_aliases
-</div>
+## query_plan_display_internal_aliases {#query_plan_display_internal_aliases}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -100,17 +86,13 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 在 EXPLAIN PLAN 中显示内部别名 (如 &#95;&#95;table1) ，而非显示原始查询中指定的别名。
 
-<div id="query_plan_enable_multithreading_after_window_functions">
-  ## query_plan_enable_multithreading_after_window_functions
-</div>
+## query_plan_enable_multithreading_after_window_functions {#query_plan_enable_multithreading_after_window_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 在计算窗口函数后启用多线程，以支持并行流处理
 
-<div id="query_plan_enable_optimizations">
-  ## query_plan_enable_optimizations
-</div>
+## query_plan_enable_optimizations {#query_plan_enable_optimizations}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -125,9 +107,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * 0 - 禁用查询计划层的所有优化
 * 1 - 启用查询计划层的优化 (但仍可通过各自的设置禁用单项优化)
 
-<div id="query_plan_execute_functions_after_sorting">
-  ## query_plan_execute_functions_after_sorting
-</div>
+## query_plan_execute_functions_after_sorting {#query_plan_execute_functions_after_sorting}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -143,9 +123,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_filter_push_down">
-  ## query_plan_filter_push_down
-</div>
+## query_plan_filter_push_down {#query_plan_filter_push_down}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -161,9 +139,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_fuse_filter_into_array_join">
-  ## query_plan_fuse_filter_into_array_join
-</div>
+## query_plan_fuse_filter_into_array_join {#query_plan_fuse_filter_into_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -176,9 +152,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
   这是一项专家级设置，仅供开发人员调试时使用。该设置未来可能会以不向后兼容的方式变更或被移除。
 </Note>
 
-<div id="query_plan_join_shard_by_pk_ranges">
-  ## query_plan_join_shard_by_pk_ranges
-</div>
+## query_plan_join_shard_by_pk_ranges {#query_plan_join_shard_by_pk_ranges}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -186,9 +160,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 如果两个表的连接键都包含 PRIMARY KEY 的前缀，则对 JOIN 启用分片。支持哈希、parallel&#95;hash、full&#95;sorting&#95;merge 和 parallel&#95;full&#95;sorting&#95;merge 算法。通常不会加速查询，但可能会降低内存消耗。
 
-<div id="query_plan_join_swap_table">
-  ## query_plan_join_swap_table
-</div>
+## query_plan_join_swap_table {#query_plan_join_swap_table}
 
 <SettingsInfoBlock type="BoolAuto" default_value="auto" />
 
@@ -200,9 +172,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * &#39;false&#39;：从不交换表 (右表为 build 表) 。
 * &#39;true&#39;：始终交换表 (左表为 build 表) 。
 
-<div id="query_plan_lift_up_array_join">
-  ## query_plan_lift_up_array_join
-</div>
+## query_plan_lift_up_array_join {#query_plan_lift_up_array_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -218,9 +188,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_lift_up_union">
-  ## query_plan_lift_up_union
-</div>
+## query_plan_lift_up_union {#query_plan_lift_up_union}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -236,9 +204,20 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_max_limit_for_join_lazy_indexing">
-  ## query_plan_max_limit_for_join_lazy_indexing
-</div>
+## query_plan_lower_array_join_function {#query_plan_lower_array_join_function}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增优化：将 arrayJoin 函数降为真正的 ARRAY JOIN 步骤；默认禁用。"}]}]} />
+
+启用或禁用一项查询计划级别的优化：将表达式中的 `arrayJoin` 函数降为真正的 `ARRAY JOIN` 步骤，使其采用与 `ARRAY JOIN` 子句相同的执行机制 (惰性复制和过滤器融合) 。
+仅当设置 [query&#95;plan&#95;enable&#95;optimizations](/zh/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 为 1 时生效。
+
+<Note>
+  这是一项专家级设置，仅应由开发人员用于调试。该设置未来可能会以不向后兼容的方式更改或被移除。
+</Note>
+
+## query_plan_max_limit_for_join_lazy_indexing {#query_plan_max_limit_for_join_lazy_indexing}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -246,9 +225,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 控制可在 JOIN 中使用查询计划进行惰性索引优化时允许的最大 LIMIT 值。若为 0，则不受限制。
 
-<div id="query_plan_max_limit_for_lazy_materialization">
-  ## query_plan_max_limit_for_lazy_materialization
-</div>
+## query_plan_max_limit_for_lazy_materialization {#query_plan_max_limit_for_lazy_materialization}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -256,9 +233,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 控制可对惰性物化优化使用查询计划的最大 LIMIT 值。若为 0，则不受限制。
 
-<div id="query_plan_max_limit_for_top_k_optimization">
-  ## query_plan_max_limit_for_top_k_optimization
-</div>
+## query_plan_max_limit_for_top_k_optimization {#query_plan_max_limit_for_top_k_optimization}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -268,9 +243,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 此设置还控制 [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/zh/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) 的行为。
 
-<div id="query_plan_max_optimizations_to_apply">
-  ## query_plan_max_optimizations_to_apply
-</div>
+## query_plan_max_optimizations_to_apply {#query_plan_max_optimizations_to_apply}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -283,9 +256,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
   这是一个专家级设置，仅应供开发人员用于调试。该设置未来可能会以不向后兼容的方式更改，或者被移除。
 </Note>
 
-<div id="query_plan_max_set_size_for_projection_match">
-  ## query_plan_max_set_size_for_projection_match
-</div>
+## query_plan_max_set_size_for_projection_match {#query_plan_max_set_size_for_projection_match}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -295,9 +266,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 该设置由聚合投影匹配器使用 (以及未来任何需要比较 `IN` 子句集合的投影匹配器) 。计算内容哈希的复杂度相对于集合中元素数量为 `O(N log N)`；当查询或投影中出现大量 `IN` 子句时，此设置可限制规划阶段的开销。
 
-<div id="query_plan_max_step_description_length">
-  ## query_plan_max_step_description_length
-</div>
+## query_plan_max_step_description_length {#query_plan_max_step_description_length}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -305,9 +274,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 EXPLAIN PLAN 中步骤描述的最大长度。
 
-<div id="query_plan_merge_expression_into_join">
-  ## query_plan_merge_expression_into_join
-</div>
+## query_plan_merge_expression_into_join {#query_plan_merge_expression_into_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -315,9 +282,7 @@ EXPLAIN PLAN 中步骤描述的最大长度。
 
 允许在 JOIN 重排序优化过程中将表达式合并到 JOIN 步骤中。
 
-<div id="query_plan_merge_expressions">
-  ## query_plan_merge_expressions
-</div>
+## query_plan_merge_expressions {#query_plan_merge_expressions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -333,9 +298,7 @@ EXPLAIN PLAN 中步骤描述的最大长度。
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_merge_filter_into_join_condition">
-  ## query_plan_merge_filter_into_join_condition
-</div>
+## query_plan_merge_filter_into_join_condition {#query_plan_merge_filter_into_join_condition}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -343,9 +306,7 @@ EXPLAIN PLAN 中步骤描述的最大长度。
 
 允许将过滤条件合并到 `JOIN` 条件中，并将 `CROSS JOIN` 转换为 `INNER JOIN`。
 
-<div id="query_plan_merge_filters">
-  ## query_plan_merge_filters
-</div>
+## query_plan_merge_filters {#query_plan_merge_filters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -353,9 +314,7 @@ EXPLAIN PLAN 中步骤描述的最大长度。
 
 允许在查询计划中合并过滤器。
 
-<div id="query_plan_min_columns_for_join_lazy_indexing">
-  ## query_plan_min_columns_for_join_lazy_indexing
-</div>
+## query_plan_min_columns_for_join_lazy_indexing {#query_plan_min_columns_for_join_lazy_indexing}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
@@ -363,9 +322,7 @@ EXPLAIN PLAN 中步骤描述的最大长度。
 
 控制启用 JOIN 中惰性索引优化时左侧所需的最小载荷列数。0 表示禁用此优化。
 
-<div id="query_plan_optimize_count_from_text_index">
-  ## query_plan_optimize_count_from_text_index
-</div>
+## query_plan_optimize_count_from_text_index {#query_plan_optimize_count_from_text_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -374,9 +331,7 @@ EXPLAIN PLAN 中步骤描述的最大长度。
 允许直接利用文本索引倒排列表的基数执行 `SELECT count() ... WHERE <text search predicate>`，无需具体化匹配的行。
 仅在启用 `query_plan_direct_read_from_text_index` 时生效。
 
-<div id="query_plan_optimize_join_order_algorithm">
-  ## query_plan_optimize_join_order_algorithm
-</div>
+## query_plan_optimize_join_order_algorithm {#query_plan_optimize_join_order_algorithm}
 
 <ExperimentalBadge />
 
@@ -392,9 +347,7 @@ EXPLAIN PLAN 中步骤描述的最大长度。
 * &#39;dphyp&#39; - 实现 DPhyp (通过超图分区进行动态规划) 算法，目前仅支持 INNER JOIN - 探索与 `dpsize` 相同的搜索空间，但只枚举连通子图对，因此在稀疏 JOIN 图上生成的中间 JOIN 更少，代价是不考虑笛卡尔积
   可以将多个算法指定为逗号分隔的列表，例如 `dphyp,greedy`。系统会按顺序尝试这些算法；如果某个算法无法处理该查询 (例如由于存在 OUTER JOIN 或不连通分量) ，则会回退到下一个算法。
 
-<div id="query_plan_optimize_join_order_limit">
-  ## query_plan_optimize_join_order_limit
-</div>
+## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -403,9 +356,7 @@ EXPLAIN PLAN 中步骤描述的最大长度。
 优化同一子查询中 JOIN 的顺序。目前仅支持极少数情况。
 值表示可优化的最大表数量。
 
-<div id="query_plan_optimize_join_order_max_searched_plans">
-  ## query_plan_optimize_join_order_max_searched_plans
-</div>
+## query_plan_optimize_join_order_max_searched_plans {#query_plan_optimize_join_order_max_searched_plans}
 
 <ExperimentalBadge />
 
@@ -417,9 +368,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 该设置会以确定性的方式限制优化时间 (与实际时钟时间无关) ，适用于团状或星状等稠密 JOIN 图，因为这类场景中的搜索空间会呈指数级增长。
 设置为 0 可禁用此限制。对默认的 `query_plan_optimize_join_order_limit` 没有影响，因为在默认情况下，搜索规模始终远低于此上限。
 
-<div id="query_plan_optimize_join_order_randomize">
-  ## query_plan_optimize_join_order_randomize
-</div>
+## query_plan_optimize_join_order_randomize {#query_plan_optimize_join_order_randomize}
 
 <ExperimentalBadge />
 
@@ -431,9 +380,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 当设置为 1 时，会生成一个随机种子；当设置为大于 1 的值时，则直接使用该值作为种子。
 此设置用于测试，以发现由不同 JOIN 顺序引起的错误。
 
-<div id="query_plan_optimize_lazy_final">
-  ## query_plan_optimize_lazy_final
-</div>
+## query_plan_optimize_lazy_final {#query_plan_optimize_lazy_final}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -441,9 +388,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 通过构建主键集合并将其用于索引分析，优化从 ReplacingMergeTree 使用 FINAL 读取时的性能。
 
-<div id="query_plan_optimize_lazy_materialization">
-  ## query_plan_optimize_lazy_materialization
-</div>
+## query_plan_optimize_lazy_materialization {#query_plan_optimize_lazy_materialization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -451,9 +396,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 使用查询计划进行惰性物化优化。
 
-<div id="query_plan_optimize_lazy_materialization_for_file">
-  ## query_plan_optimize_lazy_materialization_for_file
-</div>
+## query_plan_optimize_lazy_materialization_for_file {#query_plan_optimize_lazy_materialization_for_file}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -461,9 +404,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 对通过 `file` 表函数和 `File` 表引擎读取本地 Parquet 文件启用惰性物化优化：对于 `ORDER BY ... LIMIT n` 查询，仅针对通过 `LIMIT` 保留下来的 `n` 行读取排序和筛选所不需要的列。仅当 `query_plan_optimize_lazy_materialization` 已启用时生效。
 
-<div id="query_plan_optimize_lazy_materialization_for_object_storage">
-  ## query_plan_optimize_lazy_materialization_for_object_storage
-</div>
+## query_plan_optimize_lazy_materialization_for_object_storage {#query_plan_optimize_lazy_materialization_for_object_storage}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -471,9 +412,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 对从对象存储 (包括 Iceberg 表) 读取 Parquet 文件时使用惰性物化优化：对于 `ORDER BY ... LIMIT n` 查询，仅对经 `LIMIT` 保留的 `n` 行读取排序和筛选不需要的列。仅当启用 `query_plan_optimize_lazy_materialization` 时生效。
 
-<div id="query_plan_optimize_prewhere">
-  ## query_plan_optimize_prewhere
-</div>
+## query_plan_optimize_prewhere {#query_plan_optimize_prewhere}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -481,9 +420,22 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 允许将过滤器下推到受支持存储的 PREWHERE 表达式
 
-<div id="query_plan_push_down_limit">
-  ## query_plan_push_down_limit
-</div>
+## query_plan_propagate_predicate_across_join {#query_plan_propagate_predicate_across_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置：通过等值连接键传播过滤合取项，使主键裁剪可在连接两侧触发。"}]}]} />
+
+启用或禁用一项查询计划级别的优化：该优化会通过等值键替换，将过滤合取项从等值连接的一侧复制到另一侧，
+使另一侧的主键/索引裁剪也能利用这些合取项。
+
+当过滤器与 `MergeTree` 读取之间仅隔有表达式和过滤步骤时，以及复制的合取项将主键列与常量进行比较时
+(包括使用常量集合的 `IN`) ，此优化才会生效。位于嵌套连接或 `DISTINCT` 下方的谓词，以及两个键列之间的
+比较，不会被复制：它们无法驱动另一侧的主键裁剪，复制只会增加额外工作。
+
+仅当 `query_plan_enable_optimizations` 为 1 时生效。
+
+## query_plan_push_down_limit {#query_plan_push_down_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -499,9 +451,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_push_down_volume_reducing_functions">
-  ## query_plan_push_down_volume_reducing_functions
-</div>
+## query_plan_push_down_volume_reducing_functions {#query_plan_push_down_volume_reducing_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -519,9 +469,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_push_limit_by_into_sort">
-  ## query_plan_push_limit_by_into_sort
-</div>
+## query_plan_push_limit_by_into_sort {#query_plan_push_limit_by_into_sort}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -536,9 +484,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_read_in_order">
-  ## query_plan_read_in_order
-</div>
+## query_plan_read_in_order {#query_plan_read_in_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -554,9 +500,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_read_in_order_through_join">
-  ## query_plan_read_in_order_through_join
-</div>
+## query_plan_read_in_order_through_join {#query_plan_read_in_order_through_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -564,9 +508,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 在 JOIN 操作中保持按顺序从左表读取，以便后续步骤加以利用。
 
-<div id="query_plan_remove_redundant_distinct">
-  ## query_plan_remove_redundant_distinct
-</div>
+## query_plan_remove_redundant_distinct {#query_plan_remove_redundant_distinct}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -584,9 +526,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_remove_redundant_sorting">
-  ## query_plan_remove_redundant_sorting
-</div>
+## query_plan_remove_redundant_sorting {#query_plan_remove_redundant_sorting}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -604,9 +544,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_remove_unused_columns">
-  ## query_plan_remove_unused_columns
-</div>
+## query_plan_remove_unused_columns {#query_plan_remove_unused_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -624,9 +562,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_reuse_storage_ordering_for_window_functions">
-  ## query_plan_reuse_storage_ordering_for_window_functions
-</div>
+## query_plan_reuse_storage_ordering_for_window_functions {#query_plan_reuse_storage_ordering_for_window_functions}
 
 **别名**: `optimize_read_in_window_order`
 
@@ -646,9 +582,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_short_circuit_constant_false_join">
-  ## query_plan_short_circuit_constant_false_join
-</div>
+## query_plan_short_circuit_constant_false_join {#query_plan_short_circuit_constant_false_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -656,9 +590,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 对于 `ON` 条件可折叠为常量 false 的 `JOIN`，将无法产生行的每个输入侧替换为空源 (`INNER`/`CROSS`/`SEMI` 为两侧，`LEFT`/`RIGHT` 为非保留侧) ，从而避免读取无法产生结果的一侧。适用于 analyzer (`enable_analyzer = 1`) 和非分布式查询计划。
 
-<div id="query_plan_split_filter">
-  ## query_plan_split_filter
-</div>
+## query_plan_split_filter {#query_plan_split_filter}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -674,9 +606,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_text_index_add_hint">
-  ## query_plan_text_index_add_hint
-</div>
+## query_plan_text_index_add_hint {#query_plan_text_index_add_hint}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -684,9 +614,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 
 允许为查询计划中基于倒排文本索引构建的过滤器添加 hint (附加谓词) 。
 
-<div id="query_plan_top_k_through_join">
-  ## query_plan_top_k_through_join
-</div>
+## query_plan_top_k_through_join {#query_plan_top_k_through_join}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -700,9 +628,7 @@ JOIN 顺序优化器在放弃当前算法并回退到 `query_plan_optimize_join_
 * 0 - 禁用
 * 1 - 启用
 
-<div id="query_plan_try_use_vector_search">
-  ## query_plan_try_use_vector_search
-</div>
+## query_plan_try_use_vector_search {#query_plan_try_use_vector_search}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

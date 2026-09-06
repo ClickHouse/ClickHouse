@@ -17,7 +17,9 @@ import SystemTableCloud from '/snippets/fr/_system_table_cloud.mdx';
 
 Contient l’historique des valeurs de `system.asynchronous_metrics`, enregistrées une fois par intervalle de temps (une seconde par défaut). Activée par défaut.
 
-Les métriques clé-valeur de `system.asynchronous_metrics` (celles ventilées par cœur de CPU, périphérique de stockage par blocs, interface réseau ou disque) sont enregistrées sous forme d’une ligne par clé, la clé étant dans la colonne `key`. Pour les métriques scalaires, la colonne `key` est vide.
+Les métriques clé-valeur de `system.asynchronous_metrics` (celles ventilées par cœur CPU, périphérique de bloc, interface réseau ou disque) sont enregistrées sous forme d’une ligne par clé, la clé étant dans la colonne `key`. Pour les métriques scalaires, la colonne `key` est vide.
+
+Avant la version 26.8, chaque clé était une métrique scalaire distincte dont la clé était intégrée à son nom (`BlockReadBytes_sda`). Le paramètre de serveur [`asynchronous_metrics_key_values_mode`](/fr/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) permet de revenir à cette forme (`legacy_names`) ou d’enregistrer les deux formes simultanément (`both`) pendant la migration de la supervision.
 
 <div id="columns">
   ## Colonnes

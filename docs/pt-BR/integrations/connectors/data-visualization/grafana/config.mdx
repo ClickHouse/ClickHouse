@@ -140,7 +140,7 @@ Também é necessário configurar esses padrões para habilitar [data links](/pt
   ### Logs
 </div>
 
-Para acelerar a [montagem de consultas de logs](/pt-BR/integrations/connectors/data-visualization/grafana/query-builder#logs), você pode definir um banco de dados/tabela padrão, bem como colunas para a consulta de logs. Isso pré-carregará o construtor de consultas com uma consulta de logs pronta para execução, o que agiliza a navegação na página Explore para observabilidade.
+Para acelerar a [criação de consultas de logs](/pt-BR/integrations/connectors/data-visualization/grafana/query-builder#logs), você pode definir um banco de dados/tabela padrão, bem como colunas para a consulta de logs. Isso pré-carregará o construtor de consultas com uma consulta de logs pronta para execução, o que agiliza a navegação na página Explore para observabilidade.
 
 Se você estiver usando OpenTelemetry, ative a opção &quot;**Use OTel**&quot; e defina a **tabela de logs padrão** como `otel_logs`.
 Isso substituirá automaticamente as colunas padrão para usar a versão de esquema do OTel selecionada.
@@ -162,11 +162,22 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showLogLinks: true # set to false to hide the "View logs" data links on trace ID fields.
+
     # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
     timeColumn:       <string> # the primary time column for the log.
     levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
     messageColumn: <string> # the log's message/content.
 ```
+
+<div id="disabling-view-logs-links">
+  #### Desativando links &quot;View logs&quot;
+</div>
+
+A seção **Correlação de ID de trace** da configuração de logs contém o toggle **Mostrar links &quot;View logs&quot;**.
+Esse toggle controla se o plugin anexa links &quot;View logs&quot; de [data links](/pt-BR/integrations/connectors/data-visualization/grafana/query-builder#data-links) aos campos de ID de trace nos resultados das consultas.
+O toggle é ativado por padrão. Um link &quot;View logs&quot; para o mesmo tipo de consulta não requer padrões de logs configurados; já um link &quot;View logs&quot; entre sinais, proveniente de resultados de consultas de traces, requer.
+Desative o toggle ou defina `showLogLinks: false` no YAML para ocultá-los.
 
 <div id="traces">
   ### Traces
@@ -193,6 +204,8 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showTraceLinks: true # set to false to hide the "View trace" data links on trace ID fields.
+
     # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
     traceIdColumn:       <string>    # trace ID column.
     spanIdColumn:        <string>    # span ID column.
@@ -205,6 +218,15 @@ jsonData:
     tagsColumn:          <string>    # tags column. This is expected to be a map type.
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
+
+<div id="disabling-view-trace-links">
+  #### Desativar links &quot;View trace&quot;
+</div>
+
+A seção **Correlação de ID de trace** da configuração de traces contém o toggle **Mostrar links &quot;View trace&quot;**.
+Esse toggle controla se o plugin adiciona links &quot;View trace&quot; de [data links](/pt-BR/integrations/connectors/data-visualization/grafana/query-builder#data-links) aos campos de ID de trace nos resultados de consultas.
+O toggle vem ativado por padrão. Um link &quot;View trace&quot; para o mesmo tipo de consulta não requer padrões de trace configurados; já um link &quot;View trace&quot; entre sinais, a partir de resultados de consultas de logs, requer.
+Desative o toggle ou defina `showTraceLinks: false` em YAML para ocultá-los.
 
 <div id="column-aliases">
   ### Aliases de coluna
@@ -323,6 +345,7 @@ datasources:
         defaultTable: otel_logs
         otelEnabled: false
         otelVersion: latest
+        showLogLinks: <boolean>
         timeColumn: <string>
         levelColumn: <string>
         messageColumn: <string>
@@ -331,6 +354,7 @@ datasources:
         defaultTable: otel_traces
         otelEnabled: false
         otelVersion: latest
+        showTraceLinks: <boolean>
         traceIdColumn: <string>
         spanIdColumn: <string>
         operationNameColumn: <string>

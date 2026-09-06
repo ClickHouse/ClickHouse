@@ -15,21 +15,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="allow_experimental_ai_functions">
-  ## allow_experimental_ai_functions
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Новая настройка"}]}]} />
-
-Включает экспериментальные функции ИИ (например, `aiGenerateContent`). Эти функции выполняют внешние HTTP-запросы к поставщикам ИИ.
-
-<div id="allow_experimental_analyzer">
-  ## allow_experimental_analyzer
-</div>
+## allow_experimental_analyzer {#allow_experimental_analyzer}
 
 **Псевдонимы**: `enable_analyzer`
 
@@ -39,9 +25,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает использование анализатора.
 
-<div id="allow_experimental_cleanup_old_data_files_compaction">
-  ## allow_experimental_cleanup_old_data_files_compaction
-</div>
+## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
 
 <ExperimentalBadge />
 
@@ -51,19 +35,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает удалять старые файлы данных во время compaction в Iceberg.
 
-<div id="allow_experimental_codecs">
-  ## allow_experimental_codecs
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-Если задано значение true, разрешает указывать любой экспериментальный кодек сжатия.
-
-<div id="allow_experimental_correlated_subqueries">
-  ## allow_experimental_correlated_subqueries
-</div>
+## allow_experimental_correlated_subqueries {#allow_experimental_correlated_subqueries}
 
 <BetaBadge />
 
@@ -73,9 +45,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает выполнение коррелированных подзапросов.
 
-<div id="allow_experimental_database_glue_catalog">
-  ## allow_experimental_database_glue_catalog
-</div>
+## allow_experimental_database_glue_catalog {#allow_experimental_database_glue_catalog}
 
 <BetaBadge />
 
@@ -89,9 +59,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Значение по умолчанию в Cloud: `1`.
 
-<div id="allow_experimental_database_hms_catalog">
-  ## allow_experimental_database_hms_catalog
-</div>
+## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
 <ExperimentalBadge />
 
@@ -101,9 +69,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешить использование экспериментального движка базы данных DataLakeCatalog с catalog&#95;type = &#39;hms&#39;
 
-<div id="allow_experimental_database_iceberg">
-  ## allow_experimental_database_iceberg
-</div>
+## allow_experimental_database_iceberg {#allow_experimental_database_iceberg}
 
 <BetaBadge />
 
@@ -117,9 +83,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Значение по умолчанию в Cloud: `1`.
 
-<div id="allow_experimental_database_materialized_postgresql">
-  ## allow_experimental_database_materialized_postgresql
-</div>
+## allow_experimental_database_materialized_postgresql {#allow_experimental_database_materialized_postgresql}
 
 <ExperimentalBadge />
 
@@ -127,9 +91,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Позволяет создавать базу данных с Engine=MaterializedPostgreSQL(...).
 
-<div id="allow_experimental_database_paimon_rest_catalog">
-  ## allow_experimental_database_paimon_rest_catalog
-</div>
+## allow_experimental_database_paimon_rest_catalog {#allow_experimental_database_paimon_rest_catalog}
 
 <ExperimentalBadge />
 
@@ -139,9 +101,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает использование экспериментального движка базы данных DataLakeCatalog с catalog&#95;type = &#39;paimon&#95;rest&#39;
 
-<div id="allow_experimental_database_unity_catalog">
-  ## allow_experimental_database_unity_catalog
-</div>
+## allow_experimental_database_unity_catalog {#allow_experimental_database_unity_catalog}
 
 <BetaBadge />
 
@@ -155,9 +115,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Значение по умолчанию в Cloud: `1`.
 
-<div id="allow_experimental_delta_lake_writes">
-  ## allow_experimental_delta_lake_writes
-</div>
+## allow_experimental_delta_lake_writes {#allow_experimental_delta_lake_writes}
 
 <BetaBadge />
 
@@ -169,9 +127,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает возможность записи с помощью delta-kernel.
 
-<div id="allow_experimental_eval_table_function">
-  ## allow_experimental_eval_table_function
-</div>
+## allow_experimental_eval_table_function {#allow_experimental_eval_table_function}
 
 <ExperimentalBadge />
 
@@ -181,9 +137,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает экспериментальную табличную функцию `eval`.
 
-<div id="allow_experimental_expire_snapshots">
-  ## allow_experimental_expire_snapshots
-</div>
+## allow_experimental_expire_snapshots {#allow_experimental_expire_snapshots}
 
 <ExperimentalBadge />
 
@@ -193,9 +147,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает выполнение экспериментальной команды Iceberg `ALTER TABLE ... EXECUTE expire_snapshots`.
 
-<div id="allow_experimental_funnel_functions">
-  ## allow_experimental_funnel_functions
-</div>
+## allow_experimental_funnel_functions {#allow_experimental_funnel_functions}
 
 <ExperimentalBadge />
 
@@ -203,9 +155,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает экспериментальные функции для вороночного анализа.
 
-<div id="allow_experimental_geo_types_in_iceberg">
-  ## allow_experimental_geo_types_in_iceberg
-</div>
+## allow_experimental_geo_types_in_iceberg {#allow_experimental_geo_types_in_iceberg}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -213,9 +163,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Позволяет интерпретировать поля Iceberg типов `geometry` и `geography` как тип ClickHouse `Geometry` (Variant).
 
-<div id="allow_experimental_hash_functions">
-  ## allow_experimental_hash_functions
-</div>
+## allow_experimental_hash_functions {#allow_experimental_hash_functions}
 
 <ExperimentalBadge />
 
@@ -223,9 +171,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает экспериментальные хеш-функции
 
-<div id="allow_experimental_iceberg_compaction">
-  ## allow_experimental_iceberg_compaction
-</div>
+## allow_experimental_iceberg_compaction {#allow_experimental_iceberg_compaction}
 
 <ExperimentalBadge />
 
@@ -235,9 +181,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает явно использовать `OPTIMIZE` для таблиц Iceberg.
 
-<div id="allow_experimental_join_right_table_sorting">
-  ## allow_experimental_join_right_table_sorting
-</div>
+## allow_experimental_join_right_table_sorting {#allow_experimental_join_right_table_sorting}
 
 <ExperimentalBadge />
 
@@ -247,9 +191,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Если задано значение true и выполняются условия `join_to_sort_minimum_perkey_rows` и `join_to_sort_maximum_table_rows`, правая таблица переупорядочивается по ключу для повышения производительности левого или внутреннего hash JOIN.
 
-<div id="allow_experimental_json_lazy_type_hints">
-  ## allow_experimental_json_lazy_type_hints
-</div>
+## allow_experimental_json_lazy_type_hints {#allow_experimental_json_lazy_type_hints}
 
 <ExperimentalBadge />
 
@@ -259,9 +201,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает экспериментальные ленивые подсказки типов для типа JSON. Эта возможность позволяет оптимизировать преобразования типа JSON, откладывая вычисление подсказок типов.
 
-<div id="allow_experimental_kafka_offsets_storage_in_keeper">
-  ## allow_experimental_kafka_offsets_storage_in_keeper
-</div>
+## allow_experimental_kafka_offsets_storage_in_keeper {#allow_experimental_kafka_offsets_storage_in_keeper}
 
 <ExperimentalBadge />
 
@@ -271,9 +211,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает экспериментальную возможность хранения смещений, связанных с Kafka, в ClickHouse Keeper. При включении этой возможности для движка таблицы Kafka можно указать путь в ClickHouse Keeper и имя реплики. В результате вместо обычного движка Kafka будет использоваться новый тип движка хранения, который хранит зафиксированные смещения прежде всего в ClickHouse Keeper
 
-<div id="allow_experimental_kusto_dialect">
-  ## allow_experimental_kusto_dialect
-</div>
+## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
 <ExperimentalBadge />
 
@@ -281,11 +219,9 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Новая настройка"}]}]} />
 
-Включает Kusto Query Language (KQL) — альтернативный язык запросов наряду с SQL.
+Включает диалект Kusto Query Language (KQL) — альтернативу SQL.
 
-<div id="allow_experimental_materialized_postgresql_table">
-  ## allow_experimental_materialized_postgresql_table
-</div>
+## allow_experimental_materialized_postgresql_table {#allow_experimental_materialized_postgresql_table}
 
 <ExperimentalBadge />
 
@@ -293,9 +229,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает использовать движок таблицы MaterializedPostgreSQL. По умолчанию отключено, так как эта возможность экспериментальная.
 
-<div id="allow_experimental_nlp_functions">
-  ## allow_experimental_nlp_functions
-</div>
+## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
 
 <ExperimentalBadge />
 
@@ -303,9 +237,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает экспериментальные функции обработки естественного языка.
 
-<div id="allow_experimental_nullable_tuple_type">
-  ## allow_experimental_nullable_tuple_type
-</div>
+## allow_experimental_nullable_tuple_type {#allow_experimental_nullable_tuple_type}
 
 <BetaBadge />
 
@@ -320,9 +252,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Эта настройка не определяет, могут ли извлечённые подстолбцы Tuple иметь тип `Nullable` (например, из столбцов Dynamic, Variant, JSON или Tuple).
 Используйте `allow_nullable_tuple_in_extracted_subcolumns`, чтобы задать, могут ли извлечённые подстолбцы Tuple иметь тип `Nullable`.
 
-<div id="allow_experimental_object_storage_queue_hive_partitioning">
-  ## allow_experimental_object_storage_queue_hive_partitioning
-</div>
+## allow_experimental_object_storage_queue_hive_partitioning {#allow_experimental_object_storage_queue_hive_partitioning}
 
 <ExperimentalBadge />
 
@@ -332,9 +262,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает использовать партиционирование Hive с движками S3Queue/AzureQueue
 
-<div id="allow_experimental_paimon_storage_engine">
-  ## allow_experimental_paimon_storage_engine
-</div>
+## allow_experimental_paimon_storage_engine {#allow_experimental_paimon_storage_engine}
 
 <ExperimentalBadge />
 
@@ -344,9 +272,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает создавать таблицы с движками таблиц Paimon*.
 
-<div id="allow_experimental_parallel_reading_from_replicas">
-  ## allow_experimental_parallel_reading_from_replicas
-</div>
+## allow_experimental_parallel_reading_from_replicas {#allow_experimental_parallel_reading_from_replicas}
 
 **Псевдонимы**: `enable_parallel_replicas`
 
@@ -354,9 +280,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Использовать до `max_parallel_replicas` реплик из каждого сегмента при выполнении запроса SELECT. Чтение распараллеливается и координируется динамически. 0 — отключено, 1 — включено, при сбое отключается без уведомления, 2 — включено, при сбое сгенерировать исключение
 
-<div id="allow_experimental_polyglot_dialect">
-  ## allow_experimental_polyglot_dialect
-</div>
+## allow_experimental_polyglot_dialect {#allow_experimental_polyglot_dialect}
 
 <ExperimentalBadge />
 
@@ -366,9 +290,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает polyglot SQL-транспайлер — преобразует SQL из более чем 30 диалектов (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB и т. д.) в ClickHouse SQL.
 
-<div id="allow_experimental_prql_dialect">
-  ## allow_experimental_prql_dialect
-</div>
+## allow_experimental_prql_dialect {#allow_experimental_prql_dialect}
 
 <ExperimentalBadge />
 
@@ -378,9 +300,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает PRQL — альтернативный язык запросов по сравнению с SQL.
 
-<div id="allow_experimental_time_series_aggregate_functions">
-  ## allow_experimental_time_series_aggregate_functions
-</div>
+## allow_experimental_time_series_aggregate_functions {#allow_experimental_time_series_aggregate_functions}
 
 <ExperimentalBadge />
 
@@ -392,9 +312,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Экспериментальные агрегатные функции timeSeries* для ресэмплирования временных рядов в стиле Prometheus, а также для вычисления rate и delta.
 
-<div id="allow_experimental_time_series_table">
-  ## allow_experimental_time_series_table
-</div>
+## allow_experimental_time_series_table {#allow_experimental_time_series_table}
 
 <ExperimentalBadge />
 
@@ -407,9 +325,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 * 0 — движок таблицы [TimeSeries](/ru/reference/engines/table-engines/integrations/time-series) отключен.
 * 1 — движок таблицы [TimeSeries](/ru/reference/engines/table-engines/integrations/time-series) включен.
 
-<div id="allow_experimental_unique_key">
-  ## allow_experimental_unique_key
-</div>
+## allow_experimental_unique_key {#allow_experimental_unique_key}
 
 <ExperimentalBadge />
 
@@ -419,9 +335,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает создание таблиц с клаузой `UNIQUE KEY` на движках семейства MergeTree.
 
-<div id="allow_experimental_url_wildcard_from_index_pages">
-  ## allow_experimental_url_wildcard_from_index_pages
-</div>
+## allow_experimental_url_wildcard_from_index_pages {#allow_experimental_url_wildcard_from_index_pages}
 
 <ExperimentalBadge />
 
@@ -431,19 +345,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает экспериментальное раскрытие подстановочных шаблонов для `url()` и `ENGINE = URL` по HTTP-страницам индекса.
 
-<div id="allow_experimental_window_view">
-  ## allow_experimental_window_view
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-Включает WINDOW VIEW. Функция пока недостаточно зрелая.
-
-<div id="allow_experimental_ytsaurus_dictionary_source">
-  ## allow_experimental_ytsaurus_dictionary_source
-</div>
+## allow_experimental_ytsaurus_dictionary_source {#allow_experimental_ytsaurus_dictionary_source}
 
 <ExperimentalBadge />
 
@@ -453,9 +355,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Экспериментальный источник данных словаря для интеграции с YTsaurus.
 
-<div id="allow_experimental_ytsaurus_table_engine">
-  ## allow_experimental_ytsaurus_table_engine
-</div>
+## allow_experimental_ytsaurus_table_engine {#allow_experimental_ytsaurus_table_engine}
 
 <ExperimentalBadge />
 
@@ -465,9 +365,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Экспериментальный движок таблицы для интеграции с YTsaurus.
 
-<div id="allow_experimental_ytsaurus_table_function">
-  ## allow_experimental_ytsaurus_table_function
-</div>
+## allow_experimental_ytsaurus_table_function {#allow_experimental_ytsaurus_table_function}
 
 <ExperimentalBadge />
 

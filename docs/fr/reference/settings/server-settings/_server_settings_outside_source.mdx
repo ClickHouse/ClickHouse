@@ -2,9 +2,7 @@
 title: Paramètres du serveur hors de la source
 ---
 
-<div id="asynchronous_metric_log">
-  ## asynchronous_metric_log
-</div>
+## asynchronous_metric_log {#asynchronous_metric_log}
 
 Activé par défaut dans les déploiements ClickHouse Cloud.
 
@@ -39,9 +37,7 @@ Pour désactiver le paramètre `asynchronous_metric_log`, vous devez créer le f
 
 <SystemLogParameters />
 
-<div id="auth_use_forwarded_address">
-  ## auth_use_forwarded_address
-</div>
+## auth_use_forwarded_address {#auth_use_forwarded_address}
 
 Utilise l’adresse d’origine pour authentifier les clients connectés via un proxy.
 
@@ -51,9 +47,7 @@ Utilise l’adresse d’origine pour authentifier les clients connectés via un 
   Ce paramètre doit être utilisé avec une extrême prudence, car les adresses transmises peuvent être facilement usurpées ; les serveurs qui acceptent ce mode d’authentification ne doivent pas être accessibles directement, mais uniquement via un proxy de confiance.
 </Note>
 
-<div id="backups">
-  ## sauvegardes
-</div>
+## sauvegardes {#backups}
 
 Paramètres de sauvegarde utilisés lors de l&#39;exécution des instructions [`BACKUP` and `RESTORE`](/fr/concepts/features/backup-restore/overview).
 
@@ -109,9 +103,7 @@ Ce paramètre est configuré par défaut comme suit :
 </backups>
 ```
 
-<div id="background_schedule_pool_log">
-  ## background_schedule_pool_log
-</div>
+## background_schedule_pool_log {#background_schedule_pool_log}
 
 Contient des informations sur toutes les tâches d’arrière-plan exécutées par différents pools d’arrière-plan.
 
@@ -130,9 +122,7 @@ Contient des informations sur toutes les tâches d’arrière-plan exécutées p
 </background_schedule_pool_log>
 ```
 
-<div id="bcrypt_workfactor">
-  ## bcrypt_workfactor
-</div>
+## bcrypt_workfactor {#bcrypt_workfactor}
 
 Facteur de coût du type d&#39;authentification `bcrypt_password`, qui utilise l&#39;[algorithme Bcrypt](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 Le facteur de coût définit la quantité de calculs et le temps nécessaires pour calculer le hachage et vérifier le mot de passe.
@@ -149,9 +139,7 @@ Le facteur de coût définit la quantité de calculs et le temps nécessaires po
   surcoût de calcul de bcrypt avec des facteurs de coût élevés.
 </Warning>
 
-<div id="table_engines_require_grant">
-  ## table_engines_require_grant
-</div>
+## table_engines_require_grant {#table_engines_require_grant}
 
 <CloudNotSupportedBadge />
 
@@ -163,9 +151,7 @@ Si ce paramètre est défini sur true, les utilisateurs doivent disposer d&#39;u
   Par défaut, pour assurer la rétrocompatibilité, la création d&#39;une table avec un moteur de table spécifique ne tient pas compte du privilège, mais vous pouvez modifier ce comportement en définissant ce paramètre sur true.
 </Note>
 
-<div id="builtin_dictionaries_reload_interval">
-  ## builtin_dictionaries_reload_interval
-</div>
+## builtin_dictionaries_reload_interval {#builtin_dictionaries_reload_interval}
 
 Intervalle, en secondes, avant le rechargement des dictionnaires intégrés.
 
@@ -177,9 +163,7 @@ ClickHouse recharge les dictionnaires intégrés toutes les x secondes. Cela per
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
-<div id="compression">
-  ## compression
-</div>
+## compression {#compression}
 
 Paramètres de compression des données pour les tables utilisant le moteur [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -201,24 +185,24 @@ Paramètres de compression des données pour les tables utilisant le moteur [Mer
 </compression>
 ```
 
-**Champs `<case>`** :
+**Champs `<case>`** :
 
 * `min_part_size` – Taille minimale d’une partie de données.
 * `min_part_size_ratio` – Ratio entre la taille de la partie de données et celle de la table.
-* `method` – Méthode de compression. Valeurs acceptées : `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
+* `method` – Méthode de compression. Valeurs acceptées : `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
 * `level` – Niveau de compression. Voir [Codecs](/fr/reference/statements/create/table/codec#general-purpose-codecs).
 
 <Note>
   Vous pouvez configurer plusieurs sections `<case>`.
 </Note>
 
-**Actions lorsque les conditions sont remplies** :
+**Actions lorsque les conditions sont remplies** :
 
 * Si une partie de données correspond à un jeu de conditions, ClickHouse utilise la méthode de compression spécifiée.
-* Si une partie de données correspond à plusieurs jeux de conditions, ClickHouse utilise le premier jeu de conditions correspondant.
+* Si une partie de données correspond à plusieurs jeux de conditions, ClickHouse utilise le dernier jeu de conditions correspondant (les sections `<case>` sont vérifiées dans l’ordre, et chaque correspondance remplace le choix précédent).
 
 <Note>
-  Si aucune condition n’est remplie pour une partie de données, ClickHouse utilise la compression `lz4`.
+  Si aucune condition n’est remplie pour une partie de données, ClickHouse applique la valeur par défaut intégrée qui tient compte de la taille : `LZ4` en dessous de 100 Mo et `ZSTD(3)` à partir de ce seuil. Comme pour les conditions `min_part_size` ci-dessus, la taille prise en compte est celle connue au moment où le codec doit être choisi, avant l’écriture des données : `0` pour une partie fraîchement insérée, et la taille des parties sources pour une fusion ou une mutation. Une réécriture qui réduit son entrée, telle qu’un `TTL DELETE` ou une fusion avec collapsing, est donc classée selon la taille d’entrée et peut produire une partie sous le seuil mais tout de même compressée en `ZSTD(3)`.
 </Note>
 
 **Exemple**
@@ -229,14 +213,12 @@ Paramètres de compression des données pour les tables utilisant le moteur [Mer
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>1</level>
+        <level>10</level>
     </case>
 </compression>
 ```
 
-<div id="encryption">
-  ## chiffrement
-</div>
+## chiffrement {#encryption}
 
 Configure une commande permettant d&#39;obtenir une clé à utiliser avec les [codecs de chiffrement](/fr/reference/statements/create/table/codec#encryption-codecs). La ou les clés doivent être écrites dans des variables d&#39;environnement ou définies dans le fichier de configuration.
 
@@ -318,9 +300,7 @@ Ou il peut être indiqué en hexadécimal :
   Tout ce qui est mentionné ci-dessus s’applique à `aes_256_gcm_siv` (mais la clé doit comporter 32 octets).
 </Note>
 
-<div id="error_log">
-  ## error_log
-</div>
+## error_log {#error_log}
 
 Il est désactivé par défaut.
 
@@ -355,9 +335,7 @@ Pour désactiver le paramètre `error_log`, créez le fichier suivant `/etc/clic
 
 <SystemLogParameters />
 
-<div id="custom_settings_prefixes">
-  ## custom_settings_prefixes
-</div>
+## custom_settings_prefixes {#custom_settings_prefixes}
 
 Liste des préfixes utilisés pour les [paramètres personnalisés](/fr/concepts/features/configuration/settings/settings-query-level#custom_settings).
 Plusieurs préfixes doivent être séparés par des virgules.
@@ -372,9 +350,7 @@ Plusieurs préfixes doivent être séparés par des virgules.
 
 * [Paramètres personnalisés](/fr/concepts/features/configuration/settings/settings-query-level#custom_settings)
 
-<div id="core_dump">
-  ## core_dump
-</div>
+## core_dump {#core_dump}
 
 Configure la limite souple de taille du fichier core dump.
 
@@ -390,9 +366,7 @@ Configure la limite souple de taille du fichier core dump.
 </core_dump>
 ```
 
-<div id="default_profile">
-  ## default_profile
-</div>
+## default_profile {#default_profile}
 
 Profil de paramètres par défaut. Les profils de paramètres figurent dans le fichier indiqué par le paramètre `user_config`.
 
@@ -404,9 +378,7 @@ Profil de paramètres par défaut. Les profils de paramètres figurent dans le f
 <default_profile>default</default_profile>
 ```
 
-<div id="dictionaries_config">
-  ## dictionaries_config
-</div>
+## dictionaries_config {#dictionaries_config}
 
 Chemin du fichier de configuration des dictionnaires.
 
@@ -425,9 +397,7 @@ Voir aussi :
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-<div id="user_defined_executable_functions_config">
-  ## user_defined_executable_functions_config
-</div>
+## user_defined_executable_functions_config {#user_defined_executable_functions_config}
 
 Le chemin du fichier de configuration des fonctions utilisateur exécutables.
 
@@ -446,9 +416,7 @@ Voir aussi :
 <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
-<div id="graphite">
-  ## graphite
-</div>
+## graphite {#graphite}
 
 Envoi de données vers [Graphite](https://github.com/graphite-project).
 
@@ -482,9 +450,7 @@ Vous pouvez configurer plusieurs sections `<graphite>`. Par exemple, vous pouvez
 </graphite>
 ```
 
-<div id="graphite_rollup">
-  ## graphite_rollup
-</div>
+## graphite_rollup {#graphite_rollup}
 
 Paramètres de réduction des données pour Graphite.
 
@@ -512,9 +478,7 @@ Pour plus de détails, consultez [GraphiteMergeTree](/fr/reference/engines/table
 </graphite_rollup_example>
 ```
 
-<div id="http_handlers">
-  ## http_handlers
-</div>
+## http_handlers {#http_handlers}
 
 Permet d’utiliser des gestionnaires HTTP personnalisés.
 Pour ajouter un nouveau gestionnaire HTTP, ajoutez simplement une nouvelle balise `<rule>`.
@@ -579,9 +543,7 @@ Exemple :
 </http_handlers>
 ```
 
-<div id="http_server_default_response">
-  ## http_server_default_response
-</div>
+## http_server_default_response {#http_server_default_response}
 
 La page affichée par défaut lorsque vous accédez au serveur HTTP(s) de ClickHouse.
 La valeur par défaut est &quot;Ok.&quot; (avec un caractère de saut de ligne à la fin)
@@ -598,9 +560,7 @@ Ouvre `https://tabix.io/` lorsque vous accédez à `http://localhost: http_port`
 </http_server_default_response>
 ```
 
-<div id="http_options_response">
-  ## http_options_response
-</div>
+## http_options_response {#http_options_response}
 
 Utilisé pour ajouter des en-têtes à la réponse d’une requête HTTP `OPTIONS`.
 La méthode `OPTIONS` est utilisée lors de l’envoi de requêtes CORS preflight.
@@ -630,9 +590,7 @@ Exemple :
 </http_options_response>
 ```
 
-<div id="hsts_max_age">
-  ## hsts_max_age
-</div>
+## hsts_max_age {#hsts_max_age}
 
 Durée d’expiration de HSTS, en secondes.
 
@@ -646,9 +604,7 @@ Durée d’expiration de HSTS, en secondes.
 <hsts_max_age>600000</hsts_max_age>
 ```
 
-<div id="interserver_listen_host">
-  ## interserver_listen_host
-</div>
+## interserver_listen_host {#interserver_listen_host}
 
 Restriction des hôtes autorisés à échanger des données entre les serveurs ClickHouse.
 Si Keeper est utilisé, la même restriction s&#39;applique à la communication entre différentes instances de Keeper.
@@ -670,9 +626,7 @@ Type :
 
 Valeur par défaut :
 
-<div id="interserver_http_credentials">
-  ## interserver_http_credentials
-</div>
+## interserver_http_credentials {#interserver_http_credentials}
 
 Un nom d’utilisateur et un mot de passe utilisés pour se connecter à d’autres serveurs lors de la [réplication](/fr/reference/engines/table-engines/mergetree-family/replication). De plus, le serveur authentifie les autres répliques à l’aide de ces identifiants.
 `interserver_http_credentials` doit donc être identique pour toutes les répliques d’un cluster.
@@ -725,9 +679,7 @@ Pour modifier les identifiants existants, déplacez le nom d’utilisateur et le
 
 Lorsque les nouveaux identifiants ont été appliqués à toutes les répliques, les anciens peuvent être supprimés.
 
-<div id="ldap_servers">
-  ## ldap_servers
-</div>
+## ldap_servers {#ldap_servers}
 
 Indiquez ici les serveurs LDAP avec leurs paramètres de connexion afin de :
 
@@ -794,9 +746,7 @@ Exemple (cas typique d’Active Directory avec détection configurée du DN util
 </my_ad_server>
 ```
 
-<div id="listen_host">
-  ## listen_host
-</div>
+## listen_host {#listen_host}
 
 Restriction sur les hôtes à partir desquels les requêtes peuvent être envoyées. Si vous voulez que le server réponde à tous, indiquez `::`.
 
@@ -807,9 +757,7 @@ Exemples :
 <listen_host>127.0.0.1</listen_host>
 ```
 
-<div id="logger">
-  ## logger
-</div>
+## logger {#logger}
 
 L’emplacement et le format des messages de log.
 
@@ -1002,9 +950,7 @@ Les noms de clés peuvent être modifiés en changeant les valeurs des balises �
 
 Les propriétés des logs peuvent être omises en les mettant en commentaire. Par exemple, si vous ne voulez pas que votre log affiche `query_id`, vous pouvez mettre la balise `<query_id>` en commentaire.
 
-<div id="send_crash_reports">
-  ## send_crash_reports
-</div>
+## send_crash_reports {#send_crash_reports}
 
 Paramètres d’envoi des rapports de plantage à l’équipe de développement du cœur de ClickHouse.
 
@@ -1026,9 +972,7 @@ Clés :
 </send_crash_reports>
 ```
 
-<div id="ssh_server">
-  ## ssh_server
-</div>
+## ssh_server {#ssh_server}
 
 La partie publique de la clé d’hôte sera écrite dans le fichier known&#95;hosts
 côté client SSH lors de la première connexion.
@@ -1046,9 +990,7 @@ Exemple :
 </ssh_server>
 ```
 
-<div id="tcp_ssh_port">
-  ## tcp_ssh_port
-</div>
+## tcp_ssh_port {#tcp_ssh_port}
 
 Port du serveur SSH qui permet à l’utilisateur de se connecter et d’exécuter des requêtes de façon interactive à l’aide du client intégré via le PTY.
 
@@ -1058,9 +1000,7 @@ Exemple :
 <tcp_ssh_port>9022</tcp_ssh_port>
 ```
 
-<div id="storage_configuration">
-  ## storage_configuration
-</div>
+## storage_configuration {#storage_configuration}
 
 Permet de configurer le stockage sur plusieurs disques.
 
@@ -1077,9 +1017,7 @@ La configuration du stockage a la structure suivante :
 </storage_configuration>
 ```
 
-<div id="configuration-of-disks">
-  ### Configuration de `disks`
-</div>
+### Configuration de `disks` {#configuration-of-disks}
 
 La configuration de `disks` suit la structure ci-dessous :
 
@@ -1114,9 +1052,7 @@ Les sous-balises ci-dessus définissent les paramètres suivants pour `disks` :
   L’ordre des disques n’a pas d’importance.
 </Note>
 
-<div id="configuration-of-policies">
-  ### Configuration des politiques
-</div>
+### Configuration des politiques {#configuration-of-policies}
 
 Les sous-balises ci-dessus définissent les paramètres suivants pour `policies` :
 
@@ -1140,9 +1076,7 @@ Pour `volume_priority` :
 * Si *aucun* volume ne reçoit ce paramètre, leur ordre est déterminé par l&#39;ordre de leur description dans le fichier de configuration.
 * La priorité des volumes ne peut pas être identique.
 
-<div id="macros">
-  ## macros
-</div>
+## macros {#macros}
 
 Substitutions de paramètres pour les tables répliquées.
 
@@ -1156,9 +1090,7 @@ Pour plus d’informations, voir la section [Création de tables répliquées](/
 <macros incl="macros" optional="true" />
 ```
 
-<div id="replica_group_name">
-  ## replica_group_name
-</div>
+## replica_group_name {#replica_group_name}
 
 Nom du groupe de répliques pour la base de données Replicated.
 
@@ -1173,9 +1105,7 @@ Les requêtes DDL n&#39;attendront que les répliques du même groupe.
 <replica_group_name>backups</replica_group_name>
 ```
 
-<div id="max_session_timeout">
-  ## max_session_timeout
-</div>
+## max_session_timeout {#max_session_timeout}
 
 Délai d’expiration maximal de la session, en secondes.
 
@@ -1185,9 +1115,7 @@ Exemple :
 <max_session_timeout>3600</max_session_timeout>
 ```
 
-<div id="merge_tree">
-  ## merge_tree
-</div>
+## merge_tree {#merge_tree}
 
 Paramétrage fin des tables du [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -1201,9 +1129,7 @@ Pour plus d’informations, consultez le fichier d’en-tête MergeTreeSettings.
 </merge_tree>
 ```
 
-<div id="metric_log">
-  ## metric_log
-</div>
+## metric_log {#metric_log}
 
 Il est désactivé par défaut.
 
@@ -1238,9 +1164,7 @@ Pour désactiver le paramètre `metric_log`, créez le fichier suivant `/etc/cli
 
 <SystemLogParameters />
 
-<div id="replicated_merge_tree">
-  ## replicated_merge_tree
-</div>
+## replicated_merge_tree {#replicated_merge_tree}
 
 Ajustement fin pour les tables [ReplicatedMergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree). Ce paramètre est prioritaire.
 
@@ -1254,9 +1178,7 @@ Pour plus d&#39;informations, consultez le fichier d&#39;en-tête MergeTreeSetti
 </replicated_merge_tree>
 ```
 
-<div id="opentelemetry_span_log">
-  ## opentelemetry_span_log
-</div>
+## opentelemetry_span_log {#opentelemetry_span_log}
 
 Paramètres de la table système [`opentelemetry_span_log`](/fr/reference/system-tables/opentelemetry_span_log).
 
@@ -1281,38 +1203,38 @@ Exemple :
 </opentelemetry_span_log>
 ```
 
-<div id="openSSL">
-  ## openSSL
-</div>
+## openSSL {#openSSL}
 
 Configuration SSL côté client et serveur.
 
 La prise en charge de SSL est assurée par la bibliothèque `libpoco`. Les options de configuration disponibles sont décrites dans [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h). Les valeurs par défaut se trouvent dans [SSLManager.cpp](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/src/SSLManager.cpp).
 
-Clés des paramètres côté serveur et client :
+Les fichiers référencés par `certificateFile`, `privateKeyFile` et `caConfig` sont rechargés sans redémarrage lorsqu&#39;ils changent ou lors d&#39;un `SYSTEM RELOAD CONFIG`. Les nouvelles connexions utilisent les certificats rechargés ; les connexions déjà établies ne sont pas affectées.
 
-| Option                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Valeur par défaut                                                                          |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `cacheSessions`               | Active ou désactive la mise en cache des sessions. À utiliser en combinaison avec `sessionIdContext`. Valeurs acceptées : `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                              | `false`                                                                                    |
-| `caConfig`                    | Chemin d’accès vers le fichier ou le répertoire contenant les certificats de CA de confiance. S’il s’agit d’un fichier, il doit être au format PEM et peut contenir plusieurs certificats de CA. S’il s’agit d’un répertoire, il doit contenir un fichier .pem par certificat de CA. Les noms de fichiers sont recherchés à partir de la valeur de hachage du nom de sujet de la CA. Pour plus de détails, consultez la page de manuel de [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). |                                                                                            |
-| `certificateFile`             | Chemin du fichier de certificat client/serveur au format PEM. Vous pouvez ne pas l’indiquer si `privateKeyFile` contient le certificat.                                                                                                                                                                                                                                                                                                                                                                                                                                 |                                                                                            |
-| `cipherList`                  | Suites de chiffrement OpenSSL prises en charge.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`                                                  |
-| `disableProtocols`            | Protocoles dont l’utilisation est interdite.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |                                                                                            |
-| `extendedVerification`        | Si cette option est activée, vérifiez que le CN ou le SAN du certificat correspond au nom d’hôte du pair.                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `false`                                                                                    |
-| `fips`                        | Active le mode FIPS d’OpenSSL. Pris en charge si la version d’OpenSSL de la bibliothèque prend en charge FIPS.                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `false`                                                                                    |
-| `invalidCertificateHandler`   | Classe (une sous-classe de CertificateHandler) utilisée pour vérifier les certificats non valides. Par exemple : `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .                                                                                                                                                                                                                                                                                                                                                     | `RejectCertificateHandler`                                                                 |
-| `loadDefaultCAFile`           | Indique si les certificats de CA intégrés d’OpenSSL seront utilisés. ClickHouse suppose que les certificats de CA intégrés se trouvent dans le fichier `/etc/ssl/cert.pem` (resp. le répertoire `/etc/ssl/certs`) ou dans le fichier (resp. le répertoire) spécifié par la variable d’environnement `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).                                                                                                                                                                                                                             | `true`                                                                                     |
-| `preferServerCiphers`         | Suites de chiffrement du serveur privilégiées par le client.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `false`                                                                                    |
-| `privateKeyFile`              | Chemin vers le fichier contenant la clé privée du certificat PEM. Le fichier peut contenir à la fois une clé et un certificat.                                                                                                                                                                                                                                                                                                                                                                                                                                          |                                                                                            |
-| `privateKeyPassphraseHandler` | Classe (sous-classe de PrivateKeyPassphraseHandler) qui demande la phrase de passe pour accéder à la clé privée. Par exemple : `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.                                                                                                                                                                                                                                                                                        | `KeyConsoleHandler`                                                                        |
-| `requireTLSv1`                | Nécessite une connexion TLSv1. Valeurs acceptées : `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `false`                                                                                    |
-| `requireTLSv1_1`              | Exige une connexion TLSv1.1. Valeurs acceptées : `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `false`                                                                                    |
-| `requireTLSv1_2`              | Exige une connexion TLSv1.2. Valeurs acceptées : `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `false`                                                                                    |
-| `sessionCacheSize`            | Le nombre maximal de sessions mises en cache par le serveur. Une valeur de `0` signifie un nombre illimité de sessions.                                                                                                                                                                                                                                                                                                                                                                                                                                                 | [1024*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978) |
-| `sessionIdContext`            | Une suite unique de caractères aléatoires que le serveur ajoute à chaque identifiant généré. La longueur de la chaîne ne doit pas dépasser `SSL_MAX_SSL_SESSION_ID_LENGTH`. Ce paramètre est toujours recommandé, car il permet d&#39;éviter des problèmes, que le serveur mette la session en cache ou que le client ait demandé une mise en cache.                                                                                                                                                                                                                    | `$\{application.name\}`                                                                    |
-| `sessionTimeout`              | Durée de mise en cache de la session sur le serveur, en heures.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `2`                                                                                        |
-| `verificationDepth`           | Longueur maximale de la chaîne de vérification. La vérification échoue si la longueur de la chaîne de certificats dépasse la valeur définie.                                                                                                                                                                                                                                                                                                                                                                                                                            | `9`                                                                                        |
-| `verificationMode`            | La méthode de vérification des certificats du nœud. Pour plus de détails, consultez la description de la classe [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). Valeurs possibles : `none`, `relaxed`, `strict`, `once`.                                                                                                                                                                                                                                                                                    | `relaxed`                                                                                  |
+Clés des paramètres côté serveur et client :
+
+| Option                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Valeur par défaut                                                                          |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `cacheSessions`               | Active ou désactive la mise en cache des sessions. À utiliser en combinaison avec `sessionIdContext`. Valeurs acceptées : `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `false`                                                                                    |
+| `caConfig`                    | Chemin d’accès vers le fichier ou le répertoire contenant les certificats de CA de confiance. S’il s’agit d’un fichier, il doit être au format PEM et peut contenir plusieurs certificats de CA. S’il s’agit d’un répertoire, il doit contenir un fichier .pem par certificat de CA. Les noms de fichiers sont recherchés à partir de la valeur de hachage du nom de sujet de la CA. Pour plus de détails, consultez la page de manuel de [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). Comme `certificateFile` et `privateKeyFile`, les certificats de CA sont rechargés sans redémarrage lorsque le fichier change ou lors d’un `SYSTEM RELOAD CONFIG`. |                                                                                            |
+| `certificateFile`             | Chemin du fichier de certificat client/serveur au format PEM. Vous pouvez ne pas l’indiquer si `privateKeyFile` contient le certificat.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |                                                                                            |
+| `cipherList`                  | Suites de chiffrement OpenSSL prises en charge.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`                                                  |
+| `disableProtocols`            | Protocoles dont l’utilisation est interdite.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |                                                                                            |
+| `extendedVerification`        | Si cette option est activée, vérifiez que le CN ou le SAN du certificat correspond au nom d’hôte du pair.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `false`                                                                                    |
+| `fips`                        | Active le mode FIPS d’OpenSSL. Pris en charge si la version d’OpenSSL de la bibliothèque prend en charge FIPS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `false`                                                                                    |
+| `invalidCertificateHandler`   | Classe (une sous-classe de CertificateHandler) utilisée pour vérifier les certificats non valides. Par exemple : `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `RejectCertificateHandler`                                                                 |
+| `loadDefaultCAFile`           | Indique si les certificats de CA intégrés d’OpenSSL seront utilisés. ClickHouse suppose que les certificats de CA intégrés se trouvent dans le fichier `/etc/ssl/cert.pem` (resp. le répertoire `/etc/ssl/certs`) ou dans le fichier (resp. le répertoire) spécifié par la variable d’environnement `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).                                                                                                                                                                                                                                                                                                                                                                                               | `true`                                                                                     |
+| `preferServerCiphers`         | Suites de chiffrement du serveur privilégiées par le client.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `false`                                                                                    |
+| `privateKeyFile`              | Chemin vers le fichier contenant la clé privée du certificat PEM. Le fichier peut contenir à la fois une clé et un certificat.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |                                                                                            |
+| `privateKeyPassphraseHandler` | Classe (sous-classe de PrivateKeyPassphraseHandler) qui demande la phrase de passe pour accéder à la clé privée. Par exemple : `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `KeyConsoleHandler`                                                                        |
+| `requireTLSv1`                | Nécessite une connexion TLSv1. Valeurs acceptées : `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `false`                                                                                    |
+| `requireTLSv1_1`              | Exige une connexion TLSv1.1. Valeurs acceptées : `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `false`                                                                                    |
+| `requireTLSv1_2`              | Exige une connexion TLSv1.2. Valeurs acceptées : `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `false`                                                                                    |
+| `sessionCacheSize`            | Le nombre maximal de sessions mises en cache par le serveur. Une valeur de `0` signifie un nombre illimité de sessions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | [1024*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978) |
+| `sessionIdContext`            | Une suite unique de caractères aléatoires que le serveur ajoute à chaque identifiant généré. La longueur de la chaîne ne doit pas dépasser `SSL_MAX_SSL_SESSION_ID_LENGTH`. Ce paramètre est toujours recommandé, car il permet d&#39;éviter des problèmes, que le serveur mette la session en cache ou que le client ait demandé une mise en cache.                                                                                                                                                                                                                                                                                                                                                                                      | `$\{application.name\}`                                                                    |
+| `sessionTimeout`              | Durée de mise en cache de la session sur le serveur, en heures.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `2`                                                                                        |
+| `verificationDepth`           | Longueur maximale de la chaîne de vérification. La vérification échoue si la longueur de la chaîne de certificats dépasse la valeur définie.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `9`                                                                                        |
+| `verificationMode`            | La méthode de vérification des certificats du nœud. Pour plus de détails, consultez la description de la classe [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). Valeurs possibles : `none`, `relaxed`, `strict`, `once`.                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `relaxed`                                                                                  |
 
 **Exemple de paramètres :**
 
@@ -1344,9 +1266,7 @@ Clés des paramètres côté serveur et client :
 </openSSL>
 ```
 
-<div id="part_log">
-  ## part_log
-</div>
+## part_log {#part_log}
 
 Journal des événements associés à [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree). Par exemple, l’ajout ou la fusion de données. Vous pouvez utiliser ce journal pour simuler des algorithmes de fusion et comparer leurs caractéristiques. Vous pouvez visualiser le processus de fusion.
 
@@ -1369,9 +1289,7 @@ Les requêtes sont consignées dans la table [system.part&#95;log](/fr/reference
 </part_log>
 ```
 
-<div id="processors_profile_log">
-  ## processors_profile_log
-</div>
+## processors_profile_log {#processors_profile_log}
 
 Paramètres de la table système [`processors_profile_log`](/fr/reference/system-tables/processors_profile_log).
 
@@ -1392,9 +1310,7 @@ Les réglages par défaut sont :
 </processors_profile_log>
 ```
 
-<div id="prometheus">
-  ## prometheus
-</div>
+## prometheus {#prometheus}
 
 Exposition des données de métriques pour la collecte par [Prometheus](https://prometheus.io).
 
@@ -1404,9 +1320,9 @@ Paramètres :
 * `port` – Port de `endpoint`.
 * `metrics` – Expose les métriques de la table [system.metrics](/fr/reference/system-tables/metrics).
 * `events` – Expose les métriques de la table [system.events](/fr/reference/system-tables/events).
-* `asynchronous_metrics` – Expose les valeurs actuelles des métriques de la table [system.asynchronous&#95;metrics](/fr/reference/system-tables/asynchronous_metrics).
+* `asynchronous_metrics` – Expose les valeurs actuelles des métriques de la table [system.asynchronous&#95;metrics](/fr/reference/system-tables/asynchronous_metrics). Les métriques clé-valeur (celles ventilées par cœur CPU, périphérique bloc, interface réseau ou disque) sont exposées sous la forme d’un échantillon par clé, la clé étant transmise comme libellé : `ClickHouseAsyncMetrics_BlockReadBytes{device="sda"}`. Le paramètre du serveur [`asynchronous_metrics_key_values_mode`](/fr/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) les expose à la place sous leurs noms altérés antérieurs à la version 26.8 (`ClickHouseAsyncMetrics_BlockReadBytes_sda`), ou sous les deux formes simultanément.
 * `errors` - Expose le nombre d’erreurs par code d’erreur survenues depuis le dernier redémarrage du serveur. Ces informations peuvent également être obtenues à partir de [system.errors](/fr/reference/system-tables/errors).
-* `labels` – Libellés constants ajoutés à chaque métrique exposée. Chaque élément enfant définit un libellé : le nom de l’élément est le nom du libellé (il doit correspondre à `[a-zA-Z_][a-zA-Z0-9_]*`) et la valeur de l’élément est la valeur du libellé. Les valeurs de libellé prennent en charge les substitutions de config standard, telles que l’attribut `from_env`. Un nom de libellé est rejeté s’il commence par `__` (réservé par Prometheus) ou s’il entre en conflit avec un libellé que cet endpoint écrit déjà pour l’une de ses sections activées — sinon, un échantillon porterait deux fois le même nom de libellé. L’ensemble réservé dépend donc de la surface d’exportation active de l’endpoint : `le` lorsque `histograms` est activé ; les libellés de `ClickHouse_Info` (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) lorsque `info` est activé ; et tout libellé utilisé par un histogramme exposé ou une famille de métriques dimensionnelles (par exemple `group`, `direction` ou `operation_type`) lorsque `histograms`/`dimensional_metrics` est activé. Comme cela dépend de ce que l’endpoint expose réellement, un nom peut être valide pour un endpoint mais rejeté pour un autre — par exemple, un endpoint Keeper `keeper_metrics_only` n’expose que les familles `keeper_*` ; les libellés utilisés uniquement par les familles de serveur y sont donc acceptés.
+* `labels` – Libellés constants ajoutés à chaque métrique exposée. Chaque élément enfant définit un libellé : le nom de l’élément est le nom du libellé (il doit correspondre à `[a-zA-Z_][a-zA-Z0-9_]*`) et la valeur de l’élément est la valeur du libellé. Les valeurs de libellé prennent en charge les substitutions de config standard, telles que l’attribut `from_env`. Un nom de libellé est rejeté s’il commence par `__` (réservé par Prometheus) ou s’il entre en conflit avec un libellé que cet endpoint écrit déjà pour l’une de ses sections activées — sinon, un échantillon porterait deux fois le même nom de libellé. L’ensemble réservé dépend donc de la surface d’exportation active de l’endpoint : `le` lorsque `histograms` est activé ; les libellés de `ClickHouse_Info` (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) lorsque `info` est activé ; les libellés de clé des métriques asynchrones clé-valeur (`channel`, `cpu`, `device`, `disk`, `interface`, `mc`, `sensor`) lorsque `asynchronous_metrics` est activé et qu’elles sont publiées sous forme clé-valeur, ce que détermine le paramètre du serveur [`asynchronous_metrics_key_values_mode`](/fr/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_key_values_mode) ; et tout libellé utilisé par un histogramme exposé ou une famille de métriques dimensionnelles (par exemple `group`, `direction` ou `operation_type`) lorsque `histograms`/`dimensional_metrics` est activé. Comme cela dépend de ce que l’endpoint expose réellement, un nom peut être valide pour un endpoint mais rejeté pour un autre — par exemple, un endpoint Keeper `keeper_metrics_only` n’expose que les familles `keeper_*` ; les libellés utilisés uniquement par les familles de serveur y sont donc acceptés. Les libellés constants sont validés selon la même règle lorsqu’une configuration est chargée, y compris lors de `SYSTEM RELOAD CONFIG` : un rechargement qui ferait entrer un libellé constant en conflit - en ajoutant un tel libellé ou en modifiant `asynchronous_metrics_key_values_mode` afin que les libellés de clé commencent à être écrits - est intégralement rejeté avant de prendre effet, plutôt que d’exposer deux fois le même libellé. Une modification acceptée du mode recrée les endpoints qui exposent les métriques, afin que la nouvelle forme et les libellés de la même configuration soient publiés ensemble.
 
 **Exemple**
 
@@ -1436,9 +1352,7 @@ Vérifiez (remplacez `127.0.0.1` par l’adresse IP ou le nom d’hôte de votre
 curl 127.0.0.1:9363/metrics
 ```
 
-<div id="query_log">
-  ## query_log
-</div>
+## query_log {#query_log}
 
 Paramètre de journalisation des requêtes reçues lorsque le paramètre [log&#95;queries=1](/fr/reference/settings/session-settings/log-queries#log_queries) est activé.
 
@@ -1466,9 +1380,7 @@ Si la table n&#39;existe pas, ClickHouse la crée. Si la structure du journal de
 </query_log>
 ```
 
-<div id="query_metric_log">
-  ## query_metric_log
-</div>
+## query_metric_log {#query_metric_log}
 
 Il est désactivé par défaut.
 
@@ -1503,9 +1415,7 @@ Pour désactiver le paramètre `query_metric_log`, créez le fichier suivant `/e
 
 <SystemLogParameters />
 
-<div id="query_cache">
-  ## query_cache
-</div>
+## query_cache {#query_cache}
 
 Configuration du [cache de requêtes](/fr/concepts/features/performance/caches/query-cache).
 
@@ -1534,9 +1444,7 @@ Les paramètres suivants sont disponibles :
 </query_cache>
 ```
 
-<div id="query_thread_log">
-  ## query_thread_log
-</div>
+## query_thread_log {#query_thread_log}
 
 Paramètre de journalisation des threads des requêtes reçues lorsque le paramètre [log&#95;query&#95;threads=1](/fr/reference/settings/session-settings/log-query#log_query_threads) est activé.
 
@@ -1561,9 +1469,7 @@ Si la table n’existe pas, ClickHouse la crée. Si la structure du journal des 
 </query_thread_log>
 ```
 
-<div id="query_views_log">
-  ## query_views_log
-</div>
+## query_views_log {#query_views_log}
 
 Paramètre de journalisation des vues (en direct, matérialisées, etc.) en fonction des requêtes reçues avec le paramètre [log&#95;query&#95;views=1](/fr/reference/settings/session-settings/log-query#log_query_views).
 
@@ -1588,9 +1494,7 @@ Si la table n’existe pas, ClickHouse la crée. Si la structure du journal des 
 </query_views_log>
 ```
 
-<div id="text_log">
-  ## text_log
-</div>
+## text_log {#text_log}
 
 Paramètres de la [table système text&#95;log](/fr/reference/system-tables/text_log) pour consigner les messages texte.
 
@@ -1621,9 +1525,7 @@ En outre :
 </clickhouse>
 ```
 
-<div id="trace_log">
-  ## trace_log
-</div>
+## trace_log {#trace_log}
 
 Paramètres de fonctionnement de la table système [trace&#95;log](/fr/reference/system-tables/trace_log).
 
@@ -1645,9 +1547,7 @@ Le fichier de configuration du serveur par défaut `config.xml` contient la sect
 </trace_log>
 ```
 
-<div id="asynchronous_insert_log">
-  ## asynchronous_insert_log
-</div>
+## asynchronous_insert_log {#asynchronous_insert_log}
 
 Paramètres de la table système [asynchronous&#95;insert&#95;log](/fr/reference/system-tables/asynchronous_insert_log) pour la journalisation des async inserts.
 
@@ -1671,9 +1571,7 @@ Paramètres de la table système [asynchronous&#95;insert&#95;log](/fr/reference
 </clickhouse>
 ```
 
-<div id="crash_log">
-  ## crash_log
-</div>
+## crash_log {#crash_log}
 
 Paramètres de fonctionnement de la table système [crash&#95;log](/fr/reference/system-tables/crash_log).
 
@@ -1710,9 +1608,7 @@ Le fichier de configuration du serveur `config.xml` par défaut contient la sect
 </crash_log>
 ```
 
-<div id="create_union_system_log_tables">
-  ## create_union_system_log_tables
-</div>
+## create_union_system_log_tables {#create_union_system_log_tables}
 
 Demande la création de tables `all_...` à côté des tables de logs système (`system.all_query_log` pour `system.query_log`, `system.all_text_log` pour `system.text_log`, etc.). Une telle table est l’union de la table de logs correspondante, de ses versions après rotation (`query_log_0`, `query_log_1`, ...) et/ou de ces mêmes tables sur toutes les répliques d’un cluster. Elle permet de les interroger toutes en une seule fois sans avoir à retenir des constructions telles que `clusterAllReplicas(default, merge(system, '^query_log'))`.
 
@@ -1740,9 +1636,7 @@ Cette option s’applique à toutes les tables de logs système ; elle ne perme
 </create_union_system_log_tables>
 ```
 
-<div id="custom_cached_disks_base_directory">
-  ## custom_cached_disks_base_directory
-</div>
+## custom_cached_disks_base_directory {#custom_cached_disks_base_directory}
 
 Ce paramètre spécifie le chemin du cache pour les disques personnalisés avec cache (créés à partir de SQL).
 `custom_cached_disks_base_directory` est prioritaire sur `filesystem_caches_path` pour les disques personnalisés (défini dans `filesystem_caches_path.xml`),
@@ -1761,9 +1655,7 @@ Exemple :
 <custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
 ```
 
-<div id="backup_log">
-  ## backup_log
-</div>
+## backup_log {#backup_log}
 
 Paramètres de la [table système backup&#95;log](/fr/reference/system-tables/backup_log) servant à journaliser les opérations `BACKUP` et `RESTORE`.
 
@@ -1787,9 +1679,7 @@ Paramètres de la [table système backup&#95;log](/fr/reference/system-tables/ba
 </clickhouse>
 ```
 
-<div id="blob_storage_log">
-  ## blob_storage_log
-</div>
+## blob_storage_log {#blob_storage_log}
 
 Paramètres de la table système [`blob_storage_log`](/fr/reference/system-tables/blob_storage_log).
 
@@ -1807,9 +1697,7 @@ Exemple :
 </blob_storage_log>
 ```
 
-<div id="query_masking_rules">
-  ## query_masking_rules
-</div>
+## query_masking_rules {#query_masking_rules}
 
 Règles fondées sur des expressions régulières, appliquées aux requêtes ainsi qu’à tous les messages de journalisation avant leur enregistrement dans les journaux du serveur,
 les tables [`system.query_log`](/fr/reference/system-tables/query_log), [`system.text_log`](/fr/reference/system-tables/text_log), [`system.processes`](/fr/reference/system-tables/processes), ainsi que dans les journaux envoyés au client. Cela permet d’éviter
@@ -1842,9 +1730,7 @@ La table [`system.events`](/fr/reference/system-tables/events) comporte le compt
 Pour les requêtes distribuées, chaque serveur doit être configuré séparément, sinon les sous-requêtes transmises à d’autres
 nœuds seront stockées sans masquage.
 
-<div id="remote_servers">
-  ## remote_servers
-</div>
+## remote_servers {#remote_servers}
 
 Configuration des clusters utilisés par le moteur de table [Distributed](/fr/reference/engines/table-engines/special/distributed) et par la fonction de table `cluster`.
 
@@ -1862,9 +1748,7 @@ Pour la valeur de l’attribut `incl`, consultez la section &quot;[Fichiers de c
 * [Découverte du cluster](/fr/guides/oss/deployment-and-scaling/cluster-discovery)
 * [Moteur de base de données Replicated](/fr/reference/engines/database-engines/replicated)
 
-<div id="remote_url_allow_hosts">
-  ## remote_url_allow_hosts
-</div>
+## remote_url_allow_hosts {#remote_url_allow_hosts}
 
 Liste des hôtes autorisés à être utilisés dans les moteurs de stockage et les fonctions de table liés aux URL.
 
@@ -1884,9 +1768,7 @@ Par exemple :
 </remote_url_allow_hosts>
 ```
 
-<div id="timezone">
-  ## timezone
-</div>
+## timezone {#timezone}
 
 Le fuseau horaire du serveur.
 
@@ -1904,9 +1786,7 @@ Le fuseau horaire est nécessaire pour les conversions entre les formats String 
 
 * [session&#95;timezone](/fr/reference/settings/session-settings/other#session_timezone)
 
-<div id="tcp_port">
-  ## tcp_port
-</div>
+## tcp_port {#tcp_port}
 
 Port de communication avec les clients via le protocole TCP.
 
@@ -1916,9 +1796,7 @@ Port de communication avec les clients via le protocole TCP.
 <tcp_port>9000</tcp_port>
 ```
 
-<div id="tcp_port_secure">
-  ## tcp_port_secure
-</div>
+## tcp_port_secure {#tcp_port_secure}
 
 Port TCP utilisé pour les communications sécurisées avec les clients. À utiliser avec les paramètres [OpenSSL](#openSSL).
 
@@ -1928,9 +1806,7 @@ Port TCP utilisé pour les communications sécurisées avec les clients. À util
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-<div id="mysql_port">
-  ## mysql_port
-</div>
+## mysql_port {#mysql_port}
 
 Port utilisé pour communiquer avec les clients via le protocole MySQL.
 
@@ -1945,9 +1821,7 @@ Port utilisé pour communiquer avec les clients via le protocole MySQL.
 <mysql_port>9004</mysql_port>
 ```
 
-<div id="postgresql_port">
-  ## postgresql_port
-</div>
+## postgresql_port {#postgresql_port}
 
 Port utilisé pour communiquer avec les clients via le protocole PostgreSQL.
 
@@ -1962,9 +1836,7 @@ Port utilisé pour communiquer avec les clients via le protocole PostgreSQL.
 <postgresql_port>9005</postgresql_port>
 ```
 
-<div id="url_scheme_mappers">
-  ## url_scheme_mappers
-</div>
+## url_scheme_mappers {#url_scheme_mappers}
 
 Configuration permettant de convertir des préfixes d’URL abrégés ou symboliques en URL complètes.
 
@@ -1984,9 +1856,7 @@ Exemple :
 </url_scheme_mappers>
 ```
 
-<div id="user_defined_path">
-  ## user_defined_path
-</div>
+## user_defined_path {#user_defined_path}
 
 Le répertoire des fichiers définis par l’utilisateur. Utilisé pour les fonctions définies par l’utilisateur en SQL [Fonctions définies par l’utilisateur en SQL](/fr/reference/functions/regular-functions/udf).
 
@@ -1996,9 +1866,7 @@ Le répertoire des fichiers définis par l’utilisateur. Utilisé pour les fonc
 <user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
 ```
 
-<div id="users_config">
-  ## users_config
-</div>
+## users_config {#users_config}
 
 Chemin vers le fichier qui contient :
 
@@ -2013,9 +1881,7 @@ Chemin vers le fichier qui contient :
 <users_config>users.xml</users_config>
 ```
 
-<div id="access_control_improvements">
-  ## access_control_improvements
-</div>
+## access_control_improvements {#access_control_improvements}
 
 Paramètres des améliorations facultatives du système de contrôle d’accès.
 
@@ -2045,9 +1911,7 @@ Exemple :
 </access_control_improvements>
 ```
 
-<div id="s3queue_log">
-  ## s3queue_log
-</div>
+## s3queue_log {#s3queue_log}
 
 Paramètres de la table système `s3queue_log`.
 
@@ -2064,9 +1928,7 @@ Les réglages par défaut sont :
 </s3queue_log>
 ```
 
-<div id="dead_letter_queue">
-  ## dead_letter_queue
-</div>
+## dead_letter_queue {#dead_letter_queue}
 
 Paramètre de la table système &#39;dead&#95;letter&#95;queue&#39;.
 
@@ -2083,9 +1945,7 @@ Les paramètres par défaut sont :
 </dead_letter_queue>
 ```
 
-<div id="zookeeper">
-  ## zookeeper
-</div>
+## zookeeper {#zookeeper}
 
 Contient des paramètres permettant à ClickHouse d&#39;interagir avec un cluster [ZooKeeper](http://zookeeper.apache.org/). ClickHouse utilise ZooKeeper pour stocker les métadonnées des répliques lors de l&#39;utilisation de tables répliquées. Si vous n&#39;utilisez pas de tables répliquées, cette section de paramètres peut être omise.
 
@@ -2148,9 +2008,7 @@ Il existe également le paramètre `zookeeper_load_balancing` (facultatif), qui 
 * [Guide du programmeur de ZooKeeper](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 * [Communication sécurisée optionnelle entre ClickHouse et ZooKeeper](/fr/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper)
 
-<div id="use_minimalistic_part_header_in_zookeeper">
-  ## use_minimalistic_part_header_in_zookeeper
-</div>
+## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
 
 Méthode de stockage des en-têtes des fragments de données dans ZooKeeper. Ce paramètre s&#39;applique uniquement à la famille [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/index). Il peut être défini :
 
@@ -2175,9 +2033,7 @@ Si [`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_head
   Les en-têtes de fragments de données déjà stockés avec ce paramètre ne peuvent pas être restaurés dans leur représentation précédente (non compacte).
 </Note>
 
-<div id="distributed_ddl">
-  ## distributed_ddl
-</div>
+## distributed_ddl {#distributed_ddl}
 
 Gère l’exécution des [requêtes DDL distribuées](/fr/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) sur le cluster.
 Fonctionne uniquement si [ZooKeeper](/fr/reference/settings/server-settings/settings/zookeeper#zookeeper) est activé.
@@ -2221,9 +2077,7 @@ Les paramètres configurables dans `<distributed_ddl>` comprennent :
 </distributed_ddl>
 ```
 
-<div id="access_control_path">
-  ## access_control_path
-</div>
+## access_control_path {#access_control_path}
 
 Chemin du dossier dans lequel un serveur ClickHouse stocke les configurations des utilisateurs et des rôles créées par des commandes SQL.
 
@@ -2231,9 +2085,7 @@ Chemin du dossier dans lequel un serveur ClickHouse stocke les configurations de
 
 * [Contrôle d&#39;accès et gestion des comptes](/fr/concepts/features/security/access-rights#access-control-usage)
 
-<div id="allow_plaintext_password">
-  ## allow_plaintext_password
-</div>
+## allow_plaintext_password {#allow_plaintext_password}
 
 Indique si les types de mot de passe en clair (non sécurisés) sont autorisés ou non.
 
@@ -2243,9 +2095,7 @@ Indique si les types de mot de passe en clair (non sécurisés) sont autorisés 
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
-<div id="allow_no_password">
-  ## allow_no_password
-</div>
+## allow_no_password {#allow_no_password}
 
 Indique si le type de mot de passe non sécurisé no&#95;password est autorisé ou non.
 
@@ -2255,9 +2105,7 @@ Indique si le type de mot de passe non sécurisé no&#95;password est autorisé 
 <allow_no_password>1</allow_no_password>
 ```
 
-<div id="allow_implicit_no_password">
-  ## allow_implicit_no_password
-</div>
+## allow_implicit_no_password {#allow_implicit_no_password}
 
 Interdit de créer un utilisateur sans mot de passe, sauf si &#39;IDENTIFIED WITH no&#95;password&#39; est explicitement spécifié.
 
@@ -2267,9 +2115,7 @@ Interdit de créer un utilisateur sans mot de passe, sauf si &#39;IDENTIFIED WIT
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
-<div id="default_session_timeout">
-  ## default_session_timeout
-</div>
+## default_session_timeout {#default_session_timeout}
 
 Délai d’expiration par défaut de la session, en secondes.
 
@@ -2279,9 +2125,7 @@ Délai d’expiration par défaut de la session, en secondes.
 <default_session_timeout>60</default_session_timeout>
 ```
 
-<div id="default_password_type">
-  ## default_password_type
-</div>
+## default_password_type {#default_password_type}
 
 Définit le type de mot de passe à appliquer automatiquement dans les requêtes du type `CREATE USER u IDENTIFIED BY 'p'`.
 
@@ -2301,9 +2145,7 @@ Les valeurs acceptées sont :
 <default_password_type>sha256_password</default_password_type>
 ```
 
-<div id="user_directories">
-  ## user_directories
-</div>
+## user_directories {#user_directories}
 
 Section du fichier de configuration contenant les paramètres suivants :
 
@@ -2362,9 +2204,7 @@ Pour ajouter un serveur LDAP comme répertoire distant pour les utilisateurs qui
 </ldap>
 ```
 
-<div id="top_level_domains_list">
-  ## top_level_domains_list
-</div>
+## top_level_domains_list {#top_level_domains_list}
 
 Définit une liste de domaines de premier niveau personnalisés à ajouter, chaque entrée devant être au format `<name>/path/to/file</name>`.
 
@@ -2381,9 +2221,7 @@ Voir aussi :
 * la fonction [`cutToFirstSignificantSubdomainCustom`](/fr/reference/functions/regular-functions/url-functions#cutToFirstSignificantSubdomainCustom) et ses variantes,
   qui accepte un nom de liste TLD personnalisée et renvoie la partie du domaine comprenant les sous-domaines de plus haut niveau jusqu&#39;au premier sous-domaine significatif.
 
-<div id="proxy">
-  ## proxy
-</div>
+## proxy {#proxy}
 
 Définissez des serveurs proxy pour les requêtes HTTP et HTTPS, actuellement pris en charge par le stockage S3, les fonctions de table S3 et les fonctions URL.
 
@@ -2521,9 +2359,7 @@ ClickHouse vérifiera le type de résolveur ayant la plus haute priorité pour l
 il vérifiera alors le type de résolveur ayant la priorité immédiatement inférieure, jusqu&#39;à atteindre le résolveur d&#39;environnement.
 Cela permet également d&#39;utiliser une combinaison de types de résolveur.
 
-<div id="disable_tunneling_for_https_requests_over_http_proxy">
-  ## disable_tunneling_for_https_requests_over_http_proxy
-</div>
+## disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
 
 Par défaut, le tunneling (c.-à-d. `HTTP CONNECT`) est utilisé pour effectuer des requêtes `HTTPS` via un proxy `HTTP`. Ce paramètre permet de le désactiver.
 
@@ -2553,9 +2389,7 @@ Il en va de même pour GitLab, même s’il comporte un point initial. `gitlab.c
 </proxy>
 ```
 
-<div id="workload_path">
-  ## workload_path
-</div>
+## workload_path {#workload_path}
 
 Répertoire utilisé pour stocker toutes les requêtes `CREATE WORKLOAD` et `CREATE RESOURCE`. Par défaut, le dossier `/workload/` situé dans le répertoire de travail du serveur est utilisé.
 
@@ -2572,9 +2406,7 @@ Répertoire utilisé pour stocker toutes les requêtes `CREATE WORKLOAD` et `CRE
 * [Hiérarchie des workloads](/fr/concepts/features/configuration/server-config/workload-scheduling#workloads)
 * [workload&#95;zookeeper&#95;path](#workload_zookeeper_path)
 
-<div id="workload_zookeeper_path">
-  ## workload_zookeeper_path
-</div>
+## workload_zookeeper_path {#workload_zookeeper_path}
 
 Le chemin vers un nœud ZooKeeper, utilisé comme stockage pour toutes les requêtes `CREATE WORKLOAD` et `CREATE RESOURCE`. Pour des raisons de cohérence, toutes les définitions SQL sont stockées comme valeur de cet unique znode. Par défaut, ZooKeeper n&#39;est pas utilisé et les définitions sont stockées sur le [disk](#workload_path).
 
@@ -2589,9 +2421,7 @@ Le chemin vers un nœud ZooKeeper, utilisé comme stockage pour toutes les requ�
 * [workload](/fr/concepts/features/configuration/server-config/workload-scheduling#workloads)
 * [workload&#95;path](#workload_path)
 
-<div id="zookeeper_log">
-  ## zookeeper_log
-</div>
+## zookeeper_log {#zookeeper_log}
 
 Paramètres de la [table système `zookeeper_log`](/fr/reference/system-tables/zookeeper_log).
 

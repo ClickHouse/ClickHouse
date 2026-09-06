@@ -15,21 +15,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="allow_experimental_ai_functions">
-  ## allow_experimental_ai_functions
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "새로운 설정"}]}]} />
-
-실험적 AI 함수(예: `aiGenerateContent`)를 활성화합니다. 이 함수는 AI 프로바이더에 외부 HTTP 요청을 보냅니다.
-
-<div id="allow_experimental_analyzer">
-  ## allow_experimental_analyzer
-</div>
+## allow_experimental_analyzer {#allow_experimental_analyzer}
 
 **별칭**: `enable_analyzer`
 
@@ -39,9 +25,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 분석기 사용을 허용합니다.
 
-<div id="allow_experimental_cleanup_old_data_files_compaction">
-  ## allow_experimental_cleanup_old_data_files_compaction
-</div>
+## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
 
 <ExperimentalBadge />
 
@@ -51,19 +35,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 Iceberg compaction 중 오래된 data files를 정리하도록 허용합니다.
 
-<div id="allow_experimental_codecs">
-  ## allow_experimental_codecs
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-true로 설정하면 모든 실험적 압축 코덱을 지정할 수 있습니다.
-
-<div id="allow_experimental_correlated_subqueries">
-  ## allow_experimental_correlated_subqueries
-</div>
+## allow_experimental_correlated_subqueries {#allow_experimental_correlated_subqueries}
 
 <BetaBadge />
 
@@ -73,9 +45,7 @@ true로 설정하면 모든 실험적 압축 코덱을 지정할 수 있습니�
 
 상관 서브쿼리 실행을 허용합니다.
 
-<div id="allow_experimental_database_glue_catalog">
-  ## allow_experimental_database_glue_catalog
-</div>
+## allow_experimental_database_glue_catalog {#allow_experimental_database_glue_catalog}
 
 <BetaBadge />
 
@@ -89,9 +59,7 @@ catalog&#95;type = &#39;glue&#39;인 실험적 데이터베이스 엔진 DataLak
 
 Cloud 기본값: `1`.
 
-<div id="allow_experimental_database_hms_catalog">
-  ## allow_experimental_database_hms_catalog
-</div>
+## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
 
 <ExperimentalBadge />
 
@@ -101,9 +69,7 @@ Cloud 기본값: `1`.
 
 catalog&#95;type = &#39;hms&#39;인 실험적 데이터베이스 엔진 DataLakeCatalog 사용 허용
 
-<div id="allow_experimental_database_iceberg">
-  ## allow_experimental_database_iceberg
-</div>
+## allow_experimental_database_iceberg {#allow_experimental_database_iceberg}
 
 <BetaBadge />
 
@@ -117,9 +83,7 @@ catalog&#95;type = &#39;iceberg&#39;인 실험적 데이터베이스 엔진 Data
 
 Cloud 기본값: `1`.
 
-<div id="allow_experimental_database_materialized_postgresql">
-  ## allow_experimental_database_materialized_postgresql
-</div>
+## allow_experimental_database_materialized_postgresql {#allow_experimental_database_materialized_postgresql}
 
 <ExperimentalBadge />
 
@@ -127,9 +91,7 @@ Cloud 기본값: `1`.
 
 Engine=MaterializedPostgreSQL(...)를 사용하는 데이터베이스 생성이 가능해집니다.
 
-<div id="allow_experimental_database_paimon_rest_catalog">
-  ## allow_experimental_database_paimon_rest_catalog
-</div>
+## allow_experimental_database_paimon_rest_catalog {#allow_experimental_database_paimon_rest_catalog}
 
 <ExperimentalBadge />
 
@@ -139,9 +101,7 @@ Engine=MaterializedPostgreSQL(...)를 사용하는 데이터베이스 생성이 
 
 `catalog_type = 'paimon_rest'`인 실험적 데이터베이스 엔진 DataLakeCatalog 사용을 허용합니다
 
-<div id="allow_experimental_database_unity_catalog">
-  ## allow_experimental_database_unity_catalog
-</div>
+## allow_experimental_database_unity_catalog {#allow_experimental_database_unity_catalog}
 
 <BetaBadge />
 
@@ -155,9 +115,7 @@ catalog&#95;type = &#39;unity&#39;인 실험적 데이터베이스 엔진 DataLa
 
 Cloud 기본값: `1`.
 
-<div id="allow_experimental_delta_lake_writes">
-  ## allow_experimental_delta_lake_writes
-</div>
+## allow_experimental_delta_lake_writes {#allow_experimental_delta_lake_writes}
 
 <BetaBadge />
 
@@ -169,9 +127,7 @@ Cloud 기본값: `1`.
 
 delta-kernel 쓰기 기능을 활성화합니다.
 
-<div id="allow_experimental_eval_table_function">
-  ## allow_experimental_eval_table_function
-</div>
+## allow_experimental_eval_table_function {#allow_experimental_eval_table_function}
 
 <ExperimentalBadge />
 
@@ -181,9 +137,7 @@ delta-kernel 쓰기 기능을 활성화합니다.
 
 실험적 테이블 함수 `eval`을 활성화합니다.
 
-<div id="allow_experimental_expire_snapshots">
-  ## allow_experimental_expire_snapshots
-</div>
+## allow_experimental_expire_snapshots {#allow_experimental_expire_snapshots}
 
 <ExperimentalBadge />
 
@@ -193,9 +147,7 @@ delta-kernel 쓰기 기능을 활성화합니다.
 
 실험적 Iceberg 명령 `ALTER TABLE ... EXECUTE expire_snapshots`을 실행할 수 있게 합니다.
 
-<div id="allow_experimental_funnel_functions">
-  ## allow_experimental_funnel_functions
-</div>
+## allow_experimental_funnel_functions {#allow_experimental_funnel_functions}
 
 <ExperimentalBadge />
 
@@ -203,9 +155,7 @@ delta-kernel 쓰기 기능을 활성화합니다.
 
 퍼널 분석용 실험적 함수를 활성화합니다.
 
-<div id="allow_experimental_geo_types_in_iceberg">
-  ## allow_experimental_geo_types_in_iceberg
-</div>
+## allow_experimental_geo_types_in_iceberg {#allow_experimental_geo_types_in_iceberg}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -213,9 +163,7 @@ delta-kernel 쓰기 기능을 활성화합니다.
 
 Iceberg `geometry` 및 `geography` 필드 타입을 ClickHouse `Geometry` (Variant) 타입으로 파싱할 수 있도록 허용합니다.
 
-<div id="allow_experimental_hash_functions">
-  ## allow_experimental_hash_functions
-</div>
+## allow_experimental_hash_functions {#allow_experimental_hash_functions}
 
 <ExperimentalBadge />
 
@@ -223,9 +171,7 @@ Iceberg `geometry` 및 `geography` 필드 타입을 ClickHouse `Geometry` (Varia
 
 실험적 해시 함수를 활성화합니다.
 
-<div id="allow_experimental_iceberg_compaction">
-  ## allow_experimental_iceberg_compaction
-</div>
+## allow_experimental_iceberg_compaction {#allow_experimental_iceberg_compaction}
 
 <ExperimentalBadge />
 
@@ -235,9 +181,7 @@ Iceberg `geometry` 및 `geography` 필드 타입을 ClickHouse `Geometry` (Varia
 
 Iceberg 테이블에서 &#39;OPTIMIZE&#39;를 명시적으로 사용할 수 있도록 합니다.
 
-<div id="allow_experimental_join_right_table_sorting">
-  ## allow_experimental_join_right_table_sorting
-</div>
+## allow_experimental_join_right_table_sorting {#allow_experimental_join_right_table_sorting}
 
 <ExperimentalBadge />
 
@@ -247,9 +191,7 @@ Iceberg 테이블에서 &#39;OPTIMIZE&#39;를 명시적으로 사용할 수 있�
 
 true로 설정되고 `join_to_sort_minimum_perkey_rows` 및 `join_to_sort_maximum_table_rows`의 조건이 충족되면, left 또는 inner 해시 조인의 성능 향상을 위해 오른쪽 테이블을 키 기준으로 재정렬합니다.
 
-<div id="allow_experimental_json_lazy_type_hints">
-  ## allow_experimental_json_lazy_type_hints
-</div>
+## allow_experimental_json_lazy_type_hints {#allow_experimental_json_lazy_type_hints}
 
 <ExperimentalBadge />
 
@@ -259,9 +201,7 @@ true로 설정되고 `join_to_sort_minimum_perkey_rows` 및 `join_to_sort_maximu
 
 JSON 타입의 실험적 지연 실행 타입 힌트를 활성화합니다. 이 기능을 사용하면 타입 힌트 평가를 지연시켜 JSON 타입 변환을 최적화할 수 있습니다.
 
-<div id="allow_experimental_kafka_offsets_storage_in_keeper">
-  ## allow_experimental_kafka_offsets_storage_in_keeper
-</div>
+## allow_experimental_kafka_offsets_storage_in_keeper {#allow_experimental_kafka_offsets_storage_in_keeper}
 
 <ExperimentalBadge />
 
@@ -271,9 +211,7 @@ JSON 타입의 실험적 지연 실행 타입 힌트를 활성화합니다. 이 
 
 Kafka 관련 오프셋을 ClickHouse Keeper에 저장하는 실험적 기능을 허용합니다. 이 기능을 활성화하면 ClickHouse Keeper 경로와 레플리카 이름을 Kafka 테이블 엔진에 지정할 수 있습니다. 그러면 일반적인 Kafka 엔진 대신, 커밋된 오프셋을 주로 ClickHouse Keeper에 저장하는 새로운 유형의 저장 엔진이 사용됩니다.
 
-<div id="allow_experimental_kusto_dialect">
-  ## allow_experimental_kusto_dialect
-</div>
+## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
 
 <ExperimentalBadge />
 
@@ -281,11 +219,9 @@ Kafka 관련 오프셋을 ClickHouse Keeper에 저장하는 실험적 기능을 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
-SQL의 대안인 Kusto Query Language (KQL)를 활성화합니다.
+SQL의 대안인 Kusto Query Language (KQL) 방언을 활성화합니다.
 
-<div id="allow_experimental_materialized_postgresql_table">
-  ## allow_experimental_materialized_postgresql_table
-</div>
+## allow_experimental_materialized_postgresql_table {#allow_experimental_materialized_postgresql_table}
 
 <ExperimentalBadge />
 
@@ -293,9 +229,7 @@ SQL의 대안인 Kusto Query Language (KQL)를 활성화합니다.
 
 MaterializedPostgreSQL 테이블 엔진을 사용할 수 있도록 허용합니다. 이 기능은 실험적 기능이므로 기본적으로 비활성화되어 있습니다.
 
-<div id="allow_experimental_nlp_functions">
-  ## allow_experimental_nlp_functions
-</div>
+## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
 
 <ExperimentalBadge />
 
@@ -303,9 +237,7 @@ MaterializedPostgreSQL 테이블 엔진을 사용할 수 있도록 허용합니�
 
 자연어 처리(NLP)를 위한 실험적 함수를 활성화합니다.
 
-<div id="allow_experimental_nullable_tuple_type">
-  ## allow_experimental_nullable_tuple_type
-</div>
+## allow_experimental_nullable_tuple_type {#allow_experimental_nullable_tuple_type}
 
 <BetaBadge />
 
@@ -320,9 +252,7 @@ MaterializedPostgreSQL 테이블 엔진을 사용할 수 있도록 허용합니�
 이 설정은 추출된 Tuple 서브컬럼을 `Nullable`로 만들 수 있는지는 제어하지 않습니다(예: Dynamic, Variant, JSON 또는 Tuple 컬럼에서 추출된 경우).
 추출된 Tuple 서브컬럼을 `Nullable`로 만들 수 있는지 제어하려면 `allow_nullable_tuple_in_extracted_subcolumns`를 사용하십시오.
 
-<div id="allow_experimental_object_storage_queue_hive_partitioning">
-  ## allow_experimental_object_storage_queue_hive_partitioning
-</div>
+## allow_experimental_object_storage_queue_hive_partitioning {#allow_experimental_object_storage_queue_hive_partitioning}
 
 <ExperimentalBadge />
 
@@ -332,9 +262,7 @@ MaterializedPostgreSQL 테이블 엔진을 사용할 수 있도록 허용합니�
 
 S3Queue/AzureQueue 엔진에서 Hive 파티셔닝 사용을 허용합니다
 
-<div id="allow_experimental_paimon_storage_engine">
-  ## allow_experimental_paimon_storage_engine
-</div>
+## allow_experimental_paimon_storage_engine {#allow_experimental_paimon_storage_engine}
 
 <ExperimentalBadge />
 
@@ -344,9 +272,7 @@ S3Queue/AzureQueue 엔진에서 Hive 파티셔닝 사용을 허용합니다
 
 Paimon* 테이블 엔진을 사용해 테이블을 생성할 수 있습니다.
 
-<div id="allow_experimental_parallel_reading_from_replicas">
-  ## allow_experimental_parallel_reading_from_replicas
-</div>
+## allow_experimental_parallel_reading_from_replicas {#allow_experimental_parallel_reading_from_replicas}
 
 **별칭**: `enable_parallel_replicas`
 
@@ -354,9 +280,7 @@ Paimon* 테이블 엔진을 사용해 테이블을 생성할 수 있습니다.
 
 각 세그먼트에서 SELECT 쿼리 실행 시 최대 `max_parallel_replicas`개의 레플리카를 사용합니다. 읽기는 병렬로 수행되며 동적으로 조정됩니다. 0 - 비활성화, 1 - 활성화, 실패 시 조용히 비활성화, 2 - 활성화, 실패 시 예외를 발생시킴
 
-<div id="allow_experimental_polyglot_dialect">
-  ## allow_experimental_polyglot_dialect
-</div>
+## allow_experimental_polyglot_dialect {#allow_experimental_polyglot_dialect}
 
 <ExperimentalBadge />
 
@@ -366,9 +290,7 @@ Paimon* 테이블 엔진을 사용해 테이블을 생성할 수 있습니다.
 
 polyglot SQL 트랜스파일러를 활성화합니다. 이 기능은 30개 이상의 SQL 방언(MySQL, PostgreSQL, SQLite, Snowflake, DuckDB 등)을 ClickHouse SQL로 트랜스파일합니다.
 
-<div id="allow_experimental_prql_dialect">
-  ## allow_experimental_prql_dialect
-</div>
+## allow_experimental_prql_dialect {#allow_experimental_prql_dialect}
 
 <ExperimentalBadge />
 
@@ -378,9 +300,7 @@ polyglot SQL 트랜스파일러를 활성화합니다. 이 기능은 30개 이�
 
 SQL의 대안인 PRQL을 활성화합니다.
 
-<div id="allow_experimental_time_series_aggregate_functions">
-  ## allow_experimental_time_series_aggregate_functions
-</div>
+## allow_experimental_time_series_aggregate_functions {#allow_experimental_time_series_aggregate_functions}
 
 <ExperimentalBadge />
 
@@ -392,9 +312,7 @@ SQL의 대안인 PRQL을 활성화합니다.
 
 Prometheus 스타일의 시계열 리샘플링, rate, delta 계산을 위한 실험적 timeSeries* 집계 함수입니다.
 
-<div id="allow_experimental_time_series_table">
-  ## allow_experimental_time_series_table
-</div>
+## allow_experimental_time_series_table {#allow_experimental_time_series_table}
 
 <ExperimentalBadge />
 
@@ -407,9 +325,7 @@ Prometheus 스타일의 시계열 리샘플링, rate, delta 계산을 위한 실
 * 0 — [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 테이블 엔진이 비활성화되어 있습니다.
 * 1 — [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 테이블 엔진이 활성화되어 있습니다.
 
-<div id="allow_experimental_unique_key">
-  ## allow_experimental_unique_key
-</div>
+## allow_experimental_unique_key {#allow_experimental_unique_key}
 
 <ExperimentalBadge />
 
@@ -419,9 +335,7 @@ Prometheus 스타일의 시계열 리샘플링, rate, delta 계산을 위한 실
 
 MergeTree 계열 엔진에서 `UNIQUE KEY` 절을 사용하는 테이블 생성을 허용합니다.
 
-<div id="allow_experimental_url_wildcard_from_index_pages">
-  ## allow_experimental_url_wildcard_from_index_pages
-</div>
+## allow_experimental_url_wildcard_from_index_pages {#allow_experimental_url_wildcard_from_index_pages}
 
 <ExperimentalBadge />
 
@@ -431,19 +345,7 @@ MergeTree 계열 엔진에서 `UNIQUE KEY` 절을 사용하는 테이블 생성�
 
 HTTP 인덱스 페이지를 기반으로 `url()` 및 `ENGINE = URL`의 실험적 와일드카드 확장을 허용합니다.
 
-<div id="allow_experimental_window_view">
-  ## allow_experimental_window_view
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-WINDOW VIEW를 활성화합니다. 아직 충분히 안정적이지 않습니다.
-
-<div id="allow_experimental_ytsaurus_dictionary_source">
-  ## allow_experimental_ytsaurus_dictionary_source
-</div>
+## allow_experimental_ytsaurus_dictionary_source {#allow_experimental_ytsaurus_dictionary_source}
 
 <ExperimentalBadge />
 
@@ -453,9 +355,7 @@ WINDOW VIEW를 활성화합니다. 아직 충분히 안정적이지 않습니다
 
 YTsaurus 통합용 실험적 딕셔너리 소스입니다.
 
-<div id="allow_experimental_ytsaurus_table_engine">
-  ## allow_experimental_ytsaurus_table_engine
-</div>
+## allow_experimental_ytsaurus_table_engine {#allow_experimental_ytsaurus_table_engine}
 
 <ExperimentalBadge />
 
@@ -465,9 +365,7 @@ YTsaurus 통합용 실험적 딕셔너리 소스입니다.
 
 YTsaurus 통합용 실험적 테이블 엔진입니다.
 
-<div id="allow_experimental_ytsaurus_table_function">
-  ## allow_experimental_ytsaurus_table_function
-</div>
+## allow_experimental_ytsaurus_table_function {#allow_experimental_ytsaurus_table_function}
 
 <ExperimentalBadge />
 

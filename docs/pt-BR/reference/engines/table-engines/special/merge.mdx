@@ -114,7 +114,7 @@ SELECT * FROM WatchLog;
 
 * `_table` — O nome da tabela da qual os dados foram lidos. Tipo: [String](/pt-BR/reference/data-types/string).
 
-  Se você aplicar um filtro em `_table` (por exemplo, `WHERE _table='xyz'`), somente as tabelas que satisfizerem a condição de filtro serão lidas.
+  Se você aplicar um filtro em `_table` (por exemplo, `WHERE _table='xyz'`), somente as tabelas que satisfizerem a condição de filtro serão lidas. Uma tabela que lê de outras tabelas (`Distributed`, `Merge`, `Buffer`, `Alias`) retorna linhas com o nome da tabela que realmente as produziu; portanto, essas tabelas são sempre lidas, e o filtro é aplicado às suas linhas.
 
 * `_database` — Contém o nome do banco de dados do qual os dados foram lidos. Tipo: [String](/pt-BR/reference/data-types/string).
 

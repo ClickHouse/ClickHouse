@@ -15,9 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
 
 권한을 취소하려면 [REVOKE](/ko/reference/statements/revoke) SQL 문을 사용하십시오. 또한 [SHOW GRANTS](/ko/reference/statements/show#show-grants) SQL 문을 사용해 부여된 권한 목록을 확인할 수 있습니다.
 
-<div id="granting-privilege-syntax">
-  ## 권한 부여 구문
-</div>
+## 권한 부여 구문 {#granting-privilege-syntax}
 
 ```sql
 GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
@@ -30,9 +28,7 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 `WITH GRANT OPTION` 절은 `user` 또는 `role`에 `GRANT` 쿼리를 실행할 수 있는 권한을 부여합니다. 사용자는 자신이 보유한 것과 동일한 범위 또는 그보다 좁은 범위의 권한을 부여할 수 있습니다.
 `WITH REPLACE OPTION` 절은 `user` 또는 `role`의 기존 권한을 새 권한으로 대체하며, 지정하지 않으면 권한을 추가합니다.
 
-<div id="assigning-role-syntax">
-  ## 역할 할당 구문
-</div>
+## 역할 할당 구문 {#assigning-role-syntax}
 
 ```sql
 GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
@@ -44,9 +40,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 `WITH ADMIN OPTION` 절은 `user` 또는 `role`에 [ADMIN OPTION](#admin-option) 권한을 부여합니다.
 `WITH REPLACE OPTION` 절은 `user` 또는 `role`의 기존 역할을 새 역할로 대체하고, 지정하지 않으면 역할을 추가합니다.
 
-<div id="grant-current-grants-syntax">
-  ## GRANT CURRENT GRANTS 구문
-</div>
+## GRANT CURRENT GRANTS 구문 {#grant-current-grants-syntax}
 
 ```sql
 GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}) | ON {db.table|db.*|*.*|table|*}} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
@@ -59,9 +53,7 @@ GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*
 `CURRENT GRANTS` 문을 사용하면 지정된 사용자 또는 역할에 명시한 모든 권한을 부여할 수 있습니다.
 권한을 하나도 지정하지 않으면 지정된 사용자 또는 역할에 `CURRENT_USER`에 대해 사용 가능한 모든 권한이 부여됩니다.
 
-<div id="usage">
-  ## 사용법
-</div>
+## 사용법 {#usage}
 
 `GRANT`를 사용하려면 계정에 `GRANT OPTION` 권한이 있어야 합니다. 권한은 계정에 부여된 권한 범위 내에서만 부여할 수 있습니다.
 
@@ -90,9 +82,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 
 하나의 쿼리로 여러 계정에 여러 권한을 부여할 수 있습니다. `GRANT SELECT, INSERT ON *.* TO john, robin` 쿼리를 사용하면 계정 `john`과 `robin`은 서버의 모든 데이터베이스에 있는 모든 테이블에서 `INSERT` 및 `SELECT` 쿼리를 실행할 수 있습니다.
 
-<div id="wildcard-grants">
-  ## 와일드카드 권한 부여
-</div>
+## 와일드카드 권한 부여 {#wildcard-grants}
 
 권한을 지정할 때 테이블이나 데이터베이스 이름 대신 별표(`*`)를 사용할 수 있습니다. 예를 들어 `GRANT SELECT ON db.* TO john` 쿼리는 `john`이 `db` 데이터베이스의 모든 테이블에서 `SELECT` 쿼리를 실행할 수 있도록 합니다.
 또한 데이터베이스 이름을 생략할 수도 있습니다. 이 경우 권한은 현재 데이터베이스에 부여됩니다.
@@ -143,9 +133,7 @@ GRANT SELECT ON *suffix TO john -- 잘못됨
 GRANT SELECT(foo) ON db.table* TO john -- 잘못됨
 ```
 
-<div id="privileges">
-  ## 권한
-</div>
+## 권한 {#privileges}
 
 권한(Privilege)은 사용자가 특정 유형의 쿼리를 실행할 수 있도록 부여되는 권한입니다.
 
@@ -271,6 +259,7 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
   * [`SOURCES`](#sources)
     * `AZURE`
     * `BIGQUERY`
+    * `DISK`
     * `FILE`
     * `HDFS`
     * `HIVE`
@@ -389,9 +378,7 @@ ClickHouse의 권한 계층 구조는 아래와 같습니다.
 
 일부 쿼리는 구현 방식에 따라 여러 권한이 필요합니다. 예를 들어 [RENAME](/ko/reference/statements/optimize) 쿼리를 실행하려면 `SELECT`, `CREATE TABLE`, `INSERT`, `DROP TABLE` 권한이 필요합니다.
 
-<div id="select">
-  ### SELECT
-</div>
+### SELECT {#select}
 
 [SELECT](/ko/reference/statements/select/index) 쿼리를 실행할 수 있습니다.
 
@@ -409,9 +396,7 @@ GRANT SELECT(x,y) ON db.table TO john
 
 이 권한이 있으면 `john`은 `db.table`의 `x` 및/또는 `y` 컬럼 데이터를 포함하는 모든 `SELECT` 쿼리를 실행할 수 있습니다. 예를 들어 `SELECT x FROM db.table`은 실행할 수 있습니다. `john`은 `SELECT z FROM db.table`은 실행할 수 없습니다. `SELECT * FROM db.table`도 실행할 수 없습니다. 이 쿼리를 처리할 때 ClickHouse는 `x`와 `y`를 포함해 어떤 데이터도 반환하지 않습니다. 유일한 예외는 테이블에 `x`와 `y` 컬럼만 있는 경우이며, 이때는 ClickHouse가 모든 데이터를 반환합니다.
 
-<div id="insert">
-  ### INSERT
-</div>
+### INSERT {#insert}
 
 [INSERT](/ko/reference/statements/insert-into) 쿼리를 실행할 수 있도록 허용합니다.
 
@@ -429,9 +414,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 부여된 권한으로 `john`은 `db.table`의 `x` 및/또는 `y` 컬럼에 데이터를 삽입할 수 있습니다.
 
-<div id="alter">
-  ### ALTER
-</div>
+### ALTER {#alter}
 
 다음 권한 계층에 따라 [ALTER](/ko/reference/statements/alter/index) 쿼리 실행을 허용합니다:
 
@@ -481,15 +464,11 @@ GRANT INSERT(x,y) ON db.table TO john
 * `DETACH` 작업에는 [DROP](#drop) 권한이 필요합니다.
 * [KILL MUTATION](/ko/reference/statements/kill#kill-mutation) 쿼리로 mutation을 중지하려면, 해당 mutation을 시작할 수 있는 권한이 있어야 합니다. 예를 들어 `ALTER UPDATE` 쿼리를 중지하려면 `ALTER UPDATE`, `ALTER TABLE` 또는 `ALTER` 권한이 필요합니다.
 
-<div id="backup">
-  ### BACKUP
-</div>
+### BACKUP {#backup}
 
 쿼리에서 [`BACKUP`]을 실행할 수 있도록 합니다. 백업에 대한 자세한 내용은 [&quot;백업 및 복원&quot;](/ko/concepts/features/backup-restore/overview)을 참조하십시오.
 
-<div id="create">
-  ### CREATE
-</div>
+### CREATE {#create}
 
 다음 권한 계층에 따라 [CREATE](/ko/reference/statements/create/index) 및 [ATTACH](/ko/reference/statements/attach) DDL 쿼리의 실행을 허용합니다:
 
@@ -505,9 +484,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 * 생성한 테이블을 삭제하려면 [DROP](#drop) 권한이 필요합니다.
 
-<div id="cluster">
-  ### CLUSTER
-</div>
+### CLUSTER {#cluster}
 
 `ON CLUSTER` 쿼리 실행을 허용합니다.
 
@@ -531,9 +508,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 </access_control_improvements>
 ```
 
-<div id="drop">
-  ### DROP
-</div>
+### DROP {#drop}
 
 다음과 같은 권한 계층에 따라 [DROP](/ko/reference/statements/drop) 및 [DETACH](/ko/reference/statements/detach) 쿼리를 실행할 수 있습니다.
 
@@ -543,25 +518,19 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   * `DROP VIEW`. 수준: `VIEW`
   * `DROP DICTIONARY`. 수준: `DICTIONARY`
 
-<div id="truncate">
-  ### TRUNCATE
-</div>
+### TRUNCATE {#truncate}
 
 [TRUNCATE](/ko/reference/statements/truncate) 쿼리 실행을 허용합니다.
 
 권한 수준: `TABLE`.
 
-<div id="optimize">
-  ### OPTIMIZE
-</div>
+### OPTIMIZE {#optimize}
 
 [OPTIMIZE TABLE](/ko/reference/statements/optimize) 쿼리 실행을 허용합니다.
 
 권한 수준: `TABLE`.
 
-<div id="show">
-  ### SHOW
-</div>
+### SHOW {#show}
 
 다음 권한 계층에 따라 `SHOW`, `DESCRIBE`, `USE`, `EXISTS` 쿼리를 실행할 수 있습니다.
 
@@ -575,9 +544,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 지정된 테이블, 딕셔너리 또는 데이터베이스에 대한 다른 권한을 하나라도 보유한 사용자는 `SHOW` 권한도 가집니다.
 
-<div id="kill-query">
-  ### KILL QUERY
-</div>
+### KILL QUERY {#kill-query}
 
 다음 권한 계층에 따라 [KILL](/ko/reference/statements/kill#kill-query) 쿼리 실행을 허용합니다:
 
@@ -587,9 +554,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 `KILL QUERY` 권한이 있으면 다른 사용자의 쿼리를 종료할 수 있습니다.
 
-<div id="access-management">
-  ### 액세스 관리
-</div>
+### 액세스 관리 {#access-management}
 
 사용자, 역할, 행 정책을 관리하는 쿼리를 실행할 수 있게 합니다.
 
@@ -620,9 +585,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 `ROLE ADMIN` 권한이 있으면 admin 옵션과 함께 사용자에게 부여되지 않은 역할을 포함해 모든 역할을 할당하거나 회수할 수 있습니다.
 
-<div id="system">
-  ### SYSTEM
-</div>
+### SYSTEM {#system}
 
 다음 권한 계층에 따라 사용자가 [SYSTEM](/ko/reference/statements/system) 쿼리를 실행할 수 있습니다.
 
@@ -657,9 +620,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 `SYSTEM RELOAD DICTIONARY ON *.*` 권한이 있으면 `SYSTEM RELOAD EMBEDDED DICTIONARIES` 권한도 암묵적으로 부여됩니다.
 
-<div id="introspection">
-  ### INTROSPECTION
-</div>
+### INTROSPECTION {#introspection}
 
 [인트로스펙션](/ko/concepts/features/performance/troubleshoot/sampling-query-profiler) 함수를 사용할 수 있습니다.
 
@@ -669,11 +630,10 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
   * `addressToSymbol`. 수준: `GLOBAL`
   * `demangle`. 수준: `GLOBAL`
 
-<div id="sources">
-  ### SOURCES
-</div>
+### SOURCES {#sources}
 
 외부 데이터 소스를 사용할 수 있도록 허용합니다. [테이블 엔진](/ko/reference/engines/table-engines/index) 및 [테이블 함수](/ko/reference/functions/table-functions/index)에 적용됩니다.
+백업 위치에도 필요합니다. `BACKUP`/`RESTORE` 및 `ENGINE = Backup`은 해당 위치를 이 권한 부여를 기준으로 인가합니다.
 
 * `READ`. 수준: `GLOBAL_WITH_PARAMETER`
 * `WRITE`. 수준: `GLOBAL_WITH_PARAMETER`
@@ -682,6 +642,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 * `AZURE`
 * `BIGQUERY`
+* `DISK`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -713,9 +674,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 * [MySQL 테이블 엔진](/ko/reference/engines/table-engines/integrations/mysql)으로 테이블을 생성하려면 `CREATE TABLE (ON db.table_name)` 및 `MYSQL` 권한이 필요합니다.
 * [MySQL 테이블 함수](/ko/reference/functions/table-functions/mysql)를 사용하려면 `CREATE TEMPORARY TABLE` 및 `MYSQL` 권한이 필요합니다.
 
-<div id="source-filter-grants">
-  ### 소스 필터 권한 부여
-</div>
+### 소스 필터 권한 부여 {#source-filter-grants}
 
 <Note>
   이 기능은 버전 25.8부터 사용할 수 있으며, 서버 설정
@@ -785,9 +744,7 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 * **부분 취소는 허용되지 않습니다:** 이미 권한이 부여된 필터 패턴의 부분 집합만 취소할 수는 없습니다. 필요한 경우 전체 권한 부여를 취소한 후 새 패턴으로 다시 권한을 부여해야 합니다.
 * **와일드카드 권한 부여는 허용되지 않습니다:** `GRANT READ ON *('regexp')` 또는 이와 유사한 와일드카드 전용 패턴은 사용할 수 없습니다. 반드시 구체적인 소스를 지정해야 합니다.
 
-<div id="dictget">
-  ### dictGet
-</div>
+### dictGet {#dictget}
 
 * `dictGet`. 별칭: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
@@ -800,18 +757,14 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 * `GRANT dictGet ON mydb.mydictionary TO john`
 * `GRANT dictGet ON mydictionary TO john`
 
-<div id="displaysecretsinshowandselect">
-  ### displaySecretsInShowAndSelect
-</div>
+### displaySecretsInShowAndSelect {#displaysecretsinshowandselect}
 
 [`display_secrets_in_show_and_select` 서버 설정](/ko/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
 및
 [`format_display_secrets_in_show_and_select` 포맷 설정](/ko/reference/settings/formats/format#format_display_secrets_in_show_and_select)
 이 모두 활성화되어 있으면, `SHOW` 및 `SELECT` 쿼리에서 시크릿을 볼 수 있습니다.
 
-<div id="named-collection-admin">
-  ### NAMED COLLECTION ADMIN
-</div>
+### NAMED COLLECTION ADMIN {#named-collection-admin}
 
 지정된 명명된 컬렉션에 대해 특정 작업을 허용합니다. 버전 23.7 이전에는 NAMED COLLECTION CONTROL이라고 불렸고, 23.7부터는 NAMED COLLECTION ADMIN이 추가되었으며 NAMED COLLECTION CONTROL은 별칭으로 유지됩니다.
 
@@ -831,9 +784,7 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 
 * `GRANT CREATE NAMED COLLECTION ON abc TO john`
 
-<div id="table-engine">
-  ### 테이블 엔진
-</div>
+### 테이블 엔진 {#table-engine}
 
 <CloudNotSupportedBadge />
 
@@ -855,9 +806,7 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 
 * `GRANT READ, WRITE ON AZURE TO john`
 
-<div id="all">
-  ### ALL
-</div>
+### ALL {#all}
 
 <CloudNotSupportedBadge />
 
@@ -868,15 +817,11 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   또한 사용자는 `default` 사용자로 `GRANT CURRENT GRANTS`를 사용해 `ALL`과 유사한 효과를 얻을 수 있습니다.
 </Note>
 
-<div id="none">
-  ### NONE
-</div>
+### NONE {#none}
 
 어떤 권한도 부여하지 않습니다.
 
-<div id="admin-option">
-  ### ADMIN OPTION
-</div>
+### ADMIN OPTION {#admin-option}
 
 `ADMIN OPTION` 권한이 있으면 사용자는 자신의 역할을 다른 사용자에게 부여할 수 있습니다.
 

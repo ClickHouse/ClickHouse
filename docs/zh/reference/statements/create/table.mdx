@@ -12,15 +12,11 @@ doc_type: 'reference'
 创建一个新表。默认情况下，表只会在当前服务器上创建。
 分布式 DDL 查询通过 `ON CLUSTER` 子句来实现，相关内容[另文说明](/zh/reference/statements/distributed-ddl)。
 
-<div id="syntax-forms">
-  ## 语法格式
-</div>
+## 语法格式 {#syntax-forms}
 
 该查询可根据不同的用例采用多种语法格式。
 
-<div id="with-explicit-schema">
-  ### 使用显式 schema 创建表
-</div>
+### 使用显式 schema 创建表 {#with-explicit-schema}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -45,9 +41,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 可以为列和表添加注释。
 
-<div id="with-a-schema-similar-to-other-table">
-  ### 使用现有表的 schema 创建表
-</div>
+### 使用现有表的 schema 创建表 {#with-a-schema-similar-to-other-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
@@ -59,9 +53,7 @@ ClickHouse 支持复制现有表的 schema 和数据。
 
 这会创建一个与另一个表结构相同的表。
 
-<div id="with-a-schema-and-data-cloned-from-another-table">
-  ### 使用现有表的 schema 和数据创建表
-</div>
+### 使用现有表的 schema 和数据创建表 {#with-a-schema-and-data-cloned-from-another-table}
 
 若要复制现有表的 schema 和数据：
 
@@ -78,9 +70,7 @@ ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 
 对于这两项功能，你都可以为该表指定不同的引擎。如果未指定引擎，则默认使用与原始表 (`db.table`) 相同的引擎。
 
-<div id="from-a-table-function">
-  ### 使用表函数创建表
-</div>
+### 使用表函数创建表 {#from-a-table-function}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
@@ -88,9 +78,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 
 创建一个表，其结果与指定的[表函数](/zh/reference/functions/table-functions/index)相同。创建后的表也会像所指定的对应表函数一样工作。
 
-<div id="from-select-query">
-  ### 使用 SELECT 查询创建表
-</div>
+### 使用 SELECT 查询创建表 {#from-select-query}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
@@ -115,9 +103,7 @@ SELECT x, toTypeName(x) FROM t1;
 └───┴───────────────┘
 ```
 
-<div id="default_values">
-  ## 指定列默认值
-</div>
+## 指定列默认值 {#default_values}
 
 列描述可以通过 `DEFAULT expr`、`MATERIALIZED expr` 或 `ALIAS expr` 的形式指定默认值表达式。例如：`URLDomain String DEFAULT domain(URL)`。
 
@@ -129,9 +115,7 @@ SELECT x, toTypeName(x) FROM t1;
 
 默认值表达式 `expr` 可以引用任意表列和常量。ClickHouse 会检查对表结构的修改不会在表达式计算中引入循环。对于 INSERT，它还会检查这些表达式是否可解析——也就是说，用于计算它们的所有列都必须已传入。
 
-<div id="default">
-  ### DEFAULT
-</div>
+### DEFAULT {#default}
 
 `DEFAULT expr`
 
@@ -157,9 +141,7 @@ SELECT * FROM test;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-<div id="materialized">
-  ### MATERIALIZED
-</div>
+### MATERIALIZED {#materialized}
 
 `MATERIALIZED expr`
 
@@ -197,9 +179,7 @@ SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-<div id="ephemeral">
-  ### EPHEMERAL
-</div>
+### EPHEMERAL {#ephemeral}
 
 `EPHEMERAL [expr]`
 
@@ -235,9 +215,7 @@ hexed:      Z��
 hex(hexed): 5A90B714
 ```
 
-<div id="alias">
-  ### ALIAS
-</div>
+### ALIAS {#alias}
 
 `ALIAS expr`
 
@@ -274,9 +252,7 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 └────┴────────────┴──────────┘
 ```
 
-<div id="null-or-not-null-modifiers">
-  ## 使用 NULL 或 NOT NULL 修饰符
-</div>
+## 使用 NULL 或 NOT NULL 修饰符 {#null-or-not-null-modifiers}
 
 在列定义中，数据类型后面的 `NULL` 和 `NOT NULL` 修饰符用于控制该列是否可以为 [Nullable](/zh/reference/data-types/nullable)。
 
@@ -284,9 +260,7 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 
 另请参见 [data&#95;type&#95;default&#95;nullable](/zh/reference/settings/session-settings/other#data_type_default_nullable) 设置。
 
-<div id="primary-key">
-  ## 主键
-</div>
+## 主键 {#primary-key}
 
 你可以在创建表时定义[主键](/zh/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries)。主键可以通过两种方式指定：
 
@@ -322,15 +296,11 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
   不能在一次查询中同时使用这两种方式。
 </Tip>
 
-<div id="constraints">
-  ## 指定表约束
-</div>
+## 指定表约束 {#constraints}
 
 除列描述外，还可以定义约束：
 
-<div id="constraint">
-  ### CONSTRAINT
-</div>
+### CONSTRAINT {#constraint}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -348,9 +318,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 可以通过 [`system.constraints`](/zh/reference/system-tables/constraints) 表查看所有表中现有的约束。
 
-<div id="assume">
-  ### ASSUME
-</div>
+### ASSUME {#assume}
 
 `ASSUME` 子句用于在表上定义一个被假定为真的 `CONSTRAINT`。优化器随后可以利用该约束来提升 SQL 查询性能。
 
@@ -374,15 +342,11 @@ ORDER BY (name_len, name);
 
 `ASSUME CONSTRAINT` **不会强制执行该约束**，它只是告知优化器该约束成立。如果该约束实际上并不成立，查询结果可能会不正确。因此，只有在你确定该约束确实成立时，才应使用 `ASSUME CONSTRAINT`。
 
-<div id="ttl-expression">
-  ## 使用 TTL 定义存储时长
-</div>
+## 使用 TTL 定义存储时长 {#ttl-expression}
 
 定义值的存储时长。只能为 MergeTree 家族表指定。有关详细说明，请参阅[列和表的 TTL](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)。
 
-<div id="column_compression_codec">
-  ## 选择列压缩编解码器
-</div>
+## 选择列压缩编解码器 {#column_compression_codec}
 
 {/* 指向已迁移至 /reference/statements/create/table/codec 的章节链接的锚点 */}
 
@@ -430,7 +394,7 @@ ORDER BY (name_len, name);
 
 <a id="adaptive-codec-selection" />
 
-默认情况下，自管理版本的 ClickHouse 使用 `lz4` 压缩，ClickHouse Cloud 则使用 `zstd`。您还可以在 `CREATE TABLE` 查询中为每一列指定压缩方法：
+默认情况下，自管理版本的 ClickHouse 使用 `ZSTD(3)` 压缩，ClickHouse Cloud 则使用 `zstd`。对于 `MergeTree` 家族，默认行为会根据大小自动选择：小于 100 MB 时使用速度更快的 `LZ4`，达到或超过该值时使用 `ZSTD(3)`；因此刚插入的数据先以 `LZ4` 压缩，而后台合并生成的较大 parts 则切换为 `ZSTD(3)`。该阈值针对的是选择编解码器时 (即数据写入之前) 已知的 part 大小——刚插入的 part 为 `0`，merge 或 mutation 则为 source parts 的大小——而不是最终生成的 part 的大小。您还可以在 `CREATE TABLE` 查询中为每一列指定压缩方法：
 
 ```sql
 CREATE TABLE codec_example
@@ -447,15 +411,11 @@ ENGINE = <Engine>
 
 有关可用的通用、专用和加密编解码器，请参阅[列压缩编解码器](/zh/reference/statements/create/table/codec)。
 
-<div id="temporary-tables">
-  ## 创建临时表
-</div>
+## 创建临时表 {#temporary-tables}
 
 ClickHouse 支持临时表，会话结束后这些表将自动消失。详情请参阅 [CREATE TEMPORARY TABLE](/zh/reference/statements/create/table/temporary-table)。
 
-<div id="replace-table">
-  ## 使用 REPLACE TABLE 以原子方式更新表
-</div>
+## 使用 REPLACE TABLE 以原子方式更新表 {#replace-table}
 
 {/* 为已迁移至 /reference/statements/create/table/replace-table 的章节链接提供的锚点 */}
 
@@ -465,9 +425,7 @@ ClickHouse 支持临时表，会话结束后这些表将自动消失。详情请
 
 `REPLACE` 语句允许你以[原子方式](/zh/concepts/core-concepts/glossary#atomicity)更新表。有关详细信息，请参阅 [REPLACE TABLE](/zh/reference/statements/create/table/replace-table)。
 
-<div id="comment-clause">
-  ## 添加表注释
-</div>
+## 添加表注释 {#comment-clause}
 
 您可以在创建表时添加注释。
 
@@ -508,9 +466,7 @@ SELECT name, comment FROM system.tables WHERE name = 't1';
 └──────┴─────────────────────┘
 ```
 
-<div id="related-content">
-  ## 相关内容
-</div>
+## 相关内容 {#related-content}
 
 * 博客：[使用 schema 和编解码器优化 ClickHouse](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 * 博客：[在 ClickHouse 中处理时间序列数据](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

@@ -21,9 +21,7 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 * Organize o armazenamento tolerante a falhas.
 * Processe fluxos à medida que estiverem disponíveis.
 
-<div id="creating-a-table">
-  ## Criar uma tabela
-</div>
+## Criar uma tabela {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -156,9 +154,7 @@ CREATE TABLE queue3 (
   O motor de tabela Kafka não oferece suporte a colunas com [valor padrão](/pt-BR/reference/statements/create/table#default_values). Se você precisar de colunas com valor padrão, poderá adicioná-las na visão materializada (veja abaixo).
 </Info>
 
-<div id="description">
-  ## Descrição
-</div>
+## Descrição {#description}
 
 As mensagens entregues são rastreadas automaticamente, portanto cada mensagem em um grupo é contabilizada apenas uma vez. Se você quiser obter os dados duas vezes, crie uma cópia da tabela com outro nome de grupo.
 
@@ -216,9 +212,7 @@ ATTACH TABLE consumer;
 
 Se você quiser alterar a tabela de destino usando `ALTER`, recomendamos desativar a visão materializada para evitar discrepâncias entre a tabela de destino e os dados da visão materializada.
 
-<div id="configuration">
-  ## Configuração
-</div>
+## Configuração {#configuration}
 
 Assim como o GraphiteMergeTree, o motor Kafka oferece suporte a uma configuração estendida por meio do arquivo de configuração do ClickHouse. Há duas chaves de configuração que você pode usar: global (em `<kafka>`) e no nível do tópico (em `<kafka><kafka_topic>`). A configuração global é aplicada primeiro e, em seguida, a configuração no nível do tópico é aplicada (se existir).
 
@@ -264,9 +258,7 @@ Assim como o GraphiteMergeTree, o motor Kafka oferece suporte a uma configuraç�
 
 Para ver uma lista das opções de configuração disponíveis, consulte a [referência de configuração do librdkafka](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use o sublinhado (`_`) em vez do ponto na configuração do ClickHouse. Por exemplo, `check.crcs=true` será `<check_crcs>true</check_crcs>`.
 
-<div id="kafka-aws-msk-iam">
-  ### Autenticação IAM do AWS MSK
-</div>
+### Autenticação IAM do AWS MSK {#kafka-aws-msk-iam}
 
 <Note>
   A autenticação IAM do AWS MSK exige que o ClickHouse seja compilado com o suporte ao AWS S3 ativado.
@@ -374,9 +366,7 @@ Permissões do produtor (para gravar mensagens):
 }
 ```
 
-<div id="kafka-kerberos-support">
-  ### Suporte a Kerberos
-</div>
+### Suporte a Kerberos {#kafka-kerberos-support}
 
 Para lidar com o Kafka com suporte a Kerberos, adicione o elemento filho `security_protocol` com o valor `sasl_plaintext`. Isso é suficiente se o ticket de concessão de tickets do Kerberos for obtido e armazenado em cache pelo sistema operacional.
 O ClickHouse consegue manter credenciais do Kerberos usando um arquivo keytab. Considere os elementos filhos `sasl_kerberos_service_name`, `sasl_kerberos_keytab` e `sasl_kerberos_principal`.
@@ -392,9 +382,7 @@ Exemplo:
 </kafka>
 ```
 
-<div id="virtual-columns">
-  ## Colunas virtuais
-</div>
+## Colunas virtuais {#virtual-columns}
 
 * `_topic` — Tópico do Kafka. Tipo de dado: `LowCardinality(String)`.
 * `_key` — Chave da mensagem. Tipo de dado: `String`.
@@ -412,9 +400,7 @@ Colunas virtuais adicionais quando `kafka_handle_error_mode='stream'`:
 
 Observação: as colunas virtuais `_raw_message` e `_error` são preenchidas apenas em caso de exceção durante a análise; elas ficam sempre vazias quando a mensagem é analisada com sucesso.
 
-<div id="mapping-columns-to-kafka-message-metadata">
-  ## Mapeamento de colunas para metadados de mensagens do Kafka
-</div>
+## Mapeamento de colunas para metadados de mensagens do Kafka {#mapping-columns-to-kafka-message-metadata}
 
 Ao produzir mensagens com `INSERT INTO`, o motor Kafka sempre usa uma coluna chamada `_key` (do tipo `String`) como a chave da mensagem do Kafka e uma coluna chamada `_timestamp` (do tipo `DateTime`) como o timestamp da mensagem do Kafka — se essas colunas existirem na tabela. Por padrão, essas colunas também aparecem no payload da mensagem junto com as outras colunas.
 
@@ -451,9 +437,7 @@ INSERT INTO kafka_out VALUES
 
 A mensagem produzida no Kafka tem payload `{"event_json":"{\"a\":1}"}`, chave `session-42`, o timestamp atual e dois cabeçalhos `source=api` e `trace_id=abc-123`.
 
-<div id="data-formats-support">
-  ## Suporte a formatos de dados
-</div>
+## Suporte a formatos de dados {#data-formats-support}
 
 O motor Kafka oferece suporte a todos os [formatos](/pt-BR/reference/formats/index) compatíveis com o ClickHouse.
 O número de linhas em uma mensagem do Kafka depende de o formato ser baseado em linhas ou em blocos:
@@ -461,9 +445,7 @@ O número de linhas em uma mensagem do Kafka depende de o formato ser baseado em
 * Para formatos baseados em linhas, o número de linhas em uma mensagem do Kafka pode ser controlado pela configuração `kafka_max_rows_per_message`.
 * Para formatos baseados em blocos, não é possível dividir um bloco em partes menores, mas o número de linhas em um bloco pode ser controlado pela configuração geral [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max#max_block_size).
 
-<div id="engine-to-store-committed-offsets-in-clickhouse-keeper">
-  ## Motor para armazenar offsets confirmados no ClickHouse Keeper
-</div>
+## Motor para armazenar offsets confirmados no ClickHouse Keeper {#engine-to-store-committed-offsets-in-clickhouse-keeper}
 
 <ExperimentalBadge />
 
@@ -474,9 +456,7 @@ Se `allow_experimental_kafka_offsets_storage_in_keeper` estiver habilitada, mais
 
 As duas configurações devem ser especificadas juntas, ou nenhuma delas. Quando ambas são especificadas, um novo motor Kafka experimental passa a ser usado. Esse novo motor não depende do armazenamento dos offsets confirmados no Kafka, mas os armazena no ClickHouse Keeper. Ele ainda tenta fazer commit dos offsets no Kafka, mas só depende desses offsets quando a tabela é criada. Em qualquer outra situação (se a tabela for reiniciada ou recuperada após algum erro), os offsets armazenados no ClickHouse Keeper serão usados para continuar consumindo mensagens. Além do offset confirmado, ele também armazena quantas mensagens foram consumidas no último lote, portanto, se o insert falhar, a mesma quantidade de mensagens será consumida, o que permite a desduplicação, se necessário.
 
-<div id="static-partition-to-shard-affinity">
-  ### Afinidade estática entre partições e shards
-</div>
+### Afinidade estática entre partições e shards {#static-partition-to-shard-affinity}
 
 Ao usar `StorageKafka2`, você pode habilitar opcionalmente a afinidade estática entre partições e shards especificando `kafka_partition_shard_num` e `kafka_shard_count`. Isso permite que várias instâncias do ClickHouse (shards) consumam o mesmo tópico do Kafka, com cada shard processando apenas um subconjunto determinístico de partições, com base na fórmula:
 
@@ -525,15 +505,19 @@ kafka_replica_name = '{replica}'
 SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 ```
 
-<div id="known-limitations">
-  ### Limitações conhecidas
-</div>
+### Limitações conhecidas {#known-limitations}
 
 Como o novo motor é experimental, ele ainda não está pronto para produção. Existem algumas limitações conhecidas na implementação:
 
 * Excluir e recriar a tabela rapidamente, ou especificar o mesmo caminho do ClickHouse Keeper para motores diferentes, pode causar problemas. Como prática recomendada, você pode usar `{uuid}` em `kafka_keeper_path` para evitar conflitos de caminho.
 * Para garantir leituras repetíveis, as mensagens não podem ser consumidas de várias partições em uma única thread. Por outro lado, os consumidores do Kafka precisam ser consultados regularmente para continuarem ativos. Como resultado dessas duas exigências, decidimos permitir a criação de vários consumidores apenas se `kafka_thread_per_consumer` estiver ativado; caso contrário, é muito complicado evitar problemas relacionados à consulta regular dos consumidores.
 * Ao usar afinidade de partição, todos os shards devem usar o mesmo `kafka_shard_count`; caso contrário, algumas partições podem ser consumidas por vários shards ou permanecer sem consumo.
+
+## Durabilidade dos dados {#data-durability}
+
+O motor `Kafka` pode perder silenciosamente linhas já consumidas se o cache de páginas do SO for descartado antes de os dados inseridos serem gravados em disco. Depois que um lote é enviado às visões materializadas dependentes, o offset consumido é confirmado (no broker ou no ClickHouse Keeper quando `kafka_keeper_path` está definido), permitindo que o consumidor retome a partir de mensagens posteriores. No entanto, as linhas inseridas só se tornam duráveis quando é feito fsync na parte de destino, o que não ocorre de forma síncrona por padrão (`fsync_after_insert = 0`). Se o cache de páginas for perdido após a confirmação do offset, mas antes de ser feito fsync na parte de destino, o consumidor ignorará essas mensagens ao reiniciar; assim, as linhas serão perdidas sem nenhum erro e `count()` simplesmente retornará um valor menor. Encerrar um processo normalmente não revela esse problema, pois o kernel mantém o cache de páginas e acaba gravando os dados em disco. Já a perda do cache de páginas o revela; por exemplo, em caso de perda de energia no nível do dispositivo ou reinicialização forçada do host ou do kernel.
+
+No caminho de consumo recomendado com visão materializada (em que o offset só é confirmado depois que todo o pipeline de inserção é concluído), definir `fsync_after_insert = 1` (e `fsync_part_directory = 1`) nas tabelas `MergeTree` de destino torna as partes inseridas duráveis antes da confirmação do offset, reduzindo significativamente essa janela. A configuração deve ser ativada em todas as tabelas `MergeTree` nas quais o lote é inserido, incluindo os destinos de visões materializadas em cascata; qualquer uma dessas tabelas mantida com a configuração padrão ainda poderá perder sua parte. Intermediários assíncronos não ganham durabilidade apenas com essa configuração: por exemplo, um destino `Distributed` insere dados em segundo plano quando `distributed_foreground_insert = 0`, que é o padrão fora do ClickHouse Cloud, portanto precisa de configurações próprias de durabilidade ou de inserção síncrona. A mitigação também não se aplica quando o offset é confirmado antes de a inserção terminar. Isso ocorre com um `INSERT ... SELECT ... FROM <kafka_table>` direto usando `kafka_commit_on_select = 1` e, no motor baseado em broker, com `kafka_commit_every_batch = 1`; esta última configuração é ignorada quando `kafka_keeper_path` está definido, portanto não pode causar uma confirmação intermediária nesse caso.
 
 **Veja também**
 

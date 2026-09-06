@@ -58,7 +58,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         <br />
 
-        ### الاتصال باستخدام SQL Console
+        ### الاتصال باستخدام SQL Console {#connect-using-sql-console}
 
         للبدء بسرعة، يوفّر ClickHouse SQL Console عبر الويب، وستتم إعادتك إليها بعد إكمال Onboarding.
 
@@ -78,7 +78,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         هذا كل شيء — أصبحت جاهزًا لبدء استخدام خدمة ClickHouse الجديدة!
 
-        ### الاتصال بتطبيقك
+        ### الاتصال بتطبيقك {#connect-with-your-app}
 
         اضغط على زر الاتصال في قائمة التنقل. ستُفتح نافذة تعرض بيانات اعتماد خدمتك ومجموعة من الإرشادات حول كيفية الاتصال عبر الواجهة أو مكتبات العملاء للغات البرمجة.
 
@@ -104,7 +104,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
         * حمّل ملفًا - تشمل التنسيقات المقبولة JSON وCSV وTSV
         * حمّل البيانات من URL للملف
 
-        ### ClickPipes
+        ### ClickPipes {#clickpipes}
 
         [ClickPipes](/ar/integrations/clickpipes/home) هي منصة تكامل مُدارة تجعل استيعاب البيانات من مجموعة متنوعة من المصادر بسهولة النقر على بضعة أزرار. وقد صُممت لأكثر أحمال العمل تطلبًا، حيث تضمن معمارية ClickPipes المتينة والقابلة للتوسع أداءً وموثوقية متسقين. ويمكن استخدام ClickPipes لتلبية احتياجات البث طويلة الأمد أو لمهمة تحميل بيانات لمرة واحدة.
 
@@ -112,7 +112,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         <br />
 
-        ### إضافة البيانات باستخدام SQL Console
+        ### إضافة البيانات باستخدام SQL Console {#add-data-using-the-sql-console}
 
         شأنه شأن معظم أنظمة إدارة قواعد البيانات، يُجمّع ClickHouse الجداول منطقيًا ضمن **قواعد بيانات**. استخدم الأمر [`CREATE DATABASE`](/ar/reference/statements/create/database) لإنشاء قاعدة بيانات جديدة في ClickHouse:
 
@@ -155,7 +155,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
           تتوفر العديد من محركات الجداول للاختيار من بينها، ولكن لجدول بسيط على خادم ClickHouse أحادي العقدة، يُرجّح أن يكون [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) خيارك.
         </Info>
 
-        #### مقدمة موجزة عن المفاتيح الأساسية
+        #### مقدمة موجزة عن المفاتيح الأساسية {#a-brief-intro-to-primary-keys}
 
         قبل المضي قدمًا، من المهم فهم كيفية عمل المفاتيح الأساسية في ClickHouse (فقد يبدو تطبيق
         المفاتيح الأساسية غير متوقع!):
@@ -175,7 +175,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         للتعمق في المفاهيم الأساسية لـ ClickHouse، راجع [&quot;المفاهيم الأساسية&quot;](/ar/concepts/core-concepts/index).
 
-        #### إدراج البيانات في جدولك
+        #### إدراج البيانات في جدولك {#insert-data-into-your-table}
 
         يمكنك استخدام الأمر المألوف [`INSERT INTO TABLE`](/ar/reference/statements/insert-into) مع ClickHouse، لكن من المهم أن تدرك أن كل عملية insert في جدول [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) ينتج عنها إنشاء **part** في التخزين.
 
@@ -208,7 +208,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
         SELECT * FROM helloworld.my_first_table
         ```
 
-        ### إضافة البيانات باستخدام ClickHouse Client
+        ### إضافة البيانات باستخدام ClickHouse Client {#add-data-using-the-clickhouse-client}
 
         يمكنك أيضًا الاتصال بخدمة ClickHouse Cloud الخاصة بك باستخدام أداة سطر الأوامر [**clickhouse client**](/ar/concepts/features/interfaces/client). انقر على `Connect` في القائمة اليسرى للاطلاع على هذه التفاصيل، ثم اختر `Native` من القائمة المنسدلة في مربع الحوار:
 
@@ -288,7 +288,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
         exit
         ```
 
-        ### رفع ملف
+        ### رفع ملف {#upload-a-file}
 
         من المهام الشائعة عند البدء باستخدام قاعدة بيانات إدراجُ بعض البيانات الموجودة لديك مسبقًا في ملفات. ولدينا بعض
         البيانات النموذجية المتاحة عبر الإنترنت والتي يمكنك إدراجها، وهي تمثّل بيانات تدفق النقرات — إذ تتضمن معرّف مستخدم، وعنوان URL تمت زيارته،
@@ -331,7 +331,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
       راجع [&quot;إعداد IP filters&quot;](/ar/products/cloud/guides/security/connectivity/setting-ip-filters) لمزيد من التفاصيل.
     </Tip>
 
-    ## ما الخطوة التالية؟
+    ## ما الخطوة التالية؟ {#whats-next}
 
     * يتيح لك [الدليل العملي](/ar/get-started/quickstarts/tutorial) إدراج مليوني صف في جدول وكتابة بعض الاستعلامات التحليلية
     * لدينا قائمة بـ [مجموعات البيانات النموذجية](/ar/get-started/sample-datasets/index) تتضمن إرشادات حول كيفية إدراجها

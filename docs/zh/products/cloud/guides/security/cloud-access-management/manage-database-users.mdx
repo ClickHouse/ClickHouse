@@ -12,16 +12,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 本指南介绍两种管理数据库用户的方法：在 SQL 控制台中，或直接在数据库中。
 
 <div id="sql-console-passwordless-authentication">
-  ### SQL 控制台无密码身份验证
+  ### SQL 控制台无密码身份验证 {#sql-console-passwordless-authentication}
 </div>
 
 系统会为每个会话创建 SQL 控制台用户，并使用自动轮换的 X.509 证书进行身份验证。会话终止后，该用户会被删除。生成审计用访问列表时，请在控制台中进入该 service 的 Settings 选项卡，除了数据库中现有的数据库用户外，还要留意 SQL 控制台访问。如果配置了自定义角色，用户的访问权限会列在名称以该用户用户名结尾的角色中。
 
-<div id="sql-console-users-and-roles">
-  ## SQL 控制台用户和角色
-</div>
+## SQL 控制台用户和角色 {#sql-console-users-and-roles}
 
-具有 Service Read Only 和 Service Admin 权限的用户可以被分配基础 SQL 控制台角色。更多信息，请参阅 [管理 SQL 控制台角色分配](/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)。本指南演示如何为 SQL 控制台用户创建自定义角色。
+具有 Service Read Only 和 Service Admin 权限的用户可以被分配基础 SQL 控制台角色。更多信息，请参阅 [管理云用户](/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments)。本指南演示如何为 SQL 控制台用户创建自定义角色。
 
 <Tip>
   优先使用[云托管数据库角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (Beta) 从控制台管理数据库访问权限。`sql-console-role:<email>` 角色与 [JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) 不兼容。
@@ -57,11 +55,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Steps>
 
 <div id="database-authentication">
-  ## 数据库身份验证
+  ## 数据库身份验证 {#database-authentication}
 </div>
 
 <div id="database-user-id--password">
-  ### 数据库用户 ID 和密码
+  ### 数据库用户 ID 和密码 {#database-user-id--password}
 </div>
 
 在[创建用户账户](/zh/reference/statements/create/user)时，请使用 SHA256&#95;哈希 方法来保护密码。ClickHouse 数据库密码必须至少包含 12 个字符，并满足复杂度要求：包含大写字母、小写字母、数字和/或特殊字符。
@@ -78,7 +76,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 ```
 
 <div id="database-ssh">
-  ### 通过安全外壳 (SSH) 进行身份验证的数据库用户
+  ### 通过安全外壳 (SSH) 进行身份验证的数据库用户 {#database-ssh}
 </div>
 
 为 ClickHouse Cloud 数据库用户配置 SSH 身份验证。
@@ -91,7 +89,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 如需查看包含示例的详细操作指南，请参阅我们知识库中的 [如何使用 SSH 密钥连接到 ClickHouse Cloud](/zh/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys)。
 
 <div id="database-permissions">
-  ## 数据库权限
+  ## 数据库权限 {#database-permissions}
 </div>
 
 使用 SQL [GRANT](/zh/reference/statements/grant) 语句在服务和数据库中配置以下权限。
@@ -110,7 +108,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 <Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="展示可向用户授予权限的不同方式的示意图" size="md" background="black" />
 
 <div id="initial-settings">
-  ### 初始设置
+  ### 初始设置 {#initial-settings}
 </div>
 
 系统会自动创建一个名为 `default` 的账户，并在服务创建时向其授予 default&#95;role。创建服务的用户会看到系统在服务创建时自动生成并分配给 `default` 账户的随机密码。初始设置完成后，该密码将不再显示，但之后任何在控制台中具有 Service Admin 权限的用户都可以更改它。此账户，或控制台中具有 Service Admin 特权的账户，均可随时设置其他数据库用户和角色。
@@ -128,9 +126,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 
 你可以使用 SHA256 哈希生成器，或 Python 中的 `hashlib` 等代码库函数，将一个长度不少于 12 个字符且复杂度适当的密码转换为 SHA256 字符串，并将其作为密码提供给系统管理员。这样可确保管理员不会看到或接触明文密码。
 
-<div id="database-access-listings-with-sql-console-users">
-  ### 使用 SQL 控制台用户列出数据库访问权限
-</div>
+### 使用 SQL 控制台用户列出数据库访问权限 {#database-access-listings-with-sql-console-users}
 
 以下流程可用于生成组织内 SQL 控制台和数据库的完整访问权限清单。
 
@@ -176,8 +172,6 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
   </Step>
 </Steps>
 
-<div id="warehouse-users">
-  ## 仓库用户
-</div>
+## 仓库用户 {#warehouse-users}
 
 仓库用户在同一仓库内的各个服务之间共享。更多信息，请参阅[仓库访问控制](/zh/products/cloud/features/infrastructure/warehouses#access-controls)。

@@ -11,17 +11,13 @@ doc_type: 'reference'
 
 Предоставляет интерфейс, подобный таблице, только для чтения для таблиц Apache [Hudi](https://hudi.apache.org/) в Amazon S3.
 
-<div id="syntax">
-  ## Синтаксис
-</div>
+## Синтаксис {#syntax}
 
 ```sql
 hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 ```
 
-<div id="arguments">
-  ## Аргументы
-</div>
+## Аргументы {#arguments}
 
 | Аргумент                                     | Описание                                                                                                                                                                                                                                                                                                                                                                                |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -29,18 +25,14 @@ hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,co
 | `aws_access_key_id`, `aws_secret_access_key` | Долговременные учетные данные пользователя аккаунта [AWS](https://aws.amazon.com/). Их можно использовать для аутентификации запросов. Эти параметры необязательны. Если учетные данные не указаны, они берутся из конфигурации ClickHouse. Подробнее см. в разделе [Using S3 for Data Storage](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3). |
 | `format`                                     | [Формат](/ru/reference/formats/index) файла.                                                                                                                                                                                                                                                                                                                                               |
 | `structure`                                  | Структура таблицы. Формат: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                               |
-| `compression`                                | Параметр необязателен. Поддерживаемые значения: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. По умолчанию сжатие автоматически определяется по расширению файла.                                                                                                                                                                                                              |
+| `compression`                                | Параметр необязателен. Поддерживаемые значения: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. По умолчанию сжатие автоматически определяется по расширению файла. Для `snappy` формат передачи данных выбирается настройкой [snappy&#95;mode](/ru/reference/settings/session-settings/other#snappy_mode) (по умолчанию — `basic`).             |
 | `extra_credentials`                          | Параметр необязателен. Используется для передачи `role_arn` для доступа на основе ролей в ClickHouse Cloud. Инструкции по настройке см. в разделе [Secure S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).                                                                                                                                                          |
 
-<div id="returned-value">
-  ## Возвращаемое значение
-</div>
+## Возвращаемое значение {#returned-value}
 
 Таблица с указанной структурой для чтения данных из указанной таблицы Hudi в S3.
 
-<div id="virtual-columns">
-  ## Виртуальные столбцы
-</div>
+## Виртуальные столбцы {#virtual-columns}
 
 * `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
 * `_file` — Имя файла. Тип: `LowCardinality(String)`.
@@ -48,9 +40,7 @@ hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,co
 * `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
 * `_etag` — ETag файла. Тип: `LowCardinality(String)`. Если ETag неизвестен, значение — `NULL`.
 
-<div id="related">
-  ## См. также
-</div>
+## См. также {#related}
 
 * [Движок Hudi](/ru/reference/engines/table-engines/integrations/hudi)
 * [Табличная функция cluster для Hudi](/ru/reference/functions/table-functions/hudiCluster)

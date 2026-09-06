@@ -1,6 +1,6 @@
 ---
 slug: /guides/developer/mutations
-sidebarTitle: '데이터 업데이트 및 삭제'
+sidebarTitle: 'ClickHouse 데이터 업데이트 및 삭제'
 searchable: true
 keywords: ['UPDATE', 'DELETE', 'mutations']
 title: 'ClickHouse 데이터 업데이트 및 삭제'
@@ -35,7 +35,7 @@ ClickHouse는 대용량 분석 워크로드에 맞게 설계되었지만, 일부
 </Tip>
 
 <div id="updating-data">
-  ## 데이터 업데이트
+  ## 데이터 업데이트 {#updating-data}
 </div>
 
 테이블의 행을 업데이트하려면 `ALTER TABLE...UPDATE` 명령을 사용하십시오:
@@ -77,7 +77,7 @@ ALTER TABLE [<database>.]<table> UPDATE <column> = <expression> WHERE <filter_ex
 </Note>
 
 <div id="deleting-data">
-  ## 데이터 삭제
+  ## 데이터 삭제 {#deleting-data}
 </div>
 
 행을 삭제하려면 `ALTER TABLE` 명령을 사용하십시오:
@@ -107,7 +107,7 @@ ALTER TABLE [<database>.]<table> DELETE WHERE <filter_expr>
 자세한 내용은 [`DELETE` SQL 문](/ko/reference/statements/delete) 문서 페이지를 참조하십시오.
 
 <div id="lightweight-deletes">
-  ## 경량한 삭제
+  ## 경량한 삭제 {#lightweight-deletes}
 </div>
 
 행을 삭제하는 또 다른 방법은 `DELETE FROM` 명령을 사용하는 것이며, 이를 **경량한 삭제**라고 합니다. 삭제된 행은 즉시 삭제된 것으로 표시되고, 이후 실행되는 모든 쿼리에서 자동으로 필터링되므로 파트 병합을 기다리거나 `FINAL` 키워드를 사용할 필요가 없습니다. 데이터 정리는 백그라운드에서 비동기적으로 수행됩니다.

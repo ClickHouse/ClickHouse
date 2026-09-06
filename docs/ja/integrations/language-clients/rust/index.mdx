@@ -45,12 +45,12 @@ clickhouse = { version = "0.12.2", features = ["test-util"] }
   ## Cargo の機能
 </div>
 
-* `lz4` (既定で有効) — `Compression::Lz4` および `Compression::Lz4Hc(_)` バリアントを有効にします。有効にすると、`WATCH` を除くすべてのクエリで既定で `Compression::Lz4` が使用されます。
+* `lz4` (既定で有効) — `Compression::Lz4` および `Compression::Lz4Hc(_)` バリアントを有効にします。有効にすると、v26.9 より前の ClickHouse でのみ受け付けられる `WATCH` を除くすべてのクエリで、既定で `Compression::Lz4` が使用されます。
 * `native-tls` — OpenSSL にリンクする `hyper-tls` を介して、`HTTPS` スキームの URL をサポートします。
 * `rustls-tls` — OpenSSL にリンクしない `hyper-rustls` を介して、`HTTPS` スキームの URL をサポートします。
 * `inserter` — `client.inserter()` を有効にします。
 * `test-util` — モックを追加します。[例](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs) を参照してください。使用は `dev-dependencies` のみにしてください。
-* `watch` — `client.watch` 機能を有効にします。詳細は該当する節を参照してください。
+* `watch` — `client.watch` 機能を有効にします。これは `WATCH` クエリを発行しますが、`WATCH` は `WINDOW VIEW` とともに ClickHouse v26.9 で削除されたため、古いサーバーに対してのみ機能します。
 * `uuid` — [uuid](https://docs.rs/uuid) クレートと連携するために `serde::uuid` を追加します。
 * `time` — [time](https://docs.rs/time) クレートと連携するために `serde::time` を追加します。
 
@@ -556,7 +556,7 @@ struct MyRow {
   ## モック化
 </div>
 
-このクレートには、CHサーバーをモック化し、DDL、`SELECT`、`INSERT`、`WATCH` クエリをテストするためのユーティリティが用意されています。この機能は `test-util` feature で有効にできます。**必ず**開発用依存関係としてのみ使用してください。
+このクレートには、CHサーバーをモック化し、DDL、`SELECT`、`INSERT`、`WATCH` クエリをテストするためのユーティリティが用意されています (`WATCH` はv26.9より前のClickHouseでのみ受け付けられます) 。この機能は `test-util` feature で有効にできます。**必ず**開発用依存関係としてのみ使用してください。
 
 [サンプル](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs) を参照してください。
 

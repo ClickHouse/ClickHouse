@@ -2,132 +2,175 @@
 title: Instrumentar um aplicativo
 ---
 
+import { AgentPrompt } from '/snippets/pt-BR/components/AgentPrompt/AgentPrompt.jsx';
+
+<div id="instrument-the-application">
+  ## Instrumente a aplicação
+</div>
+
 <Steps>
-  <Step title="Faça o clone e execute a aplicação" id="clone-and-run-the-application">
-    Clone o repositório, instale as dependências e crie seu arquivo `.env`:
-
-    ```bash
-    git clone https://github.com/ClickHouse/hn-news-analyzer.git
-    cd hn-news-analyzer
-    npm install
-    cp .env.example .env
-    ```
-
-    A fonte de dados do ClickHouse tem como padrão o cluster demo público e somente leitura, portanto o aplicativo funciona sem nenhuma configuração adicional. Inicie-o:
+  <Step title="Execute a aplicação" id="run-the-application">
+    No diretório `hn-news-analyzer` clonado, inicie o aplicativo. A fonte de dados do ClickHouse usa, por padrão, o cluster de demonstração público e somente leitura, portanto é executado sem nenhuma configuração adicional:
 
     ```bash
     ./run.sh
     ```
 
-    Abra [http://localhost:5001](http://localhost:5001). Você verá um seletor de ano, estatísticas resumidas, um gráfico de atividade, tabelas com os principais usuários e domínios, e um campo de busca. Explore a interface: mude de ano, abra os detalhes das histórias.
+    Abra [http://localhost:5001](http://localhost:5001). Você verá um seletor de ano, estatísticas resumidas, um gráfico de atividade, tabelas com os principais usuários e domínios e uma caixa de busca. Explore: alterne entre os anos e aprofunde-se nas histórias.
 
     <Frame>
       <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="O aplicativo HackerNews Analyzer em execução localmente" />
     </Frame>
 
-    Neste ponto, o aplicativo está em execução, mas ainda não foi instrumentado. O ClickStack não mostra dados: ele está aguardando telemetria. Este é o estado &quot;antes&quot;.
+    Neste ponto, o aplicativo está em execução, mas ainda não está instrumentado. O ClickStack não exibe dados: está aguardando telemetria.
   </Step>
 
-  <Step title="Obtenha os detalhes da conexão" id="get-connection-details">
-    A aplicação precisa de dois valores para se comunicar com o coletor:
-
-    * `OTEL_EXPORTER_OTLP_ENDPOINT`: o endpoint OTLP que seu coletor expõe (geralmente na porta `4318` para OTLP via HTTP).
-    * `OTEL_EXPORTER_OTLP_HEADERS`: o cabeçalho de autorização que contém seu token de ingestão, no formato `authorization=<token>`.
-
-    Abra o `.env` e defina esses valores:
+  <Step title="Configure o ambiente" id="configure-environment">
+    Os SDKs leem as variáveis padrão do exporter do OpenTelemetry. Elas não estão codificadas diretamente no código-fonte. Abra o arquivo `.env` e defina:
 
     ```bash
     OTEL_SERVICE_NAME=hn-analyzer-api
-    OTEL_EXPORTER_OTLP_ENDPOINT=https://<your-collector-endpoint>:4318
+    OTEL_EXPORTER_OTLP_ENDPOINT=<your-otlp-http-endpoint>
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
     OTEL_EXPORTER_OTLP_HEADERS=authorization=<your-ingestion-token>
+    OTEL_TRACES_EXPORTER=otlp
+    OTEL_METRICS_EXPORTER=otlp
+    OTEL_LOGS_EXPORTER=otlp
     ```
 
-    O SDK usa `OTEL_EXPORTER_OTLP_HEADERS` para definir o header de autorização para os três sinais: traces, métricas e logs. Se o seu collector estiver em execução localmente e não exigir autenticação, você pode deixar o valor vazio (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`), mas a variável precisa estar presente; o SDK ignora completamente a inicialização se ela não estiver definida ou se estiver totalmente vazia.
+    `OTEL_EXPORTER_OTLP_ENDPOINT` é o endpoint OTLP/HTTP (porta `4318`). `OTEL_EXPORTER_OTLP_HEADERS` é o cabeçalho de autorização, no formato `authorization=<token>`, sem o prefixo `Bearer`.
+
+    Se o collector não exigir autenticação, deixe o token vazio (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`). A variável ainda deve estar presente; o SDK ignora a inicialização se ela não estiver definida ou estiver totalmente vazia.
+
+    O SDK do navegador reutiliza esses mesmos valores. O `vite.config.ts` incorpora o endpoint e o token ao pacote público durante a compilação; portanto, use um token de ingestão descartável, não um token de produção.
   </Step>
 
-  <Step title="Instrumente a aplicação" id="instrument-the-application">
-    A instrumentação tem três partes: instalar os SDKs, alterar o comando de inicialização e habilitar o SDK do navegador. Nada disso altera as regras de negócio da aplicação.
+  <Step title="Instrumente a aplicação" id="instrument">
+    Escolha um caminho. Todos os três levam ao mesmo aplicativo instrumentado.
 
-    ### Instale os SDKs
+    <Tabs>
+      <Tab title="Instrumentação com agente" id="instrument-with-an-agent">
+        Com o repositório clonado e o `.env` preenchido, cole este prompt em um agente de programação **nesse diretório** para instrumentar o aplicativo.
 
-    Instale os SDKs do OpenTelemetry para o backend e para o navegador:
+        <AgentPrompt
+          prompt="Use curl para baixar, ler e seguir: github.com/ClickHouse/hn-news-analyzer/blob/main/agent.md"
+          description="Depois de clonar hn-news-analyzer e preencher o .env, execute este prompt nesse diretório. Funciona com Claude Code, Cursor, Codex e outros agentes de programação."
+          outline={[
+"Confirme que você está no diretório clonado do hn-news-analyzer e que o .env já contém valores para OTEL_EXPORTER_OTLP_*. Interrompa se algum dos dois estiver ausente.",
+"Instale @hyperdx/node-opentelemetry e altere run.sh para usar opentelemetry-instrument.",
+"Instale @hyperdx/browser e habilite HyperDX.init e HyperDX.addAction.",
+"Inicie o aplicativo, confirme que as verificações de saúde do OTLP passam e informe para navegar pelo aplicativo em http://localhost:5001.",
+]}
+        />
+      </Tab>
 
-    ```bash
-    npm install @hyperdx/node-opentelemetry @hyperdx/browser
-    ```
+      <Tab title="Instrumentação manual" id="instrument-manually">
+        A instrumentação tem três partes: instalar os SDKs, alterar o comando de inicialização e habilitar o SDK do navegador. Nada disso altera a regra de negócio do aplicativo.
 
-    ### Use a CLI `opentelemetry-instrument`
+        ### Instale o SDK do Node
 
-    A aplicação é iniciada por `run.sh`, que tem duas linhas `exec` na parte inferior: uma ativa e outra comentada. Troque qual delas está ativa para que o Node seja iniciado com `opentelemetry-instrument`:
+        ```bash
+        npm install @hyperdx/node-opentelemetry
+        ```
 
-    ```diff
-     # BEFORE: plain node, no instrumentation, collector stays silent:
-    -exec node scripts/entrypoint.js
-    +# exec node scripts/entrypoint.js
+        ### Habilite o wrapper em run.sh
 
-     # AFTER: same source, wrapped by opentelemetry-instrument CLI.
-    -# exec npx opentelemetry-instrument scripts/entrypoint.js
-    +exec npx opentelemetry-instrument scripts/entrypoint.js
-    ```
+        No final de `run.sh`, há duas linhas `exec`. Comente a linha simples de `node` e descomente a instrumentada:
 
-    Essa é toda a alteração no backend. A instrumentação automática é carregada por `opentelemetry-instrument` na inicialização do processo.
+        ```diff
+         # ANTES: node simples, sem instrumentação:
+        -exec node scripts/entrypoint.js
+        +# exec node scripts/entrypoint.js
 
-    ### Ative o SDK do navegador
+         # DEPOIS: mesmo código-fonte, envolvido por opentelemetry-instrument:
+        -# exec npx opentelemetry-instrument scripts/entrypoint.js
+        +exec npx opentelemetry-instrument scripts/entrypoint.js
+        ```
 
-    Para capturar traces distribuídos (do navegador para o backend) e replay de sessão, ative o SDK do navegador em `src/web/telemetry.ts`. Descomente a importação e o bloco `HyperDX.init({...})`:
+        Continue iniciando por `scripts/entrypoint.js`. Esse shim chama `require('console')`, permitindo que a captura do console envolva `console.log`. Apontar `opentelemetry-instrument` diretamente para `dist/server/index.js` envia traces, mas descarta os logs silenciosamente.
 
-    ```javascript
-    import HyperDX from '@hyperdx/browser';
+        ### Habilite o SDK do navegador
 
-    export function initTelemetry(): void {
-      HyperDX.init({
-        url: __OTLP_ENDPOINT__,
-        apiKey: __OTLP_AUTH_TOKEN__,
-        service: 'hn-analyzer-web',
-        tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
-        consoleCapture: true,
-        advancedNetworkCapture: true,
-      });
-    }
-    ```
+        ```bash
+        npm install @hyperdx/browser
+        ```
 
-    Nenhuma edição adicional no `.env` é necessária. `__OTLP_ENDPOINT__` e `__OTLP_AUTH_TOKEN__` são constantes de tempo de compilação injetadas por `vite.config.ts`: o endpoint é `OTEL_EXPORTER_OTLP_ENDPOINT`, e o token é extraído de `OTEL_EXPORTER_OTLP_HEADERS`, os mesmos valores usados pelo backend.
+        Em `src/web/telemetry.ts`, descomente a importação, o bloco `HyperDX.init({...})` e `HyperDX.addAction` em `recordAction()`:
 
-    <Warning>
-      O token de ingestão é incorporado ao bundle público do navegador e pode ser lido por qualquer pessoa que inspecione a aba Network.
-    </Warning>
+        ```diff
+        -// import HyperDX from '@hyperdx/browser';
+        +import HyperDX from '@hyperdx/browser';
+
+         export function initTelemetry(): void {
+        -  // HyperDX.init({
+        -  //   url: __OTLP_ENDPOINT__,
+        -  //   apiKey: __OTLP_AUTH_TOKEN__,
+        -  //   service: 'hn-analyzer-web',
+        -  //   tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        -  //   consoleCapture: true,
+        -  //   advancedNetworkCapture: true,
+        -  // });
+        +  HyperDX.init({
+        +    url: __OTLP_ENDPOINT__,
+        +    apiKey: __OTLP_AUTH_TOKEN__,
+        +    service: 'hn-analyzer-web',
+        +    tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        +    consoleCapture: true,
+        +    advancedNetworkCapture: true,
+        +  });
+         }
+        ```
+
+        `__OTLP_ENDPOINT__` e `__OTLP_AUTH_TOKEN__` são constantes de tempo de compilação injetadas por `vite.config.ts` a partir dos mesmos valores `OTEL_EXPORTER_OTLP_*` usados pelo backend.
+
+        <Warning>
+          O token de ingestão é incorporado ao pacote público do navegador e pode ser lido por qualquer pessoa que inspecione a aba Network. Use um token descartável.
+        </Warning>
+      </Tab>
+
+      <Tab title="Usar uma branch pré-instrumentada" id="use-the-instrumented-branch">
+        Para pular a instrumentação e começar com um aplicativo já instrumentado, faça checkout da [branch `instrumented`](https://github.com/ClickHouse/hn-news-analyzer/tree/instrumented).
+
+        ```bash
+        git checkout instrumented
+        npm install
+        ```
+
+        Não execute `./reset.sh` nessa branch, a menos que queira remover os SDKs.
+      </Tab>
+    </Tabs>
   </Step>
 
   <Step title="Gere tráfego e visualize a telemetria" id="generate-traffic-and-view-telemetry">
-    Reinicie a aplicação para que o novo comando de inicialização e o bundle do navegador recém-compilado entrem em vigor:
+    Reinicie a aplicação para que o novo comando de inicialização e o bundle do navegador recém-gerado entrem em vigor:
 
     ```bash
     # Ctrl-C the previous run, then:
     ./run.sh
     ```
 
-    Recarregue a aba do navegador para que o Vite sirva o bundle atualizado. Em seguida, atualize o app algumas vezes, alterne entre os anos e clique nas histórias para gerar tráfego.
+    Confirme que o banner de inicialização exibe três linhas &quot;Verificação de integridade aprovada&quot; para `/v1/traces`, `/v1/metrics` e `/v1/logs`. Recarregue a aba do navegador para que o Vite sirva o pacote atualizado, depois alterne entre os anos e clique nas histórias para gerar tráfego.
 
     Abra a UI do ClickStack:
 
-    1. Vá para **Busca** e filtre pelos últimos 5 minutos. Os logs de `hn-analyzer-api` começarão a aparecer.
+    1. Vá para **Busca** e filtre os últimos 5 minutos. Os logs de `hn-analyzer-api` começam a ser exibidos.
 
     <Frame>
-      <img src="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Logs do ClickStack" />
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Busca do ClickStack mostrando logs de hn-analyzer-api dos últimos cinco minutos" />
     </Frame>
 
-    2. Clique em uma requisição e suba pelo trace. Você verá o span do handler do Express, um span HTTP filho apontando para o cluster do ClickHouse com a duração real da rede, além de registros `console.log` correlacionados no mesmo trace.
+    2. Clique em uma solicitação e percorra o trace até a origem. Você verá o span do handler do Express, um span HTTP filho apontando para `sql-clickhouse.clickhouse.com` com duração real de rede e registros `console.log` correlacionados no mesmo trace.
 
     <Frame>
-      <img src="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Traces do ClickStack" />
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Trace do ClickStack com um span de handler do Express e um span HTTP filho para o ClickHouse" />
     </Frame>
 
-    3. Abra **Session Replay** para reproduzir um vídeo com linha do tempo navegável de uma sessão do navegador, sincronizado com a linha do tempo do trace.
+    3. Abra **Reprodução de sessão** para reproduzir um vídeo de uma sessão do navegador que permite avançar e retroceder, sincronizado com a linha do tempo do trace.
 
     <Frame>
-      <img src="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Sessões do ClickStack" />
+      <img src="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Reprodução de sessão do ClickStack sincronizada com a linha do tempo do trace" />
     </Frame>
 
-    Logs, métricas, traces e replays de sessão chegam à mesma UI, compartilham a mesma linguagem de consulta e são correlacionados automaticamente.
+    Logs, métricas, traces e reproduções de sessão são exibidos na mesma UI, compartilham a mesma linguagem de consulta e são correlacionados automaticamente.
   </Step>
 </Steps>

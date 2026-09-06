@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -18,7 +18,7 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
   ## ai_function_allow_insecure_endpoint
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -30,7 +30,7 @@ Se false (padrão), as funções de IA se recusam a usar um `endpoint` de coleç
   ## ai_function_embedding_default_credentials
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nova configuração"}]}]} />
 
@@ -40,7 +40,7 @@ Nome da coleção nomeada usada pelas funções de embedding (`aiEmbed`, `aiSimi
   ## ai_function_embedding_max_batch_size
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -52,7 +52,7 @@ Número máximo de textos a serem incluídos em uma única requisição HTTP fei
   ## ai_function_max_api_calls_per_query
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -64,7 +64,7 @@ Número máximo de requisições HTTP que as funções de IA podem encaminhar em
   ## ai_function_max_input_tokens_per_query
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
@@ -78,7 +78,7 @@ Esse limite só é aplicado a provedores que informam um objeto `usage` na respo
   ## ai_function_max_output_tokens_per_query
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="500000" />
 
@@ -92,11 +92,11 @@ Esse limite só é aplicado a provedores que informam um objeto `usage` na respo
   ## ai_function_max_retries
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="UInt64" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Por padrão, tenta novamente uma vez em caso de erro transitório da API, para que um único 429 ou 5xx do provedor não faça a consulta falhar."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nova configuração"}]}]} />
 
 Número máximo de retentativas para erros transitórios por solicitação individual à API. Cada retentativa usa backoff exponencial a partir de `ai_function_retry_initial_delay_ms`.
 
@@ -104,31 +104,31 @@ Número máximo de retentativas para erros transitórios por solicitação indiv
   ## ai_function_request_timeout_sec
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="60" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "60"},{"label": "Nova configuração"}]}]} />
 
-Timeout em segundos para requisições HTTP individuais feitas por funções de IA (completions de chat com IA e chamadas à API de embedding). Se uma requisição não for concluída dentro desse tempo, ela será considerada malsucedida e poderá ser repetida de acordo com `ai_function_max_retries`.
+Timeout em segundos para requisições HTTP individuais feitas por funções de IA (chat completions com IA e chamadas à API de embedding). Se uma requisição não for concluída dentro desse tempo, ela será considerada malsucedida e poderá ser repetida de acordo com `ai_function_max_retries`.
 
 <div id="ai_function_retry_initial_delay_ms">
   ## ai_function_retry_initial_delay_ms
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "Nova configuração"}]}]} />
 
-Atraso inicial, em milissegundos, antes da primeira nova tentativa de uma solicitação de API com falha da função de IA. O atraso dobra a cada tentativa subsequente (backoff exponencial). Por exemplo, com as configurações padrão: 1000ms, 2000ms, 4000ms.
+Atraso inicial, em milissegundos, antes da primeira retentativa de uma solicitação de API com falha da função de IA. O atraso dobra a cada tentativa subsequente (backoff exponencial). Por exemplo, com as configurações padrão: 1000ms, 2000ms, 4000ms.
 
 <div id="ai_function_text_default_credentials">
   ## ai_function_text_default_credentials
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nova configuração"}]}]} />
 
@@ -138,7 +138,7 @@ Nome da coleção nomeada usada pelas funções de IA de texto (`aiGenerate`, `a
   ## ai_function_throw_on_error
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -150,7 +150,7 @@ Se true (padrão), uma chamada de função de IA que falhar permanentemente apó
   ## ai_function_throw_on_quota_exceeded
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

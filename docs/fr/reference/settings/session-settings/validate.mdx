@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="validate_enum_literals_in_operators">
-  ## validate_enum_literals_in_operators
-</div>
+## validate_enum_literals_in_operators {#validate_enum_literals_in_operators}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,21 +21,17 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Si cette option est activée, les littéraux enum utilisés dans des opérateurs tels que `IN`, `NOT IN`, `==` et `!=` sont validés par rapport au type enum, et une exception est levée si le littéral n’est pas une valeur enum valide.
 
-<div id="validate_mutation_query">
-  ## validate_mutation_query
-</div>
+## validate_mutation_query {#validate_mutation_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "Nouveau paramètre qui valide les requêtes de mutation par défaut."}]}]} />
 
-Valider les requêtes de mutation avant de les accepter. Les mutations sont exécutées en arrière-plan, et l&#39;exécution d&#39;une requête invalide entraînera leur blocage, nécessitant une intervention manuelle.
+Valider les requêtes de mutation avant de les accepter. Les mutations sont exécutées en arrière-plan, et l&#39;exécution d&#39;une requête invalide peut entraîner leur blocage, nécessitant une intervention manuelle.
 
 Ne modifiez ce paramètre que si vous rencontrez un bogue non rétrocompatible.
 
-<div id="validate_polygons">
-  ## validate_polygons
-</div>
+## validate_polygons {#validate_polygons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

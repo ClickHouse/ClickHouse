@@ -99,7 +99,7 @@ ClickHouse는 2개의 공식 Terraform 프로바이더를 제공합니다. 하�
 
 각 서비스가 생성될 때 기본 레플리카 수는 Scale 및 Enterprise 티어에서는 3개이고, Basic 티어에서는 1개입니다.
 Scale 및 Enterprise 티어에서는 서비스 생성 요청에 `numReplicas` 필드를 전달하여 이 값을 조정할 수 있습니다.
-`numReplicas` 필드 값은 warehouse의 첫 번째 서비스에서는 2 이상 20 이하여야 합니다. 기존 warehouse에서 생성되는 서비스는 레플리카 수를 최소 1개까지 설정할 수 있습니다.
+`numReplicas` 필드 값은 warehouse의 첫 번째 서비스에서는 최소 2 이상이어야 합니다. 기존 warehouse에서 생성되는 서비스는 레플리카 수를 최소 1개까지 설정할 수 있습니다. 최대 레플리카 수는 [사용량 제한](/ko/cloud/bestpractices/usage-limits)을 참조하십시오.
 
 <div id="support">
   ## 지원

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont générés automatiquement à partir des sources de ClickHouse.
 
-<div id="max_avg_part_size_for_too_many_parts">
-  ## max_avg_part_size_for_too_many_parts
-</div>
+## max_avg_part_size_for_too_many_parts {#max_avg_part_size_for_too_many_parts}
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -27,9 +25,7 @@ rejetés. Cela permet d’avoir des centaines de téraoctets dans une seule tabl
 seul serveur si les parties sont correctement fusionnées en parties plus volumineuses. Cela
 n’affecte pas les seuils sur les parties inactives ni sur le nombre total de parties.
 
-<div id="max_buckets_in_map">
-  ## max_buckets_in_map
-</div>
+## max_buckets_in_map {#max_buckets_in_map}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -39,17 +35,13 @@ Le nombre maximal de buckets pour la sérialisation `Map`. Fonctionne avec la s�
 Le nombre réel de buckets est déterminé par [map&#95;buckets&#95;strategy](/fr/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy).
 La valeur maximale autorisée est de 256.
 
-<div id="max_cleanup_delay_period">
-  ## max_cleanup_delay_period
-</div>
+## max_cleanup_delay_period {#max_cleanup_delay_period}
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 
 Période maximale de nettoyage des anciens journaux de file d’attente, des hachages de blocs et des parties.
 
-<div id="max_compress_block_size">
-  ## max_compress_block_size
-</div>
+## max_compress_block_size {#max_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -59,9 +51,7 @@ dans une table. Vous pouvez également définir ce paramètre dans les paramètr
 ). La valeur spécifiée lors de la création de la table remplace la valeur globale
 de ce paramètre.
 
-<div id="max_concurrent_queries">
-  ## max_concurrent_queries
-</div>
+## max_concurrent_queries {#max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -81,9 +71,7 @@ Valeur par défaut : `0` (aucune limite).
 <max_concurrent_queries>50</max_concurrent_queries>
 ```
 
-<div id="max_digestion_size_per_segment">
-  ## max_digestion_size_per_segment
-</div>
+## max_digestion_size_per_segment {#max_digestion_size_per_segment}
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" />
 
@@ -91,9 +79,7 @@ Valeur par défaut : `0` (aucune limite).
 
 Paramètre obsolète, sans effet.
 
-<div id="max_file_name_length">
-  ## max_file_name_length
-</div>
+## max_file_name_length {#max_file_name_length}
 
 <SettingsInfoBlock type="UInt64" default_value="127" />
 
@@ -103,9 +89,7 @@ La valeur de ce paramètre n&#39;inclut pas la longueur de l&#39;extension de fi
 est donc recommandé de la définir en dessous de la longueur maximale d&#39;un nom de fichier (généralement 255
 octets), avec une certaine marge afin d&#39;éviter des erreurs du système de fichiers.
 
-<div id="max_partitions_to_read">
-  ## max_partitions_to_read
-</div>
+## max_partitions_to_read {#max_partitions_to_read}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -121,17 +105,83 @@ Valeurs possibles :
 Vous pouvez également définir le paramètre de complexité des requêtes [max&#95;partitions&#95;to&#95;read](/fr/reference/settings/session-settings/max-partitions#max_partitions_to_read)
 au niveau d’une requête / session / profil.
 
-<div id="max_projections">
-  ## max_projections
-</div>
+## max_projections {#max_projections}
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
 Le nombre maximal de projections MergeTree.
 
-<div id="max_uncompressed_bytes_in_patches">
-  ## max_uncompressed_bytes_in_patches
-</div>
+## max_table_size_bytes_compressed {#max_table_size_bytes_compressed}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre permettant de limiter le nombre total d’octets compressés de toutes les parties de données actives et inactives de la table."}]}]} />
+
+Si le nombre total d’octets compressés (la taille sur disque) de toutes les parties de données actives
+et inactives de la table dépasse cette valeur, une instruction `INSERT` est
+interrompue avec l’exception `Table size limit exceeded`. Les parties inactives
+sont également comptabilisées, car ce paramètre vise à limiter l’utilisation
+du disque. Notez que les parties inactives sont supprimées en arrière-plan (voir le paramètre
+`old_parts_lifetime`) ; la taille observée peut donc diminuer au fil du temps.
+La limite est vérifiée au début de `INSERT` et lorsque de nouvelles parties de données
+sont validées dans l’ensemble de travail, y compris les résultats des fusions en arrière-plan
+et des mutations. Les insertions effectuées par les vues matérialisées sont également vérifiées. La
+limite n’est pas vérifiée lors des récupérations répliquées, ce qui peut entraîner une condition de concurrence
+lorsque des insertions parallèles dans plusieurs répliques dépassent la limite. La validation de
+parties de données vides est toujours autorisée ; les données peuvent donc être supprimées d’une table
+qui dépasse la limite, par exemple avec `TRUNCATE` ou `ALTER TABLE ... DROP
+PARTITION`.
+
+Valeurs possibles :
+
+* Tout entier positif.
+* 0 — illimité.
+
+Ce paramètre est utile pour les services multilocataires, temporaires et de démonstration.
+
+## max_table_size_bytes_uncompressed {#max_table_size_bytes_uncompressed}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre permettant de limiter le nombre total d’octets non compressés de toutes les parties de données actives et inactives de la table."}]}]} />
+
+Identique à `max_table_size_bytes_compressed`, mais la limite s’applique au
+nombre total d’octets non compressés de toutes les parties de données
+actives et inactives de la table.
+
+Valeurs possibles :
+
+* Tout entier positif.
+* 0 — illimité.
+
+Ce paramètre est utile pour les services multilocataires, temporaires et de démonstration.
+
+## max_table_size_rows {#max_table_size_rows}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre permettant de limiter le nombre total de lignes dans les parties de données actives de la table."}]}]} />
+
+Si le nombre total de lignes des parties de données actives de la table dépasse cette
+valeur, une exception `Table size limit exceeded` interrompt un `INSERT`.
+La limite est vérifiée au début de `INSERT` et lorsque de nouvelles
+parties de données sont validées dans l’ensemble de travail, y compris à l’issue des
+fusions et mutations en arrière-plan (ainsi, une mutation qui augmente la taille de la table
+au-delà de la limite sera réessayée sans se terminer). Les insertions effectuées par des
+vues matérialisées sont également vérifiées. La limite n’est pas vérifiée lors des
+récupérations répliquées, ce qui peut entraîner une condition de concurrence lorsque des insertions parallèles sur plusieurs
+répliques dépassent la limite. La validation de parties de données vides est toujours autorisée,
+afin de pouvoir supprimer les données d’une table qui dépasse la limite, par exemple avec
+`TRUNCATE` ou `ALTER TABLE ... DROP PARTITION`.
+
+Valeurs possibles :
+
+* Tout entier positif.
+* 0 — illimité.
+
+Ce paramètre est utile pour les services multilocataires, temporaires et de démonstration.
+
+## max_uncompressed_bytes_in_patches {#max_uncompressed_bytes_in_patches}
 
 <SettingsInfoBlock type="UInt64" default_value="32212254720" />
 
