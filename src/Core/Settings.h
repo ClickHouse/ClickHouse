@@ -170,6 +170,12 @@ struct Settings
     /// `compatibility` itself instead of being forced to the sender's derived values.
     void resetSettingsChangedByCompatibility();
 
+    /// Keep the values that the `compatibility` setting derived but clear their `changed` flags (and forget
+    /// they were compatibility-derived). The resulting object still selects e.g. the client-side network codec
+    /// from the derived values, while serialization to a server skips them — the server re-derives them from
+    /// `compatibility` itself and honors its own constraints (e.g. a profile pinning a setting read-only).
+    void markSettingsChangedByCompatibilityAsUnchanged();
+
     VectorWithMemoryTracking<String> getHints(const String & name) const;
     String toString() const;
 

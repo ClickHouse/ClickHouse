@@ -304,6 +304,13 @@ class SharedEngineReplacer:
 
     OLD_SYNTAX_OR_ARGUMENTS_RE = r"Tree\(.*[0-9]+.*\)"
 
+    # `default_table_engine` names an engine family in a setting value rather than in an `ENGINE =`
+    # clause, so the mapping above never sees it. Tables generated from the setting (such as the inner
+    # tables of a `TimeSeries` table) need it rewritten too, or they stay replicated.
+    DEFAULT_TABLE_ENGINE_RE = (
+        r"(default_table_engine\s*=\s*'?)Replicated([a-zA-Z]*MergeTree'?)"
+    )
+
     CLUSTER_KEYWORDS = [
         "test_shard_localhost",
         "test_shard_localhost_secure",
@@ -465,6 +472,9 @@ class SharedEngineReplacer:
             return modified_statement
         return line
 
+    def _replace_default_table_engine(self, line):
+        return re.sub(self.DEFAULT_TABLE_ENGINE_RE, r"\1Shared\2", line)
+
     def _replace_database_engines(self, line):
         pattern = r"(CREATE DATABASE\s+(?:IF NOT EXISTS\s+)?(?:`[^`]*`|\S+))(\s*ENGINE\s*=\s*(Shared|Replicated|Atomic|Ordinary|Memory)(\(.*\))?)"
         if re.search(pattern, line, flags=re.IGNORECASE):
@@ -545,6 +555,8 @@ class SharedEngineReplacer:
                         ):
                             line = line.replace(engine_from, engine_to)
                             break
+
+                    line = self._replace_default_table_engine(line)
 
                 if args.shared_catalog_stress:
                     line = self._replace_data_engines(line)
