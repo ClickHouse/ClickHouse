@@ -150,8 +150,15 @@ This engine provides an integration with [Azure Blob Storage](https://azure.micr
 ## Create table {#create-table}
 
 ```sql
+-- Account key
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
-    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, extra_credentials(client_id=, tenant_id=)])
+    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file])
+    [PARTITION BY expr]
+    [SETTINGS ...]
+
+-- Workload identity (mutually exclusive with account_name / account_key)
+CREATE TABLE azure_blob_storage_table (name String, value UInt32)
+    ENGINE = AzureBlobStorage(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, partition_strategy, partition_columns_in_data_file])
     [PARTITION BY expr]
     [SETTINGS ...]
 ```
@@ -169,7 +176,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `compression` — Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression by file extension. (same as setting to `auto`). For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
 - `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
-- `extra_credentials` - Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.
+- `extra_credentials` - Use `client_id` and `tenant_id` for Azure workload identity authentication. Mutually exclusive with `account_name` / `account_key`, and requires `storage_account_url` (not `connection_string`).
 
 **Example**
 
@@ -2321,8 +2328,13 @@ ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<pa
 **Syntax**
 
 ```sql
+-- Account key
 CREATE TABLE table_name
 ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+-- Workload identity (mutually exclusive with account_name / account_key)
+CREATE TABLE table_name
+ENGINE = DeltaLake(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression])
 ```
 
 **Arguments**
@@ -2333,6 +2345,29 @@ ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpa
 - `blobpath` — Path to the Delta Lake table within the container
 - `account_name` — Azure storage account name
 - `account_key` — Azure storage account key
+- `extra_credentials` — Optional alternative to `account_name` / `account_key`. Use `client_id` and `tenant_id` for Azure workload identity authentication. Cannot be combined with account credentials. This is not the S3 `role_arn` form of `extra_credentials`.
+
+Engine parameters can be specified using [Named Collections](/operations/named-collections.md). Named collections accept the same `client_id` and `tenant_id` keys.
+
+**Workload identity**
+
+The delta-kernel Azure path also requires environment variables:
+
+- `AZURE_FEDERATED_TOKEN_FILE` — required (the projected token file, e.g. on AKS)
+- `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` — required unless passed via `extra_credentials` or a named collection
+- `AZURE_AUTHORITY_HOST` — optional
+
+```sql
+CREATE NAMED COLLECTION azure_wi AS
+    storage_account_url = 'https://account.blob.core.windows.net',
+    container = 'mycontainer',
+    blob_path = 'path/to/table',
+    client_id = '<client-id>',
+    tenant_id = '<tenant-id>';
+
+CREATE TABLE azureDeltaLake
+ENGINE = DeltaLake(azure_wi)
+```
 
 </TabItem>
 </Tabs>
@@ -2440,7 +2475,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
         },
         Documentation{
             .description = "Provides a read-only integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage.",
-            .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath)",
+            .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath) | ENGINE = DeltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=))",
             .related = {"DeltaLake"}});
 #    endif
     factory.registerStorage(
