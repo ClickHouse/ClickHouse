@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.database_disk import read_metadata, write_metadata
 from helpers.s3_tools import list_s3_objects
 
 cluster = ClickHouseCluster(__file__)
@@ -440,12 +441,22 @@ def test_database_backup_legacy_quoted_locator_in_metadata():
     """
     )
 
-    def_path = "/var/lib/clickhouse/metadata/test_legacy_metadata_view.sql"
-    definition = read_database_def(def_path)
+    # The definition is read and rewritten through clickhouse-disks, which resolves the path on
+    # whichever disk holds database metadata: under the "db disk" config that is a remote disk, not
+    # /var/lib/clickhouse/metadata. The database definition file is metadata/<db>.sql. The rewrite is
+    # done with the server stopped, so nothing has to invalidate the server's cached view of a file
+    # that was written behind its back.
+    def_path = "metadata/test_legacy_metadata_view.sql"
+    definition = read_metadata(instance, def_path)
     assert destination in definition, definition
-    write_database_def(def_path, definition.replace(destination, quoted(destination)))
 
-    instance.restart_clickhouse()
+    instance.stop_clickhouse()
+    legacy_definition = definition.replace(destination, quoted(destination))
+    write_metadata(instance, def_path, legacy_definition)
+    # Read the file back: a rewrite that did not land leaves the function form for the server to
+    # load, and every assertion below then passes without the string form ever being exercised.
+    assert read_metadata(instance, def_path).strip() == legacy_definition.strip()
+    instance.start_clickhouse()
 
     # The server came back with the database attached: the string form was parsed into the function
     # the engine opens, and reading through it still reaches the backup.
@@ -464,7 +475,7 @@ def test_database_backup_legacy_quoted_locator_in_metadata():
 
     # The next rewrite of that file persists the function form, so the spelling does not come back.
     instance.query("ALTER DATABASE test_legacy_metadata_view MODIFY COMMENT 'another comment'")
-    assert destination in read_database_def(def_path), read_database_def(def_path)
+    assert destination in read_metadata(instance, def_path), read_metadata(instance, def_path)
 
     # A string that decodes to no locator is still refused, and the message does not echo it - the
     # locator of an S3 destination carries a secret access key. The client prints the query it sent
