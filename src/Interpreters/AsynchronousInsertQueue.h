@@ -237,6 +237,16 @@ private:
             }
 
             ready_promise.set_value();
+
+            if (in_flight_flushes && in_flight_flushes->fetch_sub(1) == 1)
+                in_flight_flushes->notify_all();
+        }
+
+        void trackFlush(std::atomic<size_t> & counter)
+        {
+            chassert(!in_flight_flushes);
+            in_flight_flushes = &counter;
+            ++counter;
         }
 
         using EntryPtr = std::shared_ptr<Entry>;
@@ -246,6 +256,7 @@ private:
         std::shared_future<void> ready_future;
         size_t size_in_bytes = 0;
         Milliseconds timeout_ms = Milliseconds::zero();
+        std::atomic<size_t> * in_flight_flushes = nullptr;
     };
 
     using InsertDataPtr = std::unique_ptr<InsertData>;
@@ -270,6 +281,9 @@ private:
     {
         mutable std::mutex mutex;
         mutable std::condition_variable are_tasks_available;
+        /// Counts batches removed by producers or the deadline worker, including those
+        /// still waiting for pool admission. Released when the batch is destroyed.
+        std::atomic<size_t> in_flight_flushes{0};
 
         Queue queue TSA_GUARDED_BY(mutex);
         QueueIteratorByKey iterators TSA_GUARDED_BY(mutex);
