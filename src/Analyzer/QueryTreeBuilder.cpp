@@ -1201,7 +1201,7 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
             if (apply_transformer->lambda)
             {
                 auto lambda_query_tree_node = buildExpression(apply_transformer->lambda, context);
-                column_transformers.emplace_back(std::make_shared<ApplyColumnTransformerNode>(std::move(lambda_query_tree_node)));
+                column_transformers.emplace_back(std::make_shared<ApplyColumnTransformerNode>(std::move(lambda_query_tree_node), apply_transformer->column_name_prefix));
             }
             else
             {
@@ -1209,7 +1209,7 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
                 if (apply_transformer->parameters)
                     function_node->getParametersNode() = buildExpressionList(apply_transformer->parameters, context);
 
-                column_transformers.emplace_back(std::make_shared<ApplyColumnTransformerNode>(std::move(function_node)));
+                column_transformers.emplace_back(std::make_shared<ApplyColumnTransformerNode>(std::move(function_node), apply_transformer->column_name_prefix));
             }
         }
         else if (auto * except_transformer = child->as<ASTColumnsExceptTransformer>())
