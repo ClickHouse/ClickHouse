@@ -138,11 +138,12 @@ static void BM_insertFromRepeatedlyArray(benchmark::State & state)
     const size_t array_size = static_cast<size_t>(state.range(0));
     const size_t length = static_cast<size_t>(state.range(1));
     auto src = mockRepeatedArrayColumn(type, array_size);
+    MutableColumnPtr dst;
 
     for (auto _ [[maybe_unused]] : state)
     {
         state.PauseTiming();
-        auto dst = type->createColumn();
+        dst = type->createColumn();
         reserveRepeatedArray(*dst, *src, length);
         state.ResumeTiming();
 
@@ -158,11 +159,12 @@ static void BM_insertManyFromRepeatedlyArray(benchmark::State & state)
     const size_t array_size = static_cast<size_t>(state.range(0));
     const size_t length = static_cast<size_t>(state.range(1));
     auto src = mockRepeatedArrayColumn(type, array_size);
+    MutableColumnPtr dst;
 
     for (auto _ [[maybe_unused]] : state)
     {
         state.PauseTiming();
-        auto dst = type->createColumn();
+        dst = type->createColumn();
         reserveRepeatedArray(*dst, *src, length);
         state.ResumeTiming();
 

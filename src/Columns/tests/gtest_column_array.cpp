@@ -271,6 +271,53 @@ TEST(ColumnArray, InsertManyFromSelfString)
         EXPECT_EQ(column->getData().getDataAt(i), std::string_view(value));
 }
 
+TEST(ColumnArray, InsertManyFromNonAliasedString)
+{
+    auto source_data = ColumnString::create();
+    source_data->insert(Field(String("prefix")));
+    source_data->insert(Field(String("x\0y", 3)));
+    source_data->insert(Field(String{}));
+
+    auto source_offsets = ColumnArray::ColumnOffsets::create();
+    source_offsets->insertValue(1);
+    source_offsets->insertValue(2);
+    source_offsets->insertValue(3);
+    auto source = ColumnArray::create(std::move(source_data), std::move(source_offsets));
+
+    auto createDestination = []
+    {
+        auto data = ColumnString::create();
+        data->insert(Field(String("sentinel")));
+
+        auto offsets = ColumnArray::ColumnOffsets::create();
+        offsets->insertValue(1);
+        return ColumnArray::create(std::move(data), std::move(offsets));
+    };
+
+    auto bulk = createDestination();
+    auto scalar = createDestination();
+    ASSERT_NE(bulk->getDataPtr().get(), source->getDataPtr().get());
+
+    bulk->insertManyFrom(*source, 1, 3);
+    for (size_t i = 0; i < 3; ++i)
+        scalar->insertFrom(*source, 1);
+    for (size_t i = 0; i < 2; ++i)
+        scalar->insertFrom(*source, 2);
+
+    ASSERT_EQ(bulk->size(), 6);
+    ASSERT_EQ(bulk->getData().size(), 6);
+    ASSERT_EQ(bulk->getOffsets().back(), 6);
+    const auto & bulk_data = assert_cast<const ColumnString &>(bulk->getData());
+    const auto & scalar_data = assert_cast<const ColumnString &>(scalar->getData());
+    ASSERT_EQ(bulk_data.getChars().size(), 17);
+
+    for (size_t i = 0; i < bulk->size(); ++i)
+    {
+        EXPECT_EQ(bulk->getSize(i), 1);
+        EXPECT_EQ(bulk_data.getDataAt(i), scalar_data.getDataAt(i));
+    }
+}
+
 TEST(ColumnArray, InsertManyFromEmptyDynamicPreservesStructure)
 {
     auto source = createDynamicArrayWithEmptyFirstRow();
