@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <Core/Types.h>
 #include <bit>
+#include <utility>
 
 namespace DB
 {
@@ -260,8 +261,66 @@ TypeIndex typeIdx(const IDataType * data_type)
     return TypeIndex::Nothing;
 }
 
+/** Both transposes exchange the two indices of an 8x8 tile: the byte transpose moves the byte at
+  * 8 * j + b to 8 * b + j across eight consecutive lanes, and the bit transpose does the same one
+  * level down, within a lane. The scalar loops below carry out either exchange one byte (or one
+  * bit) at a time. The byte exchange instead becomes a single whole-vector byte shuffle, and the
+  * bit exchange three mask-and-shift delta swaps per lane.
+  *
+  * The kernels are written with generic clang vectors, so no arch-specific code or runtime
+  * dispatch is needed: the compiler lowers each permutation to the target's own shuffle sequence.
+  * Bytes are addressed in native order, so the fast path also requires a little-endian build to
+  * match the little-endian on-disk format; others fall back to the scalar loops.
+  */
+#if (((defined(__x86_64__) || defined(__i386__)) && defined(__SSE2__)) || (defined(__aarch64__) && defined(__ARM_NEON))) \
+    && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define T64_CODEC_SIMD_TRANSPOSE 1
+#else
+#define T64_CODEC_SIMD_TRANSPOSE 0
+#endif
+
+#if T64_CODEC_SIMD_TRANSPOSE
+using ByteVec [[gnu::vector_size(64)]] = UInt8;
+
+/// Move the byte at position 8 * j + b to 8 * b + j, i.e. transpose the 8x8 tile of bytes formed by
+/// eight consecutive 64-bit lanes. Self-inverse, so one helper serves both directions. The vector is
+/// passed by pointer: a 64-byte vector argument is split across registers without AVX-512, which
+/// changes the ABI.
+template <size_t... i>
+ALWAYS_INLINE void transposeByteLanes(UInt64 * lanes, std::index_sequence<i...>)
+{
+    ByteVec vec;
+    memcpy(&vec, lanes, sizeof(vec));
+    vec = __builtin_shufflevector(vec, vec, (8 * (i % 8) + i / 8)...);
+    memcpy(lanes, &vec, sizeof(vec));
+}
+
+ALWAYS_INLINE void transposeByteLanes(UInt64 * lanes)
+{
+    transposeByteLanes(lanes, std::make_index_sequence<64>{});
+}
+
+/// The same index exchange one level down: bit 8 * j + b of a lane moves to 8 * b + j, via three
+/// delta swaps (Hacker's Delight 7-3). Also self-inverse.
+ALWAYS_INLINE UInt64 transposeBitsInLane(UInt64 lane)
+{
+    lane = (lane & 0xAA55AA55AA55AA55ULL) | ((lane & 0x00AA00AA00AA00AAULL) << 7) | ((lane >> 7) & 0x00AA00AA00AA00AAULL);
+    lane = (lane & 0xCCCC3333CCCC3333ULL) | ((lane & 0x0000CCCC0000CCCCULL) << 14) | ((lane >> 14) & 0x0000CCCC0000CCCCULL);
+    lane = (lane & 0xF0F0F0F00F0F0F0FULL) | ((lane & 0x00000000F0F0F0F0ULL) << 28) | ((lane >> 28) & 0x00000000F0F0F0F0ULL);
+    return lane;
+}
+#endif
+
 void transpose64x8(UInt64 * src_dst)
 {
+#if T64_CODEC_SIMD_TRANSPOSE
+    /// A 64x8 bit transpose is the per-lane bit transpose followed by the byte transpose across
+    /// lanes; applying the two passes in the opposite order inverts it, which is what
+    /// `reverseTranspose64x8` below does. The byte pass is shared with the matrix transposes.
+    for (UInt32 lane = 0; lane < 8; ++lane)
+        src_dst[lane] = transposeBitsInLane(src_dst[lane]);
+    transposeByteLanes(src_dst);
+#else
     const auto * src8 = reinterpret_cast<const UInt8 *>(src_dst);
     UInt64 dst[8] = {};
 
@@ -279,10 +338,16 @@ void transpose64x8(UInt64 * src_dst)
     }
 
     memcpy(src_dst, dst, 8 * sizeof(UInt64));
+#endif
 }
 
 void reverseTranspose64x8(UInt64 * src_dst)
 {
+#if T64_CODEC_SIMD_TRANSPOSE
+    transposeByteLanes(src_dst);
+    for (UInt32 lane = 0; lane < 8; ++lane)
+        src_dst[lane] = transposeBitsInLane(src_dst[lane]);
+#else
     UInt8 dst8[64];
 
     for (UInt32 i = 0; i < 64; ++i)
@@ -299,6 +364,7 @@ void reverseTranspose64x8(UInt64 * src_dst)
     }
 
     memcpy(src_dst, dst8, 8 * sizeof(UInt64));
+#endif
 }
 
 template <typename T>
@@ -384,6 +450,60 @@ void clear(T * buf)
         buf[i] = 0;
 }
 
+/// `matrix8[64 * byte + col]` = byte-th byte of `src[col]`, for a full matrix of 8-byte values. One
+/// iteration transposes the 8 columns whose bytes occupy one 64-byte group, then spreads the
+/// resulting rows across the eight matrix lines they belong to.
+template <typename T>
+void transposeMatrixBytes(const T * src, UInt64 * matrix, UInt32 tail)
+{
+#if T64_CODEC_SIMD_TRANSPOSE
+    if constexpr (sizeof(T) == sizeof(UInt64))
+    {
+        if (tail == 64)
+        {
+            auto * matrix8 = reinterpret_cast<UInt8 *>(matrix);
+            for (UInt32 group = 0; group < 8; ++group)
+            {
+                UInt64 rows[8];
+                memcpy(rows, src + 8 * group, sizeof(rows));
+                transposeByteLanes(rows);
+                for (UInt32 byte = 0; byte < 8; ++byte)
+                    memcpy(matrix8 + 64 * byte + 8 * group, &rows[byte], sizeof(UInt64));
+            }
+            return;
+        }
+    }
+#endif
+    for (UInt32 col = 0; col < tail; ++col)
+        transposeBytes(src[col], matrix, col);
+}
+
+template <typename T>
+void reverseTransposeMatrixBytes(const UInt64 * matrix, T * buf, UInt32 tail)
+{
+#if T64_CODEC_SIMD_TRANSPOSE
+    if constexpr (sizeof(T) == sizeof(UInt64))
+    {
+        if (tail == 64)
+        {
+            const auto * matrix8 = reinterpret_cast<const UInt8 *>(matrix);
+            for (UInt32 group = 0; group < 8; ++group)
+            {
+                UInt64 rows[8];
+                for (UInt32 byte = 0; byte < 8; ++byte)
+                    memcpy(&rows[byte], matrix8 + 64 * byte + 8 * group, sizeof(UInt64));
+                transposeByteLanes(rows);
+                memcpy(buf + 8 * group, rows, sizeof(rows));
+            }
+            return;
+        }
+    }
+#endif
+    clear(buf);
+    for (UInt32 col = 0; col < tail; ++col)
+        reverseTransposeBytes(matrix, col, buf[col]);
+}
+
 
 MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
@@ -394,8 +514,7 @@ void), transposeImpl, MULTITARGET_FUNCTION_BODY((const T * src, char * dst, UInt
     UInt32 part_bits = num_bits % 8;
 
     UInt64 matrix[64] = {};
-    for (UInt32 col = 0; col < tail; ++col)
-        transposeBytes(src[col], matrix, col);
+    transposeMatrixBytes(src, matrix, tail);
 
     if constexpr (full)
     {
@@ -458,9 +577,7 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * bu
         reverseTranspose64x8(matrix_line);
     }
 
-    clear(buf);
-    for (UInt32 col = 0; col < tail; ++col)
-        reverseTransposeBytes(matrix, col, buf[col]);
+    reverseTransposeMatrixBytes(matrix, buf, tail);
 })
 )
 
