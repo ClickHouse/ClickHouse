@@ -1986,6 +1986,11 @@ public:
     bool isServerCompletelyStarted() const;
     void setServerCompletelyStarted();
 
+    /// True while a database engine conversion (`Ordinary` to `Atomic`) is moving tables through a
+    /// temporary database at startup. On the shared part, so nested storage-owned contexts see it too.
+    bool isConvertingDatabaseEngine() const;
+    void setConvertingDatabaseEngine(bool value);
+
     AsynchronousInsertQueue * tryGetAsynchronousInsertQueue() const;
     void setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr);
 

@@ -827,6 +827,7 @@ struct ContextSharedPart : boost::noncopyable
     Context::StopIntrospectionServersCallback stop_introspection_servers_callback;
 
     bool is_server_completely_started TSA_GUARDED_BY(mutex) = false;
+    bool is_converting_database_engine TSA_GUARDED_BY(mutex) = false;
 
 #if USE_NURAFT
     mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
@@ -8417,6 +8418,18 @@ void Context::setServerCompletelyStarted()
     chassert(!shared->is_server_completely_started);
     chassert(getApplicationType() == ApplicationType::SERVER);
     shared->is_server_completely_started = true;
+}
+
+bool Context::isConvertingDatabaseEngine() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->is_converting_database_engine;
+}
+
+void Context::setConvertingDatabaseEngine(bool value)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->is_converting_database_engine = value;
 }
 
 ClusterFunctionReadTaskCallback Context::getClusterFunctionReadTaskCallback() const

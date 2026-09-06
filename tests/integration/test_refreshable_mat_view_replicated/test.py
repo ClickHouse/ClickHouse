@@ -840,3 +840,75 @@ def test_dependent_sees_latest_data_other_replica(module_setup_tables, with_appe
     node.query("SYSTEM START VIEW child_v")
     node2.query("SYSTEM START VIEW parent_v")
     _drop_sync_objects()
+
+
+def _drop_row_policy_objects():
+    for n in nodes:
+        n.query("DROP ROW POLICY IF EXISTS rp ON default.rp_tgt")
+        n.query("DROP USER IF EXISTS rp_user")
+    node.query("DROP TABLE IF EXISTS rp_rmv ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS rp_tgt ON CLUSTER default SYNC")
+
+
+def test_row_policy_survives_refresh(module_setup_tables):
+    # A non-append refresh installs the fresh result by exchanging a temporary table into the target
+    # name. Only the storage is replaced, so the target's row policy must stay bound to the target
+    # name; if it followed the data it would land on the temp table that the refresh drops right
+    # after, leaving the target readable with no filter.
+    #
+    # In a Replicated database the rename travels through the DDL queue as SQL text, so the AST flag
+    # that marks such a swap does not reach the executing interpreter and the policy used to move.
+    # Assert after the FIRST refresh: the swap is symmetric, so after an even number of refreshes a
+    # policy that followed the data is back on the target name and the escape is invisible.
+    _drop_row_policy_objects()
+    node.query(
+        "CREATE TABLE rp_tgt ON CLUSTER default (x UInt64, dept String) "
+        "ENGINE = ReplicatedMergeTree ORDER BY x"
+    )
+    # Access entities are node-local in this fixture, so create the user and the policy on each node.
+    for n in nodes:
+        n.query("CREATE USER rp_user")
+        n.query("GRANT SELECT ON default.* TO rp_user")
+        n.query(
+            "CREATE ROW POLICY rp ON default.rp_tgt FOR SELECT USING dept = 'eng' TO rp_user"
+        )
+
+    # REFRESH EVERY 1 YEAR: creation triggers exactly one refresh and no second one can race.
+    node.query(
+        "CREATE MATERIALIZED VIEW rp_rmv ON CLUSTER default REFRESH EVERY 1 YEAR TO rp_tgt AS "
+        "SELECT number AS x, if(number = 0, 'eng', 'fin') AS dept FROM numbers(2)"
+    )
+    node.query("SYSTEM WAIT VIEW rp_rmv")
+
+    # SYSTEM WAIT VIEW waits on the LOCAL refresh task only (RefreshTask::wait waits on this
+    # replica's condition variable), and the refresh discards the BlockIO of the swap it issues, so
+    # it does not wait for the other replicas to execute that DDL entry either (see the comment in
+    # StorageMaterializedView::prepareRefresh). Synchronize each replica explicitly before asserting
+    # per-node state, otherwise node2 can be read before it has applied the swap.
+    for n in nodes:
+        n.query("SYSTEM SYNC DATABASE REPLICA default")
+        n.query("SYSTEM SYNC REPLICA rp_tgt")
+
+    for n in nodes:
+        # Read the true row count through system.parts: the default user cannot SELECT from a table
+        # that has row policies none of which apply to it. The data assertion gets a bounded retry
+        # (replicated fetches are asynchronous even after SYNC REPLICA), following the pattern used
+        # elsewhere in this module; the policy binding is asserted exactly and never retried,
+        # because that is the security property under test.
+        rows = ""
+        for _ in range(60):
+            rows = n.query(
+                "SELECT sum(rows) FROM system.parts "
+                "WHERE database = 'default' AND table = 'rp_tgt' AND active"
+            )
+            if rows == "2\n":
+                break
+            time.sleep(0.5)
+        assert rows == "2\n"
+        assert (
+            n.query("SELECT table FROM system.row_policies WHERE short_name = 'rp'")
+            == "rp_tgt\n"
+        )
+        assert n.query("SELECT count() FROM rp_tgt", user="rp_user") == "1\n"
+
+    _drop_row_policy_objects()

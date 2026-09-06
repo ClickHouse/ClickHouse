@@ -50,6 +50,12 @@ using RenameDescriptions = std::vector<RenameDescription>;
 
 using TableGuards = std::map<UniqueTableName, std::unique_ptr<DDLGuard>>;
 
+/// Throws if the row policies bound to any of `renames` could not follow their table, so a caller
+/// executing several renames non-transactionally can reject the whole set before moving anything.
+/// Every `{from, to}` must genuinely change the name: the name-preserving cases of a user rename
+/// need the `ASTRenameQuery`, which a pair does not carry, so they are not evaluated here.
+void preflightRowPolicyRekeysForRenames(const ContextPtr & context, const std::vector<std::pair<StorageID, StorageID>> & renames);
+
 /** Rename one table
   *  or rename many tables at once.
   */
