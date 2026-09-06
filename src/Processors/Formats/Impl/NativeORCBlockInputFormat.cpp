@@ -1219,7 +1219,8 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(
     bool use_prefetch_,
     size_t min_bytes_for_seek_,
     FormatFilterInfoPtr format_filter_info_)
-    : IInputFormat(std::move(header_), &in_)
+    : IInputFormat(header_, &in_)
+    , supplied_header(std::move(header_))
     , block_missing_values(getPort().getHeader().columns())
     , format_settings(format_settings_)
     , skip_stripes(format_settings.orc.skip_stripes)
@@ -1246,7 +1247,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
         stripe_info = file_reader->getStripe(0);
 
     orc_column_to_ch_column = std::make_unique<ORCColumnToCHColumn>(
-        getPort().getHeader(),
+        *supplied_header,
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.orc.case_insensitive_column_matching,

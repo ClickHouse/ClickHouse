@@ -12,8 +12,10 @@ namespace ErrorCodes
 
 ISource::~ISource() = default;
 
+/// A port header describes the shape of a stream, not its contents, so it carries no rows. A caller may pass
+/// a block that doubles as a value carrier: a dictionary sample block seeds row 0 with the declared defaults.
 ISource::ISource(SharedHeader header, bool enable_auto_progress)
-    : IProcessor({}, {std::move(header)})
+    : IProcessor({}, {header->rows() ? std::make_shared<const Block>(header->cloneEmpty()) : std::move(header)})
     , auto_progress(enable_auto_progress)
     , output(outputs.front())
 {
