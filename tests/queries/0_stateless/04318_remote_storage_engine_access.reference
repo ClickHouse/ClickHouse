@@ -11,3 +11,12 @@ x	UInt64
 42
 -- 3. a Remote table built from a named collection blocks DROP NAMED COLLECTION
 1
+-- 4. an Alias target: rejected while only the alias itself is readable
+1
+1
+1
+-- 4. an Alias target: a column-scoped privilege on its target is not enough
+1
+-- 4. an Alias target: with the privilege on its target, the structure is inferred
+x	UInt64
+x	UInt64

@@ -9,6 +9,14 @@ Test count without target SELECT permission using the old analyzer read path
 ACCESS_DENIED
 Test DESCRIBE without target permission
 ACCESS_DENIED
+Test merge() structure without target permission
+ACCESS_DENIED
+Test Merge inherited virtual columns without target permission
+2 0
+Test ENGINE = Merge creation without target permission
+ACCESS_DENIED
+Test ENGINE = Buffer structure inference without target permission
+ACCESS_DENIED
 Test SHOW CREATE without target permission
 ACCESS_DENIED
 Test SHOW COLUMNS without target permission
@@ -26,6 +34,12 @@ Test index metadata and statistics without target permission
 0
 Test lifetime statistics without target permission
 1	1
+Test merge() structure with column-scoped target permission
+ACCESS_DENIED
+Test Merge inherited virtual columns with column-scoped target permission
+2 0
+Test ENGINE = Buffer structure inference with column-scoped target permission
+ACCESS_DENIED
 Test direct and Alias count with column-scoped target SELECT permission using the analyzer
 2	2
 Test direct and Alias count with column-scoped target SELECT permission using the read path
@@ -51,6 +65,14 @@ Test schema commands with target permission
 DESCRIBE OK
 SHOW COLUMNS OK
 ENGINE = Alias
+merge() OK
+Test Merge inherited virtual columns with target permission
+2 1
+Test ENGINE = Merge creation with target permission
+ENGINE = Merge OK
+Test ENGINE = Buffer structure inference with target permission
+ENGINE = Buffer OK
+['id','value']
 Test system.tables with an Alias database-level grant
 1	1	1	1
 Test other metadata tables with an Alias database-level grant

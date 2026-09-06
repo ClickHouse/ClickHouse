@@ -154,6 +154,30 @@ ${CLICKHOUSE_CLIENT} --query "
     DROP DATABASE ${REMOTE_DB}_sharded;
 "
 
+echo '-- an Alias in the underlying database does not expose its target through the proxy (prints 1)'
+# Resolving the table of the proxy reads the structure of the underlying local table, and an `Alias`
+# reports its target's columns, so the caller needs the same right on that target as a `DESCRIBE` of
+# the target requires; `SHOW COLUMNS` on the alias alone is not enough.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.alias_target (secret UInt64) ENGINE = MergeTree ORDER BY secret;
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.t_alias ENGINE = Alias('${CLICKHOUSE_DATABASE}', 'alias_target');
+    GRANT SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.t_alias TO ${TEST_USER};
+"
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "DESCRIBE TABLE ${REMOTE_DB}.t_alias" 2>&1 | grep -c -m1 "ACCESS_DENIED"
+
+echo '-- ...a column-scoped privilege on the target is not enough either (prints 1)'
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT(secret) ON ${CLICKHOUSE_DATABASE}.alias_target TO ${TEST_USER}"
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "DESCRIBE TABLE ${REMOTE_DB}.t_alias" 2>&1 | grep -c -m1 "ACCESS_DENIED"
+${CLICKHOUSE_CLIENT} --query "REVOKE SELECT(secret) ON ${CLICKHOUSE_DATABASE}.alias_target FROM ${TEST_USER}"
+
+echo '-- ...and it resolves once the target is describable too (prints secret UInt64)'
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.alias_target TO ${TEST_USER}"
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "DESCRIBE TABLE ${REMOTE_DB}.t_alias" | cut -f1,2
+${CLICKHOUSE_CLIENT} --query "
+    DROP TABLE ${CLICKHOUSE_DATABASE}.t_alias;
+    DROP TABLE ${CLICKHOUSE_DATABASE}.alias_target;
+"
+
 ${CLICKHOUSE_CLIENT} --query "
     DROP USER ${TEST_USER};
     DROP DATABASE ${REMOTE_DB};

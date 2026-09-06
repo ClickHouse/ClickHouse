@@ -12,6 +12,8 @@
 #      cannot describe the local target cannot create the engine over it.
 #   3. A `Remote(named_collection, ...)` table registers a dependency on the named collection, so
 #      `DROP NAMED COLLECTION` is rejected while the table exists.
+#   4. An `Alias` local target reports its own target's columns, so inferring the structure from one
+#      requires the privilege on that target, not only on the alias.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -76,6 +78,40 @@ EOF
 ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION $collection" 2>&1 | grep -c -m1 "NAMED_COLLECTION_IS_USED\|is used by"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.t_remote_nc"
 ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION $collection"
+
+echo "-- 4. an Alias target: rejected while only the alias itself is readable"
+${CLICKHOUSE_CLIENT} <<EOF
+CREATE TABLE $db.alias_target ENGINE = Alias('$db', 'local_target');
+GRANT TABLE ENGINE ON Distributed TO $user;
+-- Leaves the database-level grant covering the alias, so the alias is readable and only its
+-- target is not: the check under test is the one on the target.
+REVOKE SELECT, INSERT ON $db.local_target FROM $user;
+EOF
+${CLICKHOUSE_CLIENT} --user "$user" --query \
+    "CREATE TABLE $db.t_remote_alias ENGINE = Remote('127.0.0.1', $db, alias_target, 'default')" 2>&1 \
+    | grep -c -m1 "ACCESS_DENIED\|Not enough privileges"
+${CLICKHOUSE_CLIENT} --user "$user" --query \
+    "CREATE TABLE $db.t_dist_alias ENGINE = Distributed(test_shard_localhost, $db, alias_target)" 2>&1 \
+    | grep -c -m1 "ACCESS_DENIED\|Not enough privileges"
+${CLICKHOUSE_CLIENT} --user "$user" --query \
+    "DESCRIBE remote('127.0.0.1', $db, alias_target)" 2>&1 \
+    | grep -c -m1 "ACCESS_DENIED\|Not enough privileges"
+
+echo "-- 4. an Alias target: a column-scoped privilege on its target is not enough"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT(x) ON $db.local_target TO $user"
+${CLICKHOUSE_CLIENT} --user "$user" --query \
+    "CREATE TABLE $db.t_dist_alias ENGINE = Distributed(test_shard_localhost, $db, alias_target)" 2>&1 \
+    | grep -c -m1 "ACCESS_DENIED\|Not enough privileges"
+${CLICKHOUSE_CLIENT} --query "REVOKE SELECT(x) ON $db.local_target FROM $user"
+
+echo "-- 4. an Alias target: with the privilege on its target, the structure is inferred"
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON $db.local_target TO $user"
+${CLICKHOUSE_CLIENT} --user "$user" --query \
+    "CREATE TABLE $db.t_dist_alias ENGINE = Distributed(test_shard_localhost, $db, alias_target)"
+${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT name, type FROM system.columns WHERE database = '$db' AND table = 't_dist_alias'"
+${CLICKHOUSE_CLIENT} --user "$user" --query "DESCRIBE remote('127.0.0.1', $db, alias_target)" | cut -f1,2
+${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.t_dist_alias"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.alias_target"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.local_target"

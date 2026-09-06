@@ -126,6 +126,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+extern const int ACCESS_DENIED;
 extern const int DATABASE_ACCESS_DENIED;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
@@ -312,6 +313,16 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
             return false;
 
         access->checkAccess(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name);
+
+        /// An `Alias` reports its target's columns, so reading them needs the same privilege on the
+        /// target that a `DESCRIBE` of the target requires.
+        if (const auto * alias = t->template as<StorageAlias>();
+            alias && !alias->isTargetTableGranted(query_context, AccessType::SHOW_COLUMNS, {}))
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Not enough privileges to access the table that {} points to",
+                storage_id.getNameForLogs());
+
         auto table_metadata = t->getInMemoryMetadataPtr(query_context, false);
         auto structure = table_metadata->getColumns();
         String prev_column_name;
@@ -674,9 +685,15 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
     try
     {
         const auto & access = query_context->getAccess();
-        if (auto first_table = traverseTablesUntil([access](auto && table)
+        if (auto first_table = traverseTablesUntil([&access, &query_context](auto && table)
         {
             if (!table)
+                return false;
+
+            /// An `Alias` reports its target's virtual columns, so inheriting them needs the
+            /// privilege on the target that reading the target's columns requires.
+            if (const auto * alias = table->template as<StorageAlias>();
+                alias && !alias->isTargetTableGranted(query_context, AccessType::SHOW_COLUMNS, {}))
                 return false;
 
             auto id = table->getStorageID();
