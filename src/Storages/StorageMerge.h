@@ -110,6 +110,16 @@ public:
         const String & source_table_regexp,
         size_t max_tables_to_look);
 
+    /// Require `SHOW_COLUMNS` for every source table an omitted structure would be inferred from.
+    /// Unlike that inference this does not skip a table the context may not `SHOW_TABLES`: a
+    /// context with no user sees every one of them and infers from it regardless.
+    static void checkSourceTablesAccess(
+        const ContextPtr & query_context,
+        const String & source_database_name_or_regexp,
+        bool database_is_regexp,
+        const String & source_table_regexp,
+        size_t max_tables_to_look);
+
 private:
     /// (Database, Table, Lock, TableName)
     using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
@@ -338,5 +348,9 @@ private:
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context) const;
 };
+
+/// Run, under `local_context`, the source-table access checks owed by a `Merge` storage that infers
+/// an omitted structure. `engine_args` is not modified.
+void validateMergeEngineTarget(const ASTs & engine_args, ContextPtr local_context);
 
 }

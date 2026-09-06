@@ -180,7 +180,13 @@ private:
     /// It's used to prevent automatic schema inference while table creation on each server startup.
     void addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage);
 
-    BlockIO executeQueryOnCluster(ASTCreateQuery & create);
+    /// `engine_is_resolved` says whether `create.storage->engine` is final at the call site, which is
+    /// the precondition for `preflightEngineTarget`.
+    BlockIO executeQueryOnCluster(ASTCreateQuery & create, bool engine_is_resolved);
+
+    /// Authorize, on the initiator, the access checks the table engine performs while its storage
+    /// object is constructed -- which on each host runs under a context that carries no user.
+    void preflightEngineTarget(ASTCreateQuery & create, bool structure_given);
 
     void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
 

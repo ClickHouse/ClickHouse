@@ -283,6 +283,38 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables(
     return getColumnsDescriptionFromSourceTablesImpl(query_context, database_name_or_regexp, max_tables_to_look, nullptr);
 }
 
+void StorageMerge::checkSourceTablesAccess(
+    const ContextPtr & query_context,
+    const String & source_database_name_or_regexp,
+    bool database_is_regexp,
+    const String & source_table_regexp,
+    size_t max_tables_to_look)
+{
+    DatabaseNameOrRegexp database_name_or_regexp(source_database_name_or_regexp, database_is_regexp, source_database_name_or_regexp, source_table_regexp, {});
+    auto access = query_context->getAccess();
+    size_t table_num = 0;
+
+    traverseTablesUntilImpl(query_context, nullptr, database_name_or_regexp, [&](auto && table)
+    {
+        if (!table)
+            return false;
+
+        const auto storage_id = table->getStorageID();
+
+        /// A denial names what it asks the grant for, and a regexp would turn that into an
+        /// enumeration oracle, so ask for the narrowest object the context could already name.
+        if (access->isGranted(AccessType::SHOW_TABLES, storage_id.database_name, storage_id.table_name))
+            access->checkAccess(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name);
+        else if (!database_is_regexp || access->isGranted(AccessType::SHOW_DATABASES, storage_id.database_name))
+            access->checkAccess(AccessType::SHOW_COLUMNS, storage_id.database_name);
+        else
+            access->checkAccess(AccessType::SHOW_COLUMNS);
+
+        ++table_num;
+        return table_num >= max_tables_to_look;
+    });
+}
+
 ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables(const ContextPtr & query_context) const
 {
     auto max_tables_to_look = query_context->getSettingsRef()[Setting::merge_table_max_tables_to_look_for_schema_inference];
@@ -2559,6 +2591,72 @@ std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
     return first_table ? std::nullopt : std::make_optional(total_rows_or_bytes);
 }
 
+namespace
+{
+
+struct ParsedMergeEngineArguments
+{
+    String source_database_name_or_regexp;
+    bool is_regexp;
+    String table_name_regexp;
+};
+
+/// Both parsers replace `engine_args` elements by their constant-folded literals, which is
+/// idempotent. The source database is parsed on its own so that a caller can reject a forbidden
+/// one before the second argument's expression is evaluated.
+std::pair<String, bool> parseMergeEngineDatabaseArgument(ASTs & engine_args, ContextPtr local_context)
+{
+    if (engine_args.size() != 2)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Storage Merge requires exactly 2 parameters - name "
+                        "of source database and regexp for table names.");
+
+    auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(engine_args[0], local_context);
+
+    if (!is_regexp)
+        engine_args[0] = database_ast;
+
+    return {checkAndGetLiteralArgument<String>(database_ast, "database_name"), is_regexp};
+}
+
+/// Requires `parseMergeEngineDatabaseArgument` to have validated the argument count first.
+String parseMergeEngineTableRegexpArgument(ASTs & engine_args, ContextPtr local_context)
+{
+    engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], local_context);
+    return checkAndGetLiteralArgument<String>(engine_args[1], "table_name_regexp");
+}
+
+ParsedMergeEngineArguments parseMergeEngineArguments(ASTs & engine_args, ContextPtr local_context)
+{
+    auto [source_database_name_or_regexp, is_regexp] = parseMergeEngineDatabaseArgument(engine_args, local_context);
+    String table_name_regexp = parseMergeEngineTableRegexpArgument(engine_args, local_context);
+
+    return {std::move(source_database_name_or_regexp), is_regexp, std::move(table_name_regexp)};
+}
+
+}
+
+void validateMergeEngineTarget(const ASTs & engine_args, ContextPtr local_context)
+{
+    /// Constant folding rewrites the arguments in place, so parse a copy: the caller's query may
+    /// still be formatted afterwards, and this validation must not alter it.
+    ASTs args_copy;
+    args_copy.reserve(engine_args.size());
+    for (const auto & arg : engine_args)
+        args_copy.push_back(arg->clone());
+
+    auto parsed = parseMergeEngineArguments(args_copy, local_context);
+
+    /// A regexp matching no table stays accepted, so the constructing host still decides that:
+    /// this rejects only a source the issuing user may not see the columns of.
+    StorageMerge::checkSourceTablesAccess(
+        local_context,
+        parsed.source_database_name_or_regexp,
+        parsed.is_regexp,
+        parsed.table_name_regexp,
+        local_context->getSettingsRef()[Setting::merge_table_max_tables_to_look_for_schema_inference]);
+}
+
 void registerStorageMerge(StorageFactory & factory);
 void registerStorageMerge(StorageFactory & factory)
 {
@@ -2568,19 +2666,8 @@ void registerStorageMerge(StorageFactory & factory)
           *  as well as regex for source-table names.
           */
 
-        ASTs & engine_args = args.engine_args;
-
-        if (engine_args.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage Merge requires exactly 2 parameters - name "
-                            "of source database and regexp for table names.");
-
-        auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(engine_args[0], args.getLocalContext());
-
-        if (!is_regexp)
-            engine_args[0] = database_ast;
-
-        String source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
+        auto [source_database_name_or_regexp, is_regexp]
+            = parseMergeEngineDatabaseArgument(args.engine_args, args.getLocalContext());
 
         /// With an explicit column list, `CREATE` (or a full-definition `ATTACH`, which is CREATE-like user input)
         /// does not need schema inference and would not read the source tables, so the unusable table definition
@@ -2597,11 +2684,16 @@ void registerStorageMerge(StorageFactory & factory)
             throw Exception(
                 ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", DatabaseCatalog::TEMPORARY_DATABASE);
 
-        engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
-        String table_name_regexp = checkAndGetLiteralArgument<String>(engine_args[1], "table_name_regexp");
+        String table_name_regexp = parseMergeEngineTableRegexpArgument(args.engine_args, args.getLocalContext());
 
         return std::make_shared<StorageMerge>(
-            args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getLocalContext());
+            args.table_id,
+            args.columns,
+            args.comment,
+            source_database_name_or_regexp,
+            is_regexp,
+            table_name_regexp,
+            args.getLocalContext());
     },
     {
         .supports_schema_inference = true

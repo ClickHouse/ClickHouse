@@ -1,0 +1,22 @@
+<clickhouse>
+    <remote_servers>
+        <test_cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica><host>node1</host><port>9000</port></replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica><host>node2</host><port>9000</port></replica>
+            </shard>
+        </test_cluster>
+        <!-- node1 is not a member, so a query issued there runs only on hosts whose
+             databases the initiator need not have. -->
+        <node2_only_cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica><host>node2</host><port>9000</port></replica>
+            </shard>
+        </node2_only_cluster>
+    </remote_servers>
+</clickhouse>

@@ -47,6 +47,9 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
+#include <Storages/Distributed/validateRemoteEngineTarget.h>
+#include <Storages/StorageMerge.h>
+#include <Storages/StorageQueryRunner.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -1838,7 +1841,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         }
 
         if (!create.cluster.empty())
-            return executeQueryOnCluster(create);
+        {
+            /// A short `ATTACH` carries no engine; the definition comes from stored metadata.
+            return executeQueryOnCluster(create, /* engine_is_resolved = */ false);
+        }
 
         if (!database)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -2085,7 +2091,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!create.cluster.empty())
     {
         chassert(!ddl_guard);
-        return executeQueryOnCluster(create);
+        /// `getTablePropertiesAndNormalizeCreateQuery` above ran `setEngine`, so the engine is final.
+        return executeQueryOnCluster(create, /* engine_is_resolved = */ true);
     }
 
     if (need_add_to_database && !database)
@@ -3568,9 +3575,99 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
     }
 }
 
-BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
+void InterpreterCreateQuery::preflightEngineTarget(ASTCreateQuery & create, bool structure_given)
+{
+    /// A server-initiated query is not authorized against a user, mirroring `getRequiredAccess`.
+    if (internal)
+        return;
+
+    /// `setEngine` has not run here, and each host resolves `AS other_table` in its own catalog, so an
+    /// inherited engine has no single value the initiator could authorize.
+    if (!create.storage || !create.storage->engine)
+        return;
+
+    const String & engine_name = create.storage->engine->name;
+
+    /// An `ON CLUSTER` query is always the initial query on the initiator, never a secondary one.
+    auto mode = getLoadingStrictnessLevel(
+        create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_restore_from_backup);
+
+    /// One condition for both the branch and the `secure` flag it implies, so that the secure
+    /// engine cannot be dropped from the branch without also changing the plain engine.
+    const bool is_remote_engine = engine_name == "Remote" || engine_name == "RemoteSecure";
+
+    if (is_remote_engine)
+    {
+        if (!create.storage->engine->arguments)
+            return;
+
+        /// Parsing folds constant arguments into literals in place, and this query is still to be
+        /// enqueued: each host must evaluate its own, so validate a copy.
+        ASTs args_copy;
+        args_copy.reserve(create.storage->engine->arguments->children.size());
+        for (const auto & arg : create.storage->engine->arguments->children)
+            args_copy.push_back(arg->clone());
+
+        /// No named-collection dependency may be registered: the table may never be created.
+        parseAndValidateRemoteEngineTarget(
+            args_copy,
+            getContext(),
+            mode,
+            create.attach_short_syntax,
+            /* columns_given = */ structure_given,
+            /* secure = */ engine_name != "Remote",
+            /* is_restore_from_backup = */ false,
+            /* dependent_table_id = */ nullptr);
+    }
+    else if (engine_name == "QueryRunner")
+    {
+        validateQueryRunnerTarget(*create.storage, getContext(), mode);
+    }
+    else if (engine_name == "Merge")
+    {
+        /// The engine checks its source tables only while inferring an omitted structure.
+        if (!structure_given && create.storage->engine->arguments)
+        {
+            try
+            {
+                validateMergeEngineTarget(create.storage->engine->arguments->children, getContext());
+            }
+            catch (const Exception & e)
+            {
+                /// The initiator need not host the source database: there is then nothing local to
+                /// authorize, and every host still checks its own sources while constructing the
+                /// storage. Only this one code is tolerated, so a denial still propagates.
+                if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+                    throw;
+            }
+        }
+    }
+}
+
+BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create, bool engine_is_resolved)
 {
     prepareOnClusterQuery(create, getContext(), create.cluster);
+
+    if (engine_is_resolved)
+    {
+        /// Resolving the engine's target evaluates user expressions and may contact remote shards,
+        /// so authorize first. `executeDDLQueryOnCluster` checks `CLUSTER` only after this point.
+        getContext()->checkAccess(AccessType::CLUSTER);
+
+        /// An element naming no database resolves here against the initiator's current database,
+        /// but `executeDDLQueryOnCluster` resolves it against each host's `default_database`, so
+        /// only that later check can decide it.
+        AccessRightsElements required_access = getRequiredAccess();
+        std::erase_if(required_access, [](const AccessRightsElement & element) { return element.isEmptyDatabase(); });
+        getContext()->checkAccess(required_access);
+
+        /// Normalization materializes an empty `columns_list`, so its presence says nothing about
+        /// whether the user supplied a structure; only its contents do.
+        const bool structure_given = create.columns_list && create.columns_list->columns
+            && !create.columns_list->columns->children.empty();
+        preflightEngineTarget(create, structure_given);
+    }
+
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();
     return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -3626,7 +3723,9 @@ BlockIO InterpreterCreateQuery::execute()
                 normalizeLegacyToTimeInCreateQuery(query_ptr, getContext());
             }
 
-            return executeQueryOnCluster(create);
+            /// `setEngine` has not run here: an explicit engine is final, an inherited one is not, and
+            /// `CREATE DATABASE` has no table engine at all.
+            return executeQueryOnCluster(create, /* engine_is_resolved = */ !is_create_database);
         }
     }
 
