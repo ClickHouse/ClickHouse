@@ -3075,6 +3075,13 @@ bool StorageFile::storesDataOnDisk() const
     return is_db_table;
 }
 
+bool StorageFile::hasUnreplicatedTableDataOnDisk() const
+{
+    /// A table over an explicit path keeps its own data in a local file just like a table inside the database
+    /// directory does, and that data is not replicated. Only a table over a file descriptor owns nothing.
+    return !use_table_fd;
+}
+
 Strings StorageFile::getDataPaths() const
 {
     if (paths.empty())

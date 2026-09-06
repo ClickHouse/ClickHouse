@@ -730,6 +730,11 @@ public:
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
 
+    /// Returns true if the table can store its own unreplicated data on disk.
+    /// Such a table cannot be created in a `Replicated` database while
+    /// `database_replicated_allow_only_replicated_engine` is enabled.
+    virtual bool hasUnreplicatedTableDataOnDisk() const { return storesDataOnDisk() && !supportsReplication(); }
+
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
