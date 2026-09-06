@@ -1,0 +1,20 @@
+--- except_right
+created	3
+stored	CREATE FUNCTION f AS x -> (SELECT sum(s) FROM (SELECT 1 AS s UNION ALL ((SELECT 2 AS s) EXCEPT ALL (SELECT 1 AS s))))
+reloaded	3
+--- intersect_right
+created	3
+stored	CREATE FUNCTION f AS x -> (SELECT sum(s) FROM (SELECT 1 AS s UNION ALL (SELECT 2 AS s INTERSECT ALL SELECT 2 AS s)))
+reloaded	3
+--- except_left
+created	3
+stored	CREATE FUNCTION f AS x -> (SELECT sum(s) FROM (((SELECT 2 AS s) EXCEPT ALL (SELECT 1 AS s)) UNION ALL SELECT 1 AS s))
+reloaded	3
+--- except_alone
+created	2
+stored	CREATE FUNCTION f AS x -> (SELECT sum(s) FROM ((SELECT 2 AS s) EXCEPT ALL (SELECT 1 AS s)))
+reloaded	2
+--- mv_reload
+created
+reloaded	0
+stored	AS SELECT 0 AS x UNION ALL ((SELECT x FROM default.src) EXCEPT ALL (SELECT 1))
