@@ -21,7 +21,11 @@ namespace QueryPlanOptimizations
 
 /// Main functions which optimize QueryPlan tree.
 /// First pass (ideally) apply local idempotent operations on top of Plan.
-void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+void optimizeTreeFirstPass(
+    const QueryPlanOptimizationSettings & optimization_settings,
+    QueryPlan::Node & root,
+    QueryPlan::Nodes & nodes,
+    const QueryPlan & query_plan);
 /// Second pass is used to apply read-in-order and attach a predicate to PK.
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan);
 /// Third pass is used to apply filters such as key conditions and skip indexes to the storages that support them.
@@ -75,6 +79,10 @@ struct Optimization
 
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;
+
+        /// Execution settings inherited by standalone plans extracted by optimizations.
+        size_t max_threads = 0;
+        bool concurrency_control = false;
 
         /// Mirrors `QueryPlanOptimizationSettings::push_down_volume_reducing_functions`.
         /// `tryExecuteFunctionsAfterSorting` consults it to avoid pinging volume-reducing

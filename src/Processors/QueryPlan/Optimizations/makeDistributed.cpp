@@ -5,6 +5,7 @@
 #endif
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/BlocksMarshallingStep.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -63,6 +64,13 @@ bool canExecuteRemotely(const QueryPlan::Node & node)
     /// run in the wrong process; a plan that carries it runs locally instead.
     if (typeid_cast<const BlocksMarshallingStep *>(node.step.get()))
         return false;
+
+    /// `StreamInQueryResultCacheStep` is a pass-through that writes the rows flowing through it into
+    /// the query result cache, which is node-local and has no serialized representation. It is not a
+    /// reason to keep the plan local: `QueryPlan::convertToDistributed` removes these steps before it
+    /// splits the plan, so only their children decide whether the plan can run on a worker.
+    if (typeid_cast<const StreamInQueryResultCacheStep *>(node.step.get()))
+        return canExecuteRemotely(*node.children.front());
 
     if (node.children.empty())
     {
