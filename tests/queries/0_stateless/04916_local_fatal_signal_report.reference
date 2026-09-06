@@ -1,0 +1,48 @@
+plain signalled 134
+plain jobcontrol quiet 1
+plain cores 0
+plain stderr report 1
+plain stderr signal 1
+logfile signalled 134
+logfile jobcontrol quiet 1
+logfile cores 0
+logfile stderr report 1
+logfile stderr signal 1
+logfile file report 1
+clientlog signalled 134
+clientlog jobcontrol quiet 1
+clientlog cores 0
+clientlog stderr report 1
+clientlog stderr signal 1
+clientlog file report 1
+clientlog_unwritable signalled 134
+clientlog_unwritable jobcontrol quiet 1
+clientlog_unwritable cores 0
+clientlog_unwritable stderr report 1
+clientlog_unwritable stderr signal 1
+clientlog_unwritable file report 0
+clientlog_unwritable_console signalled 134
+clientlog_unwritable_console jobcontrol quiet 1
+clientlog_unwritable_console cores 0
+clientlog_unwritable_console stderr report 1
+clientlog_unwritable_console stderr signal 1
+clientlog_unwritable_console file report 0
+sync signalled 134
+sync jobcontrol quiet 1
+sync cores 0
+sync stderr report 1
+sync stderr signal 1
+console signalled 134
+console jobcontrol quiet 1
+console cores 0
+console stderr report 1
+console stderr signal 1
+console_none signalled 134
+console_none jobcontrol quiet 1
+console_none cores 0
+console_none stderr report 1
+console_none stderr signal 1
+textlog rows 1
+textlog channels 0 0
+success stdout 42
+success stderr empty 1

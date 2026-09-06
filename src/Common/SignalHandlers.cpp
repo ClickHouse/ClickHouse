@@ -10,6 +10,7 @@
 #include <Common/StackTraceServiceSignal.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -421,6 +422,10 @@ void SignalListener::run()
 {
     setThreadName(ThreadName::SIGNAL_LISTENER);
 
+    /// Constructed outside the signal handling below: it resolves a logger, and the logger registry
+    /// mutex can be held by the faulting thread for as long as it waits for the report.
+    ThreadStatus thread_status;
+
     if (daemon)
     {
         build_id = [this]{ return daemon->build_id; };
@@ -588,7 +593,11 @@ void SignalListener::onFault(
     size_t exception_trace_size) const
 try
 {
-    ThreadStatus thread_status;
+    bool detach_logs_queue = false;
+    SCOPE_EXIT({
+        if (detach_logs_queue)
+            CurrentThread::attachInternalTextLogsQueue({}, LogsLevel::none);
+    });
 
     /// First log those fields that are safe to access and that should not cause new fault.
     /// That way we will have some duplicated info in the log but we don't loose important info
@@ -646,6 +655,9 @@ try
 
         if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
         {
+            /// Detached again on the way out: this thread outlives the handler for a signal whose
+            /// handler returns, and the queue belongs to the faulting query, not to the next one.
+            detach_logs_queue = true;
             CurrentThread::attachInternalTextLogsQueue(logs_queue, LogsLevel::trace);
         }
     }

@@ -1412,6 +1412,9 @@ void LocalServer::processConfig()
         getClientConfiguration().setString("logger", "logger");
         getClientConfiguration().setString("logger.level", logging ? level : "fatal");
         buildLoggers(getClientConfiguration(), logger(), "clickhouse-local");
+        /// `buildLoggers` re-channels every existing logger by name, including the one the signal
+        /// listener holds, whose channel is the only path a crash report has.
+        restoreFatalLogChannel(loggerConsoleAcceptsFatal(getClientConfiguration()));
     }
 
     shared_context = Context::createShared();
