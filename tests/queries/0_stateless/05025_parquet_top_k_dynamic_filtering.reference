@@ -1,0 +1,96 @@
+-- row-group pruning: part1 establishes the threshold before part2 starts, so every row
+-- group of part2 is skipped and at most the 100000 rows of part1 are read
+[[0], [1], [2]] all of part2 skipped: True
+-- without the optimization all 200000 rows are read
+[[0], [1], [2]] all of part2 skipped: False
+-- results identical with and without the optimization
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+-- sort keys the Parquet reader never sees: virtual columns and Hive partition columns are
+-- appended after the file is read, so the reader-side filter must not be armed for them;
+-- results with and without the optimization must agree, and no row group may be skipped
+OK
+OK
+OK
+OK
+1	1000
+1	1001
+1	1002
+-- all rows of both Hive files are read (nothing is pruned by a filter the reader cannot evaluate)
+rows_read: 2000
+-- collated ORDER BY: Parquet min/max statistics are bytewise, not collation-ordered, so the
+-- row-group shortcut must stay off; 'ä' sorts before 'b' in the 'de' locale but its UTF-8
+-- bytes are above 'z', so a stats-based skip of the second file would lose it
+ä
+b
+c
+OK
+-- a sort key the reader does not physically read: a column with a DEFAULT expression that
+-- the file does not store is filled with type defaults inside the reader and only computed
+-- above it (AddingDefaultsTransform), so comparing those placeholders against a threshold
+-- derived from the computed values would drop rows of the top-K
+99999	99999
+99998	99998
+99997	99997
+OK
+0	0
+1	1
+2	2
+OK
+99999	1
+99998	2
+99997	3
+OK
+-- floating-point sort keys: ORDER BY sorts 'nan' together with the NULLs while the reader's
+-- comparison does not, and Parquet min/max statistics legally omit 'nan', so neither the
+-- per-row filter nor the row-group shortcut may be armed for them (see issue #116705)
+nan
+100
+OK
+nan
+100
+OK
+nan
+65635
+OK
+100
+101
+OK
+65635
+65634
+OK
+-- a statistic that cannot be decoded (here a negative Int64 read as UInt64) leaves the bound
+-- at the Range infinity sentinel, which is a Null Field and would be compared as a SQL NULL;
+-- an unbounded side can never prove exclusion, so the row group must not be skipped
+5
+6
+1000
+OK
+-- a tuple-element sort key whose storage parent carries a DEFAULT. The reading step answers
+-- from the very ColumnsDescription that AddingDefaultsTransform is built from, so a name it
+-- reports as free of a default expression is by construction one the transform cannot
+-- rewrite: here the subcolumn description carries no default, and correspondingly the
+-- parent's DEFAULT is never applied (the null t.a rows read back as 0, not as k)
+99999	99999
+99997	99997
+99995	99995
+OK
+0	0
+2	0
+4	0
+OK
+0	0	0
+2	0	2
+4	0	4
+OK
+99999	(99999,99999)	99999
+99997	(99997,99997)	99997
+99995	(99995,99995)	99995
+OK
