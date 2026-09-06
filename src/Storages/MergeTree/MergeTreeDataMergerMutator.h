@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <expected>
+#include <optional>
 
 namespace DB
 {
@@ -34,6 +35,12 @@ class MergeTreeDataMergerMutator
     void updateTTLMergeTimes(const MergeSelectorChoices & choices, const MergeTreeSettingsPtr & settings, time_t current_time);
 
 public:
+    /// Undo the due time that `updateTTLMergeTimes` advanced for a TTL merge that was selected but
+    /// discarded before it could run (`StorageMergeTree::merge` does that when no executor slot is
+    /// free). Only restores the due time if it is still exactly the value that selection installed,
+    /// so an advance made by a later selection is never overwritten.
+    void rollbackTTLMergeTime(const String & partition_id, MergeType merge_type);
+
     explicit MergeTreeDataMergerMutator(MergeTreeData & data_);
 
     /** Useful to quickly get a list of partitions that contain parts that we may want to merge.
@@ -130,6 +137,16 @@ private:
 
     /// Stores the next TTL recompress merge due time for each partition (used only by TTLRecompressionMergeSelector)
     PartitionIdToTTLs next_recompress_ttl_merge_times_by_partition;
+
+    /// The due time advance of the last TTL merge selection of a partition, kept so that a
+    /// discarded selection can be undone. See `rollbackTTLMergeTime`.
+    struct TTLMergeTimeAdvance
+    {
+        time_t installed;
+        std::optional<time_t> previous;
+    };
+    std::unordered_map<String, TTLMergeTimeAdvance> last_delete_ttl_merge_time_advance;
+    std::unordered_map<String, TTLMergeTimeAdvance> last_recompress_ttl_merge_time_advance;
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
 };

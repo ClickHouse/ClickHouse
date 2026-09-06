@@ -56,6 +56,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <base/sleep.h>
 #include <fmt/core.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/saturatedDuration.h>
@@ -69,6 +70,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
+#include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 
 namespace ProfileEvents
@@ -76,6 +79,13 @@ namespace ProfileEvents
     extern const Event PatchesAcquireLockTries;
     extern const Event PatchesAcquireLockMicroseconds;
     extern const Event MergesRejectedByMemoryLimit;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric OptimizeFinalThreads;
+    extern const Metric OptimizeFinalThreadsActive;
+    extern const Metric OptimizeFinalThreadsScheduled;
 }
 
 namespace DB
@@ -1633,7 +1643,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     TableLockHolder & /* table_lock_holder */,
     std::unique_lock<std::mutex> & lock,
     const MergeTreeTransactionPtr & txn,
-    bool optimize_skip_merged_partitions)
+    bool optimize_skip_merged_partitions,
+    const std::function<void()> & on_wait_for_running_merges)
 {
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
     /// a DELETE's target part between part-resolution and marker publish (the
@@ -1787,11 +1798,25 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
             if (!select_result.has_value())
             {
-                /// If final - we will wait for currently processing merges to finish and continue.
-                if (final && !currently_merging_mutating_parts.empty())
+                /// If final, wait for currently running merges to finish and retry. A merge frees
+                /// both its source parts (unblocking a part conflict in this partition) and its
+                /// reserved disk space (unblocking a shared-resource failure such as the free-space
+                /// check) - and with parallel OPTIMIZE FINAL a concurrently assigned merge for
+                /// another partition can be exactly what temporarily blocks this one - so we wait
+                /// while any merge is active. We only skip the wait when there is simply nothing to
+                /// merge in this partition (e.g. optimize_skip_merged_partitions): waiting there
+                /// would needlessly hold a slot while other partitions are still merging (#46770).
+                if (final
+                    && select_result.error().reason != SelectMergeFailure::Reason::NOTHING_TO_MERGE
+                    && !currently_merging_mutating_parts.empty())
                 {
                     LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now) to perform OPTIMIZE FINAL",
                         currently_merging_mutating_parts.size());
+
+                    /// Give back the reserved foreground executor slot (if any) for the duration
+                    /// of the wait, so that other merges can use it meanwhile (see `merge`).
+                    if (on_wait_for_running_merges)
+                        on_wait_for_running_merges();
 
                     if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(lock, timeout))
                         return std::unexpected(SelectMergeFailure{
@@ -1851,52 +1876,120 @@ bool StorageMergeTree::merge(
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
     StorageMetadataPtr metadata_snapshot;  // assigned under the lock below; used later when constructing the merge task
 
-    auto merge_select_result = [&]()
+    /// The selected merge runs synchronously on this (foreground) thread, outside the merge
+    /// executor's worker pool. It still must occupy an executor task slot, so that the total
+    /// number of concurrently running merges never exceeds the configured merge capacity and
+    /// no merge can start while the executor is shutting down.
+    auto merge_mutate_executor = getContext()->getMergeMutateExecutor();
+    size_t reserved_merge_slot = 0;
+    SCOPE_EXIT({
+        if (reserved_merge_slot)
+            merge_mutate_executor->releaseTaskSlots(reserved_merge_slot);
+    });
+
+    /// If selection has to wait for currently running merges (OPTIMIZE FINAL on a partition whose
+    /// parts are being merged right now), it must not pin a task slot meanwhile: the slot would
+    /// keep an executor worker idle for the whole wait, and with parallel OPTIMIZE FINAL the
+    /// helpers of the other partitions could not use it (#46770).
+    const auto release_slot_before_wait = [&]
     {
-        std::unique_lock lock(currently_processing_in_background_mutex);
-        if (merger_mutator.merges_blocker.isCancelledForPartition(partition_id))
-            throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+        if (reserved_merge_slot)
+        {
+            merge_mutate_executor->releaseTaskSlots(reserved_merge_slot);
+            reserved_merge_slot = 0;
+        }
+    };
 
-        /// Read in-memory metadata under the mutex. Pairs with `StorageMergeTree::alter`,
-        /// which publishes new metadata and registers the rename mutation atomically under
-        /// the same mutex, so this `OPTIMIZE`-driven merge selection cannot observe new
-        /// metadata without also seeing the pending rename mutation. See #80648.
-        /// Bind the handle to a named lvalue first: converting an rvalue StorageMetadataHandle to StorageMetadataPtr is deleted.
-        auto metadata_snapshot_handle = getInMemoryMetadataPtr(getContext(), false);
-        metadata_snapshot = metadata_snapshot_handle;
-
-        return selectPartsToMerge(
-            metadata_snapshot,
-            aggressive,
-            partition_id,
-            final,
-            table_lock_holder,
-            lock,
-            txn,
-            optimize_skip_merged_partitions);
-    }();
-
-    if (merge_select_result.has_value())
+    while (true)
     {
+        auto merge_select_result = [&]()
+        {
+            std::unique_lock lock(currently_processing_in_background_mutex);
+            if (merger_mutator.merges_blocker.isCancelledForPartition(partition_id))
+                throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+
+            /// Read in-memory metadata under the mutex. Pairs with `StorageMergeTree::alter`,
+            /// which publishes new metadata and registers the rename mutation atomically under
+            /// the same mutex, so this `OPTIMIZE`-driven merge selection cannot observe new
+            /// metadata without also seeing the pending rename mutation. See #80648.
+            /// Bind the handle to a named lvalue first: converting an rvalue StorageMetadataHandle to StorageMetadataPtr is deleted.
+            auto metadata_snapshot_handle = getInMemoryMetadataPtr(getContext(), false);
+            metadata_snapshot = metadata_snapshot_handle;
+
+            return selectPartsToMerge(
+                metadata_snapshot,
+                aggressive,
+                partition_id,
+                final,
+                table_lock_holder,
+                lock,
+                txn,
+                optimize_skip_merged_partitions,
+                release_slot_before_wait);
+        }();
+
+        if (!merge_select_result.has_value())
+        {
+            auto error = std::move(merge_select_result.error());
+            out_disable_reason = std::move(error.explanation);
+
+            /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization).
+            /// A no-op OPTIMIZE never reserves a slot, so it neither waits for nor pins merge capacity.
+            return error.reason == SelectMergeFailure::Reason::NOTHING_TO_MERGE;
+        }
+
+        MergeMutateSelectedEntryPtr merge_entry = std::move(merge_select_result.value());
+
+        /// The selection has installed a `CurrentlyMergingPartsTagger`, which pins the source parts
+        /// and reserves disk space for the result. Acquire the executor slot without waiting: if no
+        /// slot is free right now, first roll the selection back, then wait for a slot while holding
+        /// neither parts nor disk space (the pending reservation of a waiting foreground merge could
+        /// otherwise make unrelated merges fail their free-space check), and retry the selection
+        /// with the slot already in hand.
+        if (merge_mutate_executor && reserved_merge_slot == 0)
+        {
+            reserved_merge_slot = merge_mutate_executor->tryReserveTaskSlots(1);
+            if (reserved_merge_slot == 0)
+            {
+                /// The discarded selection may have booked a TTL merge
+                /// (`max_number_of_merges_with_ttl_in_pool`) and postponed the next TTL merge of
+                /// the partition; give both back, since no TTL merge is going to run for it. A
+                /// single-part TTL rewrite has no regular-merge fallback, so keeping the partition
+                /// postponed would defer the TTL cleanup or recompression until
+                /// `merge_with_ttl_timeout` / `merge_with_recompression_ttl_timeout` expires,
+                /// instead of running it as soon as a slot frees. A retried selection books and
+                /// postpones again if it picks a TTL merge once more.
+                if (isTTLMergeType(merge_entry->future_part->merge_type))
+                {
+                    getContext()->getMergeList().cancelMergeWithTTL();
+
+                    std::lock_guard lock(currently_processing_in_background_mutex);
+                    merger_mutator.rollbackTTLMergeTime(
+                        merge_entry->future_part->part_info.getPartitionId(), merge_entry->future_part->merge_type);
+                }
+
+                /// Untag the parts and release the disk reservation of the discarded selection.
+                merge_entry->finalize();
+                merge_entry.reset();
+
+                reserved_merge_slot = merge_mutate_executor->reserveTaskSlots(1);
+                if (reserved_merge_slot == 0)
+                    throw Exception(ErrorCodes::ABORTED, "Cannot OPTIMIZE because merge executor is shutting down");
+
+                continue;
+            }
+        }
+
         /// Copying a vector of columns `deduplicate by columns.
         IExecutableTask::TaskResultCallback f = [](bool) {};
         auto task = std::make_shared<MergePlainMergeTreeTask>(
-            *this, metadata_snapshot, deduplicate, deduplicate_by_columns, cleanup, merge_select_result.value(), table_lock_holder, f);
+            *this, metadata_snapshot, deduplicate, deduplicate_by_columns, cleanup, merge_entry, table_lock_holder, f);
 
         task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
 
         executeHere(task);
         return true;
     }
-
-    auto error = std::move(merge_select_result.error());
-    out_disable_reason = std::move(error.explanation);
-
-    /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
-    if (error.reason == SelectMergeFailure::Reason::NOTHING_TO_MERGE)
-        return true;
-
-    return false;
 }
 
 
@@ -2589,6 +2682,8 @@ bool StorageMergeTree::optimize(
     auto txn = local_context->getCurrentTransaction();
 
     PreformattedMessage disable_reason;
+    auto merge_mutate_executor = getContext()->getMergeMutateExecutor();
+
     if (!partition && final)
     {
         if (cleanup && this->merging_params.mode != MergingParams::Mode::Replacing)
@@ -2598,32 +2693,115 @@ bool StorageMergeTree::optimize(
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
 
         DataPartsVector data_parts = getVisibleDataPartsVector(local_context);
-        std::unordered_set<String> partition_ids;
+        std::unordered_set<String> partition_ids_set;
 
         for (const DataPartPtr & part : data_parts)
-            partition_ids.emplace(part->info.getPartitionId());
+            partition_ids_set.emplace(part->info.getPartitionId());
 
-        for (const String & partition_id : partition_ids)
+        const std::vector<String> partition_ids(partition_ids_set.begin(), partition_ids_set.end());
+        const bool optimize_skip_merged_partitions = local_context->getSettingsRef()[Setting::optimize_skip_merged_partitions];
+
+        /// OPTIMIZE FINAL assigns and runs the per-partition merges in parallel, so that merges for
+        /// all partitions appear at once (e.g. in system.merges) instead of being processed one by
+        /// one (issue #46770). Partitions are independent, so their merges can run concurrently.
+        /// Explicit transactions take the sequential path: parallel merges would otherwise share a
+        /// single transaction object, which is not designed for concurrent use.
+        ///
+        std::optional<PreformattedMessage> failure_reason;
+
+        if (txn == nullptr && partition_ids.size() > 1)
         {
-            if (!merge(
-                    true,
-                    partition_id,
-                    true,
-                    deduplicate,
-                    deduplicate_by_columns,
-                    cleanup,
-                    txn,
-                    disable_reason,
-                    local_context->getSettingsRef()[Setting::optimize_skip_merged_partitions]))
+            /// Each task writes only its own slot, so no synchronization is needed for the results.
+            /// A default-constructed std::expected holds a value (i.e. "assigned successfully").
+            auto results = std::make_shared<std::vector<std::expected<void, PreformattedMessage>>>(partition_ids.size());
+
+            /// Every helper first selects its partition and reserves an executor slot only when
+            /// that selection found a real merge. Thus a fully merged table and no-op partitions
+            /// neither wait for nor pin foreground merge capacity. A helper holds neither parts,
+            /// disk space, nor an executor slot while it waits (see `merge`), so the number of
+            /// helpers is bounded by the configured merge concurrency - the same bound that caps
+            /// how many reserved slots can run at once - rather than by the capacity that happens
+            /// to be free at this instant. Helpers pull partitions from a shared queue, so at most
+            /// this many helper jobs exist regardless of the partition count.
+            const size_t max_parallel_merges = std::min(
+                {partition_ids.size(),
+                 std::max<size_t>(1, std::min(merge_mutate_executor->getMaxTasksCount(), merge_mutate_executor->getMaxThreads()))});
+
+            ThreadPool pool(
+                CurrentMetrics::OptimizeFinalThreads,
+                CurrentMetrics::OptimizeFinalThreadsActive,
+                CurrentMetrics::OptimizeFinalThreadsScheduled,
+                max_parallel_merges);
+            ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGE_MUTATE);
+
+            auto shared_partition_ids = std::make_shared<const std::vector<String>>(partition_ids);
+            auto next_partition_index = std::make_shared<std::atomic<size_t>>(0);
+
+            for (size_t helper = 0; helper < max_parallel_merges; ++helper)
             {
-                constexpr auto message = "Cannot OPTIMIZE table: {}";
-                LOG_INFO(log, message, disable_reason.text);
+                /// Everything the task needs is captured by value (or by shared_ptr), so the task
+                /// stays self-contained even if `enqueueAndKeepTrack` throws before it is tracked and
+                /// stack unwinding starts before the runner waits (ThreadPoolCallbackRunnerLocal
+                /// requires callbacks not to reference stack locals). `this` (the storage) and the
+                /// merge inputs outlive any such task.
+                runner.enqueueAndKeepTrack(
+                    [this, results, shared_partition_ids, next_partition_index, deduplicate, deduplicate_by_columns, cleanup, txn,
+                     optimize_skip_merged_partitions]
+                    {
+                        while (true)
+                        {
+                            const size_t i = next_partition_index->fetch_add(1);
+                            if (i >= shared_partition_ids->size())
+                                return;
 
-                if (local_context->getSettingsRef()[Setting::optimize_throw_if_noop])
-                    throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason.text);
-
-                return false;
+                            PreformattedMessage partition_reason;
+                            if (!merge(
+                                    true,
+                                    (*shared_partition_ids)[i],
+                                    true,
+                                    deduplicate,
+                                    deduplicate_by_columns,
+                                    cleanup,
+                                    txn,
+                                    partition_reason,
+                                    optimize_skip_merged_partitions))
+                                (*results)[i] = std::unexpected(std::move(partition_reason));
+                        }
+                    });
             }
+            runner.waitForAllToFinishAndRethrowFirstError();
+
+            for (auto & result : *results)
+            {
+                if (!result.has_value())
+                {
+                    failure_reason = std::move(result.error());
+                    break;
+                }
+            }
+        }
+        else
+        {
+            for (const String & partition_id : partition_ids)
+            {
+                PreformattedMessage partition_reason;
+                if (!merge(true, partition_id, true, deduplicate, deduplicate_by_columns, cleanup, txn, partition_reason, optimize_skip_merged_partitions))
+                {
+                    failure_reason = std::move(partition_reason);
+                    break;
+                }
+            }
+        }
+
+        if (failure_reason)
+        {
+            constexpr auto message = "Cannot OPTIMIZE table: {}";
+            LOG_INFO(log, message, failure_reason->text);
+
+            if (local_context->getSettingsRef()[Setting::optimize_throw_if_noop])
+                throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, failure_reason->text);
+
+            return false;
         }
     }
     else
