@@ -134,6 +134,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_parts_interval_seconds;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_temporary_directories_interval_seconds;
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
+    extern const MergeTreeSettingsBool remove_empty_parts;
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
@@ -1946,6 +1947,13 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         /// to prevent a race where a mutation is selected after the partition blocker is set
         /// but before stopMergesAndWaitForPartition finishes waiting.
         if (merger_mutator.merges_blocker.isCancelledForPartition(part->info.getPartitionId()))
+            continue;
+
+        /// A part with no rows is dropped by `clearEmptyParts` under the conditions mirrored here, and
+        /// mutating it produces nothing while its mutation tag holds off that drop.
+        if (part->rows_count == 0 && (*storage_settings.get())[MergeTreeSetting::remove_empty_parts]
+            && (part->version->getInfo().creation_tid.isNonTransactional()
+                || part->version->isVisible(TransactionLog::instance().getLatestSnapshot())))
             continue;
 
         auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());

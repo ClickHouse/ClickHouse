@@ -1,0 +1,144 @@
+import time
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+
+cluster = ClickHouseCluster(__file__)
+node = cluster.add_instance("node", stay_alive=True)
+
+WEDGE_REASON = "Unknown expression identifier"
+
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def state(table):
+    parts = node.query(
+        "SELECT name, rows, part_type, active FROM system.parts "
+        f"WHERE database = currentDatabase() AND table = '{table}' ORDER BY name"
+    )
+    mutations = node.query(
+        "SELECT mutation_id, is_done, latest_fail_reason FROM system.mutations "
+        f"WHERE database = currentDatabase() AND table = '{table}' ORDER BY mutation_id"
+    )
+    return f"{table} parts:\n{parts}{table} mutations:\n{mutations}"
+
+
+def arm(table):
+    """Leave an empty part on disk that owes a mutation reading a column the table no longer has.
+
+    `DETACH PART` replaces the part with an empty one covering the same block range, so that empty
+    part keeps the column list from before the rename. `old_parts_lifetime` keeps it on disk once
+    cleanup outdates it, and dropping the rename entry leaves nothing to map its `b` to `d`.
+    """
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table} (a String, b String, c String MATERIALIZED concat(a, '!'))
+        ENGINE = MergeTree ORDER BY a
+        SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+                 old_parts_lifetime = 10000
+        """
+    )
+    node.query(f"INSERT INTO {table} VALUES ('x', 'y')")
+    node.query(f"ALTER TABLE {table} DETACH PART 'all_1_1_0'")
+    node.query(f"ALTER TABLE {table} MODIFY COLUMN b Nullable(String)")
+    node.query(f"ALTER TABLE {table} ATTACH PART 'all_1_1_0'")
+    node.query(f"ALTER TABLE {table} RENAME COLUMN b TO d SETTINGS mutations_sync = 1")
+    node.query(f"ALTER TABLE {table} ADD PROJECTION p_ad (SELECT a, d ORDER BY a)")
+    node.query(
+        f"ALTER TABLE {table} MATERIALIZE COLUMN c, MATERIALIZE PROJECTION p_ad "
+        "SETTINGS mutations_sync = 1"
+    )
+
+    rename_mutation = node.query(
+        "SELECT mutation_id FROM system.mutations "
+        f"WHERE database = currentDatabase() AND table = '{table}' AND command ILIKE '%RENAME COLUMN%'"
+    ).strip()
+    assert rename_mutation, f"no rename mutation to drop\n{state(table)}"
+    node.query(
+        f"KILL MUTATION WHERE database = currentDatabase() AND table = '{table}' "
+        f"AND mutation_id = '{rename_mutation}' SYNC"
+    )
+
+    empty_part = node.query(
+        "SELECT rows, part_type, active FROM system.parts "
+        f"WHERE database = currentDatabase() AND table = '{table}' AND name = 'all_1_1_1'"
+    ).strip()
+    # A Compact part would exercise a different read path, so the scenario is only armed when the
+    # empty part is Wide and still on disk.
+    assert empty_part == "0\tWide\t0", f"empty part not armed: {empty_part!r}\n{state(table)}"
+    pending = node.query(
+        "SELECT count() FROM system.mutations "
+        f"WHERE database = currentDatabase() AND table = '{table}' AND command ILIKE '%MODIFY COLUMN%'"
+    ).strip()
+    assert pending == "1", f"the replayed mutation is gone\n{state(table)}"
+
+
+def poll(query, expected, timeout=90):
+    deadline = time.monotonic() + timeout
+    result = None
+    while time.monotonic() < deadline:
+        result = node.query(query).strip()
+        if result == expected:
+            return True
+        time.sleep(1)
+    print(f"poll timed out, last result {result!r}, wanted {expected!r}")
+    return False
+
+
+def test_mutation_of_empty_part_after_restart(started_cluster):
+    arm("t_wedge")
+
+    # With empty-part removal disabled nothing will drop the part, so the mutation has to be
+    # attempted and the pre-existing behaviour must be kept.
+    arm("t_wedge_kept")
+    node.query("ALTER TABLE t_wedge_kept MODIFY SETTING remove_empty_parts = 0")
+
+    node.restart_clickhouse()
+
+    assert poll(
+        "SELECT countIf(is_done = 0) = 0 AND countIf(latest_fail_reason != '') = 0 "
+        "FROM system.mutations WHERE database = currentDatabase() AND table = 't_wedge'",
+        "1",
+    ), f"the mutation never completed\n{state('t_wedge')}"
+    # The mutation completes by the part being dropped, not by being mutated, so no mutated
+    # descendant of it may exist. `old_parts_lifetime` keeps the dropped part itself listed.
+    assert poll(
+        "SELECT countIf(active) = 0 AND countIf(name LIKE 'all\\_1\\_1\\_1\\_%') = 0 "
+        "FROM system.parts WHERE database = currentDatabase() AND table = 't_wedge' "
+        "AND name LIKE 'all\\_1\\_1\\_1%'",
+        "1",
+    ), f"the empty part was not dropped\n{state('t_wedge')}"
+
+    assert node.query("SELECT a, d, c FROM t_wedge ORDER BY a") == "x\ty\tx!\n"
+    assert (
+        node.query(
+            "SELECT type FROM system.parts_columns WHERE database = currentDatabase() "
+            "AND table = 't_wedge' AND active AND column = 'd'"
+        )
+        == "Nullable(String)\n"
+    )
+
+    assert poll(
+        "SELECT latest_fail_reason ILIKE '%" + WEDGE_REASON + "%' FROM system.mutations "
+        "WHERE database = currentDatabase() AND table = 't_wedge_kept' AND command ILIKE '%MODIFY COLUMN%'",
+        "1",
+    ), f"remove_empty_parts = 0 no longer attempts the mutation\n{state('t_wedge_kept')}"
+    assert (
+        node.query(
+            "SELECT is_done FROM system.mutations WHERE database = currentDatabase() "
+            "AND table = 't_wedge_kept' AND command ILIKE '%MODIFY COLUMN%'"
+        ).strip()
+        == "0"
+    ), state("t_wedge_kept")
+
+    node.query("DROP TABLE t_wedge SYNC")
+    node.query("DROP TABLE t_wedge_kept SYNC")
