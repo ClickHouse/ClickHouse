@@ -673,6 +673,12 @@ void RefreshTask::pause()
     /// If `stop_requested` was already set (e.g. by `SYSTEM STOP VIEW`), this is a no-op.
     if (std::exchange(scheduling.stop_requested, true))
         return;
+    /// A query slot can be granted before the execution task starts. Cancel both queued
+    /// admission and that dispatch window; neither has started refreshing the target yet.
+    if (execution.query_slot
+        && (execution.state == ExecutionState::State::WaitingForResource
+            || execution.state == ExecutionState::State::Requested))
+        interruptExecution();
     scheduleRefresh(guard);
 }
 

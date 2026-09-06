@@ -10,9 +10,18 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-    "node", main_configs=["configs/query_slots.xml"], with_zookeeper=True, stay_alive=True
+    "node",
+    main_configs=["configs/query_slots.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
-legacy = cluster.add_instance("legacy", with_zookeeper=True, stay_alive=True)
+legacy = cluster.add_instance(
+    "legacy",
+    with_zookeeper=True,
+    stay_alive=True,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -32,6 +41,7 @@ def cleanup():
         instance.query("DROP TABLE IF EXISTS mv SYNC")
         instance.query("DROP TABLE IF EXISTS queued SYNC")
         instance.query("DROP WORKLOAD IF EXISTS updated")
+        instance.query("DROP WORKLOAD IF EXISTS original")
         instance.query("DROP WORKLOAD IF EXISTS all")
         instance.query("DROP RESOURCE IF EXISTS query")
 
@@ -84,7 +94,7 @@ def create_view(instance, name="mv", workload="all"):
 
 
 @contextmanager
-def occupied_slot(instance):
+def occupied_slot(instance, workload="all"):
     query_id = f"rmv-slot-blocker-{uuid.uuid4()}"
     errors = []
 
@@ -93,7 +103,7 @@ def occupied_slot(instance):
             # One long-lived query: no release/reacquire gaps while asserting queued state.
             instance.query(
                 "SELECT sum(number) FROM numbers(1000000000000) "
-                "SETTINGS workload='all', max_threads=1",
+                f"SETTINGS workload='{workload}', max_threads=1",
                 query_id=query_id,
             )
         except Exception as error:
@@ -180,6 +190,55 @@ def test_cancel_queued_admission(operation):
         assert node.query("SELECT count() FROM mv") == "1\n"
 
 
+@pytest.mark.parametrize("pause_query", ["SYSTEM PAUSE VIEW mv", "SYSTEM PAUSE VIEWS"])
+def test_pause_cancels_queued_admission(pause_query):
+    create_workload(node)
+    create_view(node)
+    try:
+        with occupied_slot(node):
+            node.query("SYSTEM REFRESH VIEW mv")
+            wait_status(node, "WaitingForResource")
+            node.query(pause_query, timeout=30)
+            wait_status(node, "Disabled")
+            wait_metric(node, "ConcurrentQueryScheduled", 0)
+            assert metric(node, "ConcurrentQueryAcquired") == "1"
+            assert node.query("SELECT count() FROM mv") == "0\n"
+        wait_metric(node, "ConcurrentQueryAcquired", 0)
+        assert node.query("SELECT count() FROM mv") == "0\n"
+        wait_status(node, "Disabled")
+        node.query("SYSTEM START VIEW mv")
+        node.query("SYSTEM REFRESH VIEW mv")
+        node.query("SYSTEM WAIT VIEW mv", timeout=30)
+        assert node.query("SELECT count() FROM mv") == "1\n"
+    finally:
+        # Clear any pause locks before the next test, including after an assertion failure.
+        node.query("SYSTEM START VIEWS")
+
+
+def test_pause_allows_running_refresh_to_finish():
+    create_workload(node)
+    node.query(
+        "CREATE MATERIALIZED VIEW mv REFRESH EVERY 1 YEAR "
+        "SETTINGS refresh_retries=0 APPEND (x UInt64) ENGINE Memory EMPTY "
+        "AS SELECT sum(sleepEachRow(1)) AS x FROM numbers(10) "
+        "SETTINGS workload='all', max_threads=1, max_block_size=1"
+    )
+    node.query("SYSTEM REFRESH VIEW mv")
+    # Running also covers the short dispatch window. The process-list entry proves that
+    # admission has been consumed and the refresh execution has actually started.
+    wait_query(
+        node,
+        "SELECT count() FROM system.processes "
+        "WHERE Settings['log_comment']='refresh of default.mv' AND is_internal",
+        1,
+    )
+    node.query("SYSTEM PAUSE VIEW mv")
+    node.query("SYSTEM WAIT VIEW mv", timeout=30)
+    assert node.query("SELECT count() FROM mv") == "1\n"
+    wait_status(node, "Disabled")
+    wait_metric(node, "ConcurrentQueryAcquired", 0)
+
+
 def test_admission_failure_does_not_execute():
     create_workload(node, max_waiting=1)
     create_view(node, "queued")
@@ -198,9 +257,10 @@ def test_admission_failure_does_not_execute():
 
 def test_workload_change_while_queued_requires_new_admission():
     create_workload(node)
+    node.query("CREATE WORKLOAD original IN all")
     node.query("CREATE WORKLOAD updated IN all")
-    create_view(node)
-    with occupied_slot(node):
+    create_view(node, workload="original")
+    with occupied_slot(node, workload="original"):
         node.query("SYSTEM REFRESH VIEW mv")
         wait_status(node, "WaitingForResource")
         node.query(
@@ -278,9 +338,10 @@ def test_detach_clears_running_znode_without_session_expiry():
             node.query("SYSTEM REFRESH VIEW rmv_slots.mv")
             wait_status(node, "WaitingForResource", database="rmv_slots")
             assert keeper.exists(path + "/running") is not None
-            node.query("DETACH TABLE rmv_slots.mv PERMANENTLY", timeout=30)
+            node.query("DETACH TABLE rmv_slots.mv PERMANENTLY SYNC", timeout=30)
             try:
                 assert keeper.exists(path + "/running") is None
+                assert b"refresh_running: 0" in keeper.get(path)[0]
                 wait_metric(node, "ConcurrentQueryScheduled", 0)
                 assert metric(node, "ConcurrentQueryAcquired") == "1"
             finally:
