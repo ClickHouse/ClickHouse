@@ -134,6 +134,7 @@ namespace FailPoints
     extern const char database_replicated_pause_after_reading_log_pointer[];
     extern const char database_replicated_pause_after_snapshot_identity_check[];
     extern const char database_replicated_throw_on_stop_replication[];
+    extern const char database_replicated_pause_before_commit_create_table[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -2617,6 +2618,9 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
     chassert(!ddl_worker->isCurrentlyActive() || txn);
+
+    /// Lets a test park an executing replicated DDL entry before it publishes the table and its digest.
+    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_pause_before_commit_create_table);
 
     String statement = getObjectDefinitionFromCreateQuery(query.clone());
 
