@@ -144,6 +144,50 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
     return common_header;
 }
 
+namespace
+{
+
+/// Collect a type together with all its nested types, in forEachChild pre-order.
+DataTypes flattenTypeTree(const DataTypePtr & type)
+{
+    DataTypes result{type};
+    type->forEachChild([&](const IDataType & child) { result.push_back(child.getPtr()); });
+    return result;
+}
+
+/// DataTypeUInt64 carries a per-instance canUnsignedBeSigned flag which lets getLeastSupertype
+/// replace UInt64 by Int64, but IDataType::equals() does not compare it, so a flagged and an
+/// unflagged UInt64 are indistinguishable to every equals()-based check. Report whether converting
+/// a union branch to the common header would only ever DROP the flag: that direction is the one
+/// that makes the branch match the target the planner already computed. The reverse direction
+/// (adding a flag) is skipped on purpose, and so is a container that would do both at once, because
+/// a CAST converts a whole column and cannot flip one leaf without flipping the other.
+bool convertingToCommonHeaderOnlyStripsSupertypeFlags(const DataTypePtr & branch_type, const DataTypePtr & target_type)
+{
+    /// Anything equals() can see is already converted by makeConvertingActions.
+    if (!branch_type->equals(*target_type))
+        return false;
+
+    DataTypes branch_types = flattenTypeTree(branch_type);
+    DataTypes target_types = flattenTypeTree(target_type);
+    if (branch_types.size() != target_types.size())
+        return false;
+
+    bool strips = false;
+    bool adds = false;
+    for (size_t i = 0; i < branch_types.size(); ++i)
+    {
+        const bool branch_flagged = isUInt64ThatCanBeInt64(branch_types[i]);
+        const bool target_flagged = isUInt64ThatCanBeInt64(target_types[i]);
+        strips |= branch_flagged && !target_flagged;
+        adds |= target_flagged && !branch_flagged;
+    }
+
+    return strips && !adds;
+}
+
+}
+
 void addConvertingToCommonHeaderActionsIfNeeded(
     std::vector<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
@@ -154,7 +198,29 @@ void addConvertingToCommonHeaderActionsIfNeeded(
     for (size_t i = 0; i < queries_size; ++i)
     {
         auto & query_node_plan = query_plans[i];
-        if (blocksHaveEqualStructure(*query_node_plan->getCurrentHeader(), union_common_header))
+        const auto & plan_header = *query_node_plan->getCurrentHeader();
+
+        /// A branch may differ from the common header only in a supertype-inference flag that
+        /// IDataType::equals() ignores, in which case blocksHaveEqualStructure reports equality and
+        /// makeConvertingActions omits the CAST. The branch then publishes its own type identity as
+        /// the union output type, and an enclosing union folds a different supertype than the
+        /// analyzer already declared for the same node.
+        bool needs_conversion = !blocksHaveEqualStructure(plan_header, union_common_header);
+        std::vector<size_t> positions_to_force_cast;
+        if (plan_header.columns() == union_common_header.columns())
+        {
+            for (size_t column = 0; column < union_common_header.columns(); ++column)
+            {
+                if (convertingToCommonHeaderOnlyStripsSupertypeFlags(
+                        plan_header.getByPosition(column).type, union_common_header.getByPosition(column).type))
+                {
+                    positions_to_force_cast.push_back(column);
+                    needs_conversion = true;
+                }
+            }
+        }
+
+        if (!needs_conversion)
             continue;
 
         auto actions_dag = ActionsDAG::makeConvertingActions(
@@ -165,6 +231,17 @@ void addConvertingToCommonHeaderActionsIfNeeded(
             false /*ignore_constant_values*/,
             false /*add_cast_columns*/,
             nullptr /*new_names*/);
+
+        /// Force the CAST makeConvertingActions did not emit, so the branch publishes the common
+        /// header type instance instead of its own.
+        auto & outputs = actions_dag.getOutputs();
+        for (size_t position : positions_to_force_cast)
+        {
+            const auto & target = union_common_header.getByPosition(position);
+            const auto & cast_node = actions_dag.addCast(*outputs[position], target.type, {}, context);
+            outputs[position] = &actions_dag.addAlias(cast_node, target.name);
+        }
+
         auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
         converting_step->setStepDescription("Conversion before UNION");
         query_node_plan->addStep(std::move(converting_step));

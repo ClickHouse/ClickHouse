@@ -1,0 +1,56 @@
+plain select
+9223372036854775806
+explain pipeline
+1
+declared type
+Variant(Int64, UInt64)
+plan header agrees with the declared type
+1
+materialized branches
+9223372036854775806
+intersect
+0
+wrapped in Nullable
+9223372036854775806
+wrapped in LowCardinality
+9223372036854775806
+wrapped in Array
+[9223372036854775806]
+wrapped in Tuple
+(9223372036854775806)
+wrapped in Map
+{'k':9223372036854775806}
+control: explicit casts
+Variant(Int64, UInt64)
+9223372036854775806
+control: union all
+Int64
+control: mixed branches, flagged first
+Int64
+1
+control: mixed branches, unflagged first
+Variant(Int64, UInt64)
+3
+control: tuple with flags in both directions
+Variant(Tuple(Int64, Int64), Tuple(UInt64, UInt64))
+conversion steps: primary
+4
+conversion steps: mixed branches, flagged first
+3
+conversion steps: mixed branches, unflagged first
+3
+conversion steps: tuple with flags in both directions
+4
+conversion steps: union all
+3
+conversion steps: explicit casts
+4
+conversion steps: a branch that would have to acquire the flag
+1
+UInt64
+conversion steps: non constant tuple with flags in both directions
+0
+Tuple(UInt64, UInt64)
+control: aggregate state union
+15
+UInt64
