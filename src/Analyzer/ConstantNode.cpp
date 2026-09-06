@@ -71,6 +71,17 @@ String ConstantNode::getValueStringRepresentation() const
     return applyVisitor(FieldVisitorToString(), getValue());
 }
 
+bool ConstantNode::requiresCastCallForResultType(const DataTypePtr & data_type)
+{
+    /// `requiresCastCall` returns false only when the `Field`'s type is none of `Nullable`, `Array`
+    /// or `Tuple` AND its type id equals `data_type`'s. For one of these three the id equality would
+    /// force the `Field`'s type to be that same kind, contradicting the first clause, so
+    /// `requiresCastCall` answers true for any `Field` at all - even one disagreeing with the
+    /// declared type.
+    WhichDataType which_data_type(data_type);
+    return which_data_type.isNullable() || which_data_type.isArray() || which_data_type.isTuple();
+}
+
 bool ConstantNode::requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type)
 {
     WhichDataType which_field_type(field_type);
@@ -244,6 +255,12 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 
     auto requires_cast = [this]()
     {
+        /// `Nullable`, `Array` and `Tuple` always require a cast whatever the value is, so answer
+        /// from the result type instead of materializing the value: inferring the type of a large
+        /// `Array` or `Tuple` constant costs one `Field` and one `DataTypePtr` per element.
+        if (requiresCastCallForResultType(getResultType()))
+            return true;
+
         try
         {
             auto field_type = applyVisitor(FieldToDataType(), getValue());
