@@ -3015,7 +3015,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 if (unexpected)
                 {
                     LOG_DEBUG(log, "loadDataParts: Part {} is broken, but it's not expected to be in parts set, "
-                              " will not count it as suspicious broken part", res.part->name);
+                              "will not count it as suspicious broken part", res.part->name);
                     ++suspicious_broken_unexpected_parts;
                 }
                 else
@@ -4518,7 +4518,7 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
 
     if (parts_to_remove.size() != sum_of_ranges + excluded_parts.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Number of parts to remove was not equal to number of parts in independent ranges and excluded parts"
+                        "Number of parts to remove was not equal to number of parts in independent ranges and excluded parts "
                         "({} != {} + {}), it's a bug", parts_to_remove.size(), sum_of_ranges, excluded_parts.size());
 }
 

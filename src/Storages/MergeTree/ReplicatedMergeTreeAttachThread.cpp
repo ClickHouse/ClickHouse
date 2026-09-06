@@ -127,7 +127,7 @@ void ReplicatedMergeTreeAttachThread::checkHasReplicaMetadataInZooKeeper(const z
     if (!replica_metadata_exists || replica_metadata.empty())
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Upgrade from 20.3 and older to 22.9 and newer "
-                        "should be done through an intermediate version (failed to get metadata or metadata_version for {},"
+                        "should be done through an intermediate version (failed to get metadata or metadata_version for {}, "
                         "assuming it's because of upgrading)", replica_path);
     }
 }

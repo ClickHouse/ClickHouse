@@ -219,20 +219,20 @@ if __name__ == "__main__":
     group.add_argument(
         "--encode",
         action="store_true",
-        help="Specify to encode length-delimited messages."
+        help="Specify to encode length-delimited messages. "
         "The utility will read text-format messages of the given type from the input and write it in binary to the output.",
     )
     group.add_argument(
         "--decode",
         action="store_true",
-        help="Specify to decode length-delimited messages."
+        help="Specify to decode length-delimited messages. "
         "The utility will read messages in binary from the input and write text-format messages to the output.",
     )
     group.add_argument(
         "--decode_and_check",
         action="store_true",
         help="The same as --decode, and the utility will then encode "
-        " the decoded data back to the binary form to check that the result of that encoding is the same as the input was.",
+        "the decoded data back to the binary form to check that the result of that encoding is the same as the input was.",
     )
     args = parser.parse_args()
 

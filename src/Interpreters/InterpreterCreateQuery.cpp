@@ -1759,7 +1759,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.isTemporary() && !create.cluster.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY,
-            "Temporary objects (tables/views) cannot be created ON CLUSTER."
+            "Temporary objects (tables/views) cannot be created ON CLUSTER. "
             "You should not specify a cluster for a temporary objects.");
 
     String current_database = getContext()->getCurrentDatabase();

@@ -40,7 +40,7 @@ void AggregateFunctionFactory::registerFunction(const String & name, Value creat
 {
     if (creator_with_properties.creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: "
-            "the aggregate function {} has been provided  a null constructor", name);
+            "the aggregate function {} has been provided a null constructor", name);
 
     if (!aggregate_functions.emplace(name, creator_with_properties).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: the aggregate function name '{}' is not unique",

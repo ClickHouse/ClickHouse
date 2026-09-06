@@ -23,7 +23,7 @@ def check():
     ):
         GH.post_updateable_comment(
             comment_tags_and_bodies={
-                "team_notification": "@ClickHouse/integrations team,  please, take a look"
+                "team_notification": "@ClickHouse/integrations team, please, take a look"
             }
         )
 

@@ -84,8 +84,8 @@ REGISTER_FUNCTION(WKB)
         .arguments{{"geometry", "The input geometry type to convert into WKB."}},
         .examples{
             {"first call",
-             "CREATE TABLE IF NOT EXISTS geom1 (a Point) ENGINE = Memory();"
-             "INSERT INTO geom1 VALUES((0, 0));"
+             "CREATE TABLE IF NOT EXISTS geom1 (a Point) ENGINE = Memory();\n"
+             "INSERT INTO geom1 VALUES((0, 0));\n"
              "SELECT hex(wkb(a)) FROM geom1;",
              R"(
 ┌─hex(wkb(a))────────────────────────────────┐

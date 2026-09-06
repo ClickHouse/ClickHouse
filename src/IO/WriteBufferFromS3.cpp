@@ -294,7 +294,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
         {
             LOG_INFO(
                 log,
-                "WriteBufferFromS3 was canceled."
+                "WriteBufferFromS3 was canceled. "
                 "The file might not be written to S3. "
                 "{}.",
                 getVerboseLogDetails());

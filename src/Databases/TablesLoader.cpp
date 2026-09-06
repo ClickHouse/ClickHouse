@@ -211,7 +211,7 @@ void TablesLoader::removeUnresolvableDependencies()
             /// Tables depend on a XML dictionary.
             LOG_WARNING(
                 log,
-                "Tables {} depend on XML dictionary {}, but XML dictionaries are loaded independently."
+                "Tables {} depend on XML dictionary {}, but XML dictionaries are loaded independently. "
                 "Consider converting it to DDL dictionary.",
                 fmt::join(all_loading_dependencies.getDependents(table_id), ", "),
                 table_id);
@@ -232,7 +232,7 @@ void TablesLoader::removeUnresolvableDependencies()
         size_t num_dependents = 0;
         all_loading_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
         if (num_dependencies || !num_dependents)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependencies and dependent tables as it expected to."
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependencies and dependent tables as it expected to. "
                                                        "It's a bug", table_id);
 
         return true; /// Exclude this dependency.

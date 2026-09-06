@@ -874,7 +874,7 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
     {
         LOG_ERROR(
             log,
-            "Table was not completely removed from Keeper, {} still exists and may contain some garbage,"
+            "Table was not completely removed from Keeper, {} still exists and may contain some garbage, "
             "but someone is removing it right now.",
             keeper_path);
     }

@@ -479,7 +479,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
             break;
     }
     if (!success)
-        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot,"
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot, "
                                                                  "because replicas are created or removed concurrently");
 
     LOG_TRACE(log, "Got a list of hosts after {} iterations. All hosts: [{}], filtered: [{}], ids: [{}]", iteration,

@@ -1401,7 +1401,7 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         {
             HostID interserver_io_secure_host_id = {host_port.first, *maybe_secure_port};
             all_host_ids.emplace(interserver_io_secure_host_id.toString());
-            LOG_INFO(log, "Add interserver IO secure host ID  {}", interserver_io_secure_host_id.toString());
+            LOG_INFO(log, "Add interserver IO secure host ID {}", interserver_io_secure_host_id.toString());
         }
     }
     catch (const Exception & e)
