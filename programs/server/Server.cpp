@@ -3629,12 +3629,20 @@ try
                 LOG_INFO(log, "Closed all listening sockets.");
 
             /// Wait for unfinished backups and restores.
-            /// This must be done after closing listening sockets (no more backups/restores) but before ProcessList::killAllQueries
+            /// This must be done after closing listening sockets (no more socket-delivered backups/restores) but before ProcessList::killAllQueries
             /// (because killAllQueries() will cancel all running backups/restores).
+            bool backups_finished = true;
             if (server_settings[ServerSetting::shutdown_wait_backups_and_restores])
                 global_context->waitAllBackupsAndRestores();
             else
-                global_context->cancelAllBackupsAndRestores();
+            {
+                /// Refused first so that the wait cannot miss an operation started after it took
+                /// its snapshot; a distributed DDL query can still deliver one here.
+                global_context->stopAcceptingNewBackupsAndRestores();
+                backups_finished = global_context->cancelAllBackupsAndRestores(
+                    std::chrono::steady_clock::now()
+                    + std::chrono::seconds(server_settings[ServerSetting::shutdown_wait_unfinished]));
+            }
 
             stop_oom_canary();
 
@@ -3663,7 +3671,13 @@ try
 
             dns_cache_updater.reset();
 
-            if (current_connections || !joined_refresh_tasks || !joined_background_queries)
+            /// killAllQueries() and the waits above can have driven a cancelled backup to a final
+            /// status, and then the normal teardown is able to complete. Sound because this is false
+            /// only where new operations are already refused, so the unfinished set cannot grow.
+            if (!backups_finished)
+                backups_finished = !global_context->hasUnfinishedBackupsAndRestores();
+
+            if (current_connections || !joined_refresh_tasks || !joined_background_queries || !backups_finished)
             {
                 /// There is no better way to force connections to close in Poco.
                 /// Otherwise connection handlers will continue to live
