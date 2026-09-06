@@ -1473,6 +1473,18 @@
             flex: 1;
         }
 
+        #profile-traces-control
+        {
+            white-space: nowrap;
+        }
+
+        @media (max-width: 600px)
+        {
+            #run_div { flex-wrap: wrap; }
+            #hint { display: none; }
+            query-progress { flex-basis: 100%; order: 1; }
+        }
+
         #run, #run-all
         {
             grid-area: run;
@@ -1851,6 +1863,7 @@
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
                 <button type="button" class="shadow" id="run-all">Run all</button>
+                <label id="profile-traces-control" title="Collect sampling-profiler stacks during the next query in this tab"><input type="checkbox" id="profile-traces"> Flame graph</label>
                 <div id="hint">&nbsp;(<span id="hint-modifier">Ctrl/Cmd</span>+Enter<span id="hint-run-all" style="display: none">, +Shift to run all</span>)</div>
                 <query-progress id="query-progress"></query-progress>
                 <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
@@ -2130,7 +2143,7 @@ class QueryProgressElement extends HTMLElement
 
         /// The Logs, Metrics and Flame toggles switch the result view between the query result and
         /// one of the extras: the streamed server logs, the extended profile-event metrics, or the
-        /// flame graph built from the query's `system.trace_log` samples. The progress element only
+        /// flame graph built from the query's streamed profiler samples. The progress element only
         /// tracks which view is selected and announces changes via a `set-view` event; the page
         /// listener applies the view to the result element(s).
         this._logsToggle = this.shadowRoot.getElementById('logs-toggle');
@@ -2178,8 +2191,7 @@ class QueryProgressElement extends HTMLElement
         this._metricsToggle.style.display = 'inline-block';
     }
 
-    /// Reveal the Flame toggle. Called once the server has accepted a query whose `query_id` this
-    /// page chose, so its samples in `system.trace_log` can be looked up. Idempotent.
+    /// Reveal the Flame toggle when profiling is requested or samples arrive. Idempotent.
     showFlameToggle()
     {
         this._flameToggle.style.display = 'inline-block';
@@ -3989,7 +4001,7 @@ class QueryResultElement extends HTMLElement
                     margin-bottom: 0.5rem;
                 }
 
-                #flame-controls select, #flame-controls button
+                #flame-controls select
                 {
                     font-size: 10pt;
                     color: var(--text-color);
@@ -4134,7 +4146,6 @@ class QueryResultElement extends HTMLElement
                         <option value="10000000">10 ms</option>
                         <option value="1000000">1 ms</option>
                     </select></label>
-                    <button id="flame-reload">Reload</button>
                     <span id="flame-status"></span>
                 </div>
                 <div id="flame-graph" class="monospace"></div>
@@ -4155,17 +4166,11 @@ class QueryResultElement extends HTMLElement
         this._flamePeriod = this.shadowRoot.getElementById('flame-period');
         this._flameStatus = this.shadowRoot.getElementById('flame-status');
         this._flameGraph = this.shadowRoot.getElementById('flame-graph');
-        /// Where the flame graph's samples live: the `query_id` this page chose for the query and the
-        /// connection it ran on (set by `setProfileSource` once the server accepted the query). The
-        /// samples are fetched lazily, on the first switch to the Flame view, and cached per trace
-        /// type in `_flame_data` (a map from trace type to the collapsed stacks) until the next run.
-        this._flame_source = null;
-        this._flame_data = new Map();
-        this._flame_request = 0;
-        this._flamePeriod.value = profilerPeriodNs();
+        this._flame_data = freshFlameGraphState();
+        this._flame_timer = null;
+        this._flame_requested = false;
         this._flamePeriod.addEventListener('change', () => selectProfilerPeriod(this, this._flamePeriod.value));
         this._flameType.addEventListener('change', () => this._showFlameGraph());
-        this.shadowRoot.getElementById('flame-reload').addEventListener('click', () => this._showFlameGraph(true));
         /// The extended profile-event metrics model (the Metrics view). Each metric name maps to
         /// its per-host aggregation; `_metrics_final` switches the rate column from the recent rate
         /// to the query-average once the query finishes. See `updateMetrics`/`renderMetricsTable`.
@@ -4411,9 +4416,10 @@ class QueryResultElement extends HTMLElement
         this._flameGraph.replaceChildren();
         this._flameGraph.style.height = '';
         this._flameStatus.textContent = '';
-        this._flame_source = null;
-        this._flame_data = new Map();
-        ++this._flame_request;
+        this._flame_data = freshFlameGraphState();
+        this._flame_requested = false;
+        clearTimeout(this._flame_timer);
+        this._flame_timer = null;
 
         this._dataTable.classList.remove('fixed');
         this._dataTable.classList.remove('single-value');
@@ -6612,11 +6618,10 @@ class QueryResultElement extends HTMLElement
     renderError(message)
     {
         let text = message ? message : "No response.";
-        /// A rejected profiler setting most likely comes from the period selected in the Flame view (it
-        /// is applied to every run, in every tab), so point back to it: nothing else in the page or in
-        /// the error would tell the user where the setting came from.
-        if (profilerPeriodNs() && String(message).includes('query_profiler_'))
-            text += '\n\nThe profiler period selected in the Flame view is applied to every run; switch it back to the server default there.';
+        if (profilerPeriodNs(this._ownerTab) && String(message).includes('query_profiler_'))
+            text += '\n\nReset the profiler period to the server default in the Flame view, or uncheck Flame graph before running again.';
+        if (String(message).includes('send_profile_traces'))
+            text += '\n\nThis server did not accept live profiling. Uncheck Flame graph before running again.';
         this._error.innerText = text;
         this._error.style.display = 'block';
     }
@@ -6671,50 +6676,47 @@ class QueryResultElement extends HTMLElement
         progressEl.showFlameToggle();
     }
 
-    /// Record where this result's profiler samples can be fetched from (see `postImpl`) and offer the
-    /// Flame toggle. Called once the server accepted the query, so `system.trace_log` gets rows under
-    /// this `query_id` if the profiler sampled it. Samples for a still-running query are partial.
-    setProfileSource(source)
+    startProfileTraces(requested)
     {
-        this._flame_source = source;
-        this._flame_data = new Map();
-        this._markFlameAvailable();
-        if (this._view === 'flame')
-            this._showFlameGraph();
+        this._flame_requested = requested;
+        if (requested) this._markFlameAvailable();
     }
 
-    /// Show the flame graph for the selected trace type: from the cache, or fetched from the server
-    /// (`force` refetches, e.g. after the query produced more samples). See `fetchFlameGraphStacks`.
-    async _showFlameGraph(force = false)
+    appendProfileTraces(traces)
     {
-        const source = this._flame_source;
-        if (!source) return;
+        this._flame_requested = true;
+        accumulateProfileTraces(this._flame_data, traces);
+        this._markFlameAvailable();
+        /// Hidden views keep only the aggregate. Paint at most four times a second, including when
+        /// many batches arrive in a single network read; the next activation paints immediately.
+        if (this._view === 'flame' && (!this._ownerTab || this._ownerTab.id === activeTabId) && this._flame_timer === null)
+        {
+            this._flame_timer = setTimeout(() =>
+            {
+                this._flame_timer = null;
+                if (this.isConnected && this._view === 'flame' && (!this._ownerTab || this._ownerTab.id === activeTabId))
+                    this._showFlameGraph();
+            }, 250);
+        }
+    }
+
+    _showFlameGraph()
+    {
         const trace_type = this._flameType.value;
-        const request = ++this._flame_request;
-        if (force || !this._flame_data.has(trace_type))
+        this._flamePeriod.value = profilerPeriodNs(this._ownerTab);
+        const tree = this._flame_data.types.get(trace_type);
+        this._flameStatus.textContent = tree?.root.value ? `${tree.samples.toLocaleString('en-US')} samples received.`
+            : this._flame_requested ? flameGraphEmptyHint(trace_type)
+            : 'Check Flame graph next to Run to collect samples on the next query.';
+        if (this._flame_data.dropped)
+            this._flameStatus.textContent += ` ${this._flame_data.dropped.toLocaleString('en-US')} samples omitted at the browser memory limit.`;
+        if (!tree || tree.root.value === 0)
         {
             this._flameGraph.replaceChildren();
-            this._flameStatus.textContent = 'Loading…';
-            const fetched = await fetchFlameGraphStacks(source, trace_type);
-            /// A newer request, a rerun or a `clear` superseded this fetch.
-            if (request !== this._flame_request) return;
-            if (fetched.error !== null)
-            {
-                this._flameStatus.textContent = fetched.error;
-                return;
-            }
-            this._flame_data.set(trace_type, fetched);
-        }
-        const data = this._flame_data.get(trace_type);
-        this._flameGraph.replaceChildren();
-        this._flameGraph.style.height = '';
-        if (data.stacks.length === 0)
-        {
-            this._flameStatus.textContent = flameGraphEmptyHint(trace_type, source.query_id) + (data.warning ? '\n' + data.warning : '');
+            this._flameGraph.style.height = '';
             return;
         }
-        this._flameStatus.textContent = data.warning || '';
-        renderFlameGraph(this._flameGraph, data.stacks, trace_type === 'MemorySample' ? 'bytes' : 'samples');
+        renderFlameGraph(this._flameGraph, tree, trace_type === 'MemorySample' ? 'bytes' : 'samples');
     }
 
     /// Queue a server log entry (from a framing `log` packet) for the logs view. Lines are buffered
@@ -6859,7 +6861,7 @@ class QueryResultElement extends HTMLElement
         /// finish - so switching to it must render the current snapshot.
         if (view === 'metrics')
             this.renderMetricsTable();
-        /// The flame graph is fetched lazily too - `system.trace_log` is queried on the first switch.
+        /// Render the samples already received when switching to the flame graph.
         if (view === 'flame')
             this._showFlameGraph();
         /// If the fixed table layout was deferred because the table was hidden (see
@@ -8199,117 +8201,97 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
     return await response.json();
 }
 
-/// A fresh `query_id` for a run (see `postImpl`). Random hex from `crypto.getRandomValues`, which,
-/// unlike `crypto.randomUUID`, is also available when the page is served over plain HTTP.
-function randomQueryId()
+/// Profiler controls belong to the tab and are not persisted across page loads or copied to other
+/// tabs. A selected period is sent only when the user has also enabled Flame graph for that run.
+function profilerPeriodNs(tab)
 {
-    const bytes = new Uint8Array(16);
-    crypto.getRandomValues(bytes);
-    return 'play-' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    return tab?.profilerPeriodNs || '';
 }
 
-/// The sampling-profiler period the Flame view asked for (a string of nanoseconds, or '' for the
-/// server default), kept in localStorage so it applies to every run in every tab.
-function profilerPeriodNs()
+function selectProfilerPeriod(result_el, value)
 {
-    return localStorage.getItem('play_profiler_period_ns') || '';
-}
-
-function setProfilerPeriodNs(value)
-{
-    if (value) localStorage.setItem('play_profiler_period_ns', value);
-    else localStorage.removeItem('play_profiler_period_ns');
-    for (const el of document.querySelectorAll('query-result'))
+    const tab = result_el._ownerTab;
+    if (!tab) return;
+    tab.profilerPeriodNs = value;
+    for (const el of tab.panel.querySelectorAll('query-result'))
         el._flamePeriod.value = value;
 }
 
-/// Apply a profiler period chosen in a result element's Flame view. A non-default period is first
-/// probed on the connection (the one that produced the result, or the live one): the setting may be
-/// constrained read-only on the server, and since the period is remembered and applied to every later
-/// run, storing a rejected value would make each of those runs fail with a settings error that names
-/// no cause. A rejected period is not stored; the server's message is shown in the view instead.
-async function selectProfilerPeriod(result_el, value)
+const MAX_FLAME_NODES = 20000;
+const MAX_FLAME_LABEL_CHARS = 2 * 1024 * 1024;
+const MAX_FLAME_DEPTH = 256;
+const MAX_FLAME_DOM_FRAMES = 2000;
+
+function freshFlameGraphState()
 {
-    if (value)
+    return { types: new Map(), nodes: 0, labelChars: 0, dropped: 0 };
+}
+
+/// Fold leaf-first samples directly into stable trees, so zoom references survive new batches.
+/// Bound both node count and symbol text across all trace types. Reject an entire new stack when
+/// it would exceed the budget; existing stacks can still accumulate without allocating more nodes.
+function accumulateProfileTraces(state, traces)
+{
+    for (const sample of traces)
     {
-        const source = result_el._flame_source;
-        const server_address = source ? source.server_address : url_elem.value;
-        const user = source ? source.user : user_elem.value;
-        const password = source ? source.password : password_elem.value;
-        let error = null;
-        result_el._flameStatus.textContent = 'Checking the profiler settings…';
-        const json = await auxiliaryQuery(server_address, user, password, 'SELECT 1',
-            `&query_profiler_real_time_period_ns=${value}&query_profiler_cpu_time_period_ns=${value}`, true, null, text => { error = String(text); });
-        if (json === false)
+        const type = sample.trace_type;
+        if (type !== 'CPU' && type !== 'Real' && type !== 'MemorySample') continue;
+        const weight = type === 'MemorySample' ? Number(sample.size) : 1;
+        if (!Number.isFinite(weight) || weight <= 0 || !Array.isArray(sample.trace) || sample.trace.length === 0) continue;
+        if (sample.trace.length > MAX_FLAME_DEPTH) { ++state.dropped; continue; }
+        let tree = state.types.get(type);
+        if (!tree)
         {
-            result_el._flamePeriod.value = profilerPeriodNs();
-            result_el._flameStatus.textContent = 'The server does not accept this profiler period:\n' + (error ?? 'network error');
-            return;
+            const root = { name: 'all', value: 0, children: new Map(), parent: null, depth: 0 };
+            tree = { root, zoom: root, maxDepth: 0, samples: 0 };
+            state.types.set(type, tree);
         }
-        result_el._flameStatus.textContent = '';
+        const names = [];
+        for (let i = sample.trace.length - 1; i >= 0; --i)
+        {
+            /// Addresses arrive as decimal strings: converting them to `Number` would merge distinct
+            /// unresolved frames above 2^53. Host names separate unsymbolized addresses across hosts.
+            names.push(sample.symbols?.[i] || `${sample.host_name}: ${sample.trace[i]}`);
+        }
+        let node = tree.root;
+        let new_nodes = 0;
+        let new_chars = 0;
+        for (const name of names)
+        {
+            node = node?.children.get(name);
+            if (!node) { ++new_nodes; new_chars += name.length; }
+        }
+        if (state.nodes + new_nodes > MAX_FLAME_NODES || state.labelChars + new_chars > MAX_FLAME_LABEL_CHARS)
+        {
+            ++state.dropped;
+            continue;
+        }
+        state.nodes += new_nodes;
+        state.labelChars += new_chars;
+        node = tree.root;
+        node.value += weight;
+        for (const name of names)
+        {
+            let child = node.children.get(name);
+            if (!child)
+            {
+                child = { name, value: 0, children: new Map(), parent: node, depth: node.depth + 1 };
+                node.children.set(name, child);
+            }
+            child.value += weight;
+            node = child;
+        }
+        tree.maxDepth = Math.max(tree.maxDepth, node.depth);
+        ++tree.samples;
     }
-    setProfilerPeriodNs(value);
 }
 
-/// Fetch the collapsed stacks ("frame;frame;frame count" lines) of a query's samples of the given
-/// `trace_type` from `system.trace_log` on the connection that ran it, symbolized by the server's
-/// `flameGraph` aggregate function. Logs are flushed first, because the samples are written to the
-/// table asynchronously; a failed flush (e.g. missing privilege) is reported as a warning while the
-/// stacks are still fetched. Returns `{ stacks, warning, error }`; `error` is non-null on failure.
-async function fetchFlameGraphStacks(source, trace_type)
+function flameGraphEmptyHint(trace_type)
 {
-    const first_line = text => String(text).split('\n')[0];
-    let warning = '';
-    /// Not `auxiliaryQuery`: that parses the response as JSON, and a statement returns an empty body.
-    let flush_url = source.server_address + (source.server_address.indexOf('?') >= 0 ? '&' : '?') + 'add_http_cors_header=1';
-    if (source.user) flush_url += '&user=' + encodeURIComponent(source.user);
-    if (source.password) flush_url += '&password=' + encodeURIComponent(source.password);
-    try
-    {
-        const response = await fetch(flush_url, { method: 'POST', body: 'SYSTEM FLUSH LOGS trace_log', headers: { 'Authorization': 'never' } });
-        if (!response.ok)
-            warning = 'Could not flush the logs, recent samples may be missing: ' + first_line(await response.text());
-    }
-    catch (e)
-    {
-        warning = 'Could not flush the logs, recent samples may be missing: network error';
-    }
-
-    const stack = trace_type === 'MemorySample'
-        ? 'flameGraph(arrayReverse(trace), size)'
-        : 'flameGraph(arrayReverse(trace))';
-    /// For memory, only the allocations: each sampled deallocation is a negative `size` that
-    /// `flameGraph` would subtract, leaving a graph of what was still allocated at the end.
-    const size_filter = trace_type === 'MemorySample' ? ' AND size > 0' : '';
-    /// The table is ordered by `event_date, event_time`, so bound the lookup to the run. Without the
-    /// bound this is a full scan of a table that grows quickly on a busy server with profiling enabled.
-    /// The bound is computed in the server's clock: the page passes how long ago the run started (a
-    /// difference of two browser timestamps, so the browser and server clocks disagreeing does not
-    /// matter) and the server subtracts it from its `now()`. The start was stamped before the run's
-    /// request left the browser, so the age already errs on the safe side; the slack only covers the
-    /// latency of this lookup itself and small clock adjustments on the server.
-    const age_sec = Math.ceil((Date.now() - source.started_at_ms) / 1000) + 10;
-    const time_filter = ` AND event_date >= toDate(now() - ${age_sec}) - 1 AND event_time >= now() - ${age_sec}`;
-    const query = `SELECT arrayJoin(${stack}) AS stack FROM system.trace_log`
-        + ` WHERE query_id = ${quoteStringLiteral(source.query_id)} AND trace_type = ${quoteStringLiteral(trace_type)}${time_filter}${size_filter}`;
-
-    let error = null;
-    const json = await auxiliaryQuery(source.server_address, source.user, source.password, query,
-        '&allow_introspection_functions=1', true, null, text => { error = String(text); });
-    if (json === false)
-        return { stacks: [], warning, error: error ?? 'Could not fetch the samples.' };
-    return { stacks: json.data.map(row => row.stack), warning, error: null };
-}
-
-function flameGraphEmptyHint(trace_type, query_id)
-{
-    const where = `No ${trace_type} samples for query_id ${query_id} in system.trace_log.`;
+    const where = `No ${trace_type} samples received.`;
     if (trace_type === 'MemorySample')
-        return where + '\nMemory allocations are sampled only when memory_profiler_sample_probability is set'
-            + ' (it is 0 by default), e.g. SETTINGS memory_profiler_sample_probability = 0.01. Set it and run the query again.';
-    const setting = trace_type === 'CPU' ? 'query_profiler_cpu_time_period_ns' : 'query_profiler_real_time_period_ns';
-    return where + `\nThe profiler takes a sample every ${setting} (1 s by default), so a short query leaves none.`
-        + ' Pick a shorter profiler period above and run the query again.';
+        return where + '\nTo sample allocations, add SETTINGS memory_profiler_sample_probability = 0.01 and run the query again.';
+    return where + '\nShort queries may finish before the profiler takes a sample. Pick a shorter profiler period above and run again.';
 }
 
 function formatFlameValue(value, unit)
@@ -8323,40 +8305,16 @@ function formatFlameValue(value, unit)
     return (i === 0 ? v.toString() : v.toFixed(2)) + ' ' + units[i];
 }
 
-/// Render an interactive flame graph from collapsed stacks into `container`: one frame per stack
+/// Render an interactive flame graph from the aggregated tree into `container`: one frame per stack
 /// entry, the root at the bottom, frame widths proportional to the sample counts. A click zooms
 /// into that frame's subtree (its ancestors stay visible, dimmed, and a click on one zooms back out).
-function renderFlameGraph(container, stacks, unit)
+function renderFlameGraph(container, tree, unit)
 {
-    const root = { name: 'all', value: 0, children: new Map(), parent: null, depth: 0 };
-    for (const line of stacks)
-    {
-        const sep = line.lastIndexOf(' ');
-        if (sep < 0) continue;
-        const count = Number(line.slice(sep + 1));
-        if (!Number.isFinite(count) || count <= 0) continue;
-        let node = root;
-        node.value += count;
-        for (const name of line.slice(0, sep).split(';'))
-        {
-            let child = node.children.get(name);
-            if (!child)
-            {
-                child = { name, value: 0, children: new Map(), parent: node, depth: node.depth + 1 };
-                node.children.set(name, child);
-            }
-            child.value += count;
-            node = child;
-        }
-    }
+    const root = tree.root;
     if (root.value === 0) return;
 
     const row_height = 17;
     const min_width_pct = 0.05;
-    let max_depth = 0;
-    const measure = node => { max_depth = Math.max(max_depth, node.depth); for (const c of node.children.values()) measure(c); };
-    measure(root);
-    container.style.height = ((max_depth + 1) * row_height) + 'px';
 
     const frame_color = name =>
     {
@@ -8366,9 +8324,14 @@ function renderFlameGraph(container, stacks, unit)
 
     const draw = zoom =>
     {
+        tree.zoom = zoom;
         container.replaceChildren();
+        container.style.height = ((tree.maxDepth + 1) * row_height) + 'px';
+        const fragment = document.createDocumentFragment();
+        let frame_count = 0;
         const add_frame = (node, left_pct, width_pct, dimmed) =>
         {
+            ++frame_count;
             const frame = document.createElement('div');
             frame.className = 'flame-frame' + (dimmed ? ' dimmed' : '');
             frame.style.left = left_pct + '%';
@@ -8379,27 +8342,36 @@ function renderFlameGraph(container, stacks, unit)
             const share = (100 * node.value / root.value).toFixed(2);
             frame.title = `${node.name}\n${formatFlameValue(node.value, unit)} (${share}%)`;
             frame.addEventListener('click', () => draw(node === zoom && node.parent ? node.parent : node));
-            container.appendChild(frame);
+            fragment.appendChild(frame);
         };
         for (let node = zoom.parent; node; node = node.parent)
             add_frame(node, 0, 100, true);
         const layout = (node, left_pct) =>
         {
             const width_pct = 100 * node.value / zoom.value;
-            if (width_pct < min_width_pct) return;
+            if (width_pct < min_width_pct || frame_count >= MAX_FLAME_DOM_FRAMES) return;
             add_frame(node, left_pct, width_pct, false);
             /// Children in descending order of weight, the heaviest to the left.
             const children = [...node.children.values()].sort((a, b) => b.value - a.value);
             let child_left = left_pct;
             for (const child of children)
             {
+                if (frame_count >= MAX_FLAME_DOM_FRAMES) break;
                 layout(child, child_left);
                 child_left += 100 * child.value / zoom.value;
             }
         };
         layout(zoom, 0);
+        container.appendChild(fragment);
+        if (frame_count >= MAX_FLAME_DOM_FRAMES)
+        {
+            const note = document.createElement('div');
+            note.textContent = 'Frame display limit reached. Click a frame to explore its subtree.';
+            container.style.height = ((tree.maxDepth + 2) * row_height) + 'px';
+            container.appendChild(note);
+        }
     };
-    draw(root);
+    draw(tree.zoom);
 }
 
 async function getServerStatus(server_address, user, password) {
@@ -10398,6 +10370,10 @@ function makeEventStreamHandler(targetResultEl, options = {})
                 if (options.resourceMeter) options.resourceMeter(events);
             }
         }
+        else if (name === 'profile_traces')
+        {
+            targetResultEl.appendProfileTraces(JSON.parse(dataLines.join('\n')));
+        }
         else if (name === 'exception')
         {
             /// The payload is `{"exception": "..."}`, handled by `update` as an error.
@@ -11001,14 +10977,10 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// We will put the result in the query cache, so it can be used when download is initiated later.
     /// But we don't use cached results, so the results that we get here, are always fresh.
     url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore';
-    /// A `query_id` chosen here lets the Flame view find this query's sampling-profiler stacks in
-    /// `system.trace_log` (see `setProfileSource`). The profiler period is the one selected in that
-    /// view; unset leaves the server's `query_profiler_*_time_period_ns` defaults in effect.
-    const query_id = randomQueryId();
-    const started_at_ms = Date.now();
-    url += '&query_id=' + encodeURIComponent(query_id);
-    const profiler_period_ns = profilerPeriodNs();
-    if (profiler_period_ns)
+    const profile_traces = !!tab.profileTraces;
+    const profiler_period_ns = profilerPeriodNs(tab);
+    if (profile_traces) url += '&send_profile_traces=1';
+    if (profile_traces && profiler_period_ns)
         url += `&query_profiler_real_time_period_ns=${profiler_period_ns}&query_profiler_cpu_time_period_ns=${profiler_period_ns}`;
 
     /// If the user selected a database in the panel, use it as the default database.
@@ -11135,6 +11107,11 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     let plain_http_each_row_error = false;
     reply = '';
     try {
+        targetResultEl.startProfileTraces(profile_traces);
+        if (profile_traces && !use_framing)
+        {
+            throw new Error('Live flame graphs require automatic EventStream framing. Uncheck Flame graph to use JSONCompactColumns or an explicit framing_output_format setting.');
+        }
         if (user_sets_session_framing)
         {
             throw new Error("This page sets framing_output_format on every request, so it cannot change it for the whole session with a standalone SET. To use a specific framing for one query, put it in that query's SETTINGS clause, e.g. SELECT 1 SETTINGS framing_output_format = 'JSONEachPacketString'.");
@@ -11167,7 +11144,9 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         /// Only read-only queries are retried: framing is not created for a non-pulling pipeline
         /// (`INSERT`, DDL) on such a server, so the statement may already have run before returning
         /// a plain-HTTP error, and blindly resubmitting the whole request could duplicate its effect.
-        if (use_framing && !response.ok && !content_type.startsWith('text/event-stream') && await queryIsReadOnly(query)) {
+        /// An unsupported `send_profile_traces` is a profiling error, not a framing rejection.
+        /// Keep it visible so the user can disable profiling without resubmitting the query here.
+        if (use_framing && !profile_traces && !response.ok && !content_type.startsWith('text/event-stream') && await queryIsReadOnly(query)) {
             use_framing = false;
             response = await fetch(url, fetch_options);
             content_type = response.headers.get('Content-Type') ?? '';
@@ -11192,7 +11171,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             framed_error_stream = await response.text();
             if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
             const framed_error_message = framedFailureMessage(framed_error_stream, 'event_stream', null);
-            if (use_framing && framed_error_message !== null
+            if (use_framing && !profile_traces && framed_error_message !== null
                 && framed_error_message.includes('is not compatible with framing formats')
                 && await queryIsReadOnly(query)) {
                 framed_error_stream = null;
@@ -11203,10 +11182,6 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         }
 
         format = response.headers.get('X-ClickHouse-Format') ?? default_format;
-
-        /// The server has accepted (or already rejected) the query under our `query_id`, so its profiler
-        /// samples can be looked up in `system.trace_log` on the same connection.
-        targetResultEl.setProfileSource({ query_id, server_address, user, password, started_at_ms });
 
         /// An image output format (`PNG`) is detected by the `X-ClickHouse-Format` header as well as
         /// by the `Content-Type`: with a framing format the `Content-Type` is `text/event-stream`, so
@@ -13488,7 +13463,9 @@ function tabRuntimeDefaults() {
         view: 'result',         /// this tab's selected view ('result' | 'logs' | 'metrics' | 'flame'), replayed by syncActiveTabChrome
         logsAvailable: false,   /// this tab produced server logs (its Logs toggle can be offered)
         metricsAvailable: false,/// this tab produced profile-event metrics (its Metrics toggle can be offered)
-        flameAvailable: false,  /// this tab ran a query under a known `query_id` (its Flame toggle can be offered)
+        flameAvailable: false,  /// this tab requested or received profiler samples
+        profileTraces: false,   /// explicit opt-in for the next run, independent of other tabs
+        profilerPeriodNs: '',   /// empty preserves the server's sampling period
         resources: null,        /// tab-owned resource-meter state (see `freshResourceState` / `readEventStream`)
         colorModes: {},         /// per-column color modes for this tab's result (shared with its element)
         pinnedColumns: {},      /// pinned columns for this tab's result (shared with its element)
@@ -13657,6 +13634,7 @@ function syncActiveTabChrome() {
     const tab = getActiveTab();
     if (!tab) return;
     tab.completed = false;   /// opening a tab clears its "finished while away" check-mark
+    document.getElementById('profile-traces').checked = !!tab.profileTraces;
 
     if (tab.inFlight) {
         document.getElementById('run').innerText = 'Stop';
@@ -15431,6 +15409,13 @@ document.getElementById('controls').addEventListener('submit', e =>
         postOne();
         storeCredentials();
     }
+});
+
+document.getElementById('profile-traces').addEventListener('change', e =>
+{
+    markBootstrapDirty(e);
+    const tab = getActiveTab();
+    if (tab) tab.profileTraces = e.target.checked;
 });
 
 /// The "Run all" button.
