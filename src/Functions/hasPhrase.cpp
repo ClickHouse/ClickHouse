@@ -5,6 +5,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -168,7 +169,9 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
     if (arguments.size() < 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' requires at least 2 arguments, got {}", name, arguments.size());
 
-    if (!isString(arguments[arg_phrase].type))
+    /// `getReturnTypeImpl` is called on a `LowCardinality`-stripped type, so strip it here too:
+    /// otherwise `hasPhrase(text, toLowCardinality('b c'))` is rejected.
+    if (!isString(recursiveRemoveLowCardinality(arguments[arg_phrase].type)))
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "A value of illegal type was provided as 2nd argument 'phrase' to function '{}'. Expected: const String, got: {}",
@@ -184,8 +187,9 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
 
     DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
 
-    const auto tokenizer_name = arguments.size() < 3 || !arguments[arg_tokenizer].column ? SplitByNonAlphaTokenizer::getExternalName()
-                                                                                         : arguments[arg_tokenizer].column->getDataAt(0);
+    const auto tokenizer_name = arguments.size() < 3 || !arguments[arg_tokenizer].column
+        ? SplitByNonAlphaTokenizer::getExternalName()
+        : arguments[arg_tokenizer].column->convertToFullColumnIfLowCardinality()->getDataAt(0);
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
     static const UnorderedSetWithMemoryTracking<ITokenizer::Type> supported_types = {
         ITokenizer::Type::SplitByNonAlpha,
