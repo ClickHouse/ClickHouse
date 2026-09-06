@@ -22,23 +22,11 @@ This page covers the ClickHouse sink: connecting to ClickHouse Cloud and self-ho
 
 ## Prerequisites {#prerequisites}
 
-- sqlflow **v1.0.5** or later. Earlier v1.0.x releases have data-fidelity problems in this path — see the version matrix — so upgrade rather than work around them.
-- ClickHouse Cloud, or self-hosted ClickHouse. The recommended sqlflow 1.0.5 was exercised against Cloud 26.2 and self-hosted 26.8. Self-hosted 24.8 was exercised with 1.0.4 only, so the version matrix records it on that row. No minimum below these has been established.
+- sqlflow **v1.0.5** or later. Earlier releases have data-fidelity defects in this path, so upgrade rather than work around them.
+- ClickHouse Cloud, or self-hosted ClickHouse. Everything on this page was run against Cloud 26.2 and self-hosted 26.8; no minimum below those has been established.
 - A Kafka broker the pipeline can reach, for the Kafka source used in the example. The WebSocket and webhook sources need no broker.
 - Python 3 with the `confluent-kafka` package (`pip install confluent-kafka`), only for the script in the example that publishes the sample data to Kafka. sqlflow itself needs no Python.
 - Docker is the simplest install — `turbolytics/sql-flow` is published multi-arch for `linux/amd64` and `linux/arm64`. sqlflow can also be built from source; it needs Go, a C toolchain, and `libduckdb` present at runtime.
-
-### Version matrix {#version-matrix}
-
-| sqlflow       | ClickHouse Cloud | ClickHouse open source | Notes |
-| ------------- | ---------------- | ---------------------- | ----- |
-| 1.0.5+        | ✅ tested on 26.2 | ✅ tested on 26.8      | Recommended |
-| 1.0.4         | ✅ tested on 26.2 | ✅ tested on 24.8 and 26.8 | An explicit JSON `null` in a string field is stored as the text `null` rather than `NULL`; a `handlers.StructuredBatch` pipeline whose SQL has a `WHERE` inserts nothing |
-| 1.0.3         | ✅               | ✅                     | The above, plus: Kafka offsets could be committed ahead of what was inserted, so a crash lost those rows silently; a timestamp passed as a *string* is shifted by the host's UTC offset |
-| 1.0.2         | ✅               | ✅                     | The above, plus no `Array(T)` support in the sink |
-| 1.0.0 – 1.0.1 | ✅               | ✅                     | The above, plus JSON string escapes (`\n`, `\uXXXX`) stored verbatim |
-
-Every row below 1.0.5 has a data-fidelity defect in this path. Upgrade rather than work around them.
 
 ## Setup {#setup}
 
@@ -358,17 +346,13 @@ sqlflow hands each batch to ClickHouse as rows built from the Arrow table DuckDB
 | `DATE`                                 | `Date`, `Date32` |
 | `BLOB`                                 | `String` |
 | `VARCHAR` holding the textual form     | `UUID`, `IPv4`, `Decimal(P, S)` — the driver parses the string |
-| `LIST` of any of the above, nested     | `Array(T)`, `Array(Array(T))` — sqlflow 1.0.3+ |
+| `LIST` of any of the above, nested     | `Array(T)`, `Array(Array(T))` |
 | `NULL` in any column                   | `NULL` in a `Nullable(T)` column. In any other column, the type's zero value: `0`, `''`, `1970-01-01 00:00:00`, `false`. A `DEFAULT` expression on the column is **not** evaluated, because sqlflow names every column it produces in the `INSERT`; supply the default in the handler SQL with `coalesce()`, or make the column `Nullable`. A null list becomes `[]`. |
 
 Values are matched to columns **by name**, not by position.
 
 <Note>
-**Explicit JSON `null` on 1.0.4 and earlier.** A source field present with a `null` value, as in `{"name": null}`, reached the sink as the four-character string `null` rather than as `NULL`: a `Nullable(String)` column stored the word, and `CAST(ts AS TIMESTAMP)` on such a field failed the batch with `invalid timestamp field format: "null"`. A missing key was always `NULL`. From 1.0.5 an explicit `null` is `NULL` and follows the row above.
-</Note>
-
-<Note>
-**Prefer `CAST(ts AS TIMESTAMP)` over passing timestamps as strings.** A `VARCHAR` such as `'2026-09-01 12:00:00'` is accepted by a `DateTime` column and, from sqlflow 1.0.4, read as UTC; a string carrying an explicit offset such as `'… +09:00'` is honoured as written. On 1.0.3 a zone-less string is interpreted in the sqlflow host's local time zone instead, so a process in UTC−4 stores `16:00:00`. Casting in the handler SQL is unambiguous on every version.
+**Prefer `CAST(ts AS TIMESTAMP)` over passing timestamps as strings.** A `VARCHAR` such as `'2026-09-01 12:00:00'` is accepted by a `DateTime` column and read as UTC; a string carrying an explicit offset such as `'… +09:00'` is honoured as written. Casting in the handler SQL is unambiguous either way.
 
 If the field can be `NULL`, a `DateTime` column stores it as `1970-01-01 00:00:00`. Use `Nullable(DateTime)`, or `coalesce(CAST(ts AS TIMESTAMP), now()::TIMESTAMP)` in the handler SQL.
 </Note>
@@ -383,7 +367,7 @@ If the field can be `NULL`, a `DateTime` column stores it as `1970-01-01 00:00:0
 - **No table creation or schema evolution.** The table must exist, and a column the handler emits that the table lacks fails the batch (see [Troubleshooting](#troubleshooting)). Columns the handler omits take the table's `DEFAULT`.
 - **A `NULL` written to a non-`Nullable` column is stored as the type's zero value**, not as the column's `DEFAULT` expression, and no error is raised. See [Type mapping](#type-mapping) for the workaround.
 - **At-least-once delivery.** Kafka offsets are committed after the `INSERT` is acknowledged. A crash between the two replays the batch, so duplicates are possible. If that matters, use `ReplacingMergeTree` with a key that identifies the row, or an idempotent insert pattern.
-- **Transient failures are retried from 1.0.5.** A refused, reset, or timed-out connection to ClickHouse is retried with exponential backoff under a deadline, configured by the sink's `retry` block (`max_attempts`, `initial_backoff_ms`, `max_backoff_ms`, `deadline_seconds`). A rejected `INSERT` is not retried, because it fails the same way every time. The sink also dials ClickHouse once at startup, so an unreachable host fails before any message is consumed. On 1.0.4 and earlier, any sink failure exited the process and the batch replayed on restart.
+- **Transient failures are retried.** A refused, reset, or timed-out connection to ClickHouse is retried with exponential backoff under a deadline, configured by the sink's `retry` block (`max_attempts`, `initial_backoff_ms`, `max_backoff_ms`, `deadline_seconds`). A rejected `INSERT` is not retried, because it fails the same way every time. The sink also dials ClickHouse once at startup, so an unreachable host fails before any message is consumed.
 - **One connection, one `INSERT` per batch.** There is no parallel writer. Throughput is governed by `batch_size`; see below.
 - **Streaming aggregation** (tumbling windows) is supported: a managed table is polled on an interval and its closed windows are published to their own sink. What counts as "closed" is the SQL you write, which is evaluated against wall-clock time rather than an event-time watermark. Consult the sqlflow documentation before relying on it for late-arriving data.
 
@@ -426,25 +410,15 @@ The handler SQL produced a column the target table does not have. sqlflow insert
 
 ### `clickhouse sink: column "<name>": unsupported arrow type <type>` {#trouble-type}
 
-The column's Arrow type has no ClickHouse mapping — a struct or map value, or an array on sqlflow earlier than 1.0.3. Cast or flatten in the handler SQL; see [Type mapping](#type-mapping).
+The column's Arrow type has no ClickHouse mapping — a struct or a map value. Cast or flatten in the handler SQL; see [Type mapping](#type-mapping).
 
 ### `converting float64 to Decimal(10, 2) is unsupported` {#trouble-decimal}
 
 A `DOUBLE` was sent to a `Decimal` column. Cast to a string instead: `CAST(amount AS VARCHAR) AS amount`. The driver parses the decimal text exactly, with no floating-point rounding.
 
-### Timestamps are stored a few hours off {#trouble-timezone}
-
-On sqlflow 1.0.3, a timestamp passed as a string was interpreted in the host's local time zone before being stored as UTC; the offset you see equals the sqlflow host's UTC offset, which is how to recognise this case. Upgrade to 1.0.4, or cast in the handler SQL: `CAST(ts AS TIMESTAMP)`.
-
-### `invalid timestamp field format: "null"` when casting a timestamp {#trouble-null-text}
-
-On sqlflow 1.0.4 and earlier, a source field present with an explicit JSON `null` reached the handler as the string `null`, so `CAST(ts AS TIMESTAMP)` failed the batch, and a `Nullable(String)` column stored the word `null`. Upgrade to 1.0.5, where an explicit `null` is `NULL`. If you must stay on 1.0.4, guard the cast: `CAST(nullif(ts, 'null') AS TIMESTAMP)`.
-
 ### The pipeline runs but rows never appear {#trouble-no-rows}
 
-On sqlflow 1.0.4 and earlier, a `handlers.StructuredBatch` pipeline whose SQL has a `WHERE` clause inserts nothing: DuckDB planned the query once against the still-empty batch table and folded the filter to always-false. Upgrade to 1.0.5, or use `handlers.InferredMemBatch`, which plans per batch.
-
-Otherwise, check the batching. A batch is executed and inserted when `batch_size` messages have arrived, or when `flush_interval_seconds` elapses with a partial batch waiting — whichever comes first. `flush_interval_seconds` defaults to `30`, which is also the smallest value the config schema accepts, so a partial batch on a low-volume topic waits up to 30 seconds and a lower setting fails validation at startup. For faster inserts on a quiet topic, lower `batch_size` instead. With `--max-msgs`, the final partial batch is inserted on exit.
+Check the batching. A batch is executed and inserted when `batch_size` messages have arrived, or when `flush_interval_seconds` elapses with a partial batch waiting — whichever comes first. `flush_interval_seconds` defaults to `30`, which is also the smallest value the config schema accepts, so a partial batch on a low-volume topic waits up to 30 seconds and a lower setting fails validation at startup. For faster inserts on a quiet topic, lower `batch_size` instead. With `--max-msgs`, the final partial batch is inserted on exit.
 
 ## Further reading {#further-reading}
 
