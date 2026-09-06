@@ -1,0 +1,5 @@
+rejected with all settings disabled
+the dedicated setting of another codec does not enable ByteStreamSplit
+the dedicated setting enables ByteStreamSplit
+4
+allow_experimental_codecs still enables it
