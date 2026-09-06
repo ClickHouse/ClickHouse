@@ -2,13 +2,17 @@
 
 drop table if exists txn_counters;
 
-create table txn_counters (n Int64, creation_tid DEFAULT transactionID()) engine=MergeTree order by n SETTINGS old_parts_lifetime=3600;
+create table txn_counters (n Int64, creation_tid DEFAULT transactionID()) engine=MergeTree order by n SETTINGS old_parts_lifetime=3600, merge_tree_clear_old_parts_interval_seconds=100000;
 
 insert into txn_counters(n) values (1);
 select transactionID();
 
--- stop background cleanup
+-- A merge would add a differently named part to the listings below
 system stop merges txn_counters;
+-- A rolled back part's `remove_time` is 0, so `old_parts_lifetime` does not hold it and the parts
+-- cleanup could delete it before the assertions below read `system.parts`. This statement cannot
+-- stop an iteration already in flight; the pinned interval above keeps that one's parts pass shut.
+system stop cleanup txn_counters;
 
 set throw_on_unsupported_query_inside_transaction=0;
 
