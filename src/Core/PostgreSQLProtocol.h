@@ -845,16 +845,20 @@ public:
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
                                 "Wrong parameter format code count {} in Bind message, it must not be negative", num_format_params);
             Int16 format_param = 0;
+            bool saw_non_text_format_code = false;
             for (Int16 i = 0; i < num_format_params; ++i)
             {
                 readBinaryBigEndian(format_param, payload_in);
                 if (format_param != 0)
-                    has_binary_format_param = true;
+                    saw_non_text_format_code = true;
             }
             readBinaryBigEndian(num_params, payload_in);
             if (num_params < 0)
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
                                 "Wrong parameter count {} in Bind message, it must not be negative", num_params);
+            /// A format code only states how to decode a parameter value, and one code may be
+            /// broadcast to all parameters, so a message with no values has nothing to decode.
+            has_binary_format_param = saw_non_text_format_code && num_params > 0;
             for (int i = 0; i < num_params; ++i)
             {
                 Int32 sz_param = 0;
