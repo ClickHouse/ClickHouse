@@ -3698,6 +3698,35 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
     UNREACHABLE();
 }
 
+/// `Field::isNaN` recognizes a scalar `Float64` only, so a `NaN` nested in a container is invisible to it.
+static bool fieldContainsNaN(const Field & field)
+{
+    if (field.isNaN())
+        return true;
+
+    const auto any_element_contains_nan = [](const auto & elements)
+    {
+        return std::any_of(elements.begin(), elements.end(), [](const Field & element) { return fieldContainsNaN(element); });
+    };
+
+    switch (field.getType())
+    {
+        case Field::Types::Array:
+            return any_element_contains_nan(field.safeGet<Array>());
+        case Field::Types::Tuple:
+            return any_element_contains_nan(field.safeGet<Tuple>());
+        case Field::Types::Map:
+            return any_element_contains_nan(field.safeGet<Map>());
+        case Field::Types::Object:
+        {
+            const auto & object = field.safeGet<Object>();
+            return std::any_of(object.begin(), object.end(), [](const auto & entry) { return fieldContainsNaN(entry.second); });
+        }
+        default:
+            return false;
+    }
+}
+
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out)
 {
     const auto * node_dag = node.getDAGNode();
@@ -4011,6 +4040,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 return false;
             }
 
+            /// A `NaN` nested in a container is not foldable the way a scalar one is: equality and ordering
+            /// disagree per nesting path. It must not reach the key transformations below either, which map it
+            /// to an ordinary comparable value, so the range would answer a predicate other than the one asked.
+            if (fieldContainsNaN(const_value))
+                return false;
+
             bool condition_is_relaxed = false;
             bool constant_chain_is_positive = true;
 
@@ -4235,6 +4270,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             return false;
         }
+
+        /// After every conversion above, this is the value that becomes a range endpoint. The `Field`
+        /// total order puts a `NaN` after all finite values, which SQL comparison does not follow.
+        if (fieldContainsNaN(const_value))
+            return false;
 
         const auto atom_it = atom_map.find(func_name);
 
