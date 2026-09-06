@@ -1,0 +1,9 @@
+<clickhouse>
+    <allow_experimental_audit_log>false</allow_experimental_audit_log>
+    <logger>
+        <level>warning</level>
+        <!-- An existing directory, so opening it as an audit log file fails. -->
+        <auditlog>/var/log/clickhouse-server</auditlog>
+        <auditlog_types>DDL</auditlog_types>
+    </logger>
+</clickhouse>

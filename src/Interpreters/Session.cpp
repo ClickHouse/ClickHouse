@@ -7,6 +7,7 @@
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <Common/logger_useful.h>
+#include <Common/Logger.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -324,6 +325,14 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
+        if (auto * audit_log = getAuditLogIfEnabled())
+        {
+            const auto & client_info = getClientInfo();
+            std::string host = client_info.current_address ? client_info.current_address->host().toString() : "Unknown Host";
+            LOG_AUDIT(audit_log, "User, {}, {}, Logout",
+                    escapeForAuditField(user ? user->getName() : ""), host);
+        }
+
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(user_id.value_or(UUID{})));
         if (auto session_log = getSessionLog())
         {
@@ -346,7 +355,7 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypes(const Str
     return authentication_types;
 }
 
-std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFailure(const String & user_name) const
+std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFailure(const String & user_name, const Poco::Net::SocketAddress & address) const
 {
     try
     {
@@ -354,6 +363,8 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     }
     catch (const Exception & e)
     {
+        recordAuditLoginFailure(user_name, address);
+
         LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
             session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e, certificate_info);
@@ -439,6 +450,8 @@ time_t Session::getAuthenticationValidUntil() const
 
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
+    recordAuditLoginFailure(user_name, address_);
+
     LOG_DEBUG(log, "Authentication failed with error: {}", e.what());
     if (auto session_log = getSessionLog())
     {
@@ -447,6 +460,29 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
         info_for_log.current_address = Poco::Net::SocketAddress(address_);
         session_log->addLoginFailure(auth_id, info_for_log, user_name, e, certificate_info);
     }
+}
+
+void Session::recordAuditLoginFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address) const
+{
+    /// Emit at most one audit `LoginFailure` per session. A single failed authentication can be
+    /// observed by more than one layer (the per-protocol handler, `Session::authenticate`, and
+    /// `getAuthenticationTypesOrLogInFailure`); without this latch the same failure would be
+    /// written to the audit log several times.
+    if (audit_login_failure_recorded)
+        return;
+
+    if (auto * audit_log = getAuditLogIfEnabled())
+    {
+        LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure",
+                escapeForAuditField(user_name.value_or("")),
+                address.host().toString());
+        audit_login_failure_recorded = true;
+    }
+}
+
+void Session::resetAuditLoginFailureLatch()
+{
+    audit_login_failure_recorded = false;
 }
 
 void Session::setClientCertificate(const X509Certificate & certificate)
@@ -849,6 +885,14 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      certificate_info);
     }
 
+    if (auto * audit_log = getAuditLogIfEnabled())
+    {
+        const auto & client_info = getClientInfo();
+        std::string host = client_info.current_address ? client_info.current_address->host().toString() : "Unknown Host";
+        LOG_AUDIT(audit_log, "User, {}, {}, LoginSuccess",
+                escapeForAuditField(user ? user->getName() : ""), host);
+    }
+
     notified_session_log_about_login = true;
 }
 
@@ -875,6 +919,14 @@ void Session::closeSession(const String & session_id)
         return;
 
     NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_id, named_session);
+}
+
+AuditLog * Session::getAuditLogIfEnabled() const
+{
+    if (!global_context->isEnabledAuditType(Context::AuditLogTypes::USER))
+        return nullptr;
+
+    return getAuditLog();
 }
 
 }

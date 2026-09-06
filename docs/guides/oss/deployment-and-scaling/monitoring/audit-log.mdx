@@ -1,0 +1,126 @@
+---
+description: 'Guide to the experimental audit log in ClickHouse: enabling it, choosing
+  which categories are recorded, and the format of an audit record'
+sidebarTitle: 'Audit log'
+slug: /operations/audit-log
+title: 'Audit log'
+doc_type: 'guide'
+---
+
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge/>
+
+The audit log is a dedicated log file that records authentication events and SQL statements
+independently of `system.query_log` and `system.session_log`. It is written by the server itself,
+so it does not depend on a table being available, is not affected by `log_queries`, and cannot be
+altered with SQL.
+
+The feature is experimental and is disabled by default.
+
+## Enabling the audit log {#enabling-the-audit-log}
+
+Two things are required: the experimental flag `allow_experimental_audit_log` and a destination
+file in `logger.auditlog`. Neither
+of them alone enables anything: with no `logger.auditlog` path nothing is written, and with the
+flag off no audit file is created or opened at all.
+
+```xml
+<clickhouse>
+    <allow_experimental_audit_log>true</allow_experimental_audit_log>
+    <logger>
+        <auditlog>/var/log/clickhouse-server/clickhouse-server.audit.log</auditlog>
+        <auditlog_types>USER,DDL,DCL</auditlog_types>
+    </logger>
+</clickhouse>
+```
+
+The audit file reuses the rotation, compression and retention settings of the main log
+(`logger.rotation` / `logger.size`, `logger.compress`, `logger.count`, `logger.flush`, ...),
+and honours a `logger.formatting` block whose `channel` is `auditlog`. Audit records are written
+synchronously so they are not lost if asynchronous logging queues are full.
+
+## Selecting what is recorded {#selecting-what-is-recorded}
+
+`logger.auditlog_types` is a comma-separated list of categories. An empty value means `DDL`.
+
+| Category | Recorded events                                                                             |
+|----------|---------------------------------------------------------------------------------------------|
+| `USER`   | Successful logins, failed logins, and logouts                                                 |
+| `DDL`    | Schema statements: `CREATE`, `DROP`, `ALTER`, `RENAME`, ...                                   |
+| `DML`    | Data statements: `SELECT`, `INSERT`, `DELETE`, `UPDATE`, `TRUNCATE`, `OPTIMIZE`, `SHOW`, `EXPLAIN`, ... |
+| `DCL`    | Access control: `GRANT`, `REVOKE`, `CREATE USER`, `SET ROLE`, `CHECK GRANT`, `EXECUTE AS`, ...  |
+| `MISC`   | Everything else, including statements that failed to parse                                    |
+| `ALL`    | All of the above                                                                              |
+
+An unknown category makes the server reject the configuration with the `UNEXPECTED_AUDIT_TYPE`
+error.
+
+### Composite statements {#composite-statements}
+
+`EXECUTE AS <user> <statement>` and `statement1 PARALLEL WITH statement2 ...` are wrappers: the
+statements they contain are what actually runs. Every contained statement is audited from its own
+execution, so it gets a record of its own, with its own text, classification, `OBJECT_NAMES` and
+`EXCEPTION_CODE`, and only if it actually ran. A node that audits only `DML` therefore still sees
+the `SELECT` inside an `EXECUTE AS`, and a node that audits only `DDL` still sees every `DROP` of a
+`PARALLEL WITH`. If a `PARALLEL WITH` query stops at a failing statement, the statements that were
+never reached leave no record.
+
+The wrapper itself produces one more record carrying the outcome of the query as a whole:
+`EXECUTE AS` is recorded as `DCL`, because impersonation is an access-control event, and
+`PARALLEL WITH` as `MISC`.
+
+## Changing the configuration at runtime {#changing-the-configuration-at-runtime}
+
+`SYSTEM RELOAD CONFIG` applies changes of `allow_experimental_audit_log` and
+`logger.auditlog_types`, and it can also enable audit logging for the first time, or disable it
+again by removing or emptying `logger.auditlog`.
+
+Changing the audit file *path* of an already-running audit log requires a server restart: the
+writer is deliberately never torn down while the server is running, so that concurrent audit
+writes cannot use a destroyed writer.
+
+## Record format {#record-format}
+
+Every record is a single line: the usual ClickHouse log prefix (timestamp, thread, level, and the
+`AUDIT` channel name) followed by comma-separated fields.
+
+Authentication events (`USER`) have four fields:
+
+```text
+User, USER_NAME, CLIENT_IP, EVENT
+```
+
+where `EVENT` is `LoginSuccess`, `LoginFailure`, or `Logout`.
+
+Statement events have seven fields:
+
+```text
+TYPE, COMMAND, EXCEPTION_CODE, USER_NAME, CLIENT_IP, OBJECT_NAMES, QUERY
+```
+
+| Field            | Meaning                                                                                      |
+|------------------|----------------------------------------------------------------------------------------------|
+| `TYPE`           | The category the statement was classified into (`DDL`, `DML`, `DCL`, `MISC`)                   |
+| `COMMAND`        | The kind of the statement, for example `Create`, `Select`, `Grant`                             |
+| `EXCEPTION_CODE` | `0` when the statement succeeded, otherwise the error code it failed with                      |
+| `USER_NAME`      | The user that ran the statement                                                                |
+| `CLIENT_IP`      | The address the statement came from                                                            |
+| `OBJECT_NAMES`   | The objects the statement touched, quoted the same way as in `system.query_log`                |
+| `QUERY`          | The statement text, collapsed to one line                                                      |
+
+A statement is audited even when it fails before it starts executing; in that case
+`OBJECT_NAMES` is recovered from the parsed query.
+
+Free-form fields (`USER_NAME`, `OBJECT_NAMES`, `QUERY`) are escaped so that a record can be split
+back into fields: `\` becomes `\\`, `,` becomes `\,`, and a newline or a carriage return becomes
+the two characters `\n` or `\r`. A record therefore always occupies exactly one physical line, and
+a comma inside a query cannot be mistaken for a field separator.
+
+## Example {#example}
+
+```text
+2026.08.03 10:11:12.131415 [ 1234 ] {} <Notice> AUDIT: User, alice, 10.0.0.7, LoginSuccess
+2026.08.03 10:11:12.222222 [ 1234 ] {} <Notice> AUDIT: DDL, Create, 0, alice, 10.0.0.7, default.hits, CREATE TABLE default.hits (id UInt64) ENGINE = MergeTree ORDER BY id
+2026.08.03 10:11:13.333333 [ 1234 ] {} <Notice> AUDIT: DML, Select, 60, alice, 10.0.0.7, default.missing, SELECT * FROM missing
+```

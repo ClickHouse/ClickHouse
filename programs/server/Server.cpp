@@ -2552,6 +2552,11 @@ try
             global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
             global_context->setExternalAuthenticatorsConfig(config());
 
+            /// Lazily create the audit writer if `allow_experimental_audit_log` was just enabled,
+            /// before refreshing the audit types so `loadOrReloadAuditTypes` sees the new writer.
+            updateAuditLog(config());
+            global_context->loadOrReloadAuditTypes(config());
+
             global_context->setDashboardsConfig(config());
 
             if (global_context->isServerCompletelyStarted())
@@ -3678,6 +3683,8 @@ try
                 safeExit(0, LeakCheck::SkipAndReport);
             }
         });
+
+        global_context->loadOrReloadAuditTypes(config());
 
         {
             std::lock_guard lock(servers_lock);

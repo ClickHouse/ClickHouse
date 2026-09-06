@@ -1916,7 +1916,7 @@ public:
     {
         try
         {
-            const auto user_authentication_types = session.getAuthenticationTypesOrLogInFailure(user_name);
+            const auto user_authentication_types = session.getAuthenticationTypesOrLogInFailure(user_name, address);
 
             for (auto user_authentication_type : user_authentication_types)
             {
@@ -1931,6 +1931,11 @@ public:
         }
         catch (const Exception & e)
         {
+            /// Audit authentication failures that happen during the selected method's negotiation
+            /// before Session::authenticate is reached (for example a non-password/closed client
+            /// message). recordAuditLoginFailure is idempotent, so failures already audited by
+            /// getAuthenticationTypesOrLogInFailure or Session::authenticate are not logged twice.
+            session.recordAuditLoginFailure(user_name, address);
             const bool unsupported_authentication_configuration = e.code() == ErrorCodes::NOT_IMPLEMENTED;
             mt.send(Messaging::ErrorOrNoticeResponse(
                 Messaging::ErrorOrNoticeResponse::ERROR,
@@ -1941,6 +1946,9 @@ public:
             throw;
         }
 
+        /// The user exists but none of its authentication methods can be used by the PostgreSQL
+        /// wire protocol; this is still a failed login attempt and must be audited.
+        session.recordAuditLoginFailure(user_name, address);
         mt.send(Messaging::ErrorOrNoticeResponse(Messaging::ErrorOrNoticeResponse::ERROR, "0A000", "Authentication method is not supported"),
                 true);
 

@@ -141,6 +141,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
+#include <Loggers/AuditLog.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
@@ -480,6 +481,7 @@ namespace ErrorCodes
     extern const int SET_NON_GRANTED_ROLE;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
+    extern const int UNEXPECTED_AUDIT_TYPE;
 }
 
 /// Per-query deviations from the server-level distributed cache switches. The background and buffer
@@ -549,6 +551,9 @@ struct ContextSharedPart : boost::noncopyable
     /// For DBs which have `disk` setting in the create query, the table metadata files of these DBs are stored on that disk.
     /// However, the DB metadata files are still stored on this `default_db_disk`. So the instance can load its DBs during starting up.
     std::shared_ptr<IDisk> default_db_disk TSA_GUARDED_BY(mutex);
+
+    /// Types enabled to audit
+    mutable std::atomic<uint8_t> audit_types_bitmask{0};
 
     /// All temporary files that occur when processing the requests accounted here.
     /// Child scopes for more fine-grained accounting are created per user/query/etc.
@@ -9053,6 +9058,121 @@ ServerSettings Context::getServerSettingsCopy() const
     /// (e.g. `setS3QueueDisableStreaming`), which write under `shared->mutex`.
     SharedLockGuard lock(shared->mutex);
     return shared->server_settings;
+}
+
+bool Context::isEnabledAuditType(const Context::AuditLogTypes & audit_type) const
+{
+    uint8_t current_mask = shared->audit_types_bitmask.load();
+    return (current_mask & static_cast<uint8_t>(audit_type)) != 0;
+}
+
+void Context::resetAuditTypes() const
+{
+    shared->audit_types_bitmask.store(0, std::memory_order_relaxed);
+}
+
+void Context::loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & config)
+{
+    /// The audit writer is created (in Loggers) only while `allow_experimental_audit_log` is
+    /// enabled, so that a disabled feature has no startup side effects. Once created, the writer is
+    /// kept alive for the process lifetime; this flag is the runtime gate that toggles emission on
+    /// reload without a restart. When the feature is off (or the writer was never created because it
+    /// started disabled), keep audit emission off.
+    /// The gate must also depend on the current `logger.auditlog` value, not just on the existence
+    /// of a previously created writer: when the operator removes (or empties) `logger.auditlog` and
+    /// reloads the config, audit emission must stop, otherwise statements would keep leaking into
+    /// the old file path even though the config no longer declares an audit sink.
+    if (!config.getBool("allow_experimental_audit_log", false)
+        || config.getString("logger.auditlog", "").empty()
+        || !hasGlobalAuditLog())
+    {
+        setAuditLoggingEnabled(false);
+        resetAuditTypes();
+        return;
+    }
+
+    /// audit log types
+    std::string auditlog_types = config.getString("logger.auditlog_types", "");
+    uint8_t new_mask = 0;
+
+    /// Default audit log type is DDL
+    if (auditlog_types.empty())
+        new_mask |= static_cast<uint8_t>(Context::AuditLogTypes::DDL);
+    else
+    {
+        std::string_view types_view = auditlog_types;
+        size_t pos = 0;
+
+        while (pos < types_view.size())
+        {
+            /// skip leading whitespaces
+            pos = types_view.find_first_not_of(" \t", pos);
+            if (pos == std::string_view::npos)
+                break;
+
+            /// find end of token
+            auto end = types_view.find(',', pos);
+            size_t token_end = end == std::string_view::npos ? types_view.size() : end;
+
+            /// Empty token between separators (e.g. ",DDL" or "DDL, ,DCL"): skip without
+            /// computing token_end - 1, which would underflow when token_end == pos.
+            if (token_end == pos)
+            {
+                if (end == std::string_view::npos)
+                    break;
+                pos = end + 1;
+                continue;
+            }
+
+            /// trim trailing whitespaces
+            size_t last = types_view.find_last_not_of(" \t", token_end - 1);
+
+            /// All-whitespace token between separators (e.g. `DDL,<spaces>,DCL`)
+            if (last == std::string_view::npos || last < pos)
+            {
+                pos = end + 1;
+                continue;
+            }
+
+            std::string_view item = types_view.substr(pos, last - pos + 1);
+
+            /// parse token
+            if (!item.empty())
+            {
+                if (item == "USER")
+                    new_mask |= static_cast<uint8_t>(Context::AuditLogTypes::USER);
+                else if (item == "DDL")
+                    new_mask |= static_cast<uint8_t>(Context::AuditLogTypes::DDL);
+                else if (item == "DML")
+                    new_mask |= static_cast<uint8_t>(Context::AuditLogTypes::DML);
+                else if (item == "DCL")
+                    new_mask |= static_cast<uint8_t>(Context::AuditLogTypes::DCL);
+                else if (item == "MISC")
+                    new_mask |= static_cast<uint8_t>(Context::AuditLogTypes::MISC);
+                else if (item == "ALL")
+                    new_mask |= static_cast<uint8_t>(Context::AuditLogTypes::ALL);
+                else
+                {
+                    throw Exception(ErrorCodes::UNEXPECTED_AUDIT_TYPE,
+                        "Unexpected audit type: {}, expected values are USER, DDL, DML, DCL, MISC, ALL", item);
+                }
+            }
+
+            if (end == std::string_view::npos)
+                break;
+
+            pos = end + 1;
+        }
+    }
+
+    /// Whitespace-only or separator-only values (e.g. " " or ",") parse to no bits set;
+    /// treat as the documented empty-value default (DDL) rather than silently disabling all audit categories.
+    if (new_mask == 0)
+        new_mask = static_cast<uint8_t>(Context::AuditLogTypes::DDL);
+
+    shared->audit_types_bitmask.store(new_mask, std::memory_order_relaxed);
+    setAuditLoggingEnabled(true);
+    LOG_DEBUG(shared->log, "auditlog_types={}", auditlog_types);
 }
 
 uint64_t HTTPContext::getMaxHstsAge() const

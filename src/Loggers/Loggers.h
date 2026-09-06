@@ -1,16 +1,19 @@
 #pragma once
 
+#include <Loggers/AuditLog.h>
 #include <Loggers/OwnSplitChannel.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>
 #include <Poco/Util/Application.h>
 
+#include <memory>
 #include <optional>
 #include <string>
 
 namespace DB
 {
 class OwnSplitChannelBase;
+class AuditLog;
 
 using AsyncLogQueueSize = std::pair<std::string, size_t>;
 using AsyncLogQueueSizes = VectorWithMemoryTracking<AsyncLogQueueSize>;
@@ -27,6 +30,10 @@ public:
     void buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger, const std::string & cmd_name = "");
 
     void updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger);
+
+    /// Lazily create the experimental audit writer on configuration reload, so enabling
+    /// `allow_experimental_audit_log` at runtime starts audit logging without a server restart.
+    void updateAuditLog(Poco::Util::AbstractConfiguration & config);
 
     /// Close log files. On next log write files will be reopened.
     void closeLogs(Poco::Logger & logger);
@@ -54,9 +61,17 @@ protected:
     virtual bool allowTextLog() const { return true; }
 
 private:
+    /// Create and open the standalone audit writer, but only when the experimental feature is
+    /// enabled. Idempotent: keeps an already-created writer (the writer is torn down only at
+    /// shutdown, never on reload, so concurrent LOG_AUDIT callers cannot use-after-free).
+    void createAuditLog(Poco::Util::AbstractConfiguration & config, time_t now);
+
     Poco::AutoPtr<Poco::FileChannel> log_file;
     Poco::AutoPtr<Poco::FileChannel> error_log_file;
     Poco::AutoPtr<Poco::Channel> syslog_channel;
+
+    /// Standalone audit log writer (bypasses OwnSplitChannel)
+    std::unique_ptr<DB::AuditLog> audit_log;
 
     /// Previous value of logger element in config. It is used to reinitialize loggers whenever the value changed.
     std::optional<std::string> config_logger;

@@ -5,7 +5,9 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/Logger.h>
 #include <Common/saturatedDuration.h>
+#include <Loggers/AuditLog.h>
 #include <Common/StringUtils.h>
+#include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -33,8 +35,11 @@
 
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -52,7 +57,6 @@
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
-#include <Common/quoteString.h>
 #include <Parsers/toOneLineQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
@@ -91,6 +95,16 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/Access/ASTCheckGrantQuery.h>
+#include <Parsers/Access/ASTExecuteAsQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/Access/ASTCreateQuotaQuery.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
+#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
@@ -131,6 +145,7 @@
 #include <memory>
 #include <mutex>
 #include <random>
+#include <unordered_set>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -567,11 +582,11 @@ QueryLogElement logQueryStart(
     bool log_queries = settings[Setting::log_queries];
 
     auto query_log = context->getQueryLog();
-    if (!query_log)
-        return elem;
 
-    /// Log into system table start of query execution, if need.
-    if (log_queries)
+    /// Populate object names (tables, views, etc.) from the access info and interpreter.
+    /// This is needed by both system.query_log and the audit log, so it runs regardless
+    /// of the log_queries setting.
+    if ((log_queries && query_log) || getAuditLog())
     {
         /// This check is not obvious, but without it 01220_scalar_optimization_in_alter fails.
         if (pipeline.initialized())
@@ -591,7 +606,13 @@ QueryLogElement logQueryStart(
             InterpreterInsertQuery::extendQueryLogElemImpl(elem, context);
         else if (interpreter)
             interpreter->extendQueryLogElem(elem, query_ast, context, query_database, query_table);
+    }
 
+    /// Log into system table start of query execution.
+    /// `query_metric_log` below is configured independently of `system.query_log`, so the absence
+    /// of the latter must skip only this block, not the whole rest of the function.
+    if (query_log && log_queries)
+    {
         if (settings[Setting::log_query_settings])
             elem.query_settings = context->getSettingsRef().changedToMap();
 
@@ -745,6 +766,7 @@ static void logQueryFinishImpl(
     QueryResultCacheUsage query_result_cache_usage,
     bool internal,
     bool log_as_internal,
+    bool audit_internal,
     std::chrono::system_clock::time_point time)
 {
     const Settings & settings = context->getSettingsRef();
@@ -847,6 +869,9 @@ static void logQueryFinishImpl(
 
     if (!query_pipeline_finalized_info.processors_profile_infos.empty())
         logProcessorProfile(context, query_pipeline_finalized_info.processors_profile_infos, query_pipeline_finalized_info.pipeline_dump);
+
+    if (!internal || audit_internal)
+        auditLog(elem, context, query_ast);
 }
 
 void logQueryFinish(
@@ -858,11 +883,12 @@ void logQueryFinish(
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     QueryResultCacheUsage query_result_cache_usage,
     bool internal,
-    bool log_as_internal)
+    bool log_as_internal,
+    bool audit_internal)
 {
     const auto time_now = std::chrono::system_clock::now();
     auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
-    logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, time_now);
+    logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, audit_internal, time_now);
 }
 
 /// Bump the FailedQuery / FailedInsertQuery / FailedSelectQuery family of ProfileEvents.
@@ -901,7 +927,8 @@ void logQueryException(
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     bool internal,
     bool log_as_internal,
-    bool log_error)
+    bool log_error,
+    bool audit_internal)
 {
     const Settings & settings = context->getSettingsRef();
     auto log_queries = settings[Setting::log_queries];
@@ -959,6 +986,9 @@ void logQueryException(
         query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
         query_span->finish(time_now);
     }
+
+    if (!internal || audit_internal)
+        auditLog(elem, context, query_ast);
 }
 
 void logExceptionBeforeStart(
@@ -969,7 +999,8 @@ void logExceptionBeforeStart(
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_milliseconds,
     bool internal,
-    bool log_as_internal)
+    bool log_as_internal,
+    bool audit_internal)
 {
     auto query_end_time = std::chrono::system_clock::now();
 
@@ -1095,6 +1126,292 @@ void logExceptionBeforeStart(
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
         query_span->finish(query_end_time);
     }
+
+    /// Audit queries that fail before execution starts (malformed SQL, early DDL/DML failures).
+    /// These never reach logQueryFinish/logQueryException, so without this they would be missing
+    /// from the audit trail even though they appear in system.query_log.
+    if (!internal || audit_internal)
+        auditLog(elem, context, ast);
+}
+
+/// Walk the AST and pass every referenced table (as database, table) to `append`. Only
+/// `ASTTableIdentifier` nodes are collected — plain column identifiers are `ASTIdentifier` and are
+/// skipped, and table functions carry an `ASTFunction` (not a stored object) and are skipped too.
+template <typename AppendFn>
+static void collectTableIdentifiers(const IAST & ast, AppendFn && append)
+{
+    if (const auto * table_identifier = ast.as<ASTTableIdentifier>())
+    {
+        append(table_identifier->getDatabaseName(), table_identifier->shortName());
+        return;
+    }
+    for (const auto & child : ast.children)
+        if (child)
+            collectTableIdentifiers(*child, append);
+}
+
+/// Extract affected object names (as `database.table`) directly from the AST.
+/// Used for queries that fail before `logQueryStart` populates `elem.query_tables`
+/// (EXCEPTION_BEFORE_START), so a failed DDL/DML statement still records which object it
+/// targeted in `OBJECT_NAMES` instead of leaving the field empty.
+///
+/// The names are formatted exactly like the ones `IInterpreter::extendQueryLogElem` puts into
+/// `elem.query_tables` / `elem.query_databases`: every component is quoted with `backQuoteIfNeed`,
+/// an unqualified table is prefixed with the current database, and a database-level statement
+/// (no table) is recorded as the bare database name without a trailing dot. Consumers therefore
+/// see the same `OBJECT_NAMES` format on the failed-query path as on the normal one.
+static String extractObjectNamesFromAST(const IAST & ast, const String & current_database)
+{
+    String result;
+    std::unordered_set<String> seen;
+    const auto append = [&](const String & database, const String & table)
+    {
+        if (database.empty() && table.empty())
+            return;
+        String name;
+        if (table.empty())
+        {
+            /// Database-level statement such as `CREATE DATABASE` / `DROP DATABASE`.
+            name = backQuoteIfNeed(database);
+        }
+        else
+        {
+            const String & qualifier = database.empty() ? current_database : database;
+            if (!qualifier.empty())
+            {
+                name += backQuoteIfNeed(qualifier);
+                name += ".";
+            }
+            name += backQuoteIfNeed(table);
+        }
+        if (!seen.emplace(name).second)
+            return;
+        if (!result.empty())
+            result += ",";
+        result += name;
+    };
+
+    if (const auto * rename = ast.as<ASTRenameQuery>())
+    {
+        for (const auto & element : rename->getElements())
+        {
+            append(element.from.getDatabase(), element.from.getTable());
+            append(element.to.getDatabase(), element.to.getTable());
+        }
+    }
+    else if (const auto * insert = ast.as<ASTInsertQuery>())
+    {
+        /// Record the target first, then walk the nested `SELECT` (if any), so
+        /// `INSERT INTO dst SELECT * FROM src` keeps both `dst` and `src` in the audit trail
+        /// even when the query fails before `logQueryStart`.
+        append(insert->getDatabase(), insert->getTable());
+        collectTableIdentifiers(ast, append);
+    }
+    /// `CREATE`, `DROP`, `TRUNCATE`, `ALTER`, `OPTIMIZE`, `EXISTS`, `DESCRIBE`, ... all derive
+    /// from `ASTQueryWithTableAndOutput`. Use `dynamic_cast` (not `as<>`, which matches the exact
+    /// dynamic type) to handle the whole family through the common base.
+    else if (const auto * with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(&ast))
+    {
+        /// Also walk the children, so multi-object statements such as
+        /// `CREATE TABLE dst AS SELECT * FROM src` record the source objects too.
+        append(with_table->getDatabase(), with_table->getTable());
+        collectTableIdentifiers(ast, append);
+    }
+    /// Select-like statements (`SELECT`, `WITH ... SELECT`, and data-modifying `DELETE`/`UPDATE`)
+    /// have no single top-level target and reference their tables through nested
+    /// `ASTTableIdentifier` nodes. Walk the AST so a query that fails before `logQueryStart`
+    /// (e.g. `SELECT * FROM missing_table`) still records the objects it targeted.
+    else
+        collectTableIdentifiers(ast, append);
+
+    return result;
+}
+
+/// Administration of access entities reports generic query kinds: `CREATE USER` / `ALTER USER`
+/// is `QueryKind::Create`, `DROP ROLE` is `QueryKind::Drop`, `SET ROLE` is `QueryKind::Set`.
+/// These statements manage privileges and access control, so the audit log must classify them
+/// as DCL together with `GRANT` / `REVOKE` — otherwise an operator who enables only the `DCL`
+/// audit type would miss user and role administration events.
+static bool isAccessControlQuery(const IAST * ast)
+{
+    return ast
+        && (ast->as<ASTCreateUserQuery>()
+            || ast->as<ASTCreateRoleQuery>()
+            || ast->as<ASTCreateQuotaQuery>()
+            || ast->as<ASTCreateRowPolicyQuery>()
+            || ast->as<ASTCreateSettingsProfileQuery>()
+            || ast->as<ASTCreateMaskingPolicyQuery>()
+            || ast->as<ASTDropAccessEntityQuery>()
+            || ast->as<ASTSetRoleQuery>());
+}
+
+/// Map the query kind to an audit type. Every `QueryKind` is classified deliberately so
+/// that sensitive operations (such as `Backup`, `Restore`, or moving access entities) are
+/// not silently hidden under `MISC` and excluded by common audit filters.
+static Context::AuditLogTypes classifyAuditType(IAST::QueryKind query_kind, const IAST * ast)
+{
+    /// `EXECUTE AS <user>` impersonates another user. That is an access-control (`DCL`) operation
+    /// regardless of what it wraps, and it reports the unhelpful `QueryKind::None`.
+    if (ast && ast->as<ASTExecuteAsQuery>())
+        return Context::AuditLogTypes::DCL;
+
+    Context::AuditLogTypes audit_type = Context::AuditLogTypes::MISC;
+    switch (query_kind)
+    {
+        /// Statements that query or modify data (and read-only schema/data inspection).
+        case IAST::QueryKind::Select:
+        case IAST::QueryKind::Insert:
+        case IAST::QueryKind::Delete:
+        case IAST::QueryKind::Update:
+        case IAST::QueryKind::Optimize:
+        case IAST::QueryKind::Show:
+        case IAST::QueryKind::Explain:
+        case IAST::QueryKind::Exists:
+        case IAST::QueryKind::Describe:
+        case IAST::QueryKind::Copy:
+        case IAST::QueryKind::AsyncInsertFlush:
+            audit_type = Context::AuditLogTypes::DML;
+            break;
+
+        /// CHECK GRANT is an access-control statement (DCL), not a table CHECK (DML).
+        case IAST::QueryKind::Check:
+            if (ast && ast->as<ASTCheckGrantQuery>())
+                audit_type = Context::AuditLogTypes::DCL;
+            else
+                audit_type = Context::AuditLogTypes::DML;
+            break;
+
+        /// TRUNCATE reports QueryKind::Drop but is a data-modifying operation (DML), and
+        /// `DROP USER` / `DROP ROLE` / ... report QueryKind::Drop but remove access entities (DCL).
+        case IAST::QueryKind::Drop:
+            if (ast && ast->as<ASTDropQuery>() && ast->as<ASTDropQuery>()->kind == ASTDropQuery::Kind::Truncate)
+                audit_type = Context::AuditLogTypes::DML;
+            else if (isAccessControlQuery(ast))
+                audit_type = Context::AuditLogTypes::DCL;
+            else
+                audit_type = Context::AuditLogTypes::DDL;
+            break;
+
+        /// `CREATE USER`, `ALTER ROLE`, `CREATE ROW POLICY`, ... report QueryKind::Create but
+        /// administer access entities (DCL).
+        case IAST::QueryKind::Create:
+            audit_type = isAccessControlQuery(ast) ? Context::AuditLogTypes::DCL : Context::AuditLogTypes::DDL;
+            break;
+
+        /// Statements that create, modify, or remove database objects (including backup/restore).
+        case IAST::QueryKind::Undrop:
+        case IAST::QueryKind::Rename:
+        case IAST::QueryKind::Alter:
+        case IAST::QueryKind::Backup:
+        case IAST::QueryKind::Restore:
+        case IAST::QueryKind::ExternalDDL:
+            audit_type = Context::AuditLogTypes::DDL;
+            break;
+        /// Statements related to privilege and access control.
+        case IAST::QueryKind::Grant:
+        case IAST::QueryKind::Revoke:
+        case IAST::QueryKind::Move:
+            audit_type = Context::AuditLogTypes::DCL;
+            break;
+
+        /// `SET ROLE` / `SET DEFAULT ROLE` report QueryKind::Set but change role assignment (DCL).
+        case IAST::QueryKind::Set:
+            audit_type = isAccessControlQuery(ast) ? Context::AuditLogTypes::DCL : Context::AuditLogTypes::MISC;
+            break;
+        /// Session-, transaction-, and system-level statements that do not query or alter data,
+        /// schema, or access control. All query kinds are listed explicitly (no `default`) so that
+        /// any new kind added later forces a deliberate audit classification at compile time.
+        case IAST::QueryKind::None:
+        case IAST::QueryKind::System:
+        case IAST::QueryKind::Use:
+        case IAST::QueryKind::KillQuery:
+        case IAST::QueryKind::Begin:
+        case IAST::QueryKind::Commit:
+        case IAST::QueryKind::Rollback:
+        case IAST::QueryKind::SetTransactionSnapshot:
+        case IAST::QueryKind::ParallelWithQuery:
+        case IAST::QueryKind::Snapshot:
+            audit_type = Context::AuditLogTypes::MISC;
+            break;
+    }
+
+    return audit_type;
+}
+
+/// Emit one audit record for the query described by `elem`.
+///
+/// Composite statements need no special handling here. `EXECUTE AS <user> <statement>` and
+/// `statement1 PARALLEL WITH statement2 ...` run the statements they contain through
+/// `executeQuery(..., QueryFlags{ .internal = true, .audit_internal = true })`, so every contained
+/// statement reaches this function from its own execution, with its own text, its own outcome, and
+/// only if it actually ran; the wrapper produces one record of its own (`EXECUTE AS` as DCL, since
+/// impersonation is an access-control event; `PARALLEL WITH` as MISC) carrying the outcome of the
+/// query as a whole.
+void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast)
+{
+    auto * audit_log = DB::getAuditLog();
+    if (!audit_log)
+        return;
+
+    const IAST::QueryKind query_kind = elem.query_kind;
+    const Context::AuditLogTypes audit_type = classifyAuditType(query_kind, ast.get());
+
+    /// Check if audit type enabled for logging
+    if (!context->isEnabledAuditType(audit_type))
+        return;
+
+    String object_names; /// tables / views / databases
+    if (audit_type == Context::AuditLogTypes::DDL || audit_type == Context::AuditLogTypes::DML)
+    {
+        for (const auto & table : elem.query_tables)
+        {
+            if (!object_names.empty())
+                object_names += ",";
+            object_names += table;
+        }
+
+        for (const auto & view : elem.query_views)
+        {
+            if (!object_names.empty())
+                object_names += ",";
+            object_names += view;
+        }
+
+        /// Database-level statements such as `CREATE DATABASE` / `DROP DATABASE` carry no
+        /// table/view names. Include any database names so the affected object name is not lost.
+        /// Skip when table/view names were already collected to avoid redundantly repeating the
+        /// database of fully-qualified objects.
+        if (object_names.empty())
+        {
+            for (const auto & database : elem.query_databases)
+            {
+                if (!object_names.empty())
+                    object_names += ",";
+                object_names += database;
+            }
+        }
+
+        /// When the access info carries no object names — either a database-level statement such
+        /// as `CREATE DATABASE` / `DROP DATABASE`, or a statement that failed before
+        /// `logQueryStart` populated `query_tables` (e.g. a `RENAME`/`DROP` of a missing table) —
+        /// fall back to the object names carried by the AST so the target is still recorded.
+        if (object_names.empty() && ast)
+            object_names = extractObjectNamesFromAST(*ast, context ? context->getCurrentDatabase() : String{});
+    }
+
+    std::string host = elem.client_info.current_address ? elem.client_info.current_address->host().toString() : "Unknown Host";
+
+    /// Ensure the audit record occupies exactly one physical line.
+    /// toOneLineQuery collapses most whitespace but preserves newlines after
+    /// line comments; unconditionally strip CR/LF from all free-form fields.
+    String safe_query = escapeForAuditField(toOneLineQuery(elem.query));
+    String safe_object_names = escapeForAuditField(object_names);
+    String safe_user = escapeForAuditField(elem.client_info.current_user);
+
+    /// TYPE, COMMAND, EXCEPTION_CODE, USER_NAME, CLIENT_IP, OBJECT_NAMES, QUERY
+    LOG_AUDIT(audit_log, "{}, {}, {}, {}, {}, {}, {}",
+            audit_type, query_kind, elem.exception_code, safe_user,
+            host, safe_object_names, safe_query);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)
@@ -2223,6 +2540,7 @@ static BlockIO executeQueryImpl(
 
     /// Gates concurrency limits, throttling, query-size limit, logging.
     const bool internal = flags.internal;
+    const bool audit_internal = flags.audit_internal;
     /// Can be spoofed as it comes from the wire.
     const bool log_as_internal = context->getClientInfo().is_internal;
 
@@ -2584,7 +2902,7 @@ static BlockIO executeQueryImpl(
         logQuery(query_for_logging, context, internal, stage);
 
         normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal, audit_internal);
         throw;
     }
 
@@ -3270,12 +3588,13 @@ static BlockIO executeQueryImpl(
                                     query_result_cache_usage,
                                     internal,
                                     log_as_internal,
+                                    audit_internal,
                                     implicit_tcl_executor,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
-                logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, finish_time);
+                logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, audit_internal, finish_time);
 
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -3284,7 +3603,7 @@ static BlockIO executeQueryImpl(
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, log_as_internal, audit_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -3302,7 +3621,7 @@ static BlockIO executeQueryImpl(
                         my_quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
                 }
 
-                logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error);
+                logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error, audit_internal);
             };
 
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
@@ -3321,7 +3640,7 @@ static BlockIO executeQueryImpl(
             txn->onException();
         }
 
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal, audit_internal);
 
         throw;
     }
