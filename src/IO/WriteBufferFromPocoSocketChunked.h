@@ -21,6 +21,10 @@ public:
     void enableChunked();
     void finishChunk();
 
+    /// Size of the chunk size holder the buffer reserves at its start after every flush. Those
+    /// bytes are framing rather than part of any packet written through the buffer.
+    size_t reservedChunkHeaderSize() const { return chunked ? sizeof(*chunk_size_ptr) : 0; }
+
 protected:
     void nextImpl() override;
     void finalizeImpl() override;

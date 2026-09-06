@@ -273,6 +273,9 @@ static struct InitFiu
     PAUSEABLE(sc_inner_table_drop_pause) \
     REGULAR(sc_intentions_commit_fail) \
     REGULAR(sleep_in_logs_flush) \
+    REGULAR(native_writer_throw_memory_limit_mid_block) \
+    REGULAR(native_writer_throw_memory_limit_after_flush) \
+    REGULAR(tcp_handler_throw_memory_limit_in_table_columns) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \

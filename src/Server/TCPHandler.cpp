@@ -142,6 +142,7 @@ namespace FailPoints
 extern const char parallel_replicas_delay_announcement[];
 extern const char parallel_replicas_reading_response_timeout[];
 extern const char tcp_handler_fail_connection_setup[];
+extern const char tcp_handler_throw_memory_limit_in_table_columns[];
 }
 }
 
@@ -1143,7 +1144,10 @@ void TCPHandler::runImpl()
             }
             catch (const Exception & e)
             {
-                if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                /// Only continue to the exception if the failed log packet was rolled back.
+                /// sendLogs cancels the stream when part of the packet had already been flushed,
+                /// and a connection carrying half a packet must not be preserved for reuse.
+                if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED && !out->isCanceled())
                 {
                     tryLogCurrentException(log, "Can't send logs to client. But we will try to send the exception.");
                 }
@@ -1877,13 +1881,25 @@ void TCPHandler::sendTotals(QueryState & state, const Block & totals)
 
     initBlockOutput(state, totals);
 
-    writeVarUInt(Protocol::Server::Totals, *out);
-    writeStringBinary("", *out);
+    size_t prev_bytes_written_out = out->count();
+    size_t prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
+    size_t prev_offset_out = out->offset();
 
-    state.block_out->write(totals);
-    if (state.maybe_compressed_out != out)
-        state.maybe_compressed_out->next();
-    out->finishChunk();
+    try
+    {
+        writeVarUInt(Protocol::Server::Totals, *out);
+        writeStringBinary("", *out);
+
+        state.block_out->write(totals);
+        if (state.maybe_compressed_out != out)
+            state.maybe_compressed_out->next();
+        out->finishChunk();
+    }
+    catch (...)
+    {
+        rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_offset_out);
+        throw;
+    }
 }
 
 
@@ -1894,13 +1910,25 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
 
     initBlockOutput(state, extremes);
 
-    writeVarUInt(Protocol::Server::Extremes, *out);
-    writeStringBinary("", *out);
+    size_t prev_bytes_written_out = out->count();
+    size_t prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
+    size_t prev_offset_out = out->offset();
 
-    state.block_out->write(extremes);
-    if (state.maybe_compressed_out != out)
-        state.maybe_compressed_out->next();
-    out->finishChunk();
+    try
+    {
+        writeVarUInt(Protocol::Server::Extremes, *out);
+        writeStringBinary("", *out);
+
+        state.block_out->write(extremes);
+        if (state.maybe_compressed_out != out)
+            state.maybe_compressed_out->next();
+        out->finishChunk();
+    }
+    catch (...)
+    {
+        rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_offset_out);
+        throw;
+    }
 }
 
 
@@ -1915,14 +1943,26 @@ void TCPHandler::sendProfileEvents(QueryState & state)
     {
         initProfileEventsBlockOutput(state, block);
 
-        writeVarUInt(Protocol::Server::ProfileEvents, *out);
-        writeStringBinary("", *out);
+        size_t prev_bytes_written_out = out->count();
+        size_t prev_bytes_written_compressed_out = state.maybe_compressed_out ? state.maybe_compressed_out->count() : 0;
+        size_t prev_offset_out = out->offset();
 
-        state.profile_events_block_out->write(block);
-        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS
-            && state.maybe_compressed_out != out)
-            state.profile_events_block_out->flush();
-        out->finishChunk();
+        try
+        {
+            writeVarUInt(Protocol::Server::ProfileEvents, *out);
+            writeStringBinary("", *out);
+
+            state.profile_events_block_out->write(block);
+            if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS
+                && state.maybe_compressed_out != out)
+                state.profile_events_block_out->flush();
+            out->finishChunk();
+        }
+        catch (...)
+        {
+            rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_offset_out);
+            throw;
+        }
 
         auto elapsed_milliseconds = stopwatch.elapsedMilliseconds();
         if (elapsed_milliseconds > 100)
@@ -3199,6 +3239,57 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state, bool force)
     }
 }
 
+bool TCPHandler::rollbackPartialPacket(
+    QueryState & state,
+    std::shared_ptr<TCPHandlerPocoChunkedWriter> & out,
+    size_t prev_bytes_written_out,
+    size_t prev_bytes_written_compressed_out,
+    size_t prev_offset_out)
+{
+    /// offset() covers everything written since the snapshot only while none of it was flushed
+    /// (next() zeroes offset() and moves the amount into count()), and only then is it undoable.
+    auto rewind = [](WriteBuffer & buf, size_t prev_count) -> bool
+    {
+        size_t extra_bytes_written = buf.count() - prev_count;
+        if (buf.offset() < extra_bytes_written)
+            return false;
+        buf.position() -= extra_bytes_written;
+        return true;
+    };
+
+    if (state.compression == Protocol::Compression::Enable && state.maybe_compressed_out
+        && !rewind(*state.maybe_compressed_out, prev_bytes_written_compressed_out))
+    {
+        /// A flush past the snapshot moved everything written before it out of this buffer, so
+        /// what is still pending belongs to the aborted packet. It has to go: finalize() would
+        /// otherwise compress it onto the stream behind the packet that replaces this one.
+        state.maybe_compressed_out->position() -= state.maybe_compressed_out->offset();
+    }
+
+    /// Only out writes to the socket, the compressed buffer writes through it, so only out can
+    /// tell whether any of this packet is beyond recall.
+    bool restored = true;
+    if (out)
+    {
+        /// Bytes leave the buffer oldest first, so while no more of them went out than was
+        /// already pending at the snapshot, none of this packet did and it can still be undone.
+        size_t flushed_out = (out->count() - out->offset()) - (prev_bytes_written_out - prev_offset_out);
+        /// A flush starts the buffer over, so the packet then begins after the chunk header the
+        /// writer reserves there rather than after whatever had been pending before it.
+        size_t packet_begins_at = flushed_out ? out->reservedChunkHeaderSize() : prev_offset_out;
+
+        restored = flushed_out <= prev_offset_out && out->offset() >= packet_begins_at;
+        if (restored)
+            out->position() -= out->offset() - packet_begins_at;
+    }
+
+    if (!restored)
+        state.cancelOut(out);
+
+    return restored;
+}
+
+
 void TCPHandler::sendData(QueryState & state, const Block & block)
 {
     OpenTelemetry::SpanHolder span{"TCPHandler::sendData"};
@@ -3207,6 +3298,7 @@ void TCPHandler::sendData(QueryState & state, const Block & block)
 
     size_t prev_bytes_written_out = out->count();
     size_t prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
+    size_t prev_offset_out = out->offset();
 
     try
     {
@@ -3252,22 +3344,8 @@ void TCPHandler::sendData(QueryState & state, const Block & block)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
 
-        /// In case of unsuccessful write, if the buffer with written data was not flushed,
-        ///  we will rollback write to avoid breaking the protocol.
-        /// (otherwise the client will not be able to receive exception after unfinished data
-        ///  as it will expect the continuation of the data).
-        /// It looks like hangs on client side or a message like "Data compressed with different methods".
-
-        if (state.compression == Protocol::Compression::Enable)
-        {
-            auto extra_bytes_written_compressed = state.maybe_compressed_out->count() - prev_bytes_written_compressed_out;
-            if (state.maybe_compressed_out->offset() >= extra_bytes_written_compressed)
-                state.maybe_compressed_out->position() -= extra_bytes_written_compressed;
-        }
-
-        auto extra_bytes_written_out = out->count() - prev_bytes_written_out;
-        if (out->offset() >= extra_bytes_written_out)
-            out->position() -= extra_bytes_written_out;
+        if (!rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_offset_out))
+            LOG_WARNING(log, "Part of the data packet has already been sent and cannot be rolled back. Closing the connection.");
 
         throw;
     }
@@ -3281,36 +3359,68 @@ void TCPHandler::sendLogData(
     if (out->isCanceled())
         return;
 
-    writeVarUInt(Protocol::Server::Log, *out);
-    /// Send log tag (empty tag is the default tag)
-    writeStringBinary("", *out);
+    size_t prev_bytes_written_out = out->count();
+    size_t prev_bytes_written_compressed_out = state.maybe_compressed_out ? state.maybe_compressed_out->count() : 0;
+    size_t prev_offset_out = out->offset();
 
-    state.logs_block_out->write(block);
-    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS
-        && state.maybe_compressed_out != out)
-        state.logs_block_out->flush();
-    out->finishChunk();
+    try
+    {
+        writeVarUInt(Protocol::Server::Log, *out);
+        /// Send log tag (empty tag is the default tag)
+        writeStringBinary("", *out);
+
+        state.logs_block_out->write(block);
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS
+            && state.maybe_compressed_out != out)
+            state.logs_block_out->flush();
+        out->finishChunk();
+    }
+    catch (...)
+    {
+        rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_offset_out);
+        throw;
+    }
 }
 
 
 void TCPHandler::sendTableColumns(QueryState & state, const ColumnsDescription & columns)
 {
-    writeVarUInt(Protocol::Server::TableColumns, *out);
+    /// The snapshot is taken before maybe_compressed_out may be created below, so a packet that
+    /// creates it is rolled back on the uncompressed buffer alone, which is where its bytes are.
+    size_t prev_bytes_written_out = out->count();
+    size_t prev_bytes_written_compressed_out = state.maybe_compressed_out ? state.maybe_compressed_out->count() : 0;
+    size_t prev_offset_out = out->offset();
 
-    WriteBuffer * columns_buf = out.get();
-    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+    try
     {
-        initMaybeCompressedOut(state);
-        columns_buf = state.maybe_compressed_out.get();
+        writeVarUInt(Protocol::Server::TableColumns, *out);
+
+        /// The packet type is on the buffer but its two strings are not: the state in which a
+        /// throw leaves a partial packet behind.
+        fiu_do_on(FailPoints::tcp_handler_throw_memory_limit_in_table_columns, {
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Memory tracker: fault injected");
+        });
+
+        WriteBuffer * columns_buf = out.get();
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+        {
+            initMaybeCompressedOut(state);
+            columns_buf = state.maybe_compressed_out.get();
+        }
+
+        /// Send external table name (empty name is the main table)
+        writeStringBinary("", *columns_buf);
+        writeStringBinary(columns.toString(/* include_comments = */ false), *columns_buf);
+
+        if (columns_buf != out.get())
+            columns_buf->next();
+        out->finishChunk();
     }
-
-    /// Send external table name (empty name is the main table)
-    writeStringBinary("", *columns_buf);
-    writeStringBinary(columns.toString(/* include_comments = */ false), *columns_buf);
-
-    if (columns_buf != out.get())
-        columns_buf->next();
-    out->finishChunk();
+    catch (...)
+    {
+        rollbackPartialPacket(state, out, prev_bytes_written_out, prev_bytes_written_compressed_out, prev_offset_out);
+        throw;
+    }
 }
 
 
