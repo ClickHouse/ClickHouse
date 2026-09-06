@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Compression/CompressionInfo.h>
 #include <IO/copyData.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <gtest/gtest.h>
@@ -1842,6 +1843,71 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         auto stat = stream.finishWriting();
 
         ASSERT_EQ(stat.compressed_size, 64);
+    }
+}
+
+/// Regression test: with the NONE codec, TemporaryDataBuffer writes the data directly into the
+/// file buffer (declareOutBufferExclusive), reserving COMPRESSED_BLOCK_PREFIX_SIZE bytes in front of
+/// the payload for the checksum and the header. The file buffer must be enlarged accordingly, so
+/// that a block of exactly settings.buffer_size bytes fits into one compressed frame instead of
+/// being split one prefix short of the block size.
+TEST_F(FileCacheTest, TemporaryDataExactBlockFitWithNoneCodec)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    constexpr size_t block_size = 64_KiB;
+    constexpr size_t prefix_size = COMPRESSED_BLOCK_PREFIX_SIZE;
+
+    TemporaryDataOnDiskSettings settings;
+    settings.compression_codec = "NONE";
+    settings.buffer_size = block_size;
+
+    String data(block_size, '\0');
+    for (size_t i = 0; i < data.size(); ++i)
+        data[i] = static_cast<char>(i % 251);
+
+    auto test_scope = [&](TemporaryDataOnDiskScopePtr tmp_data_scope)
+    {
+        auto out = std::make_unique<TemporaryDataBuffer>(tmp_data_scope);
+        out->write(data.data(), data.size());
+        auto stat = out->finishWriting();
+
+        /// Exactly one full frame: the payload plus one checksum-and-header prefix.
+        ASSERT_EQ(stat.uncompressed_size, block_size);
+        ASSERT_EQ(stat.compressed_size, block_size + prefix_size);
+
+        /// The data must round-trip.
+        auto in = out->read();
+        String read_back(data.size(), '\0');
+        in->readStrict(read_back.data(), read_back.size());
+        ASSERT_EQ(read_back, data);
+        ASSERT_TRUE(in->eof());
+    };
+
+    /// Temporary data stored in the file cache
+    {
+        DB::FileCacheSettings cache_settings;
+        cache_settings[FileCacheSetting::max_size] = 1_MiB;
+        cache_settings[FileCacheSetting::max_file_segment_size] = 1_MiB;
+        cache_settings[FileCacheSetting::path] = cache_base_path;
+        cache_settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        cache_settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+        DB::FileCache file_cache("cache", cache_settings);
+        file_cache.initialize();
+
+        test_scope(std::make_shared<TemporaryDataOnDiskScope>(settings, &file_cache));
+    }
+
+    /// Temporary data stored on disk
+    {
+        DiskPtr disk;
+        SCOPE_EXIT_SAFE(destroyDisk(disk));
+
+        disk = createDisk("temporary_data_exact_block_fit_test_dir");
+        VolumePtr volume = std::make_shared<SingleDiskVolume>("volume", disk);
+
+        test_scope(std::make_shared<TemporaryDataOnDiskScope>(settings, volume));
     }
 }
 

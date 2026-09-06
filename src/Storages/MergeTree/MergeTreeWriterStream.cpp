@@ -213,6 +213,14 @@ void SizeAdaptiveSpoolBuffer::sync()
 /// marks files share a coordinator so they always end up in the same layout. Otherwise
 /// (column streams, or skip indices when packing is disabled) write straight to
 /// data_part_storage.
+/// A pass-through, so that the declaration happens inside the member initializer list, before the
+/// downstream HashingWriteBuffer captures the compressor's working buffer.
+static CompressedWriteBuffer & declareOutBufferExclusive(CompressedWriteBuffer & compressor)
+{
+    compressor.declareOutBufferExclusive();
+    return compressor;
+}
+
 static std::unique_ptr<WriteBufferFromFileBase> openStreamFile(
     const MutableDataPartStoragePtr & data_part_storage,
     PackedFilesWriter * packed_writer,
@@ -309,12 +317,15 @@ MergeTreeWriterStream::MergeTreeWriterStream(
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
     is_size_adaptive(packing.writer != nullptr && (!packing.data_name.empty() || !packing.marks_name.empty())),
-    plain_file(openStreamFile(data_part_storage, packing.writer, packing.data_name, data_path_ + data_file_extension, max_compress_block_size_, query_write_settings, packing.spill_threshold, spool_coupled_spilled)),
+    /// +COMPRESSED_BLOCK_PREFIX_SIZE: NONE-coded blocks are written directly into this buffer
+    /// (see declareOutBufferExclusive below) and must fit it together with their prefix.
+    plain_file(openStreamFile(data_part_storage, packing.writer, packing.data_name, data_path_ + data_file_extension, max_compress_block_size_ + COMPRESSED_BLOCK_PREFIX_SIZE, query_write_settings, packing.spill_threshold, spool_coupled_spilled)),
     plain_hashing(*plain_file),
     compressor(plain_hashing, compression_codec_, max_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
-    compressed_hashing(compressor),
+    compressed_hashing(declareOutBufferExclusive(compressor)),
     marks_file(openStreamFile(data_part_storage, packing.writer, packing.marks_name, marks_path_ + marks_file_extension, 4096, query_write_settings, packing.spill_threshold, spool_coupled_spilled)),
     marks_hashing(*marks_file),
+    /// No declareOutBufferExclusive here: the small marks_file buffer would clamp NONE-coded mark blocks.
     marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     marks_compressed_hashing(marks_compressor),
     compress_marks(MarkType(marks_file_extension).compressed)

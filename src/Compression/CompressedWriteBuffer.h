@@ -20,6 +20,15 @@ public:
         bool use_adaptive_buffer_size_ = false,
         size_t adaptive_buffer_initial_size = DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE);
 
+    /// Enables zero-copy `NONE` writes: a block is assembled in place inside `out` instead of
+    /// being copied there. The caller guarantees that nothing else writes to or flushes `out`
+    /// while this buffer is alive, the same contract `HashingWriteBuffer` and `ForkWriteBuffer`
+    /// rely on. Call before writes or constructing a wrapper that captures the working buffer.
+    /// A violation is detected in every build, including release: the block is not finished, the
+    /// whole buffer chain is canceled and `LOGICAL_ERROR` is thrown, so a foreign write can never
+    /// be committed as a valid-looking compressed block.
+    void declareOutBufferExclusive();
+
     /// The amount of compressed data
     size_t getCompressedBytes()
     {
@@ -49,6 +58,10 @@ public:
 
 private:
     void nextImpl() override;
+
+    /// Select the direct or owned buffer for the next block.
+    void setupBufferForNextBlock();
+
     /// finalize call does not affect the out buffer.
     /// That is made in order to handle the use case when several CompressedWriteBuffers write to the one file.
     /// Usually the CompressedWriteBuffer does not own the out buffer.
@@ -59,7 +72,16 @@ private:
     WriteBuffer & out;
     CompressionCodecPtr codec;
 
+    /// Current block size, growing up to adaptive_buffer_max_size.
+    size_t block_size;
+
     PODArray<char> compressed_buffer;
+
+    /// See declareOutBufferExclusive.
+    bool out_buffer_is_exclusive = false;
+
+    /// Whether the current block is written in place inside `out` rather than into `memory`.
+    bool block_is_written_in_place = false;
 };
 
 }

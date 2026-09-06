@@ -64,6 +64,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
     if (index_granularity_info.mark_type.compressed)
     {
+        /// No declareOutBufferExclusive: the small marks_file buffer would clamp NONE-coded mark blocks.
         marks_compressor = std::make_unique<CompressedWriteBuffer>(
             *marks_file_hashing,
              CompressionCodecFactory::instance().get(settings_.marks_compression_codec),
