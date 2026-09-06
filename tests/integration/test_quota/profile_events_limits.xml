@@ -1,0 +1,16 @@
+<clickhouse>
+    <quotas>
+        <myQuota>
+            <interval>
+                <duration>31556952</duration>
+                <queries>1000</queries>
+                <!-- A limit over a profile event, using a size suffix. -->
+                <NetworkSendBytes>1G</NetworkSendBytes>
+                <!-- Zero means "track this event but do not limit it". -->
+                <SelectQuery>0</SelectQuery>
+                <!-- An unknown name is ignored with a warning in the log. -->
+                <NoSuchProfileEvent>123</NoSuchProfileEvent>
+            </interval>
+        </myQuota>
+    </quotas>
+</clickhouse>
