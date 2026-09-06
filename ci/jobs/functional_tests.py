@@ -3,6 +3,7 @@ import json
 import os
 import random
 import subprocess
+import traceback
 import zlib
 from collections.abc import Mapping
 from pathlib import Path
@@ -435,6 +436,46 @@ def reconcile_bugfix_crash_repro(result: Result, fatals: list) -> bool:
     if runner_level_error and not crash_repro:
         result.status = Result.Status.ERROR
     return crash_repro
+
+
+def checkpoint_collected_results(
+    job_name: str, collected_results: list, is_local_run: bool
+):
+    """Persist the results collected so far into the job's existing result file, so
+    a job killed during the post-processing that follows still publishes them.
+
+    Assigns NO status: every status decision in `main` runs after this point, so a
+    status here would be published as the verdict on a killed job. Left `RUNNING`,
+    the runner's `KILLED` patch decides it, and that patch keeps the children.
+
+    Updates the existing result instead of building a fresh one, because
+    `Result.create_from` takes no `ext` and would drop the `run_url`. Published by
+    rename because `Result.dump` truncates in place, and `Result.from_fs` refuses
+    to parse the truncation that a kill mid-write would leave.
+
+    Skipped on a local run, which has no runner to publish anything.
+
+    Best-effort, and never raises: the final `complete_job` writes these results
+    again, so a failure here must not cost `main` everything that follows it.
+    """
+    if is_local_run:
+        return
+    try:
+        result = Result.from_fs(job_name)
+        result.results = list(collected_results)
+        path = Path(result.file_name())
+        tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        with open(tmp_path, "w", encoding="utf8") as f:
+            json.dump(Result.to_dict(result), f, indent=4)
+        os.replace(tmp_path, path)
+    except Exception as e:
+        # No temp-file cleanup here: a cleanup that itself raises would defeat the
+        # guard. A leftover is named `*.tmp`, never the published name.
+        print(f"WARNING: Failed to checkpoint collected results: {e}")
+        # Indented so no line starts at column zero: a column-zero
+        # `Traceback (most recent call last):` in `job.log` is read as a runner failure.
+        for line in traceback.format_exc().splitlines():
+            print(f"  {line}")
 
 
 def main():
@@ -1177,6 +1218,18 @@ def main():
             is_bugfix_validation=is_labeled_bugfix_validation,
             allow_no_tests=is_flaky_check or is_targeted_check or is_selected_tests_run,
         )
+        if is_bugfix_validation:
+            # The job name carries only the architecture, so a row is attributable
+            # to a build type only through this label. Set before it is published.
+            for r in test_result.results:
+                r.set_label(build_types[0])
+
+        # Before any teardown, so an overrun there cannot cost the results.
+        # `results + [test_result]` is the shape `R` is built from below, so the
+        # CIDB insert still finds the per-test rows under the "Tests" sub-result.
+        checkpoint_collected_results(
+            info.job_name, results + [test_result], info.is_local_run
+        )
 
         # Run additional build types for bugfix validation.
         # Exit early on first failure to avoid duplicate test names,
@@ -1185,14 +1238,17 @@ def main():
         # rather than in the outer CHECK_ERRORS stage, so that crashes in any
         # build type are detected even when logs are cleaned between builds.
         if is_bugfix_validation:
-            for r in test_result.results:
-                r.set_label(build_types[0])
-
             # Check fatal messages for the first build type before cleaning logs
             first_bt_fatals = CH.check_fatal_messages_in_logs()
             for r in first_bt_fatals:
                 r.set_label(build_types[0])
             reconcile_bugfix_crash_repro(test_result, first_bt_fatals)
+
+            # The labels and fatal rows above are the first build's final state, and the
+            # next iteration stops the server before producing anything new.
+            checkpoint_collected_results(
+                info.job_name, results + [test_result], info.is_local_run
+            )
 
             if test_result.is_ok():
                 for bugfix_bt in build_types[1:]:
@@ -1334,6 +1390,16 @@ def main():
                         runner_exit_code=bt_runner_exit_code,
                         is_bugfix_validation=is_labeled_bugfix_validation,
                     )
+                    for r in bt_result.results:
+                        r.set_label(bugfix_bt)
+                    # Until this call the file holds the previous build type's
+                    # rows, and the fatal scan below runs before the next one.
+                    # Re-assigned after that scan, which can change both.
+                    test_result.results = bt_result.results
+                    test_result.status = bt_result.status
+                    checkpoint_collected_results(
+                        info.job_name, results + [test_result], info.is_local_run
+                    )
 
                     # Check fatal messages for this build type. As with the
                     # first build type, a `BLOCKER` fatal is the bug crashing
@@ -1347,14 +1413,25 @@ def main():
                         r.set_label(bugfix_bt)
                     reconcile_bugfix_crash_repro(bt_result, bt_fatals)
 
-                    for r in bt_result.results:
-                        r.set_label(bugfix_bt)
                     test_result.results = bt_result.results
                     test_result.status = bt_result.status
+                    # Per build type, not once after the loop: this REPLACES the
+                    # results, and the next iteration stops the server and
+                    # re-prepares the environment before producing any new ones.
+                    checkpoint_collected_results(
+                        info.job_name, results + [test_result], info.is_local_run
+                    )
                     debug_files += ft_res_processor_bt.debug_files
 
                     if not bt_result.is_ok():
                         break
+
+            # Every exit from this block passes here, including the breaks that
+            # skip the in-loop call: the build-type labels, the reconciled fatal
+            # rows and the startup/setup ERROR rows all land after it.
+            checkpoint_collected_results(
+                info.job_name, results + [test_result], info.is_local_run
+            )
 
         if not info.is_local_run:
             CH.stop_log_exports()
