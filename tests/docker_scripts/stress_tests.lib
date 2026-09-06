@@ -294,11 +294,16 @@ function stop_server()
     # send is already in progress.
     #
     # Refs: https://github.com/ClickHouse/ClickHouse/issues/72557
+    #
+    # `--receive_timeout` is inert until Hello completes (the client holds the
+    # 300s handshake timeout until then), so `timeout` is what bounds an attempt.
+    # BEGIN: stop-server distributed-sends loop (see ci/tests/test_stress_stop_server_bounded.py)
     for i in {1..30}; do
-        if clickhouse client --receive_timeout=10 -q "SYSTEM STOP DISTRIBUTED SENDS"; then
+        if timeout -s KILL 15 clickhouse client --handshake_timeout_ms=10000 --receive_timeout=10 -q "SYSTEM STOP DISTRIBUTED SENDS"; then
             break
         fi
     done
+    # END: stop-server distributed-sends loop
     clickhouse stop --max-tries "$max_tries" --do-not-kill && return
 
     if [ "$check_hang" == true ]
