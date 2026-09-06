@@ -516,11 +516,12 @@ public:
         {
             /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
             const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            auto final_flags = std::make_unique<UInt8[]>(row_end);
+            const size_t span = row_end - row_begin;
+            auto final_flags = std::make_unique_for_overwrite<UInt8[]>(span);
             for (size_t i = row_begin; i < row_end; ++i)
-                final_flags[i] = (!null_map[i]) & !!if_flags[i];
+                final_flags[i - row_begin] = (!null_map[i]) & !!if_flags[i];
 
-            this->data(place).addManyConditional(column.getData().data(), final_flags.get(), row_begin, row_end);
+            this->data(place).addManyConditional(column.getData().data() + row_begin, final_flags.get(), 0, span);
         }
         else
         {

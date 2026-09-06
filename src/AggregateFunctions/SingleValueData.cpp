@@ -33,7 +33,8 @@ namespace
 std::unique_ptr<UInt8[]>
 mergeIfAndNullFlags(const UInt8 * __restrict null_map, const UInt8 * __restrict if_flags, size_t row_begin, size_t row_end)
 {
-    auto final_flags = std::make_unique<UInt8[]>(row_end);
+    /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
+    auto final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
     for (size_t i = row_begin; i < row_end; ++i)
         final_flags[i] = (!null_map[i]) & !!if_flags[i];
     return final_flags;
