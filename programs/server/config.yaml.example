@@ -663,6 +663,28 @@ default_session_timeout: 60
 #     events: true
 #     asynchronous_metrics: true
 
+# Create all_... union tables next to the system log tables:
+# system.all_query_log for system.query_log, system.all_text_log for system.text_log, and so on.
+# Such a table is a union of the corresponding log table, its rotated versions
+# (query_log_0, query_log_1, ...) and/or the same tables across all replicas of a cluster,
+# and allows querying them all at once without remembering constructs like
+# clusterAllReplicas(default, merge(system, '^query_log')).
+# The option applies to all system log tables at once.
+# The tables have no state of their own, so it is safe to drop them at any time:
+# they will be recreated at the next flush of the corresponding log.
+create_union_system_log_tables:
+    # Select from the log table and its rotated versions with the merge table function.
+    merge_rotated_tables: true
+
+    # Select from the corresponding tables across all replicas of the specified cluster
+    # with the clusterAllReplicas table function (with SETTINGS skip_unavailable_shards = 1,
+    # so that unavailable replicas do not fail the queries).
+    # Note: the definitions of the all_... tables will reference the cluster,
+    # so the cluster has to exist for the tables to be loaded. If you remove the cluster
+    # from the configuration, also drop the all_... tables: they will be recreated
+    # according to the new configuration at the next flush.
+    # cluster: default
+
 # Query log. Used only for queries with setting log_queries = 1.
 query_log:
     # What table to insert data. If table is not exist, it will be created.
