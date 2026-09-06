@@ -1,0 +1,25 @@
+a quantifier behind a flag group
+1	1
+2
+2
+the other quantifiers that allow zero occurrences
+2
+2
+2
+an empty \\Q\\E quote in the same place
+1
+2
+2
+a flag group without a quantifier still gives the whole prefix
+1
+1
+and a group with a body keeps the prefix, because the quantifier applies to the group
+1
+1
+1
+1
+a plain quantifier over a literal is unchanged
+2
+2
+1
+1
