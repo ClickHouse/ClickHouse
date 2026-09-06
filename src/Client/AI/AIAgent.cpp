@@ -31,6 +31,19 @@ String escapeRecentQueryContext(const String & text)
     return escaped;
 }
 
+/// Hold the recent-query block to its own budget, keeping the end of it: the block is
+/// chronological, and the queries a question is about are the last ones.
+String boundRecentQueryContext(String escaped, size_t budget)
+{
+    static constexpr std::string_view OLDER_LEFT_OUT = "[Older entries were left out to fit the conversation.]\n";
+
+    if (escaped.size() <= budget)
+        return escaped;
+
+    truncateToUTF8BoundaryFromLeft(escaped, budget > OLDER_LEFT_OUT.size() ? budget - OLDER_LEFT_OUT.size() : 0);
+    return String(OLDER_LEFT_OUT) + escaped;
+}
+
 /// A compact rendering of the tool call arguments for the terminal. The queries of the
 /// run tools are not shown here: they are echoed in full by the query display itself.
 String summarizeArguments(const ai::ToolCall & call)
@@ -176,7 +189,10 @@ void AIAgent::chat(const String & user_text)
         String recent = query_context->format(last_seen_seqno, /*skip_ai_initiated=*/ true);
         last_seen_seqno = query_context->latestSeqno();
         if (!recent.empty())
-            full_text = fmt::format("<recent_queries>\n{}\n\n{}</recent_queries>\n\n", AIPrompts::RECENT_QUERIES_HEADER, escapeRecentQueryContext(recent));
+            full_text = fmt::format(
+                "<recent_queries>\n{}\n\n{}</recent_queries>\n\n",
+                AIPrompts::RECENT_QUERIES_HEADER,
+                boundRecentQueryContext(escapeRecentQueryContext(recent), max_recent_context_bytes));
     }
     full_text += user_text;
 

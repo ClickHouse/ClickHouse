@@ -66,6 +66,15 @@ private:
     /// cannot displace the whole rest of the conversation from the byte budget.
     static constexpr size_t max_tool_result_bytes = 32 * 1024;
 
+    /// The recent-query context prepended to the question of a turn is held to a budget of its
+    /// own. It shares the user message with the question, and `truncateCurrentQuestion` keeps the
+    /// beginning of that message, so without a cap of its own an oversized block would survive
+    /// and the question behind it would be the part that is cut - and the question is the one
+    /// thing of the turn the model cannot do without. The block is only background, and it is
+    /// reachable: `QueryContextBuffer` holds about 150 KiB and escaping it for the prompt can
+    /// expand a byte fivefold.
+    static constexpr size_t max_recent_context_bytes = 32 * 1024;
+
     String systemPrompt() const;
     void refreshToolSet();
     void pushUserMessage(const String & text);

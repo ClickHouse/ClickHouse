@@ -5,6 +5,9 @@
 
 #include <Client/AI/AIAgent.h>
 
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+
 #include <optional>
 #include <set>
 #include <sstream>
@@ -482,6 +485,41 @@ TEST(AIAgent, HistoryIsTrimmedWhenTheQuestionItselfIsOversized)
     EXPECT_NE(question.find("The question was cut here"), String::npos);
     /// What is kept is the beginning of the question.
     EXPECT_TRUE(question.starts_with("xxxx"));
+}
+
+TEST(AIAgent, RecentQueryContextDoesNotCrowdOutTheQuestion)
+{
+    /// The recent-query context and the question of the turn share one user message, and the
+    /// truncation of an oversized message keeps its beginning - which is the context. Without a
+    /// budget of its own the context would be what survives and the question would be what is
+    /// cut, so a short question after a busy session would reach the model without the task.
+    AgentWithMock harness({textStep("ok")});
+
+    /// Escaping the context for the prompt expands every `&` fivefold, so a session of
+    /// markup-heavy queries and results fills far more of the prompt than the buffer holds.
+    auto values = ColumnString::create();
+    for (size_t row = 0; row < 2 * QueryContextBuffer::head_rows; ++row)
+        values->insert(String(QueryContextBuffer::max_line_bytes, '&'));
+    Block result{ColumnWithTypeAndName{std::move(values), std::make_shared<DataTypeString>(), "value"}};
+
+    for (size_t i = 0; i < QueryContextBuffer::max_entries; ++i)
+    {
+        harness.buffer->startQuery(String(QueryContextBuffer::max_query_bytes, '&'), /*from_ai=*/ false);
+        harness.buffer->addBlock(result);
+        harness.buffer->finishQuery(0.1, false);
+    }
+    /// Without a budget of its own this context alone is over the whole budget of the history.
+    EXPECT_GT(harness.buffer->format(0, /*skip_ai_initiated=*/ true).size() * 5, 256u * 1024u);
+
+    harness.agent->chat("what went wrong?");
+
+    ASSERT_EQ(harness.transport->conversations.size(), 1u);
+    const String question = firstUserText(harness.transport->conversations[0]);
+    EXPECT_NE(question.find("what went wrong?"), String::npos);
+    /// The context is there, bounded and saying what it left out - and the question is intact.
+    EXPECT_NE(question.find("<recent_queries>"), String::npos);
+    EXPECT_NE(question.find("Older entries were left out"), String::npos);
+    EXPECT_LE(conversationBytes(harness.transport->conversations[0]), 256u * 1024u);
 }
 
 TEST(AIAgent, DisplaySanitizesControlCharacters)
