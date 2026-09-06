@@ -15,6 +15,11 @@ public:
 
     std::string getName() const override { return "MergeTreeCodecBlockCounts"; }
 
+    /// Every column of this function is derived from the source table's data, so reading any of them requires
+    /// `SELECT` on all of the source table's columns. Called both when the function's structure is resolved and
+    /// when it is read, so that resolving the structure cannot reveal anything about a table the user cannot select from.
+    static void checkSourceTableAccess(const StoragePtr & source_table, const ContextPtr & context);
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,

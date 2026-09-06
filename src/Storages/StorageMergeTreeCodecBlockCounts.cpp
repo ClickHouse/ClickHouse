@@ -315,6 +315,12 @@ StorageMergeTreeCodecBlockCounts::StorageMergeTreeCodecBlockCounts(
     setInMemoryMetadata(storage_metadata);
 }
 
+void StorageMergeTreeCodecBlockCounts::checkSourceTableAccess(const StoragePtr & source_table, const ContextPtr & context)
+{
+    const auto source_metadata = source_table->getInMemoryMetadataPtr(context, false);
+    context->checkAccess(AccessType::SELECT, source_table->getStorageID(), source_metadata->getColumns().getNamesOfPhysical());
+}
+
 void StorageMergeTreeCodecBlockCounts::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -327,9 +333,8 @@ void StorageMergeTreeCodecBlockCounts::read(
 {
     storage_snapshot->check(column_names);
 
-    const auto source_metadata = source_table->getInMemoryMetadataPtr(context, false);
+    checkSourceTableAccess(source_table, context);
     const auto source_storage_id = source_table->getStorageID();
-    context->checkAccess(AccessType::SELECT, source_storage_id, source_metadata->getColumns().getNamesOfPhysical());
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
 

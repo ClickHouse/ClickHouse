@@ -1,9 +1,11 @@
 #include <Storages/StorageMergeTreeCodecBlockCounts.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -32,6 +34,17 @@ public:
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
 private:
+    /// Checked from the name alone, before the catalog is consulted, so that a user who is not allowed to see
+    /// the source table cannot tell an existing one from a missing one by `ACCESS_DENIED` against `UNKNOWN_TABLE`.
+    /// `SHOW TABLES` is the privilege that governs whether the table's existence may be learned, and it is implied
+    /// by a grant on any single column of it, so this only adds a tier below the `SELECT` check on every column
+    /// that follows the resolution. `SHOW COLUMNS`, which `DESCRIBE` of the source table requires, is not implied
+    /// by column-level grants, so it would reject a user who holds `SELECT` on every column separately.
+    void checkSourceTableNameAccess(const ContextPtr & context) const
+    {
+        context->checkAccess(AccessType::SHOW_TABLES, source_table_id);
+    }
+
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
         ContextPtr context,
@@ -69,7 +82,14 @@ void TableFunctionMergeTreeCodecBlockCounts::parseArguments(const ASTPtr & ast_f
 
 ColumnsDescription TableFunctionMergeTreeCodecBlockCounts::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
+    checkSourceTableNameAccess(context);
+
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
+
+    /// Resolving the structure is a read of the source table, so it needs the same access as reading it.
+    /// Checked before anything is derived from the table, so that a user without `SELECT` on it cannot learn
+    /// its engine from the error below. `StorageMergeTreeCodecBlockCounts::read` checks again for the read itself.
+    StorageMergeTreeCodecBlockCounts::checkSourceTableAccess(source_table, context);
 
     const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
     if (!merge_tree)
@@ -104,6 +124,8 @@ StoragePtr TableFunctionMergeTreeCodecBlockCounts::executeImpl(
     ColumnsDescription /*cached_columns*/,
     bool is_insert_query) const
 {
+    checkSourceTableNameAccess(context);
+
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
     auto columns = getActualTableStructure(context, is_insert_query);
 
@@ -124,6 +146,8 @@ Reports, per (part, column, substream) of a MergeTree table, how many compressed
 Selecting `codec_block_counts` reads `.bin` data files, not just metadata. The other columns are metadata-only.
 
 Parts that do not record their substreams in `columns_substreams.txt` are not listed.
+
+Every reported value is derived from the table's data, so reading any column of the result requires the `SELECT` privilege on all columns of the table. A grant that covers only some of the columns is not enough. The privilege is also required to resolve the structure of the function, e.g. by `DESCRIBE`. A user who is not allowed to see the table at all, that is, one without the `SHOW TABLES` privilege on it, gets `ACCESS_DENIED` whether or not it exists, so the function does not tell such a user which tables exist.
 
 If a row policy applies to the table for the current user, reading `codec_block_counts` throws `ACCESS_DENIED`, because the counts would cover rows the policy hides. The other columns stay readable, `system.parts_columns` reports them regardless of row policies.
 
