@@ -124,6 +124,12 @@ namespace FailPoints
 namespace
 {
 
+/// Draw a random number for RANDOMIZE FOR. The range matches what addRandomSpread expects.
+Int64 drawRandomness()
+{
+    return std::uniform_int_distribution<Int64>(Int64(-1e9), Int64(1e9))(thread_local_rng);
+}
+
 /// Whether the Keeper this view is coordinated through is missing a feature flag that coordination
 /// requires (MULTI_READ, CREATE_IF_NOT_EXISTS). readZnodesIfNeeded uses multi-read on the
 /// scheduling thread, where a throw aborts the whole server, so this must be detected up front and
@@ -167,7 +173,6 @@ RefreshTask::RefreshTask(
     if (strategy.settings != nullptr)
         refresh_settings.applyChanges(strategy.settings->changes);
 
-    coordination.root_znode.randomize();
     if (empty)
     {
         /// To skip initial refresh, set the initial scheduling-related state as if this view was just refreshed.
@@ -1268,7 +1273,7 @@ void RefreshTask::executeRefresh()
         znode.last_success_dependencies = std::move(execution.dependencies);
         znode.previous_attempt_error = "";
         znode.attempt_number = 0;
-        znode.randomize();
+        znode.randomness_obsolete = drawRandomness();
     }
     execution.znode = znode;
 
@@ -1648,7 +1653,14 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
     if (when == std::chrono::system_clock::time_point::max())
         waiting_for_dependencies = true;
     else
-        when = refresh_schedule.addRandomSpread(when, znode.randomness);
+    {
+        if (znode.last_completed_timeslot != scheduling.randomness_drawn_for_timeslot)
+        {
+            scheduling.randomness_drawn_for_timeslot = znode.last_completed_timeslot;
+            scheduling.randomness = drawRandomness();
+        }
+        when = refresh_schedule.addRandomSpread(when, scheduling.randomness);
+    }
 
     znode.previous_attempt_error = "";
     if (!znode.last_attempt_succeeded && znode.last_attempt_time.time_since_epoch().count() != 0)
@@ -2051,11 +2063,6 @@ void RefreshTask::AllDependenciesInfo::readText(ReadBuffer & in)
     skipWhitespaceIfAny(in, /*one_line=*/ true);
 }
 
-void RefreshTask::CoordinationZnode::randomize()
-{
-    randomness = std::uniform_int_distribution<Int64>(Int64(-1e9), Int64(1e9))(thread_local_rng);
-}
-
 String RefreshTask::CoordinationZnode::toString() const
 {
     /// "format version" should be incremented when making incompatible change, to make older
@@ -2083,7 +2090,7 @@ String RefreshTask::CoordinationZnode::toString() const
         << "last_attempt_succeeded: " << last_attempt_succeeded << "\n"
         << "previous_attempt_error: " << escape << previous_attempt_error << "\n"
         << "attempt_number: " << attempt_number << "\n"
-        << "randomness: " << randomness << "\n"
+        << "randomness: " << randomness_obsolete << "\n"
         << "refresh_running: " << refresh_running << "\n"
         << "last_success_end_time_ns: " << Int64(last_success_end_time.time_since_epoch().count()) << "\n";
 
@@ -2173,7 +2180,7 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
     required_field("last_attempt_succeeded", last_attempt_succeeded);
     required_field("previous_attempt_error", previous_attempt_error);
     required_field("attempt_number", attempt_number);
-    required_field("randomness", randomness);
+    required_field("randomness", randomness_obsolete);
 
     refresh_running = running_znode_exists;
     optional_field("refresh_running", refresh_running);

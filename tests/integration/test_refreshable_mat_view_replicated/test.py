@@ -840,3 +840,108 @@ def test_dependent_sees_latest_data_other_replica(module_setup_tables, with_appe
     node.query("SYSTEM START VIEW child_v")
     node2.query("SYSTEM START VIEW parent_v")
     _drop_sync_objects()
+
+
+def _drop_randomize_objects():
+    node.query("DROP TABLE IF EXISTS randomize_rmv ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS randomize_multi_rmv ON CLUSTER default SYNC")
+
+
+def _next_refresh_time(n, view):
+    """next_refresh_time once the view has actually picked one.
+
+    Waiting for a non-empty value is not enough: the row appears in system.view_refreshes as soon as
+    startup() registers the view, while next_refresh_time is only assigned by the first scheduling
+    pass, and until then it holds its default of epoch 0, which renders as a non-empty timestamp.
+    """
+
+    def query():
+        return n.query_with_retry(
+            "SELECT status, toString(next_refresh_time) FROM system.view_refreshes "
+            f"WHERE view='{view}' FORMAT TabSeparated",
+            check_callback=lambda r: r.strip() != "",
+            retry_count=200,
+            sleep_time=0.3,
+        ).strip()
+
+    def picked(raw):
+        parts = raw.split("\t")
+        if len(parts) != 2:
+            return False
+        status, next_time = parts
+        return status != "Scheduling" and next_time not in (
+            "",
+            "\\N",
+            "1970-01-01 00:00:00",
+        )
+
+    return wait_condition(query, picked, max_attempts=200, delay=0.3).split("\t")[1]
+
+
+def test_randomize_for_is_per_replica(module_setup_tables):
+    """RANDOMIZE FOR is applied by each replica on its own, so the replicas disagree about when the
+    next refresh is due and whichever one comes first performs it."""
+    _drop_randomize_objects()
+
+    # A wide window keeps the two draws from landing on the same second, which next_refresh_time
+    # rounds to. EMPTY so no refresh fires while we look at the scheduled time.
+    node.query(
+        "CREATE MATERIALIZED VIEW randomize_rmv ON CLUSTER default "
+        "REFRESH EVERY 1 YEAR RANDOMIZE FOR 30 DAY "
+        "ENGINE = ReplicatedMergeTree ORDER BY tuple() EMPTY AS SELECT 1 AS x"
+    )
+
+    time1 = _next_refresh_time(node, "randomize_rmv")
+    time2 = _next_refresh_time(node2, "randomize_rmv")
+    assert (
+        time1 != time2
+    ), f"both replicas scheduled the refresh for {time1}, so the random offset is still shared"
+
+    _drop_randomize_objects()
+
+
+def test_randomize_for_is_redrawn_on_every_replica(module_setup_tables):
+    """Every replica has to draw a new offset after each refresh, not just the one that performed it.
+
+    A replica that keeps its first draw forever would keep winning whenever that draw happened to be
+    the earliest, which is what per-replica randomization exists to avoid. Two assertions are needed:
+    that each replica's own deadline MOVED, which a frozen per-process draw fails, and that they still
+    DISAGREE, which a shared redraw fails. Neither implies the other.
+
+    SYSTEM REFRESH VIEW is out of schedule, so `EVERY 1 YEAR` keeps the same timeslot across it; the
+    redraw therefore has to be triggered by the refresh itself, not by the timeslot moving.
+    """
+    _drop_randomize_objects()
+
+    node.query(
+        "CREATE MATERIALIZED VIEW randomize_multi_rmv ON CLUSTER default "
+        "REFRESH EVERY 1 YEAR RANDOMIZE FOR 30 DAY "
+        "ENGINE = ReplicatedMergeTree ORDER BY tuple() EMPTY AS SELECT 1 AS x"
+    )
+
+    for round_number in range(3):
+        before = {n.name: _next_refresh_time(n, "randomize_multi_rmv") for n in nodes}
+
+        # Out of schedule, so exactly one replica performs it and both observe the result.
+        node.query("SYSTEM REFRESH VIEW randomize_multi_rmv")
+        node.query("SYSTEM WAIT VIEW randomize_multi_rmv")
+
+        # Polling without raising, so the assertion below is what reports a frozen offset.
+        after = {}
+        for n in nodes:
+            for _ in range(200):
+                after[n.name] = _next_refresh_time(n, "randomize_multi_rmv")
+                if after[n.name] != before[n.name]:
+                    break
+                time.sleep(0.3)
+            assert after[n.name] != before[n.name], (
+                f"round {round_number}: {n.name} kept next_refresh_time {before[n.name]}, so its "
+                f"random offset was never redrawn"
+            )
+
+        assert len(set(after.values())) == len(nodes), (
+            f"round {round_number}: all replicas scheduled the next refresh for the same time "
+            f"{after}, so the random offsets became shared again"
+        )
+
+    _drop_randomize_objects()
