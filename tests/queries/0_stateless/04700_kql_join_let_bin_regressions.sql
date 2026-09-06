@@ -52,6 +52,8 @@ SET dialect = 'clickhouse';
 -- The function-property fuzzer found `kqlBin` over `Nullable` big integers answering with a
 -- logical error: the delegated `multiply` was built over the `Nullable` types but executed
 -- over columns the default null implementation had already stripped.
+-- The literal is read with the target type, so the argument is the exact `UInt128` written here
+-- rather than the nearest `Float64`.
 SELECT kqlBin(CAST(308762132851165525175899756 AS Nullable(UInt128)), CAST(14 AS UInt8));
 SELECT kqlBin(materialize(CAST(10.5 AS Nullable(Float64))), 3);
 SELECT kqlBin(CAST(NULL AS Nullable(Float64)), 2);
