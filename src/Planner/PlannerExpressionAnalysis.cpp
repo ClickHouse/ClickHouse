@@ -566,8 +566,14 @@ SortAnalysisResult analyzeSort(
         /// so here we add materialized ORDER BY columns manually, and append everything else after.
         ActionsDAG before_interpolate_actions_dag(before_sort_actions->dag.getResultColumns());
         for (const auto & out : actions_chain.getLastStepAvailableOutputColumns())
+        {
+            /// `Set` and `Function` placeholders have no serialization, so an output of this step
+            /// carrying one cannot be sent across a distributed stage boundary.
+            if (WhichDataType(out.type).isSet() || WhichDataType(out.type).isFunction())
+                continue;
             if (!before_sort_actions_dag_output_node_names.contains(out.name))
                 before_interpolate_actions_dag.getOutputs().push_back(&before_interpolate_actions_dag.addInput(out));
+        }
 
         for (auto & interpolate_node : interpolate_list_node.getNodes())
         {
