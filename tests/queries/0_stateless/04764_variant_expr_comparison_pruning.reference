@@ -1,0 +1,142 @@
+-- { echo }
+-- `optimize_redundant_comparisons` converts each comparison constant to the expression's type and
+-- treats the converted `Field` as an exact orderable point. That premise is false for a `Variant`
+-- expression, so the pruning analysis must decline it.
+--
+-- Each case prints the KEYED form (one `WHERE` with the whole chain) next to an ORACLE that
+-- materialises every comparison as its own `UInt8` column, so no chain pattern exists for the pass
+-- to rewrite. `oracle` and `keyed` must agree.
+
+SET enable_analyzer = 1;
+SET allow_suspicious_variant_types = 1;
+SET use_variant_default_implementation_for_comparisons = 0;
+SET optimize_redundant_comparisons = 1;
+SET optimize_and_compare_chain = 1;
+DROP TABLE IF EXISTS v_fs_u;
+CREATE TABLE v_fs_u (v Variant(FixedString(4), UInt64)) ENGINE = Memory;
+INSERT INTO v_fs_u VALUES ('ab'::FixedString(4)), (7::UInt64);
+DROP TABLE IF EXISTS v_single;
+CREATE TABLE v_single (v Variant(FixedString(4))) ENGINE = Memory;
+INSERT INTO v_single VALUES ('ab'::FixedString(4));
+DROP TABLE IF EXISTS v_tuple;
+CREATE TABLE v_tuple (v Tuple(Variant(FixedString(4), UInt64))) ENGINE = Memory;
+INSERT INTO v_tuple VALUES (tuple('ab'::FixedString(4)));
+DROP TABLE IF EXISTS v_array;
+CREATE TABLE v_array (v Array(Variant(FixedString(4), UInt64))) ENGINE = Memory;
+INSERT INTO v_array VALUES ([ 'ab'::FixedString(4) ]);
+DROP TABLE IF EXISTS v_fs_str;
+CREATE TABLE v_fs_str (v Variant(FixedString(4), String)) ENGINE = Memory;
+INSERT INTO v_fs_str VALUES ('ab'::FixedString(4)), ('ab'::String);
+DROP TABLE IF EXISTS v_str_u;
+CREATE TABLE v_str_u (v Variant(String, UInt64)) ENGINE = Memory;
+INSERT INTO v_str_u VALUES ('ab'::String), (7::UInt64);
+DROP TABLE IF EXISTS v_trans;
+CREATE TABLE v_trans (v Variant(FixedString(4), UInt64), w Variant(FixedString(4), UInt64)) ENGINE = Memory;
+INSERT INTO v_trans VALUES ('ab'::FixedString(4), 'ab'::FixedString(4));
+DROP TABLE IF EXISTS plain_fs;
+CREATE TABLE plain_fs (v FixedString(4)) ENGINE = Memory;
+INSERT INTO plain_fs VALUES ('ab');
+-- Group R: divergences that the fix must repair. `'ab'::FixedString(2)` and `'ab'::FixedString(4)`
+-- convert to two different `Field`s but match the same stored row, because the comparison is
+-- evaluated inside the `FixedString(4)` alternative where both are zero-padded.
+
+SELECT 'R1', countIf(g0 AND g1) AS oracle,
+       (SELECT count() FROM v_fs_u WHERE v = 'ab'::FixedString(4) AND v = 'ab'::FixedString(2)) AS keyed
+FROM (SELECT (v = 'ab'::FixedString(4)) AS g0, (v = 'ab'::FixedString(2)) AS g1 FROM v_fs_u);
+R1	1	1
+SELECT 'R2', countIf(g0 AND g1) AS oracle,
+       (SELECT count() FROM v_fs_u WHERE v = 'ab'::FixedString(4) AND v <= 'ab'::FixedString(2)) AS keyed
+FROM (SELECT (v = 'ab'::FixedString(4)) AS g0, (v <= 'ab'::FixedString(2)) AS g1 FROM v_fs_u);
+R2	1	1
+SELECT 'R3', countIf(g0 AND g1) AS oracle,
+       (SELECT count() FROM v_fs_u WHERE v = 'ab'::FixedString(4) AND v != 'ab'::FixedString(2)) AS keyed
+FROM (SELECT (v = 'ab'::FixedString(4)) AS g0, (v != 'ab'::FixedString(2)) AS g1 FROM v_fs_u);
+R3	0	0
+SELECT 'R4', countIf(g0 AND g1) AS oracle,
+       (SELECT count() FROM v_single WHERE v = 'ab'::FixedString(4) AND v = 'ab'::FixedString(2)) AS keyed
+FROM (SELECT (v = 'ab'::FixedString(4)) AS g0, (v = 'ab'::FixedString(2)) AS g1 FROM v_single);
+R4	1	1
+SELECT 'R5', countIf(g0 AND g1) AS oracle,
+       (SELECT count() FROM v_tuple WHERE v.1 = 'ab'::FixedString(4) AND v.1 = 'ab'::FixedString(2)) AS keyed
+FROM (SELECT (v.1 = 'ab'::FixedString(4)) AS g0, (v.1 = 'ab'::FixedString(2)) AS g1 FROM v_tuple);
+R5	1	1
+SELECT 'R6', countIf(g0 AND g1) AS oracle,
+       (SELECT count() FROM v_array WHERE v[1] = 'ab'::FixedString(4) AND v[1] = 'ab'::FixedString(2)) AS keyed
+FROM (SELECT (v[1] = 'ab'::FixedString(4)) AS g0, (v[1] = 'ab'::FixedString(2)) AS g1 FROM v_array);
+R6	1	1
+-- Both constants match an alternative EXACTLY here, so requiring an exact-alternative match would
+-- not have caught this shape.
+SELECT 'R7', countIf(g0 AND g1) AS oracle,
+       (SELECT count() FROM v_fs_str WHERE v = 'ab'::FixedString(4) AND v = 'ab'::String) AS keyed
+FROM (SELECT (v = 'ab'::FixedString(4)) AS g0, (v = 'ab'::String) AS g1 FROM v_fs_str);
+R7	2	2
+-- Reaches `addComparisonFilter` through the transitive-derivation call site, not the chain scan.
+SELECT 'R8', countIf(g0 AND g1 AND g2) AS oracle,
+       (SELECT count() FROM v_trans WHERE v = 'ab'::FixedString(4) AND v <= w AND w <= 'ab'::FixedString(2)) AS keyed
+FROM (SELECT (v = 'ab'::FixedString(4)) AS g0, (v <= w) AS g1, (w <= 'ab'::FixedString(2)) AS g2 FROM v_trans);
+R8	1	1
+-- The only case whose expression type is not itself a `Variant`: the `Variant` is nested one level
+-- down, so it is reached through the type's children rather than by the top-level test.
+SELECT 'R9', countIf(g0 AND g1) AS oracle,
+       (SELECT count() FROM v_tuple WHERE v = tuple('ab'::FixedString(4)) AND v = tuple('ab'::FixedString(2))) AS keyed
+FROM (SELECT (v = tuple('ab'::FixedString(4))) AS g0, (v = tuple('ab'::FixedString(2))) AS g1 FROM v_tuple);
+R9	1	1
+-- Group C: correct before the fix and must stay correct. `C1` is the anti-widening pin: a plain
+-- `FixedString(4)` expression keeps both its duplicate prune and its contradiction fold.
+
+SELECT 'C1', countIf(g0 AND g1) AS oracle,
+       (SELECT count() FROM plain_fs WHERE v = 'ab'::FixedString(4) AND v = 'ab'::FixedString(2)) AS keyed
+FROM (SELECT (v = 'ab'::FixedString(4)) AS g0, (v = 'ab'::FixedString(2)) AS g1 FROM plain_fs);
+C1	1	1
+SELECT 'C1_pruned_to_one_equals', count() FROM (EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM plain_fs WHERE v = 'ab'::FixedString(4) AND v = 'ab'::FixedString(2))
+WHERE explain ILIKE '%function_name: equals%';
+C1_pruned_to_one_equals	1
+SELECT 'C1_contradiction_folded', count() FROM (EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM plain_fs WHERE v = 'ab'::FixedString(4) AND v = 'cd'::FixedString(4))
+WHERE explain ILIKE '%constant_value: UInt64_0%';
+C1_contradiction_folded	1
+-- Against a `String` alternative a padded `FixedString` constant matches no row, so the two terms
+-- never share a row and there was no divergence to begin with.
+SELECT 'C2', countIf(g0 AND g1) AS oracle,
+       (SELECT count() FROM v_str_u WHERE v = 'ab'::FixedString(4) AND v = 'ab'::FixedString(2)) AS keyed
+FROM (SELECT (v = 'ab'::FixedString(4)) AS g0, (v = 'ab'::FixedString(2)) AS g1 FROM v_str_u);
+C2	0	0
+-- Group cost: folds this fix deliberately forgoes. Results are unchanged; only the fold stops
+-- firing. A `1` in a `folded`/`2` in an `equals_nodes` slot means the decline was narrowed and the
+-- `R` cases above are wrong again.
+
+SELECT 'cost1', countIf(g0 AND g1) AS oracle,
+       (SELECT count() FROM v_str_u WHERE v = 'ab'::String AND v = 'cd'::String) AS keyed
+FROM (SELECT (v = 'ab'::String) AS g0, (v = 'cd'::String) AS g1 FROM v_str_u);
+cost1	0	0
+SELECT 'cost1_folded', count() FROM (EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM v_str_u WHERE v = 'ab'::String AND v = 'cd'::String)
+WHERE explain ILIKE '%constant_value: UInt64_0%';
+cost1_folded	0
+SELECT 'cost2', countIf(g0 AND g1) AS oracle,
+       (SELECT count() FROM v_str_u WHERE v = 'ab'::String AND v = 'ab'::String) AS keyed
+FROM (SELECT (v = 'ab'::String) AS g0, (v = 'ab'::String) AS g1 FROM v_str_u);
+cost2	1	1
+-- The duplicate `WHERE` survives, so a collapse pattern could never detect this prune: count the
+-- remaining `equals` nodes instead. 1 = still pruned, 2 = prune forgone.
+SELECT 'cost2_equals_nodes', count() FROM (EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM v_str_u WHERE v = 'ab'::String AND v = 'ab'::String)
+WHERE explain ILIKE '%function_name: equals%';
+cost2_equals_nodes	2
+SELECT 'cost3', countIf(g0 AND g1) AS oracle,
+       (SELECT count() FROM v_str_u WHERE v >= 'zz'::String AND v <= 'ab'::String) AS keyed
+FROM (SELECT (v >= 'zz'::String) AS g0, (v <= 'ab'::String) AS g1 FROM v_str_u);
+cost3	0	0
+SELECT 'cost3_folded', count() FROM (EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM v_str_u WHERE v >= 'zz'::String AND v <= 'ab'::String)
+WHERE explain ILIKE '%constant_value: UInt64_0%';
+cost3_folded	0
+DROP TABLE v_fs_u;
+DROP TABLE v_single;
+DROP TABLE v_tuple;
+DROP TABLE v_array;
+DROP TABLE v_fs_str;
+DROP TABLE v_str_u;
+DROP TABLE v_trans;
+DROP TABLE plain_fs;
