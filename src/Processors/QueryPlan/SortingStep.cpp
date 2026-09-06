@@ -549,8 +549,11 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
 
     addPerStreamLimitByIfNeeded(pipeline, result_sort_desc);
 
+    /// A fixed-shard-count scatter must keep one sorted stream per shard: the join above pairs the shards
+    /// of its two sides positionally, and the thread count is a per-side budget, not a shared contract.
     /// If there are several streams, then we merge them into one
-    if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
+    if (scatter_partitions == 0 && pipeline.getNumStreams() > 1
+        && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
     {
         sorting_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
         auto transform = std::make_shared<MergingSortedTransform>(
