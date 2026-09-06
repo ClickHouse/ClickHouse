@@ -34,6 +34,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
@@ -2395,6 +2396,174 @@ static bool isDeterministicTransformInjective(const ActionsDAG & dag, const Stri
     return dfs(output_node, dfs).injective;
 }
 
+/// Whether the type holds values of several types at once and compares them across types.
+static bool isDynamicallyTypedDomain(const IDataType & type)
+{
+    const WhichDataType which(type);
+    return which.isDynamic() || which.isVariant() || which.isObject();
+}
+
+
+/// Whether the type is, or contains at any depth, a dynamically typed one.
+static bool hasDynamicallyTypedComponent(const DataTypePtr & type)
+{
+    bool result = false;
+    auto check = [&](const IDataType & child) { result = result || isDynamicallyTypedDomain(child); };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
+}
+
+
+/// Whether the value is a number equal to zero, whatever type it is written in. A value that denotes no
+/// number at all converts to a null `Field`, and this conversion never throws.
+static bool fieldIsZeroWrittenInAnyType(const Field & field)
+{
+    const Field as_float = tryConvertFieldToType(field, DataTypeFloat64());
+    return !as_float.isNull() && as_float.safeGet<Float64>() == 0;
+}
+
+
+/// Whether the value holds, at any depth, a zero the member holding it compares equal to a stored `-0.`:
+/// under a dynamically typed member any spelling of a zero, elsewhere only a `Float64` zero, since no other
+/// type has two spellings of zero. A value that does not have the shape of its own type cannot be read.
+/// Iterative because `Field`s nest inside `Field`s and a recursive walk overflows the native stack.
+static bool fieldHoldsZeroConflatedWithNegativeZero(const Field & field, const DataTypePtr & type)
+{
+    /// A null type marks a value under a dynamically typed member.
+    absl::InlinedVector<std::pair<const Field *, DataTypePtr>, 16> pending{{&field, type}};
+
+    while (!pending.empty())
+    {
+        const auto [current, current_type] = pending.back();
+        pending.pop_back();
+
+        DataTypePtr member_type;
+        if (current_type)
+        {
+            member_type = removeNullable(removeLowCardinality(current_type));
+            if (isDynamicallyTypedDomain(*member_type))
+                member_type = nullptr;
+        }
+
+        switch (current->getType())
+        {
+            case Field::Types::Array:
+            {
+                const auto * array_type = member_type ? typeid_cast<const DataTypeArray *>(member_type.get()) : nullptr;
+                if (member_type && !array_type)
+                    return true;
+                for (const Field & element : current->safeGet<Array>())
+                    pending.emplace_back(&element, array_type ? array_type->getNestedType() : nullptr);
+                break;
+            }
+            case Field::Types::Tuple:
+            {
+                const Tuple & elements = current->safeGet<Tuple>();
+                const auto * tuple_type = member_type ? typeid_cast<const DataTypeTuple *>(member_type.get()) : nullptr;
+                if (member_type && (!tuple_type || tuple_type->getElements().size() != elements.size()))
+                    return true;
+                for (size_t i = 0; i < elements.size(); ++i)
+                    pending.emplace_back(&elements[i], tuple_type ? tuple_type->getElement(i) : nullptr);
+                break;
+            }
+            case Field::Types::Map:
+            {
+                const auto * map_type = member_type ? typeid_cast<const DataTypeMap *>(member_type.get()) : nullptr;
+                if (member_type && !map_type)
+                    return true;
+                for (const Field & entry : current->safeGet<Map>())
+                {
+                    if (!map_type)
+                    {
+                        pending.emplace_back(&entry, nullptr);
+                        continue;
+                    }
+                    /// An entry of a `Map` value is a key and a value in a tuple.
+                    if (entry.getType() != Field::Types::Tuple || entry.safeGet<Tuple>().size() != 2)
+                        return true;
+                    const Tuple & entry_elements = entry.safeGet<Tuple>();
+                    pending.emplace_back(entry_elements.data(), map_type->getKeyType());
+                    pending.emplace_back(entry_elements.data() + 1, map_type->getValueType());
+                }
+                break;
+            }
+            case Field::Types::Object:
+            {
+                if (member_type)
+                    return true;
+                for (const auto & entry : current->safeGet<Object>())
+                    pending.emplace_back(&entry.second, nullptr);
+                break;
+            }
+            default:
+                if (member_type)
+                {
+                    if (current->getType() == Field::Types::Float64 && current->safeGet<Float64>() == 0)
+                        return true;
+                }
+                else if (fieldIsZeroWrittenInAnyType(*current))
+                    return true;
+                break;
+        }
+    }
+
+    return false;
+}
+
+
+/// A predicate on a floating-point zero holds for both `-0.` and `+0.`, which are distinct values, so a
+/// key range built from one of them stands for the predicate only if the key transform sends both to key
+/// values the index compares as equal. `{-0., +0.}` is the only such pair on a floating-point domain:
+/// every other pair of distinct bit patterns compares unequal, and a `NaN` equals nothing. `Field` has
+/// no `Float32`, so `Float32` and `BFloat16` values arrive here as `Float64`.
+static bool keyTransformCanSeparateEqualValues(
+    const Field & value,
+    const DataTypePtr & value_type,
+    const String & input_name,
+    const DeterministicKeyTransformDag & dag)
+{
+    const WhichDataType key_input_domain(removeNullable(removeLowCardinality(dag.input_type)));
+
+    /// The comparison reads the constant in the domain of the column the key expression consumes, and
+    /// that is where its equality class lives: `WHERE f = 0` over a `Float64` column compares two floats.
+    const Field key_input_value = tryConvertFieldToType(value, *dag.input_type, value_type.get());
+
+    /// A constant that does not reach the domain at all leaves nothing to reason about, unless the domain
+    /// accepts values of any type, where a conversion that fails leaves the comparison unmodelled.
+    if (key_input_value.isNull())
+        return hasDynamicallyTypedComponent(dag.input_type);
+
+    /// A container holds one sign combination per zero inside it, so one sibling does not decide it, and a
+    /// dynamically typed member reads every spelling of a zero as a number.
+    if (key_input_value.getType() != Field::Types::Float64 || hasDynamicallyTypedComponent(dag.input_type))
+        return fieldHoldsZeroConflatedWithNegativeZero(key_input_value, dag.input_type);
+
+    const Float64 zero = key_input_value.safeGet<Float64>();
+    if (zero != 0)
+        return false;
+
+    /// Only a floating-point domain carries the other spelling, and only its columns accept a `Float64`
+    /// value, so anything else cannot be probed and is declined instead.
+    if (!key_input_domain.isFloat())
+        return true;
+
+    /// Both spellings go through in one column, in the transform's own input type, so neither the
+    /// conversion nor the transform can treat them differently.
+    auto probe_column = dag.input_type->createColumn();
+    probe_column->insert(Field(zero));
+    probe_column->insert(Field(-zero));
+
+    ColumnPtr transformed_column;
+    DataTypePtr transformed_type;
+    if (!applyDeterministicDagToColumn(
+            std::move(probe_column), dag.input_type, input_name, dag, transformed_column, transformed_type))
+        return true;
+
+    return !Range::equals((*transformed_column)[0], (*transformed_column)[1]);
+}
+
 bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
@@ -2458,6 +2627,11 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     /// If the key transform produces NaN for the constant, the index cannot answer this predicate;
     /// fall back so the caller scans the granules.
     if (transformed_value.isNaN())
+        return false;
+
+    /// A point range built from one spelling of a floating-point zero misses the mark holding the other,
+    /// so the atom would be narrower than the predicate it stands for.
+    if (keyTransformCanSeparateEqualValues(out_value, out_type, expr_name, dag))
         return false;
 
     out_value = transformed_value;
