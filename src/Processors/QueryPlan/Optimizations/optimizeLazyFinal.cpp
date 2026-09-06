@@ -510,7 +510,14 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// Build the set for primary key columns only (PK is a prefix of sorting key;
     /// the remaining sorting key columns are useless for index analysis).
     SizeLimits set_size_limits(optimization_settings.max_rows_for_lazy_final, optimization_settings.max_bytes_for_lazy_final, OverflowMode::BREAK);
-    auto set = std::make_shared<Set>(set_size_limits, /*max_elements_to_fill=*/ 0, /*transform_null_in=*/ false);
+    /// This set selects FINAL winners by key identity, so a NULL key must equal itself here.
+    /// Without `transform_null_in` the `Set` drops NULL keys at insertion and a NULL-keyed
+    /// winner is pruned away. Note `isNullable` is false for `LowCardinality(Nullable(T))`.
+    const bool pk_has_nullable_column = std::any_of(
+        primary_key.data_types.begin(),
+        primary_key.data_types.end(),
+        [](const auto & type) { return isNullableOrLowCardinalityNullable(type); });
+    auto set = std::make_shared<Set>(set_size_limits, /*max_elements_to_fill=*/ 0, /*transform_null_in=*/ pk_has_nullable_column);
     set->setHeader(primary_key.sample_block.cloneWithColumns(primary_key.sample_block.cloneEmptyColumns()).getColumnsWithTypeAndName());
     set->fillSetElements();
     auto set_and_key = std::make_shared<SetAndKey>(SetAndKey{.key = "__lazy_final_set", .set = set, .external_table = nullptr});
