@@ -16,6 +16,7 @@ set(AI_SDK_CORE_SOURCES
     "${AI_SDK_SOURCE_DIR}/src/types/message.cpp"
     "${AI_SDK_SOURCE_DIR}/src/http/http_request_handler.cpp"
     "${AI_SDK_SOURCE_DIR}/src/providers/base_provider_client.cpp"
+    "${AI_SDK_SOURCE_DIR}/src/providers/http_sse_stream.cpp"
     "${AI_SDK_SOURCE_DIR}/src/tools/tool_executor.cpp"
     "${AI_SDK_SOURCE_DIR}/src/tools/multi_step_coordinator.cpp"
 )

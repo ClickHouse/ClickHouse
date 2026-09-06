@@ -1,0 +1,4 @@
+up_recall_no_hints: OK
+down_navigates_history: OK
+edit_after_recall_shows_hints: OK
+paste_no_hints: OK

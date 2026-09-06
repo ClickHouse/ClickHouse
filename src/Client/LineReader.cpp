@@ -303,7 +303,10 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
             }
         }
 
-        need_next_line = has_extender || (multiline && !has_delimiter) || hasInputData();
+        /// AI-chat input is natural language rather than SQL. In particular, it has no SQL
+        /// delimiter, so pressing Enter in `--multiline` mode must dispatch the question instead
+        /// of opening the SQL continuation prompt.
+        need_next_line = !inAIMode() && (has_extender || (multiline && !has_delimiter) || hasInputData());
 
         if (has_extender)
         {

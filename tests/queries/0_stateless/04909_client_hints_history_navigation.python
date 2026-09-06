@@ -1,0 +1,190 @@
+import multiprocessing
+import os
+import pty
+import re
+import select
+import shlex
+import time
+
+TIMEOUT_SECONDS = 30
+
+# How long to keep reading after the last keystroke while waiting for the expected output. The
+# committed-query case only sees the result once the query has executed, which can take longer
+# than the inter-keystroke drain on slow (sanitizer) builds.
+FINAL_WAIT_SECONDS = 20
+
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)).strip(".python") + ".debuglog",
+)
+
+# The gray SGR sequence replxx uses for the as-you-type hint (Color::GRAY -> "0;90").
+HINT_COLOR = "\x1b[0;90m"
+
+
+def make_history_file(name, entries):
+    """Write a replxx-format history file with the given entries, oldest first."""
+    path = os.path.join(
+        os.environ["CLICKHOUSE_TMP"],
+        os.path.basename(os.path.abspath(__file__)).strip(".python")
+        + f".{name}.history",
+    )
+    with open(path, "w") as f:
+        for i, entry in enumerate(entries):
+            f.write(f"### 2020-01-01 00:00:{i:02}.000\n{entry}\n")
+    return path
+
+
+def read_until(master, debug_log_fd, predicate, timeout):
+    output = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.3)
+        if not r:
+            if predicate(output):
+                return output
+            continue
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+        if predicate(output):
+            return output
+    return output
+
+
+def drain(master, debug_log_fd, idle):
+    output = ""
+    while True:
+        r, _, _ = select.select([master], [], [], idle)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+    return output
+
+
+def run_case(program, argv, name, keystrokes, check, state=None):
+    """Fork a PTY, wait for the prompt, send keystrokes (with a small pause between
+    them so replxx repaints), then run `check` over the collected output."""
+    shell_pid, master = pty.fork()
+    if shell_pid == 0:
+        os.environ["TERM"] = "xterm"
+        os.execv(program, argv)
+        return
+
+    debug_log_fd = open(DEBUG_LOG, "a")
+    try:
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+
+        output = ""
+        for keys in keystrokes:
+            os.write(master, keys)
+            output += drain(master, debug_log_fd, 0.4)
+
+        # The expected output may arrive only after the committed query executes, which can
+        # outlast the inter-keystroke drain on slow builds. Keep reading until the check passes
+        # instead of giving up after a single drain window.
+        if not check(output):
+            output += read_until(
+                master,
+                debug_log_fd,
+                lambda extra: check(output + extra),
+                FINAL_WAIT_SECONDS,
+            )
+
+        ok = check(output)
+        print(f"{name}: {'OK' if ok else 'FAIL'}")
+        state.value = 0 if ok else 1
+    finally:
+        os.close(master)
+        debug_log_fd.close()
+
+
+def run_with_timeout(program, argv, name, keystrokes, check):
+    for attempt in range(5):
+        state = multiprocessing.Value("i", -1)
+        process = multiprocessing.Process(
+            target=run_case,
+            args=(program, argv, name, keystrokes, check),
+            kwargs={"state": state},
+        )
+        process.start()
+        process.join(TIMEOUT_SECONDS + FINAL_WAIT_SECONDS)
+        if process.is_alive():
+            process.terminate()
+        if state.value in (0, 1):
+            return
+        # transient timeout on a loaded machine - retry
+    print(f"{name}: FAIL")
+
+
+def main():
+    program = os.environ["CLICKHOUSE_LOCAL"]
+    base = shlex.split(program)
+    args = base + ["--wait_for_suggestions_to_load", "--hints", "1"]
+
+    # A line displayed programmatically (recalled from history, pasted) must not pop the
+    # as-you-type hints by itself: with hints visible, the next Up/Down press would navigate
+    # the hints instead of the history. An edit shows the hints again.
+
+    # 1. Up recalls an entry; no hint appears at its end ("ive" would be the ghost suffix of
+    #    "concatAssumeInjective").
+    history = make_history_file("up_recall", ["SELECT concatAssumeInject"])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "up_recall_no_hints",
+        [b"\x1b[A"],
+        lambda o: "concatAssumeInject" in o and (HINT_COLOR + "ive") not in o,
+    )
+
+    # 2. Up, Up, Down walks the history (the entries end in "rand", which has many hint
+    #    matches - Down must not step into the hint list); Enter then runs the recalled entry,
+    #    so its result (222) is printed.
+    history = make_history_file(
+        "down_navigates", ["SELECT 111 AS rand", "SELECT 222 AS rand"]
+    )
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "down_navigates_history",
+        [b"\x1b[A", b"\x1b[A", b"\x1b[B", b"\r"],
+        lambda o: re.search(r"│\s*222\s*│", o) is not None,
+    )
+
+    # 3. Editing a recalled entry shows the hints again: after Up, typing the "t" completes the
+    #    prefix "concatAssumeInject" and the ghost "ive" appears.
+    history = make_history_file("edit_after_recall", ["SELECT concatAssumeInjec"])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "edit_after_recall_shows_hints",
+        [b"\x1b[A", b"t"],
+        lambda o: (HINT_COLOR + "ive") in o,
+    )
+
+    # 4. A (bracketed) paste is also a whole new line displayed at once - no hint at its end.
+    history = make_history_file("paste", [])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "paste_no_hints",
+        [b"\x1b[200~SELECT concatAssumeInject\x1b[201~"],
+        lambda o: "concatAssumeInject" in o and (HINT_COLOR + "ive") not in o,
+    )
+
+
+if __name__ == "__main__":
+    # The check lambdas are not picklable, so the subprocesses must be forked (not spawned,
+    # which became the default on newer Python).
+    multiprocessing.set_start_method("fork")
+    main()

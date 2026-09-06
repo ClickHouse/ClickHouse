@@ -54,9 +54,34 @@ public:
 
     /// Set text to be prepopulated in the next readLine call
     void setInitialText(const String & text) override;
+
+    bool inAIMode() const override { return ai_mode; }
+
+    void addQueryToHistory(const String & query) override;
 private:
     InputStatus readOneLine(const String & prompt) override;
+
+    /// The prompt shown while in AI-chat mode: the display name plus a magenta `:?`.
+    std::string aiModePrompt() const;
+
+    /// Run a history-recall action (navigation, search, restore) while keeping AI-chat mode in
+    /// sync with the entries. Entries for AI questions are stored with a `? ` prefix; the
+    /// editable line shows the question without it. Before the action, the prefix is restored on
+    /// the current line so replxx saves the entry in its stored form; after it, the recalled
+    /// entry sets the mode (AI vs SQL) and the prefix is stripped from the editable line again.
+    replxx::Replxx::ACTION_RESULT historyNavigate(replxx::Replxx::ACTION action, char32_t code);
+    void restoreHistoryPrefix();
+    void syncModeFromHistory();
+
+    /// After a line was displayed programmatically, pin its text so that any hint regeneration
+    /// for it shows nothing (see `suppress_hints_for_text`).
+    void suppressHintsForDisplayedLine();
     void addToHistory(const String & line) override;
+
+    /// Add one entry to the history in the form it is stored in (`? `-prefixed for an AI question)
+    /// and persist it. `is_sql` also feeds the identifiers of the entry to the completion.
+    void appendHistoryEntry(const String & entry, bool is_sql);
+
     int executeEditor(const std::string & path);
     void openEditor(bool format_query);
 
@@ -92,6 +117,13 @@ private:
     std::string editor;
     bool overwrite_mode = false;
 
+    /// AI-chat mode state. Entered by typing a leading `?` on an empty line (which switches the
+    /// prompt to `:?` instead of inserting the character) and left by pressing Backspace on the
+    /// empty `:?` line. Persists across readLine() calls until left. `sql_prompt` remembers the
+    /// normal prompt so it can be restored when leaving the mode.
+    bool ai_mode = false;
+    std::string sql_prompt;
+
     /// As-you-type hint state (input-thread only). `hints_visible` is whether a hint with
     /// something to complete is currently shown. `hint_count` is how many hints are shown and
     /// `hint_selection` which one is selected (0-based, -1 = none) — kept in sync with replxx's
@@ -101,6 +133,20 @@ private:
     bool hints_visible = false;
     int hint_count = 0;
     int hint_selection = -1;
+
+    /// Suppression of the as-you-type hints for a line that is displayed programmatically -
+    /// recalled from history, found by a history search, pasted, brought back from the editor.
+    /// Such a display must not pop hints by itself: with hints visible, the next Up/Down press
+    /// would navigate the hints instead of the history. An edit shows the hints again.
+    /// `suppress_hints_once` is armed before the action that displays the line (the action
+    /// repaints, and regenerates the hints, inside itself) and consumed by the next run of the
+    /// hint callback. `suppress_hints_for_text` then pins the displayed text after the action,
+    /// because the same display can regenerate the hints again later - replxx replays a
+    /// throttled refresh after the key handler returns (its "rapid refresh" of e.g. a held-down
+    /// Up key) - so any later callback run for exactly this text shows no hints either; the
+    /// first run for an edited text clears the pin.
+    bool suppress_hints_once = false;
+    std::string suppress_hints_for_text;
 
     /// Snapshot of the completion words computed when the hints were last displayed, plus the
     /// context (prefix and its length) they were computed for. The completion callback reuses it
