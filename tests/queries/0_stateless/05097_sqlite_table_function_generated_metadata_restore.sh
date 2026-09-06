@@ -36,19 +36,23 @@ CREATE TABLE t (a INTEGER NOT NULL, b INTEGER GENERATED ALWAYS AS (a * 2) STORED
 INSERT INTO t(a) VALUES (1);
 "
 
-echo 'First successful read after restoring the SQLite file:'
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${TABLE_NAME} ORDER BY a"
+# The proxy's cached column list still spelled `b` as an ordinary column. The first successful read repairs the
+# nested storage's classification and copies it to the proxy, so `b` is `MATERIALIZED` (readable but not
+# insertable) from this point on. A `MATERIALIZED` column without an expression shows an empty `default_kind` in
+# `system.columns`, so the classification is asserted through its observable effects instead: `SELECT *` skips
+# the column, and an explicit insert into it is rejected.
+echo 'First successful read after restoring the SQLite file returns only the base column:'
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${TABLE_NAME} ORDER BY a FORMAT TSVWithNames"
 
-echo 'Generated-column classification copied to the proxy:'
-${CLICKHOUSE_CLIENT} --query "
-SELECT default_kind
-FROM system.columns
-WHERE database = currentDatabase() AND table = '${TABLE_NAME}' AND name = 'b'
-"
+echo 'The generated column is still readable when named explicitly:'
+${CLICKHOUSE_CLIENT} --query "SELECT a, b FROM ${TABLE_NAME} ORDER BY a"
+
+echo 'Explicit insert into the generated column is rejected by the proxy metadata:'
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE_NAME} (a, b) VALUES (2, 100)" 2>&1 | grep -oF -m1 "Cannot insert column b, because it is MATERIALIZED column"
 
 # An insert without a column list gets its sample block from the proxy metadata. It must contain only `a`, while
 # SQLite computes the generated column `b`.
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE_NAME} VALUES (3)"
 
 echo 'Insert after metadata refresh:'
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${TABLE_NAME} ORDER BY a"
+${CLICKHOUSE_CLIENT} --query "SELECT a, b FROM ${TABLE_NAME} ORDER BY a"
