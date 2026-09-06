@@ -45,7 +45,6 @@ public:
         size_t queue_size_,
         size_t decode_concurrency_,
         IcebergDataSnapshotPtr data_snapshot_,
-        std::function<void()> prepare_,
         CreateManifestIterator create_manifest_iterator_);
 
     ~DataFileEntriesStream();
@@ -77,7 +76,6 @@ private:
     const size_t decode_concurrency;
     const IcebergDataSnapshotPtr data_snapshot;
 
-    const std::function<void()> prepare;
     const CreateManifestIterator create_manifest_iterator;
     ConcurrentBoundedQueue<ProcessedManifestFileEntryPtr> queue;
     std::atomic<bool> stopped{false};

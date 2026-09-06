@@ -188,12 +188,10 @@ DataFileEntriesStream::DataFileEntriesStream(
     size_t queue_size_,
     size_t decode_concurrency_,
     IcebergDataSnapshotPtr data_snapshot_,
-    std::function<void()> prepare_,
     CreateManifestIterator create_manifest_iterator_)
     : chunk_size(queue_size_)
     , decode_concurrency(decode_concurrency_)
     , data_snapshot(std::move(data_snapshot_))
-    , prepare(std::move(prepare_))
     , create_manifest_iterator(std::move(create_manifest_iterator_))
     , queue(queue_size_)
 {
@@ -253,9 +251,6 @@ void DataFileEntriesStream::run()
 {
     if (!data_snapshot)
         return;
-
-    if (prepare)
-        prepare();
 
     auto stream_runner = threadPoolCallbackRunnerUnsafe<void>(getIcebergManifestDecodeThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR);
 
@@ -347,15 +342,15 @@ IcebergIterator::IcebergIterator(
 {
     chassert(local_context);
 
+    /// The filter sets are shared with the reader of this table, which prepares them on its own
+    /// thread, so they must be ready before any manifest reading thread exists.
+    if (data_snapshot && manifest_filter_dag)
+        VirtualColumnUtils::buildOrderedSetsForDAG(*manifest_filter_dag, local_context);
+
     data_files_stream = std::make_unique<Iceberg::DataFileEntriesStream>(
         local_context->getSettingsRef()[Setting::iceberg_file_entries_queue_size],
         local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency],
         data_snapshot,
-        [this]
-        {
-            if (manifest_filter_dag)
-                VirtualColumnUtils::buildOrderedSetsForDAG(*manifest_filter_dag, local_context);
-        },
         [this](const ManifestFileCacheKey & manifest_list_entry, const std::atomic<bool> * stop_flag)
         { return createManifestIterator(manifest_list_entry, stop_flag); });
 }
