@@ -28,23 +28,26 @@ static UInt64 toBits64(const Int8 * bytes64)
 
     return ~res;
 }
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+/// bytes64MaskToBits64Mask returns the same mask as the branch above: bit i is set iff byte i is non-zero.
+static UInt64 toBits64(const Int8 * bytes64)
+{
+    return bytes64MaskToBits64Mask(reinterpret_cast<const UInt8 *>(bytes64));
+}
 #endif
 
 size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
 {
     size_t count = 0;
 
-    /** NOTE: In theory, `filt` should only contain zeros and ones.
-      * But, just in case, here the condition > 0 (to signed bytes) is used.
-      * It would be better to use != 0, then this does not allow SSE2.
-      */
+    /// `filt` is not restricted to zeros and ones, so every non-zero byte counts as one row.
 
     const Int8 * pos = reinterpret_cast<const Int8 *>(filt);
     pos += start;
 
     const Int8 * end_pos = pos + (end - start);
 
-#if defined(__SSE2__)
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
     const Int8 * end_pos64 = pos + (end - start) / 64 * 64;
 
     for (; pos < end_pos64; pos += 64)
@@ -68,16 +71,13 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
 {
     size_t count = 0;
 
-    /** NOTE: In theory, `filt` should only contain zeros and ones.
-      * But, just in case, here the condition > 0 (to signed bytes) is used.
-      * It would be better to use != 0, then this does not allow SSE2.
-      */
+    /// `filt` is not restricted to zeros and ones, so every non-zero byte counts as one row.
 
     const Int8 * pos = reinterpret_cast<const Int8 *>(filt.data()) + start;
     const Int8 * pos2 = reinterpret_cast<const Int8 *>(null_map) + start;
     const Int8 * end_pos = pos + (end - start);
 
-#if defined(__SSE2__)
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
     const Int8 * end_pos64 = pos + (end - start) / 64 * 64;
 
     for (; pos < end_pos64; pos += 64, pos2 += 64)
@@ -87,7 +87,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
 #endif
 
     for (; pos < end_pos; ++pos, ++pos2)
-        count += (*pos & ~*pos2) != 0;
+        count += (*pos != 0) && (*pos2 == 0);
 
     return count;
 }
