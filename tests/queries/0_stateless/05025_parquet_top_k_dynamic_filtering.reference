@@ -32,3 +32,44 @@ rows_read: 2000
 b
 c
 OK
+-- a sort key the reader does not physically read: a column with a DEFAULT expression that
+-- the file does not store is filled with type defaults inside the reader and only computed
+-- above it (AddingDefaultsTransform), so comparing those placeholders against a threshold
+-- derived from the computed values would drop rows of the top-K
+99999	99999
+99998	99998
+99997	99997
+OK
+0	0
+1	1
+2	2
+OK
+99999	1
+99998	2
+99997	3
+OK
+-- floating-point sort keys: ORDER BY sorts 'nan' together with the NULLs while the reader's
+-- comparison does not, and Parquet min/max statistics legally omit 'nan', so neither the
+-- per-row filter nor the row-group shortcut may be armed for them (see issue #116705)
+nan
+100
+OK
+nan
+100
+OK
+nan
+65635
+OK
+100
+101
+OK
+65635
+65634
+OK
+-- a statistic that cannot be decoded (here a negative Int64 read as UInt64) leaves the bound
+-- at the Range infinity sentinel, which is a Null Field and would be compared as a SQL NULL;
+-- an unbounded side can never prove exclusion, so the row group must not be skipped
+5
+6
+1000
+OK

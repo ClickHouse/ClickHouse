@@ -123,3 +123,76 @@ diff \
     <("${LOCAL_STRING[@]}" "${ON[@]}" --query "${collate_query}") \
     <("${LOCAL_STRING[@]}" "${OFF[@]}" --query "${collate_query}") \
     && echo "OK"
+
+echo "-- a sort key the reader does not physically read: a column with a DEFAULT expression that"
+echo "-- the file does not store is filled with type defaults inside the reader and only computed"
+echo "-- above it (AddingDefaultsTransform), so comparing those placeholders against a threshold"
+echo "-- derived from the computed values would drop rows of the top-K"
+# `d` is not stored in part1.parquet, so the reader fills it with zeros and only
+# `AddingDefaultsTransform` above the reader computes the real values. Its top-K rows are the
+# *last* rows of the file: if the reader applied the threshold to the zeros it puts in `d`'s
+# place, everything after the first block would be dropped and the answer would come from the
+# first block alone. (`k` has to be selected as well - the default expression reads it.)
+default_structure="k UInt64, d UInt64 DEFAULT k"
+default_queries=(
+    "SELECT k, d FROM file('${DIR}/part1.parquet', Parquet, '${default_structure}') ORDER BY d DESC LIMIT 3"
+    "SELECT k, d FROM file('${DIR}/part1.parquet', Parquet, '${default_structure}') ORDER BY d LIMIT 3"
+    "SELECT k, d FROM file('${DIR}/part1.parquet', Parquet, 'k UInt64, d UInt64 DEFAULT 100000 - k') ORDER BY d LIMIT 3"
+)
+for query in "${default_queries[@]}"; do
+    "${LOCAL[@]}" "${ON[@]}" --query "${query}"
+    diff \
+        <("${LOCAL[@]}" "${ON[@]}" --query "${query}") \
+        <("${LOCAL[@]}" "${OFF[@]}" --query "${query}") \
+        && echo "OK"
+done
+
+echo "-- floating-point sort keys: ORDER BY sorts 'nan' together with the NULLs while the reader's"
+echo "-- comparison does not, and Parquet min/max statistics legally omit 'nan', so neither the"
+echo "-- per-row filter nor the row-group shortcut may be armed for them (see issue #116705)"
+"${LOCAL[@]}" --query "
+    INSERT INTO FUNCTION file('${DIR}/f1.parquet', Parquet)
+    SELECT toFloat64(100 + number) AS f FROM numbers(65536)
+    SETTINGS output_format_parquet_row_group_size = 65536, engine_file_truncate_on_insert = 1;
+
+    INSERT INTO FUNCTION file('${DIR}/f2.parquet', Parquet)
+    SELECT arrayJoin([toFloat64(1000), nan]) AS f
+    SETTINGS engine_file_truncate_on_insert = 1;
+"
+# f1 is read first in the `f{1,2}` order and second in the `f{2,1}` order, which exercises both
+# failure modes: a threshold established from finite values skipping the row group that holds the
+# `nan` (its statistics do not mention it), and a `nan` becoming the threshold itself and then
+# rejecting every finite value read afterwards.
+float_queries=(
+    "SELECT f FROM file('${DIR}/f{1,2}.parquet', Parquet) ORDER BY f ASC NULLS FIRST LIMIT 2"
+    "SELECT f FROM file('${DIR}/f{1,2}.parquet', Parquet, 'f Nullable(Float64)') ORDER BY f ASC NULLS FIRST LIMIT 2"
+    "SELECT f FROM file('${DIR}/f{1,2}.parquet', Parquet) ORDER BY f DESC NULLS FIRST LIMIT 2"
+    "SELECT f FROM file('${DIR}/f{2,1}.parquet', Parquet) ORDER BY f LIMIT 2"
+    "SELECT f FROM file('${DIR}/f{2,1}.parquet', Parquet) ORDER BY f DESC LIMIT 2"
+)
+for query in "${float_queries[@]}"; do
+    "${LOCAL[@]}" "${ON[@]}" --query "${query}"
+    diff \
+        <("${LOCAL[@]}" "${ON[@]}" --query "${query}") \
+        <("${LOCAL[@]}" "${OFF[@]}" --query "${query}") \
+        && echo "OK"
+done
+
+echo "-- a statistic that cannot be decoded (here a negative Int64 read as UInt64) leaves the bound"
+echo "-- at the Range infinity sentinel, which is a Null Field and would be compared as a SQL NULL;"
+echo "-- an unbounded side can never prove exclusion, so the row group must not be skipped"
+"${LOCAL[@]}" --query "
+    INSERT INTO FUNCTION file('${DIR}/stat1.parquet', Parquet)
+    SELECT toInt64(1000 + number) AS k FROM numbers(1000)
+    SETTINGS output_format_parquet_row_group_size = 1000, engine_file_truncate_on_insert = 1;
+
+    INSERT INTO FUNCTION file('${DIR}/stat2.parquet', Parquet)
+    SELECT arrayJoin([toInt64(5), toInt64(6), toInt64(-1)]) AS k
+    SETTINGS engine_file_truncate_on_insert = 1;
+"
+stat_query="SELECT k FROM file('${DIR}/stat{1,2}.parquet', Parquet, 'k UInt64') ORDER BY k LIMIT 3"
+"${LOCAL[@]}" "${ON[@]}" --query "${stat_query}"
+diff \
+    <("${LOCAL[@]}" "${ON[@]}" --query "${stat_query}") \
+    <("${LOCAL[@]}" "${OFF[@]}" --query "${stat_query}") \
+    && echo "OK"
