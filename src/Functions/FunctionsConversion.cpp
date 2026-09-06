@@ -427,6 +427,10 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
     WhichDataType to(to_type_index);
     bool can_apply_accurate_cast = (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
         && (which.isInt() || which.isUInt() || which.isFloat());
+    /// `Time` and `Time64` share the accurate temporal path: widening an exact `Time` value to
+    /// `Time64(0)` must not change what `accurateCast` accepts.
+    can_apply_accurate_cast |= (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
+        && which.isTimeOrTime64() && (to.isTime() || to.isDateOrDate32() || to.isDateTimeOrDateTime64());
     can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
     if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
@@ -472,7 +476,7 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
 
-            if constexpr (IsDataTypeNumber<LeftDataType>)
+            if constexpr (IsDataTypeNumber<LeftDataType> || is_any_of<LeftDataType, DataTypeTime, DataTypeTime64>)
             {
                 if constexpr (IsDataTypeDateOrDateTimeOrTime<RightDataType>)
                 {
@@ -705,6 +709,31 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
 
                     return true;
                 }
+            }
+            else if constexpr (std::is_same_v<LeftDataType, DataTypeTime64>
+                && (std::is_same_v<RightDataType, DataTypeTime64> || std::is_same_v<RightDataType, DataTypeDateTime64>))
+            {
+                if (cast_type == CastType::accurate)
+                {
+                    AccurateConvertStrategyAdditions additions;
+                    additions.scale = scale;
+                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, additions);
+                }
+                else if (cast_type == CastType::accurateOrNull)
+                {
+                    AccurateOrNullConvertStrategyAdditions additions;
+                    additions.scale = scale;
+                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, additions);
+                }
+                else
+                {
+                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+                }
+
+                return true;
             }
             else if constexpr (std::is_same_v<LeftDataType, DataTypeDate32> && std::is_same_v<RightDataType, DataTypeDateTime64>)
             {

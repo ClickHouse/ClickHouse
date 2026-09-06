@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -963,7 +964,12 @@ void SchemaConverter::processPrimitiveColumn(
     /// directly; if size or scale differs, the Field additionally goes through
     /// tryConvertFieldToType, which rescales it the same way as the castColumn that is applied
     /// to the values - see PageDecoderInfo::cast_stats_to_output_type.
-    auto allow_decimal_stats = [&](size_t decoded_size, UInt32 decoded_scale)
+    /// `decoded_is_time_of_day` says that the decoded values are a time-of-day (parquet `TIME`),
+    /// i.e. that a `Time64` output type has the same semantics as the decoded values. It must stay
+    /// false for every other decoded semantic: casting a `DateTime64` (parquet `TIMESTAMP`) to
+    /// `Time64` wraps by day and is therefore not order-preserving, so min/max stats of the raw
+    /// values must not be used for pruning.
+    auto allow_decimal_stats = [&](size_t decoded_size, UInt32 decoded_scale, bool decoded_is_time_of_day = false)
     {
         const IDataType * output_type = type_hint ? type_hint.get() : out_inferred_type.get();
         WhichDataType which(output_type->getTypeId());
@@ -976,6 +982,19 @@ void SchemaConverter::processPrimitiveColumn(
             if (decoded_size != 8)
                 return;
             same = assert_cast<const DataTypeDateTime64 *>(output_type)->getScale() == decoded_scale;
+        }
+        else if (which.isTime64())
+        {
+            /// Stats are usable only when the decoded values are already a time-of-day; a
+            /// `DateTime64 -> Time64` cast wraps by day (a row group spanning midnight would get
+            /// raw bounds like [23:00:00, 25:00:00] while the values are 23:00:00 and 01:00:00).
+            if (!decoded_is_time_of_day)
+                return;
+            /// Same restriction as for DateTime64: tryConvertFieldToType supports a Time64 target
+            /// only for a Decimal64 source Field.
+            if (decoded_size != 8)
+                return;
+            same = assert_cast<const DataTypeTime64 *>(output_type)->getScale() == decoded_scale;
         }
         else
             return;
@@ -1143,9 +1162,15 @@ void SchemaConverter::processPrimitiveColumn(
     }
     else if (logical.__isset.TIMESTAMP || logical.__isset.TIME || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MILLIS || converted == CONV::TIME_MICROS)
     {
-        /// We interpret both timestamp (logical.TIMESTAMP) and time-of-day (logical.TIME)
-        /// types as timestamps, since clickhouse doesn't have time-of-day type.
-        /// E.g. time of day 12:34:56.789 turns into timestamp 1970-01-01 12:34:56.789.
+        /// Parquet `TIMESTAMP` is a Unix timestamp -> ClickHouse `DateTime64` (timezone-aware).
+        /// Parquet `TIME` is a time-of-day (no date, no timezone) -> ClickHouse `Time64`
+        /// (timezone-unaware). Routing `TIME` through `DateTime64` and then casting to a
+        /// `Time64` target would shift the value by `session_timezone`, which is wrong because
+        /// time-of-day has no date/timezone to interpret (see issue #104038 for the Arrow
+        /// equivalent of this bug).
+        const bool is_time_of_day = logical.__isset.TIME
+            || converted == CONV::TIME_MILLIS
+            || converted == CONV::TIME_MICROS;
 
         UInt32 scale = 0;
         if (logical.TIMESTAMP.unit.__isset.MILLIS || logical.TIME.unit.__isset.MILLIS || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIME_MILLIS)
@@ -1160,19 +1185,27 @@ void SchemaConverter::processPrimitiveColumn(
         if (type != parq::Type::INT64 && type != parq::Type::INT32)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for timestamp logical type: {}", thriftToString(element));
 
-        /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
-        String timezone = "UTC";
-        if (!options.format.parquet.local_time_as_utc &&
-            ((logical.__isset.TIMESTAMP && !logical.TIMESTAMP.isAdjustedToUTC) ||
-             (logical.__isset.TIME && !logical.TIME.isAdjustedToUTC)))
-            timezone = "";
-        out_inferred_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
+        if (is_time_of_day)
+        {
+            /// Time64 is timezone-unaware; `isAdjustedToUTC` is intentionally ignored here
+            /// because Time64 has no place to store that distinction.
+            out_inferred_type = std::make_shared<DataTypeTime64>(scale);
+        }
+        else
+        {
+            /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
+            String timezone = "UTC";
+            if (!options.format.parquet.local_time_as_utc
+                && logical.__isset.TIMESTAMP && !logical.TIMESTAMP.isAdjustedToUTC)
+                timezone = "";
+            out_inferred_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
+        }
         auto converter = std::make_shared<IntConverter>();
-        /// Note: TIMESTAMP is always INT64. INT32 is only for weird unimportant case of TIME_MILLIS
-        /// (i.e. time of day rather than timestamp).
+        /// `TIMESTAMP` is always INT64. INT32 is only used for `TIME_MILLIS`
+        /// (the sole INT32-backed time-of-day logical type in Parquet).
         converter->input_size = type == parq::Type::INT32 ? 4 : 8;
 
-        if (scale == 3 && converter->input_size == 8 && type_hint && type_hint->getTypeId() == TypeIndex::DateTime)
+        if (!is_time_of_day && scale == 3 && converter->input_size == 8 && type_hint && type_hint->getTypeId() == TypeIndex::DateTime)
         {
             /// Special case: converting milliseconds to seconds.
             /// We generally don't do such conversions during decoding, leaving it to castColumn.
@@ -1193,7 +1226,7 @@ void SchemaConverter::processPrimitiveColumn(
         else
         {
             converter->field_decimal_scale = scale;
-            allow_decimal_stats(sizeof(Int64), scale);
+            allow_decimal_stats(sizeof(Int64), scale, is_time_of_day);
             if (converter->input_size == 4)
                 /// Can't leave Decimal32 -> DateTime64 conversion to castColumn because this
                 /// particular cast is not supported for some reason.
