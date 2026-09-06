@@ -9,12 +9,14 @@ keywords: ['native format', 'columnar', 'block', 'wire format', 'serialization',
 
 The Native format is the columnar wire format ClickHouse uses to move tabular data. It shows up in several places:
 
-- the body of `Data`, `Totals`, `Extremes`, `Log`, and `ProfileEvents` packets in the [native TCP protocol](/reference/interfaces/specs/NativeProtocol) (the `TableColumns` packet is **not** a Native block — it carries two binary strings, so its layout belongs to the [native protocol spec](/reference/interfaces/specs/NativeProtocol));
+- the body of `Data`, `Totals`, `Extremes`, `Log`, `ProfileEvents`, and `ProfileTraces` packets in the [native TCP protocol](/reference/interfaces/specs/NativeProtocol) (the `TableColumns` packet is **not** a Native block — it carries two binary strings, so its layout belongs to the [native protocol spec](/reference/interfaces/specs/NativeProtocol));
 - the output of `SELECT ... FORMAT Native` over HTTP;
 - file exports written with `INTO OUTFILE ... FORMAT Native`;
 - inter-server replication payloads.
 
 This page describes the bytes inside a Block — the columnar payload — and the per-column type encodings that build it. Packet framing, connection state, and version negotiation belong to the [native protocol specification](/reference/interfaces/specs/NativeProtocol).
+
+The `ProfileTraces` packet, available at revision `54493`+, carries a block with `host_name String`, `query_id String`, `trace_type String`, `thread_id UInt64`, `event_time_microseconds UInt64`, `trace Array(UInt64)`, `symbols Array(String)`, and `size Int64`, in that order. These columns use the ordinary negotiated `Native` encodings, including the revision-dependent `String` layout for `symbols` elements. The block body uses the query's compression flag; the packet-type code and empty `table_name` string remain outside the compression frame. See [trace packet delivery and schema](/reference/interfaces/specs/NativeProtocol#profiletraces).
 
 All multi-byte integer fields are little-endian. Signed integers use two's complement.
 
@@ -1377,7 +1379,7 @@ The non-flattened `Object` encodings (`V1`/`V2`/`V3`) are used by MergeTree on-d
 
 ClickHouse can compress the column data of a `Native` stream with an internal frame format. The [frame layout](#frame-format) below is **transport-independent** — the same frames appear on both the native TCP protocol and over HTTP — but how compression is requested, and what surrounds the frames, differs by transport.
 
-- **Native TCP protocol.** Compression is opt-in per query via the `compression` flag in the [Query packet](/reference/interfaces/specs/NativeProtocol#query). When active, the body of each `Data`, `Totals`, `Extremes`, `Log`, and `ProfileEvents` packet — the bytes after the `table_name` string — is wrapped in the frame format. The packet envelope itself, the packet-type code and the `table_name` string, is **not** compressed; the server writes those to the raw stream. Everything the `NativeWriter` emits goes into the compressed stream, so the `BlockInfo` prefix is the first thing inside the frame, along with the dimensions and columns. A client must therefore decompress the frame before it can read `BlockInfo`.
+- **Native TCP protocol.** Compression is opt-in per query via the `compression` flag in the [Query packet](/reference/interfaces/specs/NativeProtocol#query). When active, the body of each `Data`, `Totals`, `Extremes`, `Log`, `ProfileEvents`, and `ProfileTraces` packet — the bytes after the `table_name` string — is wrapped in the frame format. The packet envelope itself, the packet-type code and the `table_name` string, is **not** compressed; the server writes those to the raw stream. Everything the `NativeWriter` emits goes into the compressed stream, so the `BlockInfo` prefix is the first thing inside the frame, along with the dimensions and columns. A client must therefore decompress the frame before it can read `BlockInfo`.
 - **HTTP.** `SELECT ... FORMAT Native&compress=1` wraps the whole `FORMAT Native` byte stream in the same frames (the server uses the same internal `CompressedWriteBuffer`), and `?decompress=1` expects the same frames on a `Native` *input* body, decoding them through the matching `CompressedReadBuffer`. There is no TCP packet type, `table_name`, or packet envelope on this path: the entire compressed payload is just framed `Native` blocks (a `BlockInfo` prefix is present only if the negotiated revision is greater than `0`, exactly as in the uncompressed layout above). This internal `compress`/`decompress` framing is distinct from HTTP transport compression (`Content-Encoding: gzip`/`zstd`, enabled by `enable_http_compression`), which wraps the response at the HTTP layer and is not the frame format below.
 
 So a client that implemented only the uncompressed `FORMAT Native` layout must still add this frame layer to read a compressed HTTP `Native` response or to send a `decompress=1` request body.
@@ -1398,7 +1400,7 @@ The total framed size is `16 + compressed_size` = `16 + 9 + body_size` = `25 + b
 
 ### Method byte values {#method-byte-values}
 
-These three codecs are the ones the server produces for whole-stream `Native` framing: HTTP `compress=1` output always uses `LZ4`, and the native TCP protocol uses `LZ4`, `ZSTD`, or `NONE` depending on `network_compression_method`. A generic `Native` client only ever needs to produce and consume these.
+These three codecs are the ones the server produces for whole-stream `Native` framing: HTTP `compress=1` output uses the server's default codec (`ZSTD(3)`), and the native TCP protocol uses `LZ4`, `ZSTD`, or `NONE` depending on `network_compression_method`. A generic `Native` client only ever needs to produce and consume these.
 
 | Byte   | Method | Body encoding |
 |--------|--------|---------------|
@@ -1446,9 +1448,9 @@ On the native TCP protocol, the packet envelope — the packet-type VarUInt and 
 
 ### Negotiation {#compression-negotiation}
 
-On the native TCP protocol, compression is per-query, not per-connection. The Query packet's `compression: bool` field requests it for that single query. The server honours the request and emits compressed `Data`/`Totals`/`Extremes`/`Log`/`ProfileEvents` bodies for the lifetime of the query (`Log`/`ProfileEvents` only at v54481+). It also expects the client's *outgoing* Data blocks — external tables, the empty end-of-data marker, and INSERT rows — to be framed the same way. Subsequent queries on the same connection may differ.
+On the native TCP protocol, compression is per-query, not per-connection. The Query packet's `compression: bool` field requests it for that single query. The server honours the request and emits compressed `Data`/`Totals`/`Extremes`/`Log`/`ProfileEvents`/`ProfileTraces` bodies for the lifetime of the query (`Log`/`ProfileEvents` only at v54481+, `ProfileTraces` available at v54493+). It also expects the client's *outgoing* Data blocks — external tables, the empty end-of-data marker, and INSERT rows — to be framed the same way. Subsequent queries on the same connection may differ.
 
-Over HTTP there is no Query packet: the `compress=1` query parameter selects framed output for that request, and `decompress=1` declares that the request body is framed. The `compress=1` output is written with the server's default codec (`LZ4`) rather than `network_compression_method`; the `decompress=1` reader takes the codec from each frame's method byte, so any codec is accepted on input.
+Over HTTP there is no Query packet: the `compress=1` query parameter selects framed output for that request, and `decompress=1` declares that the request body is framed. The `compress=1` output is written with the server's default codec (`ZSTD(3)`) rather than `network_compression_method`; the `decompress=1` reader takes the codec from each frame's method byte, so any codec is accepted on input.
 
 <Note>
 With compression on, the server may also route columns through the parallel block-marshalling / `ColumnBLOB` path (`PARALLEL_BLOCK_MARSHALLING`, v54478) for blocks with more than one row. An implementation that compresses INSERT data must be prepared to handle (or explicitly opt out of) that path to avoid a desynchronized stream.

@@ -44,6 +44,13 @@ using Connections = std::vector<ConnectionPtr>;
 class NativeReader;
 class NativeWriter;
 
+/// The codec for the compressed packets this side originates (e.g. `INSERT` data and external tables
+/// sent by the client). Reads the network compression settings by value, regardless of their `changed`
+/// flags — in particular, values derived from `compatibility` apply even though they are not serialized
+/// to the server (see `ClientBase::settingsWithoutCompatibilityDerived`). With no settings, the built-in
+/// default codec is used.
+CompressionCodecPtr chooseNetworkCompressionCodec(const Settings * settings);
+
 /** Connection with database server, to use by client.
   * How to use - see Core/Protocol.h
   * (Implementation of server end - see Server/TCPHandler.h)
@@ -312,6 +319,7 @@ private:
     std::unique_ptr<NativeReader> block_in;
     std::unique_ptr<NativeReader> block_logs_in;
     std::unique_ptr<NativeReader> block_profile_events_in;
+    std::unique_ptr<NativeReader> block_profile_traces_in;
 
     /// Where to write data for INSERT.
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
@@ -382,6 +390,7 @@ private:
     Block receiveLogData();
     Block receiveDataImpl(NativeReader & reader);
     Block receiveProfileEvents();
+    Block receiveProfileTraces();
 
     String receiveTableColumns();
     std::unique_ptr<Exception> receiveException() const;

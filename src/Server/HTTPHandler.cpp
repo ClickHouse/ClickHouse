@@ -1243,9 +1243,12 @@ void HTTPHandler::processQuery(
                 InternalProfileEventsQueuePtr framing_profile_events_queue = framing ? framing->getProfileEventsQueue() : nullptr;
                 String framing_profile_events_host_name = framing ? framing->getProfileEventsHostName() : "";
                 UInt64 framing_profile_events_period_us = framing ? framing->getProfileEventsPeriodMicroseconds() : 0;
+                InternalProfileTracesQueuePtr framing_profile_traces_queue = framing ? framing->getProfileTracesQueue() : nullptr;
+                UInt64 framing_profile_traces_period_us = framing ? framing->getProfileTracesPeriodMicroseconds() : 0;
 
                 used_output.exception_writer = [&, format_name, framing_name, header, context_, format_settings, session_id, close_session,
-                    framing_logs_queue, framing_profile_events_queue, framing_profile_events_host_name, framing_profile_events_period_us](WriteBuffer & buf, int code, const String & message)
+                    framing_logs_queue, framing_profile_events_queue, framing_profile_events_host_name, framing_profile_events_period_us,
+                    framing_profile_traces_queue, framing_profile_traces_period_us](WriteBuffer & buf, int code, const String & message)
                 {
                     if (used_output.out_holder->isCanceled())
                     {
@@ -1268,6 +1271,8 @@ void HTTPHandler::processQuery(
                         if (framing_profile_events_queue)
                             framing_for_exception->setProfileEventsQueue(
                                 framing_profile_events_queue, framing_profile_events_host_name, framing_profile_events_period_us);
+                        if (framing_profile_traces_queue)
+                            framing_for_exception->setProfileTracesQueue(framing_profile_traces_queue, framing_profile_traces_period_us);
                         framing_for_exception->setException(message);
                         framing_for_exception->finalize();
                     }

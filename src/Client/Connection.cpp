@@ -38,7 +38,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISink.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/FailPoint.h>
 #include <Client/JWTProvider.h>
@@ -982,6 +983,31 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 }
 
 
+CompressionCodecPtr chooseNetworkCompressionCodec(const Settings * settings)
+{
+    if (!settings)
+        return CompressionCodecFactory::instance().getDefaultCodec();
+
+    std::optional<int> level;
+    std::string method = Poco::toUpper((*settings)[Setting::network_compression_method].toString());
+
+    /// Bad custom logic
+    /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
+    /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
+    /// be broken afterwards.
+    if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+
+    /// More bad custom logic
+    if (method == "ZSTD")
+        level = (*settings)[Setting::network_zstd_compression_level];
+
+    CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(*settings));
+    return CompressionCodecFactory::instance().get(method, level);
+}
+
+
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,
@@ -1037,28 +1063,7 @@ void Connection::sendQuery(
     socket->setReceiveTimeout(timeouts.receive_timeout);
     socket->setSendTimeout(timeouts.send_timeout);
 
-    if (settings)
-    {
-        std::optional<int> level;
-        std::string method = Poco::toUpper((*settings)[Setting::network_compression_method].toString());
-
-        /// Bad custom logic
-        /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
-        /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
-        /// be broken afterwards.
-        if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
-
-        /// More bad custom logic
-        if (method == "ZSTD")
-            level = (*settings)[Setting::network_zstd_compression_level];
-
-        CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(*settings));
-        compression_codec = CompressionCodecFactory::instance().get(method, level);
-    }
-    else
-        compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
+    compression_codec = chooseNetworkCompressionCodec(settings);
 
     query_id = query_id_;
 
@@ -1101,6 +1106,15 @@ void Connection::sendQuery(
                     chassert(!modified_settings->isChanged(change.name));
                 }
             }
+            settings_to_send = &*modified_settings;
+        }
+
+        if (server_revision < DBMS_MIN_REVISION_WITH_PROFILE_TRACES && settings->isChanged("send_profile_traces"))
+        {
+            /// Older peers neither recognize the setting nor emit trace packets.
+            if (!modified_settings)
+                modified_settings.emplace(*settings);
+            modified_settings->setDefaultValue("send_profile_traces");
             settings_to_send = &*modified_settings;
         }
 
@@ -1189,6 +1203,7 @@ void Connection::sendQuery(
     block_in.reset();
     block_logs_in.reset();
     block_profile_events_in.reset();
+    block_profile_traces_in.reset();
     block_out.reset();
 
     out->finishChunk();
@@ -1420,7 +1435,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
     for (auto & elem : data)
     {
-        PipelineExecutorPtr executor;
+        CompletedPipelineExecutor * executor = nullptr;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
         if (!elem->pipe)
@@ -1436,8 +1451,13 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
                 return nullptr;
             return sink;
         });
-        executor = pipeline.execute();
-        executor->execute(/*num_threads = */ 1, false);
+        auto query_pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
+        query_pipeline.setNumThreads(1);
+        query_pipeline.setConcurrencyControl(false);
+        query_pipeline.disableReadProgress();
+        CompletedPipelineExecutor completed_executor(query_pipeline);
+        executor = &completed_executor;
+        completed_executor.execute();
 
         auto read_rows = sink->getNumReadRows();
         rows += read_rows;
@@ -1610,6 +1630,10 @@ Packet Connection::receivePacket()
                 res.block = receiveProfileEvents();
                 return res;
 
+            case Protocol::Server::ProfileTraces:
+                res.block = receiveProfileTraces();
+                return res;
+
             case Protocol::Server::TimezoneUpdate:
                 /// Same cap + control-char sanitization as the handshake read; the field
                 /// reaches the client's terminal via the time-zone warning path.
@@ -1680,6 +1704,16 @@ Block Connection::receiveProfileEvents()
 {
     initBlockProfileEventsInput();
     return receiveDataImpl(*block_profile_events_in);
+}
+
+Block Connection::receiveProfileTraces()
+{
+    if (!block_profile_traces_in)
+    {
+        initMaybeCompressedInput();
+        block_profile_traces_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, format_settings);
+    }
+    return receiveDataImpl(*block_profile_traces_in);
 }
 
 

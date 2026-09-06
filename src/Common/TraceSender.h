@@ -50,6 +50,10 @@ public:
     /// Precondition: the TraceCollector object must be created.
     static void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept;
 
+    /// Send an ordering marker from a regular thread, waiting for pipe space if necessary.
+    /// Returns false when there is no running collector. Not signal-safe.
+    static bool flushProfileTraces(UInt64 subscription_id);
+
 private:
     friend class TraceCollector;
     static LazyPipeFDs pipe;

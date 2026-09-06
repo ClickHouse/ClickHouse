@@ -24,6 +24,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/ProfileTraces.h>
+#include <Common/ProfileTracesBlocker.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Client/ConnectionEstablisher.h>
 #include <Client/MultiplexedConnections.h>
@@ -77,6 +79,7 @@ namespace FailPoints
     extern const char remote_query_executor_cancel_before_send[];
     extern const char remote_query_executor_receive_packet_pause[];
     extern const char remote_query_executor_finish_drain_pause[];
+    extern const char remote_query_executor_finish_drain_hold[];
 }
 
 ThrottlerPtr getThrottler(const ContextPtr & context)
@@ -854,6 +857,15 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
         case Protocol::Server::TimezoneUpdate:
             break;
 
+        case Protocol::Server::ProfileTraces:
+        {
+            ProfileTracesBlocker blocker;
+            if (auto profile_traces_queue = CurrentThread::getInternalProfileTracesQueue())
+                profile_traces_queue->pushBlock(packet.block);
+            packet.block = {};
+            break;
+        }
+
         default:
             got_unknown_packet_from_replica = true;
             throw Exception(
@@ -1005,6 +1017,13 @@ void RemoteQueryExecutor::finish()
         return;
     }
 
+    /// Published only once the `tryCancel` above has returned, so a `cancel` that observes it has
+    /// nothing left to send.
+    drain_in_progress = true;
+    SCOPE_EXIT({ drain_in_progress = false; });
+
+    FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_hold);
+
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
     /// packets that had been sent before the connection is fully finished in order to have final statistics of what
@@ -1059,6 +1078,15 @@ void RemoteQueryExecutor::finish()
                     profile_info_callback(packet.profile_info);
                 break;
 
+            case Protocol::Server::ProfileTraces:
+            {
+                ProfileTracesBlocker blocker;
+                if (auto profile_traces_queue = CurrentThread::getInternalProfileTracesQueue())
+                    profile_traces_queue->pushBlock(packet.block);
+                packet.block = {};
+                break;
+            }
+
             case Protocol::Server::Progress:
                 if (progress_callback)
                     progress_callback(packet.progress);
@@ -1077,6 +1105,11 @@ void RemoteQueryExecutor::finish()
 
 void RemoteQueryExecutor::cancel()
 {
+    /// While `finish` drains it has already sent the `Cancel` packet, and the external-table flags
+    /// `cancelUnlocked` sets have no reader until it releases `was_cancelled_mutex`.
+    if (drain_in_progress)
+        return;
+
     LockAndBlocker guard(was_cancelled_mutex);
     cancelUnlocked();
 }
