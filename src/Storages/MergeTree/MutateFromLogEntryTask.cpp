@@ -22,6 +22,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_ENOUGH_SPACE;
+}
+
 namespace Setting
 {
     extern const SettingsSeconds receive_timeout;
@@ -82,6 +87,17 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             mutation_ids_for_log, {});
     };
 
+    /// This mutation was admitted at selection time as one that only hardlinks the files it does not
+    /// touch, and the little space it needs was reserved there rather than here (see
+    /// ReplicatedMergeTreeQueue::selectEntryToProcess): reserving at selection time lets an entry that
+    /// cannot get its space stay queued and be retried, instead of failing the mutation.
+    /// Take ownership before any early return below: selected_entry outlives this task, and a
+    /// not-prepared result is executed as a fetch in this same thread - a fetch that reserves the
+    /// sender's whole part on the disk this reservation would otherwise still be charged to.
+    ReservationSharedPtr hardlink_only_reservation = std::move(selected_entry->hardlink_only_reservation);
+    const bool hardlink_only = hardlink_only_reservation != nullptr;
+    future_mutated_part->hardlink_only = hardlink_only;
+
     if ((*storage_settings_ptr)[MergeTreeSetting::always_fetch_mutated_part])
     {
         LOG_INFO(log, "Will fetch part {} because setting 'always_fetch_mutated_part' is true", entry.new_part_name);
@@ -137,7 +153,46 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     /// TODO - some better heuristic?
     size_t estimated_space_for_result = CompactionStatistics::estimateNeededDiskSpace({source_part}, false);
 
-    if (entry.create_time + (*storage_settings_ptr)[MergeTreeSetting::prefer_fetch_merged_part_time_threshold].totalSeconds() <= time(nullptr)
+    /// Selection reserved on the disk of the part it saw, while the source part was resolved again just
+    /// above. A move that passed its own checks before this entry existed commits at an arbitrary later
+    /// time (MergeTreePartsMover::swapClonedPart only re-checks that an active part of that name still
+    /// exists), so the two disks can differ - and this reservation is what decides the result part's
+    /// path, which a hardlink cannot cross.
+    /// One read is enough: the source part was resolved once above and is retained, and a later
+    /// swapActivePart replaces the indexed part with a new object rather than moving this one
+    /// (MergeTreeData::swapActivePart), so both the hardlink source and the result path stay on the
+    /// disk this reservation names.
+    if (hardlink_only)
+    {
+        const String reserved_disk_name = hardlink_only_reservation->getDisk()->getName();
+        const String source_disk_name = source_part->getDataPartStorage().getDiskName();
+
+        if (reserved_disk_name != source_disk_name)
+        {
+            /// Throwing rather than returning a not-prepared result: that result is what makes the entry
+            /// fetch (ReplicatedMergeMutateTaskBase::executeImpl calls executeFetch unconditionally on
+            /// it), and the fetch reserves the sender's whole part on the disk that just refused this
+            /// much. Throwing leaves the entry to be retried locally, with the reason in
+            /// system.mutations.latest_fail_reason.
+            hardlink_only_reservation = MergeTreeData::tryReserveSpace(0, source_part->getDataPartStorage());
+            if (!hardlink_only_reservation)
+                throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
+                    "Source part {} is on disk {} while this mutation reserved space on disk {}, "
+                    "and there is no space to reserve on disk {}",
+                    source_part->name, source_disk_name, reserved_disk_name, source_disk_name);
+
+            LOG_DEBUG(log, "Source part {} moved from disk {} to disk {} since this mutation was admitted; "
+                "reserved space on the part's current disk instead",
+                source_part->name, reserved_disk_name, source_disk_name);
+        }
+    }
+
+    /// Never divert such a mutation into a fetch either: it is cheap locally, while the fetch reserves
+    /// the sender's whole part, which on a full disk can never succeed - the reported bug with extra
+    /// steps. This must be its own condition rather than a smaller estimate, because the comparison
+    /// below is `>=` and prefer_fetch_merged_part_size_threshold = 0 is a supported way to force fetches.
+    if (!hardlink_only
+        && entry.create_time + (*storage_settings_ptr)[MergeTreeSetting::prefer_fetch_merged_part_time_threshold].totalSeconds() <= time(nullptr)
         && estimated_space_for_result >= (*storage_settings_ptr)[MergeTreeSetting::prefer_fetch_merged_part_size_threshold])
     {
         /// If entry is old enough, and have enough size, and some replica has the desired part,
@@ -187,7 +242,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
-    reserved_space = StorageReplicatedMergeTree::reserveSpace(estimated_space_for_result, source_part->getDataPartStorage());
+    if (hardlink_only)
+        reserved_space = hardlink_only_reservation;
+    else
+        reserved_space = StorageReplicatedMergeTree::reserveSpace(estimated_space_for_result, source_part->getDataPartStorage());
     future_mutated_part->updatePath(storage, reserved_space.get());
 
     table_lock_holder = storage.lockForShare(

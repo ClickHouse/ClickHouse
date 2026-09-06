@@ -52,6 +52,7 @@
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/MutateTask.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <base/sleep.h>
@@ -872,6 +873,25 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
 
     if (is_mutation)
         storage.currently_mutating_part_future_versions[future_part->parts[0]] = future_part->part_info.mutation;
+}
+
+CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
+    FutureMergedMutatedPartPtr future_part_, ReservationSharedPtr reservation, StorageMergeTree & storage_)
+    : future_part(future_part_), reserved_space(std::move(reservation)), storage(storage_)
+{
+    /// Assume mutex is already locked, because this method is called from mergeTask.
+    chassert(reserved_space);
+
+    future_part->updatePath(storage, reserved_space.get());
+
+    for (const auto & part : future_part->parts)
+    {
+        if (storage.currently_merging_mutating_parts.contains(part))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tagging already tagged part {}. This is a bug.", part->name);
+    }
+    storage.currently_merging_mutating_parts.insert(future_part->parts.begin(), future_part->parts.end());
+
+    storage.currently_mutating_part_future_versions[future_part->parts[0]] = future_part->part_info.mutation;
 }
 
 
@@ -1953,16 +1973,30 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             continue;
 
         fiu_do_on(FailPoints::mt_select_parts_to_mutate_max_part_size, { max_source_part_size = 1; });
-        if (max_source_part_size < part->getBytesOnDisk())
+        const bool exceeds_max_source_part_size = max_source_part_size < part->getBytesOnDisk();
+        if (exceeds_max_source_part_size)
         {
-            LOG_DEBUG(
-                log,
-                "Current max source part size for mutation is {} but part size {}. Will not mutate part {} yet",
-                max_source_part_size,
-                part->getBytesOnDisk(),
-                part->name);
-            current_parts_postpone_reasons[part->name] = PostponeReasons::EXCEED_MAX_PART_SIZE;
-            continue;
+            /// The size of the part is what a full rewrite of it needs. A mutation that only
+            /// hardlinks the files it does not touch needs almost nothing, so do not postpone it for
+            /// being large - otherwise dropping an index to free space is impossible exactly when the
+            /// space is needed. Necessary condition only (the commands are coalesced below, which can
+            /// only add commands and hence only make the mutation more expensive), so it is checked
+            /// again on the final command list. Evaluated here only, so a part within budget does not
+            /// pay for it.
+            /// Nothing is renamed behind the commands' back here: this table selects every applicable
+            /// mutation by version alone, so a pending rename is already among them.
+            if (!MutationHelpers::isHardlinkOnlyMutation(
+                    *this, part, *mutations_begin_it->second.commands, /*has_pending_rename=*/ false))
+            {
+                LOG_DEBUG(
+                    log,
+                    "Current max source part size for mutation is {} but part size {}. Will not mutate part {} yet",
+                    max_source_part_size,
+                    part->getBytesOnDisk(),
+                    part->name);
+                current_parts_postpone_reasons[part->name] = PostponeReasons::EXCEED_MAX_PART_SIZE;
+                continue;
+            }
         }
 
         TransactionID first_mutation_tid = mutations_begin_it->second.tid;
@@ -2100,8 +2134,55 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         }
 
         chassert(commands->empty() == (last_mutation_to_apply == mutations_end_it));
+
+        /// The loop above collected nothing (a size evaluation failed, or the very first mutation is
+        /// already past max_expanded_ast_elements). The part is not progressing and the size guard is
+        /// what deferred it, so keep saying so: the guard above lets an exempt mutation through without
+        /// recording a reason, and an empty parts_postpone_reasons for a stalled part tells the user
+        /// nothing.
+        if (commands->empty() && exceeds_max_source_part_size)
+            current_parts_postpone_reasons[part->name] = PostponeReasons::EXCEED_MAX_PART_SIZE;
+
         if (!commands->empty())
         {
+            /// Now that the commands are final, decide on the whole set: coalescing may have turned a
+            /// mutation that only drops secondary objects into one that rewrites the part. As above, no
+            /// rename can be outside this set.
+            const bool hardlink_only
+                = MutationHelpers::isHardlinkOnlyMutation(*this, part, *commands, /*has_pending_rename=*/ false);
+
+            /// A mutation that only hardlinks needs space for a little metadata, not for a copy of the
+            /// part, so ask for the smallest reservation the storage grants and on the part's own disk
+            /// - the budget above is a maximum across the volumes of the policy, so passing it says
+            /// nothing about where this part actually lives. Reserve before touching `future_part`,
+            /// which is shared across iterations of this loop, so that postponing leaves it untouched.
+            ReservationSharedPtr reservation;
+            if (hardlink_only)
+            {
+                reservation = tryReserveSpace(0, part->getDataPartStorage());
+                if (!reservation)
+                {
+                    LOG_DEBUG(
+                        log,
+                        "Cannot reserve space on the disk of part {} to mutate it without rewriting it. "
+                        "Will not mutate the part yet",
+                        part->name);
+                    current_parts_postpone_reasons[part->name] = PostponeReasons::EXCEED_MAX_PART_SIZE;
+                    continue;
+                }
+            }
+            else if (exceeds_max_source_part_size)
+            {
+                LOG_DEBUG(
+                    log,
+                    "Current max source part size for mutation is {} but part size {}. Will not mutate part {} yet",
+                    max_source_part_size,
+                    part->getBytesOnDisk(),
+                    part->name);
+                current_parts_postpone_reasons[part->name] = PostponeReasons::EXCEED_MAX_PART_SIZE;
+                continue;
+            }
+
             auto new_part_info = part->info;
             new_part_info.mutation = last_mutation_to_apply->first;
 
@@ -2109,8 +2190,12 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             future_part->part_info = new_part_info;
             future_part->name = part->getNewName(new_part_info);
             future_part->part_format = part->getFormat();
+            future_part->hardlink_only = hardlink_only;
 
-            tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, CompactionStatistics::estimateNeededDiskSpace({part}, false), *this, metadata_snapshot, true);
+            if (hardlink_only)
+                tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, std::move(reservation), *this);
+            else
+                tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, CompactionStatistics::estimateNeededDiskSpace({part}, false), *this, metadata_snapshot, true);
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn, mutation_ids);
         }
     }

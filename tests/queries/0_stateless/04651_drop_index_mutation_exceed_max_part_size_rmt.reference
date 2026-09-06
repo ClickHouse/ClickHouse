@@ -1,0 +1,21 @@
+fixture	Wide	Full
+rmt_drop_index	pending	0
+rmt_drop_index	failed	0
+rmt_drop_index	indices_left	0
+rmt_drop_index	rows	20000
+rmt_drop_index	route_partial	1	route_full	0
+rmt_drop_index	check	all_0_0_1_1	1
+rmt_delete	postponed	1	no_failure	1
+rmt_fetch	source_ready	1
+rmt_fetch	route_partial	1	route_full	0
+rmt_fetch	downloads_of_result	0
+rmt_fetch	pending	0
+rmt_fetch	failed	0
+rmt_fetch	indices_left	0
+rmt_fetch	rows	20000
+rmt_fetch	check	all_0_0_1_1	1
+rmt_copy_flip	refused	1	not_done	1
+rmt_copy_flip_retry	pending	0
+rmt_copy_flip_retry	indices_left	0
+rmt_copy_flip_retry	rows	20000
+rmt_copy_flip_retry	check	all_0_0_1_1	1

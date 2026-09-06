@@ -1,0 +1,40 @@
+fixture	Wide	Full
+fixture	has_statistics	1
+reported_case	pending	0
+reported_case	failed	0
+reported_case	indices_left	0
+reported_case	rows	20000
+reported_case	check	all_1_1_1_2	1
+reported_case	route_partial	1	route_full	0
+reported_case	statistics_kept	1
+drop_projection	pending	0
+drop_projection	projections_left	0
+drop_projection	rows	20000
+drop_projection	route_partial	1	route_full	0
+drop_projection	check	all_1_1_1_2	1
+mutation_delete	postponed	1	no_failure	1
+drop_index_compact	part_type	Compact
+drop_index_compact	postponed	1	no_failure	1
+drop_index_packed	part_storage_type	Packed
+drop_index_packed	postponed	1	no_failure	1
+drop_index_copying	postponed	1	no_failure	1
+clear_index_oversized	postponed	1	no_failure	1
+drop_statistics_oversized	postponed	1	no_failure	1
+drop_index_throttled	throttled	1	no_failure	1
+keep_statistics	pending	0
+keep_statistics	indices_left	0
+keep_statistics	statistics_readable	10000
+keep_statistics	check	all_1_1_1_2	1
+rewrite_statistics	pending	0
+rewrite_statistics	statistics_left	1
+rewrite_statistics	rows	20000
+rewrite_statistics	check	all_1_1_1_3	1
+write_footprint	keep_writes_less_than_rewrite	1	non_exempt_preserves_statistics_too	1
+write_footprint	keep_check	all_1_1_1_2	1
+write_footprint	rewrite_check	all_1_1_1_2	1
+write_footprint	non_exempt_check	all_1_1_1_2	1
+materialize_column	rewrites_more_than_preserving	1
+materialize_column	check	all_1_1_1_2	1
+statistics_named_column	pending	0
+statistics_named_column	rows	20000
+statistics_named_column	check	all_1_1_1_2	1
