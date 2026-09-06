@@ -54,7 +54,9 @@ namespace DB
 namespace FailPoints
 {
     extern const char backup_fail_before_writing_metadata[];
+    extern const char backup_fail_lock_file_check_after_creation[];
     extern const char backup_fail_lock_file_removal[];
+    extern const char backup_fail_lock_file_write_after_commit[];
     extern const char backup_pause_before_lock_file_creation[];
 }
 
@@ -287,7 +289,21 @@ void BackupImpl::open()
                 checkBackupDoesntExist();
                 if (!params.is_internal_backup)
                     createLockFile();
-                checkLockFile(true);
+
+                /// `createLockFile` can already have read the lock back and found this attempt's own
+                /// contents in it. Reading it a second time right away cannot make that ownership any
+                /// more certain, and it can fail on its own: that would abort an uncontended backup and
+                /// leave behind a lock nothing can remove, because removal needs a readable lock too.
+                if (!lock_file_verified_on_create)
+                {
+                    fiu_do_on(FailPoints::backup_fail_lock_file_check_after_creation,
+                    {
+                        throw Exception(
+                            ErrorCodes::FAULT_INJECTED,
+                            "Failpoint backup_fail_lock_file_check_after_creation is triggered");
+                    });
+                    checkLockFile(true);
+                }
             }
 
             if (use_archive)
@@ -945,6 +961,11 @@ void BackupImpl::createLockFile()
         auto out = writer->writeFileIfNotExists(lock_file_name);
         *out << lock_file_contents;
         out->finalize();
+        fiu_do_on(FailPoints::backup_fail_lock_file_write_after_commit,
+        {
+            throw Exception(
+                ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_lock_file_write_after_commit is triggered");
+        });
         created_own_lock_file = true;
     }
     catch (...)
@@ -969,18 +990,46 @@ void BackupImpl::createLockFile()
             /// checks below decide who owns the destination, and rethrow if they find nothing.
             tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Could not read lock file {}", lock_file_name));
         }
+        /// Matching contents identify this attempt's own write only when that write could not have replaced
+        /// somebody else's lock. A writer without conditional-create semantics (`Disk`, `Memory`) writes the
+        /// lock in rewrite mode, so a second backup can clobber the lock of the backup that got to the
+        /// destination first and then read back its own contents here. Treating that as ownership would let
+        /// the second attempt take a destination that is taken, and both would then write to it. On such
+        /// backends the destination stays reported as taken, which is the safe answer.
+        const bool own_write_committed = lock_contents_match && writer->supportsAtomicCreateIfNotExists();
 #if CLICKHOUSE_CLOUD
-        /// A resumable attempt whose own contents are already there falls through, so a later failure
-        /// lands inside `BackupResumer`'s inner try, which reports the lock and keeps its progress.
-        if (lock_contents_match && !params.resume)
+        /// A resumable attempt whose own contents are already there falls through, so a later failure lands
+        /// inside `BackupResumer`'s inner try, which reports the lock and keeps its progress. Its contents
+        /// come from the progress record of the very attempt that wrote them, so this does not depend on how
+        /// the lock was written.
+        const bool continues_own_attempt = lock_contents_match && params.resume;
 #else
-        if (lock_contents_match)
+        const bool continues_own_attempt = false;
 #endif
+        if (lock_contents_match && !own_write_committed && !continues_own_attempt)
             throw Exception(
                 ErrorCodes::BACKUP_ALREADY_EXISTS,
                 "A concurrent backup writing to the same destination {} detected",
                 backup_name_for_logging);
-        if (!lock_contents_match)
+
+        if (own_write_committed)
+        {
+            /// The write reported a failure after it had committed: a conditional `PutObject` that times
+            /// out on the client can still have been applied, and its retry then fails `If-None-Match`
+            /// against the object the first attempt wrote. `lock_file_contents` belongs to this attempt
+            /// alone -- `open` picks a fresh backup UUID for every retry, and a resumed attempt continues
+            /// the very attempt that wrote them -- so finding them in the destination means the lock is
+            /// this backup's own. Reporting a concurrent backup here fails an uncontended destination.
+            LOG_INFO(
+                log,
+                "Lock file {} of backup {} already holds the contents of this attempt: the write that "
+                "reported a failure had committed",
+                lock_file_name,
+                backup_name_for_logging);
+            /// The lock has just been read back and it is ours: the caller does not have to check it again.
+            lock_file_verified_on_create = true;
+        }
+        else if (!lock_contents_match)
         {
             if (writer->fileExists(lock_file_name))
                 throw Exception(
