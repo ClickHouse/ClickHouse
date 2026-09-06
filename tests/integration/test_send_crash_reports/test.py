@@ -3,6 +3,7 @@
 # pylint: disable=line-too-long
 # pylint: disable=bare-except
 
+import json
 import os
 import time
 
@@ -45,6 +46,10 @@ def test_send_segfault(started_node):
     ):
         pytest.skip("doesn't fit in timeouts for stacktrace generation")
 
+    # The report carries the UUID only once ServerUUID::load() has run, so read it from the
+    # live server to compare against.
+    uuid_before_crash = started_node.query("SELECT serverUUID()").strip()
+
     started_node.copy_file_to_container(
         os.path.join(SCRIPT_DIR, "fake_sentry_server.py"), "/fake_sentry_server.py"
     )
@@ -72,3 +77,11 @@ def test_send_segfault(started_node):
             assert False, "Unexpected state: " + result
 
     assert result == "OK", "Crash report not sent"
+
+    payload = json.loads(
+        started_node.exec_in_container(
+            ["cat", fake_sentry_server.PAYLOAD_PATH], user="root"
+        )
+    )
+    assert "server_uuid" in payload, "Crash report has no server_uuid: " + repr(payload)
+    assert payload["server_uuid"] == uuid_before_crash

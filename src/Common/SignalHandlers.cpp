@@ -747,7 +747,9 @@ try
 
     if (daemon)
          daemon->flushTextLogs();
-    Context::getGlobalContextInstance()->handleCrash();
+    /// These handlers are installed before the global context is created, so it can still be absent during startup.
+    if (auto global_context = Context::getGlobalContextInstance())
+        global_context->handleCrash();
 
     /// Send crash report to developers (if configured)
     if (daemon)
