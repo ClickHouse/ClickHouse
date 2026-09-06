@@ -137,6 +137,8 @@ namespace
     DECLARE(UInt64, max_thread_pool_size, 10000, R"(
 ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query, then a new thread is created in the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
 
+The pool also holds the threads that the server occupies permanently, such as the workers of the background pools and of the background schedule pools, and the flush threads of the system logs. The limit therefore has to be large enough for all of them, which is about 200 threads with the default settings, plus room for query processing. If it is not, the server refuses to start with a `CANNOT_SCHEDULE_TASK` error, because a thread that cannot be started would otherwise never run while the code that created it waits for it.
+
 **Example**
 
 ```xml

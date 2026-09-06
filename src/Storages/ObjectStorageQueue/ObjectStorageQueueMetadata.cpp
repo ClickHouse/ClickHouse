@@ -206,8 +206,14 @@ ZooKeeperRetriesControl ObjectStorageQueueMetadata::getKeeperRetriesControl(Logg
 
 void ObjectStorageQueueMetadata::startup()
 {
-    if (startup_called.exchange(true))
-         return;
+    /// Publish `startup_called` only after both background workers are actually running,
+    /// and serialize concurrent callers. The metadata object is shared between tables,
+    /// so if one table fails to start `update_registry_thread` (CANNOT_SCHEDULE_TASK),
+    /// another table must not observe a "started" object that permanently lacks
+    /// the registry updater - it should retry the startup itself instead.
+    std::lock_guard lock(startup_mutex);
+    if (startup_called)
+        return;
 
     if (!cleanup_task
         && (cleanup_processed_files || cleanup_failed_files || cleanup_processing_files))
@@ -222,7 +228,10 @@ void ObjectStorageQueueMetadata::startup()
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
     if (!update_registry_thread)
-        update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
+        update_registry_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this](){ updateRegistryFunc(); });
+
+    startup_called = true;
 }
 
 void ObjectStorageQueueMetadata::shutdown()

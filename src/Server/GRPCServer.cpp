@@ -108,6 +108,7 @@ namespace ErrorCodes
     extern const int NO_DATA_TO_INSERT;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_REQUEST_PARAMETER;
+    extern const int CANNOT_SCHEDULE_TASK;
 }
 
 namespace
@@ -844,7 +845,7 @@ namespace
             }
             on_finish_call_callback();
         };
-        call_thread = ThreadFromGlobalPool(runner_function);
+        call_thread = ThreadFromGlobalPool{ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, runner_function};
     }
 
     void Call::run()
@@ -1927,7 +1928,7 @@ public:
                 tryLogCurrentException(log, "run");
             }
         };
-        queue_thread = ThreadFromGlobalPool{runner_function};
+        queue_thread = ThreadFromGlobalPool{ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, runner_function};
     }
 
     void stop()
@@ -1985,7 +1986,23 @@ private:
             auto new_call = std::make_unique<Call>(call_type, std::move(responder), owner.iserver, owner.log);
             auto * new_call_ptr = new_call.get();
             current_calls[new_call_ptr] = std::move(new_call);
-            new_call_ptr->start([this, new_call_ptr]() { onFinishCall(new_call_ptr); });
+            try
+            {
+                new_call_ptr->start([this, new_call_ptr]() { onFinishCall(new_call_ptr); });
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::CANNOT_SCHEDULE_TASK)
+                    throw;
+
+                /// Letting the saturation exception escape would kill the completion-queue
+                /// thread and leave the half-published `Call` in `current_calls`, blocking the
+                /// empty-call fast path of the shutdown. Treat the call as a rejected connection
+                /// instead: destroying it drops the responder (the same way a connection
+                /// established after `should_stop` is dropped above).
+                current_calls.erase(new_call_ptr);
+                tryLogCurrentException(log, "Cannot start a worker thread for a new call");
+            }
         }
     }
 

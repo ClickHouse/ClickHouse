@@ -3731,13 +3731,18 @@ try
 
         CannotAllocateThreadFaultInjector::setFaultProbability(server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
 
-        try
+        /// Fail close: transient ZooKeeper errors are already tolerated inside
+        /// `ClusterDiscovery::start`, so an exception here means cluster discovery cannot work at
+        /// all (e.g. its working thread cannot be started because the global thread pool is
+        /// exhausted). There is no later retry, so silently continuing would leave the server up
+        /// with dynamic clusters frozen forever.
+        global_context->startClusterDiscovery();
+
+        std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
+        for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
         {
-            global_context->startClusterDiscovery();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Caught exception while starting cluster discovery");
+            metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(
+                global_context->getConfigRef(), graphite_key, *async_metrics));
         }
 
 #if defined(OS_LINUX)
@@ -3746,13 +3751,6 @@ try
         /// the child process notifies 'READY=1'.
         systemdNotify("READY=1\n");
 #endif
-
-        std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
-        for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
-        {
-            metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(
-                global_context->getConfigRef(), graphite_key, *async_metrics));
-        }
 
         waitForTerminationRequest();
     }

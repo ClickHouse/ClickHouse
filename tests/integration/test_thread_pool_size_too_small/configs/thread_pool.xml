@@ -1,0 +1,3 @@
+<clickhouse>
+    <max_thread_pool_size>10000</max_thread_pool_size>
+</clickhouse>

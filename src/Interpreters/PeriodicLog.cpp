@@ -16,7 +16,7 @@ void PeriodicLog<LogElement>::startCollect(ThreadName thread_name, size_t collec
 {
     collect_interval_milliseconds = collect_interval_milliseconds_;
     is_shutdown_metric_thread = false;
-    collecting_thread = std::make_unique<ThreadFromGlobalPool>([this, thread_name] {
+    collecting_thread = std::make_unique<ThreadFromGlobalPool>(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this, thread_name] {
         DB::setThreadName(thread_name);
         threadFunction();
     });

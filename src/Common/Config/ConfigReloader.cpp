@@ -50,7 +50,7 @@ void ConfigReloader::start()
     if (!thread.joinable())
     {
         quit = false;
-        thread = ThreadFromGlobalPool(&ConfigReloader::run, this);
+        thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, &ConfigReloader::run, this);
     }
 }
 

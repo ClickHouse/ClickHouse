@@ -1016,17 +1016,35 @@ private:
         if (enable_async_loading)
         {
             /// Put a job to the thread pool for the loading.
-            ThreadFromGlobalPool thread;
+            /// The map entry is reserved before the thread is started: every operation after the thread
+            /// becomes joinable must be non-throwing, otherwise unwinding destroys a joinable
+            /// `ThreadFromGlobalPool` and aborts the process instead of propagating the exception.
+            auto thread_it = loading_threads.end();
             try
             {
-                thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
+                bool inserted = false;
+                std::tie(thread_it, inserted) = loading_threads.try_emplace(loading_id);
+                chassert(inserted);
+
+                /// The move assignment is `noexcept`.
+                thread_it->second = ThreadFromGlobalPool{
+                    ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
+                    &LoadingDispatcher::doLoading,
+                    this,
+                    info.name,
+                    loading_id,
+                    forced_to_reload,
+                    min_id_to_finish_loading_dependencies_,
+                    true,
+                    CurrentThread::getGroup()};
             }
             catch (...)
             {
+                if (thread_it != loading_threads.end())
+                    loading_threads.erase(thread_it);
                 cancelLoading(info);
                 throw;
             }
-            loading_threads.try_emplace(loading_id, std::move(thread));
         }
         else
         {
@@ -1343,7 +1361,10 @@ public:
                 try
                 {
                     /// Starts the thread which will do periodic updates.
-                    thread = ThreadFromGlobalPool{&PeriodicUpdater::doPeriodicUpdates, this};
+                    thread = ThreadFromGlobalPool{
+                        ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
+                        &PeriodicUpdater::doPeriodicUpdates,
+                        this};
                 }
                 catch (Exception & e)
                 {

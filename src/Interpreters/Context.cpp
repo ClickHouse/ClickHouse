@@ -6822,7 +6822,19 @@ void Context::startClusterDiscovery()
     std::lock_guard lock(shared->clusters_mutex);
     if (!shared->cluster_discovery)
         return;
-    shared->cluster_discovery->start();
+
+    try
+    {
+        shared->cluster_discovery->start();
+    }
+    catch (...)
+    {
+        /// Fail close: a `ClusterDiscovery` whose working thread could not be started (e.g.
+        /// `CANNOT_SCHEDULE_TASK` when the global thread pool is exhausted) never receives
+        /// ZooKeeper updates and is never restarted, so it must not stay published.
+        shared->cluster_discovery.reset();
+        throw;
+    }
 }
 
 

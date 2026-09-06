@@ -16,6 +16,7 @@
 #include <thread>
 
 #include <Core/ServerUUID.h>
+#include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/iota.h>
 #include <Common/randomSeed.h>
@@ -115,6 +116,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsNonZeroUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
+    extern const FileCacheSettingsUInt64 background_download_threads;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
     extern const FileCacheSettingsUInt64 idle_client_ttl_sec;
@@ -3977,6 +3979,108 @@ TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
 
         ASSERT_EQ(query_limit.tryGetQueryContext().get(), nullptr);
     }
+}
+
+TEST_F(FileCacheTest, AsyncInitThreadStartFailureIsSynchronous)
+{
+    /// Regression test: when the permanent background threads of the cache (background
+    /// downloads, delayed cleanup) do not fit into the global thread pool, the
+    /// `CANNOT_SCHEDULE_TASK` exception must reach the caller of `initialize`
+    /// synchronously even with `load_metadata_asynchronously`, instead of being deferred
+    /// into `init_exception` on the metadata loading thread, which would leave the server
+    /// running with a registered but permanently broken cache.
+
+    ServerUUID::setRandomForUnitTests();
+
+    /// The schedule pool is created lazily and starts its own threads; create it
+    /// before enabling fault injection.
+    DB::Context::getGlobalContextInstance()->getSchedulePool();
+
+    const fs::path cache_path = caches_dir / "cache_async_fail_close";
+    fs::remove_all(cache_path);
+    SCOPE_EXIT({ fs::remove_all(cache_path); });
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_path.string();
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 5;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = true;
+    settings[FileCacheSetting::background_download_threads] = 2;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    /// Fault injection is blocked for the current thread only: with the fix the permanent
+    /// threads are started synchronously in `initialize` and succeed, while on the broken
+    /// code they were started on the metadata loading thread (where the injection is
+    /// active), so the failure was deferred into `init_exception`.
+    auto block_current_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
+    CannotAllocateThreadFaultInjector::setFaultProbability(1.0);
+    SCOPE_EXIT({ CannotAllocateThreadFaultInjector::setFaultProbability(0.0); });
+
+    DB::FileCache cache("async_fail_close", settings);
+    cache.initialize();
+
+    /// `initialize` did not throw, so the cache must become usable once the asynchronous
+    /// metadata loading finishes. Join the loading thread deterministically (probing with
+    /// `getFileSegmentInfos` instead would race with the loading thread taking `init_mutex`
+    /// and hit the "Cache not initialized" logical error, which aborts in debug and
+    /// sanitizer builds); `deactivateBackgroundOperations` is idempotent, so the destructor
+    /// calling it again is fine.
+    cache.deactivateBackgroundOperations();
+    EXPECT_TRUE(cache.isInitialized())
+        << "initialize() succeeded, but the cache came up broken: the thread allocation "
+           "failure was deferred into the metadata loading thread";
+}
+
+TEST_F(FileCacheTest, InitializeRetryAfterLateFailure)
+{
+    /// Regression test: the cache is published in `FileCacheFactory` before `initialize`
+    /// is called and `initialize` may be retried after an exception, because `callOnce`
+    /// does not set the flag when the callable throws. The permanent background threads
+    /// of the cache are started before the metadata loading, so an exception thrown by
+    /// a later step of `initialize` must stop and join them; otherwise the retry would
+    /// re-enter `CacheMetadata::startup`, which replaces still-joinable threads and
+    /// aborts the process.
+
+    ServerUUID::setRandomForUnitTests();
+    DB::Context::getGlobalContextInstance()->getSchedulePool();
+
+    const fs::path cache_path = caches_dir / "cache_init_retry";
+    fs::remove_all(cache_path);
+    SCOPE_EXIT({ fs::remove_all(cache_path); });
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_path.string();
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 5;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::background_download_threads] = 2;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    /// With per-user directories `loadMetadata` opens an `fs::directory_iterator` on
+    /// every entry of the base directory except the "status" file, so a plain file
+    /// planted there makes it throw ENOTDIR deterministically.
+    settings[FileCacheSetting::write_cache_per_user_id_directory] = true;
+
+    /// The failure happens after the permanent background threads have started.
+    const fs::path garbage_file = cache_path / "garbage";
+    fs::create_directories(cache_path);
+    {
+        WriteBufferFromFile garbage(garbage_file.string());
+        writeString("garbage", garbage);
+        garbage.finalize();
+    }
+
+    DB::FileCache cache("init_retry", settings);
+    EXPECT_ANY_THROW(cache.initialize());
+    EXPECT_FALSE(cache.isInitialized());
+
+    /// Remove the obstacle and retry: the retried `initialize` must start from a clean
+    /// state (in particular, re-enter `CacheMetadata::startup` with the previous
+    /// permanent threads stopped and joined) and bring the cache up.
+    fs::remove(garbage_file);
+    cache.initialize();
+    EXPECT_TRUE(cache.isInitialized());
 }
 
 /// Concurrent readBigAt calls on AsynchronousBoundedReadBuffer over a cached buffer, with a

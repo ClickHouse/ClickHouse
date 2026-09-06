@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <functional>
 #include <list>
+#include <memory>
 #include <optional>
 #include <atomic>
 #include <stack>
@@ -61,7 +62,8 @@ public:
         explicit ThreadFromThreadPool(ThreadPoolImpl& parent_pool);
 
         // Shift the thread state from Preparing to Running to allow the worker to start.
-        void start(typename ThreadList::iterator& it);
+        void start(typename ThreadList::iterator & it);
+        void start(typename ThreadList::iterator & it, std::unique_ptr<JobWithPriority> initial_job_);
 
         void join();
 
@@ -87,6 +89,11 @@ public:
 
         // Stores the position of the thread in the parent thread pool list
         typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_it;
+
+        /// A job reserved through `scheduleThreadOrThrow` is handed to its newly created worker
+        /// directly. It must not compete with already queued work, otherwise the caller can still
+        /// observe a seemingly running thread whose function has not started.
+        std::unique_ptr<JobWithPriority> initial_job;
 
         /// Per-thread condition variable for LIFO idle scheduling.
         /// Each idle thread waits on its own CV, so the scheduler can wake the
@@ -153,6 +160,17 @@ public:
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
     void scheduleOrThrow(Job job, Priority priority = {}, uint64_t wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
+
+    /// Schedules a job that occupies its worker for the whole lifetime of that worker, i.e. the job
+    /// *is* a thread (see `ThreadFromGlobalPoolImpl`). Such a job must be handed a worker slot at
+    /// scheduling time and must never be left in the queue: the workers running other never-returning
+    /// jobs will not free up, so a queued job would stay in the queue forever while its creator
+    /// already believes that its thread is running - any code that then waits for that thread to make
+    /// progress deadlocks. Throws `CANNOT_SCHEDULE_TASK` instead of enqueueing when all `max_threads`
+    /// slots are already taken by such jobs, and also when the pool is at `max_threads` and all its
+    /// workers are busy with ordinary jobs, because one of those jobs may be the one waiting for this
+    /// thread.
+    void scheduleThreadOrThrow(Job job, Priority priority = {}, bool propagate_opentelemetry_tracing_context = true);
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
@@ -227,6 +245,13 @@ private:
     // If negative, it means that we have more jobs than threads.
     std::atomic<int64_t> available_threads;
 
+    // Number of worker slots not yet taken by jobs scheduled through `scheduleThreadOrThrow`.
+    // Originally equals to max_threads and is adjusted by setMaxThreads together with
+    // `remaining_pool_capacity`. Such a job holds its slot from the moment it is scheduled until it
+    // finishes, because it occupies a worker for the whole lifetime of that worker. Once this reaches
+    // zero, no further such job can ever start, so it has to be rejected instead of being queued.
+    std::atomic<int64_t> remaining_thread_job_capacity;
+
     bool finished = false;
     bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
@@ -246,7 +271,12 @@ private:
     size_t idle_thread_count = 0;
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
+    ReturnType scheduleImpl(
+        Job job,
+        Priority priority,
+        std::optional<uint64_t> wait_microseconds,
+        bool propagate_opentelemetry_tracing_context = true,
+        bool job_occupies_thread = false);
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with the mutex locked.
     void startNewThreadsNoLock();
@@ -339,6 +369,12 @@ struct ThreadFromGlobalPoolState
     Poco::Event event;
 };
 
+enum class ThreadFromGlobalPoolScheduleMode : bool
+{
+    Queue,
+    FailIfNoWorker,
+};
+
 /// Worker entry point implementing ThreadFromGlobalPoolImpl's constructor body.
 /// Lives in the .cpp so that ThreadStatus, scope_guard and friends do not leak via this header.
 void startThreadFromGlobalPool(
@@ -347,7 +383,8 @@ void startThreadFromGlobalPool(
     UInt64 global_profiler_real_time_period_ns,
     UInt64 global_profiler_cpu_time_period_ns,
     bool global_trace_collector_allowed,
-    bool propagate_opentelemetry_context);
+    bool propagate_opentelemetry_context,
+    ThreadFromGlobalPoolScheduleMode schedule_mode);
 
 
 /** Looks like std::thread but allocates threads in GlobalThreadPool.
@@ -364,6 +401,12 @@ public:
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPoolImpl(Function && func, Args &&... args)
+        : ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolScheduleMode::Queue, std::forward<Function>(func), std::forward<Args>(args)...)
+    {
+    }
+
+    template <typename Function, typename... Args>
+    explicit ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolScheduleMode schedule_mode, Function && func, Args &&... args)
         : state(std::make_shared<ThreadFromGlobalPoolState>())
     {
         startThreadFromGlobalPool(
@@ -376,7 +419,8 @@ public:
             GlobalThreadPool::instance().global_profiler_real_time_period_ns,
             GlobalThreadPool::instance().global_profiler_cpu_time_period_ns,
             global_trace_collector_allowed,
-            propagate_opentelemetry_context);
+            propagate_opentelemetry_context,
+            schedule_mode);
     }
 
     ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolImpl && rhs) noexcept

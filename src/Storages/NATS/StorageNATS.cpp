@@ -163,31 +163,42 @@ StorageNATS::StorageNATS(
     nats_context = addSettings(getContext());
     nats_context->makeQueryContext();
 
-    event_loop_thread = std::make_unique<ThreadFromGlobalPool>([this] { event_handler.runLoop(); });
+    event_loop_thread = std::make_unique<ThreadFromGlobalPool>(
+        ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
+        [this] { event_handler.runLoop(); });
 
+    /// Everything after the event loop thread has been started must unwind through `stopEventLoop`:
+    /// the destructor does not run for a constructor which throws, so a joinable
+    /// `ThreadFromGlobalPool` member would be destroyed directly and terminate the process instead
+    /// of propagating the original exception.
     try
     {
-        if (!getContext()->getMessageQueueDisableInsertion())
-            createConsumersConnection();
+        try
+        {
+            if (!getContext()->getMessageQueueDisableInsertion())
+                createConsumersConnection();
+        }
+        catch (...)
+        {
+            if (throw_on_startup_failure)
+                throw;
+
+            tryLogCurrentException(log);
+        }
+
+        streaming_task
+            = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "NATSStreamingTask", [this] { threadFunc(); });
+        streaming_task->deactivate();
+
+        initialize_consumers_task = getContext()->getMessageBrokerSchedulePool()->createTask(
+            getStorageID(), "NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
+        initialize_consumers_task->deactivate();
     }
     catch (...)
     {
-        if (throw_on_startup_failure)
-        {
-            stopEventLoop();
-            throw;
-        }
-
-        tryLogCurrentException(log);
+        stopEventLoop();
+        throw;
     }
-
-    streaming_task
-        = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "NATSStreamingTask", [this] { threadFunc(); });
-    streaming_task->deactivate();
-
-    initialize_consumers_task = getContext()->getMessageBrokerSchedulePool()->createTask(
-        getStorageID(), "NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
-    initialize_consumers_task->deactivate();
 }
 StorageNATS::~StorageNATS()
 {

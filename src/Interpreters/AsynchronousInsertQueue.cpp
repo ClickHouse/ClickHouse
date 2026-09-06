@@ -357,8 +357,24 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
         queue_shards[i].busy_timeout_ms
             = std::min(saturatedMilliseconds(settings[Setting::async_insert_busy_timeout_min_ms].totalMilliseconds()), saturatedMilliseconds(settings[Setting::async_insert_busy_timeout_max_ms].totalMilliseconds()));
 
-    for (size_t i = 0; i < pool_size; ++i)
-        dump_by_first_update_threads.emplace_back([this, i] { processBatchDeadlines(i); });
+    try
+    {
+        for (size_t i = 0; i < pool_size; ++i)
+            dump_by_first_update_threads.emplace_back(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this, i] { processBatchDeadlines(i); });
+    }
+    catch (...)
+    {
+        /// If starting a thread throws (e.g. CANNOT_SCHEDULE_TASK), stop and join the already
+        /// started ones: `flushAndShutdown` is never called for an object that failed to
+        /// construct, and the member vector destructor would terminate on a joinable thread.
+        shutdown = true;
+        for (size_t i = 0; i < dump_by_first_update_threads.size(); ++i)
+        {
+            queue_shards[i].are_tasks_available.notify_one();
+            dump_by_first_update_threads[i].join();
+        }
+        throw;
+    }
 }
 
 void AsynchronousInsertQueue::flushAndShutdown()

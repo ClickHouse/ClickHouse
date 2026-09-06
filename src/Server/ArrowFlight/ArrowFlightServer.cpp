@@ -446,41 +446,52 @@ void ArrowFlightServer::start()
 
     initialized = true;
 
-    server_thread.emplace([this]
+    try
     {
-        try
-        {
-            DB::setThreadName(ThreadName::ARROW_FLIGHT_SERVER);
-            if (stopped)
-                return;
-            auto serve_status = Serve();
-            if (!serve_status.ok())
-                LOG_ERROR(log, "Failed to serve Arrow Flight: {}", serve_status.ToString());
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to serve Arrow Flight");
-        }
-    });
-
-    if (tickets_lifetime_seconds || poll_descriptors_lifetime_seconds || prepared_statements_lifetime_seconds != 0)
-    {
-        cleanup_thread.emplace([this]
+        server_thread.emplace(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this]
         {
             try
             {
-                DB::setThreadName(ThreadName::ARROW_FLIGHT_EXPR);
-                while (!stopped)
-                {
-                    calls_data->waitNextExpirationTime();
-                    calls_data->cancelExpired();
-                }
+                DB::setThreadName(ThreadName::ARROW_FLIGHT_SERVER);
+                if (stopped)
+                    return;
+                auto serve_status = Serve();
+                if (!serve_status.ok())
+                    LOG_ERROR(log, "Failed to serve Arrow Flight: {}", serve_status.ToString());
             }
             catch (...)
             {
-                tryLogCurrentException(log, "Failed to cleanup");
+                tryLogCurrentException(log, "Failed to serve Arrow Flight");
             }
         });
+
+        if (tickets_lifetime_seconds || poll_descriptors_lifetime_seconds || prepared_statements_lifetime_seconds != 0)
+        {
+            cleanup_thread.emplace(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this]
+            {
+                try
+                {
+                    DB::setThreadName(ThreadName::ARROW_FLIGHT_EXPR);
+                    while (!stopped)
+                    {
+                        calls_data->waitNextExpirationTime();
+                        calls_data->cancelExpired();
+                    }
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to cleanup");
+                }
+            });
+        }
+    }
+    catch (...)
+    {
+        /// Starting a thread can throw CANNOT_SCHEDULE_TASK when the global thread pool is full.
+        /// Join the threads that did start before letting the exception out, otherwise the
+        /// destructor aborts on a still-joinable thread instead of reporting the error.
+        stop();
+        throw;
     }
 }
 

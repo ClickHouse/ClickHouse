@@ -25,7 +25,7 @@ MetricsTransmitter::MetricsTransmitter(
     send_metrics = config.getBool(config_name + ".metrics", true);
     send_asynchronous_metrics = config.getBool(config_name + ".asynchronous_metrics", true);
 
-    thread = ThreadFromGlobalPool{&MetricsTransmitter::run, this};
+    thread = ThreadFromGlobalPool{ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, &MetricsTransmitter::run, this};
 }
 
 

@@ -3633,11 +3633,14 @@ Changelog::Changelog(
         if (existing_changelogs.empty())
             LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", disk->getPath());
 
-        background_changelog_operations_thread = std::make_unique<ThreadFromGlobalPool>([this] { backgroundChangelogOperationsThread(); });
+        background_changelog_operations_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { backgroundChangelogOperationsThread(); });
 
-        write_thread = std::make_unique<ThreadFromGlobalPool>([this] { writeThread(); });
+        write_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { writeThread(); });
 
-        append_completion_thread = std::make_unique<ThreadFromGlobalPool>([this] { appendCompletionThread(); });
+        append_completion_thread = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { appendCompletionThread(); });
 
         current_writer = std::make_unique<ChangelogWriter>(
             existing_changelogs,
@@ -3650,6 +3653,25 @@ Changelog::Changelog(
     catch (...)
     {
         tryLogCurrentException(log);
+
+        /// Starting one of the worker threads may throw, e.g. `CANNOT_SCHEDULE_TASK`. Unwinding
+        /// would then destroy the already-started joinable `ThreadFromGlobalPool`s, which aborts.
+        /// Finish the queues the workers block on and join whatever threads were started, so the
+        /// real error propagates instead. (`shutdown` cannot be used here: it dereferences the
+        /// thread pointers unconditionally, and some of them may not be created yet.)
+        if (!changelog_operation_queue.isFinished())
+            changelog_operation_queue.finish();
+        if (!write_operations.isFinished())
+            write_operations.finish();
+        if (!append_completion_queue.isFinished())
+            append_completion_queue.finish();
+
+        for (const auto * thread : {&background_changelog_operations_thread, &write_thread, &append_completion_thread})
+        {
+            if (*thread && (*thread)->joinable())
+                (*thread)->join();
+        }
+
         throw;
     }
 }
