@@ -91,6 +91,14 @@ private:
     /// SYSTEM RELOAD USERS or next startup runs reloadAllAndRebuildLists() and resolves the issues.
     bool has_stale_files_on_disk TSA_GUARDED_BY(mutex) = false;
 
+    /// The strongest `fsync_metadata` requirement of the DDL operations that scheduled the pending
+    /// `.list` rewrite. `writeLists()` runs deferred (background thread) or at shutdown with no
+    /// query context, so it cannot re-read the session setting of the DDL that scheduled it;
+    /// re-reading the global `fsync_metadata` there would drop a session `fsync_metadata=1` and
+    /// leave the `.list` unsynced. We OR-accumulate the requirement here so the deferred `.list`
+    /// write is as durable as the most-durable pending change, and reset it once the batch is written.
+    bool pending_lists_fsync TSA_GUARDED_BY(mutex) = false;
+
     /// List files are written in a separate thread.
     std::unique_ptr<ThreadFromGlobalPool> lists_writing_thread;
 

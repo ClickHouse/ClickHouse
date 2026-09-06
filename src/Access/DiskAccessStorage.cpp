@@ -7,8 +7,12 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Disks/LocalDirectorySyncGuard.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Poco/JSON/JSON.h>
@@ -17,12 +21,18 @@
 #include <boost/range/adaptor/map.hpp>
 #include <base/range.h>
 #include <filesystem>
-#include <fstream>
 #include <memory>
+#include <optional>
+#include <sstream>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool fsync_metadata;
+}
+
 namespace ErrorCodes
 {
     extern const int DIRECTORY_DOESNT_EXIST;
@@ -33,6 +43,19 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Whether access-entity files should be fsync'd, honoring the `fsync_metadata` setting.
+    /// Foreground writes (CREATE/ALTER/DROP USER etc.) run on the query thread, so honor its
+    /// session setting; background `.list` writes have no query context and fall back to the
+    /// global one. Absent any context we default to syncing (matches the setting's default).
+    bool shouldFsyncMetadata()
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            return query_context->getSettingsRef()[Setting::fsync_metadata];
+        if (auto global_context = Context::getGlobalContextInstance())
+            return global_context->getSettingsRef()[Setting::fsync_metadata];
+        return true;
+    }
+
     /// Reads a file containing ATTACH queries and then parses it to build an access entity.
     AccessEntityPtr readEntityFile(const String & file_path)
     {
@@ -60,7 +83,7 @@ namespace
     }
 
     /// Writes ATTACH queries for building a specified access entity to a file.
-    void writeEntityFile(const String & file_path, const IAccessEntity & entity)
+    void writeEntityFile(const String & file_path, const IAccessEntity & entity, bool fsync)
     {
         String file_contents = serializeAccessEntity(entity);
 
@@ -76,10 +99,19 @@ namespace
         /// Write the file.
         WriteBufferFromFile out{tmp_file_path.string()};
         out.write(file_contents.data(), file_contents.size());
+        if (fsync)
+            out.sync();
         out.close();
 
-        /// Rename.
-        std::filesystem::rename(tmp_file_path, file_path);
+        /// Rename. Sync the parent directory so the rename itself survives a power loss:
+        /// fsync of the file alone does not persist the directory entry (open the dir fd
+        /// before the rename; the guard's destructor fsyncs it afterwards).
+        {
+            std::optional<LocalDirectorySyncGuard> dir_sync_guard;
+            if (fsync)
+                dir_sync_guard.emplace(std::filesystem::path{file_path}.parent_path().string());
+            std::filesystem::rename(tmp_file_path, file_path);
+        }
         succeeded = true;
     }
 
@@ -125,7 +157,7 @@ namespace
 
 
     /// Writes a map of name of access entity to UUID for access entities of some type to a file.
-    void writeListFile(const String & file_path, const std::vector<std::pair<UUID, std::string_view>> & id_name_pairs)
+    void writeListFile(const String & file_path, const std::vector<std::pair<UUID, std::string_view>> & id_name_pairs, bool fsync)
     {
         WriteBufferFromFile out(file_path);
         writeVarUInt(id_name_pairs.size(), out);
@@ -134,6 +166,10 @@ namespace
             writeStringBinary(name, out);
             writeUUIDText(id, out);
         }
+        /// The `.list` file is overwritten in place (no rename), so only the file content needs
+        /// to be synced; it is anyway rebuildable from the `.sql` files via need_rebuild_lists.mark.
+        if (fsync)
+            out.sync();
         out.close();
     }
 
@@ -281,6 +317,12 @@ void DiskAccessStorage::writeLists()
     if (types_of_lists_to_write.empty())
         return;
 
+    /// Honor the strongest fsync requirement pending for this batch (a session `fsync_metadata=1`
+    /// carried over from `scheduleWriteLists`) on top of whatever the current context resolves to.
+    /// This matters most in the deferred background thread, which has no query context and would
+    /// otherwise silently downgrade to the global `fsync_metadata` and leave the `.list` unsynced.
+    const bool fsync = pending_lists_fsync || shouldFsyncMetadata();
+
     for (const auto & type : types_of_lists_to_write)
     {
         auto file_path = getListFilePath(directory_path, type);
@@ -291,13 +333,16 @@ void DiskAccessStorage::writeLists()
             id_name_pairs.reserve(all_entities.size());
             for (const auto & [id, entity] : all_entities)
                 id_name_pairs.emplace_back(id, entity->getName());
-            writeListFile(file_path, id_name_pairs);
+            writeListFile(file_path, id_name_pairs, fsync);
         }
         catch (...)
         {
             tryLogCurrentException(getLogger(), "Could not write " + file_path);
             failed_to_write_lists = true;
             types_of_lists_to_write.clear();
+            /// Keep pending_lists_fsync: the batch was not durably written, so the fsync
+            /// obligation must survive to the eventual rebuild (reloadAllAndRebuildLists),
+            /// even if that rebuild's own context has fsync_metadata=0.
             return;
         }
     }
@@ -310,6 +355,7 @@ void DiskAccessStorage::writeLists()
     }
 
     types_of_lists_to_write.clear();
+    pending_lists_fsync = false;
 }
 
 
@@ -323,17 +369,41 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
 
     types_of_lists_to_write.insert(type);
 
-    if (lists_writing_thread_is_waiting)
-        return; /// If the lists' writing thread is still waiting we can update `types_of_lists_to_write` easily,
-                /// without restarting that thread.
-
-    if (lists_writing_thread && lists_writing_thread->joinable())
-        lists_writing_thread->join();
+    /// Remember the strongest fsync requirement of the DDLs that scheduled this pending `.list`
+    /// rewrite. The rewrite itself runs later in the background thread (or at shutdown) with no
+    /// query context, so `writeLists()` cannot see this DDL's session `fsync_metadata`; carry it
+    /// here so a session `fsync_metadata=1` is not dropped to the global value there.
+    const bool fsync = shouldFsyncMetadata();
+    pending_lists_fsync = pending_lists_fsync || fsync;
 
     /// Create the 'need_rebuild_lists.mark' file.
     /// This file will be used later to find out if writing lists is successful or not.
-    std::ofstream out{getNeedRebuildListsMarkFilePath(directory_path)};
-    out.close();
+    /// It must be durable: the marker is what tells the next startup to rescan the (already
+    /// fsync'd) <id>.sql files instead of trusting the stale .list indexes. If the marker is
+    /// missing on power loss while the background .list rewrite has not run yet, the
+    /// acknowledged CREATE/ALTER/DROP USER would become unreachable after restart even though
+    /// its <id>.sql survived. We must (re)create it even when the writing thread is already
+    /// waiting: `reloadAllAndRebuildLists()` removes the marker without stopping that thread,
+    /// so a following DDL that took the early return below would otherwise commit its entity
+    /// file with no marker on disk. Fsync the marker file and its parent directory (the
+    /// marker's existence is a new directory entry, like a rename), gated on fsync_metadata.
+    const auto mark_file_path = getNeedRebuildListsMarkFilePath(directory_path);
+    {
+        std::optional<LocalDirectorySyncGuard> dir_sync_guard;
+        if (fsync)
+            dir_sync_guard.emplace(std::filesystem::path{mark_file_path}.parent_path().string());
+        WriteBufferFromFile out{mark_file_path};
+        if (fsync)
+            out.sync();
+        out.close();
+    }
+
+    if (lists_writing_thread_is_waiting)
+        return; /// If the lists' writing thread is still waiting we can update `types_of_lists_to_write` easily,
+                /// without restarting that thread. The marker is already (re)created above.
+
+    if (lists_writing_thread && lists_writing_thread->joinable())
+        lists_writing_thread->join();
 
     LOG_TRACE(getLogger(), "Created need_rebuild_lists.mark, starting background lists-writing thread");
 
@@ -456,6 +526,11 @@ void DiskAccessStorage::reloadAllAndRebuildLists()
     /// regenerates the full index.
     for (auto type : collections::range(AccessEntityType::MAX))
         types_of_lists_to_write.insert(type);
+
+    /// The marker is a restart-surviving proxy for "a durable `.list` is still owed", so a
+    /// marker-driven rebuild must fsync even when the current (context-free) fsync check is false.
+    if (std::filesystem::exists(getNeedRebuildListsMarkFilePath(directory_path)))
+        pending_lists_fsync = true;
 
     /// Write the lists and keep the rebuild marker for now.
     failed_to_write_lists = false;
@@ -769,7 +844,7 @@ AccessEntityPtr DiskAccessStorage::readAccessEntityFromDisk(const UUID & id) con
 void DiskAccessStorage::writeAccessEntityToDisk(const UUID & id, const IAccessEntity & entity) const
 {
     LOG_TRACE(getLogger(), "Writing file for entity with id {} and name {}", id, entity.getName());
-    writeEntityFile(getEntityFilePath(directory_path, id), entity);
+    writeEntityFile(getEntityFilePath(directory_path, id), entity, shouldFsyncMetadata());
 }
 
 
@@ -777,6 +852,14 @@ void DiskAccessStorage::deleteAccessEntityOnDisk(const UUID & id) const
 {
     auto file_path = getEntityFilePath(directory_path, id);
     LOG_TRACE(getLogger(), "Deleting file {} for entity with id {}", file_path, id);
+
+    /// Sync the parent directory after the unlink so DROP USER / REVOKE (and the old-file
+    /// removal on rename-replace) survive a power loss: like a rename, an unlink is a
+    /// directory-entry change that is not durable until the directory is fsync'd. Open the
+    /// dir fd before removing; the guard's destructor fsyncs it afterwards.
+    std::optional<LocalDirectorySyncGuard> dir_sync_guard;
+    if (shouldFsyncMetadata())
+        dir_sync_guard.emplace(std::filesystem::path{file_path}.parent_path().string());
     if (!std::filesystem::remove(file_path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Couldn't delete {}", file_path);
 }
