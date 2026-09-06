@@ -334,6 +334,16 @@ Ignore extra columns in rows with more columns than expected and treat missing c
 
 Disabled by default.
 )", 0) \
+    DECLARE(BoolAuto, input_format_json_array_of_rows, Field("auto"), R"(
+Recognize a wrapping JSON array around rows in the JSONCompactEachRow family of input formats.
+
+Possible values:
+- `auto`: Compare the leading array nesting of the first value with the first column type (`Array` and unnamed `Tuple` add nesting). If the data is one level deeper than the column, treat the outermost array as a list of rows.
+- `1`: Always expect a wrapping `[...]` around the rows (the form produced by `JSON.stringify` of an array of rows).
+- `0`: Never consume a wrapping array. Each row is a top-level JSON array.
+
+This already works unconditionally for `JSONEachRow`, where a wrapping array cannot be confused with a row object.
+)", 0) \
     DECLARE(Bool, input_format_tsv_detect_header, true, R"(
 Automatically detect header with names and types in TSV format
 )", 0) \

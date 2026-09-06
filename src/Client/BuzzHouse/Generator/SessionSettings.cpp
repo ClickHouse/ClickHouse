@@ -1162,6 +1162,15 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_import_nested_json", trueOrFalseSettingNoOracle},
     {"input_format_ipv4_default_on_conversion_error", trueOrFalseSettingNoOracle},
     {"input_format_ipv6_default_on_conversion_error", trueOrFalseSettingNoOracle},
+    {"input_format_json_array_of_rows",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"0", "1", "'auto'"};
+             return rg.pickRandomly(choices);
+         },
+         {"0", "1", "'auto'"},
+         false)},
     {"input_format_json_compact_allow_variable_number_of_columns", trueOrFalseSettingNoOracle},
     {"input_format_json_defaults_for_missing_elements_in_named_tuple", trueOrFalseSettingNoOracle},
     {"input_format_json_ignore_unknown_keys_in_named_tuple", trueOrFalseSettingNoOracle},
