@@ -183,6 +183,7 @@ ISink::Status StreamingExchangeSink::prepare()
     /// would keep computing data that nobody reads.
     if (no_more_data_needed)
     {
+        LOG_TRACE(log, "Closing input of exchange stream {}, no more data needed", stream_name);
         input.close();
         return Status::Finished;
     }
