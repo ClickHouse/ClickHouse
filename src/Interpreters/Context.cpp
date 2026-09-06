@@ -7404,6 +7404,18 @@ StoragePolicyPtr Context::getOrCreateStoragePolicy(const String & name, StorageP
     return storage_policy;
 }
 
+StoragePolicyPtr Context::createOrReplaceTemporaryStoragePolicy(StoragePolicyCreator creator) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto storage_policy_selector = getStoragePolicySelector(lock);
+
+    auto storage_policy = creator(storage_policy_selector->getPoliciesMap());
+    const_cast<StoragePolicySelector *>(storage_policy_selector.get())->addOrReplaceTemporary(storage_policy);
+
+    return storage_policy;
+}
+
 DisksMap Context::getDisksMap() const
 {
     std::lock_guard lock(shared->storage_policies_mutex);

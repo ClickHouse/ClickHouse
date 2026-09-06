@@ -1855,6 +1855,11 @@ public:
     using StoragePolicyCreator = std::function<StoragePolicyPtr(const StoragePoliciesMap & storage_policies_map)>;
     StoragePolicyPtr getOrCreateStoragePolicy(const String & name, StoragePolicyCreator creator) const;
 
+    /// Always runs the creator and installs the result, replacing any policy already cached under
+    /// the created policy's name. That name must be temporary
+    /// (StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX), otherwise this throws.
+    StoragePolicyPtr createOrReplaceTemporaryStoragePolicy(StoragePolicyCreator creator) const;
+
     /// Get the server uptime in seconds.
     double getUptimeSeconds() const;
 
