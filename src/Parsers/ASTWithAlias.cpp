@@ -1,9 +1,9 @@
-#include <Common/SipHash.h>
-#include <Parsers/ASTWithAlias.h>
-#include <Parsers/ASTQueryParameter.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 #include <iostream>
+#include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTWithAlias.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -19,16 +19,37 @@ static void writeAlias(const String & name, WriteBuffer & ostr, const ASTWithAli
     settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
 }
 
+static void writeParametrisedAlias(
+    const ASTQueryParameter & alias,
+    WriteBuffer & ostr,
+    const ASTWithAlias::FormatSettings & settings,
+    ASTWithAlias::FormatState & state,
+    ASTWithAlias::FormatStateStacked frame)
+{
+    ostr << " AS ";
+    alias.format(ostr, settings, state, frame);
+}
+
 
 void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    const bool has_alias = !alias.empty() || parametrised_alias;
+    const auto write_alias = [&]
+    {
+        if (parametrised_alias)
+            writeParametrisedAlias(*parametrised_alias, ostr, settings, state, frame);
+        else
+            writeAlias(alias, ostr, settings);
+    };
+
     /// This is needed for distributed queries with the old analyzer. Remove it after removing the old analyzer.
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
-    if (settings.collapse_identical_nodes_to_aliases && !alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash(/*ignore_aliases=*/ true)).second)
+    if (settings.collapse_identical_nodes_to_aliases && !alias.empty()
+        && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash(/*ignore_aliases=*/true)).second)
     {
         settings.writeIdentifier(ostr, alias, /*ambiguous=*/false);
     }
-    else if (frame.parenthesize_alias_inner_only && !alias.empty())
+    else if (frame.parenthesize_alias_inner_only && has_alias)
     {
         /// `IAST::format` deferred parens emission to us so we can produce `(expr) AS alias`
         /// instead of `(expr AS alias)`. At the top level of an expression / SELECT element /
@@ -41,7 +62,7 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         inner.need_parens = false;
         formatImplWithoutAlias(ostr, settings, state, inner);
         ostr.write(')');
-        writeAlias(alias, ostr, settings);
+        write_alias();
     }
     else
     {
@@ -51,15 +72,15 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         /// to `b` only instead of to `(a AND b)`. After re-parsing, the parser sets
         /// `parenthesized=true` on the aliased node; the next format goes through the
         /// `parenthesize_alias_inner_only` branch above.
-        const bool wrap_around_alias = frame.need_parens && !alias.empty();
+        const bool wrap_around_alias = frame.need_parens && has_alias;
         if (wrap_around_alias)
         {
             ostr.write('(');
             frame.need_parens = false;
         }
         formatImplWithoutAlias(ostr, settings, state, frame);
-        if (!alias.empty())
-            writeAlias(alias, ostr, settings);
+        if (has_alias)
+            write_alias();
         if (wrap_around_alias)
             ostr.write(')');
     }
@@ -75,6 +96,12 @@ void ASTWithAlias::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
         hash_state.update(alias.size());
         hash_state.update(alias);
     }
+
+    hash_state.update(preferAliasToColumnName());
+    hash_state.update(static_cast<bool>(parametrised_alias));
+    if (parametrised_alias)
+        parametrised_alias->updateTreeHash(hash_state, ignore_aliases);
+
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 

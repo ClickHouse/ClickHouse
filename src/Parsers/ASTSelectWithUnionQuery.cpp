@@ -14,6 +14,36 @@
 namespace DB
 {
 
+namespace
+{
+
+void restoreSetOfModes(ASTSelectWithUnionQuery & ast)
+{
+    ast.set_of_modes.clear();
+
+    if (ast.is_normalized)
+    {
+        /// A normalized union stores one mode for all of its separators. A single select has no
+        /// separator, so its `union_mode` is not semantically relevant.
+        if (ast.list_of_selects->children.size() > 1)
+            ast.set_of_modes.insert(ast.union_mode);
+    }
+    else
+    {
+        ast.set_of_modes.insert(ast.list_of_modes.begin(), ast.list_of_modes.end());
+    }
+
+    /// The normalizer accumulates modes from nested unions as well. `readJSON` visits child ASTs
+    /// before their parent, so their reconstructed sets are available here.
+    for (const auto & select_child : ast.list_of_selects->children)
+    {
+        if (const auto * nested_union = select_child->as<ASTSelectWithUnionQuery>())
+            ast.set_of_modes.insert(nested_union->set_of_modes.begin(), nested_union->set_of_modes.end());
+    }
+}
+
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -68,9 +98,17 @@ void ASTSelectWithUnionQuery::updateTreeHashImpl(SipHash & hash_state, bool igno
     /// The set operation joining the selects is not a child, so the default implementation does not
     /// see it: without hashing the modes, `a UNION ALL b` and `a UNION DISTINCT b` hash equally.
     hash_state.update(union_mode);
-    hash_state.update(list_of_modes.size());
-    for (auto mode : list_of_modes)
-        hash_state.update(mode);
+
+    /// Mirror `formatQueryImpl`'s `get_mode`, which reads `list_of_modes` only while the query is
+    /// not normalized and repeats `union_mode` once it is. Hashing the vector unconditionally would
+    /// separate two normalized queries that format to the same SQL.
+    hash_state.update(is_normalized);
+    if (!is_normalized)
+    {
+        hash_state.update(list_of_modes.size());
+        for (auto mode : list_of_modes)
+            hash_state.update(mode);
+    }
     ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -224,8 +262,12 @@ void ASTSelectWithUnionQuery::writeJSON(WriteBuffer & out) const
     JSONObjectWriter w(out, "SelectWithUnionQuery");
 
     w.writeString("union_mode", toString(union_mode));
+    w.writeBool("is_normalized", is_normalized);
 
-    if (!list_of_modes.empty())
+    /// A normalized union uses `union_mode` for every separator. Its old `list_of_modes` can
+    /// describe the pre-normalized tree and need not have one entry per flattened select, so do
+    /// not serialize it as though it were part of the normalized representation.
+    if (!is_normalized && !list_of_modes.empty())
     {
         w.writeKey("list_of_modes");
         auto & o = w.getOut();
@@ -257,10 +299,12 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
 
     union_mode = parseSelectUnionMode(r.getString("union_mode", "UNION_DEFAULT"));
+    is_normalized = r.getBool("is_normalized");
 
     auto modes_arr = r.readStringArray("list_of_modes");
-    for (const auto & mode_str : modes_arr)
-        list_of_modes.push_back(parseSelectUnionMode(mode_str));
+    if (!is_normalized)
+        for (const auto & mode_str : modes_arr)
+            list_of_modes.push_back(parseSelectUnionMode(mode_str));
 
     /// `list_of_selects` is a required invariant: `clone`, `formatQueryImpl`, and the interpreters
     /// dereference it unconditionally. Reject malformed JSON that omits it instead of producing an
@@ -292,11 +336,13 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
     /// `list_of_modes` describes the separators between adjacent selects, so its cardinality must be
     /// exactly one less than the number of selects. `formatQueryImpl` indexes `list_of_modes` by
     /// `(position - 1)`, so a mismatch would either read stale modes or leave gaps; reject it.
-    if (!list_of_modes.empty() && list_of_modes.size() != list_of_selects->children.size() - 1)
+    if (!is_normalized && list_of_modes.size() != list_of_selects->children.size() - 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`SelectWithUnionQuery` AST has {} entries in 'list_of_modes' but expected {} for {} selects "
             "during AST JSON deserialization",
             list_of_modes.size(), list_of_selects->children.size() - 1, list_of_selects->children.size());
+
+    restoreSetOfModes(*this);
 
     /// Restore output options (`INTO OUTFILE` / `FORMAT` / `SETTINGS` / compression and flags)
     /// through the shared helper so the validation of their interdependencies stays in one place

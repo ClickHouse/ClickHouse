@@ -3,12 +3,16 @@
 #include <Common/Exception.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFromJSON.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTToJSON.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 
 using namespace DB;
 
@@ -715,4 +719,81 @@ TEST(TreeHashCompleteness, ExplicitUuidIsSignificant)
 
     EXPECT_NE(hashOf(one), hashOf(two));
     EXPECT_NE(hashOf(one), hashOf(none));
+}
+
+TEST(TreeHashCompleteness, WithAliasFlagsAndParametrisedAliasAreSignificant)
+{
+    auto plain = make_intrusive<ASTIdentifier>("x");
+    auto prefer_alias = make_intrusive<ASTIdentifier>("x");
+    prefer_alias->setPreferAliasToColumnName(true);
+    EXPECT_NE(plain->getTreeHash(/*ignore_aliases=*/ false), prefer_alias->getTreeHash(/*ignore_aliases=*/ false));
+
+    auto first_parameter = make_intrusive<ASTIdentifier>("x");
+    first_parameter->parametrised_alias = make_intrusive<ASTQueryParameter>("first", "Identifier");
+    auto second_parameter = make_intrusive<ASTIdentifier>("x");
+    second_parameter->parametrised_alias = make_intrusive<ASTQueryParameter>("second", "Identifier");
+    EXPECT_NE(first_parameter->getTreeHash(/*ignore_aliases=*/ false), second_parameter->getTreeHash(/*ignore_aliases=*/ false));
+    EXPECT_NE(plain->getTreeHash(/*ignore_aliases=*/ false), first_parameter->getTreeHash(/*ignore_aliases=*/ false));
+}
+
+TEST(TreeHashCompleteness, JSONRejectsConflictingAliases)
+{
+    String json = serializeASTToJSON(*parse("SELECT x AS y"));
+    const String key = R"("alias":"y")";
+    const auto pos = json.find(key);
+    ASSERT_NE(pos, String::npos);
+    json.insert(pos + key.size(), R"(,"parametrised_alias":{"type":"QueryParameter","name":"p","param_type":"Identifier"})");
+
+    expectJSONRejected(json);
+}
+
+TEST(TreeHashCompleteness, JSONRejectsImplicitNullsDirectionDifferentFromDirection)
+{
+    String json = serializeASTToJSON(*parse("SELECT x ORDER BY x ASC"));
+    const String key = R"("nulls_direction":1,)";
+    const auto pos = json.find(key);
+    ASSERT_NE(pos, String::npos);
+    json.replace(pos, key.size(), R"("nulls_direction":-1,)");
+
+    expectJSONRejected(json);
+}
+
+TEST(TreeHashCompleteness, NormalizedUnionJSONRoundTripKeepsHash)
+{
+    /// Normalization flattens nested UNION ALL nodes but deliberately does not rebuild
+    /// `list_of_modes`. JSON must preserve the normalized representation instead of validating
+    /// the stale pre-normalization vector against the flattened list of selects.
+    auto ast = parse("SELECT 1 UNION ALL (SELECT 2 UNION ALL SELECT 3)");
+    NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::ALL};
+    NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+
+    const auto * normalized = ast->as<ASTSelectWithUnionQuery>();
+    ASSERT_TRUE(normalized);
+    ASSERT_TRUE(normalized->is_normalized);
+    ASSERT_EQ(normalized->list_of_selects->children.size(), 3);
+    ASSERT_LT(normalized->list_of_modes.size(), normalized->list_of_selects->children.size() - 1);
+
+    auto restored = IAST::createFromJSON(serializeASTToJSON(*ast), /*max_depth=*/ 1000, /*max_elements=*/ 100000);
+    const auto * restored_union = restored->as<ASTSelectWithUnionQuery>();
+    ASSERT_TRUE(restored_union);
+    EXPECT_TRUE(restored_union->is_normalized);
+    EXPECT_TRUE(restored_union->list_of_modes.empty());
+    EXPECT_EQ(restored->getTreeHash(/*ignore_aliases=*/ false), ast->getTreeHash(/*ignore_aliases=*/ false));
+}
+
+TEST(TreeHashCompleteness, NormalizedDistinctUnionJSONRoundTripKeepsModes)
+{
+    auto ast = parse("SELECT 1 UNION DISTINCT SELECT 2");
+    NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::ALL};
+    NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+
+    const auto * normalized = ast->as<ASTSelectWithUnionQuery>();
+    ASSERT_TRUE(normalized);
+    ASSERT_TRUE(normalized->is_normalized);
+    ASSERT_TRUE(normalized->hasNonDefaultUnionMode());
+
+    auto restored = IAST::createFromJSON(serializeASTToJSON(*ast), /*max_depth=*/ 1000, /*max_elements=*/ 100000);
+    const auto * restored_union = restored->as<ASTSelectWithUnionQuery>();
+    ASSERT_TRUE(restored_union);
+    EXPECT_TRUE(restored_union->hasNonDefaultUnionMode());
 }

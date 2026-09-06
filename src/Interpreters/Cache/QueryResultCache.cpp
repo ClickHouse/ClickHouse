@@ -310,6 +310,10 @@ public:
             };
 
             std::erase_if(set_clause->changes, is_query_cache_related_setting);
+
+            /// `x = DEFAULT` is recorded in `default_settings`, not in `changes`, and is hashed
+            /// too, so an ignored name has to be erased from both lists to be absent from the key.
+            std::erase_if(set_clause->default_settings, isSettingIgnoredInQueryResultCache);
         };
 
         if (auto * select_clause = ast->as<ASTSelectQuery>())
@@ -324,7 +328,9 @@ public:
                 /// E.g. SELECT 1 SETTINGS use_query_cache = true
                 /// and SET use_query_cache = true; SELECT 1;
                 /// will match.
-                if (set_clause->changes.empty())
+                if (set_clause->changes.empty()
+                    && set_clause->default_settings.empty()
+                    && set_clause->query_parameters.empty())
                     select_clause->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
             }
         }

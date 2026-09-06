@@ -57,6 +57,7 @@
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
+#include <Storages/extractKeyExpressionList.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -972,28 +973,27 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support CLONE AS with tables of the MergeTree family");
 
                 /// Ensure that as_storage and the new storage has the same primary key, sorting key and partition key
-                auto query_to_string = [](const IAST * ast) { return ast ? ast->formatWithSecretsOneLine() : ""; };
+                const auto same_key_expressions = [](const ASTPtr & lhs, const ASTPtr & rhs)
+                {
+                    return sameAST(extractKeyExpressionList(lhs), extractKeyExpressionList(rhs));
+                };
 
-                const String as_storage_sorting_key_str = query_to_string(as_storage_metadata->getSortingKeyAST().get());
-                const String as_storage_primary_key_str = query_to_string(as_storage_metadata->getPrimaryKeyAST().get());
-                const String as_storage_partition_key_str = query_to_string(as_storage_metadata->getPartitionKeyAST().get());
+                const auto & as_storage_sorting_key = as_storage_metadata->getSortingKeyAST();
+                const auto & as_storage_primary_key = as_storage_metadata->getPrimaryKeyAST();
+                const auto & as_storage_partition_key = as_storage_metadata->getPartitionKeyAST();
 
-                const String storage_sorting_key_str = query_to_string(create.storage->order_by);
-                const String storage_primary_key_str = query_to_string(create.storage->primary_key);
-                const String storage_partition_key_str = query_to_string(create.storage->partition_by);
-
-                if (as_storage_sorting_key_str != storage_sorting_key_str)
+                if (!same_key_expressions(as_storage_sorting_key, create.storage->order_by))
                 {
                     /// It is possible that the storage only has primary key and an empty sorting key, and as_storage has both primary key and sorting key with the same value.
-                    if (as_storage_sorting_key_str != as_storage_primary_key_str || as_storage_sorting_key_str != storage_primary_key_str)
+                    if (!same_key_expressions(as_storage_sorting_key, as_storage_primary_key) || !same_key_expressions(as_storage_sorting_key, create.storage->primary_key))
                     {
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different ordering");
                     }
                 }
-                if (as_storage_partition_key_str != storage_partition_key_str)
+                if (!same_key_expressions(as_storage_partition_key, create.storage->partition_by))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key");
 
-                if (as_storage_primary_key_str != storage_primary_key_str)
+                if (!same_key_expressions(as_storage_primary_key, create.storage->primary_key))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
             }
         }

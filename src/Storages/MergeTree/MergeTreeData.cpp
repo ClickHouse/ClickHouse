@@ -62,6 +62,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
@@ -11701,24 +11702,19 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
 
-    /// The definitions are compared as text, so the text must not depend on whether the user has
-    /// written redundant parentheses: `PARTITION BY (a)` and `PARTITION BY a` are the same key.
-    auto query_to_string = [] (const ASTPtr & ast)
-    {
-        return ast ? ast->formatIgnoringRedundantParentheses() : "";
-    };
+    /// Keys are compared as ASTs, so keys whose stored form differs only in formatting are
+    /// interchangeable. `extractKeyExpressionList` additionally unwraps the optional `tuple(...)`.
 
-    if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST()))
+    if (!sameAST(*extractKeyExpressionList(my_snapshot->getSortingKeyAST()), *extractKeyExpressionList(src_snapshot->getSortingKeyAST())))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different ordering");
 
-    if (query_to_string(my_snapshot->getPartitionKeyAST()) != query_to_string(src_snapshot->getPartitionKeyAST()))
+    if (!sameAST(*extractKeyExpressionList(my_snapshot->getPartitionKeyAST()), *extractKeyExpressionList(src_snapshot->getPartitionKeyAST())))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key");
 
     if (format_version != src_data->format_version)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different format_version");
 
-    if (query_to_string(my_snapshot->getPrimaryKey().expression_list_ast)
-        != query_to_string(src_snapshot->getPrimaryKey().expression_list_ast))
+    if (!sameAST(my_snapshot->getPrimaryKey().expression_list_ast, src_snapshot->getPrimaryKey().expression_list_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
 
     const auto check_definitions = [this](const auto & my_descriptions, const auto & src_descriptions)
@@ -11728,12 +11724,22 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
             (strict_match && my_descriptions.size() != src_descriptions.size()))
             return false;
 
-        std::unordered_set<std::string> my_query_strings;
+        /// The definition keeps the function name of an `APPLY` transformer as written, so
+        /// canonicalize clones before hashing: `APPLY SUM` and `APPLY sum` are the same
+        /// definition.
+        const auto comparison_hash = [](const ASTPtr & definition_ast)
+        {
+            auto ast = definition_ast->clone();
+            FunctionNameNormalizer::visitForComparison(ast.get());
+            return ast->getTreeHash(/*ignore_aliases=*/ false);
+        };
+
+        std::set<IASTHash> my_definition_hashes;
         for (const auto & description : my_descriptions)
-            my_query_strings.insert(description.definition_ast->formatIgnoringRedundantParentheses());
+            my_definition_hashes.insert(comparison_hash(description.definition_ast));
 
         for (const auto & src_description : src_descriptions)
-            if (!my_query_strings.contains(src_description.definition_ast->formatIgnoringRedundantParentheses()))
+            if (!my_definition_hashes.contains(comparison_hash(src_description.definition_ast)))
                 return false;
 
         return true;

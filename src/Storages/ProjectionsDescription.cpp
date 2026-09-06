@@ -12,6 +12,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Analyzer/AggregationUtils.h>
@@ -131,8 +132,17 @@ ProjectionsDescription ProjectionsDescription::clone() const
 
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
 {
-    return name == other.name
-        && definition_ast->formatIgnoringRedundantParentheses() == other.definition_ast->formatIgnoringRedundantParentheses();
+    if (name != other.name)
+        return false;
+
+    /// Compared as ASTs, not as formatted text (see `sameAST`). The definition keeps the
+    /// function name of an `APPLY` transformer as written, so canonicalize clones before
+    /// comparing: `APPLY SUM` and `APPLY sum` are the same definition.
+    auto lhs = definition_ast ? definition_ast->clone() : nullptr;
+    auto rhs = other.definition_ast ? other.definition_ast->clone() : nullptr;
+    FunctionNameNormalizer::visitForComparison(lhs.get());
+    FunctionNameNormalizer::visitForComparison(rhs.get());
+    return sameAST(lhs, rhs);
 }
 
 namespace

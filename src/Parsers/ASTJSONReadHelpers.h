@@ -238,6 +238,9 @@ public:
     void readAlias(ASTWithAlias & node) const
     {
         String alias = getString("alias");
+        if (!alias.empty() && has("parametrised_alias"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Only one of 'alias' and 'parametrised_alias' may be specified during AST JSON deserialization");
         if (!alias.empty())
             node.setAlias(alias);
         if (getBool("prefer_alias_to_column_name"))

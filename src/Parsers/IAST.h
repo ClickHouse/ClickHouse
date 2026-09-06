@@ -544,6 +544,15 @@ private:
     friend void intrusive_ptr_release(const IAST * p) noexcept;
 };
 
+/** Whether two expressions are the same, compared by their ASTs with `getTreeHash` (aliases are
+  * significant). Use this instead of comparing formatted text, which also differs when only the
+  * formatting logic or purely cosmetic AST state (such as the `parenthesized` flag) differs.
+  */
+bool sameAST(const IAST & lhs, const IAST & rhs);
+
+/// Same, tolerating absent expressions: two absent expressions are equal.
+bool sameAST(const ASTPtr & lhs, const ASTPtr & rhs);
+
 /** The SQL text of `ast`, for the few places where the parser has to keep a fragment of the query
   * as a string rather than as a subtree: the type in `CAST(x, 'T')` and in
   * `defaultValueOfTypeName('T')`, the settings in `viewExplain('<kind>', '<settings>', ...)`.

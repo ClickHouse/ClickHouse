@@ -1,8 +1,11 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTTLElement.h>
 
 #include <Functions/FunctionFactory.h>
@@ -46,6 +49,16 @@ bool canonicalNameCanReparseShape(const String & canonical_name, const ASTFuncti
 
 void FunctionNameNormalizer::visit(IAST * ast)
 {
+    visitImpl(ast, /*normalize_apply_transformer=*/ false);
+}
+
+void FunctionNameNormalizer::visitForComparison(IAST * ast)
+{
+    visitImpl(ast, /*normalize_apply_transformer=*/ true);
+}
+
+void FunctionNameNormalizer::visitImpl(IAST * ast, bool normalize_apply_transformer)
+{
     if (!ast)
         return;
 
@@ -53,11 +66,11 @@ void FunctionNameNormalizer::visit(IAST * ast)
     // have the same name as function, e.g. Log.
     if (auto * node_storage = ast->as<ASTStorage>())
     {
-        visit(node_storage->partition_by);
-        visit(node_storage->primary_key);
-        visit(node_storage->order_by);
-        visit(node_storage->sample_by);
-        visit(node_storage->ttl_table);
+        visitImpl(node_storage->partition_by, normalize_apply_transformer);
+        visitImpl(node_storage->primary_key, normalize_apply_transformer);
+        visitImpl(node_storage->order_by, normalize_apply_transformer);
+        visitImpl(node_storage->sample_by, normalize_apply_transformer);
+        visitImpl(node_storage->ttl_table, normalize_apply_transformer);
         return;
     }
 
@@ -65,8 +78,8 @@ void FunctionNameNormalizer::visit(IAST * ast)
     // have the same name as function, e.g. Date.
     if (auto * node_decl = ast->as<ASTColumnDeclaration>())
     {
-        visit(node_decl->getDefaultExpression().get());
-        visit(node_decl->getTTL().get());
+        visitImpl(node_decl->getDefaultExpression().get(), normalize_apply_transformer);
+        visitImpl(node_decl->getTTL().get(), normalize_apply_transformer);
         return;
     }
 
@@ -79,14 +92,46 @@ void FunctionNameNormalizer::visit(IAST * ast)
     }
 
     for (auto & child : ast->children)
-        visit(child.get());
+        visitImpl(child.get(), normalize_apply_transformer);
 
     if (auto * ttl_elem = ast->as<ASTTTLElement>())
     {
         for (const auto & a : ttl_elem->group_by_key)
-            visit(a.get());
+            visitImpl(a.get(), normalize_apply_transformer);
         for (const auto & a : ttl_elem->group_by_assignments)
-            visit(a.get());
+            visitImpl(a.get(), normalize_apply_transformer);
+    }
+
+    /// An `APPLY` transformer carries its function in the non-child `func_name` string, and its
+    /// `parameters` and `lambda` are not in `children` either, so the walk above does not reach
+    /// them. Stored table definitions are compared as ASTs, so `APPLY SUM` and `APPLY sum` (or a
+    /// lambda spelled `x -> SuM(x)`) must compare as the same definition. This only runs on the
+    /// comparison path (see `visitForComparison`): the persisted definition keeps the transformer
+    /// as written, because older replicas compare the serialized `projections` field
+    /// byte-for-byte and the canonical form of an older version is the definition as written.
+    if (!normalize_apply_transformer)
+        return;
+
+    if (auto * apply_transformer = ast->as<ASTColumnsApplyTransformer>())
+    {
+        if (!apply_transformer->func_name.empty())
+        {
+            const String & canonical_name = getAggregateFunctionCanonicalNameIfAny(
+                getFunctionCanonicalNameIfAny(apply_transformer->func_name));
+
+            /// `APPLY f` expands to a call of `f` with the parameters of the transformer and
+            /// exactly one argument, so the shape to check is that of the expansion.
+            auto expansion = make_intrusive<ASTFunction>();
+            expansion->name = canonical_name;
+            expansion->arguments = make_intrusive<ASTExpressionList>();
+            expansion->arguments->children.push_back(make_intrusive<ASTIdentifier>("dummy"));
+            expansion->parameters = apply_transformer->parameters;
+            if (canonicalNameCanReparseShape(canonical_name, *expansion))
+                apply_transformer->func_name = canonical_name;
+        }
+
+        visitImpl(apply_transformer->parameters.get(), normalize_apply_transformer);
+        visitImpl(apply_transformer->lambda.get(), normalize_apply_transformer);
     }
 }
 
