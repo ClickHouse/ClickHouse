@@ -5,6 +5,7 @@ import argparse
 import logging
 import os
 import random
+import re
 import shlex
 import shutil
 import signal
@@ -986,6 +987,54 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+HUNG_CHECK_DEADLOCK = "Hung check failed, possible deadlock found"
+
+
+def hung_check_failure_name(hung_check_log: Path) -> str:
+    """Name the hung-check failure after the outcome it actually reached.
+
+    A hung check that fails is not always a hang. The variant seen regularly in
+    CI is a server that is alive and answers every connection with an error --
+    most often `MEMORY_LIMIT_EXCEEDED`, because the global memory tracker sits
+    far above the memory the process really uses, so every allocation fails
+    down to the zero-byte check at the start of a connection. `clickhouse-test`
+    then never reaches the processlist and reports no hung query at all. Filing
+    that under "possible deadlock found" sends investigators after a hang that
+    does not exist and hides how often the memory tracker breaks, so report it
+    as itself.
+
+    The name is taken from the terminal outcome `clickhouse-test` prints, not
+    from any error the log happens to mention along the way: a run whose early
+    retries hit the memory tracker but which ended on a refused connection is
+    not the memory-tracker case.
+    """
+    rejected = ""
+    try:
+        with open(hung_check_log, "r", encoding="utf-8", errors="replace") as log:
+            for line in log:
+                # The processlist was reached and did show hung queries: a hang,
+                # whatever else the log holds.
+                if "Found hung queries in processlist" in line:
+                    return HUNG_CHECK_DEADLOCK
+                # Printed once, after the last retry, and only when that retry
+                # got an answer from the server rather than failing to reach it.
+                if "Server rejects queries. Cannot query the server version:" in line:
+                    rejected = line
+    except OSError as ex:
+        logging.warning("Failed to read %s: %s", hung_check_log, ex)
+        return HUNG_CHECK_DEADLOCK
+
+    if not rejected:
+        return HUNG_CHECK_DEADLOCK
+
+    # Keep the error name, so that a memory tracker above the real usage and a
+    # thread pool that cannot start a thread do not share one row.
+    error = re.search(r"\(([A-Z_0-9]+)\)\s*$", rejected.strip())
+    if error:
+        return f"Server rejects all queries, {error.group(1)}"
+    return "Server rejects all queries"
+
+
 def collect_stacktrace_dumps(output_folder: Path) -> None:
     # stdout keeps only a trimmed preview of the server stacktrace dumps;
     # the full dumps are written to the working directory.
@@ -1162,7 +1211,7 @@ def run_stress_test(args: argparse.Namespace) -> None:
                     )
 
                 hung_check_status = (
-                    "Hung check failed, possible deadlock found\tFAIL\t\\N\t"
+                    f"{hung_check_failure_name(hung_check_log)}\tFAIL\t\\N\t"
                     f"{info_field}\n"
                 )
                 with open(

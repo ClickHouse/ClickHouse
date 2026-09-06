@@ -5674,6 +5674,11 @@ def get_server_memory_fraction(args) -> Optional[float]:
 def check_server_started(args):
     print("Connecting to ClickHouse server...", end="")
 
+    # The last error the server itself answered with, as opposed to a failure to
+    # reach it at all. A server that answers every connection with an error is
+    # running and is not hung, so the caller must not report it as unresponsive.
+    check_server_started.last_server_error = ""
+
     sys.stdout.flush()
     retry_count = args.server_check_retries
     query = "SELECT version(), (SELECT value FROM system.build_options WHERE name = 'GIT_HASH'), (SELECT value FROM system.build_options WHERE name = 'GIT_BRANCH')"
@@ -5699,6 +5704,12 @@ def check_server_started(args):
 
             # HTTPError:
             # Code: 503. Code: 439. DB::Exception: Cannot schedule a task: failed to start the thread (threads=2, jobs=2). (CANNOT_SCHEDULE_TASK)
+            # Only an HTTP response is an answer from the server; a transport
+            # failure means it was not reached, so it must not leave an earlier
+            # answer standing. Keep only the outcome of the last retry.
+            check_server_started.last_server_error = (
+                str(e) if isinstance(e, HTTPError) else ""
+            )
             if args.hung_check:
                 print("Connection error, will retry: ", str(e))
             else:
@@ -5708,9 +5719,11 @@ def check_server_started(args):
             sleep(0.5)
             continue
         except TimeoutError:
+            check_server_started.last_server_error = ""
             print("\nConnection timeout, will not retry")
             break
         except Exception as e:
+            check_server_started.last_server_error = ""
             print(
                 "\nUnexpected exception, will not retry: ",
                 type(e).__name__,
@@ -6423,7 +6436,21 @@ def main(args):
     tests_start_time = time()
 
     if not check_server_started(args):
-        msg = "Server is not responding. Cannot query the server version."
+        # A server that answered every connection with an error is running: it
+        # rejected the query, it did not fail to receive it. Reporting that as
+        # "not responding" is what makes the stress-test hung check file it as a
+        # deadlock. The case seen in CI is a global memory tracker sitting far
+        # above the memory the process really uses, which fails every
+        # allocation, down to the zero-byte check at the start of a connection,
+        # with `MEMORY_LIMIT_EXCEEDED`.
+        server_error = getattr(check_server_started, "last_server_error", "")
+        if server_error:
+            msg = (
+                "Server rejects queries. Cannot query the server version: "
+                + server_error
+            )
+        else:
+            msg = "Server is not responding. Cannot query the server version."
         if args.hung_check:
             print(msg)
             # The probe that just failed is HTTP; this dump goes over TCP.
