@@ -8,6 +8,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
@@ -588,8 +589,11 @@ void SettingFieldTimezone::readBinary(ReadBuffer & in)
 
 void SettingFieldTimezone::validateTimezone(const std::string & tz_str)
 {
+    if (tz_str.empty())
+        return;
+
     cctz::time_zone validated_tz;
-    if (!tz_str.empty() && !cctz::load_time_zone(tz_str, &validated_tz))
+    if (!DateLUTImpl::isSupportedTimeZoneName(tz_str) || !cctz::load_time_zone(tz_str, &validated_tz))
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
 }
 

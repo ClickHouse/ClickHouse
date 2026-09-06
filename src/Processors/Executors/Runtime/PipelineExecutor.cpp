@@ -205,26 +205,14 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
     try
     {
         executeImpl(num_threads, concurrency_control);
-
-        /// Log all of the LOGICAL_ERROR exceptions.
-        for (auto & node : graph->nodes)
-            if (node.exception && getExceptionErrorCode(node.exception) == ErrorCodes::LOGICAL_ERROR)
-                tryLogException(node.exception, log);
-
-        /// Rethrow the first exception.
-        for (auto & node : graph->nodes)
-            if (node.exception)
-                std::rethrow_exception(node.exception);
-
-        /// Exception which happened in executing thread, but not at processor.
-        tasks.rethrowFirstThreadException();
+        tasks.rethrowFirstThreadException(log);
     }
     catch (...)
     {
         span.addAttribute(DB::ExecutionStatus::fromCurrentException());
 
 #ifndef NDEBUG
-        LOG_TRACE(log, "Exception while executing query. Current state:\n{}", dumpPipeline());
+        LOG_TRACE(log, "Exception while executing query. Current state:\n{}", graph->dump());
 #endif
         throw;
     }
@@ -253,9 +241,7 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
         return true;
 
     /// Execution can be stopped because of exception. Check and rethrow if any.
-    for (auto & node : graph->nodes)
-        if (node.exception)
-            std::rethrow_exception(node.exception);
+    tasks.rethrowFirstThreadException(log);
 
     finalizeExecution();
 
@@ -309,40 +295,28 @@ void PipelineExecutor::finalizeExecution()
     if (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser)
         return;
 
-    bool all_processors_finished = true;
-    for (auto & node : graph->nodes)
+    if (!graph->isAllFinished())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", graph->dump(), tasks.dump());
+
+    if (!read_progress_callback)
+        return;
+
+    for (const auto & processor : graph->getProcessors())
     {
-        if (node.status != ExecutingGraph::ExecStatus::Finished)
+        /// Some executors might have reported progress as part of their finish() call
+        if (auto read_progress = processor->getReadProgress())
         {
-            /// Single thread, do not hold mutex
-            all_processors_finished = false;
-            break;
-        }
-        if (node.processor() && read_progress_callback)
-        {
-            /// Some executors might have reported progress as part of their finish() call
-            /// For example, when reading from parallel replicas the coordinator will cancel the queries as soon as it
-            /// enough data (on LIMIT), but as the progress report is asynchronous it might not be reported until the
-            /// connection is cancelled and all packets drained
-            /// To cover these cases we check if there is any pending progress in the processors to report
-            if (auto read_progress = node.processor()->getReadProgress())
-            {
-                if (read_progress->counters.total_rows_approx)
-                    read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
+            if (read_progress->counters.total_rows_approx)
+                read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
 
-                if (read_progress->counters.total_bytes)
-                    read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
+            if (read_progress->counters.total_bytes)
+                read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
 
-                /// We are finalizing the execution, so no need to call onProgress if there is nothing to report
-                if (read_progress->counters.read_rows || read_progress->counters.read_bytes)
-                    read_progress_callback->onProgress(
-                        read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits);
-            }
+            /// We are finalizing the execution, so no need to call onProgress if there is nothing to report
+            if (read_progress->counters.read_rows || read_progress->counters.read_bytes)
+                read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits);
         }
     }
-
-    if (!all_processors_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
 }
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, WorkloadResources && resources)
@@ -399,12 +373,19 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 Queue async_queue;
 
                 /// Prepare processor after execution.
-                auto status = graph->updateNode(context.getTask(), queue, async_queue);
-                if (status == ExecutingGraph::UpdateNodeStatus::Exception)
+                bool updated = false;
+                try
+                {
+                    updated = graph->updateNode(context.getTask(), queue, async_queue) == ExecutingGraph::UpdateNodeStatus::Done;
+                }
+                catch (...)
+                {
+                    context.setException(std::current_exception());
                     cancel(ExecutionStatus::Exception);
+                }
 
                 /// Push other tasks to global queue.
-                if (status == ExecutingGraph::UpdateNodeStatus::Done)
+                if (updated)
                     spawn_count = tasks.pushTasks(queue, async_queue, context);
             }
 
@@ -734,42 +715,6 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
 
         throw;
     }
-}
-
-String PipelineExecutor::dumpPipeline() const
-{
-    for (const auto & node : graph->nodes)
-    {
-        {
-            WriteBufferFromOwnString buffer;
-            buffer << "(" << node.num_executed_jobs << " jobs";
-
-#ifndef NDEBUG
-            buffer << ", execution time: " << static_cast<double>(node.execution_time_ns) / 1e9 << " sec.";
-            buffer << ", preparation time: " << static_cast<double>(node.preparation_time_ns) / 1e9 << " sec.";
-#endif
-
-            buffer << ")";
-            node.processor()->setDescription(buffer.str());
-        }
-    }
-
-    std::vector<std::optional<IProcessor::Status>> statuses;
-    std::vector<IProcessor *> proc_list;
-    statuses.reserve(graph->nodes.size());
-    proc_list.reserve(graph->nodes.size());
-
-    for (const auto & node : graph->nodes)
-    {
-        proc_list.emplace_back(node.processor());
-        statuses.emplace_back(node.last_processor_status);
-    }
-
-    WriteBufferFromOwnString out;
-    printPipeline(graph->getProcessors(), statuses, out);
-    out.finalize();
-
-    return out.str();
 }
 
 }
