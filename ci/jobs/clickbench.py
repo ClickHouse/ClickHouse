@@ -71,10 +71,9 @@ def main():
         ]
 
         def configure_log_export(config_dir, var_lib_dir):
-            # `start_log_exports` guards on `log_export_host`, so an unconfigured
-            # export is a supported state. Returns truthy: `ClickHouseService`
-            # treats a hook returning exactly `False` as a failed hook. Only an
-            # unanswered fetch is tolerated; every other failure fails the hook.
+            # Without the credentials `setup_log_cluster.sh` creates no `_sender` table,
+            # so leaving the export unconfigured is a supported state. Returns truthy
+            # because `ClickHouseService` fails a hook that returns exactly `False`.
             try:
                 return ch.create_log_export_config(config_dir)
             except SecretFetchFailed as e:

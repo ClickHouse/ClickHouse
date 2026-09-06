@@ -5,7 +5,3 @@
 -- correctness: result is the same regardless of the setting
 0
 0
--- legacy path, setting on: exact subcolumn size, cheap tup.small first
-1
--- legacy path, setting off: top-level column size, cheap medium first
-0
