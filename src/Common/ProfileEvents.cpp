@@ -1001,6 +1001,7 @@ The server successfully detected this situation and will download merged part fr
     M(AdaptiveAggregationStagedBytes, "How many key bytes the adaptive aggregation staged for the merge-time drain.", ValueType::Bytes) \
     M(AdaptiveAggregationSealedChunks, "How many coalesced chunks the adaptive aggregation sealed from buffered staging batches.", ValueType::Number) \
     M(AdaptiveAggregationStagedChunkSplits, "How many staged chunks the adaptive aggregation cut along bucket boundaries at publication because one chunk's drain was estimated over the pressure part bound.", ValueType::Number) \
+    M(AdaptiveAggregationStagedChunkPiecesOverBound, "How many pieces of a cut staged chunk the adaptive aggregation published still over the bound the chunk was cut to meet. A piece is a range of whole buckets, so this is a single bucket whose records alone are over the bound; such a piece is claimed whole, and its drain can overshoot the pressure part by that much.", ValueType::Number) \
     M(AdaptiveAggregationSealNormalizations, "How many staged argument columns the adaptive aggregation seal normalized from a wrapped representation (Const, Replicated, Sparse, LowCardinality) to the dense form the drain consumes.", ValueType::Number) \
     M(AdaptiveAggregationDrainedRecords, "How many delayed records the adaptive aggregation drained into the shared table at merge time.", ValueType::Number) \
     M(AdaptiveAggregationPressureSweeps, "How many times the adaptive aggregation drained staged records early because of memory pressure.", ValueType::Number) \

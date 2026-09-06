@@ -30,6 +30,7 @@ namespace ProfileEvents
 {
     extern const Event AggregationOptimizedEqualRangesOfKeys;
     extern const Event AdaptiveAggregationThaws;
+    extern const Event AdaptiveAggregationStagedChunkPiecesOverBound;
     extern const Event AdaptiveAggregationProbeBypasses;
     extern const Event AdaptiveAggregationStagedRecords;
     extern const Event AdaptiveAggregationStagedRecordsMerged;
@@ -1575,9 +1576,12 @@ static size_t stagedChunkBytes(const StagedChunk & chunk)
 /// charges a whole chunk but by size rather than allocation, a slice having no allocation of its
 /// own: the routing hashes, the key bytes (twice for variable-width keys, for the arena copy a
 /// drain makes beside them) and their offsets, then the payload - the run lengths, or the
-/// argument columns prorated by records, since their values are gathered in the chunk's record
-/// order but their bytes are not indexed by it. Keys route by hash, so the buckets share the
-/// argument bytes about evenly and the proration is close.
+/// argument columns, record by record. The argument bytes are summed per record rather than
+/// prorated by the record count, because a variable-width argument may put most of a chunk's
+/// bytes into a few records, and those records may share a bucket range - a piece sized by the
+/// average would then come out over the bound it was cut to meet. The per-record walk is a
+/// virtual call per record and column, paid only on the rare path that cuts a chunk, and once
+/// per record of it: the bucket ranges are disjoint.
 static size_t stagedRecordRangeBytes(const StagedChunk & chunk, size_t begin, size_t end)
 {
     const size_t records = end - begin;
@@ -1589,10 +1593,10 @@ static size_t stagedRecordRangeBytes(const StagedChunk & chunk, size_t begin, si
     if (chunk.countsOnly())
         return bytes + records * sizeof(UInt32);
 
-    const size_t total_records = chunk.keys.size();
     for (const auto & column : std::get<StagedChunk::AggregatePayload>(chunk.payload).argument_columns)
         if (column)
-            bytes += static_cast<size_t>(static_cast<UInt128>(column->byteSize()) * records / total_records);
+            for (size_t i = begin; i < end; ++i)
+                bytes += column->byteSizeAt(i);
     return bytes;
 }
 
@@ -1702,7 +1706,17 @@ std::vector<MutableStagedChunkPtr> Aggregator::splitStagedChunkAtPartBound(
     std::vector<MutableStagedChunkPtr> pieces;
     pieces.reserve(ranges.size());
     for (const auto & [bucket_begin, bucket_end] : ranges)
+    {
         pieces.push_back(sliceStagedChunk(chunk, bucket_begin, bucket_end));
+
+        /// The piece is measured again as a whole, the way its range was measured bucket by
+        /// bucket, so a piece that comes out over the bound is counted: with the range sizing
+        /// exact, that can only be a single bucket that is over the bound on its own.
+        const auto & piece = *pieces.back();
+        const size_t piece_records = piece.keys.size();
+        if (estimateAdaptiveDrainBytes(type, piece_records, stagedRecordRangeBytes(piece, 0, piece_records)) > chunk_bound)
+            ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedChunkPiecesOverBound);
+    }
     return pieces;
 }
 
