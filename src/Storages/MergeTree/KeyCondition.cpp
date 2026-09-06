@@ -1220,9 +1220,14 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 res = &inverted_dag.addFunction(node.function_base, children, "");
                 handled_inversion = true;
             }
-            else if (name == "materialize")
+            else if (name == "materialize" && !isNothing(removeNullable(node.result_type)))
             {
                 /// Remove "materialize" from index analysis.
+                ///
+                /// Except over a `Nothing`, where removing it turns a non-constant argument into a
+                /// constant one and a function above it - `assumeNotNull(materialize(NULL))` - then
+                /// folds and throws while trying to build a non-empty `Nothing` column. Index analysis
+                /// learns nothing from such an argument anyway.
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
 
                 /// `need_inversion` was already pushed into the child; avoid adding an extra `not()` wrapper

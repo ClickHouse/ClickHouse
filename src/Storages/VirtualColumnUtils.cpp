@@ -788,9 +788,37 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     auto index_hint_dag = index_hint->getActions().clone();
                     ActionsDAG::NodeRawConstPtrs atoms;
                     for (const auto & output : index_hint_dag.getOutputs())
-                        if (const auto * child_copy
-                            = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, context, allow_partial_result))
-                            atoms.push_back(child_copy);
+                    {
+                        const auto * child_copy
+                            = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, context, allow_partial_result);
+                        if (!child_copy)
+                            continue;
+
+                        /// A hint atom that folds to a constant `NULL`, or that is `Nothing`-typed,
+                        /// tells index analysis nothing, and converting it to the hint's result type
+                        /// below fails. Drop it, the way an atom that cannot be evaluated here is
+                        /// dropped - a hint may only narrow the read, never fail the query.
+                        if (child_copy->column && child_copy->column->onlyNull())
+                            continue;
+
+                        if (isNothing(removeNullable(child_copy->result_type)))
+                            continue;
+
+                        /// A constant atom has to be taken by truthiness, not by value: casting it to
+                        /// the hint's `UInt8` result type below narrows a truthy constant that does not
+                        /// fit - `indexHint(256)` became an always-false hint and pruned every granule.
+                        if (child_copy->column && isColumnConst(*child_copy->column))
+                        {
+                            const auto & value = assert_cast<const ColumnConst &>(*child_copy->column).getDataColumn();
+                            if (!value.isNullAt(0) && value.getBool(0))
+                            {
+                                auto uint8_type = std::make_shared<DataTypeUInt8>();
+                                child_copy = &index_hint_dag.addColumn(uint8_type->createColumnConst(1, Field(1u)), uint8_type, "1");
+                            }
+                        }
+
+                        atoms.push_back(child_copy);
+                    }
 
                     if (!atoms.empty())
                     {
