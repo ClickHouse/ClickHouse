@@ -79,6 +79,7 @@ SIMPLE_ENTRIES = [
 ]
 SIMPLE_ARCHIVES = {
     "/data/simple_archive.zip": make_zip_file(SIMPLE_ENTRIES),
+    "/data/header_archive.zip": make_zip_file(SIMPLE_ENTRIES),
     "/data/simple_archive.tar": make_tar_file(SIMPLE_ENTRIES),
     "/data/simple_archive.tar.gz": make_tar_file(SIMPLE_ENTRIES, "w:gz"),
 }
@@ -153,6 +154,14 @@ class RequestHandler(BaseHTTPRequestHandler):
             return SHARD_1_ARCHIVE
         return None
 
+    def _reject_archive_request_without_header(self, parsed_url):
+        if parsed_url.path != "/data/header_archive.zip" or self.headers.get("X-Test-Header") == "1":
+            return False
+
+        self.send_response(403)
+        self.end_headers()
+        return True
+
     def _page_cache_identity_tsv_for_request(self, parsed_url):
         # Two web sources (`?shard=0` / `?shard=1`) expose the same object path with the same ETag
         # but different contents, so the page cache must key on the web source identity (the shard
@@ -201,6 +210,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         self._record_request("HEAD", path)
+        if self._reject_archive_request_without_header(parsed):
+            return
         page_cache_identity_tsv = self._page_cache_identity_tsv_for_request(parsed)
         if page_cache_identity_tsv is not None:
             self.send_response(200)
@@ -326,6 +337,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         self._record_request("GET", path)
+        if self._reject_archive_request_without_header(parsed):
+            return
         page_cache_identity_tsv = self._page_cache_identity_tsv_for_request(parsed)
         if page_cache_identity_tsv is not None:
             self.send_response(200)

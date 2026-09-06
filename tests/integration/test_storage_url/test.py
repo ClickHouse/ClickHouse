@@ -648,6 +648,38 @@ def test_url_archive_without_url_wildcards():
         "'http://resolver:8087/data/simple_archive.7z :: example*.csv', "
         "'CSV', 'id UInt32, data String')"
     ).strip() == "10"
+    for process_on_multiple_nodes in (0, 1):
+        assert node1.query(
+            "SELECT sum(value) FROM urlCluster("
+            "'test_cluster_two_shards', "
+            "'http://resolver:8087/data/simple_archive.zip :: *.csv', "
+            "'CSV', 'value UInt64') "
+            f"SETTINGS cluster_function_process_archive_on_multiple_nodes={process_on_multiple_nodes}"
+        ).strip() == "3"
+
+    assert node1.query(
+        "SELECT sum(value) FROM urlCluster("
+        "'test_cluster_two_shards', "
+        "'http://resolver:8087/data/simple_archive.tar :: *.csv', "
+        "'CSV', 'value UInt64')"
+    ).strip() == "3"
+    assert node1.query(
+        "SELECT sum(id) FROM urlCluster("
+        "'test_cluster_two_shards', "
+        "'http://resolver:8087/data/simple_archive.7z :: example*.csv', "
+        "'CSV', 'id UInt32, data String')"
+    ).strip() == "10"
+    assert node1.query(
+        "SELECT sum(c1) FROM urlCluster("
+        "'test_cluster_two_shards', "
+        "'http://resolver:8087/data/simple_archive.zip :: eod.csv')"
+    ).strip() == "3"
+    assert node1.query(
+        "SELECT sum(value) FROM urlCluster("
+        "'test_cluster_two_shards', "
+        "'http://resolver:8087/data/header_archive.zip :: eod.csv', "
+        "'CSV', 'value UInt64', headers('X-Test-Header'='1'))"
+    ).strip() == "3"
 
     table_name = "url_archive_empty_as"
     node1.query(f"DROP TABLE IF EXISTS {table_name}")

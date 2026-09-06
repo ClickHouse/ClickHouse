@@ -100,6 +100,19 @@ namespace
     }
 }
 
+std::shared_ptr<StorageWebConfiguration> TableFunctionURL::createWebObjectStorageConfiguration(
+    const String & source,
+    const String & format_,
+    const String & structure_,
+    const String & compression_method_,
+    ContextPtr context) const
+{
+    auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
+    auto engine_args = makeWebObjectStorageEngineArgs(source, format_, structure_, compression_method_, configuration.headers);
+    StorageObjectStorageConfiguration::initialize(*object_storage_configuration, engine_args, context, /* with_table_structure */ true);
+    return object_storage_configuration;
+}
+
 VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
@@ -367,10 +380,8 @@ StoragePtr TableFunctionURL::getStorage(
     {
         if (use_web_wildcard)
             checkExperimentalURLWildcardFromIndexPages(context);
-        auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
-
-        auto engine_args = makeWebObjectStorageEngineArgs(source, format_, structure, compression_method_, configuration.headers);
-        StorageObjectStorageConfiguration::initialize(*object_storage_configuration, engine_args, context, /* with_table_structure */ true);
+        auto object_storage_configuration
+            = createWebObjectStorageConfiguration(source, format_, structure, compression_method_, context);
 
         ObjectStoragePtr object_storage = object_storage_configuration->createObjectStorage(context, /* is_readonly */ true, std::nullopt);
 
@@ -432,9 +443,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
             if (use_web_wildcard)
                 checkExperimentalURLWildcardFromIndexPages(context);
 
-            auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
-            auto engine_args = makeWebObjectStorageEngineArgs(filename, format, structure, compression_method, configuration.headers);
-            StorageObjectStorageConfiguration::initialize(*object_storage_configuration, engine_args, context, /* with_table_structure */ true);
+            auto object_storage_configuration
+                = createWebObjectStorageConfiguration(filename, format, structure, compression_method, context);
             object_storage_configuration->check(context);
 
             auto object_storage = object_storage_configuration->createObjectStorage(context, /* is_readonly */ true, std::nullopt);

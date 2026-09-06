@@ -2,6 +2,11 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Common/Exception.h>
+#include <Core/Settings.h>
+#include <IO/Archives/ArchiveUtils.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Storages/ObjectStorage/Web/Configuration.h>
 #include <TableFunctions/registerTableFunctions.h>
 
 namespace DB
@@ -9,43 +14,117 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace Setting
+{
+    extern const SettingsBool allow_archive_path_syntax;
 }
 
 namespace
 {
-    void checkURLClusterDoesNotUseIndexPageWildcards(const String & filename, const StorageURL::Configuration & configuration)
-    {
-        if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "`urlCluster` does not support wildcard expansion from HTTP index pages");
-    }
+struct WebObjectStorageUsage
+{
+    bool has_url_wildcards;
+    bool has_archive_pattern;
+};
+
+WebObjectStorageUsage getWebObjectStorageUsage(
+    const String & filename, const StorageURL::Configuration & configuration, ContextPtr context)
+{
+    String url = filename;
+    std::optional<String> archive_pattern;
+    /// When archive syntax is disabled, `::` and everything after it deliberately remain part of
+    /// the ordinary URL. In particular, glob characters there retain their normal URL semantics.
+    if (context->getSettingsRef()[Setting::allow_archive_path_syntax])
+        std::tie(url, archive_pattern) = getURIAndArchivePattern(filename);
+
+    if (archive_pattern && !configuration.http_method.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Archive path syntax is not supported with a custom HTTP method");
+
+    return {
+        .has_url_wildcards = configuration.http_method.empty() && urlPathHasListableGlobs(url),
+        .has_archive_pattern = archive_pattern.has_value(),
+    };
+}
 }
 
 ColumnsDescription TableFunctionURLCluster::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
-    checkURLClusterDoesNotUseIndexPageWildcards(filename, configuration);
+    if (getWebObjectStorageUsage(filename, configuration, context).has_url_wildcards)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "`urlCluster` does not support wildcard expansion from HTTP index pages");
+
     return TableFunctionURL::getActualTableStructure(context, is_insert_query);
 }
 
 StoragePtr TableFunctionURLCluster::getStorage(
-    const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
-    const std::string & table_name, const String & /*compression_method_*/, bool /*is_insert_query*/) const
+    const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr context,
+    const std::string & table_name, const String & compression_method_, bool /*is_insert_query*/) const
 {
-    checkURLClusterDoesNotUseIndexPageWildcards(filename, configuration);
+    const auto usage = getWebObjectStorageUsage(source, configuration, context);
+    if (usage.has_url_wildcards)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "`urlCluster` does not support wildcard expansion from HTTP index pages");
+
+    if (usage.has_archive_pattern)
+    {
+        /// `structure` has no corresponding `getStorage` argument. It is the value parsed by
+        /// `ITableFunctionFileLike` together with the source, format, and compression arguments.
+        auto object_storage_configuration
+            = createWebObjectStorageConfiguration(source, format_, structure, compression_method_, context);
+        auto object_storage = object_storage_configuration->createObjectStorage(context, /* is_readonly */ true, std::nullopt);
+
+        if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        {
+            /// Workers always use distributed processing to request tasks from the initiator.
+            /// `cluster_function_process_archive_on_multiple_nodes` changes whether those tasks
+            /// contain individual files or whole archives, not whether workers request tasks.
+            return std::make_shared<StorageObjectStorage>(
+                object_storage_configuration,
+                object_storage,
+                context,
+                StorageID(getDatabaseName(), table_name),
+                columns,
+                ConstraintsDescription{},
+                /* comment */ String{},
+                /* format_settings */ std::nullopt,
+                /* mode */ LoadingStrictnessLevel::CREATE,
+                /* catalog */ nullptr,
+                /* if_not_exists */ false,
+                /* is_datalake_query */ false,
+                /* distributed_processing */ true,
+                /* partition_by */ nullptr,
+                /* order_by */ nullptr,
+                /* is_table_function */ true,
+                /* lazy_init */ true);
+        }
+
+        return std::make_shared<StorageObjectStorageCluster>(
+            cluster_name,
+            object_storage_configuration,
+            object_storage,
+            StorageID(getDatabaseName(), table_name),
+            columns,
+            ConstraintsDescription{},
+            /* partition_by */ nullptr,
+            context,
+            /* is_table_function */ true);
+    }
 
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         //On worker node this uri won't contain globs
         return std::make_shared<StorageURL>(
-            filename,
+            source,
             StorageID(getDatabaseName(), table_name),
-            format,
+            format_,
             std::nullopt /*format settings*/,
             columns,
             ConstraintsDescription{},
             String{},
             context,
-            compression_method,
+            compression_method_,
             configuration.headers,
             configuration.http_method,
             nullptr,
@@ -55,9 +134,9 @@ StoragePtr TableFunctionURLCluster::getStorage(
     return std::make_shared<StorageURLCluster>(
         context,
         cluster_name,
-        filename,
-        format,
-        compression_method,
+        source,
+        format_,
+        compression_method_,
         StorageID(getDatabaseName(), table_name),
         getActualTableStructure(context, true),
         ConstraintsDescription{},
@@ -72,7 +151,7 @@ Allows processing files from URL in parallel from many nodes in a specified clus
 ## Syntax {#syntax}
 
 ```sql
-urlCluster(cluster_name, URL, format, structure)
+urlCluster(cluster_name, URL [,format] [,structure] [,compression_method] [,headers])
 ```
 
 ## Arguments {#arguments}
@@ -83,6 +162,8 @@ urlCluster(cluster_name, URL, format, structure)
 | `URL`          | HTTP or HTTPS server address, which can accept `GET` requests. Type: [String](/reference/data-types/string).                               |
 | `format`       | [Format](/reference/formats/index) of the data. Type: [String](/reference/data-types/string).                                                |
 | `structure`    | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string). |
+| `compression_method` | Compression method. Supports the same values and automatic suffix detection as [`url`](/reference/functions/table-functions/url). |
+| `headers`      | Optional HTTP headers in `headers('key'='value')` format. |
 
 ## Returned value {#returned-value}
 
@@ -113,6 +194,20 @@ if __name__ == "__main__":
 ```sql
 SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column1 String, column2 UInt32')
 ```
+
+## Working with archives {#working-with-archives}
+
+Like `url`, `s3Cluster`, and `s3`, `urlCluster` can read files from remote ZIP, TAR, and 7Z archives by separating the archive URL and the path inside it with `::`:
+
+```sql
+SELECT *
+FROM urlCluster(
+    'cluster_simple',
+    'https://example.com/dataset.zip :: data/*.csv'
+);
+```
+
+The archive is distributed using the same `StorageObjectStorageCluster` implementation as `s3Cluster`. The [cluster_function_process_archive_on_multiple_nodes](/operations/settings/settings#cluster_function_process_archive_on_multiple_nodes) setting controls whether files from one archive can be processed on multiple cluster nodes.
 
 ## Globs in URL {#globs-in-url}
 
