@@ -9,6 +9,8 @@
 #include <Disks/IDisk.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskEncrypted.h>
+#include <Disks/SingleDiskVolume.h>
+#include <Disks/StoragePolicy.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -54,6 +56,26 @@ protected:
         settings->disk_path = path;
         encrypted_disk = std::make_shared<DiskEncrypted>("encrypted_disk", std::move(settings));
         return encrypted_disk;
+    }
+
+    static void configureEncryptedDisk(
+        Poco::Util::XMLConfiguration & config,
+        const String & prefix,
+        const String & wrapped_disk,
+        const std::optional<String> & path)
+    {
+        config.setString(prefix + ".key", "1234567890123456");
+        config.setString(prefix + ".disk", wrapped_disk);
+        if (path)
+            config.setString(prefix + ".path", *path);
+    }
+
+    static std::shared_ptr<DiskEncrypted> makeConfiguredEncryptedDisk(
+        const String & name,
+        const Poco::Util::XMLConfiguration & config,
+        const DisksMap & disks)
+    {
+        return std::make_shared<DiskEncrypted>(name, config, name, disks);
     }
 
     String getFileNames()
@@ -481,4 +503,191 @@ TEST_F(DiskEncryptedTest, DoubleEncrypted)
     auto double_encrypted_disk = makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", single_encrypted_disk);
 
     testSeekAndReadUntilPosition(encrypted_disk, "a.txt", {});
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationAllowsSameDelegateAndExplicitPathInDifferentPolicies)
+{
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "data/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "data/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    auto encrypted1 = makeConfiguredEncryptedDisk("encrypted1", *config, disks);
+    disks.emplace("encrypted1", encrypted1);
+    auto encrypted2 = makeConfiguredEncryptedDisk("encrypted2", *config, disks);
+
+    EXPECT_NO_THROW(StoragePolicy("policy1", Volumes{std::make_shared<SingleDiskVolume>("volume1", encrypted1)}, 0.0));
+    EXPECT_NO_THROW(StoragePolicy("policy2", Volumes{std::make_shared<SingleDiskVolume>("volume2", encrypted2)}, 0.0));
+}
+
+TEST_F(DiskEncryptedTest, StoragePolicyRejectsSameDelegateAndExplicitPath)
+{
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "data/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "data/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    auto encrypted1 = makeConfiguredEncryptedDisk("encrypted1", *config, disks);
+    disks.emplace("encrypted1", encrypted1);
+    auto encrypted2 = makeConfiguredEncryptedDisk("encrypted2", *config, disks);
+
+    Volumes volumes{
+        std::make_shared<SingleDiskVolume>("volume1", encrypted1),
+        std::make_shared<SingleDiskVolume>("volume2", encrypted2),
+    };
+    EXPECT_THROW(StoragePolicy("policy", std::move(volumes), 0.1), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, StoragePolicyRejectsSameNamespaceOverDifferentDelegates)
+{
+    auto nested_local_disk = std::make_shared<DiskLocal>("nested_local_disk", getDirectory() + "data/");
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "nested_local_disk", "encrypted/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "data/encrypted/");
+
+    DisksMap disks{{"local_disk", local_disk}, {"nested_local_disk", nested_local_disk}};
+    auto encrypted1 = makeConfiguredEncryptedDisk("encrypted1", *config, disks);
+    disks.emplace("encrypted1", encrypted1);
+    auto encrypted2 = makeConfiguredEncryptedDisk("encrypted2", *config, disks);
+
+    Volumes volumes{
+        std::make_shared<SingleDiskVolume>("volume1", encrypted1),
+        std::make_shared<SingleDiskVolume>("volume2", encrypted2),
+    };
+    EXPECT_THROW(StoragePolicy("policy", std::move(volumes), 0.1), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsAbsolutePath)
+{
+    /// An absolute `path` would escape the wrapped disk: `DiskLocal` joins paths with `fs::path(root) / path`,
+    /// and `fs::path::operator/` discards the root when the right-hand side is absolute. Such a path must be rejected
+    /// before storage-policy namespace validation because it violates the delegate boundary.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "/data/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted1", *config, disks), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, StoragePolicyRejectsTraversalAliasOfSamePath)
+{
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "a/../b/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "b/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    auto encrypted1 = makeConfiguredEncryptedDisk("encrypted1", *config, disks);
+    disks.emplace("encrypted1", encrypted1);
+    auto encrypted2 = makeConfiguredEncryptedDisk("encrypted2", *config, disks);
+
+    Volumes volumes{
+        std::make_shared<SingleDiskVolume>("volume1", encrypted1),
+        std::make_shared<SingleDiskVolume>("volume2", encrypted2),
+    };
+    EXPECT_THROW(StoragePolicy("policy", std::move(volumes), 0.1), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsPathEscapingDelegateRoot)
+{
+    /// A relative `path` that escapes the delegate's root via `..` lands outside the wrapped disk, just like an
+    /// absolute path and breaks isolation. It must be rejected.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "../escape/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted1", *config, disks), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsSymlinkEscapingDelegateRoot)
+{
+    const fs::path delegate_root = fs::path(getDirectory()) / "delegate";
+    const fs::path outside_root = fs::path(getDirectory()) / "outside";
+    fs::create_directories(delegate_root);
+    fs::create_directories(outside_root);
+    fs::create_directory_symlink(outside_root, delegate_root / "link");
+
+    auto delegate_disk = std::make_shared<DiskLocal>("delegate_disk", delegate_root);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "delegate_disk", "link/encrypted/");
+
+    DisksMap disks{{"delegate_disk", delegate_disk}};
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted1", *config, disks), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationAllowsDifferentPathsOrDelegates)
+{
+    auto other_local_disk = std::make_shared<DiskLocal>("other_local_disk", getDirectory() + "other/");
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "data/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "other_data/");
+    configureEncryptedDisk(*config, "encrypted3", "other_local_disk", "data/");
+
+    DisksMap disks{{"local_disk", local_disk}, {"other_local_disk", other_local_disk}};
+    auto encrypted1 = makeConfiguredEncryptedDisk("encrypted1", *config, disks);
+    disks.emplace("encrypted1", encrypted1);
+    auto encrypted2 = makeConfiguredEncryptedDisk("encrypted2", *config, disks);
+    disks.emplace("encrypted2", encrypted2);
+    auto encrypted3 = makeConfiguredEncryptedDisk("encrypted3", *config, disks);
+
+    Volumes volumes{
+        std::make_shared<SingleDiskVolume>("volume1", encrypted1),
+        std::make_shared<SingleDiskVolume>("volume2", encrypted2),
+        std::make_shared<SingleDiskVolume>("volume3", encrypted3),
+    };
+    EXPECT_NO_THROW(StoragePolicy("policy", std::move(volumes), 0.1));
+}
+
+TEST_F(DiskEncryptedTest, StoragePolicyAllowsEncryptedWithoutPathAsOnlyDisk)
+{
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", std::nullopt);
+
+    DisksMap disks{{"local_disk", local_disk}};
+    auto encrypted1 = makeConfiguredEncryptedDisk("encrypted1", *config, disks);
+
+    EXPECT_NO_THROW(StoragePolicy("policy", Volumes{std::make_shared<SingleDiskVolume>("volume", encrypted1)}, 0.0));
+}
+
+TEST_F(DiskEncryptedTest, StoragePolicyRejectsDelegateAndEncryptedWithoutPath)
+{
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", std::nullopt);
+
+    DisksMap disks{{"local_disk", local_disk}};
+    auto encrypted1 = makeConfiguredEncryptedDisk("encrypted1", *config, disks);
+
+    Volumes volumes{
+        std::make_shared<SingleDiskVolume>("plain_volume", local_disk),
+        std::make_shared<SingleDiskVolume>("encrypted_volume", encrypted1),
+    };
+    EXPECT_THROW(StoragePolicy("policy", std::move(volumes), 0.1), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, StoragePolicyRejectsLocalDiskAliases)
+{
+    auto local_disk_alias = std::make_shared<DiskLocal>("local_disk_alias", getDirectory());
+
+    Volumes volumes{
+        std::make_shared<SingleDiskVolume>("volume1", local_disk),
+        std::make_shared<SingleDiskVolume>("volume2", local_disk_alias),
+    };
+    EXPECT_THROW(StoragePolicy("policy", std::move(volumes), 0.1), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, StoragePolicyRejectsLocalDiskSymlinkAliases)
+{
+    const fs::path real_path = fs::path(getDirectory()) / "real";
+    const fs::path alias_path = fs::path(getDirectory()) / "alias";
+    fs::create_directories(real_path);
+    fs::create_directory_symlink(real_path, alias_path);
+
+    auto real_disk = std::make_shared<DiskLocal>("real_disk", real_path);
+    auto alias_disk = std::make_shared<DiskLocal>("alias_disk", alias_path);
+    Volumes volumes{
+        std::make_shared<SingleDiskVolume>("volume1", real_disk),
+        std::make_shared<SingleDiskVolume>("volume2", alias_disk),
+    };
+    EXPECT_THROW(StoragePolicy("policy", std::move(volumes), 0.1), DB::Exception);
 }
