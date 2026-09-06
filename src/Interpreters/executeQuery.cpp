@@ -83,7 +83,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/executeQuery.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>

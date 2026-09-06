@@ -348,6 +348,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         typeid_cast<ColumnUInt64 &>(tid_tuple.getColumn(0)).getData().push_back(tid.start_csn);
         typeid_cast<ColumnUInt64 &>(tid_tuple.getColumn(1)).getData().push_back(tid.local_tid);
         typeid_cast<ColumnUUID &>(tid_tuple.getColumn(2)).getData().push_back(tid.host_id);
+        typeid_cast<ColumnInt64 &>(tid_tuple.getColumn(3)).getData().push_back(tid.session_node_version);
     }
 
     typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(uint8_t(query_result_cache_usage));

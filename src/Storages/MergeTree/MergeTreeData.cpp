@@ -67,7 +67,7 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Planner/TableExpressionData.h>
@@ -2262,11 +2262,11 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
                 return RollbackStatus::Committed;
 
             /// On-disk CSN is unresolved — consult TransactionLog (mirrors VersionMetadata::tryGetCSN).
-            csn = TransactionLog::getCSN(version_info.creation_tid);
+            csn = TransactionManager::getCSN(version_info.creation_tid);
             if (!csn
-                && TransactionLog::instance().tryGetRunningTransaction(version_info.creation_tid.getHash()) == nullptr)
+                && TransactionManager::instance().tryGetRunningTransaction(version_info.creation_tid.getHash()) == nullptr)
             {
-                csn = TransactionLog::getCSN(version_info.creation_tid);  /// re-check after the race window
+                csn = TransactionManager::getCSN(version_info.creation_tid);  /// re-check after the race window
                 if (!csn)
                     return RollbackStatus::RolledBack;
             }
@@ -2519,7 +2519,7 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
     if (!current_version_info.isRemoved())
     {
         TransactionInfoContext transaction_context{part->storage.getStorageID(), part->name};
-        part->version->setAndStoreNonTransactionalRemovalTID(transaction_context);
+        part->version->setAndStoreNonTransactionalRemovalTID(LockKind::REMOVAL, transaction_context);
     }
 }
 
@@ -4588,7 +4588,7 @@ size_t MergeTreeData::clearEmptyParts()
 
             /// Do not try to drop uncommitted parts. If the newest tx doesn't see it then it probably hasn't been committed yet
             if (!part->version->getInfo().creation_tid.isNonTransactional()
-                && !part->version->isVisible(TransactionLog::instance().getLatestSnapshot()))
+                && !part->version->isVisible(TransactionManager::instance().getLatestSnapshot()))
                 continue;
 
             parts_names_to_drop.emplace_back(part->name);
@@ -6884,7 +6884,7 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
     for (const DataPartPtr & part : remove)
     {
         if (part->version->getInfo().creation_csn != Tx::RolledBackCSN)
-            MergeTreeTransaction::removeOldPart(shared_from_this(), part, txn);
+            MergeTreeTransaction::removeOldPart(shared_from_this(), part, txn, LockKind::REMOVAL);
 
         if (part->getState() == MergeTreeDataPartState::Active)
         {
@@ -11071,7 +11071,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             /// If there's a covering part, the precommitted part will be marked as obsolete in NOEXCEPT_SCOPE below.
             if (!covering_part)
             {
-                MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
+                MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn, LockKind::REMOVAL);
                 /// Track successfully locked parts for cleanup in case a later iteration fails.
                 if (!txn)
                     locked_parts_to_cleanup.insert(locked_parts_to_cleanup.end(), covered_parts.begin(), covered_parts.end());

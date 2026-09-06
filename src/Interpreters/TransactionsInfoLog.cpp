@@ -81,7 +81,7 @@ void TransactionsInfoLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(thread_id);
 
     columns[i++]->insert(query_id);
-    columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
+    columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id, tid.session_node_version});
     columns[i++]->insert(tid.getHash());
 
     columns[i++]->insert(csn);
