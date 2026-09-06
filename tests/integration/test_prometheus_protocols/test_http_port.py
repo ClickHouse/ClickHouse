@@ -1,4 +1,5 @@
 import pytest
+from .pb2.prompb import types_pb2
 
 from helpers.cluster import ClickHouseCluster
 from .prometheus_test_utils import (
@@ -93,6 +94,27 @@ def test_main_http_prefixed_remote_read():
 
     metric_names = read_metric_names(metric_name, timestamp - 1, timestamp + 1)
     assert metric_name in metric_names
+
+
+def test_remote_read_with_empty_matching_label_matcher():
+    timestamp = 1_700_001_150.0
+    metric_name = "remote_read_empty_matching_label_matcher"
+    send_to_clickhouse([({"__name__": metric_name, "job": "test"}, {timestamp: 12.0})])
+
+    read_request = convert_read_request_to_protobuf(
+        "",
+        timestamp,
+        timestamp,
+        [(types_pb2.LabelMatcher.Type.RE, "job", ".*")],
+    )
+    read_response = receive_protobuf_from_remote_read(
+        node.ip_address, MAIN_HTTP_PORT, "/prometheus/api/v1/read", read_request
+    )
+
+    assert len(read_response.results) == 1
+    assert len(read_response.results[0].timeseries) == 1
+    labels = {label.name: label.value for label in read_response.results[0].timeseries[0].labels}
+    assert labels["__name__"] == metric_name
 
 
 def test_main_http_prefixed_query_api():

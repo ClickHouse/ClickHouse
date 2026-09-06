@@ -13,6 +13,7 @@
 #include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
@@ -113,7 +114,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
-    PrometheusQueryTree promql_query{getStringConstArgument(args[argument_index++], context, "promql_query"), timestamp_scale};
+    String promql_query_string = getStringConstArgument(args[argument_index++], context, "promql_query");
 
     PrometheusQueryEvaluationMode mode = {};
     DateTime64 start_time;
@@ -142,6 +143,8 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     }
 
     chassert(argument_index == args.size());
+
+    PrometheusQueryTree promql_query{promql_query_string, timestamp_scale};
 
     Configuration config;
     config.promql_query = std::make_shared<PrometheusQueryTree>(std::move(promql_query));
