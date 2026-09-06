@@ -63,10 +63,17 @@ MergeTreeReaderWide::MergeTreeReaderWide(
 {
     try
     {
+        /// Must be decided before any stream name is resolved: for a subcolumn absent from the part's
+        /// type, `getStreamNameForColumn` resolves an existing stream of the parent, so a check made
+        /// after resolution cannot tell the two apart.
+        columns_skipped_from_part.resize(columns_to_read.size());
+        for (size_t i = 0; i < columns_to_read.size(); ++i)
+            columns_skipped_from_part[i]
+                = isColumnDroppedByPendingMutation(i) || isSystemColumnInvalidated(i) || isSubcolumnMissingInPart(i);
+
         for (size_t i = 0; i < columns_to_read.size(); ++i)
         {
-            /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
-            if (!isColumnDroppedByPendingMutation(i) && !isSystemColumnInvalidated(i))
+            if (!columns_skipped_from_part[i])
                 addStreams(columns_to_read[i], serializations[i]);
         }
     }
@@ -127,7 +134,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
     /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
-        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+        if (columns_skipped_from_part[pos])
             continue;
 
         try
@@ -169,7 +176,7 @@ size_t MergeTreeReaderWide::readRows(
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+            if (columns_skipped_from_part[pos])
             {
                 res_columns[pos] = nullptr;
                 continue;
@@ -492,7 +499,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
         DeserializeBinaryBulkStateMap deserialize_state_map;
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+            if (columns_skipped_from_part[pos])
                 continue;
 
             try
@@ -686,6 +693,9 @@ std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColum
     std::unordered_map<String, std::vector<String>> column_to_streams;
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
+        if (columns_skipped_from_part[i])
+            continue;
+
         const auto & name_and_type = columns_to_read[i];
         const auto & serialization = serializations[i];
 

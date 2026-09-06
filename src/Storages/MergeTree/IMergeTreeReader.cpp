@@ -115,6 +115,31 @@ bool IMergeTreeReader::isSystemColumnInvalidated(size_t pos) const
     return data_part_info_for_read->isSystemColumnInvalidated(columns_to_read[pos].getNameInStorage());
 }
 
+bool IMergeTreeReader::isSubcolumnMissingInPart(size_t pos) const
+{
+    const auto & column_to_read = columns_to_read[pos];
+    if (!column_to_read.isSubcolumn())
+        return false;
+
+    /// The part's own columns list, not the Nested-collected view: a member of a Nested group is a
+    /// column in its own right, and asking the synthesized group type about it reports every member
+    /// the part lacks as a missing subcolumn, including one that is only awaiting offsets sharing.
+    auto storage_column_from_part = data_part_info_for_read->getColumnsDescription().tryGetColumn(
+        GetColumnsOptions::AllPhysical, column_to_read.getNameInStorage());
+    if (!storage_column_from_part)
+        return false;
+
+    /// The `Quantize` codec's custom serialization exposes companion `quantized`/`pq_codebook` subcolumns that
+    /// the part's plain columns list cannot represent - they round-trip to the bare type name and are lost, so
+    /// the subcolumn would be treated as missing and recomputed/defaulted after a reload. Decide presence from
+    /// the requested column's storage type in that case. Restricted to that specific serialization so it does
+    /// not change presence decisions for ordinary subcolumns (e.g. of sparse columns).
+    const auto * custom = column_to_read.getTypeInStorage()->getCustomSerialization();
+    const bool is_quantize = custom && typeid(*custom) == typeid(SerializationQuantizedVector);
+    const auto & type_for_subcolumn = is_quantize ? column_to_read.getTypeInStorage() : storage_column_from_part->type;
+    return !type_for_subcolumn->hasSubcolumn(column_to_read.getSubcolumnName());
+}
+
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
 {
     chassert(columns.size() == getColumns().size());
