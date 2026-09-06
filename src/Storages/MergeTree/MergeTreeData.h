@@ -1310,6 +1310,10 @@ public:
     DiskPtr tryGetDiskForDetachedPart(const String & part_name) const;
     DiskPtr getDiskForDetachedPart(const String & part_name) const;
 
+    /// True if detached/<dir_name> exists on one of the disks getDetachedParts() enumerates, i.e. the
+    /// name is already taken in the namespace ATTACH PARTITION resolves against.
+    bool isDetachedNameTakenOnEnumerableDisk(const String & dir_name) const;
+
     bool storesDataOnDisk() const override { return !isStaticStorage(); }
     Strings getDataPaths() const override;
 

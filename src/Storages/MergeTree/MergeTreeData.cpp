@@ -11944,6 +11944,23 @@ DiskPtr MergeTreeData::getDiskForDetachedPart(const String & part_name) const
     throw DB::Exception(ErrorCodes::BAD_DATA_PART_NAME, "Detached part \"{}\" not found", part_name);
 }
 
+bool MergeTreeData::isDetachedNameTakenOnEnumerableDisk(const String & dir_name) const
+{
+    for (const auto & disk : getDisks())
+    {
+        /// Deliberately the same disks getDetachedParts() enumerates. A name occupied only on a disk
+        /// it skips is not a name that ATTACH PARTITION can ever offer, so treating it as taken would
+        /// push a live part to a '_tryN' directory that the very same enumeration then filters out.
+        if (disk->isReadOnly() || disk->isWriteOnce())
+            continue;
+
+        if (disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME / dir_name))
+            return true;
+    }
+
+    return false;
+}
+
 
 Strings MergeTreeData::getDataPaths() const
 {

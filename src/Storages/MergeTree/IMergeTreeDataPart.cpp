@@ -136,6 +136,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int EXPECTED_END_OF_FILE;
@@ -2946,7 +2947,13 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String 
     if (detached && parent_part)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot detach projection");
 
-    return getDataPartStorage().getRelativePathForPrefix(storage.log.load(), prefix, detached, broken);
+    /// detached/ is a table-wide namespace: it is enumerated across the disks of the storage policy,
+    /// so the name must be free on those too, not just on the disk this part happens to live on.
+    IDataPartStorage::NameTakenChecker name_taken_anywhere;
+    if (detached)
+        name_taken_anywhere = [this](const String & dir_name) { return storage.isDetachedNameTakenOnEnumerableDisk(dir_name); };
+
+    return getDataPartStorage().getRelativePathForPrefix(storage.log.load(), prefix, detached, broken, name_taken_anywhere);
 }
 
 std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix, bool broken) const
@@ -2968,10 +2975,12 @@ String IMergeTreeDataPart::getRelativePathOfActivePart() const
 
 void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_error)
 {
-    auto path_to_detach = getRelativePathForDetachedPart(prefix, /* broken */ false);
-    chassert(path_to_detach);
     try
     {
+        /// Picking the name is inside the try on purpose: it can fail to find a free one, and a
+        /// caller that opted into ignore_error must be able to skip such a detach too.
+        auto path_to_detach = getRelativePathForDetachedPart(prefix, /* broken */ false);
+        chassert(path_to_detach);
         renameTo(path_to_detach.value(), true);
     }
     /// This exceptions majority of cases:
@@ -2997,6 +3006,20 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_err
             // Don't throw when the destination is to the detached folder. It might be able to
             // recover in some cases, such as fetching parts into multi-disks while some of the
             // disks are broken.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        else
+            throw;
+    }
+    /// - no free directory name left in detached/ (all the '_tryN' candidates are taken)
+    catch (const Exception & e)
+    {
+        if (ignore_error && e.code() == ErrorCodes::DIRECTORY_ALREADY_EXISTS)
+        {
+            // A background or startup detach that cannot pick a usable name must be logged and
+            // skipped, not escalated: some of these callers terminate the server on an exception.
+            // Only that one code is tolerated: the block also covers the rename itself, and
+            // swallowing a storage failure there would forget the part while it is still in place.
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
         else
