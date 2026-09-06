@@ -361,10 +361,14 @@ std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings);
 
+/// Returns the name of a projection that replaced the table read (caller should re-run optimizations),
+/// or nullopt if the plan structure was not rewritten. Projections used only for filtering are recorded
+/// in applied_projection_names without triggering a rewrite.
 std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
-    const QueryPlanOptimizationSettings & optimization_settings);
+    const QueryPlanOptimizationSettings & optimization_settings,
+    std::unordered_set<String> & applied_projection_names);
 
 /// Returns `COUNT()` query directly from the text index posting metadata.
 bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
