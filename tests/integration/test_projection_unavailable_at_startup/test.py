@@ -66,6 +66,24 @@ def part_types(table):
     ).strip()
 
 
+def projection_dirs_in_active_parts(table):
+    """Which `<name>.proj` directories the table's active parts hold on disk.
+
+    `system.projection_parts` cannot answer this for a declaration that could not be analyzed: it
+    dereferences the analyzed description, which does not exist.
+    """
+    paths = node.query(
+        "SELECT path FROM system.parts"
+        f" WHERE database = 'dl' AND table = '{table}' AND active"
+    ).split()
+    found = []
+    for path in paths:
+        found += node.exec_in_container(
+            ["bash", "-c", f"ls -1 {path} | grep '\\.proj$' || true"]
+        ).split()
+    return sorted(found)
+
+
 def broken_projection_parts(table):
     return node.query(
         "SELECT count() FROM system.projection_parts"
@@ -152,6 +170,22 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     )
     node.query("INSERT INTO dl.t4 SELECT number, toString(number) FROM numbers(100)")
 
+    # `t5` is `t2`'s fixture on a Wide part, so a mutation that runs no writer takes the hardlink path
+    # and both obligations of `CLEAR PROJECTION` are observable at once.
+    node.query(
+        "CREATE TABLE dl.t5 (a UInt64, b String) ENGINE = MergeTree ORDER BY a"
+        " SETTINGS min_bytes_for_wide_part = 0"
+    )
+    node.query(
+        "ALTER TABLE dl.t5 ADD PROJECTION pp (SELECT b, a GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+    node.query(
+        "ALTER TABLE dl.t5 ADD PROJECTION qq (SELECT a, b GROUP BY 1, 2)",
+        settings=POSITIONAL,
+    )
+    node.query("INSERT INTO dl.t5 SELECT number, toString(number) FROM numbers(100)")
+
     # Armed: every declaration is analyzed and materialized.
     assert projections("t") == "1"
     assert projections("t2") == "2"
@@ -162,6 +196,9 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t4") == "2"
     assert active_projection_parts("t4") == "2"
     assert part_types("t4") == "Wide"
+    assert projections("t5") == "2"
+    assert active_projection_parts("t5") == "2"
+    assert part_types("t5") == "Wide"
 
     node.restart_clickhouse()
 
@@ -171,6 +208,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t2") == "0"
     assert projections("t3") == "0"
     assert projections("t4") == "1"  # only `qq` can be analyzed without the setting
+    assert projections("t5") == "0"
     assert node.query("SELECT count() FROM dl.t").strip() == "100"
     assert node.query("SELECT count() FROM dl.t2").strip() == "100"
 
@@ -225,15 +263,32 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     )
     assert "a projection with this name is declared but could not be analyzed" in error
 
+    # `CLEAR PROJECTION` carries the same command type as `DROP PROJECTION` and is exempt on purpose:
+    # `AlterCommands::apply` deliberately keeps the declaration when `clear` is set, so it changes
+    # projection data and no metadata that the unanalyzable declaration could be validated against.
+    # Both of `t5`'s declarations are still preserved, so one measurement covers both obligations of a
+    # mutation that runs no writer: the named projection's data goes, the other one's is carried
+    # forward.
+    some_before, all_before = event_value("MutationSomePartColumns"), event_value(
+        "MutationAllPartColumns"
+    )
+    assert projection_dirs_in_active_parts("t5") == ["pp.proj", "qq.proj"]
+    node.query("ALTER TABLE dl.t5 CLEAR PROJECTION qq", settings={"mutations_sync": 2})
+    # A Wide part with no writer takes the hardlink path, which is the arm that has to carry
+    # `pp.proj` forward; a full rewrite would drop both directories for an unrelated reason, so the
+    # counters pin which arm ran.
+    assert event_value("MutationSomePartColumns") == some_before + 1
+    assert event_value("MutationAllPartColumns") == all_before
+    assert "PROJECTION qq" in node.query("SHOW CREATE TABLE dl.t5")
+    assert projection_dirs_in_active_parts("t5") == ["pp.proj"]
+
     # Dropping is the way out, and it works one declaration at a time: the one that was not dropped is
     # still declared in the statement this ALTER rewrote.
     node.query("ALTER TABLE dl.t2 DROP PROJECTION pp")
     assert "PROJECTION qq" in node.query("SHOW CREATE TABLE dl.t2")
     assert declarations_on_disk("t2") == "1"
 
-    # `CLEAR PROJECTION` carries the same command type as `DROP PROJECTION` and is exempt on purpose:
-    # `AlterCommands::apply` deliberately keeps the declaration when `clear` is set, so it changes
-    # projection data and no metadata that the unanalyzable declaration could be validated against.
+    # The same exemption on a Compact part, whose mutation rewrites every column instead.
     node.query("ALTER TABLE dl.t2 CLEAR PROJECTION qq")
     assert "PROJECTION qq" in node.query("SHOW CREATE TABLE dl.t2")
 
