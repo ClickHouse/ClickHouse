@@ -36,6 +36,7 @@ namespace DB::FailPoints
 {
     extern const char azure_inject_forbidden_response[];
     extern const char azure_inject_forbidden_response_once[];
+    extern const char azure_inject_forbidden_response_on_put_once[];
     extern const char azure_inject_auth_failure_on_request[];
     extern const char azure_inject_auth_failure_on_request_once[];
     extern const char azure_inject_poco_timeout[];
@@ -173,6 +174,18 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::Send(
         injected->SetBodyStream(std::make_unique<EmptyBodyStream>());
         return injected;
     });
+
+    /// Test-only: transient 403 confined to blob uploads, so a concurrent read cannot consume the one-shot.
+    if (request.GetMethod() == Azure::Core::Http::HttpMethod::Put)
+    {
+        fiu_do_on(DB::FailPoints::azure_inject_forbidden_response_on_put_once,
+        {
+            auto injected = std::make_unique<Azure::Core::Http::RawResponse>(
+                1, 1, Azure::Core::Http::HttpStatusCode::Forbidden, "Forbidden (injected by failpoint)");
+            injected->SetBodyStream(std::make_unique<EmptyBodyStream>());
+            return injected;
+        });
+    }
 
     /// Test-only: throw AuthenticationException on the read path (production throws it from the SDK token policy).
     fiu_do_on(DB::FailPoints::azure_inject_auth_failure_on_request,
