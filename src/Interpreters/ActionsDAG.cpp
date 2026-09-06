@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/validateColumnType.h>
 #include <Functions/IFunction.h>
@@ -3156,6 +3157,21 @@ struct ConjunctionNodes
 /// Assuming predicate is a conjunction (probably, trivial).
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
 /// Allowed predicate is a predicate which can be calculated using only nodes from the allowed_nodes set.
+/// A lambda with only constant captures is materialized as a constant `ColumnFunction` holding its body.
+/// Such a column carries the non-determinism of the body, which is not visible on any function node.
+static bool columnHoldsNonDeterministicLambda(const ColumnPtr & column)
+{
+    if (!column)
+        return false;
+
+    const IColumn * inner_column = column.get();
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(inner_column))
+        inner_column = &column_const->getDataColumn();
+
+    const auto * column_function = typeid_cast<const ColumnFunction *>(inner_column);
+    return column_function && column_function->getFunction() && !column_function->getFunction()->isDeterministicInScopeOfQuery();
+}
+
 ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes, bool allow_non_deterministic_functions)
 {
     ConjunctionNodes conjunction;
@@ -3228,8 +3244,13 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
             if (cur.num_allowed_children == cur.node->children.size())
             {
                 bool is_deprecated_function = !allow_non_deterministic_functions
-                    && cur.node->type == ActionsDAG::ActionType::FUNCTION
-                    && !cur.node->function_base->isDeterministicInScopeOfQuery();
+                    && ((cur.node->type == ActionsDAG::ActionType::FUNCTION
+                         && !cur.node->function_base->isDeterministicInScopeOfQuery())
+                        /// A lambda whose captured columns are all constant is folded into a constant
+                        /// `ColumnFunction` holding its body, so a non-deterministic call inside it
+                        /// (e.g. `arrayExists(x -> rand(x) % 2 = 0, arr)`) is not on any function node.
+                        || (cur.node->type == ActionsDAG::ActionType::COLUMN
+                            && columnHoldsNonDeterministicLambda(cur.node->column)));
 
                 if (cur.node->type != ActionsDAG::ActionType::ARRAY_JOIN
                     && cur.node->type != ActionsDAG::ActionType::INPUT

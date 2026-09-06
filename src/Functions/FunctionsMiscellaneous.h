@@ -101,6 +101,34 @@ private:
 };
 
 /// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
+/// Checks a predicate over every function of a lambda body. A lambda inherits the properties of the
+/// functions it calls: without this, a non-deterministic call inside the body (e.g.
+/// `arrayExists(x -> rand(x) % 2 = 0, arr)`) is invisible to the consumers of those properties, and a
+/// filter holding it is moved across an aggregation or a JOIN, where it is evaluated a different
+/// number of times.
+inline bool lambdaBodySatisfies(const ActionsDAG & dag, bool (*predicate)(const IFunctionBase &))
+{
+    for (const auto & node : dag.getNodes())
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && !predicate(*node.function_base))
+            return false;
+    return true;
+}
+
+inline bool lambdaBodyIsDeterministic(const ActionsDAG & dag)
+{
+    return lambdaBodySatisfies(dag, [](const IFunctionBase & function) { return function.isDeterministic(); });
+}
+
+inline bool lambdaBodyIsDeterministicInScopeOfQuery(const ActionsDAG & dag)
+{
+    return lambdaBodySatisfies(dag, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
+}
+
+inline bool lambdaBodyIsStateful(const ActionsDAG & dag)
+{
+    return !lambdaBodySatisfies(dag, [](const IFunctionBase & function) { return !function.isStateful(); });
+}
+
 class FunctionExpression final : public IFunctionBase
 {
 public:
@@ -133,6 +161,15 @@ public:
     String getName() const override { return "FunctionExpression"; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool isDeterministic() const override { return lambdaBodyIsDeterministic(expression_actions->getActionsDAG()); }
+
+    bool isDeterministicInScopeOfQuery() const override
+    {
+        return lambdaBodyIsDeterministicInScopeOfQuery(expression_actions->getActionsDAG());
+    }
+
+    bool isStateful() const override { return lambdaBodyIsStateful(expression_actions->getActionsDAG()); }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return capture->return_type; }
@@ -291,6 +328,19 @@ public:
         }
         return true;
     }
+
+    /// A lambda is deterministic only if every function in its inner DAG is. Without this, a
+    /// non-deterministic call inside a lambda body (e.g. `arrayExists(x -> rand(x) % 2 = 0, arr)`) is
+    /// invisible to the consumers of these flags, and a filter holding it is moved across an
+    /// aggregation or a JOIN, where it is then evaluated a different number of times.
+    bool isDeterministic() const override { return lambdaBodyIsDeterministic(expression_actions->getActionsDAG()); }
+
+    bool isDeterministicInScopeOfQuery() const override
+    {
+        return lambdaBodyIsDeterministicInScopeOfQuery(expression_actions->getActionsDAG());
+    }
+
+    bool isStateful() const override { return lambdaBodyIsStateful(expression_actions->getActionsDAG()); }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
