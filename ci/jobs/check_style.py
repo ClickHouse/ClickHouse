@@ -349,6 +349,12 @@ CLICKHOUSE_DISKS_WRITE_RE = re.compile(
 # tests instead. The only acceptable additions are false positives - tests that only touch
 # their own scratch files - and they must say so in a comment.
 SERVER_DATA_MANIPULATION_EXCLUSIONS = {
+    # False positive: truncates one part metadata file (`checksums.txt`) to zero bytes, which is
+    # the exact state the fix has to survive, and does not copy or move anything - so the blob
+    # reference-counting hazard this check guards against cannot arise. The test is already tagged
+    # no-object-storage and no-shared-merge-tree, pins `part_storage_type = 'Full'`, asserts the
+    # path is absolute, and detaches the table around the edit.
+    "03599_empty_checksums_txt_not_fatal.sh",
     # False positive: writes only an mktemp scratch file under CLICKHOUSE_TMP.
     "04326_disks_app_read_checksums.sh",
 }
