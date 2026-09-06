@@ -225,9 +225,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
-    extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_merge_selecting_sleep_ms;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
+    extern const MergeTreeSettingsUInt64 min_unreserved_disk_space_for_merge;
     extern const MergeTreeSettingsUInt64 max_replicated_fetches_network_bandwidth;
     extern const MergeTreeSettingsUInt64 max_replicated_merges_in_queue;
     extern const MergeTreeSettingsUInt64 max_replicated_merges_with_ttl_in_queue;
@@ -4559,6 +4559,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     deduplicate,
                     deduplicate_by_columns,
                     cleanup,
+                    /*bypass_min_unreserved_space=*/false,
                     nullptr,
                     merge_predicate->getVersion(),
                     future_merged_part->merge_type);
@@ -4710,6 +4711,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     bool deduplicate,
     const Names & deduplicate_by_columns,
     bool cleanup,
+    bool bypass_min_unreserved_space,
     ReplicatedMergeTreeLogEntryData * out_log_entry,
     int32_t log_version,
     MergeType merge_type)
@@ -4750,6 +4752,7 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.deduplicate = deduplicate;
     entry.deduplicate_by_columns = deduplicate_by_columns;
     entry.cleanup = cleanup;
+    entry.bypass_min_unreserved_space = bypass_min_unreserved_space;
     entry.create_time = time(nullptr);
 
     for (const auto & part : parts)
@@ -6555,7 +6558,6 @@ bool StorageReplicatedMergeTree::optimize(
     };
 
     auto zookeeper = getZooKeeperAndAssertNotReadonly();
-    const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
     std::vector<ReplicatedMergeTreeLogEntryData> merge_entries;
 
@@ -6588,7 +6590,18 @@ bool StorageReplicatedMergeTree::optimize(
             {
                 if (partition_id.empty())
                 {
-                    UInt64 max_source_parts_bytes_for_merge = (*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
+                    /// Same limit the queue re-derives in shouldExecuteLogEntry: seeding the selector
+                    /// from the raw setting would enqueue an entry that is then postponed forever.
+                    UInt64 max_source_parts_bytes_for_merge = CompactionStatistics::getMaxSourcePartsBytesForMerge(*this);
+
+                    /// Zero means that no merge can be executed right now (same check as in StorageMergeTree):
+                    /// selecting parts anyway would enqueue an entry that the queue postpones forever.
+                    if (max_source_parts_bytes_for_merge == 0)
+                        return std::unexpected(SelectMergeFailure{
+                            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                            .explanation = PreformattedMessage::create("Current value of max_source_parts_bytes is zero"),
+                        });
+
                     UInt64 max_result_part_rows = CompactionStatistics::getMaxResultPartRowsCount(*this);
 
                     return merger_mutator.selectPartsToMerge(
@@ -6661,6 +6674,15 @@ bool StorageReplicatedMergeTree::optimize(
             }
 
             ReplicatedMergeTreeLogEntryData merge_entry;
+            /// A non-empty partition_id means the parts came from selectAllPartsToMergeWithinPartition,
+            /// i.e. this is an OPTIMIZE ... FINAL / OPTIMIZE ... PARTITION entry: those bypass
+            /// min_unreserved_disk_space_for_merge when selecting parts, so the queue must not re-apply
+            /// the headroom, or the entry is postponed forever (see #80006). The empty-partition
+            /// (plain OPTIMIZE) path selected parts under the headroom-respecting limit instead.
+            /// With the setting disabled there is no headroom to bypass, and the bit stays off the
+            /// wire so mixed-version rolling upgrades keep parsing OPTIMIZE entries.
+            const bool bypass_min_unreserved_space = !partition_id.empty()
+                && (*getSettings())[MergeTreeSetting::min_unreserved_disk_space_for_merge] > 0;
             CreateMergeEntryResult create_result = createLogEntryToMergeParts(
                 zookeeper,
                 select_merge_result.value()->parts,
@@ -6671,6 +6693,7 @@ bool StorageReplicatedMergeTree::optimize(
                 deduplicate,
                 deduplicate_by_columns,
                 cleanup,
+                bypass_min_unreserved_space,
                 &merge_entry,
                 merge_predicate->getVersion(),
                 select_merge_result.value()->merge_type);
