@@ -1288,32 +1288,43 @@ def parse_args():
     return parser.parse_args()
 
 
-def master_build_link(sha, build_type):
-    """Ask praktika where `MasterCI` published the build of master commit `sha`,
-    so that a later change of the prefix layout is picked up here for free."""
+def master_build_links(sha, build_type):
+    """Links to the build of master commit `sha`, newest layout first.
+
+    Ask praktika where `MasterCI` publishes builds now, so that a later change
+    of the prefix layout is picked up here for free. Commits older than
+    https://github.com/ClickHouse/ClickHouse/pull/110081 (2026-09) published
+    their builds one level up, without the normalized workflow name, and the
+    `release_base` baseline stays pinned to such a commit until the next release
+    branch is cut - keep probing the legacy path until then."""
     prefix = _Environment.get_s3_prefix_static(
         pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
     )
-    return f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{prefix}/{build_type}/clickhouse"
+    legacy_prefix = f"REFs/master/{sha}"
+    return [
+        f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/{p}/{build_type}/clickhouse"
+        for p in (prefix, legacy_prefix)
+    ]
+
+
+def find_master_build(commits, build_type):
+    for sha in commits:
+        for link in master_build_links(sha, build_type):
+            if Shell.check(f"curl -sfI {link} > /dev/null"):
+                return link
+    return None
 
 
 def find_prev_build(info, build_type):
-    commits = info.get_kv_data("master_track_commits_sha") or []
-    for sha in commits:
-        link = master_build_link(sha, build_type)
-        if Shell.check(f"curl -sfI {link} > /dev/null"):
-            return link
-    return None
+    return find_master_build(
+        info.get_kv_data("master_track_commits_sha") or [], build_type
+    )
 
 
 def find_base_release_build(info, build_type):
     commits = info.get_kv_data("release_branch_base_sha_with_predecessors") or []
     assert commits, "No commits found to fetch reference build"
-    for sha in commits:
-        link = master_build_link(sha, build_type)
-        if Shell.check(f"curl -sfI {link} > /dev/null"):
-            return link
-    return None
+    return find_master_build(commits, build_type)
 
 
 # The number of distinct "slower" queries that fails the whole performance

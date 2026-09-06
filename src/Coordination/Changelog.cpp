@@ -4127,6 +4127,11 @@ void Changelog::appendCompletionThread()
 
 void Changelog::writeThread()
 {
+    /// The only consumer of an exception escaping this thread is the catch-all below, which calls
+    /// `std::terminate`. Rotation allocates (the file buffer, and the zstd buffer when logs are
+    /// compressed), so under memory pressure a refused allocation kills the process outright.
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+
     WriteOperation write_operation;
     bool batch_append_ok = true;
     size_t pending_appends = 0;
@@ -4646,6 +4651,11 @@ Changelog::~Changelog()
 
 void Changelog::backgroundChangelogOperationsThread()
 {
+    /// A failed removal here is stored and rethrown by `writeAt`, whose only handling is
+    /// `std::terminate`. A blocker on the write thread cannot help: the exception is created here,
+    /// and suppression applies where an exception is raised, not where it is rethrown.
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+
     ChangelogFileOperationPtr changelog_operation;
     while (changelog_operation_queue.pop(changelog_operation))
     {
