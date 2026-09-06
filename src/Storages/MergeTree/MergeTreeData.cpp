@@ -49,6 +49,8 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromString.h>
@@ -367,6 +369,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsSeconds refresh_statistics_interval;
+    extern const MergeTreeSettingsBool leader_election;
+    extern const MergeTreeSettingsSeconds leader_election_heartbeat_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
@@ -438,6 +442,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
     extern const int FAULT_INJECTED;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
+    extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_SIZE_LIMIT_EXCEEDED;
 }
 
@@ -447,6 +452,54 @@ namespace FailPoints
     /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
+    extern const char merge_tree_refresh_parts_skip[];
+
+    /// Deterministically simulates a leadership lease that went stale in the middle of the
+    /// strict takeover scan, right before it would replay a skipped detach/remove of a
+    /// broken/duplicate part on shared storage.
+    extern const char merge_tree_leader_election_stale_lease_during_takeover_scan[];
+    extern const char merge_tree_leader_election_stale_lease_detached_ddl[];
+    /// Deterministically simulates a leadership lease that went stale (lost and reacquired under a
+    /// newer epoch) after a restored part was copied, right before the `RESTORE` renames it into
+    /// the shared `detached/` namespace as `broken-from-backup_*`.
+    extern const char merge_tree_leader_election_stale_lease_before_restore_detach_broken[];
+    /// Pauses a `RESTORE` right after its admission (and the capture of the admission epoch by the
+    /// storage's `restoreDataFromBackup`), before the first read of the backup's metadata, so a
+    /// test can lose and reacquire the lease in exactly the window the epoch fence has to cover.
+    extern const char merge_tree_leader_election_pause_after_restore_admission[];
+
+    /// Makes the load of a part restored from a backup fail with a non-retryable error, so the
+    /// `restore_broken_parts_as_detached = 1` branch is taken without needing a corrupted backup.
+    extern const char merge_tree_restored_part_load_failure[];
+
+    /// Deterministically simulates a leadership lease that goes stale in the MIDDLE of publishing
+    /// a batch of parts (`Transaction::renameParts`): the first part is renamed to its persistent
+    /// name and the fence rejects the rest, so the undo of the already published renames is
+    /// exercised.
+    extern const char merge_tree_leader_election_stale_lease_mid_batch_rename[];
+    extern const char merge_tree_leader_election_stale_lease_before_commit[];
+
+    /// Deterministically simulates a leadership lease that goes stale in the MIDDLE of removing
+    /// a batch of outdated parts from the filesystem: the first part is removed and the per-part
+    /// freshness re-check rejects the rest, so they are rolled back to the Outdated state.
+    extern const char merge_tree_leader_election_stale_lease_mid_cleanup[];
+
+    /// Deterministically simulates a leadership lease that goes stale in the MIDDLE of dropping
+    /// a batch of empty (or unused patch) parts: the first part is dropped and the per-part
+    /// freshness re-check leaves the rest to the current leader.
+    extern const char merge_tree_leader_election_stale_lease_mid_clear_empty_parts[];
+    extern const char merge_tree_grab_old_parts_skip[];
+
+    /// Deterministically fails `createEmptyPart`, i.e. the window between writing a `DETACH`ed
+    /// part's clone to shared `detached/` and committing the covering empty part: the rollback
+    /// of the already-durable detached clones must run for the whole post-clone path.
+    extern const char merge_tree_create_empty_part_inject_failure[];
+
+    /// Deterministically simulates a leadership lease that goes stale in the MIDDLE of a sequence
+    /// of permanent changes to the shared `detached/` namespace (`ATTACH PARTITION`): the first
+    /// change succeeds and the next fence rejects the command, so the rollback journal is
+    /// exercised.
+    extern const char merge_tree_leader_election_stale_lease_mid_detached_mutation[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -2516,7 +2569,10 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
 
     /// Explicitly set remove_tid for parts w/o transaction (i.e. w/o txn_version.txt)
     /// to avoid keeping part forever (see VersionMetadata::canBeRemoved())
-    if (!current_version_info.isRemoved())
+    /// Under `leader_election`, persisting the removal TID writes to the covered part's version
+    /// metadata on shared object storage; only the lease-holding leader may do that. A follower
+    /// sets `remove_time` in memory above but leaves the on-disk removal TID to the leader.
+    if (!current_version_info.isRemoved() && part->storage.mayMutateSharedStorage())
     {
         TransactionInfoContext transaction_context{part->storage.getStorageID(), part->name};
         part->version->setAndStoreNonTransactionalRemovalTID(transaction_context);
@@ -3031,7 +3087,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             }
             else if (res.part->is_duplicate)
             {
-                if (!is_static_storage)
+                /// Under `leader_election`, only the lease-holding leader may remove parts from
+                /// shared object storage; a follower loads its view read-only (mayMutateSharedStorage).
+                if (!is_static_storage && mayMutateSharedStorage())
                 {
                     LOG_ERROR(log, "Removing duplicate part {}", res.part->getDataPartStorage().getFullPath());
                     res.part->remove();
@@ -3086,7 +3144,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         LOG_WARNING(log, "Found suspicious broken unexpected parts {} with total rows count {}", suspicious_broken_unexpected_parts, suspicious_broken_unexpected_parts_bytes);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
-    if (!is_static_storage)
+    /// Under `leader_election`, detaching a broken part renames it on shared object storage,
+    /// which only the lease-holding leader may do; a follower loads its view read-only.
+    if (!is_static_storage && mayMutateSharedStorage())
         for (auto & part : broken_parts_to_detach)
             part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
 
@@ -3220,7 +3280,16 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     data_parts_loading_finished = true;
 
     auto refresh_parts_interval = (*settings)[MergeTreeSetting::refresh_parts_interval].totalMilliseconds();
-    if (all_disks_are_readonly && refresh_parts_interval && !refresh_parts_task)
+
+    /// Under `leader_election`, followers must periodically scan shared object storage so that
+    /// `SELECT` sees parts the current leader has committed since this replica started up.
+    /// Use the heartbeat cadence as the default refresh interval — staleness on followers is then
+    /// bounded by the same cadence the leader uses to renew its lease.
+    bool leader_election_follower_refresh = (*settings)[MergeTreeSetting::leader_election];
+    if (leader_election_follower_refresh && refresh_parts_interval == 0)
+        refresh_parts_interval = (*settings)[MergeTreeSetting::leader_election_heartbeat_interval].totalMilliseconds();
+
+    if ((all_disks_are_readonly || leader_election_follower_refresh) && refresh_parts_interval && !refresh_parts_task)
     {
         refresh_parts_task = getContext()->getSchedulePool()->createTask(
             getStorageID(), "MergeTreeData::refreshDataParts",
@@ -3230,7 +3299,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 refreshDataParts(refresh_parts_interval);
             });
 
-        refresh_parts_task->scheduleAfter(refresh_parts_interval);
+        /// For `leader_election` tables we leave scheduling to the leadership-change callback in
+        /// `StorageMergeTree::startup`: the task runs only while we are a follower.
+        if (!leader_election_follower_refresh)
+            refresh_parts_task->scheduleAfter(refresh_parts_interval);
     }
 }
 
@@ -3251,53 +3323,102 @@ void MergeTreeData::startStatisticsCache()
     }
 }
 
-void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
-try
+size_t MergeTreeData::retirePartsVanishedFromStorage(
+    const NameSet & part_directories_on_storage, const NameSet & scanned_disks, bool strict_takeover)
 {
-    refreshDataPartsOnce(interval_milliseconds);
-    refresh_parts_task->scheduleAfter(interval_milliseconds);
-}
-catch (...)
-{
-    tryLogCurrentException(log, "Failed to refresh parts");
-    /// A transient error (e.g. temporary disk unavailability) must not permanently disable the background
-    /// refresh task; otherwise the read-only table stays stale until the server restarts. Mirror the
-    /// reschedule that refreshStatistics performs in its own catch block.
-    refresh_parts_task->scheduleAfter(interval_milliseconds);
-}
+    /// Under `leader_election` the refresh scan is the only channel through which a replica learns
+    /// about changes made by the current leader, and it used to be additive-only: a part that the
+    /// leader retired and then deleted from the shared storage stayed active here forever unless
+    /// the covering empty part (the "tombstone" published by TRUNCATE / DROP PARTITION /
+    /// REPLACE PARTITION / MOVE PARTITION) happened to still be there at the next refresh. That
+    /// made the tombstone the only cross-replica retirement record, so a replica that refreshed
+    /// after the leader had cleaned it up kept serving the old partition — and kept it active when
+    /// it later took over. Diffing the active set against the storage listing removes that
+    /// dependency: whatever is no longer on the shared storage is no longer part of the table.
+    ///
+    /// This is not a destructive operation: the parts are only forgotten in memory (their data is
+    /// already gone from the storage), and if a listing was somehow incomplete, the very next
+    /// refresh re-adds the parts it finds. Only a follower (or a takeover scan, which runs before
+    /// writes are enabled) does this: a writing leader can have just published a part that a
+    /// cached listing does not show yet.
+    if (!(*getSettings())[MergeTreeSetting::leader_election])
+        return 0;
 
-/// Re-scan the data directory once: reload disk metadata and add parts that appeared since the
-/// last scan (it does not detect parts that vanished from disk; `grabOldParts` only cleans up
-/// parts already marked outdated). Shared by the background refresh task (which reschedules
-/// itself afterwards) and by `SYSTEM RESTART DISK` (an explicit, one-shot refresh). The two
-/// callers are serialized so they cannot load the same new part concurrently.
-void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
-{
-    std::lock_guard refresh_lock(refresh_parts_mutex);
+    if (!strict_takeover && mayMutateSharedStorage())
+        return 0;
 
-    fiu_do_on(FailPoints::merge_tree_refresh_parts_throw_once,
+    DataPartsVector vanished_parts;
+
     {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected transient failure into MergeTreeData::refreshDataPartsOnce");
-    });
+        auto parts_lock = lockParts();
 
-    for (auto & disk : getStoragePolicy()->getDisks())
-        disk->refresh(interval_milliseconds);
+        for (const auto & part : getDataPartsStateRange(DataPartState::Active, DataPartKind::Regular))
+        {
+            /// A broken disk is not scanned at all, so its parts are unknown, not vanished.
+            if (!scanned_disks.contains(part->getDataPartStorage().getDiskName()))
+                continue;
 
+            if (part_directories_on_storage.contains(part->getDataPartStorage().getPartDirectory()))
+                continue;
+
+            vanished_parts.push_back(part);
+        }
+
+        for (const auto & part : vanished_parts)
+        {
+            auto it = data_parts_by_info.find(part->info);
+            if (it == data_parts_by_info.end())
+                continue;
+
+            LOG_INFO(log, "Retiring active part {}: it no longer exists on the shared storage", part->name);
+
+            /// The part is still `Active` here, so it counts towards the table's size counters and
+            /// the column and secondary index size caches (`loadDataPart` adds that contribution
+            /// when it loads a part into the `Active` state). Forgetting it without subtracting
+            /// the contribution would leave `totalRows` / `totalBytes` / `getActivePartsCount`
+            /// reporting a table that no longer has any active parts, and everything built on
+            /// `getTotalActiveSizeInBytes` — the `RESTORE` non-empty-table check, the drop-size
+            /// check, the insert part-limit throttling — acting on that stale value. This mirrors
+            /// the active branch of `removePartsFromWorkingSet` and inverts `restoreAndActivatePart`.
+            removePartContributionToColumnAndSecondaryIndexSizes(part);
+            removePartContributionToUncompressedBytesInPatches(part);
+            removePartContributionToDataVolume(part);
+
+            /// Forget the part entirely instead of moving it to `Outdated`: there is nothing left
+            /// to clean up on the storage, and a follower must not attempt such a cleanup anyway.
+            modifyPartState(it, DataPartState::Temporary, parts_lock);
+            data_parts_indexes.erase(it);
+        }
+    }
+
+    return vanished_parts.size();
+}
+
+size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
+{
     Stopwatch watch;
     LOG_DEBUG(log, "Refreshing data parts");
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    const auto settings = getSettings();
-
     auto disks = getStoragePolicy()->getDisks();
+
+    /// The caller is responsible for refreshing the disk metadata cache before this call
+    /// if it needs the freshest view. The periodic refresh path (`refreshDataParts`) does
+    /// this in a rate-limited way; the leader-election takeover path forces a refresh.
+
     PartLoadingTree::PartLoadingInfos parts_to_load;
+
+    /// The full set of part directories seen by this scan, together with the disks it covered.
+    /// Used below to retire active parts that vanished from the shared storage (see the comment
+    /// there); a part on a disk that was not scanned (broken) must not be retired.
+    NameSet part_directories_on_storage;
+    NameSet scanned_disks;
 
     for (const auto & disk_ptr : disks)
     {
         if (disk_ptr->isBroken())
             continue;
-        if (!disk_ptr->isReadOnly())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::refreshDataPartsOnce should only be called if all disks are readonly");
+
+        scanned_disks.insert(disk_ptr->getName());
 
         for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
@@ -3308,7 +3429,10 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
                 continue;
 
             if (auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version))
+            {
+                part_directories_on_storage.insert(it->name());
                 parts_to_load.emplace_back(*part_info, it->name(), disk_ptr);
+            }
         }
     }
 
@@ -3331,6 +3455,30 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     bool have_lightweight_in_parts = false;
     bool have_parts_with_version_metadata = false;
 
+    size_t suspicious_broken_parts = 0;
+    UInt64 suspicious_broken_parts_bytes = 0;
+    const auto settings = getSettings();
+
+    /// The strict takeover scan runs on the heartbeat thread, which cannot renew the lease
+    /// while it executes this scan — so scanning and loading the earlier parts can consume
+    /// most of `leader_election_session_timeout`, after which another node may legitimately
+    /// take over. Replaying a skipped detach/remove on shared storage as a stale leader
+    /// would violate the single-writer contract, so re-check lease freshness immediately
+    /// before EACH replayed detach/remove and abort the takeover once it flips false
+    /// (mirroring the per-write lease rechecks in `loadMutations`). The exception propagates
+    /// to the takeover callback, which relinquishes leadership locally and retries on a
+    /// later heartbeat.
+    auto assert_lease_fresh_before_cleanup = [this](const String & part_name, std::string_view action)
+    {
+        bool lease_is_fresh = mayMutateSharedStorage();
+        fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_during_takeover_scan, { lease_is_fresh = false; });
+        if (!lease_is_fresh)
+            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                "The leader lease was not renewed within the session timeout while scanning parts "
+                "during leadership takeover; refusing to {} part {} as a possibly stale leader",
+                action, part_name);
+    };
+
     for (const auto & my_part : parts_to_add)
     {
         auto res = loadDataPartWithRetries(
@@ -3340,7 +3488,51 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
 
         if (res.is_broken)
         {
-            LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
+            if (strict_takeover)
+            {
+                /// A broken part discovered here is typically one whose detach was skipped by the
+                /// read-only pre-lease/follower startup loaders (`mayMutateSharedStorage`). Those
+                /// loaders are one-shot, so this scan is the deterministic point to replay the
+                /// skipped cleanup — the lease is held during the takeover callback, so detaching
+                /// on shared storage is permitted. Aborting the takeover instead would rediscover
+                /// the same broken part on every heartbeat retry and livelock leadership
+                /// acquisition, leaving the table permanently read-only. Bound the replay by the
+                /// same sanity limits as startup loading: mass breakage still fails the takeover
+                /// closed rather than silently detaching a large slice of the active set.
+                ++suspicious_broken_parts;
+                if (res.size_of_part)
+                    suspicious_broken_parts_bytes += *res.size_of_part;
+
+                if (suspicious_broken_parts > (*settings)[MergeTreeSetting::max_suspicious_broken_parts]
+                    || suspicious_broken_parts_bytes > (*settings)[MergeTreeSetting::max_suspicious_broken_parts_bytes])
+                    throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
+                        "Suspiciously many ({} parts, {} in total) broken parts on shared storage "
+                        "during leadership takeover, while the maximum allowed is {} parts / {}; "
+                        "refusing to enable writes (change `max_suspicious_broken_parts` / "
+                        "`max_suspicious_broken_parts_bytes` if this is expected)",
+                        suspicious_broken_parts,
+                        formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
+                        (*settings)[MergeTreeSetting::max_suspicious_broken_parts].value,
+                        formatReadableSizeWithBinarySuffix((*settings)[MergeTreeSetting::max_suspicious_broken_parts_bytes].value));
+
+                assert_lease_fresh_before_cleanup(res.part->name, "detach broken");
+                LOG_ERROR(log, "Detaching broken part {} discovered during leadership takeover", res.part->name);
+                res.part->renameToDetached("broken-on-start", /*ignore_error=*/ false); /// detached parts must not have '_' in prefixes
+            }
+            else
+                LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
+        }
+        else if (res.part->is_duplicate)
+        {
+            /// Same replay rationale as for broken parts above: a duplicate whose removal the
+            /// read-only startup loaders skipped. A follower (non-strict refresh) leaves it in
+            /// place; only the lease-holding leader may remove it from shared storage.
+            if (strict_takeover)
+            {
+                assert_lease_fresh_before_cleanup(res.part->name, "remove duplicate");
+                LOG_ERROR(log, "Removing duplicate part {} discovered during leadership takeover", res.part->getDataPartStorage().getFullPath());
+                res.part->remove();
+            }
         }
         else
         {
@@ -3348,7 +3540,7 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
                 auto part_lock = lockParts();
                 Transaction transaction(*this, nullptr);
                 preparePartForCommit(res.part, transaction, part_lock, false, false);
-                transaction.commit(part_lock);
+                transaction.commit(part_lock, /* is_refresh = */ true);
             }
 
             bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
@@ -3358,18 +3550,91 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
         }
     }
 
-    has_non_adaptive_index_granularity_parts = have_non_adaptive_parts;
-    has_lightweight_delete_parts = have_lightweight_in_parts;
-    transactions_enabled = have_parts_with_version_metadata;
+    /// Only flip capability flags from `false` to `true`: these flags reflect properties of
+    /// the entire active part set, but `parts_to_add` only contains newly appearing parts.
+    /// On a `leader_election` takeover with no new parts to add, an unconditional assignment
+    /// would clobber flags that existing active parts still require (e.g. resetting
+    /// `has_non_adaptive_index_granularity_parts` would let `canUseAdaptiveGranularity` flip
+    /// back to true and start writing adaptive parts on top of legacy non-adaptive ones).
+    if (have_non_adaptive_parts)
+        has_non_adaptive_index_granularity_parts = true;
+    if (have_lightweight_in_parts)
+        has_lightweight_delete_parts.store(true);
+    if (have_parts_with_version_metadata)
+        transactions_enabled.store(true);
+
+    size_t retired_parts = retirePartsVanishedFromStorage(part_directories_on_storage, scanned_disks, strict_takeover);
 
     auto old_parts = grabOldParts(true);
 
     watch.stop();
-    LOG_DEBUG(log, "Refreshing data parts (added {} items, removed {} items) took {:.3f} seconds",
-        parts_to_add.size(), old_parts.size(), watch.elapsedSeconds());
+    LOG_DEBUG(log, "Refreshing data parts (added {} items, retired {} items, removed {} items) took {:.3f} seconds",
+        parts_to_add.size(), retired_parts, old_parts.size(), watch.elapsedSeconds());
 
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, parts_to_add.size());
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
+
+    return parts_to_add.size();
+}
+
+/// Re-scan the data directory once: reload disk metadata, add parts that appeared since the last
+/// scan and (under `leader_election`) retire the active parts that vanished from the shared
+/// storage. Shared by the background refresh task (which reschedules itself afterwards) and by
+/// `SYSTEM RESTART DISK` (an explicit, one-shot refresh). The two callers are serialized so they
+/// cannot load the same new part concurrently.
+void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
+{
+    std::lock_guard refresh_lock(refresh_parts_mutex);
+
+    fiu_do_on(FailPoints::merge_tree_refresh_parts_throw_once,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected transient failure into MergeTreeData::refreshDataPartsOnce");
+    });
+
+    /// Test hook that freezes the periodic follower refresh of a `leader_election` replica while
+    /// the leader changes the shared storage, so that the staleness of the frozen view — and its
+    /// reconciliation on the next leadership takeover — is deterministic. The takeover scan calls
+    /// `loadNewlyAppearedParts` directly and is intentionally not affected.
+    fiu_do_on(FailPoints::merge_tree_refresh_parts_skip, { return; });
+
+    for (auto & disk : getStoragePolicy()->getDisks())
+        disk->refresh(interval_milliseconds);
+
+    loadNewlyAppearedParts();
+}
+
+void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
+try
+{
+    /// The periodic refresh task is scheduled either when every disk is read-only, or when
+    /// `leader_election` is enabled and this replica is a follower. In both cases the
+    /// replica must not write to shared storage. Verify the invariant before re-scanning.
+    /// `SYSTEM RESTART DISK` performs its own readonly check before calling
+    /// `refreshDataPartsOnce`, so the assertion lives in the callers rather than the shared
+    /// `refreshDataPartsOnce` (a `leader_election` follower legitimately has writable disks).
+    bool is_leader_election = (*getSettings())[MergeTreeSetting::leader_election];
+    if (!is_leader_election)
+    {
+        for (const auto & disk_ptr : getStoragePolicy()->getDisks())
+        {
+            if (disk_ptr->isBroken())
+                continue;
+            if (!disk_ptr->isReadOnly())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::refreshDataParts should only be called if all disks are readonly or `leader_election` is enabled");
+        }
+    }
+
+    refreshDataPartsOnce(interval_milliseconds);
+    refresh_parts_task->scheduleAfter(interval_milliseconds);
+}
+catch (...)
+{
+    tryLogCurrentException(log, "Failed to refresh parts");
+    /// Re-schedule on the failure path as well: a transient object-storage error must
+    /// degrade to a delayed retry, not permanently disable follower visibility under
+    /// `leader_election`. The leadership transition callback deactivates the task if
+    /// this replica becomes the leader before the next tick.
+    refresh_parts_task->scheduleAfter(interval_milliseconds);
 }
 
 void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
@@ -3474,7 +3739,9 @@ try
             loadUnexpectedDataPart(load_state);
 
             chassert(load_state.part);
-            if (load_state.is_broken)
+            /// Under `leader_election`, detaching renames on shared object storage; only the
+            /// lease-holding leader may do it. A follower leaves the broken part in place.
+            if (load_state.is_broken && mayMutateSharedStorage())
                 load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
         }, Priority{});
     }
@@ -3565,13 +3832,24 @@ try
                 loading_parts_max_backoff_ms, loading_parts_max_tries);
 
             ++num_loaded_parts;
+            /// Under `leader_election`, detaching/removing parts mutates shared object storage,
+            /// which only the lease-holding leader may do. A follower loads the parts read-only
+            /// and leaves broken/duplicate parts in place (mayMutateSharedStorage). The normal
+            /// `preparePartForRemoval` path is itself read-only on a follower — it sets the
+            /// in-memory remove time but skips persisting the removal TID (see the function).
             if (res.is_broken)
             {
-                forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
-                res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+                if (mayMutateSharedStorage())
+                {
+                    forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
+                    res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+                }
             }
             else if (res.part->is_duplicate)
-                res.part->remove();
+            {
+                if (mayMutateSharedStorage())
+                    res.part->remove();
+            }
             else
                 preparePartForRemoval(res.part);
         }, Priority{});
@@ -4034,6 +4312,12 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 {
     DataPartsVector res;
 
+    /// Test hook: simulate a cleanup round that cannot remove any outdated part yet (for
+    /// example, every part is still held by a long-running reader, or a delete rolled back
+    /// after an I/O failure). Used to check that dependent cleanup steps such as
+    /// `clearEmptyParts` do not act as if the outdated parts were gone.
+    fiu_do_on(FailPoints::merge_tree_grab_old_parts_skip, { return res; });
+
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(grab_old_parts_mutex, std::defer_lock);
     if (!lock.try_lock())
@@ -4268,7 +4552,10 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts, 
     {
         get_failed_parts();
 
-        LOG_DEBUG(log, "Failed to remove all parts, all count {}, removed {}", parts.size(), part_names_succeed.size());
+        /// Include the reason: when the error is not rethrown it would be lost entirely otherwise,
+        /// and the removal of a batch stops on the first failure, so it is the decisive one.
+        LOG_DEBUG(log, "Failed to remove all parts, all count {}, removed {}: {}",
+            parts.size(), part_names_succeed.size(), getCurrentExceptionMessage(false));
 
         if (throw_on_error)
             throw;
@@ -4282,13 +4569,43 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
 
     const auto settings = getSettings();
 
-    auto remove_single_thread = [this, &parts_to_remove, part_names_succeed]()
+    /// Removing a batch can take long (each removal on a remote disk is a network round-trip),
+    /// so under `leader_election` the lease can go stale in the middle of it. Re-check freshness
+    /// before each removal: a stale leader must not keep deleting parts the new leader still
+    /// serves. Parts whose removal is rejected here are reported as failed, and the caller
+    /// (`clearPartsFromFilesystemAndRollbackIfError`) rolls them back to the Outdated state so a
+    /// later pass — as the leader — can retry. For every engine without `leader_election` the
+    /// check is a no-op returning true. `removed_in_this_call` gates the test hook so that the
+    /// simulated staleness fires only after the first part of the batch was actually removed.
+    auto removed_in_this_call = std::make_shared<std::atomic<size_t>>(0);
+    const bool is_leader_election = (*settings)[MergeTreeSetting::leader_election];
+    auto assert_cleanup_still_allowed = [this, removed_in_this_call, is_leader_election]()
+    {
+        /// The failpoint is global, but must only fire for the table under test.
+        if (is_leader_election && removed_in_this_call->load(std::memory_order_relaxed) > 0)
+        {
+            fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_mid_cleanup,
+            {
+                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                    "Simulated leadership loss in the middle of removing a batch of old parts (leader_election)");
+            });
+        }
+
+        if (!canRunDestructiveCleanup())
+            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                "The leadership lease went stale in the middle of removing a batch of old parts; "
+                "the remaining parts are left to the current leader (leader_election)");
+    };
+
+    auto remove_single_thread = [this, &parts_to_remove, part_names_succeed, &assert_cleanup_still_allowed, removed_in_this_call]()
     {
         LOG_DEBUG(
             log, "Removing {} parts from filesystem (serially): Parts: [{}]", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
         for (const DataPartPtr & part : parts_to_remove)
         {
+            assert_cleanup_still_allowed();
             asMutableDeletingPart(part)->remove();
+            removed_in_this_call->fetch_add(1, std::memory_order_relaxed);
             if (part_names_succeed)
                 part_names_succeed->insert(part->name);
         }
@@ -4337,9 +4654,11 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
             /// Passing by reference here is safe:
             /// part is part of parts_to_remove which outlives runner
             /// part_names_mutex is created before runner and outlives it
-            runner.enqueueAndKeepTrack([&part, &part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup()]
+            runner.enqueueAndKeepTrack([&part, &part_names_mutex, part_names_succeed, &assert_cleanup_still_allowed, removed_in_this_call, thread_group = CurrentThread::getGroup()]
             {
+                assert_cleanup_still_allowed();
                 asMutableDeletingPart(part)->remove();
+                removed_in_this_call->fetch_add(1, std::memory_order_relaxed);
                 if (part_names_succeed)
                 {
                     std::lock_guard lock(part_names_mutex);
@@ -4421,19 +4740,21 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
 
     ThreadPoolCallbackRunnerLocal<void> runner(getPartsCleaningThreadPool().get(), ThreadName::MERGETREE_PARTS_CLEANUP);
 
-    auto schedule_parts_removal = [this, &runner, &part_names_mutex, part_names_succeed](
+    auto schedule_parts_removal = [this, &runner, &part_names_mutex, part_names_succeed, &assert_cleanup_still_allowed, removed_in_this_call](
         const MergeTreePartInfo & range, DataPartsVector && parts_in_range)
     {
         /// Below, range should be captured by copy to avoid use-after-scope on exception from pool
         /// part_names_mutex is fine since it's created before runner and outlives it
         runner.enqueueAndKeepTrack(
-            [this, range, &part_names_mutex, part_names_succeed, batch = std::move(parts_in_range)]
+            [this, range, &part_names_mutex, part_names_succeed, &assert_cleanup_still_allowed, removed_in_this_call, batch = std::move(parts_in_range)]
         {
             LOG_TRACE(log, "Removing {} parts in blocks range {}", batch.size(), range.getPartNameForLogs());
 
             for (const auto & part : batch)
             {
+                assert_cleanup_still_allowed();
                 asMutableDeletingPart(part)->remove();
+                removed_in_this_call->fetch_add(1, std::memory_order_relaxed);
                 if (part_names_succeed)
                 {
                     std::lock_guard lock(part_names_mutex);
@@ -4595,13 +4916,63 @@ size_t MergeTreeData::clearEmptyParts()
         }
     }
 
+    /// Each drop below persists removal metadata and a dedup-log `DROP` record before the
+    /// filesystem cleanup inside `dropPartNoWaitNoThrow` re-checks the lease, so under
+    /// `leader_election` the freshness must be re-checked per part: a lease that goes stale in
+    /// the middle of the loop must leave the remaining parts to the current leader instead of
+    /// mutating shared metadata under the stale lease. For every engine without `leader_election`
+    /// the check is a no-op returning true. `dropped` gates the test hook so that the simulated
+    /// staleness fires only after the first part was actually dropped (the failpoint is global,
+    /// but must only fire for the table under test).
+    const bool is_leader_election = (*getSettings())[MergeTreeSetting::leader_election];
+    size_t dropped = 0;
     for (auto & name : parts_names_to_drop)
     {
+        bool lease_went_stale = !canRunDestructiveCleanup();
+        if (is_leader_election && dropped > 0)
+            fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_mid_clear_empty_parts, { lease_went_stale = true; });
+        if (lease_went_stale)
+        {
+            LOG_INFO(log, "Stopping the removal of empty parts after {} of {}: the leadership lease went stale; "
+                "the remaining parts are left to the current leader (leader_election)", dropped, parts_names_to_drop.size());
+            break;
+        }
+
+        if (is_leader_election)
+        {
+            /// First remove all covered parts, then remove the covering empty part. Under
+            /// `leader_election` the active empty covering part is the durable tombstone
+            /// for the outdated parts it covers: if some covered part is still on the shared
+            /// storage (for example, a reader still holds it, or its delete rolled back after
+            /// an I/O error), dropping the covering part now would let the old part be loaded
+            /// again on the next ATTACH or leader takeover — undoing the TRUNCATE /
+            /// DROP PARTITION / REPLACE PARTITION that produced the empty part. This mirrors
+            /// the `EMPTY_PART_COVERS_OTHER_PARTS` invariant in `grabOldParts`; the skipped
+            /// parts are retried on the next cleanup round. Dropping the covering part once the
+            /// covered parts are gone is safe for the other replicas: `loadNewlyAppearedParts`
+            /// retires active parts that vanished from the shared storage
+            /// (`retirePartsVanishedFromStorage`), so the retirement converges without the
+            /// tombstone. Without `leader_election` the
+            /// empty part is dropped right away, as before: keeping it active until the
+            /// covered parts are gone would change the long-standing visible behavior of
+            /// ordinary tables (an extra active part lingering after TRUNCATE or DETACH).
+            auto parts_lock = lockParts();
+            auto part = getPartIfExistsUnlocked(name, {DataPartState::Active}, parts_lock);
+            if (!part)
+                continue;
+            if (!getCoveredOutdatedParts(part, parts_lock).empty())
+            {
+                LOG_TRACE(log, "Not dropping empty part {}: it still covers outdated parts that were not removed yet", name);
+                continue;
+            }
+        }
+
         LOG_TRACE(log, "Will drop empty part {}", name);
         dropPartNoWaitNoThrow(name);
+        ++dropped;
     }
 
-    return parts_names_to_drop.size();
+    return dropped;
 }
 
 size_t MergeTreeData::clearUnusedPatchParts()
@@ -4637,13 +5008,29 @@ size_t MergeTreeData::clearUnusedPatchParts()
             patch_names_to_drop.push_back(patch->name);
     }
 
+    /// Same per-part freshness re-check as in `clearEmptyParts`: each drop persists removal
+    /// metadata and a dedup-log `DROP` record, so a lease that goes stale in the middle of the
+    /// loop must leave the remaining patch parts to the current leader.
+    const bool is_leader_election = (*getSettings())[MergeTreeSetting::leader_election];
+    size_t dropped = 0;
     for (const auto & name : patch_names_to_drop)
     {
+        bool lease_went_stale = !canRunDestructiveCleanup();
+        if (is_leader_election && dropped > 0)
+            fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_mid_clear_empty_parts, { lease_went_stale = true; });
+        if (lease_went_stale)
+        {
+            LOG_INFO(log, "Stopping the removal of unused patch parts after {} of {}: the leadership lease went stale; "
+                "the remaining parts are left to the current leader (leader_election)", dropped, patch_names_to_drop.size());
+            break;
+        }
+
         LOG_INFO(log, "Will drop unused patch part {}", name);
         dropPartNoWaitNoThrow(name);
+        ++dropped;
     }
 
-    return patch_names_to_drop.size();
+    return dropped;
 }
 
 void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
@@ -6537,7 +6924,10 @@ void MergeTreeData::PartsTemporaryRename::rollBackAll()
         try
         {
             const String full_path = fs::path(storage.relative_data_path) / source_dir;
-            disk->moveFile(fs::path(full_path) / new_dir, fs::path(full_path) / old_dir);
+            /// The renamed entries are part directories; `moveDirectory` (symmetric with
+            /// `tryRenameAll`) is required for disks where a directory is not a file,
+            /// e.g. plain-rewritable object storage.
+            disk->moveDirectory(fs::path(full_path) / new_dir, fs::path(full_path) / old_dir);
         }
         catch (...)
         {
@@ -6564,6 +6954,62 @@ MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void MergeTreeData::DetachedNamespaceRollback::renameDirectory(
+    const DiskPtr & disk, const String & from_relative, const String & to_relative)
+{
+    disk->moveDirectory(from_relative, to_relative);
+    if (armed)
+        changes.push_back(Change{disk, from_relative, to_relative, {}, {}});
+}
+
+void MergeTreeData::DetachedNamespaceRollback::removeFileIfExists(const DiskPtr & disk, const String & relative_path)
+{
+    /// Read the contents before the removal so that the file can be recreated verbatim. These
+    /// files (`txn_version.txt` and its temporary counterpart) are a few dozen bytes.
+    String content;
+    const bool remember = armed && disk->existsFile(relative_path);
+    if (remember)
+    {
+        auto in = disk->readFile(relative_path, getReadSettingsForMetadata());
+        readStringUntilEOF(content, *in);
+    }
+
+    disk->removeFileIfExists(relative_path);
+
+    if (remember)
+        changes.push_back(Change{disk, {}, {}, relative_path, std::move(content)});
+}
+
+MergeTreeData::DetachedNamespaceRollback::~DetachedNamespaceRollback()
+{
+    /// Replay in reverse: the last change is the one closest to the failure. Best effort — this
+    /// runs while an exception is propagating to the client, and a failure to undo one change must
+    /// not hide the original rejection nor prevent the remaining changes from being undone.
+    for (auto it = changes.rbegin(); it != changes.rend(); ++it)
+    {
+        try
+        {
+            if (!it->removed_path.empty())
+            {
+                LOG_INFO(storage.log, "Restoring detached file {} removed by a rejected command (leader_election)", it->removed_path);
+                auto out = it->disk->writeFile(it->removed_path);
+                writeString(it->removed_content, *out);
+                out->finalize();
+            }
+            else
+            {
+                LOG_INFO(storage.log, "Renaming detached directory {} back to {} after a rejected command (leader_election)",
+                    it->renamed_to, it->renamed_from);
+                it->disk->moveDirectory(it->renamed_to, it->renamed_from);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(storage.log, "Cannot undo a change of the detached namespace made by a rejected command");
+        }
     }
 }
 
@@ -6713,7 +7159,18 @@ void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction 
     chassert(!(!need_rename && rename_in_transaction));
 
     if (need_rename && !rename_in_transaction)
+    {
+        /// When the publish fence is armed (`leader_election`), remember the temporary directory
+        /// the part came from BEFORE the rename publishes it, so that a fence failure at
+        /// `Transaction::commit` can rename the part back (`undoPublishedRenames`). Otherwise an
+        /// insert/merge/mutation that loses the lease between this rename and its commit would
+        /// return an exception to the client yet leave the part on shared storage, where the next
+        /// leader would load and activate it.
+        if (out_transaction.publish_fence_epoch)
+            out_transaction.published_parts_pending_commit.emplace_back(part, part->getDataPartStorage().getPartDirectory());
+
         part->renameTo(part->name, true);
+    }
 
     LOG_TEST(log, "preparePartForCommit: inserting {} into data_parts_indexes", part->getNameWithState());
     data_parts_indexes.insert(part);
@@ -8532,7 +8989,7 @@ void MergeTreeData::checkPartCanBeDropped(const String & part_name, ContextPtr l
     getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, part->getBytesOnDisk());
 }
 
-void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr local_context)
+void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr local_context, UInt64 admission_epoch)
 {
     String partition_id;
 
@@ -8578,7 +9035,8 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
         moving_tagger,
         local_context->getReadSettings(),
         local_context->getWriteSettings(),
-        query_settings[Setting::alter_move_to_space_execute_async]);
+        query_settings[Setting::alter_move_to_space_execute_async],
+        admission_epoch);
 
     if (query_settings[Setting::alter_move_to_space_execute_async] && moves_future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
     {
@@ -8602,7 +9060,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
 }
 
 
-void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr local_context)
+void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr local_context, UInt64 admission_epoch)
 {
     String partition_id;
 
@@ -8661,7 +9119,8 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         moving_tagger,
         local_context->getReadSettings(),
         local_context->getWriteSettings(),
-        query_settings[Setting::alter_move_to_space_execute_async]);
+        query_settings[Setting::alter_move_to_space_execute_async],
+        admission_epoch);
 
     if (query_settings[Setting::alter_move_to_space_execute_async] && moves_future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
     {
@@ -8783,7 +9242,11 @@ Pipe MergeTreeData::alterPartition(
             break;
 
             case PartitionCommand::DROP_DETACHED_PARTITION:
-                dropDetached(command.partition, command.part, query_context);
+                /// Capture the leadership epoch before resolving the partition and scanning
+                /// `detached/` (both take arbitrary time), so that every permanent change of the
+                /// shared detached namespace below is fenced against the epoch that admitted this
+                /// command, not merely against the current lease freshness.
+                dropDetached(command.partition, command.part, query_context, currentLeadershipEpoch());
                 break;
 
             case PartitionCommand::FORGET_PARTITION:
@@ -8795,14 +9258,15 @@ Pipe MergeTreeData::alterPartition(
                 break;
             case PartitionCommand::MOVE_PARTITION:
             {
+                const UInt64 admission_epoch = currentLeadershipEpoch();
                 switch (*command.move_destination_type)
                 {
                     case PartitionCommand::MoveDestinationType::DISK:
-                        movePartitionToDisk(command.partition, command.move_destination_name, command.part, query_context);
+                        movePartitionToDisk(command.partition, command.move_destination_name, command.part, query_context, admission_epoch);
                         break;
 
                     case PartitionCommand::MoveDestinationType::VOLUME:
-                        movePartitionToVolume(command.partition, command.move_destination_name, command.part, query_context);
+                        movePartitionToVolume(command.partition, command.move_destination_name, command.part, query_context, admission_epoch);
                         break;
 
                     case PartitionCommand::MoveDestinationType::TABLE:
@@ -9012,8 +9476,13 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
     return res;
 }
 
-void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+void MergeTreeData::restoreDataFromBackupAtEpoch(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions, UInt64 admission_epoch)
 {
+    /// Test hook: hold the restore between its admission and the first backup metadata read.
+    /// Under `leader_election` the epoch has already been captured at this point, so a lease lost
+    /// and reacquired while paused here must make every later stage of the restore fail closed.
+    FailPointInjection::pauseFailPoint(FailPoints::merge_tree_leader_election_pause_after_restore_admission);
+
     auto backup = restorer.getBackup();
     if (!backup->hasFiles(data_path_in_backup))
         return;
@@ -9030,7 +9499,7 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!restorer.isNonEmptyTableAllowed() && getTotalActiveSizeInBytes() && backup->hasFiles(data_path_in_backup))
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
-    restorePartsFromBackup(restorer, data_path_in_backup, partitions);
+    restorePartsFromBackup(restorer, data_path_in_backup, partitions, admission_epoch);
 }
 
 class MergeTreeData::RestoredPartsHolder
@@ -9039,12 +9508,15 @@ public:
     RestoredPartsHolder(
         const std::shared_ptr<MergeTreeData> & storage_,
         const BackupPtr & backup_,
-        const ZooKeeperRetriesInfo & zookeeper_retries_info_)
-        : storage(storage_), backup(backup_), zookeeper_retries_info(zookeeper_retries_info_)
+        const ZooKeeperRetriesInfo & zookeeper_retries_info_,
+        UInt64 admission_epoch_)
+        : storage(storage_), backup(backup_), zookeeper_retries_info(zookeeper_retries_info_), admission_epoch(admission_epoch_)
     {
     }
 
     BackupPtr getBackup() const { return backup; }
+
+    UInt64 getAdmissionEpoch() const { return admission_epoch; }
 
     void setNumParts(size_t num_parts_)
     {
@@ -9097,7 +9569,7 @@ private:
             parts.end(),
             [](const MutableDataPartPtr & lhs, const MutableDataPartPtr & rhs) { return lhs->info.min_block < rhs->info.min_block; });
 
-        storage->attachRestoredParts(std::move(parts), zookeeper_retries_info);
+        storage->attachRestoredParts(std::move(parts), zookeeper_retries_info, admission_epoch);
         parts.clear();
         temp_part_dirs.clear();
         num_parts = 0;
@@ -9106,6 +9578,7 @@ private:
     const std::shared_ptr<MergeTreeData> storage;
     const BackupPtr backup;
     const ZooKeeperRetriesInfo zookeeper_retries_info;
+    const UInt64 admission_epoch;
     size_t num_parts = 0;
     size_t num_broken_parts = 0;
     MutableDataPartsVector parts;
@@ -9113,7 +9586,7 @@ private:
     mutable std::mutex mutex;
 };
 
-void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions, UInt64 admission_epoch)
 {
     std::optional<std::unordered_set<String>> partition_ids;
     if (partitions)
@@ -9125,8 +9598,16 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
 
     bool restore_broken_parts_as_detached = restorer.getRestoreSettings().restore_broken_parts_as_detached;
 
+    /// Under `leader_election` the whole restore — every part copy and the final publish — is
+    /// fenced to `admission_epoch`, the leadership epoch the storage sampled together with the
+    /// admission check of the command, before any backup metadata was read (see
+    /// `restoreDataFromBackupAtEpoch`): a lease lost after admission must fail closed even if this
+    /// node reacquires leadership meanwhile, because the interim leader may have written its own
+    /// data the restored parts — and the non-empty-table check above — were never reconciled with.
+    /// Sampling the epoch here instead would let a lose-and-reacquire in that earlier window go
+    /// unnoticed.
     auto restored_parts_holder = std::make_shared<RestoredPartsHolder>(
-        std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup, restorer.getZooKeeperRetriesInfo());
+        std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup, restorer.getZooKeeperRetriesInfo(), admission_epoch);
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
     size_t num_parts = 0;
@@ -9162,6 +9643,15 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
 {
     String part_name = part_info.getPartNameAndCheckFormat(format_version);
     auto backup = restored_parts_holder->getBackup();
+
+    /// The data restore tasks run asynchronously, long after `restoreDataFromBackup` admitted
+    /// the command, and each of them copies a whole part into a `tmp_restore_*` directory under
+    /// the table's data path. Under `leader_election` that path is shared with the other nodes,
+    /// so re-check the admission epoch per part: a lease lost meanwhile — even if reacquired —
+    /// must stop the copying instead of writing the rest of the backup into a prefix another
+    /// node may own now.
+    const UInt64 admission_epoch = restored_parts_holder->getAdmissionEpoch();
+    assertWritableLeaderAtEpoch(admission_epoch);
 
     /// Find all files of this part in the backup.
     Strings filenames = backup->listFiles(part_path_in_backup, /* recursive= */ true);
@@ -9216,17 +9706,28 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
             continue;
         }
 
+        /// Bound the leak of a lease lost in the middle of the part to a single file: without a
+        /// per-file fence a lease gone stale after the first copied file would still let the rest
+        /// of the part stream into the shared prefix. The check is two atomic loads — noise next
+        /// to a file copy from the backup.
+        assertWritableLeaderAtEpoch(admission_epoch);
+
         size_t file_size = backup->copyFileToDisk(part_path_in_backup_fs / filename, disk, temp_part_dir / filename, WriteMode::Rewrite, fsync_files);
         reservation->update(reservation->getSize() - file_size);
     }
 
-    if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken))
+    if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken, admission_epoch))
         restored_parts_holder->addPart(part);
     else
         restored_parts_holder->increaseNumBrokenParts();
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const
+MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(
+    const String & part_name,
+    const DiskPtr & disk,
+    const String & temp_part_dir,
+    bool detach_if_broken,
+    UInt64 admission_epoch) const
 {
     MutableDataPartPtr part;
 
@@ -9245,6 +9746,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     /// Load this part from the directory `temp_part_dir`.
     auto load_part = [&]
     {
+        fiu_do_on(FailPoints::merge_tree_restored_part_load_failure,
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Injected load failure for the restored part {}", part_name);
+        });
+
         MergeTreeDataPartBuilder builder(*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings(), PartDirIntent::OpenExisting);
         builder.withPartFormatFromDisk();
         part = std::move(builder).build();
@@ -9271,6 +9777,18 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
                        .withPartType(MergeTreeDataPartType::Wide)
                        .build();
         }
+        /// `renameToDetached` publishes the part under a persistent name in the shared `detached/`
+        /// namespace, and nothing ever removes it again - the part is not published, so the final
+        /// publish fence of the `RESTORE` never sees it. Fence it like every other irreversible
+        /// rename: a lease lost since the part was copied - even one already reacquired as a newer
+        /// epoch - must not leave a `broken-from-backup_*` entry behind from the stale epoch.
+        UInt64 fence_epoch = admission_epoch;
+        fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_before_restore_detach_broken,
+        {
+            fence_epoch = fence_epoch >= 1 ? fence_epoch - 1 : fence_epoch + 1;
+        });
+        assertWritableLeaderAtEpoch(fence_epoch);
+
         /// Errors should not be ignored in RESTORE, since you should not restore to broken disks.
         part->renameToDetached("broken-from-backup");
     };
@@ -10217,7 +10735,41 @@ void MergeTreeData::validateDetachedPartName(const String & name)
                             "most likely it is used by another DROP or ATTACH query.", name);
 }
 
-void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr local_context)
+void MergeTreeData::assertLeaseFreshForDetachedOperation(
+    std::string_view action,
+    const String & dir_name,
+    std::optional<UInt64> admission_epoch,
+    const DetachedNamespaceRollback * rollback) const
+{
+    bool lease_is_fresh = mayMutateSharedStorage();
+    fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_detached_ddl, { lease_is_fresh = false; });
+
+    /// Test hook: fail only after this command already made at least one permanent change to the
+    /// shared `detached/` namespace, which is exactly the window the rollback journal closes.
+    if (rollback && rollback->recordedChanges() > 0)
+    {
+        fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_mid_detached_mutation,
+        {
+            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                "Simulated leadership loss in the middle of changing the detached namespace (leader_election)");
+        });
+    }
+
+    if (!lease_is_fresh)
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+            "The leader lease was not renewed within the session timeout; refusing to {} detached part "
+            "directory {} as a possibly stale leader",
+            action, dir_name);
+
+    /// A fresh lease is not sufficient: leadership may have been lost and reacquired since this
+    /// command was admitted, in which case the detached namespace now belongs to a newer epoch
+    /// (see the header). The command would be rejected by its own publish fence anyway, so refuse
+    /// before making the permanent change instead of after.
+    if (admission_epoch.has_value())
+        assertWritableLeaderAtEpoch(*admission_epoch);
+}
+
+void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr local_context, std::optional<UInt64> admission_epoch)
 {
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
 
@@ -10243,12 +10795,40 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
 
     LOG_DEBUG(log, "Will drop {} detached parts.", renamed_parts.old_and_new_names.size());
 
+    /// Re-fence right before the first shared-storage side effect: the admission-level check in
+    /// `alterPartition` may have passed long ago (partition resolution and the detached-parts scan
+    /// above take arbitrary time). A failure here (or below) leaves the temporary `deleting_`
+    /// renames to be rolled back by the `PartsTemporaryRename` destructor.
+    if (!renamed_parts.old_and_new_names.empty())
+        assertLeaseFreshForDetachedOperation("rename for deletion", renamed_parts.old_and_new_names.front().old_dir, admission_epoch);
+
     renamed_parts.tryRenameAll();
 
+    Names dropped_so_far;
     for (auto & [_, old_dir, new_dir, disk] : renamed_parts.old_and_new_names)
     {
+        /// The deletion is irreversible, so re-check the lease before EACH removed directory:
+        /// once the lease goes stale mid-sequence, the remaining (still renamed) directories are
+        /// rolled back instead of deleted by a possibly stale leader.
+        ///
+        /// Unlike `ATTACH PARTITION`, a partially executed `DROP DETACHED` cannot be undone: the
+        /// directories already deleted are gone. Name them in the exception so that the operator
+        /// is not left guessing which half of the command took effect.
+        try
+        {
+            assertLeaseFreshForDetachedOperation("drop", old_dir, admission_epoch);
+        }
+        catch (Exception & e)
+        {
+            if (!dropped_so_far.empty())
+                e.addMessage("{} detached part directories were already dropped and cannot be restored: {}",
+                    dropped_so_far.size(), fmt::join(dropped_so_far, ", "));
+            throw;
+        }
+
         bool keep_shared = removeDetachedPart(disk, fs::path(relative_data_path) / DETACHED_DIR_NAME / new_dir / "", old_dir);
         LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", old_dir, keep_shared);
+        dropped_so_far.push_back(old_dir);
         old_dir.clear();
     }
 }
@@ -10262,6 +10842,17 @@ void MergeTreeData::optimizeDryRun(
     ContextPtr local_context)
 {
     /// DRY RUN PARTS executes a real merge task, bypassing StorageMergeTree::optimize's guard.
+    /// `InterpreterOptimizeQuery` calls this directly, so neither `assertNotReadonly` nor the
+    /// admission-epoch fence of a regular `OPTIMIZE` runs. The merge writes a temporary part on
+    /// the table's disks and commits its storage transaction there — for a `leader_election`
+    /// table those disks are shared, so a follower (or a leader that lost and reacquired the
+    /// lease mid-command) would write into shared storage outside the admitted epoch. There is no
+    /// node-local scratch path for it yet, so fail closed and reject the command outright.
+    if ((*getSettings())[MergeTreeSetting::leader_election])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "OPTIMIZE ... DRY RUN is not supported under `leader_election`: it would write a temporary "
+                        "merged part into shared storage outside the leadership fence. Use a regular OPTIMIZE on the leader.");
+
     if (metadata_snapshot->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "OPTIMIZE is not supported for UNIQUE KEY tables: merges are currently disabled "
@@ -10407,9 +10998,21 @@ void MergeTreeData::optimizeDryRun(
     new_part->remove();
 }
 
-MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr local_context, PartsTemporaryRename & renamed_parts)
+MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(
+    const PartitionCommand & command,
+    ContextPtr local_context,
+    PartsTemporaryRename & renamed_parts,
+    std::optional<UInt64> admission_epoch,
+    DetachedNamespaceRollback * detached_rollback)
 {
     const fs::path source_dir = DETACHED_DIR_NAME;
+
+    /// Every permanent change of the shared `detached/` namespace below goes through the caller's
+    /// rollback journal when there is one, so that a command rejected afterwards — including by
+    /// the publish fence, which can only reject after some of these changes succeeded — leaves the
+    /// namespace exactly as it found it. Without a journal the helpers are plain disk calls.
+    DetachedNamespaceRollback unrecorded_changes(*this, /*armed*/ false);
+    DetachedNamespaceRollback & detached_changes = detached_rollback ? *detached_rollback : unrecorded_changes;
 
     /// Let's compose a list of parts that should be added.
     if (command.part)
@@ -10468,7 +11071,13 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             if (outcome == ActiveDataPartSet::AddPartOutcome::HasIntersectingPart)
             {
                 LOG_WARNING(log, "Ignoring detached part {} because it intersects another detached part: {}", part_info.dir_name, reason);
-                part_info.disk->moveDirectory(fs::path(relative_data_path) / source_dir / part_info.dir_name,
+                /// The `ignored_` rename permanently mutates the shared `detached/` namespace and
+                /// happens before the commit-time epoch fence in `attachPartition`, so re-check
+                /// the lease — and the admitting leadership epoch — before each one, and record it
+                /// so that a rejection later undoes it.
+                assertLeaseFreshForDetachedOperation("rename to ignored_", part_info.dir_name, admission_epoch, detached_rollback);
+                detached_changes.renameDirectory(part_info.disk,
+                    fs::path(relative_data_path) / source_dir / part_info.dir_name,
                     fs::path(relative_data_path) / source_dir / ("ignored_" + part_info.dir_name));
             }
         }
@@ -10499,14 +11108,25 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             LOG_DEBUG(log, "Found containing part {} for part {}", containing_part, part_info.dir_name);
 
             if (containing_part != part_info.dir_name)
-                part_info.disk->moveDirectory(fs::path(relative_data_path) / source_dir / part_info.dir_name,
+            {
+                /// Same as the `ignored_` rename above: permanent, pre-fence, shared-namespace.
+                assertLeaseFreshForDetachedOperation("rename to inactive_", part_info.dir_name, admission_epoch, detached_rollback);
+                detached_changes.renameDirectory(part_info.disk,
+                    fs::path(relative_data_path) / source_dir / part_info.dir_name,
                     fs::path(relative_data_path) / source_dir / ("inactive_" + part_info.dir_name));
+            }
             else
                 renamed_parts.addPart(part_info.dir_name, part_info.dir_name, "attaching_" + part_info.dir_name, part_info.disk);
         }
     }
 
     /// Try to rename all parts before attaching to prevent race with DROP DETACHED and another ATTACH.
+    /// Re-fence first: a stale leader must not take `attaching_` ownership of directories the new
+    /// leader may be operating on. A failure here or below rolls the temporary renames back via
+    /// the caller's `PartsTemporaryRename` destructor.
+    if (!renamed_parts.old_and_new_names.empty())
+        assertLeaseFreshForDetachedOperation(
+            "rename to attaching_", renamed_parts.old_and_new_names.front().old_dir, admission_epoch, detached_rollback);
     renamed_parts.tryRenameAll();
 
     /// Synchronously check that added parts exist and are not broken. We will write checksums.txt if it does not exist.
@@ -10522,8 +11142,17 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         /// transaction (see `VersionMetadataOnDisk::loadMetadata`) and get discarded as `Outdated`.
         /// Remove the temporary file first so the cleanup is fail-closed: a failure between the two
         /// removals leaves a valid `txn_version.txt` rather than the dangerous tmp-only state.
-        disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
-        disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+        /// The removals are irreversible shared-storage side effects, so re-check the lease before
+        /// EACH of them: the lease may go stale between the two removals, and stripping only the
+        /// main `txn_version.txt` of a part whose attach is then rolled back would silently turn
+        /// detached transactional data into non-transactional data for the next leader. Both
+        /// removals are recorded, so a rejection later restores the files verbatim.
+        assertLeaseFreshForDetachedOperation("strip transaction metadata from", new_dir, admission_epoch, detached_rollback);
+        detached_changes.removeFileIfExists(
+            disk, fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
+        assertLeaseFreshForDetachedOperation("strip transaction metadata from", new_dir, admission_epoch, detached_rollback);
+        detached_changes.removeFileIfExists(
+            disk, fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
 
         /// The per-part `SingleDiskVolume` lives for the part's lifetime, so create it in the dedicated
         /// arena; `build()` and `loadPartAndFixMetadataImpl` below run outside it (the metadata load's
@@ -10877,7 +11506,7 @@ MergeTreeData::Transaction::Transaction(MergeTreeData & data_, MergeTreeTransact
         data.transactions_enabled.store(true);
 }
 
-void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
+void MergeTreeData::Transaction::rollbackPartsToTemporaryState(DataPartsLock * acquired_lock)
 {
     if (!isEmpty())
     {
@@ -10888,8 +11517,11 @@ void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
         buf << ".";
         LOG_DEBUG(data.log, "Undoing transaction.{}", buf.str());
 
+        std::optional<DataPartsLock> own_lock;
+        auto & lock = acquired_lock ? *acquired_lock : own_lock.emplace(data.lockParts());
+
         data.removePartsFromWorkingSetImmediatelyAndSetTemporaryState(
-            DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()));
+            DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()), lock);
     }
 
     clear();
@@ -11000,26 +11632,135 @@ void MergeTreeData::Transaction::clear()
     chassert(precommitted_parts.size() >= precommitted_parts_need_rename.size());
     precommitted_parts.clear();
     precommitted_parts_need_rename.clear();
+    published_parts_pending_commit.clear();
 }
 
 void MergeTreeData::Transaction::renameParts()
 {
     for (const auto & part_need_rename : precommitted_parts_need_rename)
     {
+        if (publish_fence_epoch)
+        {
+            /// Publishing a batch is not atomic: the lease can expire between two renames, and
+            /// everything renamed so far is already visible under its persistent name. Re-check
+            /// the fence before each rename, and undo the renames already done if it fails.
+            try
+            {
+                /// Test hook: fail only after the first part of the batch has been published,
+                /// which is exactly the window this fence closes.
+                if (!published_parts_pending_commit.empty())
+                {
+                    fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_mid_batch_rename,
+                    {
+                        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                            "Simulated leadership loss in the middle of publishing a batch of parts (leader_election)");
+                    });
+                }
+
+                data.assertWritableLeaderAtEpoch(*publish_fence_epoch);
+            }
+            catch (...)
+            {
+                undoPublishedRenames();
+                throw;
+            }
+
+            /// `getPartDirectory` is already relative to the table root and keeps the parent
+            /// directory of a part staged from the detached namespace (`detached/attaching_…` for
+            /// `ATTACH PARTITION`), which is exactly what `renameTo` expects. The journal entry is
+            /// kept until `commit` (not just for this call), so that a two-table operation whose
+            /// OTHER side fails after this batch fully published can still undo it
+            /// (see `undoPublishedRenames`).
+            published_parts_pending_commit.emplace_back(part_need_rename, part_need_rename->getDataPartStorage().getPartDirectory());
+        }
+
         LOG_TEST(data.log, "Renaming part to {}", part_need_rename->name);
         part_need_rename->renameTo(part_need_rename->name, true);
     }
     precommitted_parts_need_rename.clear();
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
+void MergeTreeData::Transaction::undoPublishedRenames()
 {
-    auto lock = data.lockParts();
-    return commit(lock);
+    /// Rename the published parts back to the temporary directories they came from. The command
+    /// is aborted, so nothing of it may stay visible under a persistent name: otherwise the
+    /// next leader would load parts of a DDL that failed. The temporary names are process-scoped
+    /// under `leader_election` (`getPostfixForTempPartName`), so restoring them cannot collide
+    /// with the new leader's own work. A rollback failure is a command failure too: swallowing it
+    /// would claim the command was rejected while leaving a persistent part for the next leader.
+    std::exception_ptr first_exception;
+    for (auto it = published_parts_pending_commit.rbegin(); it != published_parts_pending_commit.rend(); ++it)
+    {
+        try
+        {
+            LOG_DEBUG(data.log, "Renaming part {} back to {}: the batch was aborted", it->first->name, it->second);
+            it->first->renameTo(it->second, true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(data.log, "Cannot rename part " + it->first->name + " back to " + it->second);
+
+            if (!first_exception)
+                first_exception = std::current_exception();
+        }
+    }
+
+    if (first_exception)
+        std::rethrow_exception(first_exception);
+
+    published_parts_pending_commit.clear();
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock)
+void MergeTreeData::Transaction::validateCommitPreconditions()
 {
+    if (publish_fence_epoch)
+    {
+        /// The parts of this transaction were published under the leadership epoch that
+        /// admitted the operation. A plain leadership check would let a node that lost and
+        /// reacquired the lease commit parts prepared under the previous epoch, racing the
+        /// writes the interim leader may have made. And when the check fails, the published
+        /// renames must be undone: everything this transaction renamed is already visible
+        /// under a persistent name on shared storage, where the next leader would load it
+        /// even though the client gets an exception.
+        try
+        {
+            /// Test hook: deterministically simulate a leadership loss between the publishing
+            /// rename(s) and the commit, which is exactly the window this fence closes.
+            fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_before_commit,
+            {
+                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                    "Simulated leadership loss between the publishing renames and the commit (leader_election)");
+            });
+
+            data.assertWritableLeaderAtEpoch(*publish_fence_epoch);
+        }
+        catch (...)
+        {
+            undoPublishedRenames();
+            throw;
+        }
+    }
+    else
+        data.assertCanCommitTransaction();
+
+    commit_preconditions_validated = true;
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(bool is_refresh)
+{
+    auto lock = data.lockParts();
+    return commit(lock, is_refresh);
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock, bool is_refresh)
+{
+    /// Refresh-path commits (`loadNewlyAppearedParts`) only add parts that already exist on
+    /// shared storage to the local in-memory index; they do not produce new data. Followers
+    /// under `leader_election` must be able to run this path to keep their part view fresh,
+    /// so the leadership assertion is skipped in that case.
+    if (!is_refresh && !commit_preconditions_validated)
+        validateCommitPreconditions();
+
     DataPartsVector total_covered_parts;
 
     if (!isEmpty())
@@ -12045,6 +12786,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     ContextPtr local_context)
 {
     auto settings = getSettings();
+    const UInt64 admission_epoch = currentLeadershipEpoch();
 
     String clickhouse_path = fs::canonical(local_context->getPath());
     String default_shadow_path = fs::path(clickhouse_path) / "shadow/";
@@ -12070,9 +12812,38 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication] && has_zero_copy_part)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FREEZE PARTITION queries are disabled.");
 
-    String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
+    String backup_name = !with_name.empty() ? escapeForFileName(with_name) : toString(increment);
+    if (with_name.empty())
+    {
+        /// `shadow/increment.txt` is local to a server, while a `leader_election` table's
+        /// `shadow/` directory is shared. Keep the familiar numeric default for ordinary
+        /// tables, but scope automatic names to the server process for shared storage.
+        if (const auto postfix = getPostfixForTempPartName(); !postfix.empty())
+            backup_name += "_" + postfix;
+    }
     String backup_path = fs::path(shadow_path) / backup_name / "";
 
+    if ((*settings)[MergeTreeSetting::leader_election])
+    {
+        /// `SYSTEM UNFREEZE` gets only a path and resolves the table directory (by `UUID` or by
+        /// database and table name) back to a loaded table to fence the removal. That resolution fails when the table was dropped locally,
+        /// so mark the snapshot as owned by a lease: without the table there is no lease to check
+        /// and the removal must be refused instead of deleting shared data owned by another node.
+        for (const auto & disk : getStoragePolicy()->getDisks())
+        {
+            if (disk->isReadOnly() || disk->isWriteOnce())
+                continue;
+
+            assertWritableLeaderAtEpoch(admission_epoch);
+
+            const String marker_path = fs::path(backup_path) / relative_data_path / LEADER_ELECTION_SNAPSHOT_MARKER_FILE_NAME;
+            disk->createDirectories(fs::path(marker_path).parent_path());
+            auto out = disk->writeFile(marker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, local_context->getWriteSettings());
+            writeString(getStorageID().getNameForLogs(), *out);
+            writeChar('\n', *out);
+            out->finalize();
+        }
+    }
 
     ThreadPool pool(
         CurrentMetrics::FreezePartThreads,
@@ -12094,9 +12865,14 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
         /// Passing by reference here is fine. All variables outlive the runner.
         runner.enqueueAndKeepTrack(
-            [this, &part, &backup_path, &backup_name, &local_context, &result, &result_mutex]()
+            [this, &part, &backup_path, &backup_name, &local_context, &result, &result_mutex, admission_epoch]()
             {
                 LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
+
+                /// A `FREEZE` writes into `shadow/` on the table disk. Fence every part to the
+                /// command's admission epoch so a stale leader cannot keep extending a shared
+                /// snapshot after failover (or after it reacquired a newer lease).
+                assertWritableLeaderAtEpoch(admission_epoch);
 
                 auto data_part_storage = part->getDataPartStoragePtr();
                 String backup_part_path = fs::path(backup_path) / relative_data_path;
@@ -12104,8 +12880,9 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
                 scope_guard src_flushed_tmp_dir_lock;
                 MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
 
-                auto callback = [this, &part, &backup_part_path](const DiskPtr & disk)
+                auto callback = [this, &part, &backup_part_path, admission_epoch](const DiskPtr & disk)
                 {
+                    assertWritableLeaderAtEpoch(admission_epoch);
                     // Store metadata for replicated table.
                     // Do nothing for non-replicated.
                     createAndStoreFreezeMetadata(disk, part, fs::path(backup_part_path) / part->getDataPartStorage().getPartDirectory());
@@ -12123,6 +12900,8 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
                     local_context->getWriteSettings(),
                     callback,
                     params);
+
+                assertWritableLeaderAtEpoch(admission_epoch);
 
                 part->is_frozen.store(true, std::memory_order_relaxed);
                 {
@@ -12177,13 +12956,19 @@ bool MergeTreeData::removeDetachedPart(DiskPtr disk, const String & path, const 
 PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr local_context)
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::unfreezePartitionsByMatcher");
+    const UInt64 admission_epoch = currentLeadershipEpoch();
     auto backup_path = fs::path("shadow") / escapeForFileName(backup_name) / relative_data_path;
 
     LOG_DEBUG(log, "Unfreezing parts by path {}", backup_path.generic_string());
 
     auto disks = getStoragePolicy()->getDisks();
 
-    return Unfreezer(local_context).unfreezePartitionsFromTableDirectory(matcher, backup_name, disks, backup_path);
+    return Unfreezer(local_context).unfreezePartitionsFromTableDirectory(
+        matcher,
+        backup_name,
+        disks,
+        backup_path,
+        [this, admission_epoch] { assertWritableLeaderAtEpoch(admission_epoch); });
 }
 
 bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
@@ -12390,7 +13175,7 @@ bool MergeTreeData::areBackgroundMovesNeeded() const
     return policy->getVolumes().size() == 1 && policy->getVolumes()[0]->getDisks().size() > 1;
 }
 
-std::future<MovePartsOutcome> MergeTreeData::movePartsToSpace(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool async)
+std::future<MovePartsOutcome> MergeTreeData::movePartsToSpace(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool async, std::optional<UInt64> admission_epoch)
 {
     auto finish_move_promise = std::make_shared<std::promise<MovePartsOutcome>>();
     auto finish_move_future = finish_move_promise->get_future();
@@ -12398,9 +13183,9 @@ std::future<MovePartsOutcome> MergeTreeData::movePartsToSpace(const CurrentlyMov
     if (async)
     {
         bool is_scheduled = background_moves_assignee.scheduleMoveTask(std::make_shared<ExecutableLambdaAdapter>(
-            [this, finish_move_promise, moving_tagger, read_settings, write_settings] () mutable
+            [this, finish_move_promise, moving_tagger, read_settings, write_settings, admission_epoch] () mutable
             {
-                auto outcome = moveParts(moving_tagger, read_settings, write_settings, /* wait_for_move_if_zero_copy= */ true);
+                auto outcome = moveParts(moving_tagger, read_settings, write_settings, /* wait_for_move_if_zero_copy= */ true, admission_epoch);
 
                 finish_move_promise->set_value(outcome);
 
@@ -12412,7 +13197,7 @@ std::future<MovePartsOutcome> MergeTreeData::movePartsToSpace(const CurrentlyMov
     }
     else
     {
-        auto outcome = moveParts(moving_tagger, read_settings, write_settings, /* wait_for_move_if_zero_copy= */ true);
+        auto outcome = moveParts(moving_tagger, read_settings, write_settings, /* wait_for_move_if_zero_copy= */ true, admission_epoch);
         finish_move_promise->set_value(outcome);
     }
 
@@ -12471,7 +13256,7 @@ MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::checkPartsForMove(co
     return std::make_shared<CurrentlyMovingPartsTagger>(std::move(parts_to_move), *this);
 }
 
-MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool wait_for_move_if_zero_copy)
+MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool wait_for_move_if_zero_copy, std::optional<UInt64> admission_epoch)
 {
     LOG_INFO(log, "Got {} parts to move.", moving_tagger->parts_to_move.size());
 
@@ -12554,7 +13339,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
                         /// Recheck if the lock (and keeper session expirity) is OK
                         if (lock->isLocked())
                         {
-                            parts_mover.swapClonedPart(cloned_part);
+                            parts_mover.swapClonedPart(cloned_part, admission_epoch);
                             break; /// Successfully moved
                         }
                         else
@@ -12583,7 +13368,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             else /// Ordinary move as it should be
             {
                 cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
-                parts_mover.swapClonedPart(cloned_part);
+                parts_mover.swapClonedPart(cloned_part, admission_epoch);
             }
             write_part_log({});
         }
@@ -13519,6 +14304,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     const MergeTreeTransactionPtr & txn,
     std::optional<PatchPartIndex> patch_part_index) const
 {
+    fiu_do_on(FailPoints::merge_tree_create_empty_part_inject_failure,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure into MergeTreeData::createEmptyPart");
+    });
+
     auto settings = getSettings();
 
     auto block = metadata_snapshot->getSampleBlock();
@@ -13539,7 +14329,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     /// A leftover is possible here: the covering operation (DROP/DETACH/MOVE/REPLACE PARTITION) that
     /// creates this empty part can be interrupted after the directory but before the rename.
-    String tmp_part_dir_name = EMPTY_PART_TMP_PREFIX + new_part_name;
+    /// Scope the temporary directory name to this server process: under `leader_election`,
+    /// several processes share the data path and empty covering parts for the same partition
+    /// could otherwise collide by name. See `getPostfixForTempPartName`.
+    String tmp_part_dir_name = EMPTY_PART_TMP_PREFIX;
+    if (const auto temp_postfix = getPostfixForTempPartName(); !temp_postfix.empty())
+        tmp_part_dir_name += temp_postfix + "_";
+    tmp_part_dir_name += new_part_name;
     auto tmp_dir_holder = claimTemporaryPartDirectory(data_part_volume->getDisk(), tmp_part_dir_name);
 
     auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, tmp_part_dir_name, getReadSettings(), PartDirIntent::CreateFresh)

@@ -114,6 +114,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char merge_task_projection_stage_pause[];
+    extern const char merge_task_pause_after_temporary_directory_created[];
     extern const char merge_task_pause_after_reserving_tmp_dir[];
 }
 
@@ -559,6 +560,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     // projection parts have different prefix and suffix compared to normal parts.
     // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
     String local_tmp_prefix = global_ctx->parent_part ? "" : TEMP_DIRECTORY_PREFIX;
+
+    /// Scope the temporary directory name to this server process: under `leader_election`,
+    /// several processes share the data path, and the merged part name is deterministic, so
+    /// after a failover the new leader could otherwise collide with a leftover temporary
+    /// directory of the previous leader's in-flight merge of the same parts. Projection merges
+    /// are exempt: their directories live inside the parent part's (already scoped) directory.
+    /// The token goes after the prefix so that temporary-directory cleanup and the part-loading
+    /// skip of `tmp*` directories keep matching by prefix. See `getPostfixForTempPartName`.
+    if (!global_ctx->parent_part)
+        if (const auto temp_postfix = global_ctx->data->getPostfixForTempPartName(); !temp_postfix.empty())
+            local_tmp_prefix += temp_postfix + "_";
 
     /// Honor an explicitly supplied suffix for top-level merges too, not only projections.
     /// Real top-level merges pass an empty suffix; `OPTIMIZE ... DRY RUN` passes a unique one.
@@ -1240,6 +1252,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->context->getWriteSettings(),
         &global_ctx->written_offset_substreams,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression);
+
+    /// Test hook: hold the merge here, when its temporary directory exists on disk but the
+    /// result is not published yet (used to exercise failover with an in-flight merge).
+    FailPointInjection::pauseFailPoint(FailPoints::merge_task_pause_after_temporary_directory_created);
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;

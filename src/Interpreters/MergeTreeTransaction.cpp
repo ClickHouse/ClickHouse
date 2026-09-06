@@ -138,7 +138,14 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
         for (const auto & covered : covered_parts)
         {
             transaction_context.part_name = covered->name;
-            covered->version->setAndStoreNonTransactionalRemovalTID(transaction_context);
+            /// Under `leader_election`, persisting the removal TID writes to the covered part's
+            /// version metadata on shared object storage. A follower part refresh
+            /// (`loadNewlyAppearedParts`, committed with `is_refresh`) reaches this path when the
+            /// leader merged parts, but must only update its in-memory part set — the leader owns
+            /// the on-disk metadata. `mayMutateSharedStorage()` is true for the leader and for any
+            /// non-`leader_election` table, so behavior is unchanged there.
+            if (covered->storage.mayMutateSharedStorage())
+                covered->version->setAndStoreNonTransactionalRemovalTID(transaction_context);
         }
     }
 }

@@ -1,6 +1,7 @@
 #include <Storages/Freeze.h>
 
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
@@ -144,7 +145,22 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
 
     PartitionCommandsResultInfo result_info;
 
+    /// Table directories of the snapshot, resolved to their storage where possible, collected for
+    /// every disk before anything is removed.
+    struct SnapshotTableDirectory
+    {
+        DiskPtr disk;
+        fs::path table_directory;
+        std::shared_ptr<MergeTreeData> merge_tree;
+    };
+    std::vector<SnapshotTableDirectory> table_directories;
+
     auto disks_map = local_context->getDisksMap();
+
+    /// First pass: resolve every table directory and reject the whole command if any of them
+    /// belongs to a `leader_election` table that cannot be fenced on this node. The scan covers
+    /// all disks before the second pass removes anything, so a rejected `SYSTEM UNFREEZE` leaves
+    /// the snapshot exactly as it was.
     for (auto & [_, disk] : disks_map)
     {
         if (disk->isReadOnly() || disk->isWriteOnce())
@@ -161,21 +177,87 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
                 for (auto table_it = disk->iterateDirectory(prefix_directory); table_it->isValid(); table_it->next())
                 {
                     auto table_directory = prefix_directory / table_it->name();
-                    auto current_result_info = unfreezePartitionsFromTableDirectory(
-                        [](const String &) { return true; }, backup_name, {disk}, table_directory);
-                    for (auto & command_result : current_result_info)
-                        command_result.command_type = "SYSTEM UNFREEZE";
-                    result_info.insert(
-                        result_info.end(),
-                        std::make_move_iterator(current_result_info.begin()),
-                        std::make_move_iterator(current_result_info.end()));
+
+                    /// `SYSTEM UNFREEZE` receives only the on-disk path, unlike `ALTER TABLE ...
+                    /// UNFREEZE`. Resolve the table directory back to its storage before deleting
+                    /// anything, so leader-election tables get the same admission-epoch fence.
+                    /// The snapshot mirrors the table's relative data path, so there are two
+                    /// layouts: `store/{prefix}/{uuid}` for UUID-backed tables (`Atomic` and
+                    /// `Replicated` databases) and `data/{database}/{table}` for `Ordinary` ones, with
+                    /// the names escaped for the file system.
+                    StoragePtr storage;
+                    if (store_path.filename() == "store")
+                    {
+                        if (UUID table_uuid; tryParse(table_uuid, table_it->name()))
+                            storage = DatabaseCatalog::instance().tryGetByUUID(table_uuid).second;
+                    }
+                    else
+                    {
+                        storage = DatabaseCatalog::instance().tryGetTable(
+                            StorageID(unescapeForFileName(prefix_it->name()), unescapeForFileName(table_it->name())),
+                            local_context);
+                    }
+
+                    std::shared_ptr<MergeTreeData> merge_tree;
+                    if (storage)
+                        merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+
+                    /// An unresolved directory means the table is not loaded on this node: it was
+                    /// dropped locally, or never attached here. Removing the snapshot then still
+                    /// makes sense for an ordinary table — that is exactly what `SYSTEM UNFREEZE`
+                    /// is for — but a `leader_election` snapshot lives on storage shared with
+                    /// other nodes and there is no lease left to check here, so the command must
+                    /// fail closed instead of deleting data another node's leader owns. The
+                    /// snapshot carries the marker written at `FREEZE` time for exactly this.
+                    if (!merge_tree
+                        && disk->existsFile(table_directory / MergeTreeData::LEADER_ELECTION_SNAPSHOT_MARKER_FILE_NAME))
+                    {
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Snapshot {} on disk {} belongs to a `leader_election` table that is not attached on this "
+                            "node, so its lease cannot be checked here. Removing it could delete shared data owned by "
+                            "the current leader. Attach the table on this node and use `ALTER TABLE ... UNFREEZE WITH "
+                            "NAME` on the leader instead.",
+                            table_directory.generic_string(), disk->getName());
+                    }
+
+                    table_directories.push_back({disk, std::move(table_directory), std::move(merge_tree)});
                 }
             }
         }
+    }
+
+    /// Second pass: the actual removal, fenced per table at the epoch captured at admission.
+    std::unordered_map<String, std::vector<std::function<void()>>> assert_writable_at_admission_epoch;
+    for (const auto & entry : table_directories)
+    {
+        const UInt64 admission_epoch = entry.merge_tree ? entry.merge_tree->currentLeadershipEpoch() : 0;
+        auto merge_tree = entry.merge_tree;
+        auto assert_table_writable = [merge_tree, admission_epoch]
+        {
+            if (merge_tree)
+                merge_tree->assertWritableLeaderAtEpoch(admission_epoch);
+        };
+        auto current_result_info = unfreezePartitionsFromTableDirectory(
+            [](const String &) { return true; }, backup_name, {entry.disk}, entry.table_directory, assert_table_writable);
+        assert_writable_at_admission_epoch[entry.disk->getName()].emplace_back(std::move(assert_table_writable));
+        for (auto & command_result : current_result_info)
+            command_result.command_type = "SYSTEM UNFREEZE";
+        result_info.insert(
+            result_info.end(),
+            std::make_move_iterator(current_result_info.begin()),
+            std::make_move_iterator(current_result_info.end()));
+    }
+
+    for (auto & [_, disk] : disks_map)
+    {
+        if (disk->isReadOnly() || disk->isWriteOnce())
+            continue;
 
         if (disk->existsDirectory(backup_path))
         {
             /// After unfreezing we need to clear revision.txt file and empty directories
+            for (const auto & assert_writable : assert_writable_at_admission_epoch[disk->getName()])
+                assert_writable();
             disk->removeRecursive(backup_path);
         }
     }
@@ -205,7 +287,12 @@ bool Unfreezer::removeFrozenPart(DiskPtr disk, const String & path, const String
     return false;
 }
 
-PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(MergeTreeData::MatcherFn matcher, const String & backup_name, const Disks & disks, const fs::path & table_directory)
+PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(
+    MergeTreeData::MatcherFn matcher,
+    const String & backup_name,
+    const Disks & disks,
+    const fs::path & table_directory,
+    const std::function<void()> & assert_writable_at_admission_epoch)
 {
     PartitionCommandsResultInfo result;
 
@@ -229,6 +316,9 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
 
             const auto & path = it->path();
 
+            /// `UNFREEZE` removes from `shadow/` on the table disk. Do not let a leader that
+            /// lost, then possibly reacquired, its lease continue deleting another epoch's data.
+            assert_writable_at_admission_epoch();
             bool keep_shared = removeFrozenPart(disk, path, partition_directory, local_context, zookeeper);
 
             result.push_back(PartitionCommandResultInfo{
@@ -241,6 +331,23 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
             });
 
             LOG_DEBUG(log, "Unfrozen part by path {}, keep shared data: {}", disk->getPath() + path, keep_shared);
+        }
+
+        /// The leader-election marker is not a part directory, so the loop above never removes it.
+        /// Drop it once the snapshot of this table holds no parts any more, so that an emptied
+        /// snapshot directory does not keep blocking a later `SYSTEM UNFREEZE`.
+        const auto marker_path = table_directory / MergeTreeData::LEADER_ELECTION_SNAPSHOT_MARKER_FILE_NAME;
+        if (disk->existsFile(marker_path))
+        {
+            bool has_parts = false;
+            for (auto it = disk->iterateDirectory(table_directory); it->isValid() && !has_parts; it->next())
+                has_parts = it->name().contains('_');
+
+            if (!has_parts)
+            {
+                assert_writable_at_admission_epoch();
+                disk->removeFileIfExists(marker_path);
+            }
         }
     }
 

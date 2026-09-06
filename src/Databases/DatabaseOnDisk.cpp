@@ -418,13 +418,48 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
         throw;
     }
 
-    for (const auto & [disk_name, disk] : getContext()->getDisksMap())
+    /// Honor the storage's data-cleanup skip contract. A `MergeTree` with `leader_election = 1`
+    /// keeps its data on shared object storage owned by whichever node holds the lease, and
+    /// `StorageMergeTree::drop` deliberately skips local cleanup; without this, the on-disk
+    /// database drop path below would still `removeRecursive` the shared prefix on a follower and
+    /// delete data the live leader owns (the documented "DROP TABLE removes only local metadata").
+    if (table && table->dropSkipsDataDirectoryCleanup())
     {
-        if (disk->isReadOnly() || !disk->existsDirectory(table_data_path_relative))
-            continue;
+        LOG_INFO(log, "Skipping data directory cleanup for dropped table {}: storage manages its data externally", table_name);
+    }
+    else
+    {
+        /// If the ownership of the data could not be determined — no table object at all (a lazy
+        /// database drops tables it never loaded) or a lazy-load proxy whose real storage failed
+        /// to materialize during `drop()` — mirror `DatabaseCatalog::dropTableFinally`: still
+        /// clean up node-local disks (so an ordinary table does not leak its data directory on a
+        /// transient load failure), but skip disks whose metadata is shared across nodes
+        /// (`plain_rewritable` — the layout `leader_election` requires — or `keeper`), where
+        /// `removeRecursive` could destroy data a live leader still owns.
+        const bool data_ownership_unknown = !table || table->dropDataOwnershipUnknown();
 
-        LOG_INFO(log, "Removing data directory from disk {} with path {} for dropped table {} ", disk_name, table_data_path_relative, table_name);
-        disk->removeRecursive(table_data_path_relative);
+        for (const auto & [disk_name, disk] : getContext()->getDisksMap())
+        {
+            if (disk->isReadOnly() || !disk->existsDirectory(table_data_path_relative))
+                continue;
+
+            if (data_ownership_unknown)
+            {
+                auto metadata_type = disk->getDataSourceDescription().metadata_type;
+                if (metadata_type == MetadataStorageType::PlainRewritable || metadata_type == MetadataStorageType::Keeper)
+                {
+                    LOG_WARNING(log,
+                        "Not removing data directory {} of dropped table {} from disk {}: the table could not be "
+                        "loaded and the disk uses shared metadata, so its data may belong to another node. Skipping "
+                        "to avoid destroying shared data; the directory may need manual cleanup.",
+                        table_data_path_relative, table_name, disk_name);
+                    continue;
+                }
+            }
+
+            LOG_INFO(log, "Removing data directory from disk {} with path {} for dropped table {} ", disk_name, table_data_path_relative, table_name);
+            disk->removeRecursive(table_data_path_relative);
+        }
     }
     db_disk->removeFileIfExists(table_metadata_path_drop);
 }

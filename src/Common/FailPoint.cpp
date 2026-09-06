@@ -76,6 +76,26 @@ static struct InitFiu
     ONCE(smt_lightweight_snapshot_table_path_session_expired) \
     ONCE(smt_lightweight_update_sleep_after_block_allocation) \
     ONCE(smt_merge_task_sleep_in_prepare) \
+    REGULAR(merge_tree_leader_election_stale_epoch_before_commit) \
+    REGULAR(merge_tree_leader_election_stale_lease_cleanup) \
+    REGULAR(merge_tree_leader_election_stale_lease_before_clear_empty) \
+    REGULAR(merge_tree_leader_election_stale_lease_during_takeover_scan) \
+    REGULAR(merge_tree_leader_election_stale_lease_detached_ddl) \
+    REGULAR(merge_tree_leader_election_stale_lease_mid_batch_rename) \
+    REGULAR(merge_tree_leader_election_stale_lease_before_commit) \
+    REGULAR(merge_tree_leader_election_stale_lease_between_move_publishes) \
+    REGULAR(merge_tree_leader_election_stale_lease_between_move_commits) \
+    REGULAR(merge_tree_leader_election_stale_lease_mid_cleanup) \
+    REGULAR(merge_tree_leader_election_stale_lease_mid_clear_empty_parts) \
+    REGULAR(merge_tree_grab_old_parts_skip) \
+    REGULAR(merge_tree_refresh_parts_skip) \
+    REGULAR(merge_tree_create_empty_part_inject_failure) \
+    REGULAR(merge_tree_leader_election_stale_lease_mid_detached_mutation) \
+    REGULAR(merge_tree_leader_election_stale_lease_dedup_log_write) \
+    REGULAR(merge_tree_leader_election_stale_lease_dedup_log_mid_batch) \
+    REGULAR(merge_tree_leader_election_stale_lease_dedup_log_before_rotate) \
+    REGULAR(merge_tree_leader_election_stale_lease_before_restore_detach_broken) \
+    REGULAR(merge_tree_restored_part_load_failure) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
     ONCE(merge_tree_refresh_parts_throw_once) \
@@ -279,6 +299,10 @@ static struct InitFiu
     PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
     REGULAR(mutate_task_random_sleep_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
+    PAUSEABLE(merge_task_pause_after_temporary_directory_created) \
+    PAUSEABLE(merge_tree_leader_election_pause_after_detach_clone) \
+    PAUSEABLE(merge_tree_leader_election_pause_after_restore_admission) \
+    PAUSEABLE(merge_tree_leader_election_pause_heartbeat) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_mutate_task_pause_before_rename_part) \
     PAUSEABLE(rmt_mutate_task_pause_after_temporary_part_released) \

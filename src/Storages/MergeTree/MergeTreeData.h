@@ -228,6 +228,15 @@ public:
     constexpr static auto DETACHED_DIR_NAME = "detached";
     constexpr static auto MOVING_DIR_NAME = "moving";
 
+    /// Marker written by `FREEZE` into the snapshot's table directory of a `leader_election`
+    /// table. `SYSTEM UNFREEZE` only receives an on-disk path, so when the table `UUID` cannot be
+    /// resolved to a loaded table on this node (it was dropped locally, or never attached here),
+    /// this marker is the only evidence that the snapshot belongs to shared storage owned by a
+    /// lease. Its presence makes `SYSTEM UNFREEZE` fail closed instead of deleting a snapshot that
+    /// another node's leader owns. The name deliberately contains no underscore, so it is never
+    /// mistaken for a `<partition id>_<...>` part directory while unfreezing.
+    constexpr static auto LEADER_ELECTION_SNAPSHOT_MARKER_FILE_NAME = "leader-election.txt";
+
     /// Auxiliary structure for index comparison. Keep in mind lifetime of MergeTreePartInfo.
     struct DataPartStateAndInfo
     {
@@ -368,13 +377,52 @@ public:
     public:
         Transaction(MergeTreeData & data_, MergeTreeTransaction * txn_);
 
-        DataPartsVector commit();
-        DataPartsVector commit(DataPartsLock & lock);
+        /// `is_refresh` skips `assertCanCommitTransaction`. Used by `loadNewlyAppearedParts`
+        /// to add parts discovered on shared storage into the in-memory part set on follower
+        /// replicas under `leader_election`, where the leadership assertion would otherwise
+        /// reject the commit even though no new data is being produced.
+        DataPartsVector commit(bool is_refresh = false);
+        DataPartsVector commit(DataPartsLock & lock, bool is_refresh = false);
 
         /// Rename should be done explicitly, before calling commit(), to
         /// guarantee that no lock held during rename (since rename is IO
         /// bound, while data parts lock is the bottleneck)
         void renameParts();
+
+        /// Under `leader_election`, publish the batch under the leadership epoch captured at the
+        /// operation's admission: `renameParts` then re-checks the fence before EACH rename and
+        /// renames the parts it already published back to their temporary directories if the
+        /// lease goes stale in the middle of the batch. Without it, a lease lost after the first
+        /// rename would still leave the remaining parts of an aborted DDL under their persistent
+        /// names on shared storage, where the new leader can load them.
+        /// `commit` also enforces the armed fence (instead of the plain leadership check of
+        /// `assertCanCommitTransaction`) and undoes the published renames when it fails, so a
+        /// lease lost — or lost and reacquired — between the renames and the commit cannot leave
+        /// parts of a failed operation visible to the next leader. Direct renames done outside
+        /// `renameParts` (insert/merge/mutation with `rename_in_transaction = false`) join the
+        /// same undo journal in `preparePartForCommit`.
+        void setPublishFenceEpoch(UInt64 admission_epoch) { publish_fence_epoch = admission_epoch; }
+
+        /// Run the commit-time leadership checks (the armed publish fence, or the plain
+        /// `assertCanCommitTransaction` otherwise) ahead of `commit`, and remember that they
+        /// passed so that `commit` does not repeat them. Needed by two-table operations
+        /// (`MOVE PARTITION TO TABLE`): they commit two transactions in a row, and a check that
+        /// fails inside the SECOND `commit` only undoes that transaction's own publish, leaving
+        /// the first one committed — the moved partition would stay visible in both tables even
+        /// though the command returned an exception. Validating both sides first makes the two
+        /// commits unable to fail independently on the leadership fence, and a failure here is
+        /// still undone for the whole command (each transaction undoes its own published
+        /// renames, and the caller rolls both of them back).
+        void validateCommitPreconditions();
+
+        /// Rename the parts already published by `renameParts` back to the temporary directories
+        /// they came from. For two-table operations (`MOVE PARTITION TO TABLE`) that publish
+        /// through two transactions: when one side's batch has fully published and the other
+        /// side's publish then fails, the whole command is aborted and the completed batch must
+        /// not stay visible under persistent names on shared storage either. Only does anything
+        /// when the publish fence is armed (`leader_election`); a no-op otherwise. Best effort:
+        /// failures are logged, not thrown, so the original rejection reaches the client.
+        void undoPublishedRenames();
 
         void addPart(MutableDataPartPtr & part, bool need_rename);
 
@@ -382,7 +430,7 @@ public:
 
         /// Immediately remove parts from table's data_parts set and change part
         /// state to temporary. Useful for new parts which not present in table.
-        void rollbackPartsToTemporaryState();
+        void rollbackPartsToTemporaryState(DataPartsLock * acquired_lock = nullptr);
 
         size_t size() const { return precommitted_parts.size(); }
         bool isEmpty() const { return precommitted_parts.empty(); }
@@ -402,6 +450,19 @@ public:
 
         MutableDataParts precommitted_parts;
         MutableDataParts precommitted_parts_need_rename;
+
+        /// Set by `setPublishFenceEpoch` under `leader_election`; empty otherwise.
+        std::optional<UInt64> publish_fence_epoch;
+
+        /// Set by `validateCommitPreconditions`: the commit-time leadership checks have already
+        /// been made by the caller, so `commit` must not repeat them.
+        bool commit_preconditions_validated = false;
+
+        /// Parts published by `renameParts`, with the temporary directory each of them came
+        /// from, kept until `commit` so that an abort after a fully-published batch (see
+        /// `undoPublishedRenames`) can still rename them back. Only tracked when the publish
+        /// fence is armed.
+        std::vector<std::pair<MutableDataPartPtr, String>> published_parts_pending_commit;
     };
 
     using TransactionUniquePtr = std::unique_ptr<Transaction>;
@@ -442,6 +503,54 @@ public:
         const String source_dir;
         std::vector<RenameInfo> old_and_new_names;
         bool renamed = false;
+    };
+
+    /// Journal of the permanent changes an `ATTACH PARTITION` makes to the shared `detached/`
+    /// namespace before its parts are published: the `ignored_` / `inactive_` renames and the
+    /// stripped `txn_version.txt*` files. Those changes are not staged in `PartsTemporaryRename`
+    /// and used to survive a command that was rejected afterwards — in particular by the publish
+    /// fence, which can reject the command only after the first parts of the batch were already
+    /// prepared. The journal replays them in reverse in the destructor unless `commit` was called,
+    /// so a rejected command leaves the shared `detached/` contents byte-identical.
+    ///
+    /// Only armed under `leader_election`: with the journal disarmed the methods below are plain
+    /// pass-throughs to the disk, so the behaviour of every other engine is unchanged.
+    struct DetachedNamespaceRollback : private boost::noncopyable
+    {
+        DetachedNamespaceRollback(const MergeTreeData & storage_, bool armed_)
+            : storage(storage_)
+            , armed(armed_)
+        {
+        }
+
+        /// Moves a directory inside `detached/`, remembering how to move it back.
+        void renameDirectory(const DiskPtr & disk, const String & from_relative, const String & to_relative);
+
+        /// Removes a file if it exists, remembering its contents so that it can be recreated.
+        void removeFileIfExists(const DiskPtr & disk, const String & relative_path);
+
+        /// How many permanent changes were recorded so far. Zero when the journal is disarmed.
+        size_t recordedChanges() const { return changes.size(); }
+
+        /// The command succeeded: its changes to `detached/` are final.
+        void commit() { changes.clear(); }
+
+        ~DetachedNamespaceRollback();
+
+        struct Change
+        {
+            DiskPtr disk;
+            /// A rename: `renamed_to` has to be moved back to `renamed_from`.
+            String renamed_from;
+            String renamed_to;
+            /// A removed file: `removed_path` has to be recreated with `removed_content`.
+            String removed_path;
+            String removed_content;
+        };
+
+        const MergeTreeData & storage;
+        const bool armed;
+        std::vector<Change> changes;
     };
 
     /// Parameters for various modes.
@@ -699,6 +808,34 @@ public:
     /// The same as above but does not hold vector of data parts.
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
+    /// Whether this node may currently write to the (possibly shared) storage that backs the
+    /// parts — repairing `checksums.txt`/`columns.txt`, removing duplicate parts, detaching
+    /// broken parts, and persisting removal TIDs during loading and refresh. A standalone table
+    /// owns its data outright and always may. `StorageMergeTree` with `leader_election` overrides
+    /// this to allow such writes only while the lease is held, so that a follower (or a node that
+    /// has not yet acquired the lease) loads and refreshes its part view strictly read-only and
+    /// never mutates shared object-storage metadata owned by the current leader.
+    virtual bool mayMutateSharedStorage() const { return true; }
+
+    /// Re-check, immediately before an irreversible rename that publishes a part under its
+    /// persistent name, that this node is still the writable leader in the same leadership epoch
+    /// that admitted the operation. A no-op for every engine but `StorageMergeTree` with
+    /// `leader_election` (see the override there). Declared here so that
+    /// `Transaction::renameParts` — which publishes a whole batch of parts, one rename at a
+    /// time — can fence each individual rename.
+    virtual void assertWritableLeaderAtEpoch(UInt64 /*admission_epoch*/) const {}
+
+    /// The leadership epoch under which the currently executing command was admitted, captured at
+    /// the start of the command and passed back to `assertWritableLeaderAtEpoch` before each
+    /// irreversible shared-storage side effect. Returns 0 for every engine but `StorageMergeTree`
+    /// with `leader_election` (see the override there), where 0 also means "no lease".
+    virtual UInt64 currentLeadershipEpoch() const { return 0; }
+
+    /// Whether this table coordinates writes via `leader_election`. Write paths that publish
+    /// parts outside `Transaction::renameParts` (insert, merge, mutation) use it to decide
+    /// whether to arm the transaction's publish fence (`Transaction::setPublishFenceEpoch`).
+    virtual bool hasLeaderElection() const { return false; }
+
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
 
@@ -708,6 +845,35 @@ public:
     /// `refreshDataPartsOnce` performs a single refresh and is also used by `SYSTEM RESTART DISK`.
     void refreshDataParts(UInt64 interval_milliseconds);
     void refreshDataPartsOnce(UInt64 interval_milliseconds);
+
+    /// Scan shared storage for new parts and add them to the in-memory set.
+    /// Unlike `refreshDataParts`, does not reschedule a periodic task and does not require
+    /// all disks to be read-only. Used by `leader_election` to sync a new leader's view
+    /// of parts written by the previous leader before resuming writes.
+    /// The caller is responsible for invalidating the disk metadata cache via
+    /// `disk->refresh(...)` before this call when it needs the freshest view.
+    /// Returns the number of newly loaded parts.
+    ///
+    /// When `strict_takeover` is true (a `leader_election` leadership acquisition), broken and
+    /// duplicate parts get the same treatment startup loading would have given them on a
+    /// standalone writer — detach ("broken-on-start") and remove respectively. The read-only
+    /// pre-lease/follower startup loaders (`mayMutateSharedStorage`) skip that cleanup and are
+    /// one-shot, so the takeover scan is where the skipped work is deterministically replayed,
+    /// now under a held lease. Aborting instead would livelock leadership acquisition on the
+    /// same broken part forever. The detaching is bounded by `max_suspicious_broken_parts` /
+    /// `max_suspicious_broken_parts_bytes`: mass breakage still aborts the takeover, so the new
+    /// leader never enables writes having detached a suspiciously large slice of the active set.
+    /// The periodic follower refresh leaves `strict_takeover` false and stays best-effort
+    /// read-only (a follower merely skips parts it cannot load).
+    size_t loadNewlyAppearedParts(bool strict_takeover = false);
+
+    /// Retire (forget) active parts that are no longer present on the shared storage, according to
+    /// the listing collected by `loadNewlyAppearedParts`. Only for `leader_election`, and only on a
+    /// replica that is not currently writing (a follower refresh, or a takeover scan that runs
+    /// before writes are enabled). Returns the number of retired parts. See the implementation for
+    /// why this is what makes coverage-based retirements converge across replicas.
+    size_t retirePartsVanishedFromStorage(
+        const NameSet & part_directories_on_storage, const NameSet & scanned_disks, bool strict_takeover);
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
@@ -857,7 +1023,28 @@ public:
 
     static void validateDetachedPartName(const String & name);
 
-    void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
+    void dropDetached(const ASTPtr & partition, bool part, ContextPtr context, std::optional<UInt64> admission_epoch = {});
+
+    /// Under `leader_election`, throws `TABLE_IS_READ_ONLY` if the leader lease is no longer
+    /// fresh (`mayMutateSharedStorage`). `DROP DETACHED` and `ATTACH` mutate the shared
+    /// `detached/` namespace (prefix renames, `txn_version.txt*` removals, directory deletion)
+    /// before the commit-time epoch fence, so each such side effect is re-fenced individually:
+    /// a node that loses the lease mid-command must not keep mutating directories the new
+    /// leader now owns. No-op for tables without `leader_election`.
+    /// When `admission_epoch` is set, the side effect is additionally fenced by
+    /// `assertWritableLeaderAtEpoch`: lease freshness alone is not enough, because a node that
+    /// lost leadership and reacquired it as a NEW epoch has a fresh lease again, while the
+    /// detached-namespace changes it is about to make belong to a command admitted under the
+    /// previous epoch — and the command's own publish fence will reject it afterwards, leaving
+    /// those permanent changes behind.
+    /// `rollback`, when set, is the journal of the permanent changes this command already made to
+    /// the shared `detached/` namespace; it only gates the test hook that simulates a lease going
+    /// stale in the middle of such a sequence.
+    void assertLeaseFreshForDetachedOperation(
+        std::string_view action,
+        const String & dir_name,
+        std::optional<UInt64> admission_epoch = {},
+        const DetachedNamespaceRollback * rollback = nullptr) const;
 
     /// Execute a merge of the specified parts to a temporary directory without committing.
     /// Used by OPTIMIZE ... DRY RUN PARTS.
@@ -869,7 +1056,18 @@ public:
         bool cleanup,
         ContextPtr context);
 
-    MutableDataPartsVector tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr context, PartsTemporaryRename & renamed_parts);
+    /// `admission_epoch`, when set, fences every permanent change of the shared `detached/`
+    /// namespace made here (`ignored_` / `inactive_` renames, `attaching_` renames, stripping
+    /// `txn_version.txt*`) against the leadership epoch that admitted the `ATTACH` command, not
+    /// merely against lease freshness. See `assertLeaseFreshForDetachedOperation`.
+    /// `detached_rollback`, when set, records those permanent changes so that a command rejected
+    /// later (by the publish fence in the caller) undoes them. See `DetachedNamespaceRollback`.
+    MutableDataPartsVector tryLoadPartsToAttach(
+        const PartitionCommand & command,
+        ContextPtr context,
+        PartsTemporaryRename & renamed_parts,
+        std::optional<UInt64> admission_epoch = {},
+        DetachedNamespaceRollback * detached_rollback = nullptr);
 
     bool assertNoPatchesForParts(const DataPartsVector & parts, const DataPartsVector & patches, std::string_view command, bool throw_on_error = true) const;
 
@@ -1038,6 +1236,13 @@ public:
     /// That allows to schedule them for deletion a bit later
     size_t clearPartsFromFilesystemAndRollbackIfError(const DataPartsVector & parts_to_delete, const String & parts_type);
 
+    /// Whether destructive background cleanup (removing outdated parts from the filesystem, ...)
+    /// is currently allowed. Always true here; `StorageMergeTree` overrides it under
+    /// `leader_election` with a leadership-lease freshness check. Removal loops re-check it
+    /// before each part so that a lease that goes stale in the middle of a batch stops the
+    /// deletion instead of letting a stale leader destroy data the new leader still serves.
+    virtual bool canRunDestructiveCleanup() const { return true; }
+
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
     size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", "tmp-fetch_"});
@@ -1149,17 +1354,23 @@ public:
         ContextPtr context,
         TableLockHolder & table_lock_holder);
 
-    /// Extract data from the backup and put it to the storage.
-    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    /// Extract data from the backup and put it to the storage. `admission_epoch` is the leadership
+    /// epoch (see `currentLeadershipEpoch`) the caller sampled together with its admission check,
+    /// BEFORE this method reads any backup metadata: every later stage of the restore - the
+    /// non-empty-table check, each part copy, the detaching of broken parts and the final publish -
+    /// is fenced to it, so a lease lost and reacquired at any point after admission fails closed
+    /// instead of restoring into a table an interim leader may have changed meanwhile. The
+    /// `restoreDataFromBackup` override of each concrete storage samples it; nothing here does.
+    void restoreDataFromBackupAtEpoch(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions, UInt64 admission_epoch);
 
     /// Returns true if the storage supports backup/restore for specific partitions.
     bool supportsBackupPartition() const override { return true; }
 
     /// Moves partition to specified Disk
-    void movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
+    void movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context, UInt64 admission_epoch);
 
     /// Moves partition to specified Volume
-    void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
+    void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context, UInt64 admission_epoch);
 
     /// Moves partition to specified Table
     void movePartitionToTable(const PartitionCommand & command, ContextPtr query_context);
@@ -1477,10 +1688,11 @@ public:
     /// In merge tree we do inserts with several steps. One of them:
     /// X. write part to temporary directory with some temp name
     /// Y. rename temporary directory to final name with correct block number value
-    /// As temp name MergeTree use just ordinary in memory counter, but in some cases
-    /// it can be useful to add additional part in temp name to avoid collisions on FS.
-    /// FIXME: Currently unused.
-    virtual std::string getPostfixForTempInsertName() const { return ""; }
+    /// As temp name MergeTree use just ordinary in memory counter or the deterministic name of
+    /// the produced part, but in some cases it can be useful to add additional token in temp name
+    /// to avoid collisions on FS (e.g. `StorageMergeTree` under `leader_election`, where several
+    /// server processes create temporary names under the same shared data path).
+    virtual std::string getPostfixForTempPartName() const { return ""; }
 
     /// For generating names of temporary parts during insertion.
     SimpleIncrement insert_increment;
@@ -1627,6 +1839,10 @@ protected:
     friend class UniqueKeyDenseIndexOps; // for access to log + data_parts_by_info
 
     bool require_part_metadata;
+
+    /// Called from Transaction::commit to verify the instance is allowed to commit changes.
+    /// Overridden in StorageMergeTree to check leader election status.
+    virtual void assertCanCommitTransaction() const {}
 
     /// Relative path data, changes during rename for ordinary databases use
     /// under lockForShare if rename is possible.
@@ -2007,13 +2223,23 @@ protected:
 
     class RestoredPartsHolder;
 
-    /// Restores the parts of this table from backup.
-    void restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
+    /// Restores the parts of this table from backup. `admission_epoch` is carried into
+    /// `RestoredPartsHolder` and fences every restore task and the final publish; see
+    /// `restoreDataFromBackupAtEpoch`.
+    void restorePartsFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions, UInt64 admission_epoch);
     void restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> restored_parts_holder, const MergeTreePartInfo & part_info, const String & part_path_in_backup, bool detach_if_broken) const;
-    MutableDataPartPtr loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const;
+    MutableDataPartPtr loadPartRestoredFromBackup(
+        const String & part_name,
+        const DiskPtr & disk,
+        const String & temp_part_dir,
+        bool detach_if_broken,
+        UInt64 admission_epoch) const;
 
-    /// Attaches restored parts to the storage.
-    virtual void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
+    /// Attaches restored parts to the storage. `admission_epoch` is the leadership epoch sampled
+    /// when the restore was admitted (see `currentLeadershipEpoch`); the publish must be fenced to
+    /// that same epoch so a lease lost and reacquired during the restore fails closed instead of
+    /// publishing under the new lease. Ignored by storages without `leader_election`.
+    virtual void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info, UInt64 admission_epoch) = 0;
 
     void resetSerializationHints(const DataPartsLock & lock);
 
@@ -2232,10 +2458,10 @@ private:
     using CurrentlyMovingPartsTaggerPtr = std::shared_ptr<CurrentlyMovingPartsTagger>;
 
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
-    std::future<MovePartsOutcome> movePartsToSpace(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool async);
+    std::future<MovePartsOutcome> movePartsToSpace(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool async, std::optional<UInt64> admission_epoch = {});
 
     /// Move selected parts to corresponding disks
-    MovePartsOutcome moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool wait_for_move_if_zero_copy);
+    MovePartsOutcome moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, const ReadSettings & read_settings, const WriteSettings & write_settings, bool wait_for_move_if_zero_copy, std::optional<UInt64> admission_epoch = {});
 
     /// Select parts for move and disks for them. Used in background moving processes.
     CurrentlyMovingPartsTaggerPtr selectPartsForMove();

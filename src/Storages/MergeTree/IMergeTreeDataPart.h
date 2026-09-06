@@ -477,7 +477,8 @@ public:
     static NameSet readInvalidatedSystemColumns(ReadBuffer & in);
     static void writeInvalidatedSystemColumnsFile(IDataPartStorage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
     static void writeInvalidatedSystemColumnsFile(IDisk & disk, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
-    static void writeInvalidatedSystemColumnsFile(IDiskTransaction & transaction, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
+    /// `disk` is the disk the transaction writes to; only its capabilities are consulted.
+    static void writeInvalidatedSystemColumnsFile(IDiskTransaction & transaction, const IDisk & disk, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
 
     CompressionCodecPtr default_codec;
 
@@ -571,6 +572,15 @@ public:
     /// Makes clone of a part in detached/ directory via hard links
     virtual DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot,
                                                    const DiskTransactionPtr & disk_transaction) const;
+
+    /// Makes the same clone as `makeCloneInDetached`, but in `relative_dir_name` (relative to the
+    /// storage data directory) instead of a directory in `detached/`. Used to stage the copy of a
+    /// `DETACH` outside `detached/` until the command commits, see `StorageMergeTree::cloneToDetachedForDrop`.
+    DataPartStoragePtr makeCloneAt(const String & relative_dir_name, const DiskTransactionPtr & disk_transaction) const;
+
+    /// The directory in `detached/` a clone with this prefix would be put into, `_tryN` suffix and
+    /// all. Empty when the part looks like it has already been cloned there (only for `broken`).
+    std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
     MutableDataPartStoragePtr makeCloneOnDisk(
@@ -883,8 +893,6 @@ protected:
 
     /// Calculate the size of all files required to read a specified subcolumn.
     virtual ColumnSize calculateSubcolumnSize(const String & /*subcolumn_name*/) const { return {}; }
-
-    std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
     /// Checks that part can be actually removed from disk.
     /// In ordinary scenario always returns true, but in case of

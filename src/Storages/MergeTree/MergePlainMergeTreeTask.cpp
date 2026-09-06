@@ -94,6 +94,11 @@ void MergePlainMergeTreeTask::prepare()
     future_part = merge_mutate_entry->future_part;
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
+    /// Capture the leadership epoch at the start of the merge (just after selection, as the
+    /// leader). `finish` re-checks it before publishing, so a merge that survives a leadership
+    /// loss+reacquire is rejected rather than publishing parts prepared under the previous epoch.
+    admission_epoch = storage.currentLeadershipEpoch();
+
     task_context = createTaskContext();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
@@ -157,6 +162,22 @@ void MergePlainMergeTreeTask::finish()
     new_part->getDataPartStorage().commitTransaction();
 
     MergeTreeData::Transaction transaction(storage, txn.get());
+    /// Under `leader_election`, enforce the writable-leader check BEFORE the rename inside
+    /// `renameMergedTemporaryPart` publishes the covering part on shared storage. `transaction.commit`
+    /// re-checks leadership, but by then the rename has already happened, so a node that lost
+    /// leadership during the merge could leave a covering part a new leader then activates. Use the
+    /// epoch captured when the merge was *selected* (not the current one): a merge that started
+    /// under a previous lease and only reaches `finish` after a leadership loss+reacquire must be
+    /// rejected, because its source parts and block range belong to the previous epoch.
+    storage.assertWritableLeaderAtEpoch(admission_epoch);
+
+    /// Also arm the publish fence: `transaction.commit` then re-checks the same epoch (a lease
+    /// lost and reacquired between the rename and the commit would pass a plain leadership
+    /// check) and renames the published part back if the check fails, so a failed commit does
+    /// not leave the covering part on shared storage for the next leader to activate.
+    if (storage.hasLeaderElection())
+        transaction.setPublishFenceEpoch(admission_epoch);
+
     storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
     transaction.commit();
 

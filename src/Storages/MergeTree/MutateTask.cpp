@@ -4036,6 +4036,12 @@ bool MutateTask::prepare()
             files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
 
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
+        /// Scope the temporary directory name to this server process: under `leader_election`,
+        /// several processes share the data path and the cloned part name is deterministic.
+        /// See `getPostfixForTempPartName`.
+        std::string prefix = "tmp_clone_";
+        if (const auto temp_postfix = ctx->data->getPostfixForTempPartName(); !temp_postfix.empty())
+            prefix += temp_postfix + "_";
 
         IDataPartStorage::ClonePartParams clone_params
         {
@@ -4050,7 +4056,7 @@ bool MutateTask::prepare()
 
         {
             std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
-                ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
+                ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
             part->getDataPartStorage().beginTransaction();
             ctx->temporary_directory_lock = std::move(lock);
         }
@@ -4171,7 +4177,15 @@ bool MutateTask::prepare()
     }
     ctx->disk = single_disk_volume->getDisk();
 
-    String tmp_part_dir_name = TEMP_DIRECTORY_PREFIX + ctx->future_part->name;
+    /// Scope the temporary directory name to this server process: under `leader_election`,
+    /// several processes share the data path and the mutated part name is deterministic, so
+    /// after a failover the new leader could otherwise collide with (or reclaim from under) a
+    /// leftover temporary directory of the previous leader's in-flight mutation of the same
+    /// part. See `getPostfixForTempPartName`.
+    String tmp_part_dir_name = TEMP_DIRECTORY_PREFIX;
+    if (const auto temp_postfix = ctx->data->getPostfixForTempPartName(); !temp_postfix.empty())
+        tmp_part_dir_name += temp_postfix + "_";
+    tmp_part_dir_name += ctx->future_part->name;
 
     /// The name is deterministic, so claim it and reclaim a leftover of an interrupted mutation.
     ctx->temporary_directory_lock = ctx->data->claimTemporaryPartDirectory(ctx->disk, tmp_part_dir_name);

@@ -9,10 +9,12 @@
 #include <Core/MergeSelectorAlgorithm.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
+#include <Disks/DiskType.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
@@ -42,6 +44,7 @@
 #include <Storages/MergeTree/Compaction/PartsCollectors/MergeTreePartsCollector.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MergeTreeLeaderElection.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
@@ -54,9 +57,12 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
+#include <base/hex.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <fmt/core.h>
 #include <Common/CurrentThread.h>
+#include <Common/SipHash.h>
 #include <Common/ThreadStatus.h>
 #include <Common/saturatedDuration.h>
 #include <Common/ErrorCodes.h>
@@ -95,6 +101,12 @@ namespace FailPoints
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_pause_before_register_mutation[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char merge_tree_leader_election_stale_epoch_before_commit[];
+    extern const char merge_tree_leader_election_stale_lease_cleanup[];
+    extern const char merge_tree_leader_election_stale_lease_before_clear_empty[];
+    extern const char merge_tree_leader_election_stale_lease_between_move_publishes[];
+    extern const char merge_tree_leader_election_stale_lease_between_move_commits[];
+    extern const char merge_tree_leader_election_pause_after_detach_clone[];
 }
 
 namespace Setting
@@ -137,6 +149,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
+    extern const MergeTreeSettingsBool leader_election;
+    extern const MergeTreeSettingsSeconds leader_election_heartbeat_interval;
+    extern const MergeTreeSettingsSeconds leader_election_session_timeout;
     extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
@@ -153,6 +168,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_DATA_PART;
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TOO_MANY_PARTS;
     extern const int PART_IS_LOCKED;
@@ -237,6 +253,75 @@ StorageMergeTree::StorageMergeTree(
     loadMutations();
     loadDeduplicationLog();
     prewarmCaches(getActivePartsLoadingThreadPool().get(), getCachesToPrewarm(0));
+
+    if ((*getSettings())[MergeTreeSetting::leader_election])
+    {
+        /// A read-only table returns from `startup` before the lease task is created. Allowing
+        /// this combination would let a later `ALTER ... MODIFY SETTING table_readonly = 0`
+        /// turn the table into a writer without any leadership fence. Supporting that lifecycle
+        /// requires starting and managing the election task for read-only tables too; reject it
+        /// until then rather than silently weakening the single-writer guarantee.
+        if ((*getSettings())[MergeTreeSetting::table_readonly])
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The `table_readonly` and `leader_election` settings cannot be enabled together: "
+                "a read-only table does not start the leader-election task, so making it writable "
+                "later would bypass the leadership fence.");
+        }
+
+        /// Leader election relies on conditional writes (`If-Match` / `If-None-Match`) on object
+        /// storage to implement the lease protocol. Only `S3` and `Azure` backends support these
+        /// operations. Other remote backends (`HDFS`, `Web`) and local disks do not.
+        ///
+        /// In addition to a shared object-storage backend, we also require shared *metadata*:
+        /// after failover, the new leader must see all parts committed by the previous leader,
+        /// otherwise the active/standby invariant ("the elected leader sees all successful
+        /// inserts") cannot be enforced. Only `PlainRewritable` and `Keeper` metadata are
+        /// shared across nodes. The default `Local` metadata is per-replica — each node's
+        /// metadata files live on its own local disk and are not visible to its peers, so the
+        /// next leader after a failover would lose the previous leader's parts from its view.
+        ///
+        /// Validate every disk in the storage policy, not just the primary one. Otherwise a
+        /// multi-volume policy could place parts on a non-shared disk via `TTL`-driven moves
+        /// or a default-volume fallback, and the new leader after a failover would not see
+        /// those parts on a different node — silently breaking correctness.
+        for (const auto & disk : getDisks())
+        {
+            auto description = disk->getDataSourceDescription();
+            /// `Azure` is intentionally not accepted yet: the lease protocol's conditional-write
+            /// and error-mapping behavior is backend-specific and is currently only covered by
+            /// `S3` (Minio) integration tests. Restrict to `S3` until an Azurite two-node failover
+            /// test exists. The lease code already maps `AZURE_BLOB_STORAGE_ERROR`, so re-enabling
+            /// `Azure` here is a one-line change once it is covered.
+            if (description.object_storage_type != ObjectStorageType::S3)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The `leader_election` setting currently requires every disk in the storage policy"
+                    " to be an `S3` object storage disk that supports conditional writes, but disk '{}'"
+                    " uses a different backend. (`Azure` is implemented but not yet covered by tests,"
+                    " so it is rejected for now.) Mixed shared and non-shared disks would also place"
+                    " parts on a node-local volume that another node cannot see after failover.",
+                    disk->getName());
+            }
+
+            /// `Keeper` metadata is shared across nodes too and would satisfy the invariant,
+            /// but the leader-election flows (follower part-list refresh, takeover reload,
+            /// shared dedup-log rotation) are currently only covered by `plain_rewritable`
+            /// integration tests. Restrict to `plain_rewritable` until a keeper-backed
+            /// failover test exists; re-enabling `Keeper` here is a one-line change.
+            if (description.metadata_type != MetadataStorageType::PlainRewritable)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The `leader_election` setting requires every disk in the storage policy to use"
+                    " shared metadata so that the next leader after a failover sees the parts"
+                    " written by the previous leader. Disk '{}' uses a different metadata layout:"
+                    " with node-local metadata each replica's part list is invisible to its peers,"
+                    " and `metadata_type = keeper` is implemented but not yet covered by tests, so"
+                    " it is rejected for now. Use a disk with `metadata_type = plain_rewritable`.",
+                    disk->getName());
+            }
+        }
+    }
 }
 
 
@@ -247,20 +332,259 @@ void StorageMergeTree::startup()
         return;
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startup");
 
-    clearEmptyParts();
+    /// When `leader_election` is enabled, data lives on shared object storage and only
+    /// the leader may mutate it. Defer startup cleanup (`clearEmptyParts`,
+    /// `clearOldTemporaryDirectories`) until leadership is acquired — otherwise a follower
+    /// would delete parts or temp directories of the real leader during its own startup.
+    /// The cleanup thread will run both periodically after the leadership callback starts it.
+    if (!(*getSettings())[MergeTreeSetting::leader_election])
+    {
+        clearEmptyParts();
 
-    /// Temporary directories contain incomplete results of merges (after forced restart)
-    ///  and don't allow to reinitialize them, so delete each of them immediately
-    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+        /// Temporary directories contain incomplete results of merges (after forced restart)
+        ///  and don't allow to reinitialize them, so delete each of them immediately
+        clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
 
-    /// NOTE background task will also do the above cleanups periodically.
+        /// NOTE background task will also do the above cleanups periodically.
+    }
 
     try
     {
-        cleanup_thread.start();
-        background_operations_assignee.start();
-        background_streaming_assignee.start();
-        startBackgroundMovesIfNeeded();
+        if ((*getSettings())[MergeTreeSetting::leader_election])
+        {
+            /// The first disk should be the main data disk.
+            ObjectStoragePtr object_storage = getDisks().front()->getObjectStorage();
+
+            auto heartbeat_ms = (*getSettings())[MergeTreeSetting::leader_election_heartbeat_interval].totalMilliseconds();
+            auto session_timeout_ms = (*getSettings())[MergeTreeSetting::leader_election_session_timeout].totalMilliseconds();
+
+            String lease_path = getRelativeDataPath() + "leader_election";
+
+            leader_election_ptr = std::make_unique<MergeTreeLeaderElection>(
+                getStorageID(),
+                std::move(object_storage),
+                std::move(lease_path),
+                getContext(),
+                heartbeat_ms,
+                session_timeout_ms);
+
+            leader_election_ptr->setOnLeadershipChangeCallback([this](bool became_leader)
+            {
+                if (became_leader)
+                {
+                    LOG_INFO(log, "Became leader, syncing shared storage and starting background operations");
+
+                    /// Stop the follower refresh task before issuing the forced disk refresh
+                    /// below so the two paths cannot interleave `disk->refresh` calls or
+                    /// `loadNewlyAppearedParts` updates against the same disk metadata cache.
+                    /// `deactivate` waits for any in-flight refresh execution to finish, so the
+                    /// takeover sync that follows observes a quiesced follower-state.
+                    if (refresh_parts_task)
+                        refresh_parts_task->deactivate();
+
+                    /// Before accepting any writes, refresh the local view of parts and
+                    /// advance the block-number counter past anything the previous leader
+                    /// committed on shared storage. The constructor has already validated that
+                    /// every disk uses `PlainRewritable` or `Keeper` metadata, so a forced
+                    /// `disk->refresh(0)` makes the previous leader's committed parts visible
+                    /// via `disk->iterateDirectory`. After `loadNewlyAppearedParts` returns,
+                    /// the in-memory part set reflects every part the previous leader committed
+                    /// and `getMaxBlockNumber` reflects the highest block number among them —
+                    /// so advancing `increment` past that max is sufficient to avoid block-number
+                    /// reuse.
+                    ///
+                    /// Force the refresh here (bypassing the rate limit) rather than inside
+                    /// `loadNewlyAppearedParts`, so the periodic follower path
+                    /// (`refreshDataParts`) does not double-refresh on every cycle. Leadership
+                    /// transitions are infrequent, so the extra unrate-limited listing pressure
+                    /// is bounded.
+                    ///
+                    /// User-facing writes are gated by `writes_enabled` in
+                    /// `MergeTreeLeaderElection`, which the election task flips to true only
+                    /// after this callback returns. Until then `assertNotReadonly` rejects
+                    /// `INSERT`s — so the part refresh and counter advance below run with no
+                    /// concurrent user writers competing for block numbers.
+                    ///
+                    /// If the refresh fails, refuse to enable writes — running without a fresh
+                    /// view is precisely the split-brain case we are guarding against. The
+                    /// election task will retry on the next heartbeat.
+                    try
+                    {
+                        for (const auto & disk : getStoragePolicy()->getDisks())
+                            disk->refresh(/* not_sooner_than_milliseconds= */ 0);
+                        /// Strict load: broken/duplicate parts get the cleanup (detach/remove)
+                        /// that the read-only pre-lease and follower loaders skipped, replayed
+                        /// here under the held lease — bounded by `max_suspicious_broken_parts`,
+                        /// beyond which the takeover aborts rather than enabling writes having
+                        /// detached a suspiciously large slice of the active set. Unconditionally
+                        /// aborting on any broken part would livelock takeover: every heartbeat
+                        /// retry would rediscover the same part, keeping the table read-only.
+                        size_t newly_loaded = loadNewlyAppearedParts(/* strict_takeover = */ true);
+                        Int64 max_block_number = getMaxBlockNumber();
+                        UInt64 next_block = std::max<UInt64>(increment.value.load(), static_cast<UInt64>(std::max<Int64>(0, max_block_number)));
+                        increment.set(next_block);
+                        LOG_INFO(log, "Synced from shared storage: loaded {} new parts, max block {}, advanced counter to {}",
+                            newly_loaded, max_block_number, increment.value.load());
+                    }
+                    catch (...)
+                    {
+                        /// If we cannot read shared storage, do not enable writes — leadership
+                        /// without a fresh view is precisely the split-brain case we are
+                        /// guarding against. The election task will retry on the next tick.
+                        ///
+                        /// Reactivate the follower refresh task so `SELECT` keeps observing the
+                        /// current leader's parts during the retry window. Without this, a single
+                        /// takeover failure would leave the follower's view permanently frozen.
+                        if (refresh_parts_task)
+                            refresh_parts_task->activateAndSchedule();
+                        tryLogCurrentException(log, "Failed to sync parts from shared storage on leadership acquisition, refusing to enable writes");
+                        throw;
+                    }
+
+                    /// The takeover sync above can take longer than
+                    /// `leader_election_session_timeout`, and the heartbeat task cannot renew
+                    /// the lease while it is executing this callback. If the lease has gone
+                    /// stale, another node may have already claimed leadership — reconciling the
+                    /// remaining shared state and starting background write jobs below as a stale
+                    /// leader would violate the single-writer invariant. Re-check lease freshness
+                    /// (relaxed to `session_timeout` by `TakeoverSyncScope`) and abort the
+                    /// takeover: the exception propagates to the election task, which relinquishes
+                    /// leadership locally and retries on a later heartbeat.
+                    if (!leader_election_ptr->isLeader())
+                    {
+                        if (refresh_parts_task)
+                            refresh_parts_task->activateAndSchedule();
+                        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                            "The leader lease was not renewed within the session timeout while "
+                            "syncing parts from shared storage on leadership acquisition; "
+                            "refusing to enable writes as a possibly stale leader");
+                    }
+
+                    /// Cancel pre-existing follower-state cancellations on merges and moves so the
+                    /// background assignees can run. The cancellations are re-acquired below on
+                    /// leadership loss.
+                    follower_merges_cancellation = {};
+                    follower_moves_cancellation = {};
+
+                    /// Reconcile the rest of the shared write-order state created by the previous
+                    /// leader while this node was a follower, before any writes or background jobs:
+                    ///  - reload mutation entries so an acknowledged `ALTER ... UPDATE/DELETE` is
+                    ///    tracked in `current_mutations_by_version` and actually finishes after
+                    ///    failover (and stale `tmp_mutation_*`/uncommitted entries are now cleaned
+                    ///    up as the leader);
+                    ///  - open the deduplication log so retried inserts cannot bypass
+                    ///    `non_replicated_deduplication_window` because the previous leader's dedup
+                    ///    records were not loaded.
+                    /// These run while `writes_enabled` is still false (set by the election task
+                    /// only after this callback returns) and before the background jobs below.
+                    loadMutations(/* reloading = */ true);
+                    loadDeduplicationLog();
+
+                    /// `loadMutations` / `loadDeduplicationLog` above can themselves run long — they
+                    /// list and rewrite shared metadata (mutation entries can gain `csn:` markers or
+                    /// have stale `tmp_mutation_*` entries removed; the dedup log can be rotated) —
+                    /// and the heartbeat task still cannot renew the lease while it executes this
+                    /// callback. Re-check lease freshness once more, after the mutating reloads and
+                    /// immediately before enabling writes / starting background jobs, so a takeover
+                    /// whose reloads outlasted the session timeout fails closed instead of becoming a
+                    /// stale leader. This mirrors the freshness re-check above (after the part refresh).
+                    if (!leader_election_ptr->isLeader())
+                    {
+                        if (refresh_parts_task)
+                            refresh_parts_task->activateAndSchedule();
+                        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                            "The leader lease was not renewed within the session timeout while reloading "
+                            "mutations and the deduplication log on leadership acquisition; refusing to "
+                            "enable writes as a possibly stale leader");
+                    }
+
+                    /// Do NOT run `clearEmptyParts` / `clearOldTemporaryDirectories` synchronously
+                    /// here: those can be long (they list and delete on shared object storage),
+                    /// and the heartbeat task cannot renew the lease while it executes this
+                    /// callback, so a slow cleanup could run past lease expiry and overlap another
+                    /// node's takeover. The `cleanup_thread` started just below performs both
+                    /// periodically and re-checks `canRunDestructiveCleanup()` (lease freshness)
+                    /// at execution time, outside the heartbeat, so it fails closed if the lease
+                    /// is no longer held.
+                    cleanup_thread.start();
+                    background_operations_assignee.start();
+                    startBackgroundMovesIfNeeded();
+                }
+                else
+                {
+                    /// Stop only write-side background tasks: merges/mutations, moves, and
+                    /// outdated-parts cleanup. The parts-refresh, statistics cache, and
+                    /// outdated-parts loader keep running on followers because the data
+                    /// lives on shared object storage and must remain readable.
+                    LOG_INFO(log, "Lost leadership, stopping background write operations");
+
+                    /// Actively cancel in-flight merges and moves rather than only waiting for
+                    /// them to finish. `BackgroundJobsAssignee::finish` drains active tasks,
+                    /// but a long-running merge can extend the dual-writer window beyond the
+                    /// session timeout — the action blockers cause active tasks to bail out
+                    /// at the next cancellation check (e.g. `swapClonedPart`, merge-task loop).
+                    /// Ordered fail-closed: the blockers are set first, so even if a later step
+                    /// throws, no new destructive work can start.
+                    follower_merges_cancellation = merger_mutator.merges_blocker.cancel();
+                    follower_moves_cancellation = parts_mover.moves_blocker.cancel();
+
+                    /// The shared deduplication log must not carry its open writer across
+                    /// leadership epochs. On the supported `S3`/`plain_rewritable` path every
+                    /// rotation leaves `current_writer` pointing at the next numbered log file
+                    /// in `WriteMode::Rewrite`, so finalizing it later — from `shutdown`, the
+                    /// destructor, or when a future leadership reacquisition replaces the log
+                    /// object in `loadDeduplicationLog` — would overwrite a log file the
+                    /// intervening leader already owns, losing deduplication history and
+                    /// letting retried inserts bypass deduplication. Cancel it instead; the
+                    /// log object is rebuilt from shared storage on the next acquisition.
+                    if (deduplication_log)
+                        deduplication_log->discard();
+
+                    /// Followers periodically re-scan shared object storage so that `SELECT`
+                    /// observes parts the current leader has committed since this replica
+                    /// started up. The task is created in `MergeTreeData::loadDataParts` and
+                    /// is owned by `MergeTreeData::refresh_parts_task`. Reactivate it via a
+                    /// scope guard: leadership-change callbacks fire only on transitions, so if
+                    /// draining the background machinery below threw and the refresh task were
+                    /// left deactivated, this node would serve permanently stale reads with no
+                    /// retry.
+                    SCOPE_EXIT({
+                        if (refresh_parts_task)
+                            refresh_parts_task->activateAndSchedule();
+                    });
+
+                    background_operations_assignee.finish();
+                    background_moves_assignee.finish();
+                    cleanup_thread.stop();
+                }
+            });
+
+            /// Begin serving follower reads immediately. The leadership callback fires only
+            /// on transitions, so a replica that never becomes leader would otherwise leave
+            /// the refresh task dormant and serve stale `SELECT`s. If we later acquire
+            /// leadership, the `became_leader=true` branch above deactivates this task.
+            if (refresh_parts_task)
+                refresh_parts_task->activateAndSchedule();
+
+            /// The streaming assignee enriches streaming `SELECT` subscriptions from the local
+            /// part set (`scheduleStreamingJob`); it performs no writes, merges, or mutations.
+            /// Start it unconditionally — like the follower refresh task — so streaming reads
+            /// remain available on followers, which must stay readable under leader election.
+            background_streaming_assignee.start();
+
+            leader_election_ptr->start();
+        }
+
+        /// When leader_election is enabled, background write operations (merges, mutations, cleanup)
+        /// are started/stopped by the leadership change callback. Only start them here if we are not
+        /// doing leader election (i.e., this is a standalone writer).
+        if (!leader_election_ptr)
+        {
+            cleanup_thread.start();
+            background_operations_assignee.start();
+            background_streaming_assignee.start();
+            startBackgroundMovesIfNeeded();
+        }
         startOutdatedAndUnexpectedDataPartsLoadingTask();
         startStatisticsCache();
     }
@@ -290,6 +614,9 @@ void StorageMergeTree::flushAndPrepareForShutdown()
     if (flush_called.exchange(true))
         return;
 
+    if (leader_election_ptr)
+        leader_election_ptr->stop();
+
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
 
@@ -306,6 +633,9 @@ void StorageMergeTree::shutdown(bool)
 {
     if (shutdown_called.exchange(true))
         return;
+
+    if (leader_election_ptr)
+        leader_election_ptr->stop();
 
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
@@ -443,16 +773,120 @@ std::optional<UInt64> StorageMergeTree::totalBytesUncompressed(const Settings &)
 SinkToStoragePtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    /// Capture the leadership epoch BEFORE the admission gate and hand it to the sink. If it
+    /// were sampled after the gate, an `INSERT` that passes the gate under one lease, survives
+    /// a lose-and-reacquire window, and only then samples the epoch would inherit the new epoch
+    /// without ever passing the new epoch's writable-leader check. Captured first, any leadership
+    /// change after the gate makes the sink's commit-time `assertWritableLeaderAtEpoch` fail closed.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
     assertNotReadonly();
 
     const auto & settings = local_context->getSettingsRef();
-    return std::make_shared<MergeTreeSink>(*this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context);
+    return std::make_shared<MergeTreeSink>(
+        *this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context, admission_epoch);
+}
+
+void StorageMergeTree::checkInsertIsAllowed(ContextPtr /*context*/) const
+{
+    /// `async_insert` queues the query before `write` creates a sink. Perform the
+    /// same leader/read-only admission check here so a follower cannot acknowledge
+    /// a buffered insert which might later be flushed after it becomes leader.
+    assertNotReadonly();
 }
 
 void StorageMergeTree::drop()
 {
+    /// `DROP TABLE` is allowed even when the table is read-only — only the local metadata
+    /// is removed; `dropAllData` itself skips file cleanup for static storage disks.
+    /// Under `leader_election`, data on the shared object storage is owned by whichever
+    /// node currently holds the lease. We skip `dropAllData` unconditionally in that case
+    /// because (a) a follower must not touch the leader's data, and (b) checking leader
+    /// status here is a TOCTOU race — leadership can change during `shutdown(true)` so
+    /// even a current leader may execute `dropAllData` while no longer holding the lease.
+    /// This matches the `ReplicatedMergeTree` model: `DROP TABLE` removes local metadata
+    /// only, and shared data must be cleaned up out-of-band by the operator.
+    ///
+    /// The decision is keyed on the persisted setting rather than `leader_election_ptr`
+    /// because `dropTableFinally` may invoke this method on a partially-dropped table
+    /// reconstructed via `createTableFromAST` (server-restart recovery path), where
+    /// `startup` was never called and `leader_election_ptr` is therefore null.
+    bool skip_data_cleanup = (*getSettings())[MergeTreeSetting::leader_election];
     shutdown(true);
-    dropAllData();
+    if (!skip_data_cleanup)
+        dropAllData();
+}
+
+bool StorageMergeTree::dropSkipsDataDirectoryCleanup() const
+{
+    return (*getSettings())[MergeTreeSetting::leader_election];
+}
+
+void StorageMergeTree::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
+{
+    if (leader_election_ptr)
+    {
+        /// Under `leader_election`, table metadata is local to each replica and never
+        /// replicated. Applying any metadata-mutating ALTER would leave followers with a
+        /// stale schema, so after failover the new leader would interpret shared parts
+        /// using the wrong schema. Only pure-text comment changes are safe.
+        ///
+        /// This check runs from `InterpreterAlterQuery::executeToTable` BEFORE
+        /// `MergeTreeData::checkAlterIsPossible` and before `StorageMergeTree::alter`,
+        /// so it produces a deterministic `SUPPORT_IS_DISABLED` error regardless of
+        /// what type-safety or settings checks would otherwise fire first.
+        bool only_comment_changes = std::all_of(commands.begin(), commands.end(), [](const auto & c)
+        {
+            return c.type == AlterCommand::COMMENT_TABLE || c.type == AlterCommand::COMMENT_COLUMN;
+        });
+        if (!only_comment_changes)
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "ALTER is not supported under `leader_election` because table metadata "
+                "is not replicated across nodes. Recreate the table on every node to "
+                "change schema or settings. Only COMMENT TABLE / COMMENT COLUMN are allowed.");
+        }
+    }
+    MergeTreeData::checkAlterIsPossible(commands, local_context);
+}
+
+void StorageMergeTree::checkTableCanBeRenamed(const StorageID & /*new_name*/) const
+{
+    if (leader_election_ptr)
+    {
+        /// The data directory lives on shared object storage and the lease path is fixed
+        /// at startup. Renaming it on the leader would orphan the followers' lease path
+        /// and their cached `relative_data_path` — there is no protocol to broadcast the
+        /// new path. Reject rather than silently diverge. Recreate the table to rename.
+        ///
+        /// This check must live here (not only in `rename`) because the default `Atomic`
+        /// database renames a table via `checkTableCanBeRenamed` + `renameInMemory` and
+        /// never calls `StorageMergeTree::rename` — only the on-disk/`Ordinary` path does.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "RENAME TABLE is not supported under `leader_election` because the data path "
+            "is shared between nodes and the lease path is fixed at startup. Followers "
+            "would continue to track the old path. Drop and recreate the table instead.");
+    }
+}
+
+void StorageMergeTree::checkTableCanBeRenamedByDatabaseRename() const
+{
+    if (leader_election_ptr)
+    {
+        /// Same invariant as `checkTableCanBeRenamed`, reached via the `RENAME DATABASE` path:
+        /// the data directory lives on shared object storage and the lease path is fixed at
+        /// startup. Followers would keep tracking the old database name with no way to learn
+        /// the new one. Reject rather than silently diverge. Recreate the table to rename.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "RENAME DATABASE is not supported for a `leader_election` table because the data "
+            "path is shared between nodes and the lease path is fixed at startup. Followers "
+            "would continue to track the old path. Drop and recreate the table instead.");
+    }
+}
+
+void StorageMergeTree::rename(const String & new_table_path, const StorageID & new_table_id)
+{
+    checkTableCanBeRenamed(new_table_id);
+    MergeTreeData::rename(new_table_path, new_table_id);
 }
 
 void StorageMergeTree::alter(
@@ -470,6 +904,30 @@ void StorageMergeTree::alter(
     });
     if (!only_setting_changes)
         assertNotReadonly();
+
+    if (leader_election_ptr)
+    {
+        /// Under `leader_election`, table metadata (columns, indices, projections, TTLs,
+        /// settings) is local to each replica and never replicated across the cluster.
+        /// Allowing a metadata-mutating ALTER on the leader would silently desync the
+        /// followers' on-disk schemas, so after failover the new leader would interpret
+        /// shared parts using a stale schema. The only operations safe to apply locally
+        /// are pure-text comment changes; everything else is rejected.
+        bool only_comment_changes = std::all_of(commands.begin(), commands.end(), [](const auto & c)
+        {
+            return c.type == AlterCommand::COMMENT_TABLE || c.type == AlterCommand::COMMENT_COLUMN;
+        });
+        if (!only_comment_changes)
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "ALTER is not supported under `leader_election` because table metadata "
+                "is not replicated across nodes — applying it on the leader would leave "
+                "followers with a stale schema, so after failover the new leader would "
+                "interpret shared parts incorrectly. Recreate the table on all nodes to "
+                "change schema or settings. Only COMMENT TABLE / COMMENT COLUMN are allowed.");
+        }
+        leader_election_ptr->assertIsLeader();
+    }
 
     if (local_context->getCurrentTransaction() && local_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER METADATA is not supported inside transactions");
@@ -919,6 +1377,12 @@ MergeMutateSelectedEntry::~MergeMutateSelectedEntry()
 StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
     const MutationCommands & commands, ContextPtr query_context)
 {
+    /// Capture the leadership epoch before any shared state is prepared (the temporary mutation
+    /// file written by the entry constructor and the block number allocated below), so the fence
+    /// before `entry.commit` can reject an entry whose block number was allocated under a lease
+    /// that was lost and reacquired in between.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
+
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See `loadMutations`.
     auto disk = getStoragePolicy()->getAnyDisk();
@@ -931,10 +1395,23 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
-    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+    MergeTreeMutationEntry entry(
+        commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings(),
+        getPostfixForTempPartName());
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
     Int64 version = block_holder->block.number;
+
+    /// Re-fence leadership immediately before publishing the mutation file on shared storage.
+    /// The caller (`mutate`) checks `assertNotReadonly` at entry, but leadership can be lost while
+    /// waiting in `delayMutationOrThrowIfNeeded` / `tryLockForAlter` before we get here. `entry.commit`
+    /// is a non-transactional write to shared object storage that a new leader would later load and
+    /// apply, so committing it after losing the lease would break the single-writer contract.
+    /// The check is against the epoch captured at admission, not merely the current writable state:
+    /// a lease lost and reacquired while waiting would look writable again, but the block number
+    /// above belongs to the previous epoch.
+    assertNotReadonly();
+    assertWritableLeaderAtEpoch(admission_epoch);
     entry.commit(version);
 
     /// From here until `addPreparedMutationEntry` registers the entry in
@@ -968,6 +1445,21 @@ void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
 
     LOG_INFO(log, "Added mutation: {}{}", prepared.mutation_id, prepared.additional_info);
     background_operations_assignee.trigger();
+}
+
+void StorageMergeTree::restoreKilledMutationEntry(UInt64 mutation_version, MergeTreeMutationEntry entry)
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+
+    auto [it, inserted] = current_mutations_by_version.try_emplace(mutation_version, std::move(entry));
+    if (!inserted)
+        return;
+
+    it->second.is_registered = true;
+    if (!it->second.is_done)
+        incrementMutationsCounters(mutation_counters, *it->second.commands);
+
+    LOG_INFO(log, "Restored mutation {} because its removal was rejected by the leadership fence", mutation_version);
 }
 
 Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
@@ -1237,6 +1729,10 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
 
 QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & commands, ContextPtr query_context)
 {
+    /// Same ordering as `write`: capture the epoch before the admission gate so the patch sink's
+    /// commit-time epoch check covers the whole window from admission (including the block number
+    /// allocated below) to publish.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
     assertNotReadonly();
     auto context_copy = Context::createCopy(query_context);
 
@@ -1267,7 +1763,8 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
         *this,
         std::move(patch_metadata),
         std::move(update_holder),
-        context_copy);
+        context_copy,
+        admission_epoch);
 
     chassert(!pipeline.completed());
     pipeline.complete(std::move(sink));
@@ -1502,6 +1999,12 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 
     assertNotReadonly();
 
+    /// Capture the leadership epoch that admits this command. Everything below — the transaction
+    /// rollback, the cancellation of running part mutations and finally the removal of
+    /// `mutation_*.txt` from shared storage — belongs to this epoch; if leadership is lost (and
+    /// possibly reacquired) in between, the removal must not happen, see the fence before it.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
+
     LOG_TRACE(log, "Killing mutation {}", mutation_id);
     UInt64 mutation_version = MergeTreeMutationEntry::tryParseFileName(mutation_id);
     if (!mutation_version)
@@ -1534,6 +2037,26 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     }
 
     getContext()->getMergeList().cancelPartMutations(getStorageID(), {}, to_kill->block_number);
+    /// Re-fence leadership immediately before deleting the mutation file on shared storage. The
+    /// entry-level `assertNotReadonly` above can pass and the lease then be lost while we roll
+    /// back the transaction / cancel running part mutations; without this re-check a stale leader
+    /// would remove a `mutation_*.txt` that now belongs to another node's lease epoch. Freshness
+    /// alone is not enough: a lease lost and reacquired in between looks writable again, but by
+    /// then the entry belongs to the new epoch (the takeover reload may even have re-added it),
+    /// so the check is against the epoch that admitted this command.
+    assertNotReadonly();
+    try
+    {
+        assertWritableLeaderAtEpoch(admission_epoch);
+    }
+    catch (...)
+    {
+        /// The shared `mutation_*.txt` stays where it is, so put the in-memory entry back to keep
+        /// this node consistent with shared storage: the command had already removed it from
+        /// `current_mutations_by_version` before the leadership check could reject it.
+        restoreKilledMutationEntry(mutation_version, std::move(*to_kill));
+        throw;
+    }
     to_kill->removeFile();
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file {}", mutation_id);
     {
@@ -1556,24 +2079,121 @@ void StorageMergeTree::loadDeduplicationLog()
     auto disk = getDisks()[0];
     std::string path = fs::path(relative_data_path) / "deduplication_logs";
 
-    /// Deduplication log only matters on INSERTs.
-    if (!disk->isReadOnly())
+    /// Deduplication log only matters on INSERTs, so followers never need it. Under
+    /// `leader_election`, `MergeTreeDeduplicationLog::load` rotates/drops shared log files,
+    /// which a non-leader must not do — defer creation until the leadership-acquisition
+    /// callback (which calls this again once the lease is held). Followers reach this with
+    /// `mayMutateSharedStorage() == false` and leave `deduplication_log` null.
+    if (!disk->isReadOnly() && mayMutateSharedStorage())
     {
-        deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, (*settings)[MergeTreeSetting::non_replicated_deduplication_window], format_version, disk);
+        /// Under `leader_election`, let the log re-check lease freshness immediately before it
+        /// rewrites shared state (rotation / dropping outdated logs) during `load`: the takeover
+        /// reload runs on the heartbeat task and can outlast the lease, and the check at the top
+        /// of this function covers only its beginning.
+        std::function<bool()> may_write_shared_state;
+        if ((*settings)[MergeTreeSetting::leader_election])
+        {
+            may_write_shared_state = [this] { return mayMutateSharedStorage(); };
+
+            /// Defense in depth: the leadership-loss callback already discards the previous
+            /// epoch's log object, but if one survived with an open writer, destroying it via
+            /// the replacement below would finalize that writer and clobber a shared log file
+            /// the previous epoch no longer owns (see the callback for details).
+            if (deduplication_log)
+                deduplication_log->discard();
+        }
+
+        deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(
+            path, (*settings)[MergeTreeSetting::non_replicated_deduplication_window], format_version, disk,
+            std::move(may_write_shared_state));
         deduplication_log->load();
+
+        /// Reconcile the loaded log with the part set. An active *empty* part is a covering
+        /// part: all data in its range was dropped (`DROP`/`DETACH`/`TRUNCATE`/`REPLACE
+        /// PARTITION` retire partitions by publishing covering empty parts under
+        /// `leader_election`). If the previous leader died — or its lease went stale — after
+        /// committing the covering part but before appending the matching deduplication-log
+        /// `DROP` records, the loaded map still holds block ids of the dropped data, and an
+        /// `INSERT` retrying that data on this leader would be silently deduplicated even
+        /// though the rows are gone. Dropping the covered entries here writes the missing
+        /// records under the fresh lease (this runs on the takeover path, after the part
+        /// refresh). For a range that was already reconciled the map holds no covered
+        /// entries and nothing is written.
+        if ((*settings)[MergeTreeSetting::leader_election])
+        {
+            for (const auto & part : getDataPartsVectorForInternalUsage())
+                if (part->rows_count == 0)
+                    deduplication_log->dropPart(part->info);
+        }
     }
 }
 
-void StorageMergeTree::loadMutations()
+void StorageMergeTree::dropDeduplicationLogParts(const DataPartsVector & parts)
+{
+    if (!deduplication_log)
+        return;
+
+    try
+    {
+        for (const auto & part : parts)
+            deduplication_log->dropPart(part->info);
+    }
+    catch (...)
+    {
+        /// The covering empty parts are already committed at every caller below. A failed
+        /// `dropPart` may have removed only a prefix of the corresponding block ids from the
+        /// in-memory map, so continuing to accept writes can silently deduplicate a retry of
+        /// data that was just retired. Discard the writer and fence all writes until a later
+        /// election epoch reloads and reconciles the log from the committed empty parts.
+        if (leader_election_ptr)
+        {
+            deduplication_log->discard();
+            leader_election_ptr->relinquishLeadership();
+        }
+        throw;
+    }
+}
+
+void StorageMergeTree::loadMutations(bool reloading)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::loadMutations");
 
-    /// Called only from the constructor, before this storage is published to any
-    /// database, so no other thread holds a reference and the lock is unnecessary.
-    /// Avoiding it also breaks a TSan lock-order edge between `DatabaseAtomic::mutex`
-    /// (held during lazy table construction via `tryCreateSymlink`) and
-    /// `currently_processing_in_background_mutex`. See STID 3367-4813.
-    chassert(current_mutations_by_version.empty());
+    std::unique_lock<std::mutex> lock;
+    if (reloading)
+    {
+        /// The leadership-takeover reload runs on a live, published table:
+        /// `current_mutations_by_version` and `mutation_counters` are concurrently read (and
+        /// written) under `currently_processing_in_background_mutex` by `system.mutations`,
+        /// `waitForMutation`, mutation snapshots, and merge/mutation selection, so the reload
+        /// must update them under the same mutex.
+        lock = std::unique_lock(currently_processing_in_background_mutex);
+    }
+    else
+    {
+        /// The constructor path is called before this storage is published to any database, so
+        /// no other thread holds a reference and the lock is unnecessary. Avoiding it also
+        /// breaks a TSan lock-order edge between `DatabaseAtomic::mutex` (held during lazy
+        /// table construction via `tryCreateSymlink`) and
+        /// `currently_processing_in_background_mutex`. See STID 3367-4813.
+        chassert(current_mutations_by_version.empty());
+    }
+
+    /// Under `leader_election` a follower (or a node that has not yet acquired the lease) must
+    /// not delete or rewrite files on shared storage; it still loads the mutation state into
+    /// memory so reads observe the correct mutated view. The leadership-acquisition callback
+    /// calls this again with `reloading = true` once the lease is held, which both performs the
+    /// deferred file maintenance and picks up entries the previous leader created meanwhile.
+    /// `mayMutateSharedStorage` is re-evaluated immediately before EVERY shared write/delete
+    /// below (it is a couple of atomic loads) rather than hoisted: the takeover reload runs on
+    /// the heartbeat task, which cannot renew the lease meanwhile, so the lease can expire
+    /// mid-reload and the remaining shared writes must then fail closed.
+
+    /// On a takeover reload the scan below must be reconciling, not merely additive: an entry
+    /// this node loaded as a follower may have been killed (or cleaned up as finished) by the
+    /// previous leader, so its `mutation_*.txt` is gone from shared storage while the stale
+    /// in-memory entry would keep feeding `selectPartsToMutate` after failover. Collect the
+    /// versions actually present on disk and prune the rest after the scan.
+    std::unordered_set<UInt64> mutation_versions_on_disk;
 
     for (const auto & disk : getDisks())
     {
@@ -1583,6 +2203,32 @@ void StorageMergeTree::loadMutations()
             {
                 MergeTreeMutationEntry entry(disk, relative_data_path, it->name());
                 UInt64 block_number = entry.block_number;
+
+                if (reloading)
+                    mutation_versions_on_disk.insert(block_number);
+
+                /// On a leadership-takeover reload, entries created by the previous leader while
+                /// this node was a follower are already in memory. Don't re-emplace or re-count
+                /// them (avoids the "already exists" bug check and double counting), but DO
+                /// reconcile their transaction state: a follower that saw the mutation file before
+                /// the old leader appended `csn:` left the in-memory CSN unresolved (it could not
+                /// write the file). Now that we are the leader, resolve it so `selectPartsToMutate`
+                /// does not hit an `UnknownCSN` logical error for a committed mutation.
+                if (reloading)
+                {
+                    auto existing = current_mutations_by_version.find(block_number);
+                    if (existing != current_mutations_by_version.end())
+                    {
+                        auto & loaded = existing->second;
+                        if (!loaded.tid.isNonTransactional() && !loaded.csn && mayMutateSharedStorage())
+                        {
+                            if (auto csn = TransactionLog::getCSN(loaded.tid))
+                                loaded.writeCSN(csn);
+                        }
+                        continue;
+                    }
+                }
+
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands->size());
 
                 if (!entry.tid.isNonTransactional() && !entry.csn)
@@ -1590,16 +2236,18 @@ void StorageMergeTree::loadMutations()
                     if (auto csn = TransactionLog::getCSN(entry.tid))
                     {
                         /// Transaction is committed => mutation is finished, but let's load it anyway (so it will be shown in system.mutations)
-                        entry.writeCSN(csn);
+                        if (mayMutateSharedStorage())
+                            entry.writeCSN(csn);
                     }
                     else
                     {
                         /// Transaction is not committed. The TID may be outdated if the transaction log entry
                         /// was garbage-collected (e.g. after upgrade from a version that advanced tail_ptr).
-                        /// In either case the mutation was not committed and should be removed.
+                        /// In either case the mutation was not committed and should be removed (by the leader).
                         LOG_DEBUG(log, "Mutation entry {} was created by transaction {}, but it was not committed. Removing mutation entry",
                                   it->name(), entry.tid);
-                        disk->removeFile(it->path());
+                        if (mayMutateSharedStorage())
+                            disk->removeFile(it->path());
                         continue;
                     }
                 }
@@ -1612,8 +2260,42 @@ void StorageMergeTree::loadMutations()
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
-                disk->removeFile(it->path());
+                if (mayMutateSharedStorage())
+                    disk->removeFile(it->path());
             }
+        }
+    }
+
+    if (reloading)
+    {
+        /// Prune in-memory entries whose file is no longer on shared storage: the previous
+        /// leader killed the mutation (or removed a finished one via `clearOldMutations`)
+        /// while this node was a follower and could not observe the deletion. Without this,
+        /// the new leader would resurrect a killed mutation from stale in-memory state.
+        /// Background mutations are still gated at this point (writes are enabled only after
+        /// the takeover completes), so no pruned entry can be mid-execution on this node.
+        bool pruned = false;
+        for (auto it = current_mutations_by_version.begin(); it != current_mutations_by_version.end();)
+        {
+            if (!mutation_versions_on_disk.contains(it->first))
+            {
+                LOG_INFO(log, "Mutation {} is no longer present on shared storage "
+                    "(killed or cleaned up by the previous leader); removing its in-memory entry", it->second.file_name);
+                if (!it->second.is_done)
+                    decrementMutationsCounters(mutation_counters, *it->second.commands);
+                it = current_mutations_by_version.erase(it);
+                pruned = true;
+            }
+            else
+                ++it;
+        }
+
+        if (pruned)
+        {
+            /// Wake up `waitForMutation` waiters so they observe the entry's disappearance
+            /// (the same way `killMutation` notifies them after removing an entry).
+            std::lock_guard wait_lock(mutation_wait_mutex);
+            mutation_wait_event.notify_all();
         }
     }
 
@@ -2153,6 +2835,10 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     if (shutdown_called)
         return false;
 
+    /// When leader election is enabled, only the leader should perform merges and mutations.
+    if (leader_election_ptr && !leader_election_ptr->isLeader())
+        return false;
+
     if (isTableReadonly())
         return false;
 
@@ -2537,6 +3223,18 @@ size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause
         FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_background_clear_old_parts_pause);
     }
 
+    /// Re-check lease freshness at the actual deletion point, not only at the entry into the
+    /// cleanup pass: selecting the parts above (and the pause point) can hold this thread past
+    /// `leader_election_session_timeout`, and deleting the selected parts as a stale leader
+    /// would destroy data the next leader still serves. Return the parts to the Outdated state
+    /// so a later pass (as the leader) can retry.
+    if (!canRunDestructiveCleanup())
+    {
+        LOG_WARNING(log, "Not removing {} old parts: the leader lease is no longer fresh (leader_election)", parts_to_remove.size());
+        rollbackDeletingParts(parts_to_remove);
+        return 0;
+    }
+
     clearPartsFromFilesystemAndRollbackIfError(parts_to_remove, "old");
 
     /// This is needed to close files to avoid they reside on disk after being deleted.
@@ -2779,9 +3477,36 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
 
 void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
+    /// Under `leader_election`, update the shared deduplication log BEFORE retiring the part.
+    /// This path drops only empty covering parts and unused patch parts, so the covered block
+    /// ids always refer to data that is already gone and dropping them early is consistent.
+    /// The reverse order has a failover hole: once the part is outdated, the background cleanup
+    /// eventually removes it from shared storage even when the deduplication-log write below
+    /// failed its lease re-check, and with the covering part gone the next leader's post-`load`
+    /// reconciliation can no longer see that the surviving block ids belong to dropped data.
+    /// Writing the records first fails closed instead: if the lease re-check inside `dropPart`
+    /// throws, the part stays active and this cleanup is simply retried later.
+    if (hasLeaderElection() && deduplication_log)
+    {
+        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
+        if (!part)
+            return;
+
+        try
+        {
+            deduplication_log->dropPart(part->info);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format(
+                "Cannot update the deduplication log before dropping part {}; leaving the part to a later cleanup", part_name));
+            return;
+        }
+    }
+
     if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false, /*clear_without_timeout=*/ false))
     {
-        if (deduplication_log)
+        if (deduplication_log && !hasLeaderElection())
         {
             deduplication_log->dropPart(part->info);
         }
@@ -2853,10 +3578,16 @@ static std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_gua
 }
 
 
-void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction)
+void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, UInt64 admission_epoch)
 {
     DataPartsVector covered_parts;
     size_t next_part_index = 0;
+
+    /// The covering empty parts are published one rename at a time; arm the fence so that each
+    /// individual rename is checked and a lease lost in the middle of the batch undoes the
+    /// renames already done (see `Transaction::renameParts`).
+    if (leader_election_ptr)
+        transaction.setPublishFenceEpoch(admission_epoch);
 
     auto timeout_ms = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds();
     Stopwatch watch;
@@ -2900,20 +3631,47 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
     LOG_INFO(log, "Remove {} parts by covering them with empty {} parts. With txn {}.",
              covered_parts.size(), new_parts.size(), transaction.getTID());
 
-    transaction.renameParts();
+    /// The rename below is the first write that publishes the covering empty parts into the
+    /// (possibly shared) storage prefix. A lease lost during `stopMergesAndWait` or the empty-part
+    /// preparation above must fail closed here, before anything becomes visible to the new leader.
+    try
+    {
+        assertWritableLeaderAtEpoch(admission_epoch);
+        /// Inside the batch the fence is re-checked before each rename, and the renames already
+        /// done are undone if the lease goes stale in the middle, so on a failure here nothing of
+        /// this DDL is left under a persistent name either.
+        transaction.renameParts();
+    }
+    catch (...)
+    {
+        /// The covering parts were never renamed to their persistent names, and their names are
+        /// deterministic (covered part with `level + 1`). A regular rollback would leave them in
+        /// the working set as Outdated with storage still pointing at the `tmp_empty_*` directory;
+        /// a later retry of the same DDL on the same partition re-creates that exact directory,
+        /// and the lazy cleanup of the zombie would then destroy the retry's live part storage.
+        /// Remove them from the working set entirely: they were never visible to anyone.
+        transaction.rollbackPartsToTemporaryState();
+        /// Restore temporary ownership (cleared by `preparePartForCommit`) so the destructors
+        /// remove the never-published directories instead of leaving stale leftovers.
+        for (auto & part : new_parts)
+            part->is_temp = true;
+        throw;
+    }
+
     transaction.commit();
 
     /// Remove covered parts without waiting for old_parts_lifetime seconds.
     for (auto & part: covered_parts)
         part->remove_time.store(0, std::memory_order_relaxed);
 
-    if (deduplication_log)
-        for (const auto & part : covered_parts)
-            deduplication_log->dropPart(part->info);
+    dropDeduplicationLogParts(covered_parts);
 }
 
 void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &)
 {
+    /// Capture the leadership epoch before the admission gate (same ordering as `write`); it is
+    /// re-checked immediately before the covering empty parts are published.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
     assertNotReadonly();
 
     {
@@ -2926,6 +3684,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         ProfileEventsScope profile_events_scope;
 
         auto txn = query_context->getCurrentTransaction();
+        throwIfTransactionalPartitionOpUnderLeaderElection(txn, "TRUNCATE");
         if (txn)
         {
             auto data_parts_lock = lockParts();
@@ -2955,7 +3714,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
                      transaction.getTID());
 
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-            renameAndCommitEmptyParts(new_data_parts, transaction);
+            renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -2965,14 +3724,14 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         }
     }
 
-    /// Old parts are needed to be destroyed before clearing them from filesystem.
-    clearOldMutations(true);
-    clearOldPartsFromFilesystem();
-    clearEmptyParts();
+    clearDataAfterPartitionDDL("TRUNCATE", /*with_mutations=*/ true);
 }
 
 void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPtr query_context)
 {
+    /// See the comment in `truncate` — same admission-epoch fence for the empty-part publish.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
+    assertNotReadonly();
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
@@ -2995,6 +3754,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
         auto txn = query_context->getCurrentTransaction();
+        throwIfTransactionalPartitionOpUnderLeaderElection(txn, detach ? "DETACH PART" : "DROP PART");
         if (txn)
         {
             if (auto part = outdatePart(txn.get(), part_name, /*force=*/ true))
@@ -3010,24 +3770,51 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
             if (!part)
                 throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
 
+            std::vector<StagedDetachedClone> detached_clones;
+            std::vector<scope_guard> detached_dir_holders;
             if (detach)
             {
+                /// The detached copy below is an irreversible shared-storage side effect made
+                /// BEFORE the admission-epoch fence inside `renameAndCommitEmptyParts`, so
+                /// re-check the fence first: a stale leader must be rejected before writing to
+                /// `detached/`, not only at the empty-part publish.
+                assertWritableLeaderAtEpoch(admission_epoch);
+
                 auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
-                String part_dir = part->getDataPartStorage().getPartDirectory();
-                LOG_INFO(log, "Detaching {}", part_dir);
-                auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
-                part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
+                if (auto clone = cloneToDetachedForDrop(part, metadata_snapshot, detached_dir_holders))
+                    detached_clones.push_back(std::move(*clone));
             }
 
             {
-                auto future_parts = initCoverageWithNewEmptyParts({part});
+                FutureNewEmptyParts future_parts;
+                MutableDataPartsVector new_data_parts;
+                std::vector<scope_guard> tmp_dir_holders;
+                /// The rollback must cover the ENTIRE post-clone path, not only the commit: any
+                /// failure between writing the clone above and committing the covering empty
+                /// part leaves a durable copy of a `DETACH` that never committed.
+                try
+                {
+                    future_parts = initCoverageWithNewEmptyParts({part});
 
-                LOG_TEST(log, "Made {} empty parts in order to cover {} part. With txn {}",
-                         fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames({part}), ", "),
-                         transaction.getTID());
+                    LOG_TEST(log, "Made {} empty parts in order to cover {} part. With txn {}",
+                             fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames({part}), ", "),
+                             transaction.getTID());
 
-                auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-                renameAndCommitEmptyParts(new_data_parts, transaction);
+                    std::tie(new_data_parts, tmp_dir_holders) = createEmptyDataParts(*this, future_parts, txn);
+                    renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
+                }
+                catch (...)
+                {
+                    /// A rejected `DETACH` must not leave persistent copies behind on shared
+                    /// storage: a later `ATTACH` could re-import data from a DDL that failed.
+                    if (!detached_clones.empty())
+                        tryLogCurrentException(log, "DETACH was rejected before its commit; removing the detached copies it already wrote");
+                    removeDetachedClonesOfRejectedDetach(detached_clones);
+                    throw;
+                }
+
+                /// Committed: only now may the copies become visible to the other servers.
+                publishDetachedClones(detached_clones);
 
                 PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3039,12 +3826,14 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         }
     }
 
-    clearOldPartsFromFilesystem();
-    clearEmptyParts();
+    clearDataAfterPartitionDDL("DROP/DETACH PART", /*with_mutations=*/ false);
 }
 
 void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context)
 {
+    /// See the comment in `truncate` — same admission-epoch fence for the empty-part publish.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
+    assertNotReadonly();
     {
         const auto * partition_ast = partition->as<ASTPartition>();
 
@@ -3091,6 +3880,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
         auto txn = query_context->getCurrentTransaction();
+        throwIfTransactionalPartitionOpUnderLeaderElection(txn, detach ? "DETACH PARTITION" : "DROP PARTITION");
 
         if (txn)
         {
@@ -3126,28 +3916,51 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
             }
 
+            std::vector<StagedDetachedClone> detached_clones;
+            std::vector<scope_guard> detached_dir_holders;
             if (detach)
             {
+                /// See the comment in `dropPart` — re-check the fence before the first detached
+                /// copy is written, and remember the copies to remove them if the publish below
+                /// is rejected.
+                assertWritableLeaderAtEpoch(admission_epoch);
+
                 for (const auto & part : parts)
                 {
                     auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
-                    String part_dir = part->getDataPartStorage().getPartDirectory();
-                    LOG_INFO(log, "Detaching {}", part_dir);
-                    auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
-                    part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
+                    if (auto clone = cloneToDetachedForDrop(part, metadata_snapshot, detached_dir_holders))
+                        detached_clones.push_back(std::move(*clone));
                 }
             }
 
-            auto future_parts = initCoverageWithNewEmptyParts(parts);
+            FutureNewEmptyParts future_parts;
+            MutableDataPartsVector new_data_parts;
+            std::vector<scope_guard> tmp_dir_holders;
+            /// See the comment in `dropPart` — the rollback covers the entire post-clone path.
+            try
+            {
+                future_parts = initCoverageWithNewEmptyParts(parts);
 
-            LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
-                     future_parts.size(), parts.size(),
-                     fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
-                     transaction.getTID());
+                LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
+                         future_parts.size(), parts.size(),
+                         fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
+                         transaction.getTID());
 
+                std::tie(new_data_parts, tmp_dir_holders) = createEmptyDataParts(*this, future_parts, txn);
+                renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
+            }
+            catch (...)
+            {
+                /// A rejected `DETACH` must not leave persistent detached copies behind on
+                /// shared storage: a later `ATTACH` could re-import data from a DDL that failed.
+                if (!detached_clones.empty())
+                    tryLogCurrentException(log, "DETACH was rejected before its commit; removing the detached copies it already wrote");
+                removeDetachedClonesOfRejectedDetach(detached_clones);
+                throw;
+            }
 
-            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-            renameAndCommitEmptyParts(new_data_parts, transaction);
+            /// Committed: only now may the copies become visible to the other servers.
+            publishDetachedClones(detached_clones);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3158,8 +3971,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         }
     }
 
-    clearOldPartsFromFilesystem();
-    clearEmptyParts();
+    clearDataAfterPartitionDDL("DROP/DETACH PARTITION", /*with_mutations=*/ false);
 }
 
 void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool detach, ContextPtr query_context)
@@ -3179,11 +3991,7 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
         }
     }
 
-    if (deduplication_log)
-    {
-        for (const auto & part : parts_to_remove)
-            deduplication_log->dropPart(part->info);
-    }
+    dropDeduplicationLogParts(parts_to_remove);
 
     if (detach)
         LOG_INFO(log, "Detached {} parts: [{}]", parts_to_remove.size(), fmt::join(getPartsNames(parts_to_remove), ", "));
@@ -3194,44 +4002,107 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
 PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     const PartitionCommand & command, const StorageMetadataPtr &, ContextPtr local_context)
 {
+    /// Capture the leadership epoch before the admission gate (same ordering as `write`);
+    /// `tryLoadPartsToAttach` can take arbitrary time, so the epoch is re-checked immediately
+    /// before each rename that publishes an attached part.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
+    throwIfTransactionalPartitionOpUnderLeaderElection(
+        local_context->getCurrentTransaction(), command.part ? "ATTACH PART" : "ATTACH PARTITION");
+    assertNotReadonly();
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
-    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, local_context, renamed_parts);
+
+    /// Declared after `renamed_parts` on purpose: the journal restores files inside the
+    /// `attaching_` directories, so it has to run before `renamed_parts` renames them back.
+    /// Armed only under `leader_election`; for every other table it records nothing.
+    DetachedNamespaceRollback detached_rollback(*this, leader_election_ptr != nullptr);
+    MutableDataPartsVector loaded_parts
+        = tryLoadPartsToAttach(command, local_context, renamed_parts, admission_epoch, &detached_rollback);
+
+    if (loaded_parts.empty())
+    {
+        /// Nothing is published, but `ignored_` / `inactive_` renames of a command that found no
+        /// part to attach are its intended and only effect, so they stay.
+        detached_rollback.commit();
+        return results;
+    }
+
+    /// All parts are published through a single transaction so that a lease lost — or lost and
+    /// reacquired — in the middle of the batch undoes the renames already done instead of
+    /// leaving the command partially applied. It's important to create it outside of lock scope
+    /// because otherwise it can lock parts in destructor and deadlock is possible.
+    MergeTreeData::Transaction transaction(*this, local_context->getCurrentTransaction().get());
+    {
+        /// The renames below publish the attached parts into the (possibly shared) storage
+        /// prefix; a lease lost during `tryLoadPartsToAttach` must fail closed before any part
+        /// becomes visible to the new leader, and the fence is re-checked before each individual
+        /// rename (see `Transaction::renameParts`).
+        if (leader_election_ptr)
+            transaction.setPublishFenceEpoch(admission_epoch);
+
+        auto lock = lockParts();
+        std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
+
+        for (size_t i = 0; i < loaded_parts.size(); ++i)
+        {
+            LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].new_dir);
+            /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
+            auto txn = local_context->getCurrentTransaction();
+            TransactionID tid = txn ? txn->tid : Tx::NonTransactionalTID;
+            loaded_parts[i]->version->setAndStoreCreationTID(tid, nullptr);
+
+            block_holders.emplace_back(fillNewPartNameAndResetLevel(loaded_parts[i], lock));
+            renameTempPartAndAdd(loaded_parts[i], transaction, lock, /*rename_in_transaction=*/ true);
+        }
+
+        try
+        {
+            assertWritableLeaderAtEpoch(admission_epoch);
+            transaction.renameParts();
+        }
+        catch (...)
+        {
+            /// `renameParts` renamed the parts it already published back into `detached/` (the
+            /// recorded directories are process-scoped `attaching_` names, so restoring them
+            /// cannot collide). Remove the parts from the working set; they were never visible
+            /// to anyone. `is_temp` is deliberately NOT set: the directories belong to the
+            /// user's `detached/` namespace, and `renamed_parts`'s destructor restores their
+            /// original names because `old_dir` is cleared only on success below.
+            if (!local_context->getCurrentTransaction())
+                transaction.rollbackPartsToTemporaryState(&lock);
+            throw;
+        }
+
+        transaction.commit(lock);
+    }
+
+    /// The parts are published: the changes this command made to `detached/` are final.
+    detached_rollback.commit();
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
-        LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].new_dir);
-        /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
-        auto txn = local_context->getCurrentTransaction();
-        TransactionID tid = txn ? txn->tid : Tx::NonTransactionalTID;
-        loaded_parts[i]->version->setAndStoreCreationTID(tid, nullptr);
-
-        /// It's important to create it outside of lock scope because
-        /// otherwise it can lock parts in destructor and deadlock is possible.
-        MergeTreeData::Transaction transaction(*this, local_context->getCurrentTransaction().get());
-        {
-            auto lock = lockParts();
-            auto block_holder = fillNewPartNameAndResetLevel(loaded_parts[i], lock);
-            renameTempPartAndAdd(loaded_parts[i], transaction, lock, /*rename_in_transaction=*/ false);
-            transaction.commit(lock);
-        }
-
         results.push_back(PartitionCommandResultInfo{
             .command_type = "ATTACH_PART",
             .partition_id = loaded_parts[i]->info.getPartitionId(),
             .part_name = loaded_parts[i]->name,
             .old_part_name = renamed_parts.old_and_new_names[i].old_dir,
         });
-
         renamed_parts.old_and_new_names[i].old_dir.clear();
-        LOG_INFO(log, "Finished attaching part");
     }
+    LOG_INFO(log, "Finished attaching {} parts", loaded_parts.size());
 
     return results;
 }
 
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr local_context)
 {
+    /// Capture the leadership epoch before the admission gate (same ordering as `write`); it is
+    /// re-checked immediately before the cloned parts are published below, so a lease lost and
+    /// reacquired while parts were being cloned fails closed instead of publishing parts named
+    /// with block numbers from the previous epoch.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
+    throwIfTransactionalPartitionOpUnderLeaderElection(
+        local_context->getCurrentTransaction(), replace ? "REPLACE PARTITION FROM" : "ATTACH PARTITION FROM");
     assertNotReadonly();
     LOG_DEBUG(log, "StorageMergeTree::replacePartitionFrom\tsource_table: {}, replace: {}", source_table->getStorageID().getShortName(), replace);
 
@@ -3349,7 +4220,12 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
 
-    static const String TMP_PREFIX = "tmp_replace_from_";
+    /// Scope the temporary directory names to this server process: under `leader_election`,
+    /// several processes share the destination data path and the process-local `temp_index`
+    /// below is not unique across them. See `getPostfixForTempPartName`.
+    String tmp_prefix = "tmp_replace_from_";
+    if (const auto temp_postfix = getPostfixForTempPartName(); !temp_postfix.empty())
+        tmp_prefix += temp_postfix + "_";
 
     bool are_policies_partition_op_compatible = getStoragePolicy()->isCompatibleForPartitionOps(source_table->getStoragePolicy());
     for (const DataPartPtr & src_part : src_parts)
@@ -3376,7 +4252,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             /// Replace can only work on the same disk
             auto [dst_part, part_lock] = cloneAndLoadDataPart(
                 src_part,
-                TMP_PREFIX,
+                tmp_prefix,
                 dst_part_info,
                 my_metadata_snapshot,
                 clone_params,
@@ -3391,7 +4267,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             /// Attach can work on another disk
             auto [dst_part, part_lock] = cloneAndLoadDataPart(
                 src_part,
-                TMP_PREFIX,
+                tmp_prefix,
                 dst_part_info,
                 my_metadata_snapshot,
                 clone_params,
@@ -3419,13 +4295,47 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
     }
 
+    /// Under `leader_election`, the old destination partition cannot be retired via
+    /// `removePartsInRangeFromWorkingSet` below: it records the removal only in local memory and
+    /// through `VersionMetadataOnDisk`, which defers or skips non-transactional writes, so nothing
+    /// on shared storage says the old parts are gone. Until the lazy cleanup deletes their
+    /// directories, a failover or restart would make the next leader load both the old partition
+    /// and the cloned parts. Retire the old parts by covering them with empty parts instead —
+    /// staged here and published below in the SAME fenced transaction as the cloned parts, so the
+    /// retirement cannot be separated from the publish by a stale lease. The snapshot taken here
+    /// is exactly the set `removePartsInRangeFromWorkingSet` would remove: merges and mutations in
+    /// the partition are blocked by `merges_blocker`, and any concurrent insert gets a block
+    /// number above `drop_range.max_block` (its `block_holder` was allocated above), so it
+    /// survives the REPLACE in both designs.
+    DataPartsVector parts_to_cover;
+    MutableDataPartsVector new_empty_covering_parts;
+    std::vector<scope_guard> empty_parts_locks;
+    if (replace && leader_election_ptr)
+    {
+        parts_to_cover = getVisibleDataPartsVectorInPartition(local_context, partition_id);
+        std::erase_if(parts_to_cover, [&](const auto & part) { return part->info.max_block > drop_range.max_block; });
+        auto future_parts = initCoverageWithNewEmptyParts(parts_to_cover);
+        std::tie(new_empty_covering_parts, empty_parts_locks)
+            = createEmptyDataParts(*this, future_parts, local_context->getCurrentTransaction());
+    }
+
     /// Atomically add new parts and remove old ones
     try
     {
+        /// Declared outside the `data_parts_lock` scope: the deduplication log of the retired
+        /// parts is dropped after the lock is released (see below).
+        DataPartsVector covered_parts;
         {
             /// Here we use the transaction just like RAII since rare errors in renameTempPartAndReplace() are possible
             ///  and we should be able to rollback already added (Precomitted) parts
             Transaction transaction(*this, local_context->getCurrentTransaction().get());
+
+            /// The cloned parts are published one rename at a time; arm the fence so that every
+            /// individual rename is checked against the epoch captured at admission and a lease
+            /// lost in the middle of the batch undoes the renames already done (see
+            /// `Transaction::renameParts`).
+            if (leader_election_ptr)
+                transaction.setPublishFenceEpoch(admission_epoch);
 
             auto data_parts_lock = lockParts();
             std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
@@ -3444,15 +4354,83 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             {
                 block_holders.emplace_back(fillNewPartName(part, data_parts_lock));
                 renameTempPartAndReplaceUnlocked(
-                    part, transaction, data_parts_lock, /*rename_in_transaction=*/ false, /*check_table_size_limits=*/ false);
+                    part, transaction, data_parts_lock, /*rename_in_transaction=*/ true, /*check_table_size_limits=*/ false);
             }
+
+            /// Stage the covering empty parts that retire the old destination partition (see the
+            /// comment where they are created) into the same transaction, so the retirement is
+            /// published under the same fence — and undone together with the cloned parts if the
+            /// lease goes stale in the middle of the batch.
+            for (auto & part : new_empty_covering_parts)
+            {
+                auto covered_by_one_part = renameTempPartAndReplaceUnlocked(part, data_parts_lock, transaction, /*rename_in_transaction=*/ true);
+                std::move(covered_by_one_part.begin(), covered_by_one_part.end(), std::back_inserter(covered_parts));
+            }
+
+            /// Under `leader_election`, re-fence at the epoch captured at admission BEFORE
+            /// `renameParts` publishes the cloned parts on shared storage. `transaction.commit`
+            /// re-checks leadership, but by then the renames have already happened, and it cannot
+            /// detect a lease lost and reacquired while the parts were being cloned.
+            try
+            {
+                assertWritableLeaderAtEpoch(admission_epoch);
+                /// Inside the batch the fence is re-checked before each rename, and the renames
+                /// already done are undone if the lease goes stale in the middle, so on a failure
+                /// here nothing of this DDL is left under a persistent name either.
+                transaction.renameParts();
+            }
+            catch (...)
+            {
+                /// None of the cloned parts were renamed to their persistent names, and their
+                /// names are deterministic. A regular rollback would leave them in the working set
+                /// as Outdated with storage still pointing at the temporary directory; a later
+                /// retry of the same `ATTACH`/`REPLACE PARTITION` re-creates that exact directory,
+                /// and the lazy cleanup of the zombie would then destroy the retry's live part
+                /// storage. Remove them from the working set entirely: they were never visible to
+                /// anyone. Skipped for `MergeTreeTransaction` to keep its CSN bookkeeping on the
+                /// regular rollback path.
+                if (!local_context->getCurrentTransaction())
+                {
+                    transaction.rollbackPartsToTemporaryState(&data_parts_lock);
+                    /// Restore temporary ownership (cleared by `preparePartForCommit`) so the
+                    /// destructors remove the never-published directories instead of leaving
+                    /// stale leftovers.
+                    for (auto & part : dst_parts)
+                        part->is_temp = true;
+                    for (auto & part : new_empty_covering_parts)
+                        part->is_temp = true;
+                }
+                throw;
+            }
+
             /// Populate transaction
             transaction.commit(data_parts_lock);
 
             /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
             if (replace)
-                removePartsInRangeFromWorkingSet(local_context->getCurrentTransaction().get(), drop_range, data_parts_lock);
+            {
+                if (leader_election_ptr)
+                {
+                    /// The old parts were retired by the covering empty parts committed above.
+                    /// Remove them without waiting for `old_parts_lifetime`, like the other
+                    /// coverage-based retirements (see `renameAndCommitEmptyParts`).
+                    for (const auto & part : covered_parts)
+                        part->remove_time.store(0, std::memory_order_relaxed);
+                }
+                else
+                    removePartsInRangeFromWorkingSet(local_context->getCurrentTransaction().get(), drop_range, data_parts_lock);
+            }
         }
+
+        /// Retire the block ids of the covered parts in the deduplication log, like every other
+        /// coverage-based retirement (see `renameAndCommitEmptyParts` and `movePartitionToTable`).
+        /// This must happen after `data_parts_lock` is released: on a storage error
+        /// `dropDeduplicationLogParts` fails closed by relinquishing leadership, which
+        /// synchronously drains the background merge and mutation executors, and a task that
+        /// already reached its publish phase needs the very same `lockParts()` critical section to
+        /// finish — draining it while holding the lock would deadlock.
+        if (replace && leader_election_ptr)
+            dropDeduplicationLogParts(covered_parts);
 
         /// Note: same elapsed time and profile events for all parts is used
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -3468,11 +4446,29 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 /// Clang's thread-safety analyzer, which cannot track mutex ownership across `std::lock`.
 void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr local_context) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
+    /// Capture the source-side leadership epoch before the admission gate (same ordering as
+    /// `write`); both the source and the destination epoch are re-checked immediately before
+    /// the renames publish parts on shared storage below.
+    const UInt64 src_admission_epoch = currentLeadershipEpoch();
+    throwIfTransactionalPartitionOpUnderLeaderElection(local_context->getCurrentTransaction(), "MOVE PARTITION TO TABLE");
+    assertNotReadonly();
     auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
     if (!dest_table_storage)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Table {} supports movePartitionToTable only for MergeTree family of table engines. Got {}",
                         getStorageID().getNameForLogs(), dest_table->getName());
+
+    /// `MOVE PARTITION TO TABLE` mutates the destination too: below we delay/throttle inserts on it,
+    /// clone parts into it, allocate destination block numbers, and rename/commit through the
+    /// destination transaction. The source check above does not cover that, so fence the destination
+    /// here — before any destination-side work — so a `leader_election` destination on which this node
+    /// is a follower (or is still in post-failover takeover sync) fails closed rather than publishing
+    /// parts with a stale destination block counter. As with the source, capture the destination
+    /// epoch before its admission gate.
+    const UInt64 dest_admission_epoch = dest_table_storage->currentLeadershipEpoch();
+    dest_table_storage->throwIfTransactionalPartitionOpUnderLeaderElection(
+        local_context->getCurrentTransaction(), "MOVE PARTITION TO TABLE");
+    dest_table_storage->assertNotReadonly();
 
     /// Destination-side UK reject (source-side rejection is centralized in
     /// MergeTreeData::alterPartition).
@@ -3556,7 +4552,13 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
 
-    static const String TMP_PREFIX = "tmp_move_from_";
+    /// Scope the temporary directory names (created under the DESTINATION data path by
+    /// `cloneAndLoadDataPart`) to this server process: under `leader_election`, several
+    /// processes share that path and the process-local `temp_index` below is not unique
+    /// across them. See `getPostfixForTempPartName`.
+    String tmp_prefix = "tmp_move_from_";
+    if (const auto temp_postfix = dest_table_storage->getPostfixForTempPartName(); !temp_postfix.empty())
+        tmp_prefix += temp_postfix + "_";
 
     for (const DataPartPtr & src_part : src_parts)
     {
@@ -3578,7 +4580,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
         auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
             src_part,
-            TMP_PREFIX,
+            tmp_prefix,
             dst_part_info,
             dest_metadata_snapshot,
             clone_params,
@@ -3605,6 +4607,14 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         Transaction dest_transaction(*dest_table_storage, txn.get());
         Transaction src_transaction(*this, txn.get());
 
+        /// Both sides publish batches of parts one rename at a time; arm the fence so that every
+        /// individual rename is checked against the epoch captured at admission and a lease lost
+        /// in the middle of a batch undoes the renames already done (see `Transaction::renameParts`).
+        if (dest_table_storage->leader_election_ptr)
+            dest_transaction.setPublishFenceEpoch(dest_admission_epoch);
+        if (leader_election_ptr)
+            src_transaction.setPublishFenceEpoch(src_admission_epoch);
+
         {
             auto dest_data_parts_lock = dest_table_storage->lockParts();
             auto src_data_parts_lock = lockParts();
@@ -3622,12 +4632,98 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                 renameTempPartAndReplaceUnlocked(part, src_data_parts_lock, src_transaction, /*rename_in_transaction=*/true);
             }
 
-            dest_transaction.renameParts();
-            dest_transaction.commit(dest_data_parts_lock);
+            /// Under `leader_election`, re-fence both tables at the epochs captured at admission
+            /// BEFORE `renameParts` publishes anything on shared storage. The `commit` calls below
+            /// re-check leadership, but by then the renames have already happened, and they cannot
+            /// detect a lease lost and reacquired while the parts were being cloned.
+            try
+            {
+                dest_table_storage->assertWritableLeaderAtEpoch(dest_admission_epoch);
+                assertWritableLeaderAtEpoch(src_admission_epoch);
 
-            src_transaction.renameParts();
+                /// Publish both sides before committing either of them: the renames are the
+                /// irreversible part, they re-check the fence per rename, and they undo what they
+                /// already published if the lease goes stale in the middle of a batch. Both parts
+                /// locks are held for the whole scope, so the reordering is not observable.
+                dest_transaction.renameParts();
+
+                /// Test hook for the cross-transaction window: the destination batch has fully
+                /// published, and the source-side publish below is about to fail.
+                fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_between_move_publishes,
+                {
+                    throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                        "Simulated leadership loss between the two publishes of MOVE PARTITION TO TABLE (leader_election)");
+                });
+
+                src_transaction.renameParts();
+
+                /// Run the commit-time checks of BOTH transactions before committing either of
+                /// them. `commit` enforces the publish fence itself and undoes only its OWN
+                /// published renames when it fails: with the two commits back to back, a source
+                /// side rejected after the destination has already committed would leave the
+                /// moved partition visible in the destination while it is still present in the
+                /// source, even though the command returns an exception. Checking both here
+                /// makes the commits below unable to fail independently on the leadership fence,
+                /// and a failure of either check is undone for the whole command by the handler
+                /// below.
+                dest_transaction.validateCommitPreconditions();
+
+                /// Test hook for the window between the two commits: the destination side has
+                /// passed its commit-time fence (and, before this fence was hoisted, would have
+                /// been committed already), and the source side is about to be rejected.
+                fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_between_move_commits,
+                {
+                    throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                        "Simulated leadership loss between the two commits of MOVE PARTITION TO TABLE (leader_election)");
+                });
+
+                src_transaction.validateCommitPreconditions();
+            }
+            catch (...)
+            {
+                /// Undoing what `renameParts` already published (each aborted batch undoes its
+                /// own renames) may still leave the OTHER side's fully-published batch visible
+                /// under persistent names: when the source-side publish fails, the destination
+                /// batch has already completed. Rename those parts back to their temporary
+                /// directories too — after that, none of the staged parts is left under a
+                /// persistent name, and their temporary names are deterministic. A regular
+                /// rollback would leave them in the working sets as Outdated with storage still
+                /// pointing at the temporary directories; a later retry of the same
+                /// `MOVE PARTITION` re-creates those exact directories, and the lazy cleanup of
+                /// the zombies would then destroy the retry's live part storage. Remove them from
+                /// the working sets entirely: they were never visible to anyone. Skipped for
+                /// `MergeTreeTransaction` to keep its CSN bookkeeping on the regular rollback
+                /// path.
+                if (!txn)
+                {
+                    dest_transaction.undoPublishedRenames();
+                    src_transaction.undoPublishedRenames();
+                    dest_transaction.rollbackPartsToTemporaryState(&dest_data_parts_lock);
+                    src_transaction.rollbackPartsToTemporaryState(&src_data_parts_lock);
+                    /// Restore temporary ownership (cleared by `preparePartForCommit`) so the
+                    /// destructors remove the never-published directories instead of leaving
+                    /// stale leftovers.
+                    for (auto & part : dst_parts)
+                        part->is_temp = true;
+                    for (auto & part : new_empty_covering_src_parts)
+                        part->is_temp = true;
+                }
+                throw;
+            }
+
+            dest_transaction.commit(dest_data_parts_lock);
             src_transaction.commit(src_data_parts_lock);
         }
+
+        /// The moved-out source parts were retired by the covering empty parts committed above.
+        /// Remove them without waiting for `old_parts_lifetime` and retire their block ids in the
+        /// source deduplication log, like every other coverage-based retirement (see
+        /// `renameAndCommitEmptyParts` and `replacePartitionFrom`). Without this, an `INSERT`
+        /// retrying data that was just moved out of the source table would be silently
+        /// deduplicated against block ids of a partition the source no longer contains.
+        for (const auto & part : src_parts)
+            part->remove_time.store(0, std::memory_order_relaxed);
+        dropDeduplicationLogParts(src_parts);
 
         /// Note: same elapsed time and profile events for all parts is used
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -3716,6 +4812,14 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
                 auto calculated_checksums = checkDataPart(part, false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */true);
                 calculated_checksums.checkEqual(part->checksums, true, part->name);
 
+                /// Persisting the recomputed `checksums.txt` writes into the part's data
+                /// directory, which for `leader_election` tables lives on shared object
+                /// storage. Only the writable leader may write there; a follower would
+                /// otherwise race the node that holds the lease. Followers still validate
+                /// the part read-only above and report the missing file without repairing.
+                if (leader_election_ptr && !leader_election_ptr->isLeaderAndWritable())
+                    return CheckResult(part->name, true, "Checksums are missing; not rewritten because this node is not the writable leader (leader_election).");
+
                 auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
                 part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
 
@@ -3794,19 +4898,73 @@ BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & d
 }
 
 
-void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> &)
+void StorageMergeTree::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    for (auto part : parts)
+    /// Capture the leadership epoch BEFORE the admission gate, like `write` does: sampled after
+    /// the gate, a `RESTORE` admitted under one lease that survives a lose-and-reacquire window
+    /// and only then samples the epoch would inherit the new epoch without ever passing the new
+    /// epoch's writable-leader check. Captured first, any leadership change after the gate makes
+    /// every later fence of the restore fail closed.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
+
+    /// Fail closed at admission: `restorePartFromBackup` streams every file of the backup into
+    /// `tmp_restore_<part>-…` directories under the table's data path — which is the SHARED
+    /// object storage prefix under `leader_election` — long before `attachRestoredParts`
+    /// publishes anything. Without this check a follower could write the whole backup into
+    /// another node's shared prefix and be rejected only at the final publish.
+    assertNotReadonly();
+
+    /// The epoch is fixed here and threaded through every stage (`RestoredPartsHolder`): the
+    /// backup metadata reads and the non-empty-table check in `restoreDataFromBackupAtEpoch`
+    /// run after admission, so a lease lost and reacquired during them must be rejected too —
+    /// an interim leader may have written into this table in that window.
+    restoreDataFromBackupAtEpoch(restorer, data_path_in_backup, partitions, admission_epoch);
+}
+
+void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> &, UInt64 admission_epoch)
+{
+    /// Same admission-epoch fence as `attachPartition`, except the epoch is the one sampled when
+    /// the `RESTORE` command was admitted (not at this publish step, which runs long after): a
+    /// lease lost during the restore must fail closed before each rename even if this node has
+    /// reacquired leadership meanwhile, and the whole batch is published through a single
+    /// transaction so that a lease lost in the middle undoes the renames already done instead of
+    /// leaving the restore partially applied.
+    if (parts.empty())
+        return;
+
+    /// It's important to create it outside of lock scope because
+    /// otherwise it can lock parts in destructor and deadlock is possible.
+    MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
     {
-        /// It's important to create it outside of lock scope because
-        /// otherwise it can lock parts in destructor and deadlock is possible.
-        MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
+        if (leader_election_ptr)
+            transaction.setPublishFenceEpoch(admission_epoch);
+
+        auto lock = lockParts();
+        std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
+
+        for (auto part : parts)
         {
-            auto lock = lockParts();
-            auto block_holder = fillNewPartName(part, lock);
-            renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
-            transaction.commit(lock);
+            block_holders.emplace_back(fillNewPartName(part, lock));
+            renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ true);
         }
+
+        try
+        {
+            assertWritableLeaderAtEpoch(admission_epoch);
+            transaction.renameParts();
+        }
+        catch (...)
+        {
+            /// The restored parts never became visible; remove them from the working set and
+            /// restore temporary ownership (cleared by `preparePartForCommit`) so their
+            /// never-published directories are removed by the destructors.
+            transaction.rollbackPartsToTemporaryState(&lock);
+            for (auto & part : parts)
+                part->is_temp = true;
+            throw;
+        }
+
+        transaction.commit(lock);
     }
 }
 
@@ -3933,6 +5091,281 @@ void StorageMergeTree::assertNotReadonly() const
 {
     if (isTableReadonly())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode");
+    if (leader_election_ptr)
+    {
+        /// User-facing write gate: rejects writes both when we are not the leader and
+        /// when we hold the lease but the post-failover takeover-sync callback is still
+        /// in progress. The latter window is short but must not admit user `INSERT`s —
+        /// they would allocate block numbers from the stale pre-takeover counter and
+        /// race with the new leader's own writes, causing data loss on failover.
+        leader_election_ptr->assertIsLeaderAndWritable();
+    }
+}
+
+bool StorageMergeTree::canRunDestructiveCleanup() const
+{
+    if (!leader_election_ptr)
+        return true;
+
+    /// Test hook: deterministically simulate a lease that went stale before a destructive
+    /// cleanup (e.g. between a partition DDL's commit and its synchronous cleanup).
+    fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_cleanup, { return false; });
+
+    /// `isLeader()` returns false once the last successful lease renewal is older than the
+    /// freshness threshold, so a stale leader (whose heartbeat — and therefore its
+    /// leadership-loss callback — stalled) fails closed here even before `cleanup_thread.stop()`
+    /// runs. Note we deliberately use `isLeader()` (lease freshness), not
+    /// `isLeaderAndWritable()`: cleanup must keep running during the short post-failover
+    /// takeover-sync window when `writes_enabled` is still false but the lease is held.
+    return leader_election_ptr->isLeader();
+}
+
+UInt64 StorageMergeTree::currentLeadershipEpoch() const
+{
+    return leader_election_ptr ? leader_election_ptr->leadershipEpoch() : 0;
+}
+
+bool StorageMergeTree::hasLeaderElection() const
+{
+    return leader_election_ptr != nullptr;
+}
+
+void StorageMergeTree::clearDataAfterPartitionDDL(std::string_view ddl_kind, bool with_mutations)
+{
+    /// See the comment in the header: under `leader_election` the lease freshness is re-checked
+    /// before EACH destructive helper, because it may go stale between them; a stale lease must
+    /// leave the cleanup to the current leader rather than touch the just-committed empty parts.
+    if (!canRunDestructiveCleanup())
+    {
+        LOG_INFO(log, "Skipping synchronous cleanup after {}: the leadership lease is stale (leader_election)", ddl_kind);
+        return;
+    }
+
+    /// Old parts are needed to be destroyed before clearing them from filesystem.
+    if (with_mutations)
+        clearOldMutations(true);
+    clearOldPartsFromFilesystem();
+
+    /// Test hook: deterministically simulate a lease that went stale inside the helpers above,
+    /// after the first freshness check passed.
+    bool lease_went_stale = !canRunDestructiveCleanup();
+    fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_before_clear_empty, { lease_went_stale = true; });
+    if (lease_went_stale)
+    {
+        LOG_INFO(log, "Skipping the rest of the synchronous cleanup after {}: the leadership lease went stale (leader_election)", ddl_kind);
+        return;
+    }
+
+    clearEmptyParts();
+}
+
+std::optional<StorageMergeTree::StagedDetachedClone> StorageMergeTree::cloneToDetachedForDrop(
+    const DataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, std::vector<scope_guard> & dir_holders)
+{
+    const String part_dir = part->getDataPartStorage().getPartDirectory();
+    LOG_INFO(log, "Detaching {}", part_dir);
+
+    if (!(*getSettings())[MergeTreeSetting::leader_election])
+    {
+        dir_holders.push_back(getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir));
+        part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
+        return {};
+    }
+
+    /// See the comment in the header: the copy must not appear in the shared `detached/` before
+    /// the `DETACH` commits. Reserve the name it will get there — chosen exactly as
+    /// `makeCloneInDetached` would choose it, including the `_tryN` suffix when the name is taken.
+    auto detached_path = part->getRelativePathForDetachedPart("", /*broken*/ false);
+    if (!detached_path)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot choose a directory name in detached/ for part {}", part->name);
+    const String detached_dir = fs::path(*detached_path).filename();
+
+    /// The staging directory is scoped to this server process: the data path is shared, and a
+    /// `tmp_` name is what the temporary-directory cleanup of every node recognizes as garbage.
+    const String staged_dir = fmt::format("tmp_detach_{}_{}", getPostfixForTempPartName(), part_dir);
+    dir_holders.push_back(getTemporaryPartDirectoryHolder(staged_dir));
+    dir_holders.push_back(getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + detached_dir));
+
+    auto cloned_storage = part->makeCloneAt(staged_dir, /*disk_transaction*/ {});
+
+    /// Test hook: hold the command in the window this staging exists for — the copy is durable,
+    /// the covering empty part is not committed yet.
+    FailPointInjection::pauseFailPoint(FailPoints::merge_tree_leader_election_pause_after_detach_clone);
+
+    return StagedDetachedClone{
+        getStoragePolicy()->getDiskByName(cloned_storage->getDiskName()), staged_dir, detached_dir};
+}
+
+void StorageMergeTree::publishDetachedClones(const std::vector<StagedDetachedClone> & clones)
+{
+    /// Fail-closed: a failure here leaves the copy in its staging directory, where `ATTACH` does
+    /// not see it, while the `DETACH` itself is already committed. Report it instead of hiding
+    /// it, naming the directory that has to be moved into `detached/` by hand to make the
+    /// detached copy usable again. Publish every copy first, so one failure does not strand the
+    /// rest of the batch.
+    std::exception_ptr first_error;
+    for (const auto & clone : clones)
+    {
+        try
+        {
+            clone.disk->moveDirectory(
+                fs::path(relative_data_path) / clone.staged_dir,
+                fs::path(relative_data_path) / DETACHED_DIR_NAME / clone.detached_dir);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format(
+                "Cannot move the copy of a committed DETACH from {} to detached/{}; the data is dropped, "
+                "but the detached copy is not available until the directory is moved manually",
+                clone.staged_dir, clone.detached_dir));
+            if (!first_error)
+                first_error = std::current_exception();
+        }
+    }
+    if (first_error)
+        std::rethrow_exception(first_error);
+}
+
+void StorageMergeTree::removeDetachedClonesOfRejectedDetach(const std::vector<StagedDetachedClone> & clones)
+{
+    /// Fail-closed: a removal failure must fail the command instead of being swallowed —
+    /// otherwise the `DETACH` would return its original exception while its copy stays durable
+    /// on shared storage, to be published by a retry that assumes it is its own. Attempt every
+    /// clone (so one failure does not leave the rest behind), then rethrow the first error,
+    /// which names the copies that require manual cleanup.
+    std::exception_ptr first_error;
+    for (const auto & clone : clones)
+    {
+        try
+        {
+            LOG_INFO(log, "Removing the copy {} left behind by a DETACH rejected before its commit (leader_election)", clone.staged_dir);
+            removeDetachedPart(clone.disk, fs::path(relative_data_path) / clone.staged_dir / "", clone.staged_dir);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format(
+                "Cannot remove the copy {} of a rejected DETACH; it must be removed manually", clone.staged_dir));
+            if (!first_error)
+                first_error = std::current_exception();
+        }
+    }
+    if (first_error)
+        std::rethrow_exception(first_error);
+}
+
+void StorageMergeTree::throwIfTransactionalPartitionOpUnderLeaderElection(const MergeTreeTransactionPtr & txn, std::string_view command) const
+{
+    if (!txn || !leader_election_ptr)
+        return;
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "{} inside a transaction is not supported for tables with the leader_election setting: "
+        "the final COMMIT TRANSACTION is not fenced by the leadership lease, so a leader that "
+        "lost its lease could finalize the operation after failover",
+        command);
+}
+
+void StorageMergeTree::assertWritableLeaderAtEpoch(UInt64 admission_epoch) const
+{
+    if (!leader_election_ptr)
+        return;
+
+    /// Test hook: deterministically simulate a leadership loss+reacquire between a write's
+    /// admission and its commit by presenting an older admission epoch than the current one, so
+    /// the epoch comparison below rejects the write before any shared write. Placed here so every
+    /// fenced publish path (insert, merge, mutation, partition DDL, attach) is covered.
+    fiu_do_on(FailPoints::merge_tree_leader_election_stale_epoch_before_commit,
+    {
+        admission_epoch = admission_epoch >= 1 ? admission_epoch - 1 : admission_epoch + 1;
+    });
+
+    /// Must still be the writable leader (not merely hold the lease): user/background writes are
+    /// only valid once the post-failover takeover sync has completed (`writes_enabled`).
+    leader_election_ptr->assertIsLeaderAndWritable();
+
+    /// And must be the SAME leadership epoch that admitted this write. If leadership was lost and
+    /// reacquired in between, the block numbers / dedup state were prepared under the previous
+    /// lease; publishing the part now would race the new leadership's own writes.
+    const UInt64 current_epoch = leader_election_ptr->leadershipEpoch();
+    if (current_epoch != admission_epoch)
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+            "Leadership epoch changed ({} -> {}) between this write's admission and its commit; "
+            "rejecting before publishing a part prepared under a stale lease (leader_election)",
+            admission_epoch, current_epoch);
+}
+
+std::string StorageMergeTree::getPostfixForTempPartName() const
+{
+    /// See the comment in the header. The token must be stable within the process (temporary
+    /// cleanup on restart matches only the `tmp_*` prefixes, not the token) and distinct across
+    /// the server processes sharing the data path; a hash of the server UUID satisfies both.
+    if (!(*getSettings())[MergeTreeSetting::leader_election])
+        return "";
+
+    static const std::string node_token = [] {
+        SipHash hash;
+        hash.update(toString(ServerUUID::get()));
+        return getHexUIntLowercase(hash.get64());
+    }();
+    return node_token;
+}
+
+bool StorageMergeTree::mayMutateSharedStorage() const
+{
+    /// Without `leader_election` this is a standalone writer that owns its data outright.
+    if (!(*getSettings())[MergeTreeSetting::leader_election])
+        return true;
+
+    /// Otherwise only the lease-holding leader may write to shared storage. This is keyed on
+    /// `isLeader()` (lease freshness), matching `canRunDestructiveCleanup`: during the
+    /// post-failover takeover sync `writes_enabled` is still false but the lease is held, and
+    /// the callback must be able to reconcile shared state. `leader_election_ptr` is null until
+    /// `startup` creates it, so initial part/mutation/dedup loading runs read-only.
+    return leader_election_ptr && leader_election_ptr->isLeader();
+}
+
+Pipe StorageMergeTree::alterPartition(
+    const StorageMetadataPtr & metadata_snapshot,
+    const PartitionCommands & commands,
+    ContextPtr query_context)
+{
+    /// Defense-in-depth: enforce leader/readonly guard at the dispatcher level. The
+    /// per-command handlers that mutate shared data (`dropPart`, `dropPartition`,
+    /// `attachPartition`, `replacePartitionFrom`, `movePartitionToTable`) already call
+    /// `assertNotReadonly` themselves, but other commands dispatch into shared
+    /// `MergeTreeData` methods (`dropDetached`, `movePartitionToDisk`,
+    /// `movePartitionToVolume`) that do not, so a follower could otherwise mutate
+    /// shared object storage. `FREEZE`/`UNFREEZE` create or remove local hardlink
+    /// backups only and are allowed on followers.
+    for (const auto & command : commands)
+    {
+        switch (command.type)
+        {
+            case PartitionCommand::FREEZE_PARTITION:
+            case PartitionCommand::FREEZE_ALL_PARTITIONS:
+            case PartitionCommand::UNFREEZE_PARTITION:
+            case PartitionCommand::UNFREEZE_ALL_PARTITIONS:
+                /// `FREEZE`/`UNFREEZE` write to / delete from `shadow/<backup>/<relative_data_path>`
+                /// on the table's disks. Under `leader_election` those are the shared `S3`/`Azure`
+                /// disks (and `shadow/increment.txt` is per-node, so default backup names collide
+                /// across nodes), so only the leader may run them. For other tables these are
+                /// node-local backup operations and remain unrestricted (including on a
+                /// `table_readonly` table), so we gate only on leadership here, not `assertNotReadonly`.
+                if (leader_election_ptr)
+                    leader_election_ptr->assertIsLeaderAndWritable();
+                continue;
+            default:
+                assertNotReadonly();
+                break;
+        }
+    }
+    return MergeTreeData::alterPartition(metadata_snapshot, commands, query_context);
+}
+
+void StorageMergeTree::assertCanCommitTransaction() const
+{
+    if (leader_election_ptr)
+        leader_election_ptr->assertIsLeader();
 }
 
 std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)

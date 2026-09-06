@@ -99,26 +99,52 @@ public:
             return;
         }
 
+        StoragePtr nested_storage;
+        /// Only *materializing* the nested storage is allowed to fail closed. A failure of the
+        /// nested `drop()` itself must propagate: otherwise a failed drop is reported as success,
+        /// and `dropSkipsDataDirectoryCleanup` then tells `DatabaseCatalog::dropTableFinally` to
+        /// skip per-disk cleanup and finalize the catalog drop, leaving half-dropped / leaked
+        /// shared-storage state.
         try
         {
             LOG_TRACE(log, "Loading table for drop without startup");
 
             if (!get_nested)
             {
-                LOG_WARNING(log, "Cannot load table for drop, data cleanup will be handled by the database engine");
+                LOG_WARNING(log, "Cannot load table for drop, data ownership is unknown");
+                drop_load_failed = true;
                 return;
             }
 
-            auto nested_storage = get_nested();
-            nested_storage->drop();
-            get_nested = {};
+            nested_storage = get_nested();
         }
         catch (...)
         {
             LOG_WARNING(log, "Failed to load table for drop: {}. "
-                             "Data cleanup will be handled by the database engine.",
+                             "Cleanup of disks with shared metadata will be skipped to avoid "
+                             "destructive fallback on shared object storage.",
                         getCurrentExceptionMessage(false));
+            /// We could not determine the underlying storage. Report the ownership as unknown
+            /// (see `dropDataOwnershipUnknown`) instead of skipping cleanup entirely: the
+            /// nested storage may be a `MergeTree` with `leader_election = 1` whose data lives
+            /// on shared object storage and is owned by another node — but it may equally be an
+            /// ordinary local table, and a blanket skip would leak its `store/<uuid>` directory
+            /// permanently on a transient load failure. The catalog cleans node-local disks and
+            /// skips only disks with shared metadata in this case.
+            drop_load_failed = true;
+            return;
         }
+
+        /// Outside the catch: a real drop failure here propagates rather than being converted into
+        /// a finalized catalog drop.
+        nested_storage->drop();
+        get_nested = {};
+        /// Keep the dropped storage around so `dropSkipsDataDirectoryCleanup`
+        /// can delegate to it: `DatabaseCatalog::dropTableFinally` queries it
+        /// right after `drop()` returns to decide whether to skip per-disk
+        /// cleanup. Without this, an unloaded `MergeTree` with
+        /// `leader_election = 1` would fall back to the unsafe default.
+        nested = std::move(nested_storage);
     }
 
     void read(
@@ -167,6 +193,45 @@ public:
         getNested()->checkTableSizeBelowDropLimit(query_context);
     }
 
+    /// Must materialize the nested storage: the default `Atomic` database renames a table
+    /// via `checkTableCanBeRenamed` + `renameInMemory` and never calls `rename`, so a no-op
+    /// here would let a rename bypass nested-storage guards (e.g. the `leader_election`
+    /// rejection in `StorageMergeTree::checkTableCanBeRenamed`) for lazily loaded on-disk tables.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override
+    {
+        getNested()->checkTableCanBeRenamed(new_name);
+    }
+
+    /// Same reasoning as `checkTableCanBeRenamed`: materialize the nested storage so a
+    /// `RENAME DATABASE` cannot bypass the nested-storage guard (the `leader_election`
+    /// rejection) for a lazily loaded on-disk table.
+    void checkTableCanBeRenamedByDatabaseRename() const override
+    {
+        getNested()->checkTableCanBeRenamedByDatabaseRename();
+    }
+
+    bool dropSkipsDataDirectoryCleanup() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->dropSkipsDataDirectoryCleanup();
+        /// When the nested storage could not be materialized during `drop()`, the ownership of
+        /// the data is *unknown* (see `dropDataOwnershipUnknown` below), which is weaker than a
+        /// full cleanup skip: skipping everything here would permanently leak `store/<uuid>` of
+        /// an ordinary local table on a transient load failure.
+        return false;
+    }
+
+    bool dropDataOwnershipUnknown() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        /// Set by `drop()` when it could not materialize the nested storage. The catalog then
+        /// cleans node-local disks but skips disks with shared metadata, so a destructive
+        /// `removeRecursive` never runs against a path that may be on shared object storage
+        /// owned by a `leader_election = 1` peer (see `drop()` for details).
+        return !nested && drop_load_failed;
+    }
+
     std::optional<UInt64> totalRows(ContextPtr query_context) const override
     {
         std::lock_guard lock{nested_mutex};
@@ -200,9 +265,10 @@ public:
     }
 
 private:
-    mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
+    mutable std::recursive_mutex nested_mutex; /// Guards `get_nested`, `nested`, and `drop_load_failed`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
+    bool drop_load_failed = false; /// `drop()` could not load the lazy table; force fail-closed cleanup decision.
     LoggerPtr log;
 };
 
