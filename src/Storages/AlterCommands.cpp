@@ -1878,10 +1878,11 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 }
 
 
-void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets)
+void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets)
 {
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
+    NameSet columns_added_by_this_alter;
 
     /// Used to tell whether a command restates the definition the table already has, so it must not
     /// depend on whether the redundant parentheses were written on one side and not on the other.
@@ -1913,11 +1914,10 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                             "in a single ALTER query");
                     }
 
-                    /// `ADD ENUM VALUES` derives the resulting type by merging against the existing column, so
-                    /// the column must be present in the working snapshot. If it is not (e.g. the column is added
-                    /// by a preceding `ADD COLUMN` in the same statement, which does not advance the snapshot),
-                    /// fail explicitly instead of silently dropping the modification.
-                    if (!has_column)
+                    /// `ADD ENUM VALUES` derives the resulting type by merging against the type the column
+                    /// already has, so the column must predate this statement: one introduced by a preceding
+                    /// `ADD COLUMN` here has no such type to merge with.
+                    if (!has_column || columns_added_by_this_alter.contains(command.column_name))
                         throw Exception(
                             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
                             "Cannot ADD ENUM VALUES to column {}: it does not exist in the table. Adding enum values to a "
@@ -2026,6 +2026,32 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         {
             if (ast_to_str(command.order_by) == ast_to_str(metadata.sorting_key.definition_ast))
                 command.ignore = true;
+        }
+
+        /// Advance the working snapshot exactly as `AlterCommand::apply` advances the metadata, so a
+        /// later command in the same statement decides `IF (NOT) EXISTS` against the state the
+        /// preceding commands produce rather than against the pre-statement columns.
+        if (!command.ignore)
+        {
+            if (command.type == AlterCommand::ADD_COLUMN)
+            {
+                for (auto & column : columnsAddedByAlter(columns, ColumnDescription(command.column_name, command.data_type),
+                                                         context, command.if_not_exists, share_nested_offsets))
+                {
+                    columns_added_by_this_alter.insert(column.name);
+                    columns.add(std::move(column));
+                }
+            }
+            else if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition)
+            {
+                if (!command.if_exists || columns.has(command.column_name))
+                    columns.remove(command.column_name);
+            }
+            else if (command.type == AlterCommand::RENAME_COLUMN)
+            {
+                if (!command.if_exists || columns.has(command.column_name))
+                    columns.rename(command.column_name, command.rename_to);
+            }
         }
     }
 
