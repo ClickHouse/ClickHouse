@@ -49,6 +49,10 @@ public:
 private:
     FileStreams streams;
 
+    /// Guards `streams` and `prefetched_streams`. Must not be held across marks loading or stream
+    /// initialization: those block, and every prefix task needs this mutex.
+    std::mutex streams_mutex;
+
     void prefetchForAllColumns(
         Priority priority,
         size_t num_columns,
@@ -69,7 +73,10 @@ private:
         bool seek_to_mark,
         ISerialization::SubstreamsCache & cache);
 
-    FileStreams::iterator addStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name);
+    /// Returns the stream for `stream_name`, creating it if it does not exist yet.
+    /// `streams_mutex` is taken only around the lookup and the insertion; constructing the stream and
+    /// starting its asynchronous marks load happen with the mutex released.
+    MergeTreeReaderStream * getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name);
 
     void readData(
         const NameAndTypePair & name_and_type,
