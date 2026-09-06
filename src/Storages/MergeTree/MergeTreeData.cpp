@@ -11798,6 +11798,15 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (params.copy_instead_of_hardlink)
         with_copy = " (copying data)";
 
+    /// The clone keeps the source's physically stored data, so it must also keep the source's
+    /// disclaimer of the persisted _block_number/_block_offset values. Callers that adopt a part
+    /// from another table pass the columns explicitly; for all other clones (e.g. a mutation that
+    /// does not touch the part) propagate the source part's own invalidated set, otherwise the
+    /// clone would resurrect the stale persisted values (issue #107501).
+    IDataPartStorage::ClonePartParams params_with_invalidated_columns = params;
+    params_with_invalidated_columns.invalidated_columns_to_write.insert(
+        src_part->invalidated_system_columns.begin(), src_part->invalidated_system_columns.end());
+
     /// `freeze` rejects a non-empty destination, so reclaim the leftover here, once the destination disk
     /// is known (the claim itself was taken above).
     std::shared_ptr<IDataPartStorage> dst_part_storage{};
@@ -11810,7 +11819,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             read_settings,
             write_settings,
             /* save_metadata_callback= */ {},
-            params);
+            params_with_invalidated_columns);
     }
     else
     {
@@ -11829,7 +11838,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             read_settings,
             write_settings,
             /* save_metadata_callback= */ {},
-            params);
+            params_with_invalidated_columns);
     }
 
     if (params.metadata_version_to_write.has_value())
