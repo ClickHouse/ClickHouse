@@ -44,6 +44,33 @@ def collect_stacktrace_logs(cwd):
     ]
 
 
+# Mirrors `common_ft_job_config`'s `timeout` in `ci/defs/job_configs.py`; keep the
+# two in sync.
+DIAGNOSTICS_JOB_TIMEOUT = int(3600 * 2.5)
+
+# Time the diagnostics stage must leave unspent. A job that hits its own timeout
+# is recorded as ERROR and skips artifact upload entirely, which starves the
+# downstream coverage job.
+DIAGNOSTICS_RESERVE_S = 15 * 60
+
+# `clickhouse-test`'s own `--timeout` default, which the main run does not
+# override (see `run_tests`). The rerun must use exactly this bound: any other
+# value changes a verdict through the timeout alone, and reads as `flaky`.
+DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S = 600
+
+
+def diagnostics_budget(elapsed_s):
+    """Time budget for the DIAGNOSTICS stage rerun.
+
+    Returns `(stage_timeout_s, test_timeout_s)`, or `None` when too little job
+    time is left to fund one full-timeout rerun.
+    """
+    stage = DIAGNOSTICS_JOB_TIMEOUT - int(elapsed_s) - DIAGNOSTICS_RESERVE_S
+    if stage < DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S:
+        return None
+    return stage, DIAGNOSTICS_MAIN_RUN_TEST_TIMEOUT_S
+
+
 def stateless_memory_limit(source):
     """Per-test cgroup memory limit (`clickhouse-test --memory-limit`) for a run
     identified by `source` (a build type, job-parameter string, or job name).
@@ -1386,6 +1413,11 @@ def main():
                 )
                 break
 
+        # Read the clock once: the budget truncates `elapsed_s`, so evaluating it
+        # for the guard and again for the unpacking can straddle a second and
+        # unpack `None`.
+        diag_budget = diagnostics_budget(stop_watch.duration) if failed_tests else None
+
         if has_errors:
             pass
         elif len(failed_tests) > 10:
@@ -1396,19 +1428,48 @@ def main():
                     info="Too many failed tests",
                 ).set_timing(stopwatch=diag_stopwatch)
             )
+        elif failed_tests and diag_budget is None:
+            results.append(
+                Result(
+                    name="Diagnostics",
+                    status=Result.Status.SKIPPED,
+                    info="Not enough job time left to diagnose",
+                ).set_timing(stopwatch=diag_stopwatch)
+            )
         elif failed_tests:
+            diag_stage_timeout, diag_test_timeout = diag_budget
             memory_limit = stateless_memory_limit(Info().job_name)
+            # The rerun must mirror the main run's environment or its verdict is
+            # meaningless. Pass one form of a shard/zookeeper pair, not both
+            # (argparse error); options after `--` are parsed as test names.
+            diag_options = runner_options
+            if "--no-shard" not in diag_options:
+                diag_options += " --shard"
+            if "--no-zookeeper" not in diag_options:
+                diag_options += " --zookeeper"
+            print(
+                f"Diagnostics budget: stage {diag_stage_timeout}s,"
+                f" per-test {diag_test_timeout}s"
+                f" (elapsed so far: {int(stop_watch.duration)}s)"
+            )
             diag_command = (
                 f"clickhouse-test --testname --check-zookeeper-session --hung-check"
                 f" --memory-limit {memory_limit} --trace --capture-client-stacktrace"
-                f" --queries ./tests/queries --shard --zookeeper"
+                f" --queries ./tests/queries"
                 f" --diagnose-random-settings"
                 f" --random-settings-diagnostics-dir {diagnostics_dir}"
                 f" --no-random-settings --no-random-merge-tree-settings"
+                f" --timeout {diag_test_timeout}"
+                f" {diag_options}"
                 f" -- {' '.join(failed_tests)}"
             )
             print(f"Running diagnostics for {len(failed_tests)} test(s)...")
-            diag_exit_code = Shell.run(diag_command, verbose=True)
+            # Not a hard bound: the timeout signals only this process group, so a
+            # rerun leaving a live descendant that holds the runner's stdout keeps
+            # the reader waiting past the deadline. The reserve absorbs that.
+            diag_exit_code = Shell.run(
+                diag_command, verbose=True, timeout=diag_stage_timeout
+            )
 
             # Read diagnostics results and prepend to original test info
             diag_results_path = os.path.join(
