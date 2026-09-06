@@ -5871,7 +5871,8 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     for (const auto & column_name : removed_columns)
     {
         auto it = std::ranges::find(all_column_names, column_name);
-        all_column_names.erase(it);
+        if (it != all_column_names.end())
+            all_column_names.erase(it);
     }
 
     /// We have to recreate virtual columns and storage snapshot to add new virtual columns for reading from text index.
