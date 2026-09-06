@@ -7,10 +7,14 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <base/types.h>
 #include <base/sort.h>
 #include <base/scope_guard.h>
+
+#include <bit>
+#include <limits>
 
 
 namespace DB
@@ -30,6 +34,28 @@ void throwUnexpectedLowCardinalityIndexType(size_t size)
 
 namespace
 {
+    bool dictionaryHasFloatingPointValues(const IColumnUnique & dictionary)
+    {
+        return WhichDataType(dictionary.getNestedNotNullableColumn()->getDataType()).isFloat();
+    }
+
+    template <typename T, typename UInt>
+    UInt64 getCanonicalFloatingPointBits(T value)
+    {
+        if (value == T{})
+            return 0;
+        if (isNaN(value))
+            return std::numeric_limits<UInt>::max();
+        return std::bit_cast<UInt>(value);
+    }
+
+    UInt64 getCanonicalFloatingPointBits(const IColumnUnique & dictionary, size_t index)
+    {
+        if (WhichDataType(dictionary.getNestedNotNullableColumn()->getDataType()).isFloat64())
+            return getCanonicalFloatingPointBits<Float64, UInt64>(dictionary.getFloat64(index));
+        return getCanonicalFloatingPointBits<Float32, UInt32>(dictionary.getFloat32(index));
+    }
+
     void checkColumn(const IColumn & column)
     {
         if (!dynamic_cast<const IColumnUnique *>(&column))
@@ -251,7 +277,7 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
         empty()
         && low_cardinality_src->isSharedDictionary()
         && getDictionary().nestedColumnIsNullable() == low_cardinality_src->getDictionary().nestedColumnIsNullable()
-        && !WhichDataType(low_cardinality_src->getDictionary().getNestedNotNullableColumn()->getDataType()).isFloat()
+        && !dictionaryHasFloatingPointValues(low_cardinality_src->getDictionary())
         && getDictionary().structureEquals(low_cardinality_src->getDictionary()))
         setSharedDictionary(low_cardinality_src->getDictionaryPtr());
 
@@ -442,7 +468,7 @@ size_t ColumnLowCardinality::getEqualRangeEndAssumeSorted(size_t begin, size_t e
     /// dictionary built from deserialized data is not canonicalized (insert-time canonicalization unifies the
     /// NaNs of freshly inserted data, but does not apply when reading back, and -0.0 is not unified at all), so
     /// it can hold such value-equal entries separately. So for a floating-point inner type we compare values.
-    if (WhichDataType(getDictionary().getNestedNotNullableColumn()->getDataType()).isFloat())
+    if (dictionaryHasFloatingPointValues(getDictionary()))
         return IColumn::getEqualRangeEndAssumeSorted(begin, end, nan_direction_hint);
 
     /// We only require equal values to be contiguous. If the column is sorted, then equal values are contiguous.
@@ -454,6 +480,10 @@ bool ColumnLowCardinality::hasEqualValues() const
 {
     if (getDictionary().size() <= 1)
         return true;
+
+    /// This method is also used to skip hash-based scattering, for example when partitioning `MergeTree` blocks.
+    /// Floating-point values that compare equal can have distinct hashes, so only equal dictionary indexes prove
+    /// that all rows can safely take the same hash-based path.
     return getIndexes().hasEqualValues();
 }
 
@@ -475,16 +505,53 @@ void ColumnLowCardinality::getPermutationImpl(IColumn::PermutationSortDirection 
     /// Get indexes per row in column_unique.
     VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> indexes_per_row(getDictionary().size());
     size_t indexes_size = getIndexes().size();
-    for (size_t row = 0; row < indexes_size; ++row)
-        indexes_per_row[getIndexes().getUInt(row)].push_back(row);
+    bool coalesce_equal_dictionary_values = false;
+    if (stability == IColumn::PermutationSortStability::Stable && dictionaryHasFloatingPointValues(getDictionary()))
+    {
+        for (size_t i = 1; i < unique_perm.size(); ++i)
+        {
+            if (getDictionary().compareAt(unique_perm[i - 1], unique_perm[i], getDictionary(), nan_direction_hint) == 0)
+            {
+                coalesce_equal_dictionary_values = true;
+                break;
+            }
+        }
+    }
+
+    size_t num_sorted_positions = unique_perm.size();
+    if (coalesce_equal_dictionary_values)
+    {
+        /// Distinct floating-point dictionary indexes can compare equal. Map them to the same sorted position,
+        /// then collect rows in source order so stable sorting preserves their relative order.
+        PaddedPODArray<UInt64> position_by_index(unique_perm.size());
+        UInt64 position = 0;
+        for (size_t i = 0; i < unique_perm.size(); ++i)
+        {
+            if (
+                i != 0
+                && getDictionary().compareAt(unique_perm[i - 1], unique_perm[i], getDictionary(), nan_direction_hint) != 0)
+                ++position;
+            position_by_index[unique_perm[i]] = position;
+        }
+
+        num_sorted_positions = unique_perm.empty() ? 0 : position + 1;
+        for (size_t row = 0; row < indexes_size; ++row)
+            indexes_per_row[position_by_index[getIndexes().getUInt(row)]].push_back(row);
+    }
+    else
+    {
+        for (size_t row = 0; row < indexes_size; ++row)
+            indexes_per_row[getIndexes().getUInt(row)].push_back(row);
+    }
 
     /// Replicate permutation.
     size_t perm_size = std::min(indexes_size, limit);
     res.resize(perm_size);
     size_t perm_index = 0;
-    for (size_t row = 0; row < unique_perm.size() && perm_index < perm_size; ++row)
+    for (size_t row = 0; row < num_sorted_positions && perm_index < perm_size; ++row)
     {
-        const auto & row_indexes = indexes_per_row[unique_perm[row]];
+        const size_t position = coalesce_equal_dictionary_values ? row : unique_perm[row];
+        const auto & row_indexes = indexes_per_row[position];
         for (auto row_index : row_indexes)
         {
             res[perm_index] = row_index;
@@ -534,7 +601,7 @@ struct LowCardinalityComparator
 
 }
 
-template <typename IndexColumn>
+template <typename IndexColumn, bool compare_dictionary_positions>
 void ColumnLowCardinality::updatePermutationWithIndexType(
     IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & position_by_index,
     IColumn::Permutation & res, EqualRanges & equal_ranges) const
@@ -542,9 +609,12 @@ void ColumnLowCardinality::updatePermutationWithIndexType(
     /// Cast indexes column to the real type so that compareAt and getUInt methods can be inlined.
     const IndexColumn * real_indexes = assert_cast<const IndexColumn *>(&getIndexes());
 
-    auto equal_comparator = [real_indexes](size_t lhs, size_t rhs)
+    auto equal_comparator = [&](size_t lhs, size_t rhs)
     {
-        return real_indexes->getUInt(lhs) == real_indexes->getUInt(rhs);
+        if constexpr (compare_dictionary_positions)
+            return position_by_index[real_indexes->getUInt(lhs)] == position_by_index[real_indexes->getUInt(rhs)];
+        else
+            return real_indexes->getUInt(lhs) == real_indexes->getUInt(rhs);
     };
 
     const bool stable = (stability == IColumn::PermutationSortStability::Stable);
@@ -565,24 +635,58 @@ void ColumnLowCardinality::updatePermutation(IColumn::PermutationSortDirection d
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Dictionary permutation size {} is equal to dictionary size {}. It is a bug.",
             dict_perm.size(), getDictionary().size());
+
+    const bool compare_dictionary_positions = dictionaryHasFloatingPointValues(getDictionary());
     PaddedPODArray<UInt64> position_by_index(dict_perm.size());
-    for (size_t i = 0; i < dict_perm.size(); ++i)
-        position_by_index[dict_perm[i]] = i;
+    if (compare_dictionary_positions)
+    {
+        /// On-disk dictionary deserialization can preserve `-0.0` and `0.0`, or different `NaN`
+        /// payloads, at separate dictionary positions even though floating-point sorting compares them
+        /// equal. Give value-equal entries the same sorted position so row sorting and equal-range
+        /// detection can keep using integer comparisons without splitting ranges needed by subsequent
+        /// sort keys.
+        UInt64 position = 0;
+        for (size_t i = 0; i < dict_perm.size(); ++i)
+        {
+            if (
+                i != 0
+                && getDictionary().compareAt(dict_perm[i - 1], dict_perm[i], getDictionary(), nan_direction_hint) != 0)
+                ++position;
+            position_by_index[dict_perm[i]] = position;
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < dict_perm.size(); ++i)
+            position_by_index[dict_perm[i]] = i;
+    }
 
     /// Dispatch by index column type.
     switch (idx.getSizeOfIndexType())
     {
         case sizeof(UInt8):
-            updatePermutationWithIndexType<ColumnUInt8>(stability, limit, position_by_index, res, equal_ranges);
+            if (compare_dictionary_positions)
+                updatePermutationWithIndexType<ColumnUInt8, true>(stability, limit, position_by_index, res, equal_ranges);
+            else
+                updatePermutationWithIndexType<ColumnUInt8, false>(stability, limit, position_by_index, res, equal_ranges);
             return;
         case sizeof(UInt16):
-            updatePermutationWithIndexType<ColumnUInt16>(stability, limit, position_by_index, res, equal_ranges);
+            if (compare_dictionary_positions)
+                updatePermutationWithIndexType<ColumnUInt16, true>(stability, limit, position_by_index, res, equal_ranges);
+            else
+                updatePermutationWithIndexType<ColumnUInt16, false>(stability, limit, position_by_index, res, equal_ranges);
             return;
         case sizeof(UInt32):
-            updatePermutationWithIndexType<ColumnUInt32>(stability, limit, position_by_index, res, equal_ranges);
+            if (compare_dictionary_positions)
+                updatePermutationWithIndexType<ColumnUInt32, true>(stability, limit, position_by_index, res, equal_ranges);
+            else
+                updatePermutationWithIndexType<ColumnUInt32, false>(stability, limit, position_by_index, res, equal_ranges);
             return;
         case sizeof(UInt64):
-            updatePermutationWithIndexType<ColumnUInt64>(stability, limit, position_by_index, res, equal_ranges);
+            if (compare_dictionary_positions)
+                updatePermutationWithIndexType<ColumnUInt64, true>(stability, limit, position_by_index, res, equal_ranges);
+            else
+                updatePermutationWithIndexType<ColumnUInt64, false>(stability, limit, position_by_index, res, equal_ranges);
             return;
         default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
     }
@@ -631,12 +735,25 @@ size_t ColumnLowCardinality::estimateCardinalityInPermutedRange(const Permutatio
         return range_size;
 
     HashSet<UInt64> elements;
+    const bool compare_values = dictionaryHasFloatingPointValues(getDictionary());
+    bool has_null = false;
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
-        UInt64 index = getIndexes().getUInt(permutation[i]);
-        elements.insert(index);
+        const UInt64 index = getIndexes().getUInt(permutation[i]);
+        if (!compare_values)
+        {
+            elements.insert(index);
+        }
+        else if (getDictionary().isNullAt(index))
+        {
+            has_null = true;
+        }
+        else
+        {
+            elements.insert(getCanonicalFloatingPointBits(getDictionary(), index));
+        }
     }
-    return elements.size();
+    return elements.size() + has_null;
 }
 
 VectorWithMemoryTracking<MutableColumnPtr> ColumnLowCardinality::scatter(size_t num_columns, const Selector & selector) const
