@@ -84,6 +84,7 @@ set (SUPPORT_SOURCES
     "${CH}/src/Common/formatReadable.cpp"
     "${CH}/src/Common/intExp.cpp"
     "${CH}/src/Common/iota.cpp"
+    "${CH}/src/Common/levenshteinDistance.cpp"
     "${CH}/src/Common/likePatternToRegexp.cpp"
     "${CH}/src/Common/quoteString.cpp"
     "${CH}/src/Common/typeid_cast.cpp"

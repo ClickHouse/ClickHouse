@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# The list of alternatives that the parser could accept is not interesting here and grows whenever a
+# new statement is added to the grammar, so cut it off together with the version.
+run()
+{
+    echo "--- $1"
+    ${CLICKHOUSE_LOCAL} --implicit_select 0 --query "$1" 2>&1 \
+        | sed -e 's/Expected one of: .*//' -e 's/Expected .*\.$//' -e 's/ (version [^)]*)//' -e 's/^Code: 62. DB::Exception: //' \
+        | sed -e 's/[[:space:]]*$//'
+}
+
+echo '=== unclosed brackets: the error points at the place where the parser stopped, and every bracket'
+echo '=== that is never closed is listed with its own position'
+
+# The bracket of `count(` is the one the user forgot to close, but it gets matched with the `)` of the
+# innermost subquery, so bracket counting blames the outermost bracket at position 15 instead.
+run "SELECT a FROM (SELECT b FROM (SELECT c FROM (SELECT count(* AS cnt FROM numbers(10)) t3) t2) t1"
+run "SELECT count(* FROM numbers(10)"
+run "SELECT (1, 2"
+run "SELECT [1, 2"
+run "SELECT ((1)"
+# Two brackets are left open at once.
+run "SELECT x FROM (SELECT arrayMap(y -> y, [1]"
+
+echo
+echo '=== a closing bracket that does not close anything names what it fails to match'
+run "SELECT 1)"
+run "SELECT [1)"
+run "SELECT (1]"
+# When the bracket that is missing is the opening one, the closing bracket is as far from the mistake
+# as the column list is long, while the parser stops exactly where the `(` belongs.
+run "CREATE TABLE t a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a"
+
+echo
+echo '=== a mistyped keyword is named explicitly instead of being buried in the list of alternatives'
+run "SELEgT 1"
+run "ESLECT 1"
+run "CREAT TABLE t (x UInt8) ENGINE = Memory"
+run "SELECT 1 WHERE 1 ANF 2"
+
+echo
+echo '=== but a name that merely looks like a keyword is not reported as a typo'
+run "SELECT 1 hits hits"
+run "SELECT 1 orders orders"
+# `an1` is two edits away from `ANY`, and a word with a digit in it is never a mistyped keyword.
+run "SELECT 1 an1 an1"
+
+echo
+echo '=== the highlighted message (as printed by the client) marks every reported position once,'
+echo '=== even when the parser stops exactly at one of the unmatched brackets'
+
+# `--ignore-error` makes the client take the same path as the interactive one, with highlighting on.
+run_hilite()
+{
+    echo "--- $1"
+    ${CLICKHOUSE_LOCAL} --ignore-error --implicit_select 0 --query "$1" 2>&1 \
+        | sed -e 's/\x1b\[41;1m/>/g' -e 's/\x1b\[0m/</g' \
+        | sed -e 's/Expected one of: .*//' -e 's/Expected .*\.$//' -e 's/ (version [^)]*)//' \
+        | sed -e 's/[[:space:]]*$//'
+}
+
+run_hilite "CREATE TABLE t [a UInt32) ENGINE = Memory"
+run_hilite "SELECT count(* FROM numbers(10)"
+run_hilite "SELECT 1)"
