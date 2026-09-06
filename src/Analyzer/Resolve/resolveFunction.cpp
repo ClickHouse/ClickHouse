@@ -288,7 +288,16 @@ bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, b
                 arguments.reserve(argument_nodes.size());
 
                 for (const auto & argument : argument_nodes)
+                {
+                    /// IN-family functions keep their set subquery as a QueryNode/UnionNode
+                    /// argument. Such nodes have no expression result type, and the speculative
+                    /// early-fold check must fall back instead of trying to inspect one.
+                    if (argument->getNodeType() == QueryTreeNodeType::QUERY
+                        || argument->getNodeType() == QueryTreeNodeType::UNION)
+                        return true;
+
                     arguments.push_back({argument->getResultType(), argument->as<ConstantNode>() != nullptr});
+                }
 
                 if (!function_base->isSuitableForShortCircuitArgumentsExecution(arguments)
                     && !isComparisonOfEarlyShortCircuitScalar(*function))
@@ -1387,6 +1396,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             type_inference_analyzer.subquery_counter = subquery_counter;
 
             bool type_inference_succeeded = false;
+            bool post_resolution_is_safe = false;
             ProjectionNames type_inference_projection_names;
             try
             {
@@ -1398,6 +1408,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*ignore_alias*/,
                     allow_niladic_functions);
                 type_inference_succeeded = !type_inference_analyzer.early_short_circuit_type_inference_failed;
+
+                /// Post-resolution safety is also speculative: an unfamiliar non-expression
+                /// argument must decline the optimization, never make the original query fail.
+                if (type_inference_succeeded)
+                    post_resolution_is_safe = !hasFunctionNode(node_for_type_inference, "arrayJoin")
+                        && !hasUnsafeEarlyShortCircuitScalarUsage(node_for_type_inference)
+                        && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference);
             }
             catch (...)
             {
@@ -1406,10 +1423,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// cannot provide it, so fall back to the regular path which evaluates the scalar.
                 type_inference_succeeded = false;
             }
-
-            const bool post_resolution_is_safe = !hasFunctionNode(node_for_type_inference, "arrayJoin")
-                && !hasUnsafeEarlyShortCircuitScalarUsage(node_for_type_inference)
-                && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference);
             if (type_inference_succeeded && (is_strict_safe_logical_tree || post_resolution_is_safe))
             {
                 auto result_type = node_for_type_inference->getResultType();
