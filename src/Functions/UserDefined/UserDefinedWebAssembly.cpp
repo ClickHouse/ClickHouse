@@ -487,6 +487,10 @@ public:
     String getName() const override { return function_name; }
     bool isVariadic() const override { return false; }
     bool isDeterministic() const override { return user_defined_function->getIsDeterministic(); }
+
+    /// Without `DETERMINISTIC` the value may differ between two evaluations of one query, so it must
+    /// not be hoisted or relocated. The executable-UDF sibling reports the same.
+    bool isDeterministicInScopeOfQuery() const override { return user_defined_function->getIsDeterministic(); }
     bool isSpatialPredicate() const override
     {
         auto val = user_defined_function->getSettings().getValue("is_spatial_predicate");

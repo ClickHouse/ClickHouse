@@ -130,6 +130,87 @@ ExpressionSide getExpressionSide(
     return ExpressionSide::UNKNOWN;
 }
 
+/// Report `isDeterministic() == true` yet can yield different values at the two evaluation sites.
+bool reportsValueTheJoinCanChange(const String & function_name)
+{
+    return function_name == "byteSize" || function_name == "joinGet" || function_name == "joinGetOrNull"
+        || function_name == "showCertificate" || function_name == "dictGetDescendants"
+        || function_name == "dictGetChildren";
+}
+
+/// The two wrappers that hold a lambda body share only this accessor, not a common base.
+const ActionsDAG * getInnerDAG(const IFunctionBase * function)
+{
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(function))
+        return &capture->getAcionsDAG();
+
+    if (const auto * expression = typeid_cast<const FunctionExpression *>(function))
+        return &expression->getAcionsDAG();
+
+    return nullptr;
+}
+
+/// A captureless lambda is constant-folded, so it arrives as a COLUMN, not as a FUNCTION node.
+const ActionsDAG * getLambdaBody(const ActionsDAG::Node & node)
+{
+    if (node.type == ActionsDAG::ActionType::FUNCTION)
+    {
+        if (const auto * inner = getInnerDAG(node.function_base.get()))
+            return inner;
+    }
+
+    if (node.column)
+    {
+        const IColumn * maybe_function = node.column.get();
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(maybe_function))
+            maybe_function = &column_const->getDataColumn();
+
+        if (const auto * column_function = typeid_cast<const ColumnFunction *>(maybe_function))
+            return getInnerDAG(column_function->getFunction().get());
+    }
+
+    return nullptr;
+}
+
+/// Whether a subgraph yields the same value at every point in the plan, which a JOIN key must.
+/// `arrayJoin` is matched on node type because `addArrayJoin` leaves `function_base` unset, and a
+/// lambda body is enqueued separately because it is not a child of its wrapper.
+bool isSafeToUseAsJoinKey(const ActionsDAG::Node * node)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    ActionsDAG::NodeRawConstPtrs nodes_to_process = { node };
+    while (!nodes_to_process.empty())
+    {
+        const auto * current = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (!visited.insert(current).second)
+            continue;
+
+        if (current->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            return false;
+
+        if (current->type == ActionsDAG::ActionType::FUNCTION
+            && (!current->function_base->isDeterministic() || current->function_base->isStateful()
+                || reportsValueTheJoinCanChange(current->function_base->getName())))
+            return false;
+
+        if (const auto * lambda_body = getLambdaBody(*current))
+        {
+            for (const auto & inner_node : lambda_body->getNodes())
+                nodes_to_process.push_back(&inner_node);
+        }
+
+        for (const auto * child : current->children)
+        {
+            if (!visited.contains(child))
+                nodes_to_process.push_back(child);
+        }
+    }
+
+    return true;
+}
+
 using JoinConditionParts = std::vector<ActionsDAG>;
 
 /// `and` implicitly converts its arguments to booleans and returns 0 or 1, so a conjunct that is left
@@ -327,6 +408,15 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             /// We can't push equality condition into JOIN if types do not have a common super type.
             if (!lhs->result_type->equals(*rhs->result_type)
                 && !tryGetLeastSupertype(DataTypes{lhs->result_type, rhs->result_type}))
+            {
+                rejected_conjuncts.push_back(conjunct);
+                continue;
+            }
+
+            /// The extracted equality becomes a JOIN key and the conjunct above the join is replaced
+            /// by a constant, on the assumption that the key has already enforced it. That holds
+            /// only for an expression whose value does not depend on where it is evaluated.
+            if (!isSafeToUseAsJoinKey(lhs) || !isSafeToUseAsJoinKey(rhs))
             {
                 rejected_conjuncts.push_back(conjunct);
                 continue;
