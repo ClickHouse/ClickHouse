@@ -22,6 +22,114 @@ across test runs.
 
 ---
 
+## Invariant: a per-test wrapper must not hold the runner's stdout or stderr
+
+Because a surviving test process cannot be reaped in every case, it must at
+least be **harmless**.  It is not harmless if it holds a descriptor belonging to
+the runner's own stdout or stderr.  Only those two are redirected; fd 0 stays
+inherited by design and cannot wedge anything, because holding a pipe's *read*
+end does not prevent a downstream reader from seeing EOF, and a `.sh` test may
+legitimately read the inherited stdin:
+
+`ci/jobs/functional_tests.py` runs the runner as the head of a shell pipeline
+
+```
+set -o pipefail; clickhouse-test ... | ts '%Y-%m-%d %H:%M:%S' | tee -a "<file>"
+```
+
+so an orphan that inherited the runner's stdout keeps the write end of that pipe
+open.  `ts` never sees EOF, `tee` never sees EOF, and **the pipeline never
+finishes** even though the runner is long gone.  The job then runs to praktika's
+wall-clock ceiling, and praktika then tears the job down: it signals the process
+group it started (`TeePopen.send_signal` -> `os.killpg`) and runs `docker rm -f` on
+the job's container.  Functional-test jobs run in a container
+(`ci/defs/job_configs.py`), so that host process group holds the `docker run`
+client, which forwards the signal into the container; either way
+`ci/jobs/functional_tests.py` is killed while still blocked in `Shell.run`, before
+it ever reaches `FTResultsProcessor.run(runner_exit_code=...)`, so the per-test
+results are never processed at all: praktika finds an incomplete result, marks it
+`ERROR` and fills `info` from its own rolling log buffer, and the run reports **no
+per-test results at all**.  Note that the exit status itself is not the problem —
+the signal-derived `-15` is already a member of `ABORTED_RUN_EXIT_CODES` in
+`ci/jobs/scripts/functional_tests_results.py`; the processor simply never runs.
+
+Therefore `run_single_test` gives the wrapper its own sink instead of letting it
+inherit ours:
+
+```python
+open(self.stdout_file, "wb").close()          # see the fatal preexec_fn path below
+open(self.stderr_file, "wb").close()          # start empty
+with open(self.stderr_file, "ab") as wrapper_stderr:   # then append
+    proc = Popen(command, shell=True, ..., start_new_session=True,
+                 stdout=subprocess.DEVNULL, stderr=wrapper_stderr)
+```
+
+Nothing is lost: the test's own output is redirected by `command` itself
+(`{test} > {stdout} 2> {stderr}`) and read back from those files by
+`process_result_impl`.
+
+Two producers can reach these streams:
+
+* **The wrapper shell's own diagnostics** — the job-control messages bash emits *after*
+  the redirect is installed, such as
+  `line 1: 1234 Segmentation fault  <test> > ... 2> ...` when the wrapper's own child (the
+  test command) dies from a signal, plus anything it writes when the redirect itself fails
+  and so never truncates the file.  The exact shape of the job-control message depends on
+  the signal: `SIGTERM` prints a bare `Terminated`, with no `line N:` prefix and no command
+  echo.  When a background job the *test script* started is signalled instead, the message
+  goes to the test's own stderr file as it always did, so this adds no new writer there and
+  cannot turn `process_result_impl`'s "non-empty stderr" check into new failures.  These
+  now land in the stderr file the harness already collects and reports, instead of the job
+  log.
+* **`preexec_fn`** (`setup_cgroup_with_memory_limit_cb`, used under `--memory-limit`),
+  which runs in the child *after* `Popen` has installed these streams.  Its fatal
+  `Failed to configure cgroup {name}: {e}` report reaches the stderr file rather
+  than the job log, and it is written on the one path where bash never execs
+  (the branch ends in `os._exit(1)`), so the command's own `2> {stderr}` never
+  truncates it.  Because that same path also means `> {stdout}` never created the
+  stdout file, `run_single_test` creates it before spawning — otherwise the
+  post-run normalization, which opens that file unconditionally after `proc.wait`,
+  would raise `FileNotFoundError` and the diagnostic would be reported as an
+  unrelated internal error instead of as this test's failure.
+  A write from a branch that *does* go on to exec would be truncated by the
+  redirect, which is why the benign "cgroups are not available" notice is emitted
+  from the parent instead: `report_cgroups_unavailable` is `@cache_ignore_args`,
+  so it reports once per test-executing process rather than once per spawn - up to
+  `--jobs + 1` times, because the cache lives in a per-function closure (so it is
+  per process) and `run_single_test` is reached both from the forked parallel
+  workers and directly from the parent for a suite's sequential tests.
+
+Both halves of the `open` pair above are load-bearing, and for opposite reasons:
+
+* **Truncate first**, because on the fatal `preexec_fn` path the redirect that
+  would normally have emptied the file never runs, and `"Permission denied"` is
+  one of `MESSAGES_TO_RETRY`, so without it each retried attempt would report
+  every earlier attempt's diagnostics, and could carry a stale ` <Fatal> ` line,
+  which `process_result_impl` promotes to `SERVER_DIED`.
+* **Then append**, because the test command's own `2> {stderr}` opens the same
+  path through an independent descriptor with its own offset.  A non-append
+  descriptor here starts at 0, so the wrapper's job-control diagnostic would
+  overwrite whatever the test already wrote to its stderr, including a
+  ` <Fatal> ` line, silently disarming that same `SERVER_DIED` promotion.
+  `O_APPEND` sends every write to the current end of the file, so the wrapper's
+  diagnostics land after the test's own output.
+
+**Scope.** This covers per-test wrappers and, transitively, their descendants
+(they inherit from the wrapper).  It deliberately does **not** apply to the
+parallel workers, which are forked `multiprocessing.Process` objects that inherit
+the runner's stdout **by design**, because `run_tests_array` reports every
+assembled result via `sys.stdout.write`.  The two `multiprocessing.Manager`
+processes (one hosting the shared test queue, one the restarted-tests list) also
+inherit it, but they are outside this invariant simply because they are not
+per-test wrappers: they run no tests and print no results.
+Consequently the invariant does not hold if the *top-level runner* is SIGKILL'd
+(the surviving workers would then hold the pipe themselves); that is a separate
+concern about worker lifetime.
+
+Regression tests: `ci/tests/test_test_process_does_not_hold_runner_stdio.py`.
+
+---
+
 ## Solution: PGID tracking via per-worker group pid files
 
 The kernel stores the PGID directly in the process descriptor.  It is **never
@@ -49,7 +157,11 @@ partial write.
 ### Per-test bookkeeping
 
 ```python
-proc = Popen(command, shell=True, start_new_session=True, preexec_fn=cgroup_fn)
+open(self.stdout_file, "wb").close()  # see the fatal preexec_fn path above
+open(self.stderr_file, "wb").close()
+with open(self.stderr_file, "ab") as wrapper_stderr:  # see the invariant above
+    proc = Popen(command, shell=True, start_new_session=True, preexec_fn=cgroup_fn,
+                 stdout=subprocess.DEVNULL, stderr=wrapper_stderr)
 # proc.pid == PGID after start_new_session=True
 _gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
 write_text_atomic(_gpid_file, f"{proc.pid}\n")
@@ -136,7 +248,7 @@ When the bash script exits normally (exit code is set), `kill_process_group` is
 **not** called.  The code path is:
 
 ```python
-# run_single_test_command (line ~3136)
+# run_single_test
 proc = Popen(command, shell=True, start_new_session=True, ...)
 _gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
 write_text_atomic(_gpid_file, f"{proc.pid}\n")
@@ -148,7 +260,7 @@ finally:
     _gpid_file.unlink(missing_ok=True)   # file removed here on every exit
 return proc, total_time
 
-# process_result_impl (line ~2712)
+# process_result_impl
 if proc.returncode is None:              # only true on TimeoutExpired
     kill_process_group(os.getpgid(proc.pid), ...)
 ```
