@@ -1,6 +1,7 @@
-"""A manifest that declares a lower bound above the upper bound must not prune the data file it
-describes, so a filtered read still returns every matching row. The fallback is per column: a
-well-formed column in the same manifest entry must keep pruning."""
+"""A manifest whose bounds cannot be trusted must not prune the data file they describe, so a
+filtered read still returns every matching row: a lower bound above the upper bound, and a bound
+declared in fewer bytes than its column. The fallback is per column: a well-formed column in the
+same manifest entry must keep pruning."""
 
 import decimal
 import os
@@ -13,7 +14,7 @@ import pyarrow as pa
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import NestedField, Schema
-from pyiceberg.types import DecimalType, LongType
+from pyiceberg.types import DecimalType, FixedType, LongType
 
 from helpers.config_cluster import minio_access_key, minio_secret_key
 from helpers.iceberg_utils import (
@@ -196,6 +197,27 @@ def _set_bounds_in_manifests(manifests, field_id, lower_raw, upper_raw):
     )
 
 
+def _resize_bounds_in_manifests(manifests, field_id, width):
+    """Re-declare one column's bounds with `width` bytes: keep the first `width` bytes the writer
+    stored and zero fill when widening. Which end of the value that drops depends on the column: the
+    high-order bytes of a little-endian number, the last characters of a byte string."""
+
+    def resize(data_file):
+        lower = next(
+            (entry for entry in data_file["lower_bounds"] if entry["key"] == field_id), None
+        )
+        upper = next(
+            (entry for entry in data_file["upper_bounds"] if entry["key"] == field_id), None
+        )
+        if lower is None or upper is None:
+            return False
+        for entry in (lower, upper):
+            entry["value"] = entry["value"][:width].ljust(width, b"\x00")
+        return True
+
+    return _patch_manifests(manifests, resize)
+
+
 def test_iceberg_inverted_manifest_bounds(started_cluster_iceberg_no_spark):
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     table_name = "test_iceberg_inverted_manifest_bounds_" + get_uuid_str()
@@ -251,6 +273,71 @@ def test_iceberg_inverted_manifest_bounds(started_cluster_iceberg_no_spark):
     assert _swap_bounds_in_manifests(manifests, only_field_id=2) > 0
     assert pruned_files(s_expr) == 0
     assert pruned_files(id_expr) == 0
+
+
+def test_iceberg_narrow_manifest_bounds(started_cluster_iceberg_no_spark):
+    """A bound narrower than its column is completed from bytes outside the payload, so the range it
+    describes is not the one the writer stored. A bound wider than its column is not: every released
+    ClickHouse wrote eight bytes for a four-byte column, and those tables must keep pruning."""
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    table_name = "test_iceberg_narrow_manifest_bounds_" + get_uuid_str()
+    table_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}"
+
+    instance.query(
+        f"CREATE TABLE {table_name} (n Int32, s String) "
+        f"ENGINE = IcebergLocal('{table_path}/', 'Parquet')",
+        settings=NOCACHE,
+    )
+    # One data file per INSERT, with disjoint ranges in both columns. Every value needs more than two
+    # bytes, so narrowing a bound to two loses part of the value rather than a run of leading zeros,
+    # and stays non-negative, which is what widening back with zeros reproduces.
+    for k in range(4):
+        instance.query(
+            f"INSERT INTO {table_name} SELECT toInt32(number), toString(number) "
+            f"FROM numbers({100000 + k * 100000}, 100)",
+            settings=NOCACHE,
+        )
+    assert instance.query(f"SELECT count() FROM {table_name}", settings=NOCACHE).strip() == "400"
+    instance.query(f"DROP TABLE {table_name}")
+
+    def select(where):
+        return (
+            f"SELECT n, s FROM icebergLocal(local, path = '{table_path}/') "
+            f"WHERE {where} ORDER BY ALL"
+        )
+
+    def pruned_files(where):
+        return _pruned_files(instance, table_name, select(where))
+
+    manifests = ContainerManifests(instance, table_path)
+
+    # Control: with the bounds the writer declared, a filter matching only the first data file prunes
+    # the other three. Without it, a fix that stopped pruning altogether would satisfy the assertions
+    # below. Only the first file holds values below 100010, and only its strings sort below "100010".
+    assert pruned_files("n < 100010") == 3
+    assert pruned_files("s < '100010'") == 3
+
+    # Widen `n` to eight bytes, which is what every released ClickHouse wrote for this column type.
+    # `ColumnVector::insertData` reads the four bytes the column holds and ignores the rest, so the
+    # bound still decodes and those tables must keep pruning.
+    assert _resize_bounds_in_manifests(manifests, 1, 8) > 0
+    assert pruned_files("n < 100010") == 3
+
+    # Narrow `n` to two bytes. The decode reads four either way, so the two the manifest no longer
+    # declares come from outside the payload and complete a value nothing stored: every file here
+    # holds values above 50000, yet a bound keeping only the low half of each orders below it, which
+    # would prune every file the filter needs. `s` is still well formed in the same manifest entry
+    # and must keep pruning, so the fallback is per column.
+    assert _resize_bounds_in_manifests(manifests, 1, 2) > 0
+    assert pruned_files("s < '100010'") == 3
+
+    # A count cannot tell a bound that was dropped from one that decoded to an inverted pair, which
+    # the sibling guard above drops for the same count. This names the column whose bound was
+    # dropped, and the read above has already parsed every bound in the manifest entry.
+    assert instance.grep_in_log(
+        f"usable range border for column id 1 of data file '.*{table_name}"
+    )
+    assert pruned_files("n > 50000") == 0
 
 
 def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spark):
@@ -360,3 +447,85 @@ def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spa
     assert _set_bounds_in_manifests(manifests, 3, b"\x7f\xff\xff\xf0", b"\x7f\xff\xff\xfa") > 0
     assert pruned_files(e_expr) == 0
     assert pruned_files(id_expr) == 1
+
+
+def test_iceberg_narrow_fixed_manifest_bounds(started_cluster_iceberg_no_spark):
+    """A `fixed[N]` bound narrower than its column is zero filled to the column's width instead of
+    completed from outside the payload, so it stays ordered against the other bound while describing
+    less than the data file holds.
+
+    ClickHouse cannot write a `fixed[N]` column, so pyiceberg writes the table, as the decimal test
+    above does and for the same reason."""
+    cluster = started_cluster_iceberg_no_spark
+    instance = cluster.instances["node1"]
+    table_name = "test_iceberg_narrow_fixed_bounds_" + get_uuid_str()
+    key_prefix = f"var/lib/clickhouse/user_files/iceberg_data/default/{table_name}"
+
+    catalog = load_catalog(
+        "demo",
+        **{
+            "uri": f"http://localhost:{cluster.iceberg_rest_catalog_port}",
+            "type": "rest",
+            "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
+            "s3.access-key-id": minio_access_key,
+            "s3.secret-access-key": minio_secret_key,
+        },
+    )
+    namespace = f"clickhouse_{get_uuid_str()}"
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(
+        f"{namespace}.{table_name}",
+        schema=Schema(
+            NestedField(1, "f", FixedType(3), required=False),
+            NestedField(2, "n", LongType(), required=False),
+        ),
+        location=f"s3://{cluster.minio_bucket}/{key_prefix}",
+        partition_spec=PartitionSpec(),
+    )
+
+    # The field ids must reach the Parquet files for the Iceberg reader to match the columns.
+    arrow_schema = pa.schema(
+        [
+            pa.field("f", pa.binary(3), True, metadata={b"PARQUET:field_id": b"1"}),
+            pa.field("n", pa.int64(), True, metadata={b"PARQUET:field_id": b"2"}),
+        ]
+    )
+    # One data file per append, with disjoint ranges in both columns. The two `f` values of a file
+    # differ in their last character, so a bound that keeps only the first two describes less than
+    # the file holds rather than the same range spelled shorter.
+    for leading in "1234":
+        table.append(
+            pa.Table.from_pylist(
+                [
+                    {"f": f"{leading}10".encode(), "n": int(leading) * 10},
+                    {"f": f"{leading}99".encode(), "n": int(leading) * 10 + 1},
+                ],
+                schema=arrow_schema,
+            )
+        )
+
+    source = (
+        f"icebergS3(s3, filename = '{key_prefix}/', format=Parquet, "
+        f"url = 'http://minio1:9001/{cluster.minio_bucket}/')"
+    )
+    assert instance.query(f"SELECT count() FROM {source}", settings=NOCACHE).strip() == "8"
+
+    def pruned_files(where):
+        return _pruned_files(
+            instance, table_name, f"SELECT f, n FROM {source} WHERE {where} ORDER BY ALL"
+        )
+
+    # Control: only the first data file holds an `f` below '200' or an `n` below 15, so each filter
+    # prunes the other three. Without it a `fixed[N]` column that contributed no min/max condition at
+    # all, for any reason, would satisfy the assertion below.
+    assert pruned_files("f < '200'") == 3
+    assert pruned_files("n < 15") == 3
+
+    # Re-declare `f` in two bytes. Zero filling the third leaves the first file's upper bound at
+    # '19\0', below the '199' it stores, and below the filter, which would prune the only file the
+    # filter's rows are in; the pair '11\0'..'19\0' is ordered, so the sibling guard above does not
+    # reach it. `n` is well formed in the same manifest entry and must keep pruning.
+    manifests = MinioManifests(cluster.minio_client, cluster.minio_bucket, key_prefix)
+    assert _resize_bounds_in_manifests(manifests, 1, 2) > 0
+    assert pruned_files("f > '190'") == 0
+    assert pruned_files("n < 15") == 3

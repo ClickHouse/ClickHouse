@@ -137,6 +137,11 @@ namespace
         }
         else
         {
+            /// A bound narrower than the column decodes to a value the writer never stored: `ColumnVector` and
+            /// `ColumnDecimal` read `sizeof(value)` bytes past the payload, `ColumnFixedString` zero fills the rest.
+            if (column->isFixedAndContiguous() && str.length() < column->sizeOfValueIfFixed())
+                return std::nullopt;
+
             /// For all other types except decimal binary representation
             /// matches our internal representation
             column->insertData(str.data(), str.length());
@@ -650,9 +655,9 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
                 if (!left || !right)
                 {
-                    /// Pruning is skipped either way, but at scale 38 a bound that only loses its widened
-                    /// form can still be a value the column holds, so this is not on its own a malformed
-                    /// manifest and stays out of the warning log.
+                    /// Pruning is skipped either way, and a bound narrower than the column is malformed,
+                    /// but at scale 38 a bound that only loses its widened form can still be a value the
+                    /// column holds, so reaching here does not on its own mean a malformed manifest.
                     LOG_DEBUG(
                         getLogger("ManifestFileIterator"),
                         "Manifest file '{}' declares a bound that cannot be read as a usable range border "
