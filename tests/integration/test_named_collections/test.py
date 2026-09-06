@@ -27,9 +27,14 @@ def cluster():
             "node",
             main_configs=[
                 "configs/config.d/named_collections.xml",
+                "configs/config.d/clusters.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
+            ],
+            dictionaries=[
+                "configs/dictionaries/config_dict_using_collection.xml",
+                "configs/dictionaries/config_dict_in_database.xml",
             ],
             stay_alive=True,
         )
@@ -1099,3 +1104,398 @@ def test_concurrent_create_drop_race_condition(cluster):
                         node.query(f"DROP NAMED COLLECTION IF EXISTS {coll}")
             except Exception:
                 pass
+
+
+def test_drop_while_used_by_lazily_loaded_table(cluster):
+    """A table of a database with `lazy_load_tables = 1` is attached as a `StorageTableProxy` and its
+    real storage is built only on the first access, so the engine arguments are not resolved at
+    startup. The dependency on the named collection they name must be registered from the metadata
+    anyway, otherwise `DROP NAMED COLLECTION` is allowed while the table still references it: the
+    first access to the table then fails, and if the table is detached, the `ATTACH` replayed at the
+    next start fails and the server does not start."""
+    node = cluster.instances["node"]
+
+    node.query("DROP DATABASE IF EXISTS lazy_db")
+    node.query("DROP NAMED COLLECTION IF EXISTS lazy_collection")
+
+    node.query("CREATE DATABASE lazy_db ENGINE = Atomic SETTINGS lazy_load_tables = 1")
+    node.query(
+        "CREATE NAMED COLLECTION lazy_collection AS url = 'http://localhost:8123', format = 'CSV'"
+    )
+    node.query("CREATE TABLE lazy_db.t (x UInt32) ENGINE = URL(lazy_collection)")
+
+    # The restart forgets everything that was registered while the table was created, and brings the
+    # table back as a proxy that was never accessed.
+    node.restart_clickhouse()
+
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = 'lazy_db' AND name = 't'"
+        ).strip()
+        == "TableProxy"
+    )
+
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION lazy_collection"
+    )
+
+    node.query("DETACH TABLE lazy_db.t")
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION lazy_collection"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM system.named_collections WHERE name = 'lazy_collection'"
+        ).strip()
+        == "1"
+    )
+
+    # The collection is released once the metadata that references it is gone.
+    node.query("ATTACH TABLE lazy_db.t")
+    node.query("DROP TABLE lazy_db.t")
+    node.query("DROP NAMED COLLECTION lazy_collection")
+    assert (
+        node.query(
+            "SELECT count() FROM system.named_collections WHERE name = 'lazy_collection'"
+        ).strip()
+        == "0"
+    )
+    node.query("DROP DATABASE lazy_db")
+
+
+def test_drop_not_used_by_lazily_loaded_distributed_table(cluster):
+    """An identifier as the first engine argument references a named collection only for engines that
+    resolve their arguments through named collections. For `Distributed` it is a cluster name, so a
+    collection that happens to have the same name as the cluster must not be considered used by the
+    table when the dependency is reconstructed from the metadata at lazy load."""
+    node = cluster.instances["node"]
+
+    node.query("DROP DATABASE IF EXISTS lazy_dist_db")
+    node.query("DROP NAMED COLLECTION IF EXISTS lazy_dist_cluster")
+
+    node.query("CREATE DATABASE lazy_dist_db ENGINE = Atomic SETTINGS lazy_load_tables = 1")
+    node.query(
+        "CREATE TABLE lazy_dist_db.dist (dummy UInt8) ENGINE = Distributed(lazy_dist_cluster, system, one)"
+    )
+    node.query(
+        "CREATE NAMED COLLECTION lazy_dist_cluster AS url = 'http://localhost:8123', format = 'CSV'"
+    )
+
+    node.restart_clickhouse()
+
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = 'lazy_dist_db' AND name = 'dist'"
+        ).strip()
+        == "TableProxy"
+    )
+
+    # The table references the cluster `lazy_dist_cluster`, not the collection of the same name.
+    node.query("DROP NAMED COLLECTION lazy_dist_cluster")
+    node.query("DROP DATABASE lazy_dist_db")
+
+
+def test_drop_collection_recreated_under_lazily_loaded_table(cluster):
+    """The dependency of a lazily loaded table must be registered even if the collection its
+    definition references does not exist at load time (for example, after a drop with
+    `check_named_collection_dependencies = 0`): if the collection is recreated later, dropping it
+    would break the table at its first access."""
+    node = cluster.instances["node"]
+
+    node.query("DROP DATABASE IF EXISTS lazy_recreate_db")
+    node.query("DROP NAMED COLLECTION IF EXISTS lazy_recreated_collection")
+
+    node.query(
+        "CREATE DATABASE lazy_recreate_db ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+    )
+    node.query(
+        "CREATE NAMED COLLECTION lazy_recreated_collection AS url = 'http://localhost:8123', format = 'CSV'"
+    )
+    node.query(
+        "CREATE TABLE lazy_recreate_db.t (x UInt32) ENGINE = URL(lazy_recreated_collection)"
+    )
+
+    # An unchecked drop removes the collection while the table still references it.
+    node.query(
+        "DROP NAMED COLLECTION lazy_recreated_collection",
+        settings={"check_named_collection_dependencies": 0},
+    )
+
+    # The table is brought back as a proxy while the collection does not exist.
+    node.restart_clickhouse()
+
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = 'lazy_recreate_db' AND name = 't'"
+        ).strip()
+        == "TableProxy"
+    )
+
+    node.query(
+        "CREATE NAMED COLLECTION lazy_recreated_collection AS url = 'http://localhost:8123', format = 'CSV'"
+    )
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION lazy_recreated_collection"
+    )
+
+    # The collection is released once the table is gone.
+    node.query("DROP TABLE lazy_recreate_db.t")
+    node.query("DROP NAMED COLLECTION lazy_recreated_collection")
+    node.query("DROP DATABASE lazy_recreate_db")
+
+
+def test_drop_not_used_by_lazily_loaded_remote_table(cluster):
+    """Unlike `Distributed`, the `Remote` engine resolves its arguments through named collections, but
+    an identifier first argument is still a valid positional argument for it — a cluster name — when
+    no collection with that name exists. A collection created later with the same name as the cluster
+    must not be considered used by the table when the dependency is reconstructed from the metadata at
+    lazy load: for such engines the decision replicates the engine's own argument parsing, which takes
+    the named-collection branch only for a `(collection, key = value, ...)` argument list."""
+    node = cluster.instances["node"]
+
+    node.query("DROP DATABASE IF EXISTS lazy_remote_db")
+    node.query("DROP NAMED COLLECTION IF EXISTS lazy_dist_cluster")
+
+    node.query(
+        "CREATE DATABASE lazy_remote_db ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+    )
+    node.query(
+        "CREATE TABLE lazy_remote_db.r (dummy UInt8) ENGINE = Remote(lazy_dist_cluster, system, one)"
+    )
+    node.query(
+        "CREATE NAMED COLLECTION lazy_dist_cluster AS url = 'http://localhost:8123', format = 'CSV'"
+    )
+
+    node.restart_clickhouse()
+
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = 'lazy_remote_db' AND name = 'r'"
+        ).strip()
+        == "TableProxy"
+    )
+
+    # The table references the cluster `lazy_dist_cluster`, not the collection of the same name.
+    node.query("DROP NAMED COLLECTION lazy_dist_cluster")
+    node.query("DROP DATABASE lazy_remote_db")
+
+
+def test_drop_collection_recreated_under_lazily_loaded_remote_table(cluster):
+    """A `key = value` second argument occurs only in the named-collection form of `Remote`: no
+    positional signature accepts one there, so this shape is unambiguous even though the engine's
+    first identifier generally is not. The dependency must therefore be registered from the shape
+    alone, without looking at the collection namespace - otherwise a collection that is missing at
+    load time (here, after a drop with `check_named_collection_dependencies = 0`) is never
+    re-registered and can be dropped again once it is recreated."""
+    node = cluster.instances["node"]
+
+    node.query("DROP DATABASE IF EXISTS lazy_remote_recreate_db")
+    node.query("DROP NAMED COLLECTION IF EXISTS lazy_remote_collection")
+
+    node.query(
+        "CREATE DATABASE lazy_remote_recreate_db ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+    )
+    node.query(
+        "CREATE NAMED COLLECTION lazy_remote_collection AS "
+        "host = 'localhost', database = 'system', table = 'one'"
+    )
+    node.query(
+        "CREATE TABLE lazy_remote_recreate_db.r (dummy UInt8) "
+        "ENGINE = Remote(lazy_remote_collection, database = 'system')"
+    )
+
+    # An unchecked drop removes the collection while the table still references it.
+    node.query(
+        "DROP NAMED COLLECTION lazy_remote_collection",
+        settings={"check_named_collection_dependencies": 0},
+    )
+
+    # The table is brought back as a proxy while the collection does not exist.
+    node.restart_clickhouse()
+
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = 'lazy_remote_recreate_db' AND name = 'r'"
+        ).strip()
+        == "TableProxy"
+    )
+
+    node.query(
+        "CREATE NAMED COLLECTION lazy_remote_collection AS "
+        "host = 'localhost', database = 'system', table = 'one'"
+    )
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION lazy_remote_collection"
+    )
+
+    # The collection is released once the table is gone.
+    node.query("DROP TABLE lazy_remote_recreate_db.r")
+    node.query("DROP NAMED COLLECTION lazy_remote_collection")
+    node.query("DROP DATABASE lazy_remote_recreate_db")
+
+
+def test_drop_while_used_by_lazily_loaded_table_function(cluster):
+    """A table created with `CREATE TABLE ... AS f(...)` carries a table function instead of an engine
+    in its stored definition, and a database with `lazy_load_tables = 1` deliberately does not attach
+    it as a lazy proxy (`DatabaseOrdinary::shouldLazyLoad`): it is loaded eagerly as a
+    `StorageTableFunctionProxy`, and that load registers the dependency on the named collection the
+    function used via `ITableFunction::getUsedNamedCollectionName`. This pins that contract: the
+    dependency survives a restart of such a database, `DROP NAMED COLLECTION` stays refused before the
+    first access, and a detach after the restart moves the dependency to the detached list."""
+    node = cluster.instances["node"]
+
+    node.query("DROP DATABASE IF EXISTS lazy_tf_db")
+    node.query("DROP NAMED COLLECTION IF EXISTS lazy_bigquery_collection")
+
+    node.query(
+        "CREATE DATABASE lazy_tf_db ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+    )
+    node.query(
+        "CREATE NAMED COLLECTION lazy_bigquery_collection AS "
+        "project = 'p', dataset = 'd', table = 't', access_token = 'secret'"
+    )
+    # The explicit column list keeps the create local: the structure is not inferred, so no request
+    # to the (nonexistent) BigQuery endpoint is made.
+    node.query(
+        "CREATE TABLE lazy_tf_db.t (x Int64) AS bigquery(lazy_bigquery_collection)"
+    )
+
+    # The restart forgets everything that was registered while the table was created. The table comes
+    # back as a table-function proxy (not a lazy `TableProxy`), whose load re-registers the dependency.
+    node.restart_clickhouse()
+
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = 'lazy_tf_db' AND name = 't'"
+        ).strip()
+        == "Proxy"
+    )
+
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION lazy_bigquery_collection"
+    )
+
+    # A detach after that restart moves the reconstructed dependency to the detached list.
+    node.query("DETACH TABLE lazy_tf_db.t")
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION lazy_bigquery_collection"
+    )
+
+    # The collection is released once the metadata that references it is gone.
+    node.query("ATTACH TABLE lazy_tf_db.t")
+    node.query("DROP TABLE lazy_tf_db.t")
+    node.query("DROP NAMED COLLECTION lazy_bigquery_collection")
+    node.query("DROP DATABASE lazy_tf_db")
+
+
+def test_drop_while_used_by_url_table_function(cluster):
+    """Every named-collection-backed table function records the resolved collection when creating a
+    permanent table. This includes `url`, which does not share the `BigQueryConfiguration` path used
+    by the table-function regression above."""
+    node = cluster.instances["node"]
+
+    node.query("DROP DATABASE IF EXISTS url_tf_db")
+    node.query("DROP NAMED COLLECTION IF EXISTS url_tf_collection")
+
+    node.query("CREATE DATABASE url_tf_db ENGINE = Atomic SETTINGS lazy_load_tables = 1")
+    node.query(
+        "CREATE NAMED COLLECTION url_tf_collection AS "
+        "url = 'http://localhost:8123', format = 'CSV', structure = 'x Int64'"
+    )
+    node.query("CREATE TABLE url_tf_db.t (x Int64) AS url(url_tf_collection)")
+
+    # A restart reconstructs the table from its table-function definition, so this also verifies
+    # that the function reports the collection name while loading stored metadata.
+    node.restart_clickhouse()
+
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION url_tf_collection"
+    )
+
+    node.query("DROP TABLE url_tf_db.t")
+    node.query("DROP NAMED COLLECTION url_tf_collection")
+    node.query("DROP DATABASE url_tf_db")
+
+
+def test_drop_while_used_by_config_defined_dictionary(cluster):
+    """A dictionary defined in the configuration files records its dependency with an empty
+    database name (`StorageID::fromDictionaryConfig`) and never appears in `DatabaseCatalog`:
+    the stale-dependency cleanup of `DROP NAMED COLLECTION` must consult
+    `ExternalDictionariesLoader` for such an entry instead of pruning it as a leftover of a
+    failed `CREATE`, otherwise the drop is allowed while the dictionary still uses the
+    collection. The dictionary `config_dict_using_collection` is defined in
+    `configs/dictionaries/config_dict_using_collection.xml`; the MongoDB source resolves named
+    collections for configuration-defined dictionaries too, and it registers the dependency
+    while the source is created, before anything connects to the (non-existent) server."""
+    node = cluster.instances["node"]
+
+    node.query("DROP NAMED COLLECTION IF EXISTS config_dict_collection")
+    node.query(
+        "CREATE NAMED COLLECTION config_dict_collection AS "
+        "uri = 'mongodb://mongo-is-not-running:27017/db?serverSelectionTimeoutMS=1000&connectTimeoutMS=1000', "
+        "collection = 'c'"
+    )
+
+    # The load registers the dependency and then fails to connect, which does not matter here.
+    node.query_and_get_error("SYSTEM RELOAD DICTIONARY config_dict_using_collection")
+
+    # Two attempts: the first one must not prune the dependency and let the second one through.
+    for _ in range(2):
+        assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+            "DROP NAMED COLLECTION config_dict_collection"
+        )
+        assert (
+            node.query(
+                "SELECT count() FROM system.named_collections WHERE name = 'config_dict_collection'"
+            ).strip()
+            == "1"
+        )
+
+    # The dictionary definition stays in the configuration files, so only a drop that skips the
+    # dependency check removes the collection.
+    node.query(
+        "DROP NAMED COLLECTION config_dict_collection",
+        settings={"check_named_collection_dependencies": 0},
+    )
+
+
+def test_drop_while_used_by_database_qualified_config_dictionary(cluster):
+    """A dictionary defined in the configuration files can set a root `<database>`, which
+    `StorageID::fromDictionaryConfig` copies into the dependency, and `ExternalDictionariesLoader`
+    keys the dictionary by the qualified `db.name`. Such a dictionary still never appears in
+    `DatabaseCatalog`, so the stale-dependency cleanup of `DROP NAMED COLLECTION` must consult the
+    loader by the qualified name instead of pruning the entry as a leftover of a failed `CREATE`.
+    The dictionary `config_dict_db.config_dict_in_database` is defined in
+    `configs/dictionaries/config_dict_in_database.xml`."""
+    node = cluster.instances["node"]
+
+    node.query("DROP NAMED COLLECTION IF EXISTS config_dict_db_collection")
+    node.query(
+        "CREATE NAMED COLLECTION config_dict_db_collection AS "
+        "uri = 'mongodb://mongo-is-not-running:27017/db?serverSelectionTimeoutMS=1000&connectTimeoutMS=1000', "
+        "collection = 'c'"
+    )
+
+    # The load registers the dependency and then fails to connect, which does not matter here.
+    node.query_and_get_error(
+        "SYSTEM RELOAD DICTIONARY 'config_dict_db.config_dict_in_database'"
+    )
+
+    # Two attempts: the first one must not prune the dependency and let the second one through.
+    for _ in range(2):
+        assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+            "DROP NAMED COLLECTION config_dict_db_collection"
+        )
+        assert (
+            node.query(
+                "SELECT count() FROM system.named_collections WHERE name = 'config_dict_db_collection'"
+            ).strip()
+            == "1"
+        )
+
+    # The dictionary definition stays in the configuration files, so only a drop that skips the
+    # dependency check removes the collection.
+    node.query(
+        "DROP NAMED COLLECTION config_dict_db_collection",
+        settings={"check_named_collection_dependencies": 0},
+    )

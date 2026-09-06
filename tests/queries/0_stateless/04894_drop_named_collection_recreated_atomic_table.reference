@@ -1,0 +1,5 @@
+--- a failed CREATE leaves a stale dependency for the old UUID ---
+NAMED_COLLECTION_IS_USED
+1
+1
+0

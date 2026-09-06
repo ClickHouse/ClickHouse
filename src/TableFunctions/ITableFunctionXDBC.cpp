@@ -121,7 +121,8 @@ void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextPtr 
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function '{0}' requires 1, 2 or 3 arguments: {0}(named_collection) or {0}('DSN', table) or {0}('DSN', schema, table)", getName());
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(ast_function->children.at(0)->children, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            ast_function->children.at(0)->children, context, true, nullptr, nullptr, getUsedNamedCollectionNameForUpdate()))
     {
         if (Poco::toLower(getName()) == "jdbc")
         {

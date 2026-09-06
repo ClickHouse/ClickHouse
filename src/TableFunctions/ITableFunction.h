@@ -89,7 +89,10 @@ public:
     /// blocked while the table exists, matching the behavior of table engines that resolve named
     /// collections (see `tryGetNamedCollectionWithOverrides`). Transient uses of the table function in a
     /// query do not register anything.
-    virtual String getUsedNamedCollectionName() const { return {}; }
+    virtual String getUsedNamedCollectionName() const
+    {
+        return used_named_collection_name;
+    }
 
     // INSERT INTO TABLE FUNCTION ... PARTITION BY
     // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
@@ -128,6 +131,16 @@ public:
     virtual ~ITableFunction() = default;
 
 protected:
+    void setUsedNamedCollectionName(String name)
+    {
+        used_named_collection_name = std::move(name);
+    }
+
+    String * getUsedNamedCollectionNameForUpdate()
+    {
+        return &used_named_collection_name;
+    }
+
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
 
     /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by
@@ -154,6 +167,9 @@ private:
 
 protected:
     String getFunctionURINormalized() const;
+
+private:
+    String used_named_collection_name;
 };
 
 /// Properties of table function that are independent of argument types and parameters.

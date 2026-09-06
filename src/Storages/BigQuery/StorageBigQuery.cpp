@@ -661,6 +661,7 @@ void registerStorageBigQuery(StorageFactory & factory)
         },
         {
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::BIGQUERY,
         },
         Documentation{

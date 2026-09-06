@@ -202,9 +202,9 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, from_dependent_views);
             }
 
-            NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id);
+            NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id, exchange_tables);
             if (exchange_tables)
-                NamedCollectionFactory::instance().renameDependencies(to_table_id, from_table_id);
+                NamedCollectionFactory::instance().renameDependencies(to_table_id, from_table_id, exchange_tables);
 
             /// The name -> storage mapping just changed. Drop the affected names from this query's
             /// per-query storage cache so the query's own subsequent lookups resolve to the current
@@ -251,6 +251,16 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     {
         catalog.assertDatabaseDoesntExist(new_name);
         db->renameDatabase(getContext(), new_name);
+        /// The `CREATE DATABASE` metadata of an engine that uses a named collection - `MaterializedPostgreSQL`,
+        /// for one - is rewritten under the new name and keeps referencing the collection, so the
+        /// dependency of the database itself has to follow the rename. Otherwise the entry of the old
+        /// name is taken for the leftover of a failed `CREATE DATABASE` and pruned, and dropping the
+        /// collection breaks the next `ATTACH DATABASE`.
+        NamedCollectionFactory::instance().rekeyDependencies(
+            StorageID::createDatabaseOnly(old_name), StorageID::createDatabaseOnly(new_name));
+        /// The metadata of the detached tables of the database moves along with it: their named
+        /// collection dependencies stay valid under the new database name.
+        NamedCollectionFactory::instance().renameDetachedDependencies(old_name, new_name);
     }
 
     return {};

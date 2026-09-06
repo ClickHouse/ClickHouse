@@ -1,0 +1,7 @@
+--- a failed ATTACH does not unmark the detached table ---
+1
+1
+--- a rename of the re-attached table releases its detached record ---
+0
+--- the record of a detached table follows a rename of its database ---
+1

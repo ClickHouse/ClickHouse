@@ -306,12 +306,22 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             if (query.permanently)
             {
                 DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
-                NamedCollectionFactory::instance().removeDependencies(table_id);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(context_, table_id.table_name);
+                /// A permanently detached table is not loaded at startup, so dropping a collection it
+                /// references cannot break the server start; its dependencies are simply removed. This
+                /// must happen after the permanent-detach flag is written: a failed permanent detach
+                /// leaves a plain detached table which will still be attached on restart. A detached
+                /// entry left over from an earlier plain detach is removed for the same reason.
+                NamedCollectionFactory::instance().removeDependencies(table_id);
+                NamedCollectionFactory::instance().removeDetachedDependencies(table_id);
             }
             else
             {
+                /// The detached table cannot be looked up through `DatabaseCatalog` anymore, but the
+                /// `ATTACH` replayed at the next server start still references the named collections it
+                /// uses, so they must not be dropped while it can be attached back.
+                NamedCollectionFactory::instance().markDependenciesDetached(table_id);
                 /// Drop table from memory, don't touch data and metadata
                 database->detachTable(context_, table_id.table_name);
             }
@@ -364,6 +374,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
             NamedCollectionFactory::instance().removeDependencies(table_id);
+            /// A detached entry left over from an earlier detach of this table: its metadata is gone
+            /// with the drop, so it must not keep blocking `DROP NAMED COLLECTION`.
+            NamedCollectionFactory::instance().removeDetachedDependencies(table_id);
             database->dropTable(context_, table_id.table_name, query.sync);
 
             /// We have to clear mmapio cache when dropping table from Ordinary database
@@ -809,9 +822,38 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     if (!drop && !truncate)
         database->assertCanBeDetached(true);
 
+    /// The tables of a database that does not have to be empty on detach (`Atomic`, ...) stay inside
+    /// it: remember their named collection dependencies as detached, like `DETACH TABLE` does.
+    if (!drop && !truncate && !database->shouldBeEmptyOnDetach())
+    {
+        for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+        {
+            if (auto table_ptr = iterator->table())
+                NamedCollectionFactory::instance().markDependenciesDetached(table_ptr->getStorageID());
+        }
+    }
+
     /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
     if (!truncate)
         DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
+
+    /// Database engines can resolve named collections from their persisted `CREATE DATABASE`
+    /// metadata too. A detached database is absent from `DatabaseCatalog`, but that metadata is
+    /// still replayed by a later `ATTACH DATABASE` or server start.
+    /// Only after `detachDatabase` succeeded: it attaches the database back when it cannot finish -
+    /// a table appeared in it while it was being dropped, or the engine's `drop` threw - and a
+    /// database that is live again must keep its dependency, or `DROP NAMED COLLECTION` would be
+    /// allowed while its `CREATE DATABASE` metadata still references the collection.
+    const StorageID database_id = StorageID::createDatabaseOnly(database_name);
+    if (drop)
+        NamedCollectionFactory::instance().removeDependencies(database_id);
+    else if (!truncate)
+        NamedCollectionFactory::instance().markDependenciesDetached(database_id);
+
+    /// `DROP DATABASE` drops the detached tables of the database too: their entries would otherwise
+    /// keep blocking `DROP NAMED COLLECTION` until the server restart.
+    if (drop)
+        NamedCollectionFactory::instance().removeDetachedDependencies(database_name);
 
     return {};
 }

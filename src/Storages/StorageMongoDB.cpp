@@ -182,7 +182,7 @@ MongoDBConfiguration StorageMongoDB::getConfigurationFromCollection(MutableNamed
 
 static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, ASTs engine_args, ContextPtr context, bool allow_excessive_path_in_host)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, /* throw_unknown_collection */ true, /* complex_args */ nullptr, table_id))
         return StorageMongoDB::getConfigurationFromCollection(named_collection, context);
 
     MongoDBConfiguration configuration;
@@ -656,6 +656,7 @@ void registerStorageMongoDB(StorageFactory & factory)
             args.comment);
     },
     {
+        .supports_named_collections = true,
         .source_access_type = AccessTypeObjects::Source::MONGO,
     },
     Documentation{

@@ -40,7 +40,8 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     bool is_cluster_function,
     bool secure,
     const PreformattedMessage & help_message,
-    const StorageID * dependent_table_id)
+    const StorageID * dependent_table_id,
+    String * used_named_collection_name)
 {
     ParsedRemoteFunctionArguments result;
     ClusterPtr & cluster = result.cluster;
@@ -95,7 +96,7 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     const bool throw_unknown_collection = second_arg_function && second_arg_function->name == "equals";
     if (!is_cluster_function
         && (named_collection
-            = tryGetNamedCollectionWithOverrides(args, context, throw_unknown_collection, &complex_args, dependent_table_id)))
+            = tryGetNamedCollectionWithOverrides(args, context, throw_unknown_collection, &complex_args, dependent_table_id, used_named_collection_name)))
     {
         /// Simple literal overrides are already merged into `named_collection` by
         /// tryGetNamedCollectionWithOverrides; only the complex (non-literal) overrides arrive in

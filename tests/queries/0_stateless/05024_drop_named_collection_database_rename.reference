@@ -1,0 +1,4 @@
+--- the renamed database still holds the collection ---
+1
+--- the collection is released once the database is dropped ---
+0

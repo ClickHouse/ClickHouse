@@ -531,10 +531,10 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     return configuration;
 }
 
-StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, const StorageID * table_id)
+StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, const StorageID * table_id, String * used_named_collection_name)
 {
     StorageMySQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_, true, nullptr, table_id, used_named_collection_name))
     {
         configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_);
     }
@@ -641,6 +641,7 @@ void registerStorageMySQL(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_schema_inference = true,
+        .supports_named_collections = true,
         .source_access_type = AccessTypeObjects::Source::MYSQL,
         .has_builtin_setting_fn = MySQLSettings::hasBuiltin,
     },

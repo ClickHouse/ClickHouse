@@ -90,7 +90,8 @@ public:
         ASTs & engine_args,
         ContextPtr local_context,
         bool with_table_structure,
-        const StorageID * table_id = nullptr);
+        const StorageID * table_id = nullptr,
+        String * used_named_collection_name = nullptr);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
