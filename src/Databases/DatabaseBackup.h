@@ -28,10 +28,10 @@ public:
 
     DatabaseBackup(const String & name, const String & metadata_path, const Configuration & config, ContextPtr context);
 
-    /// Authorizes reading this engine's backup destination against `context`'s SOURCES grants, and
-    /// does nothing for a destination that cannot decode (creation rejects it anyway). Performs no
-    /// I/O, so it also serves as a preflight before an `ON CLUSTER` query is distributed or a
-    /// definition found in a backup is created.
+    /// Authorizes reading this engine's backup destination against `context`'s SOURCES grants, in
+    /// either spelling of the locator. An argument written in neither is left to creation, which
+    /// rejects it. Performs no I/O, so it also serves as a preflight before an `ON CLUSTER` query is
+    /// distributed or a definition found in a backup is created.
     static void parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context);
 
     /// Older servers persisted the locator as a string literal, a form nothing can open. Returns the

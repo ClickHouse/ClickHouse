@@ -465,3 +465,35 @@ def test_on_cluster_is_authorized_on_the_initiator(started_cluster):
         f"BACKUP TABLE d67785.secrets ON CLUSTER one_shard TO {s3(ALLOWED + '/b4')} FORMAT Null",
         user=USER,
     )
+
+
+def test_create_database_on_cluster_authorizes_either_locator_spelling(started_cluster):
+    # `parseAndAuthorizeLocator` is the only check that sees the real user for an `ON CLUSTER`
+    # definition, because the worker leg that creates the database carries no user at all. It
+    # returned before the source check for a locator that is not a function, which was safe only
+    # while creation rejected that spelling; the string form an older server persisted now loads,
+    # so the same locator has to be authorized here too.
+    inner = s3(DENIED + "/b16")
+    quoted = "'" + inner.replace("\\", "\\\\").replace("'", "\\'") + "'"
+    node.query("DROP DATABASE IF EXISTS dbocl ON CLUSTER one_shard SYNC")
+    node.query(f"BACKUP DATABASE d67785 TO {inner} FORMAT Null")
+
+    for spelling in (inner, quoted):
+        error = node.query_and_get_error(
+            f"CREATE DATABASE dbocl ON CLUSTER one_shard ENGINE = Backup('d67785', {spelling})",
+            user=USER,
+        )
+        assert "ACCESS_DENIED" in error, error
+        # The denial must be the source check, not some other missing privilege.
+        assert "READ ON S3" in error, error
+        assert node.query("SELECT count() FROM system.databases WHERE name = 'dbocl'") == "0\n"
+
+    # With the grant both spellings are accepted, and both open the same backup.
+    node.query(f"GRANT READ ON S3 TO {USER}")
+    for spelling in (inner, quoted):
+        node.query(
+            f"CREATE DATABASE dbocl ON CLUSTER one_shard ENGINE = Backup('d67785', {spelling})",
+            user=USER,
+        )
+        assert node.query("SELECT x FROM dbocl.secrets") == "42\n"
+        node.query("DROP DATABASE dbocl ON CLUSTER one_shard SYNC")

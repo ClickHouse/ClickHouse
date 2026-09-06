@@ -407,8 +407,16 @@ CREATE DATABASE db_04510_eval ENGINE = Backup('', S3('http://localhost:11111/tes
 
 -- A locator that is not a function cannot be reconstructed, so the whole argument must be hidden
 -- rather than echoed, both in the logged query text and in the recorded exception message. The
--- statement is logged and the exception is recorded before validation rejects the locator.
+-- statement is logged and the exception is recorded before validation rejects the locator. This
+-- spelling decodes, so what rejects it here is the destination behind it.
 CREATE DATABASE db_04510_quoted ENGINE = Backup('', 'S3(\'url_dbquoted\', \'ak\', \'SEKRIT_QUOTED\')'); -- { serverError BAD_ARGUMENTS }
+
+-- A string that decodes to no locator is rejected by the parse of the string itself, and a message
+-- quoting what failed to parse would carry the whole spelling, credentials included.
+CREATE DATABASE db_04510_undecodable ENGINE = Backup('', 'not a locator SEKRIT_DBSTR'); -- { serverError BAD_ARGUMENTS }
+
+-- An argument in neither spelling reaches the locator decoder, whose message used to echo it.
+CREATE DATABASE db_04510_ident ENGINE = Backup('', SEKRIT_DBIDENT); -- { serverError BAD_ARGUMENTS }
 
 -- A non-tail argument that is neither a literal nor `key = value` cannot be reconstructed either. It
 -- is rejected by a different message than the quoted locator above, and that message used to echo the
@@ -482,14 +490,15 @@ ORDER BY event_time_microseconds;
 -- logs each DDL from the replay worker, which re-masks a rewritten AST independently, so assert
 -- the masking property over every row this test produced, replay rows included. count() > 0 keeps
 -- an empty row set from passing vacuously.
--- The third column covers the recorded exception messages of the six unreconstructible-locator
+-- The third column covers the recorded exception messages of the eight unreconstructible-locator
 -- statements above, whose rejections used to echo the locator verbatim - one tag per message, since
 -- they are thrown at different sites. It is scoped to those tags because widening it to every
 -- deliberately-failing statement here would report unrelated pre-existing echoes.
 SELECT count() > 0, countIf(query LIKE '%SEKRIT%'),
        countIf(exception LIKE '%SEKRIT_QUOTED%' OR exception LIKE '%SEKRIT_NONLIT%'
                OR exception LIKE '%SEKRIT_DBHDR%' OR exception LIKE '%SEKRIT_DBSWAP%'
-               OR exception LIKE '%SEKRIT_DBEVAL%' OR exception LIKE '%SEKRIT_DBFTAIL%')
+               OR exception LIKE '%SEKRIT_DBEVAL%' OR exception LIKE '%SEKRIT_DBFTAIL%'
+               OR exception LIKE '%SEKRIT_DBSTR%' OR exception LIKE '%SEKRIT_DBIDENT%')
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type != 'QueryStart'
