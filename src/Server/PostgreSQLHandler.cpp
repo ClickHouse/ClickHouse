@@ -1051,6 +1051,12 @@ void PostgreSQLHandler::processQuery()
     }
     catch (const Exception & e)
     {
+        /// A failed write to the client (for example, it went away in the middle of the result)
+        /// cancels `out`, and nothing can be written into a canceled buffer any more. There is
+        /// nobody to deliver `ErrorResponse` to, so tear the connection down instead.
+        if (out->isCanceled())
+            throw;
+
         bool nothing_sent_for_failed_statement = out->count() == out_bytes_before_statement;
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
@@ -1277,6 +1283,12 @@ void PostgreSQLHandler::processExecuteQuery()
     }
     catch (const Exception & e)
     {
+        /// A failed write to the client (for example, it went away in the middle of the result)
+        /// cancels `out`, and nothing can be written into a canceled buffer any more. There is
+        /// nobody to deliver `ErrorResponse` to, so tear the connection down instead.
+        if (out->isCanceled())
+            throw;
+
         bool nothing_sent_for_failed_statement = out->count() == out_bytes_before_statement;
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
