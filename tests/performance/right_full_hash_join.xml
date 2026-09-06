@@ -15,9 +15,9 @@
         <query_plan_join_swap_table>0</query_plan_join_swap_table>
     </settings>
 
-    <create_query>CREATE TABLE build_wide (k UInt64, a UInt64, b UInt64, c UInt64, d UInt64, e UInt64, f UInt64, g UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE build_nullable (k UInt64, a Nullable(UInt64), b Nullable(UInt64), c Nullable(UInt64), d Nullable(UInt64), e Nullable(UInt64), f Nullable(UInt64), g Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query> CREATE TABLE probe (k1 UInt64, k2 UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE build_wide (k UInt64, a UInt64, b UInt64, c UInt64, d UInt64, e UInt64, f UInt64, g UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE build_nullable (k UInt64, a Nullable(UInt64), b Nullable(UInt64), c Nullable(UInt64), d Nullable(UInt64), e Nullable(UInt64), f Nullable(UInt64), g Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query> CREATE TABLE probe (k1 UInt64, k2 UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
 
     <fill_query>INSERT INTO build_wide SELECT number, number, number, number, number, number, number, number FROM numbers(2000000)</fill_query>
     <fill_query>INSERT INTO build_nullable WITH if(number % 10 = 0, NULL, number) AS n SELECT number, n, n, n, n, n, n, n FROM numbers(2000000)</fill_query>

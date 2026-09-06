@@ -3,8 +3,8 @@
         The build size underestimation that leads to selecting hash join instead of concurrent hash join
         should be corrected with runtime statistics.
     -->
-    <create_query>CREATE TABLE build (k UInt64, s String) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE probe (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE build (k UInt64, s String) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE probe (k UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
 
     <fill_query>INSERT INTO build SELECT number, toString(number) FROM numbers_mt(5000000)</fill_query>
     <fill_query>INSERT INTO probe SELECT number FROM numbers_mt(10000000)</fill_query>

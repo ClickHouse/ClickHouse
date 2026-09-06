@@ -92,6 +92,7 @@ public:
     void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
 
     std::string_view getDataAt(size_t n) const override { return tuple->getDataAt(n); }
+    bool supportsGetDataAt() const override { return tuple->supportsGetDataAt(); }
     void insertData(const char * pos, size_t length) override { tuple->insertData(pos, length); }
     void insert(const Field & x) override { tuple->insert(x); }
     bool tryInsert(const Field & x) override { return tuple->tryInsert(x); }

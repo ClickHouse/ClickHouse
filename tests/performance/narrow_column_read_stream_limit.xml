@@ -17,7 +17,7 @@
     <create_query>
         CREATE TABLE narrow_col (w UInt16)
         ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS index_granularity = 8192
+        SETTINGS index_granularity = 8192, optimize_row_order_if_no_order_by = 0
     </create_query>
 
     <fill_query>INSERT INTO narrow_col SELECT number % 50000 FROM numbers(20000000)</fill_query>

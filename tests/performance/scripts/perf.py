@@ -21,6 +21,16 @@ from threading import Thread
 import clickhouse_driver
 from scipy import stats
 
+# strip_setting_from_query lives in a sibling module so it can be unit-tested
+# (perf.py executes its whole body on import). See
+# ci/tests/test_strip_setting_from_query.py.
+from perf_create_query_utils import (
+    first_keyword,
+    is_ordinary_mergetree_create_query,
+    is_mergetree_create_query,
+    strip_setting_from_query,
+)
+
 logging.basicConfig(
     format="%(asctime)s: %(levelname)s: %(module)s: %(message)s", level="WARNING"
 )
@@ -415,29 +425,6 @@ def split_sql_statements(sql):
     return statements
 
 
-def first_keyword(sql):
-    """Return the first SQL keyword from a statement, skipping --, #, and /* */ comments."""
-    i = 0
-    while i < len(sql):
-        ch = sql[i]
-        next_ch = sql[i + 1] if i + 1 < len(sql) else ""
-        if ch in (" ", "\t", "\n", "\r"):
-            i += 1
-        elif (ch == "-" and next_ch == "-") or ch == "#":
-            nl = sql.find("\n", i)
-            i = nl + 1 if nl != -1 else len(sql)
-        elif ch == "/" and next_ch == "*":
-            end = sql.find("*/", i + 2)
-            i = end + 2 if end != -1 else len(sql)
-        else:
-            # Found start of a token → read until whitespace or special chars
-            j = i
-            while j < len(sql) and sql[j] not in (" ", "\t", "\n", "\r", "(", ";"):
-                j += 1
-            return sql[i:j].upper()
-    return ""
-
-
 def execute_query_group(connection, q_list, query_id, settings):
     """
     Execute a group of SQL statements sequentially and return the total server-side elapsed time.
@@ -789,11 +776,86 @@ if not args.use_existing_tables:
             print(f"Temporary tables are not allowed in performance tests: '{q}'", file=sys.stderr)
             sys.exit(1)
 
+    # Settings allowed to be silently stripped from a CREATE TABLE on an
+    # older baseline server that does not yet know them. Keep this list
+    # intentionally short: every entry is a setting that the PR introduces
+    # and that the baseline server is expected to default to a value
+    # compatible with the perf comparison. Adding an entry here is a
+    # deliberate decision; misspelled or unrelated settings should still
+    # fail fast.
+    #
+    # Each entry maps the setting name to the set of lowercased values that
+    # are equivalent to the baseline server's default for it. The setting is
+    # only stripped when the fixture pins it to one of those values, so that
+    # both sides of the A/B comparison build the same table. An enabled value
+    # (e.g. `optimize_row_order_if_no_order_by = 1`) is NOT strippable for an
+    # ordinary `MergeTree`: the baseline would build an unoptimized table while
+    # the PR side uses the optimized layout, so it is re-raised as
+    # UNKNOWN_SETTING to fail fast instead of silently comparing incomparable
+    # tables. It is strippable for a specialized `MergeTree`, where this
+    # setting is a documented no-op.
+    strippable_unknown_settings = {
+        "optimize_row_order_if_no_order_by": {"0", "false"},
+    }
+
     def do_create(connection, index, queries):
         for q, tolerate_on_reference in queries:
             try:
-                connection.execute(q)
-                print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
+                current_query = q
+                while True:
+                    try:
+                        connection.execute(current_query)
+                        print(
+                            f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(current_query)}"
+                        )
+                        break
+                    except clickhouse_driver.errors.ServerException as e:
+                        # If a CREATE TABLE uses a MergeTree setting that the
+                        # server does not know (e.g. a newly added setting
+                        # present only in the PR build) AND that setting is on
+                        # the explicit allowlist, strip the setting and retry.
+                        # The server falls back to its own default, which
+                        # matches the intent on the old side of an A/B perf
+                        # comparison.
+                        #
+                        # Scope this to `CREATE TABLE` of a `MergeTree`-family
+                        # engine only, and to the allowlist, so that misspelled
+                        # settings, unknown settings on `fill_query` / other
+                        # statements, and a `MergeTree` setting pinned on a
+                        # non-`MergeTree` fixture (e.g. `ENGINE = Memory
+                        # SETTINGS optimize_row_order_if_no_order_by = 0`, which
+                        # the setting cannot affect at all) still surface as
+                        # failures instead of silently producing different
+                        # datasets on the two sides.
+                        if (
+                            e.code == 115  # UNKNOWN_SETTING
+                            and first_keyword(current_query) == "CREATE"
+                            and is_mergetree_create_query(current_query)
+                        ):
+                            m = re.search(r"Unknown setting '([^']+)'", e.message)
+                            if m:
+                                unknown_setting = m.group(1)
+                                if unknown_setting in strippable_unknown_settings:
+                                    allowed_values = strippable_unknown_settings[unknown_setting]
+                                    if (
+                                        unknown_setting == "optimize_row_order_if_no_order_by"
+                                        and not is_ordinary_mergetree_create_query(current_query)
+                                    ):
+                                        allowed_values = allowed_values | {"1", "true"}
+                                    new_query = strip_setting_from_query(
+                                        current_query,
+                                        unknown_setting,
+                                        allowed_values,
+                                    )
+                                    if new_query != current_query:
+                                        print(
+                                            f"warning\t{index}\tstripped unknown setting "
+                                            f"'{unknown_setting}' from create query",
+                                            file=sys.stderr,
+                                        )
+                                        current_query = new_query
+                                        continue
+                        raise
             except Exception:
                 # Failures on any server other than the reference (connection 0), or of setup queries without the opt-out, stay fatal.
                 if index != 0 or not tolerate_on_reference:

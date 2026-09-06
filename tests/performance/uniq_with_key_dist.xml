@@ -14,7 +14,7 @@
         </substitution>
     </substitutions>
 
-    <create_query>create table t_{uniq_keys}(a UInt64, b UInt64) engine=MergeTree order by tuple()</create_query>
+    <create_query>create table t_{uniq_keys}(a UInt64, b UInt64) engine=MergeTree order by tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
 
     <fill_query>insert into t_{uniq_keys} select number, number % {uniq_keys} from numbers_mt(5e6)</fill_query>
 

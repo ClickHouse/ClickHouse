@@ -222,9 +222,11 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
 
-You can create a table without a primary key using the `ORDER BY tuple()` syntax. In this case, ClickHouse stores data in the order of inserting. If you want to save data order when inserting data by `INSERT ... SELECT` queries, set [max_insert_threads = 1](/reference/settings/session-settings/max-insert#max_insert_threads).
+You can create a table without a primary key using the `ORDER BY tuple()` syntax. To reorder the rows of every inserted block to improve compressibility, enable the `optimize_row_order_if_no_order_by` setting. It applies to ordinary `MergeTree`-family tables, including `ReplicatedMergeTree`. Specialized engines of the family, e.g. `ReplacingMergeTree` or `AggregatingMergeTree`, are never row-order optimized and keep the order of the inserted rows.
 
-To select data in the initial order, use [single-threaded](/reference/settings/session-settings/max-threads#max_threads) `SELECT` queries.
+To enable reordering, set `optimize_row_order_if_no_order_by = 1` in the table's `SETTINGS` clause. When inserting data with `INSERT ... SELECT` queries, also set [max_insert_threads = 1](/reference/settings/session-settings/max-insert#max_insert_threads) to preserve the optimized order.
+
+When reordering is disabled, use [single-threaded](/reference/settings/session-settings/max-threads#max_threads) `SELECT` queries to select data in the insertion order. When reordering is enabled, a single-threaded `SELECT` query preserves the on-disk order.
 
 ### Choosing a primary key that differs from the sorting key {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 

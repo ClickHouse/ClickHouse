@@ -3,7 +3,7 @@
     <create_query>CREATE TABLE perf_lc_str(
         str LowCardinality(String),
         arr Array(LowCardinality(String)) default [str]
-        ) ENGINE = MergeTree() ORDER BY tuple()
+        ) ENGINE = MergeTree() ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0
     </create_query>
 
     <fill_query>

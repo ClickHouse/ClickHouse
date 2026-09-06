@@ -217,6 +217,11 @@ public:
     /// Is used to optimize some computations (in aggregation, for example).
     [[nodiscard]] virtual std::string_view getDataAt(size_t n) const = 0;
 
+    /// Whether getDataAt is implemented for this column (for ColumnNullable - for its non-NULL rows).
+    /// Columns that store a value in multiple non-contiguous memory regions (e.g. Tuple, Map, Object, Variant,
+    /// Array of non-fixed elements) cannot return a single contiguous chunk and throw an exception from getDataAt.
+    [[nodiscard]] virtual bool supportsGetDataAt() const { return true; }
+
     /// If column stores integers, it returns n-th element transformed to UInt64 using static_cast.
     /// If column stores floating point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
     /// Is used to optimize some computations (in aggregation, for example).

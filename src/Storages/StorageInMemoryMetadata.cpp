@@ -690,6 +690,14 @@ ASTPtr StorageInMemoryMetadata::getSettingsChanges() const
     return nullptr;
 }
 
+bool StorageInMemoryMetadata::hasSettingChange(const String & setting_name) const
+{
+    if (!settings_changes)
+        return false;
+
+    return settings_changes->as<const ASTSetQuery &>().changes.tryGet(setting_name) != nullptr;
+}
+
 Field StorageInMemoryMetadata::getSettingChange(const String & setting_name) const
 {
     if (!settings_changes)

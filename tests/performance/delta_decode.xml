@@ -28,6 +28,7 @@
         (n {type} CODEC(Delta))
         ENGINE = MergeTree
         ORDER BY tuple()
+        SETTINGS optimize_row_order_if_no_order_by = 0
     </create_query>
 
     <fill_query>INSERT INTO delta_decode_seq_{type} (n) SELECT to{type}(number) FROM system.numbers LIMIT 50000000 SETTINGS max_threads=1</fill_query>

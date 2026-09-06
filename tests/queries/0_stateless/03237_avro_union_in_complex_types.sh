@@ -140,7 +140,7 @@ $CH_CLIENT -q "CREATE TABLE avro_union_test_03237 (
   double_or_long_or_string_in_array Array(Variant(Float64, String, Int64)),
   double_or_string_or_long_or_null_in_map Map(String, Variant(Float64, Int64, String))
 ) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic'"
+SETTINGS optimize_row_order_if_no_order_by = 0, map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic'"
 echo
 
 echo "== SELECT * FORMAT Avro | INSERT INTO avro_union_test_03237 FORMAT Avro =="

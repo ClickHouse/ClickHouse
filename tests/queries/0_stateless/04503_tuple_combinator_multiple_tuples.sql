@@ -23,7 +23,7 @@ SELECT corrTuple((NULL, toFloat64(number)), (toFloat64(number), toFloat64(100 - 
 SELECT 'sparse elements with two tuples';
 DROP TABLE IF EXISTS test_tuple_multiple_sparse;
 CREATE TABLE test_tuple_multiple_sparse (n UInt64, x Tuple(a Int64, b Float64)) ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1;
+    SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1, optimize_row_order_if_no_order_by = 0;
 -- Number 900 has the unique maximum x.a; stored first, its unordered frame is a single row.
 INSERT INTO test_tuple_multiple_sparse
 SELECT number, if(number % 100 = 0, (number, toFloat64(number)), (0, 0.0))
@@ -36,7 +36,7 @@ DROP TABLE test_tuple_multiple_sparse;
 SELECT 'mixed sparse and dense elements with two tuples';
 DROP TABLE IF EXISTS test_tuple_multiple_mixed;
 CREATE TABLE test_tuple_multiple_mixed (n UInt64, t1 Tuple(v Float64, w Float64), t2 Tuple(v Float64, w Float64)) ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5;
+    SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, optimize_row_order_if_no_order_by = 0;
 INSERT INTO test_tuple_multiple_mixed SELECT
     number,
     (if(cityHash64(number) % 10 = 0, toFloat64(number % 83), 0), toFloat64(1 + number % 3)),

@@ -1,5 +1,5 @@
 -- arrayLevenshteinDistance
-CREATE TABLE simple_levenshtein (lhs Array(UInt8), rhs Array(UInt8)) ENGINE MergeTree ORDER BY tuple();
+CREATE TABLE simple_levenshtein (lhs Array(UInt8), rhs Array(UInt8)) ENGINE MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 INSERT INTO simple_levenshtein VALUES
   ([1, 2, 3, 4], [1, 2, 3, 4]),
   ([1, 2, 3, 4], [1, 3, 3, 4]),
@@ -21,7 +21,7 @@ SELECT arrayLevenshteinDistance(['1', '2'], ['1']),
 SELECT '';
 
 -- arrayLevenshteinDistanceWeighted
-CREATE TABLE weighted_levenshtein (lhs Array(String), rhs Array(String), lhs_weights Array(Float64), rhs_weights Array(Float64)) ENGINE MergeTree ORDER BY tuple();
+CREATE TABLE weighted_levenshtein (lhs Array(String), rhs Array(String), lhs_weights Array(Float64), rhs_weights Array(Float64)) ENGINE MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 INSERT INTO weighted_levenshtein VALUES
   (['A', 'B', 'C'], ['A', 'C'], [1, 2, 3], [1, 3]),
   (['A', 'C'], ['A', 'B', 'C'], [1, 3], [1, 2, 3]),

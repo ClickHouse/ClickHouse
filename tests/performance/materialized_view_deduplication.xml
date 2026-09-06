@@ -5,12 +5,12 @@
     <create_query>
         CREATE TABLE dst (`key` Int64, `value` String)
         ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS non_replicated_deduplication_window=1000;
+        SETTINGS non_replicated_deduplication_window=1000, optimize_row_order_if_no_order_by = 0;
     </create_query>
     <create_query>
         CREATE TABLE mv_dst (`key` Int64, `value` String)
         ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS non_replicated_deduplication_window=1000;
+        SETTINGS non_replicated_deduplication_window=1000, optimize_row_order_if_no_order_by = 0;
     </create_query>
     <create_query>
         CREATE MATERIALIZED VIEW mv_first TO mv_dst

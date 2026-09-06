@@ -38,33 +38,33 @@
     <create_query>
         CREATE TABLE t_insert_uniq_v2_i64_off (c1 Int64)
         ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS auto_statistics_types = 'uniq_v2'
+        SETTINGS auto_statistics_types = 'uniq_v2', optimize_row_order_if_no_order_by = 0
     </create_query>
     <create_query>
         CREATE TABLE t_insert_uniq_v2_i64_on (c1 Int64)
         ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS auto_statistics_types = 'uniq_v2'
+        SETTINGS auto_statistics_types = 'uniq_v2', optimize_row_order_if_no_order_by = 0
     </create_query>
     <create_query>
         CREATE TABLE t_insert_uniq_v2_f64_off (c1 Float64)
         ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS auto_statistics_types = 'uniq_v2'
+        SETTINGS auto_statistics_types = 'uniq_v2', optimize_row_order_if_no_order_by = 0
     </create_query>
     <create_query>
         CREATE TABLE t_insert_uniq_v2_f64_on (c1 Float64)
         ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS auto_statistics_types = 'uniq_v2'
+        SETTINGS auto_statistics_types = 'uniq_v2', optimize_row_order_if_no_order_by = 0
     </create_query>
 
     <create_query>
         CREATE TABLE t_materialize_uniq_v2_i64 (c1 Int64)
         ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS auto_statistics_types = 'uniq_v2'
+        SETTINGS auto_statistics_types = 'uniq_v2', optimize_row_order_if_no_order_by = 0
     </create_query>
     <create_query>
         CREATE TABLE t_materialize_uniq_v2_f64 (c1 Float64)
         ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS auto_statistics_types = 'uniq_v2'
+        SETTINGS auto_statistics_types = 'uniq_v2', optimize_row_order_if_no_order_by = 0
     </create_query>
 
     <fill_query>SYSTEM STOP MERGES t_insert_uniq_v2_i64_off</fill_query>

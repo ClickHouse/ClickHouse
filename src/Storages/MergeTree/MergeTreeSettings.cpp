@@ -1215,6 +1215,29 @@ High-cardinality primary keys, e.g. involving timestamp columns of type
 Allow to use adaptive writer buffers during writing dynamic subcolumns to
 reduce memory usage
 )", 0) \
+    DECLARE(Bool, optimize_row_order_if_no_order_by, false, R"(
+Controls whether row order optimization (see `optimize_row_order`) is applied
+automatically on insert for tables with an empty sorting key, i.e. tables
+declared with `ORDER BY ()` or `ORDER BY tuple()`.
+
+Disabled by default. Enable it for tables where improving the compressibility
+of newly inserted parts with LZ4 or ZSTD is more important than preserving
+insertion order and insert throughput.
+
+As with `optimize_row_order`, inserts incur additional CPU cost to analyze and
+optimize the row order of the new data. Disable this setting if preserving the
+original insert order of the rows or maximizing insert throughput matters more
+than compression.
+
+An explicitly set `optimize_row_order = 0` takes precedence: such a table is
+never row-order optimized, regardless of this setting.
+
+As with `optimize_row_order`, the optimization applies to ordinary
+`MergeTree`-family tables only, including `ReplicatedMergeTree`. Specialized
+engines of the family, e.g. `ReplacingMergeTree`,
+`CollapsingMergeTree` or `AggregatingMergeTree`, are never row-order optimized
+and keep the order of the inserted rows.
+)", 0) \
     DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
 Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
 
@@ -2863,6 +2886,11 @@ MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, IMPLEMENT_SETTING_SUBSCRIP
 bool MergeTreeSettings::has(std::string_view name) const
 {
     return impl->has(name);
+}
+
+bool MergeTreeSettings::isChanged(std::string_view name) const
+{
+    return impl->isChanged(name);
 }
 
 bool MergeTreeSettings::tryGet(std::string_view name, Field & value) const

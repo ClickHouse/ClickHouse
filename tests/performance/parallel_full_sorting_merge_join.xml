@@ -25,8 +25,8 @@
          on the new server (as a "partial" query) instead of failing the
          precondition on a server that does not have the value yet. -->
 
-    <create_query>CREATE TABLE pfsm_left (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE pfsm_right (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE pfsm_left (k UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE pfsm_right (k UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
     <fill_query>INSERT INTO pfsm_left SELECT number FROM numbers_mt(20000000)</fill_query>
     <fill_query>INSERT INTO pfsm_right SELECT number FROM numbers_mt(20000000)</fill_query>
     <fill_query>OPTIMIZE TABLE pfsm_left FINAL</fill_query>
@@ -39,8 +39,8 @@
     <fill_query>OPTIMIZE TABLE pfsm_sorted_left FINAL</fill_query>
     <fill_query>OPTIMIZE TABLE pfsm_sorted_right FINAL</fill_query>
 
-    <create_query>CREATE TABLE pfsm_payload_left (k UInt64, s String) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE pfsm_payload_right (k UInt64, s String) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE pfsm_payload_left (k UInt64, s String) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE pfsm_payload_right (k UInt64, s String) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
     <fill_query>INSERT INTO pfsm_payload_left SELECT number, hex(sipHash128(number)) FROM numbers_mt(5000000)</fill_query>
     <fill_query>INSERT INTO pfsm_payload_right SELECT number, hex(sipHash128(number + 1)) FROM numbers_mt(5000000)</fill_query>
     <fill_query>OPTIMIZE TABLE pfsm_payload_left FINAL</fill_query>
