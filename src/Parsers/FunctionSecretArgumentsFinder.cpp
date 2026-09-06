@@ -1563,10 +1563,11 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageBackupSecretArguments()
 
     if (count == 3)
     {
-        /// Only this shape accepts a connection string, which can embed `AccountKey`.
+        /// Only this shape accepts a connection string, which can embed `AccountKey`. A value that is no
+        /// string is read by neither the classification below nor the destination.
         String connection_value;
-        if (tryGetStringFromArgument(0, &connection_value)
-            && classifyAzureConnectionValue(connection_value) == AzureConnectionValue::Unmaskable)
+        if (!tryGetStringFromArgument(0, &connection_value)
+            || classifyAzureConnectionValue(connection_value) == AzureConnectionValue::Unmaskable)
         {
             maskEveryArgument();
             return;

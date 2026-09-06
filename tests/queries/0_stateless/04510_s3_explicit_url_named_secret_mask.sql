@@ -320,9 +320,10 @@ BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing, container =
 
 -- An account url is shown only when it is a plain storage account URL, which is what the destination
 -- requires beside explicit credentials: userinfo, a query string (a SAS is a credential) and a fragment
--- each carry a credential of their own, in any shape and under any scheme spelling. The last statement
--- is the control: a plain url keeps the account url, container, path and account name visible while
--- account_key is hidden, and reaches the account_key decoding that rejects it.
+-- each carry a credential of their own, in any shape and under any scheme spelling. A connection value
+-- that is no string is read by neither this rule nor the destination, so it is hidden as well. The last
+-- statement is the control: a plain url keeps the account url, container, path and account name visible
+-- while account_key is hidden, and reaches the account_key decoding that rejects it.
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
                  storage_account_url = 'http://user:SEKRIT_AZNCUSERINFO@localhost:11111/acct'); -- { serverError BAD_ARGUMENTS }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing,
@@ -331,6 +332,7 @@ BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://user:SEKRIT_AZ3USERIN
                  'cont', 'blob'); -- { serverError BAD_ARGUMENTS }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct#f', 'cont', 'blob',
                  'acct', 'SEKRIT_AZTO5KEY'); -- { serverError BAD_ARGUMENTS }
+BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(1234567890123456, 'cont', 'blob'); -- { serverError BAD_GET }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/visible_04510_acct5',
                  'visible_04510_cont5', 'visible_04510_blob5', 'visible_04510_acctname5',
                  'SEKRIT_AZ5PLAINKEY'); -- { serverError STD_EXCEPTION }
