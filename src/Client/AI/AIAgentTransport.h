@@ -86,6 +86,15 @@ public:
     static String renderSystemPrompt(const String & system_prompt, const ai::ToolSet & tools);
     static String renderConversation(const ai::Messages & messages);
 
+    /// One message of the transcript, with everything the transport did not write itself quoted.
+    static String renderMessage(const ai::Message & message);
+
+    /// The same transcript held to `max_bytes`, by giving up whole messages rather than raw bytes
+    /// off the front: the question of the current turn is kept (cut down to half of the budget if
+    /// it is oversized on its own), and the newest steps of the turn fill what is left. Exposed
+    /// for tests.
+    static String renderConversationWithinBudget(const ai::Messages & messages, size_t max_bytes);
+
     /// Extract the assistant text and the tool calls from a model response. Malformed
     /// tool call blocks are turned into calls of `malformed_tool_call_name`, so the error
     /// is reported back to the model instead of being silently dropped. Exposed for tests.
