@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree, no-distributed-cache, no-replicated-database
+# Tags: no-fasttest, no-shared-merge-tree, no-distributed-cache, no-replicated-database, no-flaky-check
 # Tag no-fasttest: requires Azure
 # Tag no-shared-merge-tree: does not support replication
 # Tag no-distributed-cache: Not supported auth type
 # Tag no-replicated-database: plain rewritable should not be shared between replicas
+# Tag no-flaky-check: the flaky check enables the thread fuzzer, which multiplies the runtime of this
+# object-storage test far past the 180s per-run cap.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,7 +32,8 @@ SETTINGS disk = disk(
     container_name = '${container}',
     endpoint = 'http://localhost:10000/devstoreaccount1/${container}/plain-tables',
     account_name = 'devstoreaccount1',
-    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==');
+    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=='),
+    enable_block_number_column = 0, enable_block_offset_column = 0;
 "
 
 ${CLICKHOUSE_CLIENT} --query "
@@ -65,7 +68,8 @@ SETTINGS disk = disk(
     container_name = '${container}',
     endpoint = 'http://localhost:10000/devstoreaccount1/${container}/plain-tables',
     account_name = 'devstoreaccount1',
-    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==');
+    account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=='),
+    enable_block_number_column = 0, enable_block_offset_column = 0;
 "
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE 03008_alter_partition MOVE PARTITION 3 TO TABLE 03008_alter_partition_dst"
 

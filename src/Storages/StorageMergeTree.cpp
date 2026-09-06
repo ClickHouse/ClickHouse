@@ -3328,6 +3328,14 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         }
     }
 
+    /// Reject importing another table's persisted block identities. Self-REPLACE is exempt: the
+    /// operation removes the originals it clones, so the identities stay native and unique to this
+    /// table (pending patches are already rejected above). Self-ATTACH gets no exemption because it
+    /// keeps the originals and thus instantly duplicates their identities.
+    if (!(replace && source_table.get() == this))
+        assertNoPersistedBlockIdentityInAdoptedParts(src_parts,
+            fmt::format("{} PARTITION FROM", replace ? "REPLACE" : "ATTACH"));
+
     /// REPLACE PARTITION FROM a source that has no parts in the requested partition would
     /// silently drop the destination partition's data without writing anything in its place
     /// (see #23727). Reject by default; users who actually want this behavior (e.g. to clear
@@ -3540,6 +3548,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     }
 
     src_data.assertNoPatchesForParts(src_parts, src_patch_parts, "MOVE PARTITION " + partition_id);
+    /// No self-MOVE exemption is needed: MergeTreeData::movePartitionToTable early-returns when
+    /// source and destination storage ids match, so this is always a cross-table adoption.
+    src_data.assertNoPersistedBlockIdentityInAdoptedParts(src_parts, "MOVE PARTITION TO TABLE");
 
     if (src_parts.size() > settings[Setting::max_parts_to_move])
     {

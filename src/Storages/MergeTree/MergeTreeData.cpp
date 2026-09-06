@@ -10607,6 +10607,25 @@ bool MergeTreeData::assertNoPatchesForParts(const DataPartsVector & parts, const
     return true;
 }
 
+void MergeTreeData::assertNoPersistedBlockIdentityInAdoptedParts(const DataPartsVector & src_parts, std::string_view command) const
+{
+    for (const auto & part : src_parts)
+    {
+        const auto & part_columns = part->getColumns();
+        if (part_columns.contains(BlockNumberColumn::name) || part_columns.contains(BlockOffsetColumn::name))
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot execute \"{}\": source part {} physically stores the {} / {} columns "
+                "(persisted on merge when enable_block_number_column / enable_block_offset_column "
+                "is enabled). Adopting the part would import the source table's "
+                "block identities, which collide with the destination's own and corrupt lightweight-update "
+                "patch application. Copy the rows instead (for example \"INSERT INTO ... SELECT ... "
+                "FROM ...\"), which assigns fresh block identities.",
+                command, part->name, BlockNumberColumn::name, BlockOffsetColumn::name);
+        }
+    }
+}
+
 namespace
 {
 

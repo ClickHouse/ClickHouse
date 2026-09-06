@@ -5780,6 +5780,15 @@ bool StorageReplicatedMergeTree::fetchPart(
         }
         else
         {
+            /// User FETCH PARTITION/PART is the only path with to_detached=true (background
+            /// replication uses to_detached=false). A fetched/cloned part keeps its source content,
+            /// including any persisted _block_number / _block_offset columns, so attaching it later
+            /// would import foreign block identities exactly like REPLACE/ATTACH PARTITION FROM
+            /// (see MergeTreeData::assertNoPersistedBlockIdentityInAdoptedParts). Reject here, before
+            /// the rename into detached/; the part is still a temp part, so throwing lets its
+            /// destructor clean it up.
+            assertNoPersistedBlockIdentityInAdoptedParts({part}, "FETCH PARTITION/PART");
+
             // The fetched part is valuable and should not be cleaned like a temp part.
             part->is_temp = false;
             part->renameTo(fs::path(DETACHED_DIR_NAME) / part_name, true);
@@ -8438,6 +8447,17 @@ void StorageReplicatedMergeTree::fetchPartition(
 
     unsigned try_no = 0;
     Strings missing_parts;
+
+    /// Only parts renamed into `detached` by this query itself, so cleanup below never removes a part
+    /// that someone else detached.
+    NameSet fetched_to_detached;
+    std::mutex fetched_to_detached_mutex; /// Must outlive the runner below
+    bool fetched_all = false;
+    SCOPE_EXIT_SAFE({
+        if (!fetched_all)
+            removeDetachedPartsCreatedByFetch(fetched_to_detached);
+    });
+
     do
     {
         if (try_no)
@@ -8491,7 +8511,7 @@ void StorageReplicatedMergeTree::fetchPartition(
         for (const String & part : parts_to_fetch)
         {
             /// Passing by reference here is ok. All passed variables are created before the runner, so they will outlive it
-            fetch_partition_runner.enqueueAndKeepTrack([this, &part, &metadata_snapshot, &from_zookeeper_name, &best_replica_path, &zookeeper, &missing_parts_mutex, &missing_parts]()
+            fetch_partition_runner.enqueueAndKeepTrack([this, &part, &metadata_snapshot, &from_zookeeper_name, &best_replica_path, &zookeeper, &missing_parts_mutex, &missing_parts, &fetched_to_detached, &fetched_to_detached_mutex]()
             {
                 bool fetched = false;
 
@@ -8506,6 +8526,13 @@ void StorageReplicatedMergeTree::fetchPartition(
                         /*quorum=*/ 0,
                         zookeeper,
                         /*try_fetch_shared=*/ false);
+
+                    /// With to_detached, true means this call did the rename under this exact name.
+                    if (fetched)
+                    {
+                        std::lock_guard lock(fetched_to_detached_mutex);
+                        fetched_to_detached.insert(part);
+                    }
                 }
                 catch (const DB::Exception & e)
                 {
@@ -8528,7 +8555,42 @@ void StorageReplicatedMergeTree::fetchPartition(
         ++try_no;
     } while (!missing_parts.empty());
 
+    fetched_all = true;
+
     LOG_TRACE(log, "Fetch took {:.3f} sec. ({} tries)", watch.elapsedSeconds(), try_no);
+}
+
+
+void StorageReplicatedMergeTree::removeDetachedPartsCreatedByFetch(const NameSet & part_names)
+{
+    if (part_names.empty())
+        return;
+
+    LOG_DEBUG(log, "Removing up to {} detached parts left by a failed FETCH PARTITION.", part_names.size());
+
+    for (const String & part_name : part_names)
+    {
+        /// Per part, so one failure neither rolls back nor skips the others. Rename first, as
+        /// dropDetached() does: a `deleting_` prefix is never a candidate for ATTACH, and the unique
+        /// suffix keeps a leftover from colliding with a later attempt.
+        try
+        {
+            auto disk = tryGetDiskForDetachedPart(part_name);
+            if (!disk)
+                continue;
+
+            const String detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
+            const String staging_dir = "deleting_" + part_name + "_" + toString(UUIDHelpers::generateV4());
+            disk->moveDirectory(fs::path(detached_path) / part_name, fs::path(detached_path) / staging_dir);
+            bool keep_shared = removeDetachedPart(disk, fs::path(detached_path) / staging_dir / "", part_name);
+            LOG_DEBUG(log, "Removed detached part {} left by a failed FETCH PARTITION, keep shared data: {}",
+                part_name, keep_shared);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot remove detached part " + part_name + " left by a failed FETCH PARTITION");
+        }
+    }
 }
 
 
@@ -9367,6 +9429,16 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
     }
 
     assertNoPatchesForParts(src_all_parts, src_patch_parts, "REPLACE PARTITION " + partition_id + " FROM");
+
+    /// Reject importing another table's persisted block identities (see
+    /// MergeTreeData::assertNoPersistedBlockIdentityInAdoptedParts). Self-REPLACE is exempt: the
+    /// originals are removed, so identities stay native and unique. Self-ATTACH keeps the originals
+    /// and gets no exemption. The guard runs on the initiator before the log entry is created;
+    /// executors only ever see committed, post-guard parts.
+    if (!(replace && &src_data == static_cast<const MergeTreeData *>(this)))
+        src_data.assertNoPersistedBlockIdentityInAdoptedParts(src_all_parts,
+            fmt::format("{} PARTITION FROM", replace ? "REPLACE" : "ATTACH"));
+
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
     /// REPLACE PARTITION FROM a source that has no parts in the requested partition would
@@ -9721,6 +9793,9 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         }
 
         assertNoPatchesForParts(src_all_parts, src_patch_parts, "MOVE PARTITION " + partition_id);
+        /// No self-MOVE exemption is needed: MergeTreeData::movePartitionToTable early-returns when
+        /// source and destination storage ids match, so this is always a cross-table adoption.
+        src_data.assertNoPersistedBlockIdentityInAdoptedParts(src_all_parts, "MOVE PARTITION TO TABLE");
 
         if (covering_part)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got part {} covering drop range {}, it's a bug",
@@ -9968,6 +10043,12 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Active});
     if (!part)
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found locally", part_name);
+
+    /// Moving a part to another shard clones its content unchanged into a different table's
+    /// namespace, importing its persisted block identities there (see
+    /// MergeTreeData::assertNoPersistedBlockIdentityInAdoptedParts). Reject up front, before the
+    /// orchestrator log entry is created.
+    assertNoPersistedBlockIdentityInAdoptedParts({part}, "MOVE PART TO SHARD");
 
     if (part->uuid == UUIDHelpers::Nil)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Part {} does not have an uuid assigned and it can't be moved between shards", part_name);

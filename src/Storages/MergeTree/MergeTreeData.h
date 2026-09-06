@@ -873,6 +873,13 @@ public:
 
     bool assertNoPatchesForParts(const DataPartsVector & parts, const DataPartsVector & patches, std::string_view command, bool throw_on_error = true) const;
 
+    /// Enforces the invariant that (_block_number, _block_offset) is unique within a table
+    /// (PatchPartInfo.h): rejects adopting a part that physically stores those columns, because
+    /// adoption keeps part content unchanged and would import another table's identities.
+    /// Content-based, not settings-based: settings are mutable, and a part without the persisted
+    /// files serves only name-derived virtuals. Self-REPLACE is exempt (it removes the originals).
+    void assertNoPersistedBlockIdentityInAdoptedParts(const DataPartsVector & src_parts, std::string_view command) const;
+
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     /// The decision to delay or throw is made according to settings 'parts_to_delay_insert' and 'parts_to_throw_insert'.
