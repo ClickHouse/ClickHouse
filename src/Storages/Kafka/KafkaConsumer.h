@@ -64,6 +64,10 @@ public:
 
     auto pollTimeout() const { return poll_timeout; }
 
+    /// Replaces the number of messages a single poll returns. `0` restores the configured
+    /// `kafka_poll_max_batch_size`.
+    void setPollBatchSizeOverride(size_t size) { poll_batch_size_override = size; }
+
     bool hasMorePolledMessages() const
     {
         return (stalled_status == NOT_STALLED) && (current != messages.end());
@@ -75,6 +79,10 @@ public:
     }
 
     bool isStalled() const { return stalled_status != NOT_STALLED; }
+
+    /// `kafka_commit_every_batch`: `consume` commits the previous poll before fetching the next,
+    /// so the earlier polls of a block are already committed while it is still being filled.
+    bool commitsBetweenPolls() const { return intermediate_commit; }
 
     void storeLastReadMessageOffset();
     void resetToLastCommitted(const char * msg);
@@ -134,6 +142,9 @@ private:
     ConsumerPtr consumer;
     LoggerPtr log;
     const size_t batch_size = 1;
+    /// Consumers are pooled and handed to whichever source needs one, so the size has to be
+    /// (re)installed on every acquisition.
+    size_t poll_batch_size_override = 0;
     const size_t poll_timeout = 0;
     const size_t skip_bytes = 0;
     size_t offsets_stored = 0;
