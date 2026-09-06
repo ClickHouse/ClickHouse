@@ -6,7 +6,9 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TrivialMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
+#include <Common/MemoryTracker.h>
 #include <Common/logger_useful.h>
 
 #include <limits>
@@ -31,6 +33,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat merge_selector_base;
     extern const MergeTreeSettingsUInt64 min_parts_to_merge_at_once;
     extern const MergeTreeSettingsBool apply_patches_on_merge;
+    extern const MergeTreeSettingsUInt64 merge_memory_estimate_per_source_part_column;
 }
 
 namespace
@@ -51,6 +54,53 @@ struct ChooseContext
     const time_t current_time;
     const bool aggressive;
 };
+
+/// A merge keeps one block from every source part alive at the same time, and every column of every one
+/// of those blocks costs at least a minimum allocation, even when the block holds a handful of rows. That
+/// fixed cost is proportional to `source parts * columns` and does not shrink with the amount of data:
+/// merging 100 parts of a two-thousand-column table needs a few hundred MiB before a single row is read
+/// (`system.metric_log`, which has over two thousand columns, needs around 700 MiB).
+///
+/// On a server with little memory such a merge fails with `MEMORY_LIMIT_EXCEEDED`, its source parts stay
+/// where they were, and the next selection round picks the same parts again - the table stops compacting
+/// while its part count keeps growing. Narrow the merge instead, so the fixed cost stays a small share of
+/// the memory limit. Ordinary tables, and even very wide tables on a large server, keep the configured
+/// `max_parts_to_merge_at_once`.
+/// Returns the memory-derived part of the cap alone, with 0 meaning "no cap" - for the selectors whose
+/// width `max_parts_to_merge_at_once` deliberately does not constrain.
+size_t getAffordablePartsToMergeAtOnce(const ChooseContext & ctx)
+{
+    const size_t bytes_per_source_column = ctx.merge_tree_settings[MergeTreeSetting::merge_memory_estimate_per_source_part_column];
+
+    const Int64 memory_limit = total_memory_tracker.getHardLimit();
+    if (bytes_per_source_column == 0 || memory_limit <= 0)
+        return 0;
+
+    /// The fixed cost of one merge may take at most this share of the memory limit. Merges are background
+    /// work that runs next to the queries and inserts the server is there for, so keep their share small.
+    static constexpr size_t inverse_share_of_the_limit = 16;
+
+    const size_t num_columns = std::max<size_t>(1, ctx.metadata_snapshot.getColumns().size());
+    /// Divide by the two factors one after another instead of dividing by their product: the estimate is
+    /// an unrestricted `UInt64` setting, so `num_columns * bytes_per_source_column` could wrap around and
+    /// turn an absurdly large estimate into a wide (or division-by-zero) merge instead of a narrow one.
+    /// A merge of fewer than two parts makes no progress, so never narrow below that.
+    return std::max<size_t>(
+        2, static_cast<size_t>(memory_limit) / inverse_share_of_the_limit / num_columns / bytes_per_source_column);
+}
+
+size_t getMaxPartsToMergeAtOnce(const ChooseContext & ctx)
+{
+    const size_t configured = ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once];
+    const size_t affordable = getAffordablePartsToMergeAtOnce(ctx);
+
+    /// A value of 0 means "no limit" on either side.
+    if (affordable == 0)
+        return configured;
+    if (configured == 0)
+        return affordable;
+    return std::min(configured, affordable);
+}
 
 MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type)
 {
@@ -77,7 +127,16 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     {
         /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space.
         std::vector<MergeConstraint> ttl_constraints(ctx.merge_constraints.size(), {std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()});
-        TTLPartDropMergeSelector drop_ttl_selector(ctx.current_time, ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once]);
+        /// A `TTLDrop` merge of a table with only an unconditional rows TTL builds no read pipeline at all
+        /// (see `MergeTask::ExecuteAndFinalizeHorizontalPart::prepare`): the source parts are fully expired
+        /// and nothing is read from them, so the per-(source part, column) block cost the memory estimate
+        /// models does not exist. Capping it there would only stretch TTL cleanup of wide tables into tiny
+        /// drop batches for no memory benefit. When any other TTL family is present the pipeline is built
+        /// as usual, and the memory-derived cap applies like it does to the other merges.
+        const size_t max_parts_to_drop_at_once = ctx.metadata_snapshot.hasOnlyRowsTTL()
+            ? ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once]
+            : getMaxPartsToMergeAtOnce(ctx);
+        TTLPartDropMergeSelector drop_ttl_selector(ctx.current_time, max_parts_to_drop_at_once);
 
         if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, ttl_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDrop);
@@ -86,7 +145,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     /// Delete rows - 2 priority
     if (!ctx.merge_constraints.empty() && !ctx.merge_tree_settings[MergeTreeSetting::ttl_only_drop_parts])
     {
-        TTLRowDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time);
+        TTLRowDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time, getAffordablePartsToMergeAtOnce(ctx));
 
         if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
@@ -95,7 +154,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     /// Recompression - 3 priority
     if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
     {
-        TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);
+        TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time, getAffordablePartsToMergeAtOnce(ctx));
 
         if (auto merge_ranges = recompress_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress);
@@ -109,7 +168,7 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
     SimpleMergeSelector::Settings simple_merge_settings;
 
     simple_merge_settings.window_size = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_window_size];
-    simple_merge_settings.max_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once];
+    simple_merge_settings.max_parts_to_merge_at_once = getMaxPartsToMergeAtOnce(ctx);
     simple_merge_settings.enable_heuristic_to_remove_small_parts_at_right = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_enable_heuristic_to_remove_small_parts_at_right];
     simple_merge_settings.base = static_cast<double>(ctx.merge_tree_settings[MergeTreeSetting::merge_selector_base]);
     simple_merge_settings.min_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::min_parts_to_merge_at_once];
@@ -154,8 +213,16 @@ MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
             selector = std::make_shared<SimpleMergeSelector>(fillSimpleStochasticSettings(ctx));
             break;
         case MergeSelectorAlgorithm::TRIVIAL:
-            selector = std::make_shared<TrivialMergeSelector>();
+        {
+            /// The trivial selector merges a fixed number of parts and ignores the configured
+            /// `max_parts_to_merge_at_once`, but the memory-derived cap must reach it too: otherwise a
+            /// small server would keep selecting the same too-wide merge of a very wide table forever.
+            TrivialMergeSelector::Settings trivial_merge_settings;
+            if (const size_t affordable = getAffordablePartsToMergeAtOnce(ctx))
+                trivial_merge_settings.num_parts_to_merge = std::min(trivial_merge_settings.num_parts_to_merge, affordable);
+            selector = std::make_shared<TrivialMergeSelector>(trivial_merge_settings);
             break;
+        }
         case MergeSelectorAlgorithm::MANUAL:
             selector = std::make_shared<ManualMergeSelector>(ctx.storage_id);
             break;
