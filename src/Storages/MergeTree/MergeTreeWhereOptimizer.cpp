@@ -841,6 +841,11 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
         if (functionIsGlobalInOperator(function_name))
             return true;
 
+        /// Some functions are expensive in ways the optimizer cannot see, e.g. an LLM call.
+        /// Disallow these functions from being moved to PREWHERE.
+        if (auto function_base = function_node.getFunctionBase(); function_base && function_base->isExpensive())
+            return true;
+
         size_t arguments_size = function_node.getArgumentsSize();
         for (size_t i = 0; i < arguments_size; ++i)
         {
