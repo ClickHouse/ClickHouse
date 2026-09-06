@@ -132,7 +132,14 @@ struct RestoreSettings
 
     /// If true, RESTORE will not fail when the backup contains users/roles with more permissions
     /// than the restoring user is allowed to grant. Instead, the restored grants will be limited
-    /// to what the restoring user can grant (similar to GRANT CURRENT GRANTS).
+    /// to what the restoring user can grant. This is analogous to the named form
+    /// GRANT CURRENT GRANTS(privilege, ...) ON ..., not to the copy-all form GRANT CURRENT GRANTS ON ...:
+    /// the backup already spells out which grants to create, and the restoring user's privileges only limit them,
+    /// whereas the copy-all form reproduces the grantor's stored grants as they are written.
+    /// The limit is the set of privileges the restoring user can actually grant, i.e. it includes
+    /// privileges held only through implicit expansion: a restoring user with CREATE TABLE WITH GRANT OPTION
+    /// can restore a CREATE VIEW grant, and one with SELECT WITH GRANT OPTION can restore a SHOW TABLES grant.
+    /// This matches what the restoring user could grant by hand, so such grants are not silently dropped.
     /// This is useful for cloud environments where the restoring user may not have all the permissions
     /// that were present in the original system.
     bool restore_access_entities_with_current_grants = false;

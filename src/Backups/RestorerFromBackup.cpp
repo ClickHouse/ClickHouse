@@ -399,8 +399,15 @@ AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const Str
 
     if (restore_settings.restore_access_entities_with_current_grants)
     {
-        /// Limit restored grants to what the current user is allowed to grant (same as GRANT CURRENT GRANTS).
-        auto current_user_grantable_rights = context->getAccess()->getAccessRights()->getGrantableRights();
+        /// Limit restored grants to what the current user is allowed to grant.
+        /// The grants stored in the backup name the privileges explicitly, so this is the analogue of the named form
+        /// `GRANT CURRENT GRANTS(CREATE VIEW ON db.*)`, not of the copy-all form `GRANT CURRENT GRANTS ON db.*`:
+        /// nothing here derives the shape of the restored grants from the grants of the restoring user, it only limits
+        /// a grant set that the backup already spells out. Therefore the limit is the set of privileges the restoring
+        /// user can actually grant, including the ones held only through implicit expansion (CREATE VIEW via
+        /// CREATE TABLE, SHOW TABLES via SELECT). Using the stored rights instead would silently drop grants that the
+        /// restoring user could have granted by hand.
+        auto current_user_grantable_rights = context->getAccess()->getAccessRightsWithImplicit()->getGrantableRights();
 
         for (auto & [id, entity] : entities.new_entities)
         {
