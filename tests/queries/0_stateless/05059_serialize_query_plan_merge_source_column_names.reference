@@ -1,0 +1,13 @@
+-- { echo }
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), mrg_all_05059) SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, enable_analyzer = 1;
+2000
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), mrg_all_05059) SETTINGS serialize_query_plan = 0, prefer_localhost_replica = 0, enable_analyzer = 1;
+2000
+SELECT sum(x) FROM remote('127.0.0.1', currentDatabase(), mrg_all_05059) SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, enable_analyzer = 1;
+999000
+SELECT sum(x) FROM remote('127.0.0.1', currentDatabase(), mrg_all_05059) SETTINGS serialize_query_plan = 0, prefer_localhost_replica = 0, enable_analyzer = 1;
+999000
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), mrg_one_05059) SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, enable_analyzer = 1;
+1000
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), mrg_one_05059) SETTINGS serialize_query_plan = 0, prefer_localhost_replica = 0, enable_analyzer = 1;
+1000

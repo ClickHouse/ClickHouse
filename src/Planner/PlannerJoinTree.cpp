@@ -2841,7 +2841,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
     /// Propagated to the outer planner so a distributed aggregation merge buckets by only the representative keys.
     std::unordered_map<String, String> shard_collapse_duplicate_keys;
 
-    if (till_stage == QueryProcessingStage::FetchColumns)
+    /// A storage asked for `FetchColumns` may report a higher stage (`StorageMerge` folds its children's
+    /// stages), so `ignore_rename_columns` is honoured regardless of `till_stage`: the caller that sets it
+    /// matches the produced header by source column name.
+    if (till_stage == QueryProcessingStage::FetchColumns || select_query_options.ignore_rename_columns)
     {
         ActionsDAG rename_actions_dag(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
         ActionsDAG::NodeRawConstPtrs updated_actions_dag_outputs;
