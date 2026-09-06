@@ -9,6 +9,8 @@
 #include <Core/Block_fwd.h>
 #include <Core/Defines.h>
 #include <Processors/Chunk.h>
+#include <Processors/Executors/Runtime/Engine/State/UpdateChannel.h>
+#include <Processors/Executors/Runtime/Engine/State/UpdateInboxEntry.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -23,7 +25,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-class Port
+class Port : public UpdateInboxEntry
 {
     friend void connect(OutputPort &, InputPort &, bool);
     friend void disconnect(OutputPort &, InputPort &);
@@ -286,11 +288,14 @@ class InputPort : public Port
 
 private:
     OutputPort * output_port = nullptr;
+    UpdateChannel<InputPort> update_channel;
 
     mutable bool is_finished = false;
 
 public:
     using Port::Port;
+
+    UpdateChannel<InputPort> & getUpdateChannel() { return update_channel; }
 
     Data ALWAYS_INLINE pullData(bool set_not_needed = false)
     {
@@ -410,9 +415,12 @@ class OutputPort : public Port
 
 private:
     InputPort * input_port = nullptr;
+    UpdateChannel<OutputPort> update_channel;
 
 public:
     using Port::Port;
+
+    UpdateChannel<OutputPort> & getUpdateChannel() { return update_channel; }
 
     void ALWAYS_INLINE push(Chunk chunk)
     {
