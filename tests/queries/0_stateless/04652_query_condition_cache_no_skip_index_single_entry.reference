@@ -1,0 +1,17 @@
+no skip index: one entry per part and predicate
+14
+1
+1	2
+with an effective skip index: the profiled key is kept
+14
+2
+1
+the distributed_index_analysis setting alone keeps the profiled key
+14
+2
+the collapsed entry is applied: same rows, fewer marks, one consultation
+14
+14
+1	2	0
+a different predicate is not served from the collapsed entry
+16
