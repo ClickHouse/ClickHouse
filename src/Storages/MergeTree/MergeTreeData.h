@@ -2317,6 +2317,19 @@ private:
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
 
+    /// Validates that no two skip indices resolve to the same base stream name: with
+    /// `escape_index_filenames = 0` an index named `a.pos` claims `skp_idx_a.pos`, the same base a text
+    /// index `a` derives for its positional substream. Each projection is its own namespace.
+    ///
+    /// @old_metadata / @old_settings, passed only by `checkAlterIsPossible`, grandfather an inherited
+    /// collision while the contested base keeps holding the same data files written by the same owners.
+    void checkSkipIndexFilenamesForCollision(
+        const StorageInMemoryMetadata & metadata,
+        const MergeTreeSettings & settings,
+        bool throw_on_error,
+        const StorageInMemoryMetadata * old_metadata = nullptr,
+        const MergeTreeSettings * old_settings = nullptr) const;
+
     StorageSnapshotPtr
     createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 
