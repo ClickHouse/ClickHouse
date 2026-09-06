@@ -1,0 +1,4 @@
+-- Hidden dependent view behind a Buffer, parallel_view_processing = 0: single stream
+1
+-- Hidden dependent view behind a Buffer, parallel_view_processing = 1: the separate-context write stays single-stream
+1

@@ -1,0 +1,6 @@
+-- No dependent views on the target: the fan-out stays available
+4
+-- Hidden dependent view, parallel_view_processing = 0: single stream
+1
+-- Hidden dependent view, parallel_view_processing = 1: the fan-out stays available
+4

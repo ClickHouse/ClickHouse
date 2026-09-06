@@ -111,6 +111,13 @@ public:
 
     String getName() const override { return "AliasSink"; }
 
+    /// The real pre-write checks (the `Too many parts` check) run inside the nested INSERT this sink
+    /// executes, one nested INSERT per branch of the outer query's `max_insert_threads` fan-out. Keep
+    /// the registry to thread it into the nested INSERT, so the sinks created there share the outer
+    /// query's gates and the check still runs once per query per destination table - a late branch
+    /// must not count a part committed by a sibling branch of the same query.
+    void setInsertStartGateRegistry(InsertStartGatesPtr gates) override { insert_start_gates = std::move(gates); }
+
     void onStart() override
     {
         StoragePtr target = storage.getTargetTable();
@@ -143,6 +150,7 @@ public:
             /* no_squash */ false,
             /* no_destination */ false,
             /* async_insert */ async_insert);
+        interpreter.setInsertStartGates(insert_start_gates);
 
         block_io = interpreter.execute();
         executor = std::make_unique<PushingPipelineExecutor>(block_io.pipeline);
@@ -197,6 +205,7 @@ private:
     StorageAlias & storage;
     Block non_materialized_header;
     bool async_insert;
+    InsertStartGatesPtr insert_start_gates;
     BlockIO block_io;
     std::unique_ptr<PushingPipelineExecutor> executor;
     /// Memoizes the deduplication data hashes across the sibling chunks of one source block, so a

@@ -4,6 +4,7 @@
 #include <IO/ReadBuffer.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/InsertStartGates.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -66,6 +67,11 @@ public:
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
 
+    /// Set for a nested INSERT that runs in the context of an outer INSERT (`AliasSink`), so the
+    /// sinks of the nested pipeline share the outer query's per-destination-table start gates
+    /// (the `Too many parts` check runs once per query per table). See InsertStartGates.h.
+    void setInsertStartGates(InsertStartGatesPtr gates) { insert_start_gates = std::move(gates); }
+
 private:
     static Block getSampleBlock(
         const Names & names,
@@ -85,6 +91,9 @@ private:
 
     size_t max_threads = 0;
     size_t max_insert_threads = 0;
+
+    /// Non-null only for a nested INSERT run by an `AliasSink`: the outer query's gate registry.
+    InsertStartGatesPtr insert_start_gates;
 
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
     QueryPipeline addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder);

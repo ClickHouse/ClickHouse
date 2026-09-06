@@ -7819,6 +7819,10 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             active_parts_over_threshold = parts_count_in_partition - active_parts_to_delay_insert + 1;
     }
 
+    /// The caller asked only for the throw checks (it applies the backpressure elsewhere).
+    if (!allow_delay)
+        return;
+
     /// no need for delay
     if (!allow_delay || (!active_parts_over_threshold && !outdated_parts_over_threshold && !dead_blobs_over_threshold))
         return;
