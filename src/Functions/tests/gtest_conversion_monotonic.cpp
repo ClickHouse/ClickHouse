@@ -50,6 +50,14 @@ TEST(ConversionMonotonic, toDateTime)
 
     /// The range of from_type exceeds the range of to_type
     ASSERT_EQ(ToDateTimeMonotonicity<DataTypeDateTime>::get(DataTypeUInt64(), {}, {}).is_strict, false);
+
+    /// A from_type that converts by a plain static_cast is not monotonic, and the answer must not depend
+    /// on LowCardinality wrapping: some callers pass the key column's raw type.
+    DataTypeLowCardinality low_cardinality_int32(std::make_shared<DataTypeInt32>());
+    DataTypeLowCardinality low_cardinality_int256(std::make_shared<DataTypeInt256>());
+    ASSERT_EQ(ToDateTimeMonotonicity<DataTypeDateTime>::get(DataTypeInt256(), {}, {}).is_monotonic, false);
+    ASSERT_EQ(ToDateTimeMonotonicity<DataTypeDateTime>::get(low_cardinality_int256, {}, {}).is_monotonic, false);
+    ASSERT_EQ(ToDateTimeMonotonicity<DataTypeDateTime>::get(low_cardinality_int32, {}, {}).is_monotonic, true);
 }
 
 TEST(ConversionMonotonic, toStringFixedString)

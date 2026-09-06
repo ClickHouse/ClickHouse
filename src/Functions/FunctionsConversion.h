@@ -4406,6 +4406,21 @@ struct ToDateTimeMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type, const Field &, const Field &)
     {
+        if constexpr (std::is_same_v<T, DataTypeDateTime>)
+        {
+            /// `ConvertImpl` narrows a source type it has no dedicated `DateTime` branch for with a plain
+            /// `static_cast<UInt32>`, which does not preserve order: an `Enum16` member of -1 becomes
+            /// 4294967295 while 0 stays 0. The types below either have such a branch or fit `UInt32` exactly.
+            const auto * source_type = &type;
+            if (const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(source_type))
+                source_type = low_cardinality_type->getDictionaryType().get();
+
+            auto which_source = WhichDataType(*source_type);
+            if (!which_source.isNativeNumber() && !which_source.isBFloat16() && !which_source.isDateOrDate32()
+                && !which_source.isDateTime() && !which_source.isDateTime64())
+                return {};
+        }
+
         if (type.isValueRepresentedByNumber())
         {
             auto which = WhichDataType(type);

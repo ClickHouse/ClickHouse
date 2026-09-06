@@ -1,0 +1,9 @@
+enum, set atom	1
+enum, set atom, no index	1
+enum, comparison	1
+enum, comparison, no index	1
+wide, set atom	1
+wide, set atom, no index	1
+wide, comparison	1
+wide, comparison, no index	1
+uint32, granules pruned	1
