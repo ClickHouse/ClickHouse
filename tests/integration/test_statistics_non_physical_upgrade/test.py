@@ -30,6 +30,7 @@ _ALTER_TABLES = [
     "t_clear",
     "t_rename_reuse",
     "t_rename_plain",
+    "t_rename_readd_noop",
     "t_drop_readd",
     "t_drop_then_rename",
     "t_materialize",
@@ -186,6 +187,21 @@ def test_alter_keeps_inherited_state_alterable(upgraded):
         "ALTER TABLE t_drop_then_rename DROP COLUMN d, RENAME COLUMN IF EXISTS d TO b"
     )
     _assert_grandfathered("t_drop_then_rename")
+
+    # An `ADD COLUMN IF NOT EXISTS` of the name a preceding rename created adds nothing, so the
+    # statistics it declares never enter the table and the renamed column keeps its inherited
+    # state. `IF NOT EXISTS` is decided against the definition before any command ran, so such an
+    # add is not reported as ignored either.
+    node.query(
+        "ALTER TABLE t_rename_readd_noop RENAME COLUMN b TO saved, "
+        "ADD COLUMN IF NOT EXISTS saved UInt64 ALIAS a + 2 STATISTICS(tdigest)"
+    )
+    create = node.query("SHOW CREATE TABLE t_rename_readd_noop")
+    assert "`saved` UInt64 ALIAS a + 1 STATISTICS(tdigest)" in create, create
+    assert "a + 2" not in create, create
+    assert (
+        node.query("SELECT a, saved, d FROM t_rename_readd_noop").strip() == "1\t2\t100"
+    )
 
 
 def test_alter_refuses_state_it_produces_itself(upgraded):

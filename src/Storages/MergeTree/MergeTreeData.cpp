@@ -57,6 +57,9 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ActionsDAG.h>
@@ -5505,35 +5508,57 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// turn a column non-physical and another give it statistics.
     /// A `Replicated` database re-executes the ALTER per replica here, so only the initial execution
     /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
+    /// Shared Catalog secondaries replay without a metadata transaction and are told apart by the
+    /// client info instead (the same marker `AlterCommands` and `StorageKeeperMap` use).
     {
         const auto txn = local_context->getZooKeeperMetadataTransaction();
         const bool is_ddl_replay = txn && !txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+        const bool is_shared_catalog_replay = local_context->getClientInfo().is_shared_catalog_internal
+            && !SharedDatabaseCatalog::isInitialQuery(local_context);
+#else
+        const bool is_shared_catalog_replay = false;
+#endif
 
-        if (!is_ddl_replay)
+        if (!is_ddl_replay && !is_shared_catalog_replay)
         {
-            /// Only effective commands count: an ignored one changes nothing (`ADD COLUMN IF NOT EXISTS`
-            /// for a column that already exists).
+            /// Only effective commands count. `command.ignore` covers a command that is a no-op against
+            /// the pre-ALTER snapshot (`ADD COLUMN IF NOT EXISTS` for a column that already exists), but
+            /// it is decided before any command ran, so the commands are replayed here against the set
+            /// of names present after each preceding one, the way `AlterCommand::apply` will see them:
+            /// an `ADD COLUMN IF NOT EXISTS` of a name a preceding rename created adds nothing, and a
+            /// rename or drop of a name a preceding drop or rename already removed moves nothing.
+            NameSet present;
+            for (const auto & column : old_columns)
+                present.insert(column.name);
+
             NameSet statistics_named_by_alter;
             NameSet dropped_by_alter;
-            NameSet renamed_away;
             std::unordered_map<String, String> renamed_from;
             for (const auto & command : commands)
             {
                 if (command.ignore)
                     continue;
+
+                if (command.type == AlterCommand::ADD_COLUMN)
+                {
+                    if (present.contains(command.column_name))
+                        continue;
+                    present.insert(command.column_name);
+                }
+
                 if (command.column_statistics_decl != nullptr)
                     statistics_named_by_alter.insert(command.column_name);
+
                 /// A drop only ends the stored column's identity while that column still holds the
-                /// name: once a rename has moved it away, a drop of the freed name cannot reach it.
-                /// `CLEAR COLUMN` shares this type but only erases data, leaving the column in place.
-                if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !renamed_away.contains(command.column_name))
+                /// name. `CLEAR COLUMN` shares this type but only erases data, leaving the column in place.
+                if (command.type == AlterCommand::DROP_COLUMN && !command.clear && present.erase(command.column_name))
                     dropped_by_alter.insert(command.column_name);
-                /// `command.ignore` is decided before any command ran, so a rename of an
-                /// already-dropped name is not marked ignored even though it moves nothing.
-                if (command.type == AlterCommand::RENAME_COLUMN && !dropped_by_alter.contains(command.column_name))
+
+                if (command.type == AlterCommand::RENAME_COLUMN && present.erase(command.column_name))
                 {
+                    present.insert(command.rename_to);
                     renamed_from[command.rename_to] = command.column_name;
-                    renamed_away.insert(command.column_name);
                 }
             }
 
