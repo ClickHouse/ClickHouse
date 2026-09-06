@@ -5,9 +5,16 @@ slug: /integrations/sqlflow
 description: 'Stream Kafka, WebSocket and webhook data into ClickHouse, transformed with DuckDB SQL, using sqlflow'
 title: 'sqlflow and ClickHouse'
 doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://turbolytics.io'
 ---
 
 import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
+import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge/>
 
 <a href="https://github.com/turbolytics/sql-flow" target="_blank">sqlflow</a> is an open-source (MIT) stream processing engine. It consumes a stream — Kafka, a WebSocket, or webhooks — runs DuckDB SQL over each micro-batch, and inserts the result into a ClickHouse table. A pipeline is a single YAML file, and sqlflow ships as one binary and one Docker image, so there is no cluster to run.
 
@@ -130,12 +137,25 @@ PRIMARY KEY (pickup_datetime, dropoff_datetime);
 
 ### 2. Publish the data to Kafka {#example-publish}
 
-The dataset is published as gzipped TSV. This converts one file (about a million rows) to newline-delimited JSON and publishes it to a topic named `nyc-taxi-trips`. The publisher is a Python script and needs the `confluent-kafka` package; install it first, then download the file.
+The dataset is published as gzipped TSV. This step converts one file (about a million rows) to newline-delimited JSON and publishes it to a topic named `nyc-taxi-trips`.
+
+Install the publisher's dependency and download the file:
 
 ```bash
 pip install confluent-kafka
 curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_0.gz
 ```
+
+Create the topic. A stock Apache Kafka broker creates it on first publish, but managed and production clusters commonly set `auto.create.topics.enable=false`, where an uncreated topic fails the example before any row reaches ClickHouse:
+
+```bash
+kafka-topics.sh --bootstrap-server localhost:9092 \
+  --create --topic nyc-taxi-trips --partitions 1 --replication-factor 1
+```
+
+Confluent's images name that command `kafka-topics`, without the `.sh`.
+
+Save the publisher as `publish.py`. Change `bootstrap.servers` if the broker is not on `localhost:9092`:
 
 ```python
 import gzip, json
@@ -181,6 +201,12 @@ with gzip.open("trips_0.gz", "rb") as f:
                 row[col] = value
         send("nyc-taxi-trips", json.dumps(row))
 producer.flush()
+```
+
+Run it. Publishing the million rows takes a couple of minutes:
+
+```bash
+python publish.py
 ```
 
 ### 3. Write the pipeline {#example-pipeline}
