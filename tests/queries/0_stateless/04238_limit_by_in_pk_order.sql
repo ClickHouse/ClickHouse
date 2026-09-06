@@ -215,3 +215,112 @@ INSERT INTO test_multi_and SELECT number % 1000, number % 97, number % 7, number
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b, c, z FROM test_multi_and WHERE a = 1 AND z > 0 AND b = 2 LIMIT 5 BY c SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitBy%Transform%';
 SELECT (SELECT count() FROM (SELECT a, b, c, z FROM test_multi_and WHERE a = 1 AND z > 0 AND b = 2 LIMIT 5 BY c SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a, b, c, z FROM test_multi_and WHERE a = 1 AND z > 0 AND b = 2 LIMIT 5 BY c SETTINGS optimize_limit_by_in_order = 1));
 DROP TABLE test_multi_and;
+
+-- An outer LIMIT above LIMIT BY bounds how many groups the read must produce, so each stream may stop
+-- after that many completed groups. Issue #113110.
+DROP TABLE IF EXISTS test_outer_limit;
+CREATE TABLE test_outer_limit (a UInt32, b UInt32, c UInt32, z UInt32) ENGINE = MergeTree ORDER BY (a, b, c);
+-- Eight parts, not one. With a single part `num_streams` collapses to 1, and one stream serves the
+-- outer LIMIT from the first granules whether or not a group bound was recorded, so the `read_rows`
+-- assertions below stop discriminating. Eight parts keep them meaningful at any stream count.
+SYSTEM STOP MERGES test_outer_limit;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(0, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(125000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(250000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(375000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(500000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(625000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(750000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(875000, 125000) SETTINGS max_insert_block_size = 1000000;
+
+-- Reverse read, LIMIT BY on the full key: the reported shape. Reads under a tenth of the table.
+SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c) LIMIT 10 SETTINGS log_comment = '04238_outer_limit_full';
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows < 100000 FROM system.query_log WHERE log_comment = '04238_outer_limit_full' AND current_database = currentDatabase() AND type = 'QueryFinish';
+
+-- LIMIT BY on a strict key prefix.
+SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a) LIMIT 10 SETTINGS log_comment = '04238_outer_limit_prefix';
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows < 100000 FROM system.query_log WHERE log_comment = '04238_outer_limit_prefix' AND current_database = currentDatabase() AND type = 'QueryFinish';
+
+-- Forward read.
+SELECT a, b, c, z FROM test_outer_limit ORDER BY a ASC, b ASC, c ASC LIMIT 1 BY (a, b, c) LIMIT 10 SETTINGS log_comment = '04238_outer_limit_asc';
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows < 500000 FROM system.query_log WHERE log_comment = '04238_outer_limit_asc' AND current_database = currentDatabase() AND type = 'QueryFinish';
+
+-- Not optimized: the LIMIT BY key is not a sort prefix, so groups are not contiguous and no group count
+-- bounds the read. The hash variant runs. `c` has only 7 distinct values, so 7 groups can never satisfy
+-- the outer LIMIT 10 and the whole table is read regardless of thread count. Do not raise the
+-- cardinality of this key: that is what keeps the assertion below sound.
+SELECT count() FROM (SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (c) LIMIT 10) SETTINGS log_comment = '04238_outer_limit_nonkey';
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows > 500000 FROM system.query_log WHERE log_comment = '04238_outer_limit_nonkey' AND current_database = currentDatabase() AND type = 'QueryFinish';
+
+-- Not optimized: with a LIMIT BY OFFSET a group can yield no output row at all, so the number of groups
+-- an outer LIMIT needs is unbounded. Results stay exact and the read is not bounded.
+SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 2 OFFSET 1 BY (a) LIMIT 10 SETTINGS log_comment = '04238_outer_limit_offset';
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows > 500000 FROM system.query_log WHERE log_comment = '04238_outer_limit_offset' AND current_database = currentDatabase() AND type = 'QueryFinish';
+
+-- Not optimized: no outer LIMIT, so nothing bounds the number of groups.
+SELECT count() FROM (SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c)) SETTINGS log_comment = '04238_outer_limit_absent';
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows > 500000 FROM system.query_log WHERE log_comment = '04238_outer_limit_absent' AND current_database = currentDatabase() AND type = 'QueryFinish';
+
+-- Not optimized: `exact_rows_before_limit` requires reading to the end to report an exact count, which an
+-- early stop would truncate.
+SELECT a, b, c, z FROM test_outer_limit ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c) LIMIT 10 SETTINGS exact_rows_before_limit = 1, log_comment = '04238_outer_limit_exact_rows';
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows > 500000 FROM system.query_log WHERE log_comment = '04238_outer_limit_exact_rows' AND current_database = currentDatabase() AND type = 'QueryFinish';
+DROP TABLE test_outer_limit;
+
+-- A group whose rows span a chunk boundary is still counted once, and one spanning several parts is
+-- counted per stream, so the final single-stream LIMIT BY still sees every row it needs.
+DROP TABLE IF EXISTS test_outer_limit_straddle;
+CREATE TABLE test_outer_limit_straddle (a UInt32, z UInt32) ENGINE = MergeTree ORDER BY (a, z);
+INSERT INTO test_outer_limit_straddle SELECT intDiv(number, 7), number FROM numbers_mt(70000);
+SELECT a, z FROM test_outer_limit_straddle ORDER BY a DESC, z DESC LIMIT 3 BY (a) LIMIT 9 SETTINGS max_block_size = 5;
+DROP TABLE test_outer_limit_straddle;
+
+DROP TABLE IF EXISTS test_outer_limit_parts;
+CREATE TABLE test_outer_limit_parts (a UInt32, z UInt32) ENGINE = MergeTree ORDER BY (a, z);
+SYSTEM STOP MERGES test_outer_limit_parts;
+INSERT INTO test_outer_limit_parts SELECT number % 5, number FROM numbers_mt(30000);
+INSERT INTO test_outer_limit_parts SELECT number % 5, number + 100000 FROM numbers_mt(30000);
+INSERT INTO test_outer_limit_parts SELECT number % 5, number + 200000 FROM numbers_mt(30000);
+SELECT a, z FROM test_outer_limit_parts ORDER BY a DESC, z DESC LIMIT 3 BY (a) LIMIT 9;
+DROP TABLE test_outer_limit_parts;
+
+-- A stateful function under the LIMIT BY sees a different set of rows if a stream stops early, so the
+-- group bound is not recorded when one is present anywhere in the subtree.
+DROP TABLE IF EXISTS test_outer_limit_stateful;
+CREATE TABLE test_outer_limit_stateful (a UInt32, b UInt32, c UInt32, z UInt32) ENGINE = MergeTree ORDER BY (a, b, c);
+SYSTEM STOP MERGES test_outer_limit_stateful;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(0, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(125000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(250000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(375000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(500000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(625000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(750000, 125000) SETTINGS max_insert_block_size = 1000000;
+INSERT INTO test_outer_limit_stateful SELECT number % 100000, number % 97, number % 7, number FROM numbers_mt(875000, 125000) SETTINGS max_insert_block_size = 1000000;
+SELECT a, b, c, z, neighbor(z, 1) AS nb FROM test_outer_limit_stateful ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c) LIMIT 10 SETTINGS allow_deprecated_error_prone_window_functions = 1, log_comment = '04238_outer_limit_stateful_expr';
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows > 500000 FROM system.query_log WHERE log_comment = '04238_outer_limit_stateful_expr' AND current_database = currentDatabase() AND type = 'QueryFinish';
+SELECT a, b, c, z FROM test_outer_limit_stateful PREWHERE neighbor(z, 1) >= 0 ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c) LIMIT 10 SETTINGS allow_deprecated_error_prone_window_functions = 1, log_comment = '04238_outer_limit_stateful_prewhere';
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows > 500000 FROM system.query_log WHERE log_comment = '04238_outer_limit_stateful_prewhere' AND current_database = currentDatabase() AND type = 'QueryFinish';
+SELECT a, b, c, z FROM (SELECT a, b, c, z, neighbor(z, 1) AS nb FROM test_outer_limit_stateful ORDER BY a DESC, b DESC, c DESC) WHERE nb >= 0 ORDER BY a DESC, b DESC, c DESC LIMIT 1 BY (a, b, c) LIMIT 10 SETTINGS allow_deprecated_error_prone_window_functions = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, log_comment = '04238_outer_limit_stateful_filter';
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows > 500000 FROM system.query_log WHERE log_comment = '04238_outer_limit_stateful_filter' AND current_database = currentDatabase() AND type = 'QueryFinish';
+DROP TABLE test_outer_limit_stateful;
+
+-- `WITH TOTALS` together with an `ORDER BY` leaves `always_read_till_end` unset, and totals are emitted
+-- only once the input finishes, so an early stop would report partial totals.
+DROP TABLE IF EXISTS test_outer_limit_totals;
+CREATE TABLE test_outer_limit_totals (a UInt32, z UInt32) ENGINE = MergeTree ORDER BY (a, z);
+-- Many more groups than the outer LIMIT, so a group bound of 10 would really stop the read: with only
+-- 10 groups the stop is unreachable and the case cannot detect a missing guard.
+INSERT INTO test_outer_limit_totals SELECT number % 5000, number FROM numbers_mt(200000);
+SELECT a, count() AS c FROM test_outer_limit_totals GROUP BY a WITH TOTALS ORDER BY a DESC LIMIT 1 BY (a) LIMIT 10;
+DROP TABLE test_outer_limit_totals;

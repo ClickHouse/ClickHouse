@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -8,6 +9,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
@@ -37,6 +39,43 @@ static bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
         tryUpdateLimitForSortingSteps(child, limit);
 
     return updated;
+}
+
+/// Whether any step in the subtree makes it unsafe to stop reading early below a `LIMIT BY`: a stateful
+/// expression sees a different set of rows and blocks, and a `TotalsHavingStep` emits totals only once its
+/// input finishes, so a closed input yields partial totals.
+static bool subtreeBlocksLimitByGroupHint(const QueryPlan::Node * node)
+{
+    if (typeid_cast<const TotalsHavingStep *>(node->step.get()))
+        return true;
+
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(node->step.get()))
+    {
+        if (expression_step->getExpression().hasStatefulFunctions())
+            return true;
+    }
+    else if (const auto * filter_step = typeid_cast<const FilterStep *>(node->step.get()))
+    {
+        if (filter_step->getExpression().hasStatefulFunctions())
+            return true;
+    }
+    else if (const auto * source_step = dynamic_cast<const SourceStepWithFilterBase *>(node->step.get()))
+    {
+        /// Reader-side filters (explicit `PREWHERE`, row-level security policy) evaluate their
+        /// expressions per block during the scan, so a stateful function there is subject to the same
+        /// truncation as one in a visible `ExpressionStep` / `FilterStep`.
+        const auto & prewhere_info = source_step->getPrewhereInfo();
+        const auto & row_level_filter = source_step->getRowLevelFilter();
+        if ((prewhere_info && prewhere_info->prewhere_actions.hasStatefulFunctions())
+            || (row_level_filter && row_level_filter->actions.hasStatefulFunctions()))
+            return true;
+    }
+
+    for (const auto * child : node->children)
+        if (subtreeBlocksLimitByGroupHint(child))
+            return true;
+
+    return false;
 }
 
 size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
@@ -120,6 +159,20 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
         return 0;
     }
 
+    /// `LIMIT BY` consumes an unbounded number of input rows per output row, so no row bound may sit below
+    /// it. Record how many rows the outer `LIMIT` needs, which `pushLimitByIntoSort` turns into a group
+    /// bound for the per-stream `LIMIT BY` under the sort.
+    if (auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
+    {
+        /// An early stop truncates `rows_before_limit_at_least`, which this input must report exactly.
+        if (limit->alwaysReadTillEnd())
+            return 0;
+        if (subtreeBlocksLimitByGroupHint(child_node))
+            return 0;
+        limit_by->updateOuterLimitHint(limit->getLimitForSorting());
+        return 0;
+    }
+
     if (typeid_cast<const SortingStep *>(child.get()))
         return 0;
 
@@ -199,7 +252,11 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     if (length == 0 || length > std::numeric_limits<UInt64>::max() - offset)
         return;
 
-    sort->updateLimitByHint(limit_by->getColumns(), length + offset);
+    /// A group holding at most `offset` rows yields no output row, so the number of groups an outer
+    /// `LIMIT` needs is unbounded once the `LIMIT BY` offset is non-zero. The group hint is then
+    /// disabled; the per-stream row pre-cap below stays as it is, being offset-correct by widening.
+    const UInt64 groups_hint = offset == 0 ? limit_by->getOuterLimitHint() : 0;
+    sort->updateLimitByHint(limit_by->getColumns(), length + offset, groups_hint);
 }
 
 }

@@ -102,7 +102,12 @@ private:
 class LimitBySortedStreamTransform final : public ISimpleTransform
 {
 public:
-    LimitBySortedStreamTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const SortDescription & sorted_columns_descr);
+    LimitBySortedStreamTransform(
+        SharedHeader header,
+        UInt64 group_length_,
+        UInt64 group_offset_,
+        const SortDescription & sorted_columns_descr,
+        UInt64 groups_limit_hint_ = 0);
 
     String getName() const override { return "LimitBySortedStreamTransform"; }
 
@@ -128,10 +133,16 @@ private:
     const UInt64 group_offset;
     const UInt64 group_limit_end;
 
+    /// Stop reading once this many groups have been fully emitted. 0 disables the stop.
+    const UInt64 groups_limit_hint;
+
     MutableColumns previous_chunk_last_grouping_key_columns;
 
     /// Number of rows already seen for the current logical group.
     UInt64 current_group_rows_seen = 0;
+
+    /// Groups whose last row has already been seen, so no later row can join them.
+    UInt64 completed_groups = 0;
 
     /// Slices from the current chunk that will be emitted to output.
     std::vector<ChunkRowRange> output_slices;

@@ -280,10 +280,11 @@ void SortingStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
-void SortingStep::updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_)
+void SortingStep::updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, UInt64 limit_by_groups_hint_)
 {
     limit_by_columns = std::move(limit_by_columns_);
     limit_by_group_length = limit_by_group_length_;
+    limit_by_groups_hint = limit_by_groups_hint_;
 }
 
 void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, const SortDescription & stream_sort_desc)
@@ -300,7 +301,8 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
-            return std::make_shared<LimitBySortedStreamTransform>(header, limit_by_group_length, 0, sort_prefix);
+            return std::make_shared<LimitBySortedStreamTransform>(
+                header, limit_by_group_length, 0, sort_prefix, limit_by_groups_hint);
         });
 }
 

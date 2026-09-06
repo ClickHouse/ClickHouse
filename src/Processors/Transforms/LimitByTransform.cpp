@@ -372,10 +372,15 @@ void LimitByTransform::transform(Chunk & chunk)
 
 
 LimitBySortedStreamTransform::LimitBySortedStreamTransform(
-    SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const SortDescription & sorted_columns_descr)
+    SharedHeader header,
+    UInt64 group_length_,
+    UInt64 group_offset_,
+    const SortDescription & sorted_columns_descr,
+    UInt64 groups_limit_hint_)
     : ISimpleTransform(header, header, true)
     , group_offset(group_offset_)
     , group_limit_end(computeGroupLimitEnd(group_length_, group_offset_))
+    , groups_limit_hint(groups_limit_hint_)
 {
     Names key_names;
     key_names.reserve(sorted_columns_descr.size());
@@ -453,7 +458,11 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     const bool have_previous_chunk_key
         = !previous_chunk_last_grouping_key_columns.empty() && !previous_chunk_last_grouping_key_columns.front()->empty();
     if (have_previous_chunk_key && !firstRowContinuesPreviousChunkGroup(normalized_grouping_key_columns))
+    {
         current_group_rows_seen = 0;
+        /// The previous chunk's trailing group ends here, so it is now complete.
+        ++completed_groups;
+    }
 
     /// Segment the sorted chunk into maximal runs of rows that share one grouping key. Each run is
     /// one group.
@@ -479,7 +488,11 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
 
         /// A group boundary inside the chunk resets the per-group counter before the next run.
         if (run_end != row_count)
+        {
             current_group_rows_seen = 0;
+            /// A different key follows this run, so the group it belongs to is complete.
+            ++completed_groups;
+        }
         current_run_start_row = run_end;
         ++run_count;
     }
@@ -497,6 +510,12 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
         stopReading();
         return;
     }
+
+    /// Every group after the first `groups_limit_hint` of this stream has a strictly worse key than
+    /// all of them, so it cannot reach an outer `LIMIT` of that many rows. The authoritative
+    /// single-stream `LimitByStep` above still applies the real `LIMIT BY`.
+    if (groups_limit_hint && completed_groups >= groups_limit_hint)
+        stopReading();
 
     /// No row from this chunk survived.
     if (output_slices.empty())
