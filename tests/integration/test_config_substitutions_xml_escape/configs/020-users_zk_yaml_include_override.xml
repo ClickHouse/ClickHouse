@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <profile_zk_yaml_include_override>
+            <include from_zk="/yaml_merge_override" replace="replace" />
+        </profile_zk_yaml_include_override>
+    </profiles>
+</clickhouse>
