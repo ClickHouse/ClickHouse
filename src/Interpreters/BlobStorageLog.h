@@ -41,6 +41,16 @@ struct BlobStorageLogElement
     size_t data_size{};
     size_t elapsed_microseconds{};
 
+    /// The HTTP connection this operation went over, and how worn it was. Zero for operations
+    /// that used no HTTP connection (local object storage) and for the tail events of a batch
+    /// that shared one request. See Common/HTTPConnectionInfo.h.
+    UInt64 connection_id = 0;
+    UInt16 connection_local_port = 0;
+    UInt64 connection_socket_inode = 0;
+    UInt32 connection_requests = 0;
+    UInt64 connection_age_microseconds = 0;
+    UInt64 connection_idle_microseconds = 0;
+
     Int32 error_code = 0; /// 0 if no error
     String error_message;
 

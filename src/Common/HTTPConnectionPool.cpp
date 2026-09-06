@@ -1,4 +1,5 @@
 #include <Common/HTTPConnectionPool.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <Common/HostResolvePool.h>
 
 #include <Common/ProfileEvents.h>
@@ -434,15 +435,68 @@ private:
             isExpired = true;
         }
 
+        /// Take over another session's socket, together with everything we know about that socket.
+        ///
+        /// `Poco::Net::HTTPClientSession::assign` moves the socket from one session object to
+        /// another, and the pool does this on both of its reuse paths: when a returning connection
+        /// is preserved for the pool, and when a borrowed one is swapped in on reconnect. The
+        /// fields below describe the socket, not the wrapper around it, so they have to travel with
+        /// it - otherwise every borrow of the same live keep-alive socket would mint a fresh
+        /// `connection_id` and restart `connection_requests` at zero, and grouping by the id would
+        /// stop following the connection it is supposed to identify.
+        void assignFrom(PooledConnection & other)
+        {
+            /// Take the copies first: `Poco::Net::HTTPClientSession::assign` ends by resetting the
+            /// source session, which runs the `reset` override below and clears the very fields we
+            /// are about to read. That is the right thing for the source - the socket is ours now,
+            /// and it must not keep claiming it - but reading it afterwards would hand us an
+            /// unidentified socket and mint a new id for a connection that did not change.
+            const UInt64 other_connection_id = other.connection_id;
+            const Poco::Timestamp other_established_at = other.established_at;
+            const int other_socket_fd = other.socket_fd;
+            const UInt64 other_socket_inode = other.socket_inode;
+            const UInt32 other_requests_on_socket = other.requests_on_socket;
+            const Poco::Timespan other_last_idle_time = other.last_idle_time;
+
+            Session::assign(other);
+
+            connection_id = other_connection_id;
+            established_at = other_established_at;
+            socket_fd = other_socket_fd;
+            socket_inode = other_socket_inode;
+            requests_on_socket = other_requests_on_socket;
+            last_idle_time = other_last_idle_time;
+        }
+
+        /// Called on every path that drops this session's socket. The fd number and the inode are
+        /// only a cache used to tell "still the same socket" from "a new one", and the OS recycles
+        /// both aggressively: a close followed by a connect routinely returns the very same pair.
+        /// Forgetting them here is what makes `notifySocketInode` mint a new `connection_id` -
+        /// and restart the age and the request count - for what is really a new TCP connection.
+        void forgetSocketIdentity()
+        {
+            socket_fd = -1;
+            socket_inode = 0;
+        }
+
+        /// Time this socket spent idle since its previous request. On a socket's first request
+        /// there is no previous request to be idle after, and Poco seeds that timestamp at
+        /// construction, so report zero rather than the connection setup time.
+        void sampleIdleTime()
+        {
+            last_idle_time = requests_on_socket ? idleTime() : Poco::Timespan(0);
+        }
+
         void reconnect(UInt64 * connect_time) override
         {
             Session::close();
+            forgetSocketIdentity();
 
             if (auto lock = pool.lock())
             {
                 auto timeouts = getTimeouts(*this);
-                auto new_connection = lock->getConnection(timeouts, connect_time);
-                Session::assign(*new_connection);
+                auto new_connection = lock->getPooledConnection(timeouts, connect_time);
+                assignFrom(*new_connection);
                 Session::setKeepAliveRequest(Session::getKeepAliveRequest() + 1);
             }
             else
@@ -451,7 +505,15 @@ private:
                 Session::reconnect(connect_time);
                 ProfileEvents::increment(metrics.created);
             }
-            notifySocketInode();
+            /// Poco can reconnect from inside sendRequest when the borrowed connection turns out
+            /// to be dead. Publish again - it re-identifies the socket first - so the log describes
+            /// the socket that actually carried the request, not the one that was discarded.
+            ///
+            /// Re-sample the idle time as well: the connection we just took from the pool may have
+            /// been sitting there far longer than the sample `assignFrom` copied along with it,
+            /// which belongs to that socket's previous request.
+            sampleIdleTime();
+            publishConnectionInfo();
         }
 
         String getTarget() const
@@ -503,7 +565,10 @@ private:
 
         std::ostream & sendRequest(Poco::Net::HTTPRequest & request, UInt64 * connect_time, UInt64 * first_byte_time) override
         {
-            auto idle = idleTime();
+            /// Sampled before Poco's sendRequest, which updates the session's last-request
+            /// timestamp.
+            sampleIdleTime();
+            publishConnectionInfo();
 
             // Set data hooks for IO scheduling
             if (ResourceLink link = CurrentThread::getReadResourceLink())
@@ -517,6 +582,7 @@ private:
 
             std::ostream & result = Session::sendRequest(request, connect_time, first_byte_time);
             chassert(result.exceptions() & std::ios::badbit);
+            ++requests_on_socket;
 
             request_stream = &result;
             request_stream_completed = false;
@@ -547,6 +613,7 @@ private:
             response_stream_completed = false;
 
             Session::reset();
+            forgetSocketIdentity();
         }
 
         ~PooledConnection() override
@@ -620,28 +687,80 @@ private:
             return std::make_shared<make_shared_enabler>(std::forward<Args>(args)...);
         }
 
-        /// Notify the connection group about the current socket inode.
-        /// Called after connect/reconnect so the async metrics thread can map sockets to netlink data.
+        /// Notify the connection group about the current socket inode, and give the socket an
+        /// identity the first time we see it.
+        ///
+        /// Deriving identity from the socket rather than from the connect paths is deliberate: Poco
+        /// reaches a connected socket by several routes - handed out by the pool, connected lazily
+        /// inside sendRequest, or copied in by assign() from another session - and hooking each one
+        /// separately means whichever route is forgotten silently reports connection id 0. The fstat
+        /// costs one syscall per request, against a network round trip.
         void notifySocketInode()
         {
+            int fd = -1;
+            UInt64 inode = 0;
             try
             {
-                auto fd = Session::socket().impl()->sockfd();
-                if (fd < 0)
-                    return;
-                struct stat st; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-                if (fstat(fd, &st) == 0)
-                    group->updateSocketInode(this, st.st_ino);
+                fd = Session::socket().impl()->sockfd();
+                if (fd >= 0)
+                {
+                    struct stat st; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                    if (fstat(fd, &st) == 0)
+                        inode = st.st_ino;
+                }
             }
             catch (...) // NOLINT(bugprone-empty-catch) Ok: socket may not be connected yet
             {
             }
+
+            if (inode == 0)
+                return;
+
+            if (fd != socket_fd || inode != socket_inode)
+            {
+                /// A socket we have not identified yet. Note the OS recycles both fds and inodes,
+                /// so the pair can repeat across connections - which is exactly why the id below
+                /// exists and why callers should group by it instead.
+                socket_fd = fd;
+                socket_inode = inode;
+                connection_id = nextHTTPConnectionId();
+                established_at.update();
+                requests_on_socket = 0;
+                last_idle_time = Poco::Timespan(0);
+            }
+
+            group->updateSocketInode(this, inode);
         }
 
         void doConnect(UInt64 * connect_time)
         {
+            forgetSocketIdentity();
             Session::reconnect(connect_time);
             notifySocketInode();
+        }
+
+        /// Record which connection is carrying the current request, for whoever logs it. Every
+        /// number here is scoped to the socket rather than to the session object wrapping it, so a
+        /// row can never claim a socket is new but has been idle for a minute.
+        void publishConnectionInfo()
+        {
+            notifySocketInode();
+
+            HTTPConnectionInfo info;
+            info.has_value = true;
+            info.id = connection_id;
+            info.socket_inode = socket_inode;
+            try
+            {
+                info.local_port = Session::socket().address().port();
+            }
+            catch (...) // NOLINT(bugprone-empty-catch) Ok: the socket may not be connected yet
+            {
+            }
+            info.requests_served = requests_on_socket;
+            info.age_microseconds = static_cast<UInt64>(std::max<Poco::Timestamp::TimeDiff>(0, Poco::Timestamp() - established_at));
+            info.idle_microseconds = static_cast<UInt64>(std::max<Poco::Timespan::TimeDiff>(0, last_idle_time.totalMicroseconds()));
+            setCurrentHTTPConnectionInfo(info);
         }
 
         /// Whether the underlying socket has actually established a connection to a remote peer.
@@ -681,6 +800,16 @@ private:
 
         bool request_stream_completed = true;
         bool response_stream_completed = true;
+
+        /// State of the current TCP connection, reset together whenever a socket we have not seen
+        /// before turns up, so the numbers reported always describe one and the same socket.
+        UInt64 connection_id = 0;
+        Poco::Timestamp established_at;
+        int socket_fd = -1;
+        UInt64 socket_inode = 0;
+        UInt32 requests_on_socket = 0;
+        /// How long the socket had been idle when the in-flight request was handed to it.
+        Poco::Timespan last_idle_time;
     };
 
     using Connection = PooledConnection;
@@ -721,6 +850,13 @@ public:
     }
 
     IHTTPConnectionPoolForEndpoint::ConnectionPtr getConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time) override
+    {
+        return getPooledConnection(timeouts, connect_time);
+    }
+
+    /// Same as `getConnection`, but keeps the concrete type: `PooledConnection::reconnect` needs it
+    /// in order to inherit the socket's identity from the connection it takes over.
+    ConnectionPtr getPooledConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
     {
         std::vector<ConnectionPtr> expired_connections;
 
@@ -1109,7 +1245,7 @@ private:
         try
         {
             auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
-            connection_to_store->assign(connection);
+            connection_to_store->assignFrom(connection);
             connection_to_store->notifySocketInode();
 
             {

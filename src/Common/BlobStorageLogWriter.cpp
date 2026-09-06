@@ -1,5 +1,7 @@
 #include <Common/BlobStorageLogWriter.h>
 
+#include <Common/HTTPConnectionInfo.h>
+
 #include <base/getThreadId.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -22,6 +24,12 @@ void BlobStorageLogWriter::addEvent(
     const String & error_message,
     BlobStorageLogElement::EvenTime time_now)
 {
+    /// Which connection carried the request we are about to log. Taken here, before anything can
+    /// return early, so that the slot is always emptied: it is filled by every blob storage request,
+    /// including the ones whose event is never logged, and a value left behind would be picked up
+    /// by whatever this thread logs next - attributing an unrelated socket to it.
+    const auto connection = takeCurrentHTTPConnectionInfo();
+
     if (!log)
     {
         LOG_TEST(getLogger("BlobStorageLogWriter"), "No log, skipping {}", remote_path);
@@ -51,6 +59,17 @@ void BlobStorageLogWriter::addEvent(
         element.local_path = local_path_.empty() ? local_path : local_path_;
         element.data_size = data_size;
         element.elapsed_microseconds = elapsed_microseconds;
+
+        if (connection.has_value)
+        {
+            element.connection_id = connection.id;
+            element.connection_local_port = connection.local_port;
+            element.connection_socket_inode = connection.socket_inode;
+            element.connection_requests = connection.requests_served;
+            element.connection_age_microseconds = connection.age_microseconds;
+            element.connection_idle_microseconds = connection.idle_microseconds;
+        }
+
         element.error_code = error_code;
         element.error_message = error_message;
 

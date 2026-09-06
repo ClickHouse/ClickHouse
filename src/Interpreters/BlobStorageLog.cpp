@@ -52,6 +52,13 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
         {"data_size", std::make_shared<DataTypeUInt64>(), "Size of the data involved in the upload event."},
         {"elapsed_microseconds", std::make_shared<DataTypeUInt64>(), "Elapsed time for the operation, in microseconds."},
 
+        {"connection_id", std::make_shared<DataTypeUInt64>(), "Identifier of the HTTP connection that carried the operation, unique within the server process. Group by this to follow one connection: the OS recycles ports and socket inodes as soon as a socket closes, so those cannot tell consecutive connections apart. 0 if the operation used no HTTP connection."},
+        {"connection_local_port", std::make_shared<DataTypeUInt16>(), "Local TCP port of that connection. Unique only among sockets open at the same moment; use it to join against a packet capture or a /proc/net/tcp row taken at the time."},
+        {"connection_socket_inode", std::make_shared<DataTypeUInt64>(), "Socket inode of that connection, as reported by fstat. Same caveat as the port: unique only while the socket is open."},
+        {"connection_requests", std::make_shared<DataTypeUInt32>(), "Number of requests the connection had already sent before this one. 0 means this was its first request."},
+        {"connection_age_microseconds", std::make_shared<DataTypeUInt64>(), "Time since the connection's TCP socket was established. Reset by every reconnect, so it measures the life of the socket rather than of the session object."},
+        {"connection_idle_microseconds", std::make_shared<DataTypeUInt64>(), "Time the connection sat idle in the pool before being handed out for this operation. 0 on a connection's first request."},
+
         {"error_code", std::make_shared<DataTypeInt32>(), "Error code of the operation. 0 if there was no error."},
         {"error", std::make_shared<DataTypeString>(), "Error message associated with the event, if any."},
     };
@@ -76,6 +83,12 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(local_path);
     columns[i++]->insert(data_size);
     columns[i++]->insert(elapsed_microseconds);
+    columns[i++]->insert(connection_id);
+    columns[i++]->insert(connection_local_port);
+    columns[i++]->insert(connection_socket_inode);
+    columns[i++]->insert(connection_requests);
+    columns[i++]->insert(connection_age_microseconds);
+    columns[i++]->insert(connection_idle_microseconds);
     columns[i++]->insert(error_code);
     columns[i++]->insert(error_message);
 }
