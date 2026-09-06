@@ -181,6 +181,138 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
+/// Hides lambda argument names in the scopes they belong to and restores them on destruction.
+struct HiddenExpressionArguments
+{
+    HiddenExpressionArguments() = default;
+    HiddenExpressionArguments(const HiddenExpressionArguments &) = delete;
+    HiddenExpressionArguments & operator=(const HiddenExpressionArguments &) = delete;
+
+    void hide(IdentifierResolveScope & scope, const std::string & argument_name)
+    {
+        /// A name already hidden by an enclosing alias resolution must be restored by that
+        /// resolution, not by this one.
+        if (scope.hidden_expression_arguments.insert(argument_name).second)
+            hidden_arguments.emplace_back(&scope, argument_name);
+    }
+
+    ~HiddenExpressionArguments()
+    {
+        for (const auto & [scope, argument_name] : hidden_arguments)
+            scope->hidden_expression_arguments.erase(argument_name);
+    }
+
+    std::vector<std::pair<IdentifierResolveScope *, std::string>> hidden_arguments;
+};
+
+/// Returns true if `name` binds to something other than a lambda argument in `scope` itself.
+bool canBindNameInScope(const std::string & name, IdentifierResolveScope & scope, bool allow_to_check_aliases)
+{
+    IdentifierLookup lookup{Identifier{name}, IdentifierLookupContext::EXPRESSION};
+
+    return (allow_to_check_aliases && IdentifierResolver::tryBindIdentifierToAliases(lookup, scope))
+        || IdentifierResolver::tryBindIdentifierToTableExpressions(lookup, {} /*table_expression_node_to_ignore*/, scope)
+        || IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(lookup, scope)
+        || IdentifierResolver::tryBindIdentifierToJoinUsingColumn(lookup, scope);
+}
+
+/** Returns true if the argument named `name` has to be hidden in the lambdas of `lambda_scopes_to_hide`
+  * while an expression bound to an alias is resolved starting from `referencing_scope`.
+  *
+  * The walk repeats the one of `tryResolveIdentifier`: every scope from the referencing one up to the
+  * root is asked for `name`, then the niladic-function fallback is tried, and the arguments of the
+  * lambdas that are about to be hidden are skipped. If nothing else provides the name, the argument
+  * is the only thing it can refer to, so it stays visible.
+  */
+bool hasToHideLambdaArgument(
+    const std::string & name,
+    IdentifierResolveScope & referencing_scope,
+    const std::unordered_set<IdentifierResolveScope *> & lambda_scopes_to_hide,
+    bool allow_to_resolve_niladic_functions)
+{
+    bool allow_to_check_aliases = true;
+    for (auto * current_scope = &referencing_scope; current_scope != nullptr; current_scope = current_scope->parent_scope)
+    {
+        /** An argument of a lambda that stays visible - the one owning the alias, or one above it. Hiding the
+          * inner argument would bind the aliased expression to this one, and the planner cannot tell the two
+          * apart, because both are named after `name`. Keep the inner argument visible instead.
+          *
+          * An argument that an enclosing alias resolution already hid is not visible either: the resolution
+          * walk skips it, so it cannot be what the aliased expression refers to.
+          */
+        if (current_scope->expression_argument_name_to_node.contains(name)
+            && !lambda_scopes_to_hide.contains(current_scope)
+            && !current_scope->hidden_expression_arguments.contains(name))
+            return false;
+
+        if (canBindNameInScope(name, *current_scope, allow_to_check_aliases))
+            return true;
+
+        /// `tryResolveIdentifierInParentScopes` does not look at aliases above a query boundary
+        /// when `enable_global_with_statement` is disabled, so a binding there must not count either.
+        if (current_scope->scope_node->getNodeType() == QueryTreeNodeType::QUERY
+            && !current_scope->context->getSettingsRef()[Setting::enable_global_with_statement])
+            allow_to_check_aliases = false;
+    }
+
+    /// When no scope provides the name, `tryResolveIdentifier` falls back to resolving a bare
+    /// identifier as a niladic function (`SELECT currentDatabase`), so it binds outside of the
+    /// lambdas as well.
+    if (allow_to_resolve_niladic_functions)
+    {
+        auto function_resolver = FunctionFactory::instance().tryGet(name, referencing_scope.context);
+        if (function_resolver && function_resolver->allowsOmittingParentheses())
+            return true;
+    }
+
+    return false;
+}
+
+/** An expression bound to an alias is written in the scope that owns the alias, so it cannot reference
+  * arguments of lambdas nested inside that scope. It is nevertheless resolved in the scope where the
+  * alias is referenced, which is how an alias of an outer query picks up the table expressions of the
+  * inner one. When the alias is referenced from a lambda body, that makes the lambda arguments visible
+  * to an expression written outside of the lambda, and an argument captures an identifier of it:
+  *
+  * SELECT number + 1 AS n, arrayMap(number -> number + n, [1, 2]) FROM numbers(2);
+  *
+  * Here `number` inside `n` must be the table column, not the argument of the lambda that uses `n`.
+  *
+  * Hide the arguments of every lambda between the referencing scope and the scope owning the alias,
+  * but only those that can be resolved outside of the lambdas anyway. An argument that shadows nothing
+  * stays visible, because naming the lambda argument after a name that the aliased expression uses is
+  * the only way to write a predicate outside of the lambda it belongs to:
+  *
+  * WITH t LIKE '%_1%' AS issue SELECT arrayFilter((t, t2) -> NOT issue, col_1, col_2) FROM test;
+  *
+  * The lambda that owns the alias, if there is one, keeps its own arguments: the aliased expression is
+  * written inside of it and does reference them.
+  */
+void hideLambdaArgumentsShadowingAliasExpression(
+    IdentifierResolveScope & referencing_scope,
+    IdentifierResolveScope & alias_scope,
+    HiddenExpressionArguments & hidden_arguments,
+    bool allow_to_resolve_niladic_functions)
+{
+    std::unordered_set<IdentifierResolveScope *> lambda_scopes;
+    for (auto * current_scope = &referencing_scope;
+         current_scope != nullptr && current_scope != &alias_scope;
+         current_scope = current_scope->parent_scope)
+    {
+        if (current_scope->scope_node->getNodeType() == QueryTreeNodeType::LAMBDA)
+            lambda_scopes.insert(current_scope);
+    }
+
+    for (auto * lambda_scope : lambda_scopes)
+    {
+        for (const auto & [argument_name, _] : lambda_scope->expression_argument_name_to_node)
+        {
+            if (hasToHideLambdaArgument(argument_name, referencing_scope, lambda_scopes, allow_to_resolve_niladic_functions))
+                hidden_arguments.hide(*lambda_scope, argument_name);
+        }
+    }
+}
+
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
@@ -1182,9 +1314,15 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         return {};
 
     auto * scope_to_resolve_alias_expression = &scope;
+    HiddenExpressionArguments hidden_lambda_arguments;
     if (identifier_resolve_context.scope_to_resolve_alias_expression)
     {
         scope_to_resolve_alias_expression = identifier_resolve_context.scope_to_resolve_alias_expression;
+        hideLambdaArgumentsShadowingAliasExpression(
+            *scope_to_resolve_alias_expression,
+            scope,
+            hidden_lambda_arguments,
+            identifier_resolve_context.allow_to_resolve_niladic_functions);
     }
 
     QueryTreeNodePtr alias_node = *it;
@@ -1232,6 +1370,26 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         auto lookup_result = tryResolveIdentifier(alias_identifier_lookup, *scope_to_resolve_alias_expression, identifier_resolve_context);
 
         scope_to_resolve_alias_expression->popExpressionNode();
+
+        /** The niladic-function fallback of `tryResolveIdentifier` is gated on the initial context, so that
+          * it stays the last resort of the whole scope walk instead of firing at every parent scope. Here the
+          * walk for the alias body is over, so the fallback applies: a bare identifier bound to an alias
+          * resolves the same way the identifier itself would (`WITH currentDatabase AS n SELECT n`), matching
+          * the resolution of identifiers inside `FUNCTION` alias bodies.
+          */
+        if (!lookup_result.resolved_identifier
+            && alias_identifier_lookup.isExpressionLookup()
+            && identifier_resolve_context.allow_to_resolve_niladic_functions)
+        {
+            auto function_resolver = FunctionFactory::instance().tryGet(identifier.getFullName(), scope_to_resolve_alias_expression->context);
+            if (function_resolver && function_resolver->allowsOmittingParentheses())
+            {
+                auto function_node = std::make_shared<FunctionNode>(identifier.getFullName());
+                function_node->resolveAsFunction(function_resolver->build({}));
+                lookup_result.resolved_identifier = std::move(function_node);
+                lookup_result.resolve_place = IdentifierResolvePlace::NILADIC_FUNCTION;
+            }
+        }
 
         if (!lookup_result.resolved_identifier)
         {
