@@ -4,6 +4,8 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <string>
+#include <vector>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
@@ -28,7 +30,7 @@ pgfault 2055373287
 pgmajfault 0
 inactive_anon 2156335104
 active_anon 0
-inactive_file 2841305088
+inactive_file 1841305088
 active_file 1653915648
 unevictable 256008192
 hierarchical_memory_limit 8589934592
@@ -108,7 +110,7 @@ thp_collapse_alloc 0
 
 const std::string EXPECTED[2]
     = {"{\"active_anon\": 0, \"active_file\": 1653915648, \"cache\": 4673703936, \"dirty\": 4730880, \"hierarchical_memory_limit\": "
-       "8589934592, \"hierarchical_memsw_limit\": 8589934592, \"inactive_anon\": 2156335104, \"inactive_file\": 2841305088, "
+       "8589934592, \"hierarchical_memsw_limit\": 8589934592, \"inactive_anon\": 2156335104, \"inactive_file\": 1841305088, "
        "\"mapped_file\": 344678400, \"pgfault\": 2055373287, \"pgmajfault\": 0, \"pgpgin\": 2038569918, \"pgpgout\": 2036883790, \"rss\": "
        "2232029184, \"rss_huge\": 0, \"shmem\": 0, \"swap\": 0, \"total_active_anon\": 0, \"total_active_file\": 1653915648, "
        "\"total_cache\": 4673703936, \"total_dirty\": 4730880, \"total_inactive_anon\": 2156335104, \"total_inactive_file\": 2841305088, "
@@ -165,6 +167,38 @@ TEST_P(CgroupsMemoryUsageObserverFixture, ReadMemoryUsageTest)
 }
 
 
+TEST_P(CgroupsMemoryUsageObserverFixture, ReadMemoryUsageAndInactiveFileTest)
+{
+    const auto version = GetParam();
+    auto reader = ICgroupsReader::createCgroupsReader(version, tmp_dir);
+    auto result = reader->readMemoryUsageAndInactiveFile();
+
+    /// The usage reported here must match readMemoryUsage exactly: both compute it with the same
+    /// `calculateUsage` helper, so a single source of truth is guaranteed and the two values can never diverge.
+    ASSERT_EQ(result.usage, reader->readMemoryUsage());
+
+    /// On an intact `memory.stat`, the best-effort combined read used by `AsynchronousMetrics`
+    /// returns exactly the strict result, with `inactive_file` present.
+    auto optional_result = reader->readMemoryUsageAndOptionalInactiveFile();
+    ASSERT_EQ(optional_result.usage, result.usage);
+    ASSERT_TRUE(optional_result.inactive_file.has_value());
+    ASSERT_EQ(*optional_result.inactive_file, result.inactive_file);
+
+    if (version == ICgroupsReader::CgroupsVersion::V1)
+    {
+        ASSERT_EQ(result.usage, 2232029184); /* rss */
+        /// The fixture deliberately has `inactive_file` (1841305088) != `total_inactive_file` (2841305088),
+        /// so this assertion proves the reader returns the hierarchical `total_*` value (matching cAdvisor).
+        ASSERT_EQ(result.inactive_file, 2841305088); /* total_inactive_file */
+    }
+    else
+    {
+        ASSERT_EQ(result.usage, 10506210680); /* anon + sock + kernel - slab_reclaimable */
+        ASSERT_EQ(result.inactive_file, 8693084160); /* inactive_file */
+    }
+}
+
+
 TEST_P(CgroupsMemoryUsageObserverFixture, DumpAllStatsTest)
 {
     const auto version = GetParam();
@@ -201,6 +235,57 @@ active_anon 5000000000
     ASSERT_EQ(reader->readMemoryUsage(), /* anon + sock */ 5000001000);
 
     fs::remove_all(tmp_dir);
+}
+
+/// A broken `inactive_file` / `total_inactive_file` line must not affect `readMemoryUsage`:
+/// that path is long-standing and is used by `MemoryWorker` and by the dynamic hard limit,
+/// so it only parses the keys the usage value is made of. Only the new
+/// `readMemoryUsageAndInactiveFile` (used by the `CGroupMemoryInactiveFile` metric) sees the failure.
+TEST(CgroupsBrokenInactiveFile, UsageIsUnaffected)
+{
+    struct Case
+    {
+        ICgroupsReader::CgroupsVersion version;
+        std::string dir;
+        std::string content;
+        uint64_t expected_usage;
+    };
+
+    /// The last line is truncated (the key is not followed by a value), as it would be for a short read.
+    const std::vector<Case> cases = {
+        {ICgroupsReader::CgroupsVersion::V1,
+         "./test_cgroups_v1_broken_inactive_file",
+         "rss 2232029184\ntotal_rss 2232029184\ntotal_inactive_file",
+         2232029184},
+        {ICgroupsReader::CgroupsVersion::V2,
+         "./test_cgroups_v2_broken_inactive_file",
+         "anon 5000000000\nsock 1000\nkernel 2000000000\nslab_reclaimable 1000000000\ninactive_file",
+         6000001000},
+    };
+
+    for (const auto & test_case : cases)
+    {
+        fs::create_directories(test_case.dir);
+        auto stat_file = WriteBufferFromFile(test_case.dir + "/memory.stat");
+        stat_file.write(test_case.content.data(), test_case.content.size());
+        stat_file.finalize();
+        stat_file.sync();
+
+        auto reader = ICgroupsReader::createCgroupsReader(test_case.version, test_case.dir);
+        ASSERT_EQ(reader->readMemoryUsage(), test_case.expected_usage);
+        ASSERT_ANY_THROW(reader->readMemoryUsageAndInactiveFile());
+        /// The usage path keeps working even after the other one has failed.
+        ASSERT_EQ(reader->readMemoryUsage(), test_case.expected_usage);
+
+        /// The best-effort combined read used by `AsynchronousMetrics` must not throw here:
+        /// it still reports the usage (so the pre-existing cgroup metrics keep updating) and
+        /// only leaves `inactive_file` empty (so only `CGroupMemoryInactiveFile` is skipped).
+        auto optional_result = reader->readMemoryUsageAndOptionalInactiveFile();
+        ASSERT_EQ(optional_result.usage, test_case.expected_usage);
+        ASSERT_FALSE(optional_result.inactive_file.has_value());
+
+        fs::remove_all(test_case.dir);
+    }
 }
 
 /// Decision matrix for the cgroup-aware dynamic hard-limit headroom computation
