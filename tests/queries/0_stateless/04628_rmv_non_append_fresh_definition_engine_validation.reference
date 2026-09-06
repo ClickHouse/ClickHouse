@@ -1,0 +1,12 @@
+create_rejected
+attach_rejected
+append_allowed
+atomic_allowed
+restore_rejected
+legacy_uuid_is_nil
+legacy_short_attach_ok
+legacy_refresh_refused
+legacy_restore_ok
+legacy_restore_as_ok
+legacy_restore_as_refresh_refused
+server_alive

@@ -1183,7 +1183,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
-void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database)
+void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties)
 {
     /// This is not strict validation, just catches common errors that would make the view not work.
     /// It's possible to circumvent these checks by ALTERing the view or target table after creation;
@@ -1216,18 +1216,6 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
     {
         all_output_columns = properties.columns.getInsertable();
         check_columns = true;
-    }
-
-    if (create.refresh_strategy && !create.refresh_strategy->append)
-    {
-        if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Refreshable materialized views (except with APPEND) only support Atomic and Replicated database engines, but database {} has engine {}", create.getDatabase(), database->getEngineName());
-
-        std::string message;
-        if (!supportsAtomicRename(&message))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
     }
 
     SharedHeader input_block;
@@ -2021,13 +2009,34 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
+    /// Non-APPEND refreshable MVs only work in Atomic/Replicated databases. Validate only definitions
+    /// the user supplies now: a stored definition (attach_short_syntax) and a Replicated-DDL replay
+    /// were already validated, and rejecting them would make existing metadata unloadable.
+    /// `has_uuid` is the backup's own metadata, not the UUID this restore generated, so it tells a
+    /// view that had a UUID (about to lose it here) from one that never had one.
+    const bool is_uuid_losing_restore = is_restore_from_backup && create.has_uuid;
+    const bool is_fresh_definition = mode <= LoadingStrictnessLevel::CREATE
+        || (mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax)
+        || is_uuid_losing_restore;
+    if (create.refresh_strategy && !create.refresh_strategy->append && is_fresh_definition)
+    {
+        if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Refreshable materialized views (except with APPEND) only support Atomic and Replicated database engines, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+
+        std::string message;
+        if (!supportsAtomicRename(&message))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
+    }
+
     /// Check type compatible for materialized dest table and select columns
     if (create.select && create.is_materialized_view && mode <= LoadingStrictnessLevel::CREATE)
     {
         // An MV with a flattened nested column in an inner table can never be filled
         if (create.is_materialized_view_with_inner_table())
             getContext()->setSetting("flatten_nested", false);
-        validateMaterializedViewColumnsAndEngine(create, properties, database);
+        validateMaterializedViewColumnsAndEngine(create, properties);
     }
 
     bool is_storage_replicated = false;
