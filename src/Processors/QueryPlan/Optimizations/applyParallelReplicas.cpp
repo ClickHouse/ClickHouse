@@ -1,6 +1,7 @@
 #include <memory>
 #include <Core/Joins.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
@@ -46,6 +47,9 @@ namespace QueryPlanOptimizations
 {
 
 constexpr bool debug_logging_enabled = false;
+
+/// Placeholder kept in a distributed fragment whose own output columns were all pruned away.
+constexpr std::string_view fragment_dummy_result_name = "__parallel_replicas_fragment_dummy";
 
 /// Plan-wide collector of the MergeTree reads to distribute (defined below; used by buildPlanFragment).
 /// A `MergeTree` read the pass would distribute, and the table it reads. A `Merge` read contributes one
@@ -461,6 +465,18 @@ private:
         /// it. Clone it structurally: `QueryPlan::addStep` can only replay a linear chain and would
         /// throw on a branching fragment (e.g. a view expanding to UNION ALL, or a JOIN).
         auto plan_fragment = std::make_unique<QueryPlan>(QueryPlan::cloneSubtree(split_node->children.front(), query_plan));
+
+        /// A fragment's result travels back from the replicas as a Block, whose row count is the size of
+        /// its first column, so a fragment with no output columns cannot report how many rows it produced.
+        /// Keep one materialized column so that count is always representable.
+        if (plan_fragment->getCurrentHeader()->columns() == 0)
+        {
+            auto adding_dummy = ActionsDAG::makeAddingConstantColumnActions(
+                String(fragment_dummy_result_name), std::make_shared<DataTypeUInt8>(), Field(0));
+            auto dummy_step = std::make_unique<ExpressionStep>(plan_fragment->getCurrentHeader(), std::move(adding_dummy));
+            dummy_step->setStepDescription("Materialize dummy column of a distributed plan fragment");
+            plan_fragment->addStep(std::move(dummy_step));
+        }
 
         ContextPtr context;
         /// Mark only the coordinated reads (collectReadsToDistribute follows a join's coordinated side) so they
