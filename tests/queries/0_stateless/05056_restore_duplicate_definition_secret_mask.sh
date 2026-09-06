@@ -85,3 +85,40 @@ DROP DATABASE ${v2};
 DROP DATABASE ${s1};
 DROP DATABASE ${s2};
 "
+
+# The same function checks table definitions the same way, and a table engine keeps its credential in
+# the same argument position a database locator does.
+ta=${CLICKHOUSE_DATABASE}.dup_a
+tb=${CLICKHOUSE_DATABASE}.dup_b
+tmerged=${CLICKHOUSE_DATABASE}.dup_merged
+table_outer="Disk('backups', '${CLICKHOUSE_DATABASE}_tabledef_outer')"
+
+# Two tables renamed into one target: the definition read second is compared against one that is
+# already recorded for that target and differs from it, which is what the check requires.
+${CLICKHOUSE_CLIENT} "${client_opts[@]}" -m -q "
+DROP TABLE IF EXISTS ${ta};
+DROP TABLE IF EXISTS ${tb};
+DROP TABLE IF EXISTS ${tmerged};
+CREATE TABLE ${ta} (id UInt64) ENGINE = S3('http://localhost:11111/test/${CLICKHOUSE_DATABASE}/dup_a.csv', 'test', 'testtest', 'CSV');
+CREATE TABLE ${tb} (id UInt64) ENGINE = S3('http://localhost:11111/test/${CLICKHOUSE_DATABASE}/dup_b.csv', 'test', 'testtest', 'CSV');
+BACKUP TABLE ${ta}, TABLE ${tb} TO ${table_outer} FORMAT Null;
+"
+
+err=$(${CLICKHOUSE_CLIENT} "${client_opts[@]}" -q \
+    "RESTORE TABLE ${ta} AS ${tmerged}, TABLE ${tb} AS ${tmerged} FROM ${table_outer}" 2>&1)
+
+echo '-- table-level duplicate definition reached (must be 1)'
+echo "$err" | grep -c -m1 'Extracted two different create queries for the same table'
+echo '-- CANNOT_RESTORE_TABLE (must be 1)'
+echo "$err" | grep -c -m1 CANNOT_RESTORE_TABLE
+echo '-- secret occurrences in the error (must be 0)'
+echo "$err" | grep -c testtest
+echo '-- [HIDDEN] present in the error (must be 1)'
+echo "$err" | grep -c -m1 '\[HIDDEN\]'
+echo '-- archived table definition still identifiable in the error (must be 1)'
+echo "$err" | grep -c -m1 dup_a
+
+${CLICKHOUSE_CLIENT} "${client_opts[@]}" -m -q "
+DROP TABLE ${ta};
+DROP TABLE ${tb};
+"

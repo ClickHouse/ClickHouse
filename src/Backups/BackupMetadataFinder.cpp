@@ -327,8 +327,8 @@ void BackupMetadataFinder::findTableInBackupImpl(
                 ErrorCodes::CANNOT_RESTORE_TABLE,
                 "Extracted two different create queries for the same {}: {} and {}",
                 tableNameWithTypeToString(table_name.database, table_name.table, false),
-                table_info.create_table_query_str,
-                create_table_query_str);
+                table_info.create_table_query->formatForErrorMessage(),
+                create_table_query->formatForErrorMessage());
         }
     }
 
