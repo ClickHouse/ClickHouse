@@ -1,0 +1,14 @@
+fixture v2	1
+fixture v3	1
+v2 tokyo	1970-01-01 09:00:00
+v2 utc	1970-01-01 00:00:00
+v2 tokyo again	1970-01-01 09:00:00
+v2 renderings per query	1
+v3 tokyo	1970-01-01 09:00:00
+v3 utc	1970-01-01 00:00:00
+explicit tokyo	1970-01-01 01:00:00
+explicit utc	1970-01-01 01:00:00
+v2 datetime64 tokyo	1970-01-01 09:00:00.000
+v2 datetime64 utc	1970-01-01 00:00:00.000
+v2 format tokyo	1970-01-01 09:00:00
+v2 format utc	1970-01-01 00:00:00

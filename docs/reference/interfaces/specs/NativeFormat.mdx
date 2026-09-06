@@ -1296,6 +1296,8 @@ The discriminator width is the smallest unsigned integer that can index `num_typ
 
 The state prefix (version + type list) is read at the start of every block with rows > 0; header and empty blocks emit nothing.
 
+A type-list entry that names `DateTime` or `DateTime64(s)` without a timezone parameter pins no timezone of its own (see [DateTime](#datetime)), so a decoder resolves it against its own context and must not reuse a runtime type it resolved for a different one.
+
 <Info>
 **Malformed counts**
 
