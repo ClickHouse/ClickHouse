@@ -1,10 +1,16 @@
+#include <base/arithmeticOverflow.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Analyzer/TableNode.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Functions/FunctionFactory.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -15,6 +21,7 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
+#include <Storages/IStorage.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
@@ -27,6 +34,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool external_table_strict_query;
+    extern const SettingsBool external_storage_push_down_limit;
+    extern const SettingsUInt64 parallel_replicas_count;
 }
 
 namespace ErrorCodes
@@ -590,6 +599,87 @@ bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList
     return removeUnknownSubexpressions(node, known_names);
 }
 
+/// The SELECT list is evaluated locally, and the LIMIT of the original query is applied to its
+/// result, not to the rows read from the external table. So the push-down is only correct when
+/// every expression in the SELECT list maps one source row to one result row. Aggregate functions
+/// (`SELECT sum(column) FROM t LIMIT 1` reads the whole table and returns a single row), window
+/// functions (they are computed over a whole partition of the source rows) and `arrayJoin` (it
+/// multiplies the rows) all break this, so they disable the push-down. Note that a subquery in the
+/// SELECT list is scalar and could not change the number of rows, but it is traversed as well -
+/// rejecting such a query merely loses the optimization.
+bool isRowPreservingExpression(const ASTPtr & node)
+{
+    checkStackSize();
+
+    if (const auto * function = node->as<ASTFunction>())
+    {
+        if (function->isWindowFunction() || function->window_definition || !function->window_name.empty())
+            return false;
+
+        /// The name is compared after resolving the aliases of ordinary functions: `arrayJoin` can
+        /// also be spelled as its case-insensitive alias `unnest`. `TreeRewriter` normalizes the
+        /// names before this code runs, but not when `normalize_function_names` is disabled and not
+        /// for a secondary query of a distributed one, so the alias has to be resolved here as well.
+        if (getFunctionCanonicalNameIfAny(function->name) == "arrayJoin")
+            return false;
+
+        if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->name))
+            return false;
+    }
+
+    for (const auto & child : node->children)
+    {
+        if (!isRowPreservingExpression(child))
+            return false;
+    }
+
+    return true;
+}
+
+/// Returns the value of a `UInt64` literal, if the expression is one.
+std::optional<UInt64> getUInt64LiteralValue(const ASTPtr & node)
+{
+    const auto * literal = node->as<ASTLiteral>();
+    if (literal && literal->value.getType() == Field::Types::UInt64)
+        return literal->value.safeGet<UInt64>();
+    return {};
+}
+
+/// An explicit allow-list of query shapes for which the LIMIT can be pushed down to the
+/// external database: a plain single-table SELECT, optionally with a WHERE clause (which
+/// must additionally be copied to the external query without changes - checked separately),
+/// an OFFSET (the rows it skips are read remotely as well, so the pushed-down limit is
+/// `offset + length`) and a SETTINGS clause (it does not change the data). Everything else
+/// (DISTINCT, GROUP BY, ORDER BY, HAVING, LIMIT BY, WITH TIES, JOIN, ARRAY JOIN, SAMPLE,
+/// FINAL, ...) is applied locally after reading from the external table, so limiting the
+/// result remotely could change it. Note that some of these modifiers are flags on
+/// `ASTSelectQuery` rather than children, and some are hidden inside the TABLES child, so
+/// children alone are not a complete proxy and the flags and the table expression are
+/// checked explicitly.
+bool isLimitPushDownSafe(const ASTSelectQuery & query)
+{
+    if (query.distinct || query.group_by_all || query.group_by_with_totals || query.order_by_all
+        || query.limit_with_ties || query.limit_by_all)
+        return false;
+
+    if (query.hasJoin() || query.final() || query.sampleSize() || query.arrayJoinExpressionList().first)
+        return false;
+
+    for (const auto & child : query.children)
+    {
+        if (child != query.select() && child != query.tables() && child != query.where()
+            && child != query.limitLength() && child != query.limitOffset() && child != query.settings())
+            return false;
+    }
+
+    /// The SELECT list may also change the number of rows or aggregate them, even when the query
+    /// has no other clauses at all.
+    if (query.select() && !isRowPreservingExpression(query.select()))
+        return false;
+
+    return true;
+}
+
 String transformQueryForExternalDatabaseImpl(
     ASTPtr clone_query,
     Names used_columns,
@@ -599,11 +689,24 @@ String transformQueryForExternalDatabaseImpl(
     const String & database,
     const String & table,
     ContextPtr context,
-    std::optional<size_t> limit)
+    std::optional<size_t> limit,
+    bool allow_limit_push_down)
 {
     bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
+    bool push_down_limit = allow_limit_push_down && context->getSettingsRef()[Setting::external_storage_push_down_limit];
+
+    if (!push_down_limit)
+        limit.reset();
 
     auto select = make_intrusive<ASTSelectQuery>();
+
+    const auto & original_select = clone_query->as<ASTSelectQuery &>();
+
+    /// The LIMIT can be pushed down only if everything that is logically applied before it
+    /// is reproduced in the external query without changes: the query shape must pass the
+    /// allow-list, and the WHERE clause (if any) must be copied unchanged (checked below).
+    bool limit_push_down_allowed = push_down_limit && isLimitPushDownSafe(original_select);
+    bool where_fully_copied = true;
 
     select->replaceDatabaseAndTable(database, table);
 
@@ -619,7 +722,17 @@ String transformQueryForExternalDatabaseImpl(
       * copy only compatible parts of it.
       */
 
-    ASTPtr original_where = clone_query->as<ASTSelectQuery &>().where();
+    ASTPtr original_where = original_select.where();
+
+    /// Since WHERE subexpressions are removed "in-place" (keeping pointers to externally-known subexpressions),
+    /// we can check if the original WHERE is fully copied by comparing the ASTs' dumps.
+    std::string dumped_original_where;
+    if (limit_push_down_allowed && original_where)
+    {
+        dumped_original_where = original_where->dumpTree();
+        where_fully_copied = false;
+    }
+
     bool where_has_known_columns = removeUnknownSubexpressionsFromWhere(original_where, available_columns);
 
     if (original_where && where_has_known_columns)
@@ -632,6 +745,8 @@ String transformQueryForExternalDatabaseImpl(
 
         if (isCompatible(original_where, literal_escaping_style, available_columns, RowValueContext::BooleanPredicate))
         {
+            if (limit_push_down_allowed && original_where->dumpTree() == dumped_original_where)
+                where_fully_copied = true;
             select->setExpression(ASTSelectQuery::Expression::WHERE, ASTPtr(original_where));
         }
         else if (strict)
@@ -685,6 +800,33 @@ String transformQueryForExternalDatabaseImpl(
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
     }
 
+    auto limit_len_expr = original_select.limitLength();
+    if (limit_push_down_allowed && where_fully_copied && limit_len_expr)
+    {
+        if (auto limit_len = getUInt64LiteralValue(limit_len_expr))
+        {
+            /// The OFFSET is applied locally, so the rows it skips have to be read from the external
+            /// table as well: the limit sent remotely is `offset + length`. An OFFSET that is not a
+            /// UInt64 literal (it is not known here) disables the push-down entirely.
+            bool limit_is_known = true;
+            UInt64 limit_with_offset = *limit_len;
+
+            if (auto limit_offset_expr = original_select.limitOffset())
+            {
+                auto limit_offset = getUInt64LiteralValue(limit_offset_expr);
+                limit_is_known = limit_offset && !common::addOverflow(limit_with_offset, *limit_offset, limit_with_offset);
+            }
+
+            if (limit_is_known)
+            {
+                if (limit.has_value())
+                    limit = std::min<size_t>(limit.value(), limit_with_offset);
+                else
+                    limit = limit_with_offset;
+            }
+        }
+    }
+
     if (limit)
         select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(*limit));
 
@@ -704,6 +846,46 @@ String transformQueryForExternalDatabaseImpl(
     return out.str();
 }
 
+/// The `LIMIT` of the query can be pushed down to the external database only if every filter that is
+/// logically applied before it is also sent to the external database. A filter that is applied locally,
+/// on top of the rows read from the external table, runs before the query's `LIMIT`, so truncating the
+/// remote result could discard rows that this filter would have kept, and the query would return fewer
+/// rows than it should. Not every such filter is a part of the query AST that is rewritten here:
+/// `additional_table_filters` and row policies are carried in `SelectQueryInfo` (or, with the analyzer,
+/// are added by the planner as a separate filter step) instead, so they are checked explicitly.
+bool hasLocalFilterAppliedBeforeLimit(const SelectQueryInfo & query_info, const ContextPtr & context)
+{
+    if (query_info.additional_filter_ast || !query_info.filter_asts.empty() || query_info.row_level_filter || query_info.prewhere_info)
+        return true;
+
+    /// The analyzer adds the custom-key parallel-replicas predicate as a planner filter step instead
+    /// of storing it in `SelectQueryInfo`. It is applied before `LIMIT`, so it cannot be combined
+    /// with a remote limit push-down.
+    if (context->canUseParallelReplicasCustomKey()
+        && context->getSettingsRef()[Setting::parallel_replicas_count] > 1)
+        return true;
+
+    /// With the analyzer, the row policy filter is resolved by the planner and is not reflected in `query_info`.
+    if (query_info.table_expression)
+    {
+        const auto * table_node = query_info.table_expression->as<TableNode>();
+        const auto & storage = table_node ? table_node->getStorage() : nullptr;
+        if (storage)
+        {
+            const auto storage_id = storage->getStorageID();
+            if (storage_id.hasDatabase())
+            {
+                auto row_policy_filter = context->getRowPolicyFilter(
+                    storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+                if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+                    return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 }
 
 String transformQueryForExternalDatabase(
@@ -715,8 +897,11 @@ String transformQueryForExternalDatabase(
     const String & database,
     const String & table,
     ContextPtr context,
-    std::optional<size_t> limit)
+    std::optional<size_t> limit,
+    bool allow_limit_push_down)
 {
+    allow_limit_push_down = allow_limit_push_down && !hasLocalFilterAppliedBeforeLimit(query_info, context);
+
     if (!query_info.syntax_analyzer_result)
     {
         if (!query_info.query_tree)
@@ -741,7 +926,8 @@ String transformQueryForExternalDatabase(
             database,
             table,
             context,
-            limit);
+            limit,
+            allow_limit_push_down);
     }
 
     auto clone_query = query_info.query->clone();
@@ -754,7 +940,8 @@ String transformQueryForExternalDatabase(
         database,
         table,
         context,
-        limit);
+        limit,
+        allow_limit_push_down);
 }
 
 void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo & query_info, const ContextPtr & context)

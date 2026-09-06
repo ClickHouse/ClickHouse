@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <optional>
+
 #include <Storages/MemorySettings.h>
 #include <Storages/TableNameOrQuery.h>
 #include <Storages/transformQueryForExternalDatabase.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/parseQuery.h>
@@ -124,12 +127,26 @@ private:
     }
 };
 
+/// A filter that is applied locally, on top of the rows read from the external table, and is not a part
+/// of the query AST - `additional_table_filters` is the user-facing way to get one. `SelectQueryInfo`
+/// is normally filled in by the interpreter / planner, so in the test it is filled in manually.
+static ASTPtr parseLocalFilter(const std::string & filter)
+{
+    if (filter.empty())
+        return nullptr;
+    ParserExpression parser;
+    return parseQuery(parser, filter, 1000, 1000, 1000000);
+}
+
 static void checkOld(
     const State & state,
     size_t table_num,
     const std::string & query,
     const std::string & expected,
-    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular)
+    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
+    const std::string & additional_filter = "",
+    std::optional<size_t> limit = {},
+    bool allow_limit_push_down = true)
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -138,11 +155,16 @@ static void checkOld(
     query_info.syntax_analyzer_result
         = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, state.getTables(table_num));
     query_info.query = ast;
+    if (auto additional_filter_ast = parseLocalFilter(additional_filter))
+    {
+        query_info.additional_filter_ast = additional_filter_ast;
+        query_info.filter_asts.push_back(additional_filter_ast);
+    }
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info,
         query_info.syntax_analyzer_result->requiredSourceColumns(),
         state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        literal_escaping_style, "test", "table", state.context);
+        literal_escaping_style, "test", "table", state.context, limit, allow_limit_push_down);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -173,7 +195,10 @@ static void checkNewAnalyzer(
     const Names & column_names,
     const std::string & query,
     const std::string & expected,
-    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular)
+    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
+    const std::string & additional_filter = "",
+    std::optional<size_t> limit = {},
+    bool allow_limit_push_down = true)
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -194,10 +219,11 @@ static void checkNewAnalyzer(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryNode expected");
 
     query_info.table_expression = static_pointer_cast<ITableExpressionNode>(findTableExpression(query_node->getJoinTreeNode(), "table"));
+    query_info.additional_filter_ast = parseLocalFilter(additional_filter);
 
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        literal_escaping_style, "test", "table", state.context);
+        literal_escaping_style, "test", "table", state.context, limit, allow_limit_push_down);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -209,15 +235,18 @@ static void check(
     const std::string & query,
     const std::string & expected,
     const std::string & expected_new = "",
-    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular)
+    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
+    const std::string & additional_filter = "",
+    std::optional<size_t> limit = {},
+    bool allow_limit_push_down = true)
 {
     {
         SCOPED_TRACE("Old analyzer");
-        checkOld(state, table_num, query, expected, literal_escaping_style);
+        checkOld(state, table_num, query, expected, literal_escaping_style, additional_filter, limit, allow_limit_push_down);
     }
     {
         SCOPED_TRACE("Analyzer");
-        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, literal_escaping_style);
+        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, literal_escaping_style, additional_filter, limit, allow_limit_push_down);
     }
 }
 
@@ -453,6 +482,185 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
     check(state, 1, {"is_value"},
         "SELECT is_value FROM table WHERE is_value = 1",
         R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = 1)");
+}
+
+TEST(TransformQueryForExternalDatabase, Limit)
+{
+    const State & state = State::instance();
+
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table" LIMIT 10)");
+
+    /// The OFFSET is applied locally, so the rows it skips still have to be read from the
+    /// external table: the pushed-down limit is `offset + length`.
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10 OFFSET 5",
+        R"(SELECT "column" FROM "test"."table" LIMIT 15)");
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 5, 10",
+        R"(SELECT "column" FROM "test"."table" LIMIT 15)");
+
+    /// An `OFFSET` without a `LIMIT` gives nothing to push down.
+    check(state, 1, {"column"},
+        "SELECT column FROM table OFFSET 5",
+        R"(SELECT "column" FROM "test"."table")");
+
+    /// `offset + length` must not overflow.
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 18446744073709551615 OFFSET 1",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10 BY column",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 2, {"column", "apply_id"},
+        "SELECT column FROM test.table "
+        "JOIN test.table2 AS table2 ON (test.table.apply_id = test.table2.num) "
+        "WHERE column > 2 AND apply_id = 1 AND table2.num = 1 AND table2.attr != '' LIMIT 10",
+        R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
+
+    check(state, 2, {"column", "apply_id"},
+        "SELECT column FROM test.table "
+        "JOIN test.table2 AS table2 ON (test.table.apply_id = test.table2.num) LIMIT 10",
+        R"(SELECT "column", "apply_id" FROM "test"."table")");
+
+    /// Modifiers that are applied locally and change which rows the query returns must
+    /// disable the push-down, including those that are not children of `ASTSelectQuery`
+    /// (e.g. DISTINCT is just a flag): limiting remotely could return wrong results.
+    check(state, 1, {"column"},
+        "SELECT DISTINCT column FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT column FROM table ORDER BY column LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT column FROM table ORDER BY column LIMIT 10 WITH TIES",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT column FROM table GROUP BY column LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT column FROM table GROUP BY ALL LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    /// The SELECT list is evaluated locally and the LIMIT is applied to its result, so expressions
+    /// that do not map one source row to one result row must disable the push-down as well.
+    check(state, 1, {"column"},
+        "SELECT sum(column) FROM table LIMIT 1",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT sum(column) + 1 FROM table LIMIT 1",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT sum(column) OVER () FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT arrayJoin(range(column)) FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    /// `unnest` is a case-insensitive alias of `arrayJoin`. `TreeRewriter` normally rewrites it to the
+    /// canonical name before this code runs, but not when `normalize_function_names` is disabled (and
+    /// not for a secondary query of a distributed one), so the alias must be resolved here as well.
+    check(state, 1, {"column"},
+        "SELECT unnest(range(column)) FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    state.context->setSetting("normalize_function_names", false);
+    check(state, 1, {"column"},
+        "SELECT unnest(range(column)) FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT UNNEST(range(column)) FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+    state.context->setSetting("normalize_function_names", true);
+
+    /// A plain projection expression does not change the number of rows, so it is still pushed down.
+    check(state, 1, {"column"},
+        "SELECT column + 1 FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table" LIMIT 10)");
+
+    /// When the WHERE clause is copied to the external query only partially,
+    /// the rest of it is applied locally, so the LIMIT must not be pushed down either.
+    /// (Range comparisons on UUID columns are not compatible with external databases.)
+    state.context->setSetting("external_table_strict_query", false);
+    check(state, 1, {"column", "uuid_col"},
+        "SELECT column FROM table WHERE column > 2 AND uuid_col > toUUID('12345678-1234-1234-1234-123456789012') LIMIT 10",
+        R"(SELECT "column", "uuid_col" FROM "test"."table" WHERE "column" > 2)");
+
+    /// The SETTINGS clause does not change the data, so it does not prevent the push-down.
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10 SETTINGS max_threads = 1",
+        R"(SELECT "column" FROM "test"."table" LIMIT 10)");
+
+    /// A filter that is applied locally on top of the rows read from the external table - here an
+    /// `additional_table_filters` entry - is not a part of the rewritten query, but it runs before the
+    /// LIMIT. Pushing the LIMIT down would truncate the remote result before that filter is applied and
+    /// could return fewer rows than the query should.
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")",
+        /*expected_new=*/"",
+        /*literal_escaping_style=*/LiteralEscapingStyle::Regular,
+        /*additional_filter=*/"column > 100");
+
+    /// The same, with a WHERE clause that is fully pushed down: the local filter alone still blocks it.
+    check(state, 1, {"column"},
+        "SELECT column FROM table WHERE column > 2 LIMIT 10",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" > 2)",
+        /*expected_new=*/"",
+        /*literal_escaping_style=*/LiteralEscapingStyle::Regular,
+        /*additional_filter=*/"column > 100");
+
+    /// With the analyzer, a custom-key parallel-replicas predicate is installed as a planner filter
+    /// instead of being retained in `SelectQueryInfo`. It is still local and runs before `LIMIT`.
+    state.context->setSetting("allow_experimental_parallel_reading_from_replicas", String("1"));
+    state.context->setSetting("max_parallel_replicas", String("2"));
+    state.context->setSetting("parallel_replicas_count", String("2"));
+    state.context->setSetting("parallel_replicas_mode", String("custom_key_sampling"));
+    state.context->setSetting("parallel_replicas_custom_key", String("column"));
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+    state.context->setSetting("allow_experimental_parallel_reading_from_replicas", String("0"));
+    state.context->setSetting("max_parallel_replicas", String("1"));
+    state.context->setSetting("parallel_replicas_count", String("1"));
+
+    /// `external_storage_push_down_limit = false` disables pushing the LIMIT down (previous behavior).
+    state.context->setSetting("external_storage_push_down_limit", String("0"));
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    /// An explicit limit supplied by `StoragePostgreSQL` must be disabled too.
+    check(state, 1, {"column"},
+        "SELECT column FROM table",
+        R"(SELECT "column" FROM "test"."table")",
+        /*expected_new=*/"",
+        /*literal_escaping_style=*/LiteralEscapingStyle::Regular,
+        /*additional_filter=*/"",
+        /*limit=*/10);
+    state.context->setSetting("external_storage_push_down_limit", String("1"));
+
+    /// Generic ODBC/JDBC bridges only report identifier quoting. Until they also report
+    /// LIMIT syntax support, they must retain the historical local LIMIT evaluation.
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")",
+        /*expected_new=*/"",
+        /*literal_escaping_style=*/LiteralEscapingStyle::Regular,
+        /*additional_filter=*/"",
+        /*limit=*/{},
+        /*allow_limit_push_down=*/false);
 }
 
 TEST(TransformQueryForExternalDatabase, UUIDColumn)

@@ -103,7 +103,11 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
         LiteralEscapingStyle::Regular,
         remote_database_name,
         remote_table_name,
-        local_context);
+        local_context,
+        {},
+        /// ODBC/JDBC bridges do not expose the remote LIMIT syntax, and some supported
+        /// databases (for example Oracle and SQL Server) do not accept LIMIT at all.
+        false);
     LOG_TRACE(log, "Query: {}", query);
 
     NamesAndTypesList cols;

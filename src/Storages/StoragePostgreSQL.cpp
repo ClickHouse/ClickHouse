@@ -1066,7 +1066,7 @@ SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_c
 
 Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
 
-All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
+All joins, aggregations, sorting, and `IN [ array ]` conditions are executed in ClickHouse after the query to PostgreSQL finishes. The `LIMIT` sampling constraint is pushed to PostgreSQL only when it is safe and [external_storage_push_down_limit](/reference/settings/session-settings/external-table#external_storage_push_down_limit) is enabled; otherwise, it is executed in ClickHouse.
 
 ## Passing a query instead of a table name {#passing-a-query}
 
