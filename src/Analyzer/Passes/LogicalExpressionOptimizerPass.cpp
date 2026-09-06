@@ -14,10 +14,13 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/convertFieldToType.h>
+
+#include <absl/container/inlined_vector.h>
 
 #include <algorithm>
 
@@ -394,6 +397,11 @@ struct ComparisonFilterInfo
     /// Set when folding changed `function` or the constant: the node must be rebuilt on emission,
     /// so that the tightened predicate reaches downstream analysis.
     bool modified = false;
+    /// Set when the filter went to `opaque_filters` because this analysis and execution do not order
+    /// its constant the same way. Such a filter must stay out of the pairwise comparison, and out of
+    /// the `notEquals` merge into `NOT IN`, which replaces the comparison with set membership: a
+    /// third notion of equality, which need not agree with the one the comparison applies.
+    bool order_inconsistent = false;
 };
 
 /// A `Bool` column constant may be stored as `Types::Bool` (strict conversion) or as an integer
@@ -415,7 +423,8 @@ struct ExpressionFilters
     /// Convertible notEquals filters, keyed by their canonicalized converted value.
     std::map<Field, ComparisonFilterInfo> not_equals_filters;
     /// Excluded from the analysis: non-lossless conversions (they also veto the fold-to-false
-    /// collapse), NaN constants, and everything when pruning is disabled.
+    /// collapse), NaN constants, a nullable comparison result, a constant this analysis and execution
+    /// do not order the same way, and everything when pruning is disabled.
     std::vector<ComparisonFilterInfo> opaque_filters;
 };
 
@@ -436,6 +445,74 @@ static ValueComparisonResult invertComparisonResult(ValueComparisonResult result
     default:
         return result;
     }
+}
+
+/// The pruning analysis orders constants with `FieldAccurateComparison`, which places `NaN` after every
+/// ordinary value. Reaching `IColumn::compareAt` is necessary for a comparison to follow that order, and
+/// not sufficient: a nested `NULL` is ordered the other way round, which the constant screen in
+/// `addComparisonFilter` handles. Two shapes do not reach it at all, decomposing the container into
+/// per-element applications of the comparison function, under which a comparison against a `NaN` is false
+/// and nothing is ordered: two top-level `Tuple`s, which `executeTuple` takes before the equal-types
+/// shortcut and therefore even for identical types, and two `Array`s with no least supertype, which reach
+/// `executeArrayLexicographic`. A `Map` has no such shape.
+static bool comparisonDecomposesContainer(const DataTypePtr & expr_type, const DataTypePtr & constant_type)
+{
+    auto left = removeLowCardinality(expr_type);
+    auto right = removeLowCardinality(constant_type);
+
+    /// `executeWithConstString` converts a constant string to the other side's type once and the comparison
+    /// is then executed at that type, so classify it as that type. Either operand can be the string.
+    if (isStringOrFixedString(right) && !isStringOrFixedString(left))
+        right = left;
+    else if (isStringOrFixedString(left) && !isStringOrFixedString(right))
+        left = right;
+
+    if (isTuple(left) && isTuple(right))
+        return true;
+    if (isArray(left) && isArray(right))
+        return !tryGetLeastSupertype(DataTypes{left, right});
+    return false;
+}
+
+/// `Field` orders a `Null` by its type tag, before every value, while `IColumn::compareAt` with a
+/// direction hint of 1 orders it after every value, at any depth. Iterative because `Field`s nest
+/// inside `Field`s and a recursive walk overflows the native stack for a deeply nested value.
+static bool fieldContainsNull(const Field & field)
+{
+    absl::InlinedVector<const Field *, 16> pending{&field};
+
+    while (!pending.empty())
+    {
+        const Field * current = pending.back();
+        pending.pop_back();
+
+        if (current->isNull())
+            return true;
+
+        switch (current->getType())
+        {
+            case Field::Types::Array:
+                for (const Field & element : current->safeGet<Array>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Tuple:
+                for (const Field & element : current->safeGet<Tuple>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Map:
+                for (const Field & element : current->safeGet<Map>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Object:
+                for (const auto & [_, element] : current->safeGet<Object>())
+                    pending.push_back(&element);
+                break;
+            default:
+                break;
+        }
+    }
+
+    return false;
 }
 
 /// Try to convert a constant to the expression's (column) type using strict (lossless) conversion.
@@ -927,6 +1004,24 @@ static AddComparisonFilterResult addComparisonFilter(
     /// yields NONE for them), so keep them aside as-is.
     if (!new_filter.converted_value || is_nan_field(*new_filter.converted_value))
     {
+        filters.opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
+    /// A constant carrying a `NULL` nested in a container is ordered differently by this analysis than
+    /// by execution, so its position relative to the other conditions is not usable.
+    if (fieldContainsNull(*new_filter.converted_value))
+    {
+        new_filter.order_inconsistent = true;
+        filters.opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
+
+    /// A comparison that is decomposed into per-element comparisons is neither a point nor a bound on the
+    /// order this analysis reasons in, so it must not be compared against the other conditions.
+    if (comparisonDecomposesContainer(raw_type, new_filter.constant_node->getResultType()))
+    {
+        new_filter.order_inconsistent = true;
         filters.opaque_filters.push_back(std::move(new_filter));
         return AddComparisonFilterResult::ADDED;
     }
@@ -2046,7 +2141,7 @@ private:
 
             for (auto & filter : filters.opaque_filters)
             {
-                if (filter.function == ComparisonFunction::NOT_EQUALS)
+                if (filter.function == ComparisonFunction::NOT_EQUALS && !filter.order_inconsistent)
                     not_equals_infos.push_back(&filter);
                 else
                     all_operands.emplace_back(filter.original_index, std::move(filter.original_node));
