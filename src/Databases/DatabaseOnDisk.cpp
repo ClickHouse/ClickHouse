@@ -953,7 +953,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     return create_table_query;
 }
 
-void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr)
+void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::modifySettingsMetadata");
     auto create_query = getCreateDatabaseQuery()->clone();
@@ -992,13 +992,18 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(TSA_SUPPRESS_WARNING_FOR_READ(database_name));   /// FIXME
     auto metadata_tmp_file_path = DatabaseCatalog::getMetadataTmpFilePath(TSA_SUPPRESS_WARNING_FOR_READ(database_name));
 
+    const bool fsync_metadata = query_context->getSettingsRef()[Setting::fsync_metadata];
     auto default_db_disk = getContext()->getDatabaseDisk();
     writeMetadataFile(
         default_db_disk,
         /*file_path=*/metadata_tmp_file_path,
         /*content=*/statement,
-        getContext()->getSettingsRef()[Setting::fsync_metadata]);
+        fsync_metadata);
 
+    /// The replace below changes one directory entry; tmp and final share that directory.
+    SyncGuardPtr metadata_dir_sync_guard;
+    if (fsync_metadata)
+        metadata_dir_sync_guard = default_db_disk->getDirectorySyncGuard(metadata_file_path.parent_path().string());
     default_db_disk->replaceFile(metadata_tmp_file_path, metadata_file_path);
 }
 

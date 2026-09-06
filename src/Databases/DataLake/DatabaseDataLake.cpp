@@ -1271,7 +1271,7 @@ void DatabaseDataLake::checkDatabase() const
     LOG_TEST(log, "Database '{}' is OK", getDatabaseName());
 }
 
-void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr /*query_context*/)
+void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)
 {
     const auto current_settings = database_settings.get();
 
@@ -1329,7 +1329,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     new_create_query->setDatabase(getDatabaseName());
     new_create_query->set(new_create_query->storage, new_engine_definition);
     new_create_query->uuid = db_uuid;
-    DatabaseCatalog::instance().updateMetadataFile(getDatabaseName(), new_create_query);
+    DatabaseCatalog::instance().updateMetadataFile(getDatabaseName(), new_create_query, query_context);
 
     /// Publish. Nothing below throws.
     if (local_catalog_snapshot)
