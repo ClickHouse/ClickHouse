@@ -1,0 +1,144 @@
+-- the aggregate wrappers are eliminated: same single group as the direct predicate
+rare token	8
+rare token	8
+rare token	8
+rare token	8
+rare token	8
+rare token	8
+-- skip-index pruning fires for HAVING min(s) = ... (aggregate pushed down to the text index): 8/128
+Granules: 8/128
+-- skip-index pruning fires for HAVING any(s = ...) too: 8/128
+Granules: 8/128
+-- aggregate is gone from the query tree (no min/max/any/anyLast function remains)
+0
+-- observable result type is preserved: min/max/any/anyLast of a LowCardinality key still
+-- report the aggregate result type (String), not the key type LowCardinality(String)
+String
+String
+String
+String
+-- and it is preserved when the same aggregate is also used in a HAVING predicate (mixed)
+String
+-- the result column schema of a subquery is unchanged (String), so type-sensitive sinks work
+String
+-- pruning is still preserved for that mixed projection+HAVING query: 8/128
+Granules: 8/128
+-- QUALIFY is a filter section like HAVING (own clause plumbing, runs after window processing):
+-- a type-insensitive predicate on the key must push down to the skip index just like HAVING
+rare token	8
+rare token	8
+rare token	8
+-- skip-index pruning fires for QUALIFY min(s) = ... just like HAVING: 8/128
+Granules: 8/128
+-- LowCardinality wrapper matrix: result must be identical with the optimization on and off
+0
+1
+2
+3
+4
+0
+1
+2
+0
+1
+2
+3
+4
+5
+6
+0
+1
+2
+3
+4
+-- IN subquery must not break: the pass re-resolves ordinary functions but must skip non-column/function arguments (a non-correlated subquery QueryNode has no result type)
+3
+1	2
+-- correlated subquery in WHERE over LowCardinality key (min/max/any/anyLast), opt on == off
+2
+2
+2
+2
+-- correlated subquery in SELECT position over LowCardinality key
+1	x
+2	m
+3	z
+-- anyHeavy / RESPECT NULLS variants of a LowCardinality key are eliminated too
+-- same single group as the direct predicate (aggregate wrapper eliminated)
+rare token	8
+rare token	8
+rare token	8
+-- observable result type preserved (String, not LowCardinality(String))
+String
+String
+String
+-- aggregate gone from the query tree for anyHeavy
+0
+-- skip-index pruning fires for HAVING anyHeavy(s) = ... just like min(s): 8/128
+Granules: 8/128
+-- wrapper matrix for the newly-covered aggregates: result identical with optimization on and off
+0
+1
+2
+3
+4
+0
+1
+2
+0
+1
+2
+3
+4
+5
+6
+-- eliminated aggregate inside a lambda body: LambdaNode result type stays the analyzed type
+10
+10
+10
+['0']
+['1']
+['2']
+-- observable lambda-body type preserved (Array(String), not Array(LowCardinality(String)))
+Array(String)
+Array(String)
+-- nested lambdas over the eliminated key
+10
+10
+10
+-- type-sensitive parent inside HAVING must observe the analyzed type, not the key type
+1
+1
+1
+1
+1
+1
+1
+1
+-- type-insensitive predicate in the same HAVING still pushes down (equality on the key)
+x	1
+-- UNION subquery argument of a parent function must not be dereferenced by the pass
+1
+2
+2
+2
+-- type-sensitive QUALIFY toTypeName(min(key)) must observe the analyzed type across the LC matrix
+1
+1
+1
+1
+1
+1
+1
+1
+-- type-insensitive and type-sensitive parents together in the same QUALIFY
+x	1
+-- correlated scalar subquery as the whole filter root must not underflow the filter depth
+-- correctness across the LC matrix (correlated subquery is the whole HAVING, later QUALIFY min(key))
+x
+x
+1
+-- the later QUALIFY min(s) keeps the bare LowCardinality key (0 = no output cast = pushdown-eligible)
+0
+-- correlated subquery is the whole HAVING, later ORDER BY min(s) still eliminated (observable type String)
+String
