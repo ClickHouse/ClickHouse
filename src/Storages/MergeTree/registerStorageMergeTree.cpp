@@ -688,8 +688,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from metadata stored on this
     /// server (short `ATTACH`, `ATTACH DATABASE`, restart) carry `attach_short_syntax`, and
     /// `SECONDARY_CREATE` (`Replicated`-database DDL replay, `RESTORE`) also replays validated ones.
-    const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
-        || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+    const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
 
     /// A `Replicated` database replays a full-definition `ATTACH` on every secondary with
     /// `LoadingStrictnessLevel::ATTACH` (`attach` outranks `secondary`), so only the initial execution
@@ -717,8 +716,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
-
-    const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
 
     if (is_extended_storage_def)
     {
