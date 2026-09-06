@@ -31,10 +31,14 @@ public:
 
     bool isLowerOrUpper() const { return is_lower_or_upper; }
 
+    bool isCastOfIndexColumn() const { return is_cast_of_index_column; }
+
 private:
     /// True only when the preprocessor is exactly lower/lowerUTF8/upper/upperUTF8 applied
     /// directly to the index column (no nested transformations).
     bool is_lower_or_upper = false;
+    /// True only when the preprocessor is exactly CAST(<index column>, '<type>').
+    bool is_cast_of_index_column = false;
     /// The name of the column on which the index is defined.
     String index_column_name;
     /// The type of the column on which the index is defined.

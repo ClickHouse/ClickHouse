@@ -21,6 +21,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
+#include <Storages/MergeTree/MergeTreeIndexTextSetHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Poco/Logger.h>
@@ -424,12 +425,16 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
         {
             if (tryPrepareSetBloomFilter(left_argument, right_argument, out))
             {
-                if (function_name == "notIn")
+                /// A set containing NULL is refused inside the helper, so every spelling below is
+                /// answered from the non-NULL elements alone.
+                if (function_name == "notIn" || function_name == "globalNotIn"
+                    || function_name == "notNullIn" || function_name == "globalNotNullIn")
                 {
                     out.function = RPNElement::FUNCTION_NOT_IN;
                     return true;
                 }
-                if (function_name == "in")
+                if (function_name == "in" || function_name == "globalIn"
+                    || function_name == "nullIn" || function_name == "globalNullIn")
                 {
                     out.function = RPNElement::FUNCTION_IN;
                     return true;
@@ -863,7 +868,9 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
 
     for (const auto & prepared_set_data_type : prepared_set->getDataTypes())
     {
-        auto prepared_set_data_type_id = prepared_set_data_type->getTypeId();
+        /// At `transform_null_in = 1` a `Nullable` key keeps the wrapper on its set elements even when
+        /// no element is NULL. NULL values are refused per row below.
+        auto prepared_set_data_type_id = removeNullable(prepared_set_data_type)->getTypeId();
         if (prepared_set_data_type_id != TypeIndex::String && prepared_set_data_type_id != TypeIndex::FixedString)
             return false;
     }
@@ -880,10 +887,27 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         key_position.push_back(elem.key_index);
 
         size_t tuple_idx = elem.tuple_index;
+        /// `tuple_index` counts left-hand arguments while `columns` are the set elements.
+        if (tuple_idx >= columns.size())
+            return false;
+
+        /// The element bytes are tokenized as they arrive, so an element spelling the stored value
+        /// in another representation requires tokens no granule holds.
+        if (const auto & set_types = prepared_set->getDataTypes(); tuple_idx < set_types.size())
+        {
+            if (!textIndexSetElementIsComparable(set_types[tuple_idx], index_data_types[elem.key_index], *tokenizer))
+                return false;
+        }
+
         const auto & column = columns[tuple_idx];
+        const bool column_is_nullable = column->isNullable();
 
         for (size_t row = 0; row < prepared_set_total_row_count; ++row)
         {
+            /// A NULL element matches the column's NULL rows, which a bloom filter cannot express.
+            if (column_is_nullable && column->isNullAt(row))
+                return false;
+
             bloom_filters.back().emplace_back(params);
             auto ref = column->getDataAt(row);
             forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), bloom_filters.back().back());

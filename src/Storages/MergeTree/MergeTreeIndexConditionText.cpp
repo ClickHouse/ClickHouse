@@ -24,14 +24,18 @@
 #include <Interpreters/TokenizerFactory.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
+#include <Storages/MergeTree/MergeTreeIndexTextSetHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <absl/container/inlined_vector.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -409,6 +413,20 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
 namespace
 {
 
+/// Whether `bytes` is what a map element of a carrier storing `type` reads when the key is absent.
+/// `mapValues` gives the values as an array, so the default belongs to its element type. A
+/// `Nullable` value type defaults to NULL, which no element reaching here spells, and holds no bytes
+/// to compare.
+bool isDefaultMapValue(const DataTypePtr & type, std::string_view bytes)
+{
+    const auto * array = typeid_cast<const DataTypeArray *>(type.get());
+    const auto & value_type = array ? array->getNestedType() : type;
+    auto default_column = value_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+    if (default_column->isNullAt(0))
+        return false;
+    return default_column->getDataAt(0) == bytes;
+}
+
 /// Returns whether a text search query may match some row in current_range,
 /// given the per-granule analysis state of the query (query_builder).
 ///
@@ -732,7 +750,9 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
-        if ((function_name == "in" || function_name == "globalIn")
+        /// `nullIn`/`globalNullIn` are `in`/`globalIn` under `transform_null_in = 1`. A set containing
+        /// NULL is refused inside the helper.
+        if ((function_name == "in" || function_name == "globalIn" || function_name == "nullIn" || function_name == "globalNullIn")
             && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
         {
             out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
@@ -1803,12 +1823,50 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     RPNElement & out) const
 {
     std::optional<size_t> set_key_position;
+    /// Type of the values the matched carrier stores.
+    DataTypePtr indexed_type;
+    /// A map element reads the value type's default when the key is absent, and the index holds only
+    /// stored values.
+    bool indexed_map_element = false;
 
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
-        return hasIndexForColumn(node.getColumnName())
-            || hasIndexForMapElementValue(node)
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
+        auto column_name = node.getColumnName();
+
+        if (header.has(column_name))
+        {
+            indexed_type = header.getByName(column_name).type;
+            return true;
+        }
+
+        /// A text index is defined on a single expression, so its header holds exactly the column
+        /// that stores the indexed values, whatever name the expression is matched under.
+        if (hasIndexForColumn(column_name))
+        {
+            indexed_type = header.getByPosition(0).type;
+            return true;
+        }
+
+        /// A map-element carrier is indexed through `mapValues(map)` and a JSON subcolumn through
+        /// `JSONAllValues(json)`, so the stored type is that header column's, not the node's.
+        if (hasIndexForMapElementValue(node))
+        {
+            auto map_values_name = fmt::format("mapValues({})", node.isFunction()
+                ? node.toFunctionNode().getArgumentAt(0).getColumnName()
+                : tryParseMapSubcolumnName(node.getColumnName())->first);
+            if (header.has(map_values_name))
+                indexed_type = header.getByName(map_values_name).type;
+            indexed_map_element = true;
+            return true;
+        }
+
+        if (auto json_info = tryMatchNodeToJSONIndex(node, header, "JSONAllValues"))
+        {
+            indexed_type = header.getByPosition(json_info->header_position).type;
+            return true;
+        }
+
+        return false;
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
@@ -1848,21 +1906,54 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         return false;
 
     Columns columns = prepared_set->getSetElements();
+    DataTypes types = prepared_set->getDataTypes();
     /// Set columns with tuple may be unpacked. Unpack them here to get the correct column index.
     if (columns.size() == 1 && isTuple(columns.front()->getDataType()))
+    {
         columns = typeid_cast<const ColumnTuple &>(*columns.front()).getColumnsCopy();
+        /// The types must be unpacked alongside them to stay addressable by the same position.
+        if (types.size() == 1)
+        {
+            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(types.front()).get()))
+                types = tuple_type->getElements();
+        }
+    }
 
     if (*set_key_position >= columns.size())
         return false;
 
     const auto & set_column = *columns[*set_key_position];
-    if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
+
+    /// At `transform_null_in = 1` a `Nullable` key keeps the wrapper on its set elements even when no
+    /// element is NULL, so look through it and decide on the values in the loop below.
+    const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(&set_column);
+    const auto & set_column_values = set_column_nullable ? set_column_nullable->getNestedColumn() : set_column;
+
+    if (!WhichDataType(set_column_values.getDataType()).isStringOrFixedString())
         return false;
+
+    /// The element bytes are tokenized as they arrive, so an element spelling the stored value in
+    /// another representation requires tokens no granule holds.
+    if (!indexed_type || *set_key_position >= types.size()
+        || !textIndexSetElementIsComparable(
+               types[*set_key_position], indexed_type, *tokenizer, has_preprocessor,
+               has_preprocessor && preprocessor->isLowerOrUpper(),
+               has_preprocessor && preprocessor->isCastOfIndexColumn()))
+        return false;
+
+    const bool set_column_is_nullable = set_column.isNullable();
 
     size_t total_row_count = prepared_set->getTotalRowCount();
 
     for (size_t row = 0; row < total_row_count; ++row)
     {
+        /// A NULL element matches the column's NULL rows, which token search cannot express.
+        if (set_column_is_nullable && set_column.isNullAt(row))
+        {
+            out.text_search_queries.clear();
+            return false;
+        }
+
         auto ref = set_column.getDataAt(row);
 
         /// Reject the index usage when there is an empty string in the set.
@@ -1874,10 +1965,29 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             return false;
         }
 
+        /// A row whose map lacks the key reads the value type's default, which the index does not
+        /// store, so such an element must keep every granule.
+        if (indexed_map_element && indexed_type && isDefaultMapValue(indexed_type, ref))
+        {
+            out.text_search_queries.clear();
+            return false;
+        }
+
         /// Apply preprocessor + tokenizer + postprocessor so set elements use the same
         /// tokens that were stored in the index. Skipping the postprocessor here would
         /// produce false negatives for postprocessors like lower(), stem(), etc.
-        VectorWithMemoryTracking<String> tokens = stringToTokens(Field(String(ref)));
+        VectorWithMemoryTracking<String> tokens;
+        try
+        {
+            tokens = stringToTokens(Field(String(ref)));
+        }
+        catch (const Exception &)
+        {
+            /// An element the preprocessor cannot represent has no tokens to look up, so the
+            /// index cannot answer for it and the original predicate has to stand.
+            out.text_search_queries.clear();
+            return false;
+        }
 
         /// An element that tokenizes to nothing cannot be proven present by the index.
         /// Bail out to keep the original predicate.
