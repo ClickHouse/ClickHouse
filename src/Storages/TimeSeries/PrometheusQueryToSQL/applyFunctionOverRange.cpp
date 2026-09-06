@@ -9,6 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/dropStaleMarkers.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -278,12 +279,17 @@ SQLQueryPiece applyFunctionOverRange(
             has_group = true;
 
             /// (timeSeriesFromGrid(<start_time>, <end_time>, <step>, values) AS time_series).1
+            ///
+            /// A grid built for an instant selector keeps Prometheus stale markers, and `timeSeriesFromGrid`
+            /// only skips NULL entries - so without dropping the markers first a stale step would be turned
+            /// into a real `NaN` sample and fed to the aggregate function. A stale step means "absent", so
+            /// for example `last_over_time(m[40s:10s])` must return the last non-stale sample, not `NaN`.
             ASTPtr ts = makeASTFunction(
                 "timeSeriesFromGrid",
                 timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
                 timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
                 timeSeriesDurationToAST(argument.step, context.timestamp_data_type),
-                make_intrusive<ASTIdentifier>(ColumnNames::Values));
+                dropStaleMarkers(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
             ts->setAlias(ColumnNames::TimeSeries);
             timestamps = makeASTFunction("tupleElement", std::move(ts), make_intrusive<ASTLiteral>(1));
 

@@ -12,6 +12,8 @@ test suite (https://github.com/prometheus/compliance/blob/main/promql/promql-tes
   demo_batch_last_success_timestamp_seconds  gauge  (instance, job)
   demo_api_request_duration_seconds_bucket   counter (instance, job, method, le)
   demo_intermittent_metric         gauge     (instance, job)
+  demo_utf8_metric                 gauge     (city, empty, job)
+  demo_regex_edge                  gauge     (job, value)
 
 Data covers a 70-minute window (enough for 1h range queries plus a 10-minute
 query evaluation window) at 15-second resolution.
@@ -178,6 +180,20 @@ def generate(output_path):
                 v = _gauge(t, 100, 20, 300)
                 emit_sample("demo_intermittent_metric",
                             {"instance": inst, "job": JOB}, v, t)
+
+    # ── Label matcher edge fixtures ──────────────────────────────────────
+    emit_type("demo_utf8_metric", "gauge")
+    for idx, labels in enumerate([
+        {"city": "Zürich", "empty": "", "job": JOB},
+        {"city": "東京", "empty": "", "job": JOB},
+    ]):
+        for t in timestamps:
+            emit_sample("demo_utf8_metric", labels, idx + 1, t)
+
+    emit_type("demo_regex_edge", "gauge")
+    for idx, value in enumerate(["abc", "a.c", "literal(1)"]):
+        for t in timestamps:
+            emit_sample("demo_regex_edge", {"job": JOB, "value": value}, idx + 1, t)
 
     lines.append("# EOF")
 

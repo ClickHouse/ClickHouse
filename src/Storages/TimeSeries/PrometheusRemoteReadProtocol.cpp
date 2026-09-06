@@ -73,6 +73,15 @@ namespace
             res_matchers.emplace_back(std::move(res_matcher));
         }
 
+        /// A RemoteRead request selects time series, which always have a non-empty metric name.
+        /// Preserve that protocol invariant when serializing raw matchers as PromQL: RemoteRead
+        /// permits selectors such as `{job=~".*"}`, while PromQL rejects selectors whose matchers
+        /// can all match the empty string.
+        res_matchers.emplace_back(PrometheusQueryTree::Matcher{
+            .label_name = "__name__",
+            .label_value = ".+",
+            .matcher_type = PrometheusQueryTree::MatcherType::RE});
+
         return PrometheusQueryTree{std::move(instant_selector)};
     }
 

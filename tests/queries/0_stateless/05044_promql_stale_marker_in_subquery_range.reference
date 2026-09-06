@@ -1,0 +1,5 @@
+-- an instant selector does not return a stale step
+-- a range function over a subquery skips the stale step and returns the last real sample
+[('__name__','stale_counter'),('test_case','stale')]	1970-01-01 00:01:50.000	2
+-- the stale step does not count as a change of the value either
+[('test_case','stale')]	1970-01-01 00:01:50.000	1
