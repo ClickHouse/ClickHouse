@@ -1,0 +1,22 @@
+1
+1
+2
+2
+0
+0
+3
+3
+2
+2
+the index is still used when the whole range converts without wrapping
+40
+40
+40
+1
+40
+40
+the wider results are unaffected
+2
+2
+3
+3

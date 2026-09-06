@@ -70,6 +70,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <Interpreters/Context.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/Concepts.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -4353,6 +4354,65 @@ struct ToNumberMonotonicity
     }
 };
 
+/** At the default `date_time_overflow_behavior = 'ignore'` a `Date32` or `DateTime64` argument is
+  * narrowed to the result type by a plain cast, so a value the result type cannot represent wraps
+  * around. A wrapping conversion is not monotonic, and index analysis must not be told otherwise:
+  * it would prune granules that do contain matching rows, and count granules that do not.
+  *
+  * Returns whether the whole range converts without wrapping, given the closed window of whole
+  * seconds the result type can represent. The comparisons are strict, which leaves a second of slack
+  * on either side to cover the truncation below. An unbounded or unrecognized bound cannot be proven
+  * to fit.
+  *
+  * A range that may wrap is reported as monotonic only where the conversion is defined, which is
+  * weaker than `is_monotonic`: it still lets `KeyCondition` push a comparison constant through a
+  * sorting or partition key expression such as `PARTITION BY toDate(ts)`, where an unrepresentable
+  * constant is rejected by the dedicated guards in `applyFunctionChainToColumn`, while it stops
+  * `applyMonotonicFunctionsChainToRange` from mapping a key range through a wrapping conversion.
+  * Argument types other than `Date32` and `DateTime64` cannot wrap here and are always accepted:
+  * `DateTime` is narrower than every result type by design, and a numeric argument goes through a
+  * saturating conversion instead.
+  */
+inline bool dateTimeConversionRangeCannotWrap(
+    const IDataType & type, const Field & left, const Field & right, Int128 min_seconds, Int128 max_seconds)
+{
+    WhichDataType which(type);
+    const bool counts_days = which.isDate32();
+    if (!counts_days && !which.isDateTime64())
+        return true;
+
+    auto to_seconds = [&](const Field & bound) -> std::optional<Int128>
+    {
+        switch (bound.getType())
+        {
+            case Field::Types::UInt64:
+            case Field::Types::Int64:
+            case Field::Types::Float64:
+            case Field::Types::Decimal32:
+            case Field::Types::Decimal64:
+            case Field::Types::Decimal128:
+            case Field::Types::Decimal256:
+                break;
+            default:
+                /// Includes `Null`, which stands for an unbounded side of the range.
+                return {};
+        }
+
+        /// The visitor divides a decimal by its scale, so a `DateTime64` bound arrives as whole
+        /// seconds; a `Date32` bound is a day number.
+        const Int128 value = applyVisitor(FieldVisitorConvertToNumber<Int128>(), bound);
+        return counts_days ? value * 86400 : value;
+    };
+
+    const auto left_seconds = to_seconds(left);
+    const auto right_seconds = to_seconds(right);
+    if (!left_seconds || !right_seconds)
+        return false;
+
+    /// Strict, because the division above truncates towards zero.
+    return *left_seconds > min_seconds && *right_seconds < max_seconds;
+}
+
 template <typename T>
 struct ToDateMonotonicity
 {
@@ -4377,6 +4437,16 @@ struct ToDateMonotonicity
             if (std::is_same_v<T, DataTypeDate32> && (which.isDateOrDate32() || which.isInt8() || which.isInt16() || which.isUInt8()
                 || which.isUInt16()))
                 return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+            /// `Date` holds day numbers up to `DATE_LUT_MAX_DAY_NUM`; a `Date32` or `DateTime64`
+            /// argument outside that window wraps. `Date32` is wide enough for every argument type
+            /// reaching this point, so only the `Date` result needs the check.
+            if constexpr (std::is_same_v<T, DataTypeDate>)
+            {
+                if (!dateTimeConversionRangeCannotWrap(
+                        type, left, right, 0, (Int128(DATE_LUT_MAX_DAY_NUM) + 1) * 86400 - 1))
+                    return {.is_always_monotonic_where_defined = true};
+            }
 
             return {.is_monotonic = true, .is_always_monotonic = true};
         }
@@ -4404,7 +4474,7 @@ struct ToDateTimeMonotonicity
 {
     static bool has() { return true; }
 
-    static IFunction::Monotonicity get(const IDataType & type, const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
         if (type.isValueRepresentedByNumber())
         {
@@ -4421,6 +4491,16 @@ struct ToDateTimeMonotonicity
             /// component using toTime, which is not monotonic.
             if ((std::is_same_v<T, DataTypeTime> || std::is_same_v<T, DataTypeTime64>) && !which.isTimeOrTime64())
                 return {};
+
+            /// `DateTime` holds whole seconds up to the `UInt32` maximum; a `Date32` or `DateTime64`
+            /// argument outside that window wraps. `DateTime64` is wide enough for every argument
+            /// type reaching this point, so only the `DateTime` result needs the check.
+            if constexpr (std::is_same_v<T, DataTypeDateTime>)
+            {
+                if (!dateTimeConversionRangeCannotWrap(
+                        type, left, right, 0, Int128(std::numeric_limits<UInt32>::max())))
+                    return {.is_always_monotonic_where_defined = true};
+            }
 
             return {.is_monotonic = true, .is_always_monotonic = true};
         }
