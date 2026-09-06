@@ -3,6 +3,10 @@
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
+#include <list>
+#include <memory>
+#include <unordered_map>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -18,6 +22,56 @@ class ZooKeeperWithFaultInjection;
 class ObjectStorageQueueIFileMetadata
 {
 public:
+    /// Per-table foreign-node observations. This must stay outside `FileStatus`: file
+    /// statuses are held in a byte-accounted cache and their weight cannot grow after
+    /// insertion. The registry follows the table's metadata-cache entry limit, where
+    /// zero means unlimited.
+    /// An observation belongs to one foreign hold of the path, identified by the
+    /// generation of the shared `FileStatus`: an observation of an earlier hold must
+    /// never be reused for a later one (the file may have been released in between).
+    class ForeignProcessingObservers
+    {
+    public:
+        explicit ForeignProcessingObservers(size_t max_entries_, size_t max_bytes_ = 0)
+            : max_entries(max_entries_), max_bytes(max_bytes_) {}
+
+        void set(const String & path, UInt64 generation, time_t since);
+        /// Zero if the path was not observed by this table in this generation.
+        time_t get(const String & path, UInt64 generation) const;
+        void setMaxEntries(size_t max_entries_);
+        void setMaxSizeInBytes(size_t max_bytes_);
+        /// The whole heap footprint of the registry: the entries and the bucket array.
+        size_t sizeInBytes() const;
+        size_t count() const;
+
+    private:
+        struct Observation
+        {
+            UInt64 generation;
+            time_t since;
+            std::list<String>::iterator lru_position;
+            size_t entry_weight;
+        };
+
+        /// The registry holds this many bytes per observation: the path is stored twice
+        /// (as the key of `observations` and as an element of the `lru` list).
+        static size_t weight(const String & key, const String & lru_entry);
+        void evictWhileOverLimitsUnlocked() TSA_REQUIRES(mutex);
+        bool overLimitsUnlocked() const TSA_REQUIRES(mutex);
+        size_t sizeInBytesUnlocked() const TSA_REQUIRES(mutex);
+        /// `std::unordered_map::erase` never shrinks the bucket array, so the registry would
+        /// keep its high-water mark forever. Returns whether the bucket array became smaller.
+        bool reclaimBucketArrayUnlocked() TSA_REQUIRES(mutex);
+
+        size_t max_entries;
+        /// Zero means that only `max_entries` bounds the registry.
+        size_t max_bytes;
+        mutable std::mutex mutex;
+        mutable std::list<String> lru TSA_GUARDED_BY(mutex);
+        mutable std::unordered_map<String, Observation> observations TSA_GUARDED_BY(mutex);
+        size_t entries_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
+    };
+
     struct FileStatus
     {
         explicit FileStatus(const std::string & path_) : path(path_) {}
@@ -38,6 +92,27 @@ public:
         void reset();
         void onFailed(const std::string & exception);
         void updateState(State state_);
+        /// The `processing` node in keeper is held by another processor
+        /// (another server, or another table on this server).
+        /// `expected_terminal_generation` is the value of `terminalStateGeneration` taken
+        /// before the keeper read which discovered that node: if the cached record received
+        /// a terminal state in the meantime, that record is newer than this observation and
+        /// is kept, and the method returns false without changing anything.
+        bool onProcessingByAnotherProcessor(ForeignProcessingObservers & observers, UInt64 expected_terminal_generation);
+        /// The file was committed by another processor: replace the data of a previous
+        /// local attempt with the terminal state discovered in keeper.
+        void onTerminalStateByAnotherProcessor(State state_, const std::string & exception, size_t retries_);
+        /// Incremented on every transition of the cached record into a terminal state,
+        /// so that a concurrent observation of a foreign `processing` node can tell whether
+        /// it is older than the terminal state which is cached now.
+        UInt64 terminalStateGeneration() const { return terminal_state_generation.load(); }
+        /// Whether the `Processing` state is only a cached observation of a foreign node.
+        bool isProcessingByAnotherProcessor() const { return processing_by_another_processor_since.load() != 0; }
+        /// When the foreign `processing` node was observed; zero if the state is not foreign.
+        time_t processingByAnotherProcessorSince(const ForeignProcessingObservers & observers) const;
+        /// Whether a file in `Processing` state may be attempted again: only if the state is a
+        /// cached observation of a foreign node and the observation is older than `ttl_sec`.
+        bool shouldRetryProcessing(const ForeignProcessingObservers & observers, time_t ttl_sec) const;
 
         std::string getException() const;
 
@@ -52,10 +127,27 @@ public:
         std::atomic<UInt64> get_object_time_ms = 0;
 
     private:
+        /// When the `processing` node of another processor was observed the last time.
+        /// Zero means that the state, if it is `Processing`, belongs to this processor.
+        std::atomic<time_t> processing_by_another_processor_since = 0;
+        /// Incremented on every transition into the foreign `Processing` state.
+        std::atomic<UInt64> foreign_processing_generation = 0;
+        /// Incremented on every transition into a terminal state (see `terminalStateGeneration`).
+        std::atomic<UInt64> terminal_state_generation = 0;
         mutable std::mutex last_exception_mutex;
         std::string last_exception;
     };
     using FileStatusPtr = std::shared_ptr<FileStatus>;
+
+    /// A terminal state of a file discovered in keeper (a `processed` or `failed` node
+    /// committed by another processor).
+    struct FileTerminalState
+    {
+        FileStatus::State state;
+        /// The exception from the `failed` node; empty for `Processed`.
+        std::string exception = {};
+        size_t retries = 0;
+    };
 
     /// Helper structure for storing the flag of presence or absence of a node in the keeper.
     struct PartitionLastProcessedFileInfo
@@ -103,7 +195,10 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
-        LoggerPtr log_);
+        LoggerPtr log_,
+        /// Zero (the default) means to always check keeper.
+        time_t foreign_processing_node_cache_ttl_sec_ = 0,
+        std::shared_ptr<ForeignProcessingObservers> foreign_processing_observers_ = {});
 
     virtual ~ObjectStorageQueueIFileMetadata();
 
@@ -190,7 +285,17 @@ public:
     /// Do some work after prepared requests to set file as Processing succeeded.
     /// `file_state` is a file state,
     /// which we find out after unsuccessfully attempting to set file as processing.
-    void afterSetProcessing(bool success, std::optional<FileStatus::State> file_state);
+    /// `terminal_state` carries the `failed` node metadata when `file_state` is terminal.
+    void afterSetProcessing(
+        bool success,
+        std::optional<FileStatus::State> file_state,
+        std::optional<FileTerminalState> terminal_state = std::nullopt);
+
+    /// Remember which terminal state the cached record had before this attempt reads keeper,
+    /// so that `afterSetProcessing` can tell whether a terminal state committed by another
+    /// processor in the meantime is newer than what this attempt found (see
+    /// `FileStatus::onProcessingByAnotherProcessor`).
+    void snapshotTerminalStateGeneration() { terminal_state_generation_before_set_processing = file_status->terminalStateGeneration(); }
 
     void setUncertainCommit() { uncertain_commit = true; }
 
@@ -212,7 +317,9 @@ protected:
     /// so SipHash64 of the path is used instead.
     static std::string getNodeName(const std::string & path);
 
-    virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
+    /// `terminal_state` is filled with the discovered node metadata
+    /// when the returned state is `Processed` or `Failed`.
+    virtual std::pair<bool, FileStatus::State> setProcessingImpl(std::optional<FileTerminalState> & terminal_state) = 0;
     virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests,
         LastProcessedFileInfoMapPtr created_nodes) = 0;
 
@@ -230,6 +337,9 @@ protected:
     const size_t max_loading_retries;
     const std::atomic<size_t> & metadata_ref_count;
     const bool use_persistent_processing_nodes;
+    /// How long an observation of a `processing` node of another processor is trusted.
+    const time_t foreign_processing_node_cache_ttl_sec;
+    const std::shared_ptr<ForeignProcessingObservers> foreign_processing_observers;
     const std::string processing_node_path;
     const std::string processed_node_path;
     const std::string failed_node_path;
@@ -239,6 +349,9 @@ protected:
 
     /// Whether processing node was created by us.
     bool created_processing_node = false;
+    /// The terminal state generation of the cached record before this attempt read keeper
+    /// (see `snapshotTerminalStateGeneration`).
+    UInt64 terminal_state_generation_before_set_processing = 0;
     /// Set when a commit failed after a ZooKeeper retry (possible "failed after operation"):
     /// the multi-op may have succeeded in ZK but the connection was lost before we received
     /// the response. In this case the destructor must check ownership before removing the

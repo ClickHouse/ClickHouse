@@ -135,6 +135,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_rows_for_materialized_views;
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const ObjectStorageQueueSettingsBool use_persistent_processing_nodes;
+    extern const ObjectStorageQueueSettingsUInt64 foreign_processing_node_cache_ttl_seconds;
     extern const ObjectStorageQueueSettingsBool commit_on_select;
     extern const ObjectStorageQueueSettingsBool deduplication_v2;
     extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
@@ -316,6 +317,10 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , deduplication_v2((*queue_settings_)[ObjectStorageQueueSetting::deduplication_v2])
     , min_insert_block_size_rows_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views])
     , min_insert_block_size_bytes_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views])
+    , foreign_processing_node_cache_ttl_seconds((*queue_settings_)[ObjectStorageQueueSetting::foreign_processing_node_cache_ttl_seconds])
+    , foreign_processing_observers(std::make_shared<ObjectStorageQueueIFileMetadata::ForeignProcessingObservers>(
+        (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements],
+        (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes]))
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
@@ -770,7 +775,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     ContextPtr local_context,
     bool commit_once_processed,
     bool is_direct_select,
-    size_t max_processed_files_override)
+    size_t max_processed_files_override,
+    std::atomic_bool * iterator_consumed)
 {
     CommitSettings commit_settings_copy;
     AfterProcessingSettings after_processing_settings_copy;
@@ -810,7 +816,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         is_direct_select,
         add_deduplication_info,
         is_deduplication_v2,
-        *this);
+        *this,
+        iterator_consumed);
 }
 
 size_t StorageObjectStorageQueue::getDependencies() const
@@ -842,6 +849,10 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     /// Attached but unready views must not consume a pending REFRESH permit, so no cycle is claimed
     /// for them; a viewless table still claims, draining a pending permit so it cannot fire later.
     const bool deps_ready = num_views == 0 || dependencies_count > 0;
+
+    /// Whether this cycle actually consumed from the file iterator; only then may the reschedule
+    /// interval be capped by a pending foreign-processing recheck (see below).
+    std::atomic_bool consumed_this_cycle = false;
 
     if (deps_ready && !stream_control.claimCycle(streaming_task_refresh_epochs.at(streaming_tasks_index)))
     {
@@ -882,7 +893,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
                 metadata->registerActive(storage_id);
 
-                if (streamToViews(streaming_tasks_index, cycle_epoch))
+                if (streamToViews(streaming_tasks_index, cycle_epoch, consumed_this_cycle))
                 {
                     /// Reset the reschedule interval.
                     std::lock_guard lock(mutex);
@@ -918,6 +929,25 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
             reschedule_interval_ms = reschedule_processing_interval_ms;
         }
 
+        /// `foreign_processing_node_cache_ttl_seconds` bounds the retry latency of a file
+        /// skipped because of a foreign `processing` node: on an otherwise idle queue the
+        /// polling backoff may exceed the TTL, so wake up no later than the earliest recheck.
+        /// Only cycles that consume may be capped: a paused or streaming-disabled cycle never
+        /// touches the iterator, so an overdue recheck would make it reschedule immediately forever.
+        std::optional<time_t> recheck_time;
+        if (consumed_this_cycle)
+        {
+            std::lock_guard streaming_lock(streaming_mutex);
+            if (streaming_file_iterator)
+                recheck_time = streaming_file_iterator->earliestForeignProcessingRecheckTime();
+        }
+        if (recheck_time.has_value())
+        {
+            const time_t current_time = std::time(nullptr);
+            const UInt64 recheck_delay_ms = *recheck_time > current_time ? (*recheck_time - current_time) * 1000 : 0;
+            reschedule_interval_ms = std::min(reschedule_interval_ms, recheck_delay_ms);
+        }
+
         LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_interval_ms);
         task->scheduleAfter(reschedule_interval_ms);
 
@@ -935,7 +965,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     }
 }
 
-bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch)
+bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch, std::atomic_bool & iterator_consumed)
 {
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
@@ -1058,7 +1088,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                 queue_context,
                 /*commit_once_processed=*/false,
                 /*is_direct_select=*/false,
-                effective_max_files);
+                effective_max_files,
+                &iterator_consumed);
 
             pipes.emplace_back(source);
             sources.emplace_back(source);
@@ -1405,6 +1436,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "deduplication_v2",
     "metadata_cache_size_bytes",
     "metadata_cache_size_elements",
+    "foreign_processing_node_cache_ttl_seconds",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode{
@@ -1439,6 +1471,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "deduplication_v2",
     "metadata_cache_size_bytes",
     "metadata_cache_size_elements",
+    "foreign_processing_node_cache_ttl_seconds",
 };
 
 static std::string normalizeSetting(const std::string & name)
@@ -1772,6 +1805,12 @@ void StorageObjectStorageQueue::alter(
                 commit_on_select = change.value.safeGet<UInt64>();
             else if (change.name == "deduplication_v2")
                 deduplication_v2 = change.value.safeGet<UInt64>();
+            else if (change.name == "foreign_processing_node_cache_ttl_seconds")
+                foreign_processing_node_cache_ttl_seconds = static_cast<time_t>(change.value.safeGet<UInt64>());
+            else if (change.name == "metadata_cache_size_elements")
+                foreign_processing_observers->setMaxEntries(change.value.safeGet<UInt64>());
+            else if (change.name == "metadata_cache_size_bytes")
+                foreign_processing_observers->setMaxSizeInBytes(change.value.safeGet<UInt64>());
         }
 
         metadata->updateSettings(changed_settings);
@@ -1830,7 +1869,9 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         log,
         enable_hash_ring_filtering_copy,
         file_deletion_enabled,
-        shutdown_called);
+        shutdown_called,
+        foreign_processing_node_cache_ttl_seconds,
+        foreign_processing_observers);
 }
 
 ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
@@ -1873,6 +1914,8 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
     settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(metadata->getPersistentProcessingNodeTTLSeconds());
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = metadata->usePersistentProcessingNode();
+    settings[ObjectStorageQueueSetting::foreign_processing_node_cache_ttl_seconds]
+        = static_cast<UInt64>(foreign_processing_node_cache_ttl_seconds.load());
     const auto & file_statuses_cache = metadata->getFileStatusesCache();
     settings[ObjectStorageQueueSetting::metadata_cache_size_bytes] = file_statuses_cache.maxSizeInBytes();
     settings[ObjectStorageQueueSetting::metadata_cache_size_elements] = file_statuses_cache.maxCount();
@@ -2003,7 +2046,8 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
 
     const bool is_ordered = metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
 
-    auto file_metadata = metadata->getFileMetadata(path);
+    auto file_metadata = metadata->getFileMetadata(
+        path, /* bucket_info */ {}, foreign_processing_node_cache_ttl_seconds.load(), foreign_processing_observers);
     const auto & processed_node_path = file_metadata->getProcessedNodePath();
     const auto & failed_node_path = file_metadata->getFailedNodePath();
 

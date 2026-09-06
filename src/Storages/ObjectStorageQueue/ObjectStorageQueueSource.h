@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <base/defines.h>
+#include <condition_variable>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
@@ -57,7 +58,9 @@ public:
             LoggerPtr logger_,
             bool enable_hash_ring_filtering_,
             bool file_deletion_on_processed_enabled_,
-            std::atomic<bool> & shutdown_called_);
+            std::atomic<bool> & shutdown_called_,
+            const std::atomic<time_t> & foreign_processing_node_cache_ttl_sec_,
+            std::shared_ptr<ObjectStorageQueueIFileMetadata::ForeignProcessingObservers> foreign_processing_observers_);
 
         bool isFinished();
 
@@ -82,6 +85,13 @@ public:
 
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
 
+        /// The earliest time at which a file skipped because of a fresh foreign `processing`
+        /// observation becomes due for a recheck; `std::nullopt` if there are no such files.
+        /// The streaming task schedules the next cycle no later than this time, so that
+        /// `foreign_processing_node_cache_ttl_seconds` bounds the retry latency even when
+        /// the queue is otherwise idle and the polling backoff is large.
+        std::optional<time_t> earliestForeignProcessingRecheckTime();
+
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
         using Processor = ObjectStorageQueueMetadata::Processor;
@@ -97,6 +107,11 @@ public:
         const StorageID storage_id;
         const bool use_buckets_for_processing;
         const size_t buckets_num = 0;
+        /// A per-table setting: `metadata` is shared by the tables with the same `keeper_path`.
+        /// A reference to the storage member (like `shutdown_called`): the setting is changeable
+        /// by `ALTER TABLE ... MODIFY SETTING`, and a new value applies from the next use.
+        const std::atomic<time_t> & foreign_processing_node_cache_ttl_sec;
+        const std::shared_ptr<ObjectStorageQueueIFileMetadata::ForeignProcessingObservers> foreign_processing_observers;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;
@@ -109,9 +124,66 @@ public:
         std::mutex next_mutex;
         size_t index = 0;
 
+        /// Files skipped because a foreign `processing` node observation was fresh.
+        /// They are rechecked at the next batch boundary after the observation expires
+        /// (`foreign_processing_node_cache_ttl_seconds`), so the recheck does not wait
+        /// for the current listing pass to end. Entries left when the listing is
+        /// exhausted are dropped: the observation timestamps live in the shared file
+        /// status cache, so the next listing pass re-queues them with the original deadlines.
+        std::deque<ObjectInfoPtr> foreign_processing_files_to_recheck TSA_GUARDED_BY(next_mutex);
+
+        /// Ordered mode only. An ordering domain is the scope of one `processed` pointer:
+        /// a bucket, and a partition within it when partitioning is used.
+        using OrderingDomain = std::pair<Bucket, std::string>;
+
+        /// Ordered mode only. Later files dropped while a smaller foreign-held file
+        /// blocks their ordering domain. Once the last blocker of a domain resolves,
+        /// put these files back through the regular filtering path instead of waiting
+        /// for the object-storage listing to start another full pass.
+        /// This is only a shortcut, so the number of retained files is capped: a blocker
+        /// near the beginning of a large namespace would otherwise buffer the whole rest
+        /// of its domain in memory. Beyond the cap the files are simply not retained and
+        /// the next listing pass lists them again (the `processed` pointer cannot advance
+        /// past the blocker, so they stay within the listed range).
+        static constexpr size_t max_blocked_files_to_replay = 1000;
+        std::map<OrderingDomain, ObjectInfos> blocked_files_per_domain TSA_GUARDED_BY(next_mutex);
+        size_t blocked_files_count TSA_GUARDED_BY(next_mutex) = 0;
+        bool blocked_files_replay_capped TSA_GUARDED_BY(next_mutex) = false;
+
+        /// Ordered mode only. Committing a file declares every smaller path of its domain
+        /// processed, so while a file of the domain
+        /// is held by a foreign `processing` node, later files of the domain must not be
+        /// processed: the pointer would advance past the held file and lose it forever.
+        std::map<OrderingDomain, std::set<std::string>> foreign_held_files_per_domain TSA_GUARDED_BY(next_mutex);
+
+        /// Ordered mode only. Files handed out to a processing thread whose `trySetProcessing`
+        /// outcome is not known yet. A later file of the domain must not start processing
+        /// while a smaller file can still turn out to be foreign-held: with several processing
+        /// threads, committing the later file would advance the `processed` pointer past it.
+        /// Registered under `mutex` (the hand-out order), resolved under `next_mutex`.
+        std::map<OrderingDomain, std::set<std::string>> unresolved_set_processing_per_domain TSA_GUARDED_BY(next_mutex);
+        std::condition_variable set_processing_resolved_cv;
+
+        OrderingDomain getOrderingDomain(const std::string & path) const;
+        void recordForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
+        void resolveForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
+        void rememberBlockedFile(ObjectInfoPtr object) TSA_REQUIRES(next_mutex);
+        void recheckBlockedFilesForDomain(const OrderingDomain & domain) TSA_REQUIRES(next_mutex);
+        bool isBlockedByForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
+
+        void registerUnresolvedSetProcessing(const std::string & path);
+        void resolveSetProcessing(const std::string & path);
+        void resolveSetProcessingUnlocked(const std::string & path) TSA_REQUIRES(next_mutex);
+        bool hasSmallerUnresolvedSetProcessing(const std::string & path) TSA_REQUIRES(next_mutex);
+        /// Waits until the file at `path` is allowed to start a set-processing attempt.
+        /// TSA does not understand the `std::unique_lock` needed by the condition variable.
+        enum class OrderingDomainGate { Proceed, Blocked, Shutdown };
+        OrderingDomainGate waitOrderingDomainGate(const std::string & path) TSA_NO_THREAD_SAFETY_ANALYSIS;
+
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
-        void filterProcessableFiles(ObjectInfos & objects);
-        void filterOutProcessedAndFailed(ObjectInfos & objects);
+        void filterProcessableFiles(ObjectInfos & objects) TSA_REQUIRES(next_mutex);
+        ObjectInfos takeDueForeignProcessingRechecks() TSA_REQUIRES(next_mutex);
+        void recheckForeignProcessingLater(ObjectInfoPtr object_info, const ObjectStorageQueueIFileMetadata::FileStatusPtr & status);
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;
@@ -134,8 +206,6 @@ public:
         /// Set when a bucket lock refresh or release fails (e.g. lost ownership):
         /// next() stops returning keys, isFinished returns true.
         std::atomic_bool iterator_invalidated = false;
-
-        bool is_path_with_hive_partitioning = false;
 
         /// Only for processing without buckets.
         std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> objects_to_retry TSA_GUARDED_BY(mutex);
@@ -198,7 +268,8 @@ public:
         bool is_direct_select_,
         bool add_deduplication_info_,
         bool is_deduplication_v2_,
-        IStreamingStorage & streaming_storage_);
+        IStreamingStorage & streaming_storage_,
+        std::atomic_bool * iterator_consumed_);
 
     static Block getHeader(Block sample_block, const NamesAndTypes & requested_virtual_columns);
 
@@ -277,6 +348,7 @@ private:
     const bool add_deduplication_info;
     /// Effective dedup: gates whether shutdown can abort mid-file.
     const bool is_deduplication_v2;
+    std::atomic_bool * const iterator_consumed;
     time_t transaction_start_time;
 
     LoggerPtr log;

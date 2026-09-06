@@ -236,7 +236,9 @@ void ObjectStorageQueueMetadata::shutdown()
 
 ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileMetadata(
     const std::string & path,
-    ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info)
+    ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info,
+    time_t foreign_processing_node_cache_ttl_sec,
+    std::shared_ptr<ObjectStorageQueueIFileMetadata::ForeignProcessingObservers> foreign_processing_observers)
 {
     chassert(metadata_ref_count);
     auto [file_status, _] = local_file_statuses.getOrSet(
@@ -260,7 +262,9 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 bucketing_mode,
                 partitioning_mode,
                 filename_parser.get(),
-                log);
+                log,
+                foreign_processing_node_cache_ttl_sec,
+                std::move(foreign_processing_observers));
         case ObjectStorageQueueMode::UNORDERED:
             return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
                 zookeeper_path,
@@ -270,8 +274,15 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
                 zookeeper_name,
-                log);
+                log,
+                foreign_processing_node_cache_ttl_sec,
+                std::move(foreign_processing_observers));
     }
+}
+
+ObjectStorageQueueIFileMetadata::FileStatusPtr ObjectStorageQueueMetadata::tryGetFileStatus(const std::string & path)
+{
+    return local_file_statuses.get(getMetadataCacheKey(path));
 }
 
 bool ObjectStorageQueueMetadata::useBucketsForProcessing() const

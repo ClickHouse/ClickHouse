@@ -156,6 +156,13 @@ private:
     size_t min_insert_block_size_rows_for_materialized_views TSA_GUARDED_BY(mutex);
     size_t min_insert_block_size_bytes_for_materialized_views TSA_GUARDED_BY(mutex);
 
+    /// How long an observation of a `processing` node of another processor is trusted.
+    /// It is a per-table setting, while `files_metadata` is shared by the tables with the same `keeper_path`.
+    /// Atomic: can be changed by `ALTER TABLE ... MODIFY SETTING`, and the file iterators
+    /// read it through a reference, so a new value applies without recreating them.
+    std::atomic<time_t> foreign_processing_node_cache_ttl_seconds;
+    const std::shared_ptr<ObjectStorageQueueIFileMetadata::ForeignProcessingObservers> foreign_processing_observers;
+
     std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata TSA_GUARDED_BY(mutex);
     StorageObjectStorageConfigurationPtr configuration;
@@ -203,7 +210,8 @@ private:
         ContextPtr local_context,
         bool commit_once_processed,
         bool is_direct_select,
-        size_t max_processed_files_override = 0);
+        size_t max_processed_files_override = 0,
+        std::atomic_bool * iterator_consumed = nullptr);
 
     /// Get number of dependent materialized views.
     size_t getDependencies() const;
@@ -212,7 +220,7 @@ private:
     /// and pushing result to dependent tables.
     void threadFunc(size_t streaming_tasks_index);
     /// A subset of logic executed by threadFunc.
-    bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
+    bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch, std::atomic_bool & iterator_consumed);
     /// Apply after_processing action to successfully processed files.
     void postProcess(const StoredObjects & successful_objects, const ObjectStorageQueueMetadata & metadata) const;
     /// Commit processed files to keeper as either successful or unsuccessful.

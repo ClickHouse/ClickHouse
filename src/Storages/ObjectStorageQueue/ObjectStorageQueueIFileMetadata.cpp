@@ -43,6 +43,7 @@ namespace
     {
         return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     }
+
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::setProcessingEndTime()
@@ -57,6 +58,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::setGetObjectTime(size_t elapse
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 {
+    processing_by_another_processor_since = 0;
     state = FileStatus::State::Processing;
     processing_start_time = now();
     processing_end_time = {};
@@ -67,12 +69,14 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
 {
+    terminal_state_generation.fetch_add(1);
     state = FileStatus::State::Processed;
     chassert(processing_end_time);
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & exception)
 {
+    terminal_state_generation.fetch_add(1);
     state = FileStatus::State::Failed;
     if (!processing_end_time)
         setProcessingEndTime();
@@ -82,6 +86,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & e
 
 void ObjectStorageQueueIFileMetadata::FileStatus::reset()
 {
+    processing_by_another_processor_since = 0;
     state = FileStatus::State::None;
     processing_start_time = {};
     processing_end_time = {};
@@ -91,7 +96,190 @@ void ObjectStorageQueueIFileMetadata::FileStatus::reset()
 
 void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
 {
+    if (state_ != FileStatus::State::Processing)
+    {
+        processing_by_another_processor_since = 0;
+    }
+    if (state_ == FileStatus::State::Processed || state_ == FileStatus::State::Failed)
+        terminal_state_generation.fetch_add(1);
     state = state_;
+}
+
+void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::set(const String & file_path, UInt64 generation, time_t since)
+{
+    std::lock_guard lock(mutex);
+    if (auto it = observations.find(file_path); it != observations.end())
+    {
+        it->second.generation = generation;
+        it->second.since = since;
+        lru.splice(lru.begin(), lru, it->second.lru_position);
+        return;
+    }
+
+    lru.push_front(file_path);
+    const auto inserted_it = observations.emplace(file_path, Observation{generation, since, lru.begin(), 0}).first;
+    /// The weight is remembered, because the two copies of the path may have different capacities.
+    inserted_it->second.entry_weight = weight(inserted_it->first, lru.front());
+    entries_size_in_bytes += inserted_it->second.entry_weight;
+    evictWhileOverLimitsUnlocked();
+}
+
+size_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::weight(const String & key, const String & lru_entry)
+{
+    return sizeof(Observation) + 2 * sizeof(String) + key.capacity() + lru_entry.capacity();
+}
+
+bool ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::overLimitsUnlocked() const
+{
+    return (max_entries && observations.size() > max_entries)
+        || (max_bytes && sizeInBytesUnlocked() > max_bytes);
+}
+
+size_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::sizeInBytesUnlocked() const
+{
+    /// The bucket array of `observations` is a part of the registry, and it is the part
+    /// which stays allocated after the entries are gone, so it must be accounted as well.
+    return entries_size_in_bytes + observations.bucket_count() * sizeof(void *);
+}
+
+bool ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::reclaimBucketArrayUnlocked()
+{
+    const size_t bucket_count_before = observations.bucket_count();
+    /// Rehashing on every insertion which is over the limit would be quadratic, so the
+    /// bucket array is rebuilt only when it is mostly empty, which is the case after a
+    /// large eviction or after the limits were lowered.
+    if (bucket_count_before <= 2 * (observations.size() + 1))
+        return false;
+
+    observations.rehash(0);
+    return observations.bucket_count() < bucket_count_before;
+}
+
+void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::evictWhileOverLimitsUnlocked()
+{
+    /// The most recently touched entry is at the front, so a freshly inserted observation
+    /// is evicted only when it alone does not fit into the limit.
+    while (overLimitsUnlocked())
+    {
+        /// Reclaiming the memory the erased entries left behind can be enough by itself.
+        if (reclaimBucketArrayUnlocked())
+            continue;
+
+        if (observations.empty())
+            break;
+
+        const auto evicted_it = observations.find(lru.back());
+        entries_size_in_bytes -= evicted_it->second.entry_weight;
+        observations.erase(evicted_it);
+        lru.pop_back();
+    }
+
+    /// The limits are satisfied, but the entries which are gone may still hold their buckets.
+    reclaimBucketArrayUnlocked();
+}
+
+time_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::get(const String & file_path, UInt64 generation) const
+{
+    std::lock_guard lock(mutex);
+    const auto it = observations.find(file_path);
+    if (it == observations.end())
+        return 0;
+
+    lru.splice(lru.begin(), lru, it->second.lru_position);
+
+    /// The observation describes an earlier hold of this path: this table has not seen
+    /// the current one, so it must check keeper instead of reusing the old deadline.
+    if (it->second.generation != generation)
+        return 0;
+
+    return it->second.since;
+}
+
+void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::setMaxEntries(size_t max_entries_)
+{
+    std::lock_guard lock(mutex);
+    max_entries = max_entries_;
+    evictWhileOverLimitsUnlocked();
+}
+
+void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::setMaxSizeInBytes(size_t max_bytes_)
+{
+    std::lock_guard lock(mutex);
+    max_bytes = max_bytes_;
+    evictWhileOverLimitsUnlocked();
+}
+
+size_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::sizeInBytes() const
+{
+    std::lock_guard lock(mutex);
+    return sizeInBytesUnlocked();
+}
+
+size_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::count() const
+{
+    std::lock_guard lock(mutex);
+    return observations.size();
+}
+
+bool ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor(
+    ForeignProcessingObservers & observers, UInt64 expected_terminal_generation)
+{
+    /// The cached record was committed into a terminal state after the keeper read which
+    /// discovered the foreign `processing` node: that record describes a later fact than
+    /// this observation, so it must not be downgraded back to `Processing`.
+    if (terminal_state_generation.load() != expected_terminal_generation)
+        return false;
+
+    /// Publish the foreign marker before `Processing`: contenders which observe the
+    /// state without acquiring `processing_lock` must not mistake it for our attempt.
+    const auto processing_since = now();
+    /// A file which was not foreign a moment ago is held by a new owner now: start a new
+    /// generation, so that an observation another table made of an earlier hold of the
+    /// same path is not reused for this one.
+    if (processing_by_another_processor_since.exchange(processing_since) == 0)
+        foreign_processing_generation.fetch_add(1);
+    observers.set(path, foreign_processing_generation.load(), processing_since);
+    processing_start_time = processing_since;
+    processing_end_time = {};
+    processed_rows = 0;
+    {
+        std::lock_guard lock(last_exception_mutex);
+        last_exception = {};
+    }
+    /// Keep `retries`, as for a local processing attempt.
+    state = FileStatus::State::Processing;
+    return true;
+}
+
+void ObjectStorageQueueIFileMetadata::FileStatus::onTerminalStateByAnotherProcessor(State state_, const std::string & exception, size_t retries_)
+{
+    chassert(state_ == State::Processed || state_ == State::Failed);
+    terminal_state_generation.fetch_add(1);
+    /// The data of an abandoned local attempt does not describe the terminal state.
+    processing_by_another_processor_since = 0;
+    processing_start_time = {};
+    processing_end_time = {};
+    processed_rows = 0;
+    retries = retries_;
+    state = state_;
+    std::lock_guard lock(last_exception_mutex);
+    last_exception = exception;
+}
+
+time_t ObjectStorageQueueIFileMetadata::FileStatus::processingByAnotherProcessorSince(const ForeignProcessingObservers & observers) const
+{
+    return isProcessingByAnotherProcessor() ? observers.get(path, foreign_processing_generation.load()) : 0;
+}
+
+bool ObjectStorageQueueIFileMetadata::FileStatus::shouldRetryProcessing(const ForeignProcessingObservers & observers, time_t ttl_sec) const
+{
+    if (!isProcessingByAnotherProcessor())
+        return false;
+
+    const time_t since = processingByAnotherProcessorSince(observers);
+    if (!since)
+        return true;
+    return now() - since >= ttl_sec;
 }
 
 std::string ObjectStorageQueueIFileMetadata::FileStatus::getException() const
@@ -139,7 +327,9 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
     bool use_persistent_processing_nodes_,
-    LoggerPtr log_)
+    LoggerPtr log_,
+    time_t foreign_processing_node_cache_ttl_sec_,
+    std::shared_ptr<ForeignProcessingObservers> foreign_processing_observers_)
     : path(path_)
     , zookeeper_name(zookeeper_name_)
     , node_name(getNodeName(path_))
@@ -147,6 +337,8 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     , max_loading_retries(max_loading_retries_)
     , metadata_ref_count(metadata_ref_count_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
+    , foreign_processing_node_cache_ttl_sec(foreign_processing_node_cache_ttl_sec_)
+    , foreign_processing_observers(std::move(foreign_processing_observers_))
     , processing_node_path(processing_node_path_)
     , processed_node_path(processed_node_path_)
     , failed_node_path(failed_node_path_)
@@ -298,7 +490,7 @@ bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership(std::shared_ptr<Z
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
     auto state = file_status->state.load();
-    if (state == FileStatus::State::Processing
+    if ((state == FileStatus::State::Processing && !file_status->shouldRetryProcessing(*foreign_processing_observers, foreign_processing_node_cache_ttl_sec))
         || state == FileStatus::State::Processed
         || (state == FileStatus::State::Failed
             && file_status->retries
@@ -316,8 +508,11 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
 
-    auto [success, file_state] = setProcessingImpl();
-    afterSetProcessing(success, file_state);
+    snapshotTerminalStateGeneration();
+
+    std::optional<FileTerminalState> terminal_state;
+    auto [success, file_state] = setProcessingImpl(terminal_state);
+    afterSetProcessing(success, file_state, std::move(terminal_state));
 
     LOG_TEST(log, "File {} has state `{}`: will {}process", path, file_state, success ? "" : "not ");
     return success;
@@ -343,7 +538,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     }
 
     auto state = file_status->state.load();
-    if (state == FileStatus::State::Processing
+    if ((state == FileStatus::State::Processing && !file_status->shouldRetryProcessing(*foreign_processing_observers, foreign_processing_node_cache_ttl_sec))
         || state == FileStatus::State::Processed
         || (state == FileStatus::State::Failed
             && file_status->retries
@@ -359,10 +554,16 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
+
+    snapshotTerminalStateGeneration();
+
     return prepareProcessingRequestsImpl(requests, processing_id);
 }
 
-void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::optional<FileStatus::State> file_state)
+void ObjectStorageQueueIFileMetadata::afterSetProcessing(
+    bool success,
+    std::optional<FileStatus::State> file_state,
+    std::optional<FileTerminalState> terminal_state)
 {
     if (success)
     {
@@ -381,7 +582,52 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
         if (file_state.has_value() && file_state.value() != FileStatus::State::None)
         {
             LOG_TEST(log, "Updating state of {} from {} to {}", path, file_status->state.load(), file_state.value());
-            file_status->updateState(file_state.value());
+
+            if (file_state.value() == FileStatus::State::Processing)
+            {
+                /// A locally owned `Processing` state is kept as is: the node belongs to a
+                /// concurrent local processor (the file status is shared between tables and threads).
+                /// Otherwise the node is foreign, and it is remembered only as a non-terminal hint,
+                /// because it is not backed by a persistent keeper node.
+                if (file_status->state.load() == FileStatus::State::Processing
+                    && !file_status->isProcessingByAnotherProcessor())
+                {
+                    LOG_TEST(log, "File {} is already being processed by a concurrent local processor", path);
+                }
+                else if (!file_status->onProcessingByAnotherProcessor(
+                             *foreign_processing_observers, terminal_state_generation_before_set_processing))
+                {
+                    /// Another processor committed the file while this attempt was reading keeper,
+                    /// and the cached record already describes that terminal state.
+                    LOG_TEST(log, "File {} was committed by another processor while setting it as processing", path);
+                }
+            }
+            else
+            {
+                /// A terminal node committed by another processor: refresh the whole cached
+                /// record, with the same guards as the listing pre-filter (see
+                /// `FileIterator::filterProcessableFiles`).
+                const auto cached_state = file_status->state.load();
+                if (cached_state == file_state.value()
+                    && (file_state.value() != FileStatus::State::Failed
+                        || !terminal_state.has_value()
+                        || file_status->retries.load() == terminal_state->retries))
+                {
+                    /// The cached record already describes this terminal state (a local attempt).
+                    /// A cached `Failed` may describe an earlier retriable local attempt, so it
+                    /// is kept only when its retry count matches the `failed` node payload.
+                }
+                else if (cached_state == FileStatus::State::Processing && !file_status->isProcessingByAnotherProcessor())
+                {
+                    /// A locally owned `Processing` state is updated by its owner on commit.
+                }
+                else
+                {
+                    const auto terminal = terminal_state.value_or(FileTerminalState{.state = file_state.value()});
+                    chassert(terminal.state == file_state.value());
+                    file_status->onTerminalStateByAnotherProcessor(terminal.state, terminal.exception, terminal.retries);
+                }
+            }
         }
     }
 }
