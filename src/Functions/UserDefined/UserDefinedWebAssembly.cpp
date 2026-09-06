@@ -553,24 +553,6 @@ public:
         return user_defined_function->getResultType();
     }
 
-    /// A `Dynamic` argument is dispatched to the declared argument type by the framework's
-    /// adaptor, which then has to name the type of the whole call. Naming it as `RETURNS` says
-    /// what the definition states outright, instead of leaving the call typed `Dynamic`.
-    ///
-    /// The adaptor answers `Nullable` of this type, which is how a null `Dynamic` row keeps
-    /// answering `NULL` without reaching the guest. A type that cannot be put inside `Nullable`
-    /// has nowhere to carry that null and would answer a default value instead, so such a
-    /// function keeps the `Dynamic` result rather than trade a null for a fabricated row.
-    /// A result type that is already `Nullable` carries the null itself, and `makeNullableSafe`
-    /// hands it back unchanged rather than nesting it, so it is named here as well.
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        const DataTypePtr & result_type = user_defined_function->getResultType();
-        if (!result_type->canBeInsideNullable() && !result_type->isNullable())
-            return nullptr;
-        return result_type;
-    }
-
     /// When the function is deterministic, returning true here causes the framework to
     /// call executeImpl with a single-row block and wrap the result in ColumnConst.
     /// That ColumnConst is then recognised by the Analyzer's constant-folding check
