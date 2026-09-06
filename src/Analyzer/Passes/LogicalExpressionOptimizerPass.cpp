@@ -396,6 +396,35 @@ struct ComparisonFilterInfo
     bool modified = false;
 };
 
+/** `IN` matches by set membership while `equals` compares by value, and the two relations disagree on
+  * floating-point NaN and signed zero: `nan = nan` is 0 while `nan IN (nan)` is 1, and `-0.0 = 0.0` is 1
+  * while `-0.0 IN (0.0)` is 0. Folding such a comparison into `IN`/`NOT IN` would silently change the
+  * result, so it has to stay a comparison.
+  *
+  * The constant is compared in the domain of the expression, so an integer or a string zero reaches it as
+  * `+0.0` as well; only a constant that is provably a non-zero number is folded.
+  */
+static bool comparisonWithConstantMatchesSetMembership(const DataTypePtr & expression_type, const Field & constant_value)
+{
+    if (!isFloat(removeNullable(removeLowCardinality(expression_type))))
+        return true;
+
+    switch (constant_value.getType())
+    {
+        case Field::Types::Float64:
+        {
+            const Float64 value = constant_value.safeGet<Float64>();
+            return !isNaN(value) && value != 0.0;
+        }
+        case Field::Types::UInt64:
+            return constant_value.safeGet<UInt64>() != 0;
+        case Field::Types::Int64:
+            return constant_value.safeGet<Int64>() != 0;
+        default:
+            return false;
+    }
+}
+
 /// A `Bool` column constant may be stored as `Types::Bool` (strict conversion) or as an integer
 /// Field (boundary folding); unify so that map lookups agree with `accurateEquals`/`accurateLess`.
 static Field canonicalizeNotEqualsKey(const Field & value)
@@ -2057,6 +2086,12 @@ private:
 
             for (auto * filter : not_equals_infos)
             {
+                if (!comparisonWithConstantMatchesSetMembership(expression.node->getResultType(), filter->constant_node->getValue()))
+                {
+                    all_operands.emplace_back(filter->original_index, std::move(filter->original_node));
+                    continue;
+                }
+
                 auto & constant_set = not_equals_node_to_constants[expression];
                 if (!constant_set.contains(filter->constant_node))
                 {
@@ -2568,10 +2603,12 @@ private:
             };
 
             if (const auto * lhs_literal = lhs->as<ConstantNode>();
-                lhs_literal && !lhs_literal->getValue().isNull())
+                lhs_literal && !lhs_literal->getValue().isNull()
+                && comparisonWithConstantMatchesSetMembership(rhs->getResultType(), lhs_literal->getValue()))
                 add_equals_function_if_not_present(rhs, lhs_literal);
             else if (const auto * rhs_literal = rhs->as<ConstantNode>();
-                     rhs_literal && !rhs_literal->getValue().isNull())
+                     rhs_literal && !rhs_literal->getValue().isNull()
+                     && comparisonWithConstantMatchesSetMembership(lhs->getResultType(), rhs_literal->getValue()))
                 add_equals_function_if_not_present(lhs, rhs_literal);
             else
                 or_operands.push_back(argument);
