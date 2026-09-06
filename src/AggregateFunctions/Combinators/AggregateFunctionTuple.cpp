@@ -40,6 +40,25 @@ DataTypePtr AggregateFunctionTuple::deriveResultType(
     return std::make_shared<DataTypeTuple>(result_types);
 }
 
+/// The composed `-Tuple` name must be injective w.r.t. the nested state representation, so derive the
+/// base name from a resolved nested function (whose name already reflects the NullsAction, like every
+/// single-nested combinator) rather than the pre-resolution string. Skip only-null placeholder
+/// elements: their base carries no nulls-action variant, so taking their name would reintroduce a
+/// non-injective type name. Placeholder-ness is structural (isOnlyNullPlaceholder unwraps combinators
+/// and, for a nested -Tuple, holds only when all its elements are placeholders). The all-placeholder
+/// fallback returns the pre-resolution name; that state is empty, so it is harmless (an own-type
+/// round-trip is rejected cleanly, never misread).
+static String deriveNestedFuncName(
+    const String & nested_name, const VectorWithMemoryTracking<AggregateFunctionPtr> & nested_functions)
+{
+    for (const auto & nested_function : nested_functions)
+    {
+        if (!nested_function->isOnlyNullPlaceholder())
+            return nested_function->getName();
+    }
+    return nested_name;
+}
+
 AggregateFunctionTuple::AggregateFunctionTuple(
     const String & nested_name,
     VectorWithMemoryTracking<AggregateFunctionPtr> nested_functions_,
@@ -47,7 +66,7 @@ AggregateFunctionTuple::AggregateFunctionTuple(
     const Array & params)
     : IAggregateFunctionHelper<AggregateFunctionTuple>(arguments, params, deriveResultType(nested_functions_, arguments))
     , nested_functions(std::move(nested_functions_))
-    , nested_func_name(nested_name)
+    , nested_func_name(deriveNestedFuncName(nested_name, nested_functions))
 {
     state_offsets.resize(nested_functions.size());
 
@@ -515,6 +534,18 @@ bool AggregateFunctionTuple::isState() const
         if (func->isState())
             return true;
     return false;
+}
+
+/// A -Tuple whose every element is an only-null placeholder carries no nulls-action variant itself,
+/// so an outer -Tuple must skip it in deriveNestedFuncName rather than take its name (which would be
+/// the pre-resolution spelling and reintroduce a non-injective type name). The base predicate only
+/// unwraps a single-nested chain, so -Tuple must answer for its element vector explicitly.
+bool AggregateFunctionTuple::isOnlyNullPlaceholder() const
+{
+    for (const auto & func : nested_functions)
+        if (!func->isOnlyNullPlaceholder())
+            return false;
+    return true;
 }
 
 /// Both `haveSameStateRepresentationImpl` and `getNormalizedStateType` define state compatibility as

@@ -1,0 +1,20 @@
+1
+AggregateFunction(anyLast_respect_nullsTuple, Tuple(UInt64))
+AggregateFunction(anyLastTuple, Tuple(UInt64))
+AggregateFunction(sumDistinctTuple, Tuple(Nullable(Nothing), UInt64))
+(NULL,3)
+AggregateFunction(sumArrayTuple, Tuple(Array(Nullable(Nothing)), Array(UInt64)))
+(NULL,3)
+1
+AggregateFunction(anyTupleIfTuple, Tuple(Tuple(Nullable(Nothing)), Tuple(Nullable(UInt64))), Tuple(UInt8, UInt8))
+AggregateFunction(any_respect_nullsTupleIfTuple, Tuple(Tuple(Nullable(Nothing)), Tuple(Nullable(UInt64))), Tuple(UInt8, UInt8))
+((0),(0))
+1
+AggregateFunction(anyArgMinTuple, Tuple(Nullable(UInt64)), Tuple(Float64))
+AggregateFunction(any_respect_nullsArgMinTuple, Tuple(Nullable(UInt64)), Tuple(Float64))
+(0)
+
+(0)
+(1)
+
+(1)
