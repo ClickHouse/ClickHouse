@@ -1,0 +1,15 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT sum(mortonDecode((1, 2), number).1) FROM numbers(120000000)</query>
+    <query>SELECT sum(mortonEncode((1, 2), number, number * 2)) FROM numbers(120000000)</query>
+    <query>SELECT sum(mortonEncode(number, number * 2)) FROM numbers(200000000)</query>
+    <query>SELECT sum(mortonEncode(number, number * 2, number * 3)) FROM numbers(150000000)</query>
+    <query>SELECT sum(mortonEncode(toUInt32(number), toUInt32(number * 3))) FROM numbers(200000000)</query>
+    <query>SELECT sum(mortonDecode(2, toUInt32(number * 5)).1) FROM numbers(200000000)</query>
+    <query>SELECT sum(mortonEncode(number, bitShiftRight(number, 1), bitShiftRight(number, 2), bitShiftRight(number, 3), bitShiftRight(number, 4))) FROM numbers(120000000)</query>
+    <query>SELECT sum(mortonDecode(5, number).1) FROM numbers(120000000)</query>
+    <query>SELECT sum(hilbertEncode(number, number * 2)) FROM numbers(40000000)</query>
+</test>
