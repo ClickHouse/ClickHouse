@@ -11,7 +11,9 @@ SET transform_null_in = 0;
 CREATE TABLE test_set (i Nullable(int)) ENGINE = Set();
 INSERT INTO test_set VALUES (1), (NULL);
 
-SELECT count() = 1 FROM null_in__fuzz_6 PREWHERE 71 WHERE i IN (test_set); -- { serverError CANNOT_CONVERT_TYPE }
+-- The random `Int256` does not fit the set's `Nullable(Int32)` key, so it is not a member -
+-- the conversion no longer raises for it (#113854).
+SELECT count() FROM null_in__fuzz_6 PREWHERE 71 WHERE i IN (test_set);
 
 DROP TABLE test_set;
 DROP TABLE null_in__fuzz_6;

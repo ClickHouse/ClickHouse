@@ -12,6 +12,7 @@
 
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -488,6 +489,8 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         bool is_tuple_type = typeid_cast<const DataTypeTuple *>(target_type_without_nullable.get()) != nullptr;
 
         bool use_cast_accurate_or_null = !transform_null_in && data_types[i]->canBeInsideNullable() && !is_tuple_type;
+        /// The same restrictions, for the lenient conversion below: it also produces a `Nullable`.
+        bool can_convert_leniently = target_type_without_nullable->canBeInsideNullable() && !is_tuple_type;
 
         if (use_cast_accurate_or_null)
         {
@@ -500,21 +503,21 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             /// In this case we cannot just cast Nullable column to non-nullable type because it will fail if column contains nulls.
             /// We should cast nested column and remember the null map to use negative value on rows with null (as key column is not
             /// Nullable, Set cannot contain nulls for this column anyhow).
-            if (transform_null_in && column_to_cast.type->isNullable() && !data_types[i]->isNullable())
+            /// Marks rows that cannot be members of the set for this key column, so they are skipped
+            /// instead of being compared. The key column is not `Nullable` on these paths, so the set
+            /// has nothing to match them against anyway.
+            auto add_non_member_rows = [&](const ColumnPtr & mask)
             {
-                auto nested_type = assert_cast<const DataTypeNullable &>(*column_to_cast.type).getNestedType();
-                const auto & column_nullable = assert_cast<const ColumnNullable &>(*column_to_cast.column);
-                result = castColumnAccurate(ColumnWithTypeAndName(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name), data_types[i], cast_cache.get());
                 if (!null_map_holder)
                 {
-                    null_map_holder = column_nullable.getNullMapColumnPtr();
+                    null_map_holder = mask;
                 }
                 else
                 {
                     MutableColumnPtr mutable_null_map_holder = IColumn::mutate(std::move(null_map_holder));
 
                     PaddedPODArray<UInt8> & mutable_null_map = assert_cast<ColumnUInt8 &>(*mutable_null_map_holder).getData();
-                    const PaddedPODArray<UInt8> & other_null_map = column_nullable.getNullMapData();
+                    const PaddedPODArray<UInt8> & other_null_map = assert_cast<const ColumnUInt8 &>(*mask).getData();
                     for (size_t j = 0, size = mutable_null_map.size(); j < size; ++j)
                         mutable_null_map[j] |= other_null_map[j];
 
@@ -522,6 +525,53 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
                 }
 
                 null_map = &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData();
+            };
+
+            if (transform_null_in && column_to_cast.type->isNullable() && !data_types[i]->isNullable())
+            {
+                auto nested_type = assert_cast<const DataTypeNullable &>(*column_to_cast.type).getNestedType();
+                const auto & column_nullable = assert_cast<const ColumnNullable &>(*column_to_cast.column);
+                result = castColumnAccurate(ColumnWithTypeAndName(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name), data_types[i], cast_cache.get());
+                add_non_member_rows(column_nullable.getNullMapColumnPtr());
+            }
+            else if (can_convert_leniently)
+            {
+                /// `transform_null_in` makes NULL an ordinary matchable value, so the accurate-or-null
+                /// cast above is not taken. A value the key type cannot represent is still simply not a
+                /// member - which is what the literal `IN` list concludes, because it compares in a
+                /// common supertype - but converting it strictly raised `CANNOT_CONVERT_TYPE` on rows
+                /// the read path happened to deliver, so `v IN set_table` failed where `v IN (1)`
+                /// returned 0.
+                ///
+                /// Convert leniently and mark the values that did not fit as non-members. Their NULL
+                /// must not reach the key column: with a `Nullable` key the set may hold a NULL, and a
+                /// value that merely does not fit is not that NULL. So the key column keeps the rows'
+                /// original nullness and only the newly produced NULLs become non-members.
+                auto casted = castColumnAccurateOrNull(column_to_cast, makeNullable(removeNullable(data_types[i])), cast_cache.get());
+                const auto & casted_nullable = assert_cast<const ColumnNullable &>(*casted);
+                const size_t num_rows = casted_nullable.size();
+
+                const auto * source_nullable = typeid_cast<const ColumnNullable *>(column_to_cast.column.get());
+
+                auto did_not_fit = ColumnUInt8::create(num_rows, UInt8(0));
+                auto & did_not_fit_data = did_not_fit->getData();
+                const auto & null_after_cast = casted_nullable.getNullMapData();
+                for (size_t row = 0; row < num_rows; ++row)
+                    did_not_fit_data[row] = null_after_cast[row] && !(source_nullable && source_nullable->isNullAt(row));
+
+                if (data_types[i]->isNullable())
+                {
+                    auto original_null_map = source_nullable
+                        ? source_nullable->getNullMapColumnPtr()
+                        : ColumnUInt8::create(num_rows, UInt8(0));
+                    result = ColumnNullable::create(casted_nullable.getNestedColumnPtr(), std::move(original_null_map));
+                }
+                else
+                {
+                    result = casted_nullable.getNestedColumnPtr();
+                }
+
+                add_non_member_rows(std::move(did_not_fit));
             }
             else
             {
