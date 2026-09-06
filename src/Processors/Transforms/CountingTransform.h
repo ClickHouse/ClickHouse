@@ -16,11 +16,24 @@ class ThreadStatus;
 class CountingTransform final : public ExceptionKeepingTransform
 {
 public:
+    enum class InsertSource : uint8_t
+    {
+        Direct,
+        MaterializedView,
+        /// Rows that are neither a write into the immediate destination table of an INSERT pipeline
+        /// nor a push from a materialized view into its target table: rows entering a window view, or
+        /// rows of a background streaming push (`no_destination`) that skips the destination table and
+        /// only feeds the attached views. Counted only in the generic InsertedRows/InsertedBytes events.
+        Other,
+    };
+
     explicit CountingTransform(
         SharedHeader header,
+        InsertSource source_,
         std::shared_ptr<const EnabledQuota> quota_ = nullptr,
         UInt64 normalized_query_hash_ = 0)
         : ExceptionKeepingTransform(header, header)
+        , source(source_)
         , quota(std::move(quota_))
         , normalized_query_hash(normalized_query_hash_) {}
 
@@ -47,6 +60,7 @@ public:
 protected:
     ProgressCallback progress_callback;
     QueryStatusPtr process_elem;
+    InsertSource source;
 
     /// Quota is used to limit amount of written bytes.
     std::shared_ptr<const EnabledQuota> quota;
