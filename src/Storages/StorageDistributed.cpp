@@ -50,10 +50,12 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/parseQuery.h>
 
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
@@ -61,10 +63,10 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/WindowFunctionsUtils.h>
-#include <Analyzer/Utils.h>
 
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>
@@ -404,6 +406,66 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
     return (num_remote_shards + num_local_shards) * max_parallel_replicas;
 }
 
+/// True if `target` sits, within the join tree `node`, on a side that an outer join fills with
+/// defaults for unmatched rows. `padded_by_ancestor` carries that state down from enclosing joins.
+bool isTableExpressionOnOuterJoinNullSide(const QueryTreeNodePtr & node, const QueryTreeNodePtr & target, bool padded_by_ancestor)
+{
+    if (node == target)
+        return padded_by_ancestor;
+
+    if (const auto * join_node = node->as<JoinNode>())
+    {
+        const auto kind = join_node->getKind();
+        /// SEMI JOIN keeps only rows that have a match, so it never emits default-padded rows on the
+        /// kept side and does not break the shard-local invariant. Every other strictness that keeps
+        /// unmatched rows (including ANTI, which keeps the non-matching rows of the kept side and thus
+        /// defaults the other side's columns) is treated as padding per the join kind.
+        const bool pads = join_node->getStrictness() != JoinStrictness::Semi;
+        /// RIGHT/FULL join pads the left side; LEFT/FULL join pads the right side.
+        const bool left_padded = padded_by_ancestor || (pads && isRightOrFull(kind));
+        const bool right_padded = padded_by_ancestor || (pads && isLeftOrFull(kind));
+        return isTableExpressionOnOuterJoinNullSide(join_node->getLeftTableExpressionNode(), target, left_padded)
+            || isTableExpressionOnOuterJoinNullSide(join_node->getRightTableExpressionNode(), target, right_padded);
+    }
+
+    if (const auto * array_join_node = node->as<ArrayJoinNode>())
+        return isTableExpressionOnOuterJoinNullSide(array_join_node->getTableExpressionNode(), target, padded_by_ancestor);
+
+    /// A cross/comma join never pads its own operands, but it does not shield them from padding by an
+    /// enclosing outer join: `t CROSS JOIN u RIGHT JOIN v` builds JoinNode(RIGHT){CrossJoinNode[t, u], v},
+    /// so `t` and `u` are on the padded left side. Propagate the ancestor's padded state to every child.
+    if (const auto * cross_join_node = node->as<CrossJoinNode>())
+    {
+        for (const auto & table_expression : cross_join_node->getTableExpressions())
+            if (isTableExpressionOnOuterJoinNullSide(table_expression, target, padded_by_ancestor))
+                return true;
+        return false;
+    }
+
+    return false;
+}
+
+/// Same predicate as `isTableExpressionOnOuterJoinNullSide`, for the AST path. The table list is flat
+/// and left-associative, so this table is the accumulated left operand of every join in it and is
+/// padded exactly when one of them is RIGHT or FULL with a strictness that keeps unmatched rows.
+bool selectHasOuterJoinPaddingMainTable(const ASTSelectQuery & select)
+{
+    const ASTPtr tables = select.tables();
+    if (!tables)
+        return false;
+
+    for (const auto & child : tables->children)
+    {
+        const auto * element = child->as<ASTTablesInSelectQueryElement>();
+        if (!element || !element->table_join)
+            continue;
+        if (const auto * table_join = element->table_join->as<ASTTableJoin>())
+            if (isRightOrFull(table_join->kind) && table_join->strictness != JoinStrictness::Semi)
+                return true;
+    }
+    return false;
+}
+
 }
 
 /// For destruction of std::unique_ptr of type that is incomplete in class definition.
@@ -618,6 +680,22 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const
 {
+    /// A group lives on one shard only if the expression is over this table's own columns: another
+    /// table's column may share the sharding key's name yet span shards.
+    if (query_info.table_expression && hasUnknownColumn(expr, query_info.table_expression))
+        return false;
+
+    /// On an outer-join padded side even this table's own sharding-key column takes the same default
+    /// on every shard for unmatched rows, so that group spans shards.
+    if (query_info.query_tree && query_info.table_expression)
+    {
+        if (const auto * query_node = query_info.query_tree->as<QueryNode>())
+        {
+            if (isTableExpressionOnOuterJoinNullSide(query_node->getJoinTreeNode(), query_info.table_expression, /*padded_by_ancestor=*/ false))
+                return false;
+        }
+    }
+
     ColumnsWithTypeAndName empty_input_columns;
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
     // When comparing sharding key expressions, we need to ignore table qualifiers in column names
@@ -734,6 +812,11 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
         default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
+
+    /// AST-path counterpart of the padded-side guard above; one point here covers DISTINCT,
+    /// GROUP BY and LIMIT BY.
+    if (optimize_sharding_key_aggregation && selectHasOuterJoinPaddingMainTable(select))
+        optimize_sharding_key_aggregation = false;
 
     auto expr_contains_sharding_key = [&](const auto & exprs) -> bool
     {
