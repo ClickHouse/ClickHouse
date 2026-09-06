@@ -1,15 +1,15 @@
 -- the `SETTINGS` clause after `CREATE`
-['filter_by_min_time_and_max_time','recent_samples_ttl_seconds','samples_index_granularity','store_min_time_and_max_time','tags_to_columns']
+['filter_by_min_time_and_max_time','recent_samples_ttl_seconds','samples_index_granularity','store_min_time_and_max_time','tags_to_columns','version']
 -- `MODIFY SETTING` adds the altered setting and keeps the other ones
-['filter_by_min_time_and_max_time','id_generator','recent_samples_ttl_seconds','samples_index_granularity','store_min_time_and_max_time','tags_to_columns']
+['filter_by_min_time_and_max_time','id_generator','recent_samples_ttl_seconds','samples_index_granularity','store_min_time_and_max_time','tags_to_columns','version']
 -- `tags_to_columns` survives the alter, so the dedicated column is still filled
 m1	j1
 m2	j2
 -- the settings are kept in the metadata too, so they still apply after a reload
-['filter_by_min_time_and_max_time','id_generator','recent_samples_ttl_seconds','samples_index_granularity','store_min_time_and_max_time','tags_to_columns']
+['filter_by_min_time_and_max_time','id_generator','recent_samples_ttl_seconds','samples_index_granularity','store_min_time_and_max_time','tags_to_columns','version']
 m1	j1
 m2	j2
 m3	j3
 -- `MODIFY SETTING` sees the other settings, so a conflicting value is rejected
 -- `RESET SETTING` removes only the reset setting
-['id_generator','recent_samples_ttl_seconds','samples_index_granularity','store_min_time_and_max_time','tags_to_columns']
+['id_generator','recent_samples_ttl_seconds','samples_index_granularity','store_min_time_and_max_time','tags_to_columns','version']

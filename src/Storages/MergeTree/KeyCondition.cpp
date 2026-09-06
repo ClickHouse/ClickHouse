@@ -1186,7 +1186,18 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
         case ActionsDAG::ActionType::FUNCTION:
         {
             auto name = node.function_base->getName();
-            if (name == "not")
+            /// A `not` that receives an inversion cancels against it and substitutes its argument for
+            /// the result. That is only truthiness-preserving: `not(not(x))` is `x != 0` (a `UInt8`),
+            /// not `x`. Where the value is merely truth-tested (`boolean_context`) that is exactly what
+            /// index analysis wants, but in a value position - say the first argument of
+            /// `greater(not(not(x)), -0.5)` - it changes what the enclosing function is applied to, and
+            /// the resulting condition can prune granules that do match. Keep such a `not` as an
+            /// ordinary function there; the atom then stays opaque to index analysis, which is sound.
+            /// A `not` that merely *sends* an inversion into its child (`need_inversion == false`) is
+            /// value-preserving in any position: the child either absorbs it into an equivalent
+            /// two-valued complement (`notHas` becomes `has`, De Morgan on `and`/`or`) or gets an
+            /// explicit `not()` wrapper, so the result is the same `UInt8` the original `not` produced.
+            if (name == "not" && (boolean_context || !need_inversion))
             {
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion, boolean_context);
                 handled_inversion = true;
@@ -5699,6 +5710,93 @@ static void tupleRangeToBoundingBox(const Range & tuple_range, Float64 & x_min, 
     }
 }
 
+namespace
+{
+
+/// Whether the analysed range of a key column may hold a NULL value. A NULL key value is analysed as
+/// the `+inf` stand-in of the `NULLS LAST` order, so every range that reaches `+inf` may hold one.
+bool rangeOfKeyColumnMayHoldNull(const Range & key_range, const DataTypes & key_types, size_t key_position)
+{
+    return key_range.right.isPositiveInfinity() && key_position < key_types.size() && key_types[key_position]
+        && isNullableOrLowCardinalityNullable(key_types[key_position]);
+}
+
+/// Whether the atom answers NULL - and hence "not true" to `WHERE` - for a NULL argument, instead of
+/// answering true or false as `IS NULL` and `IS NOT NULL` do.
+bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
+{
+    switch (function)
+    {
+        case KeyCondition::RPNElement::FUNCTION_IN_RANGE:
+        case KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE:
+        case KeyCondition::RPNElement::FUNCTION_IN_SET:
+        case KeyCondition::RPNElement::FUNCTION_NOT_IN_SET:
+        case KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
+        case KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON:
+            return true;
+        case KeyCondition::RPNElement::FUNCTION_IS_NULL:
+        case KeyCondition::RPNElement::FUNCTION_IS_NOT_NULL:
+        case KeyCondition::RPNElement::FUNCTION_UNKNOWN:
+        case KeyCondition::RPNElement::FUNCTION_NOT:
+        case KeyCondition::RPNElement::FUNCTION_AND:
+        case KeyCondition::RPNElement::FUNCTION_OR:
+        case KeyCondition::RPNElement::ALWAYS_FALSE:
+        case KeyCondition::RPNElement::ALWAYS_TRUE:
+            return false;
+    }
+}
+
+}
+
+/// `WHERE` rejects a row whose comparison is NULL, so a NULL key value satisfies neither a comparison
+/// nor its negation. The two-valued range algebra of `checkInHyperrectangle` cannot express that: "no
+/// NULL row lies inside the range" turns, under negation, into "every row lies outside it", which
+/// reports a granule of NULLs as wholly matching a negated comparison - and the exact-count
+/// optimization then counts the very rows the `WHERE` throws away. So the exactness of the whole
+/// analysis is gone as soon as one such atom reads a `Nullable` key column whose range may hold a
+/// NULL. `IS NULL` and `IS NOT NULL` are excluded: they answer true or false for a NULL as well, so
+/// the algebra describes them exactly. Only `can_be_false` is affected; `can_be_true`, and with it
+/// every pruning decision, is left alone.
+bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const
+{
+    for (const auto & element : rpn)
+    {
+        if (!atomIsNullForNullArgument(element.function))
+            continue;
+
+        for (size_t key_column : element.key_columns)
+            if (key_column < hyperrectangle.size() && rangeOfKeyColumnMayHoldNull(hyperrectangle[key_column], key_types, key_column))
+                return true;
+    }
+
+    return false;
+}
+
+/// The same over the sparse representation of the primary index, where a key column is addressed by
+/// its position among the columns the index resolves.
+bool KeyCondition::mayReadNullKeyValue(
+    const std::vector<int> & key_col_to_sparse_pos, const Hyperrectangle & sparse_hyperrectangle, const DataTypes & sparse_key_types) const
+{
+    for (const auto & element : rpn)
+    {
+        if (!atomIsNullForNullArgument(element.function))
+            continue;
+
+        for (size_t key_column : element.key_columns)
+        {
+            if (key_column >= key_col_to_sparse_pos.size() || key_col_to_sparse_pos[key_column] == -1)
+                continue;
+
+            const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[key_column]);
+            if (sparse_pos < sparse_hyperrectangle.size()
+                && rangeOfKeyColumnMayHoldNull(sparse_hyperrectangle[sparse_pos], sparse_key_types, sparse_pos))
+                return true;
+        }
+    }
+
+    return false;
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
@@ -6131,6 +6229,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
+
+    if (unlikely(!rpn_stack[0].can_be_false && mayReadNullKeyValue(hyperrectangle, data_types)))
+        rpn_stack[0].can_be_false = true;
 
     return rpn_stack[0];
 }
@@ -6619,6 +6720,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
+
+    if (unlikely(!rpn_stack[0].can_be_false && mayReadNullKeyValue(key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types)))
+        rpn_stack[0].can_be_false = true;
 
     return rpn_stack[0];
 }

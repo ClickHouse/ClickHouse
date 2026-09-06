@@ -94,6 +94,14 @@ def test_aggregate_states(start_cluster):
     def check_aggregate(aggregate_function):
         logging.info("Checking %s", aggregate_function)
 
+        # estimateCompressionRatio's state encodes the size of the argument compressed with the
+        # server's default codec. That default changed (LZ4 -> ZSTD(3)), so the state (and the
+        # final ratio) legitimately differs between the old and new server; the comparison is not
+        # meaningful across the codec-default change.
+        if aggregate_function == "estimateCompressionRatio":
+            logging.info("Skipping %s (state depends on the server default codec)", aggregate_function)
+            return "skipped"
+
         try:
             backward_state = get_aggregate_state_hex(backward, aggregate_function)
         except QueryRuntimeException as e:

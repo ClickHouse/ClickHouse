@@ -149,6 +149,9 @@ public:
         return getTotals().empty() && getTotalRowCount() == 0;
     }
 
+    /// The left side is streamed through once, each row emitted in input order.
+    bool preservesLeftBlockOrder() const override { return true; }
+
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
         SharedHeader,
         SharedHeader right_sample_block_) const override

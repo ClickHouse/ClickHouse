@@ -14,6 +14,7 @@ tablefunc06	Proxy		CREATE TABLE default.tablefunc06 (`a` Int32) AS s3(\'http://s
 tablefunc07	Proxy		CREATE TABLE default.tablefunc07 (`x` String) AS url(\'http://some_addr:9000/nonexistent\')	[]	1	1
 Proxy
 \N	\N
+x	0	0	0
 \N	\N
 5
 5	1
@@ -22,3 +23,7 @@ Proxy
 1
 0
 5
+1
+0
+10000
+1
