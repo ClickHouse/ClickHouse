@@ -125,7 +125,7 @@ def three_to_five_reconfig(started_cluster):
         },
         "actions": [
             {
-                "set_priority": [{"id": 3, "priority": 1}]
+                "set_priority": [{"id": 3, "priority": 1}, {"id": 4, "priority": 1}, {"id": 5, "priority": 1}]
             },
             {
                 "add_members": [
