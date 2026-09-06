@@ -2995,7 +2995,7 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
             false /*allow_table_expression*/);
 
         const auto * window_frame_begin_constant_node = window_node.getFrameBeginOffsetNode()->as<ConstantNode>();
-        if (!window_frame_begin_constant_node || !isNativeNumber(removeNullable(window_frame_begin_constant_node->getResultType())))
+        if (!window_frame_begin_constant_node || !isNumber(removeNullable(window_frame_begin_constant_node->getResultType())))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Window frame begin OFFSET expression must be constant with numeric type. Actual: {}. In scope {}",
                 window_node.getFrameBeginOffsetNode()->formatASTForErrorMessage(),
@@ -3016,16 +3016,16 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
             false /*allow_table_expression*/);
 
         const auto * window_frame_end_constant_node = window_node.getFrameEndOffsetNode()->as<ConstantNode>();
-        if (!window_frame_end_constant_node || !isNativeNumber(removeNullable(window_frame_end_constant_node->getResultType())))
+        if (!window_frame_end_constant_node || !isNumber(removeNullable(window_frame_end_constant_node->getResultType())))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Window frame begin OFFSET expression must be constant with numeric type. Actual: {}. In scope {}",
+                "Window frame end OFFSET expression must be constant with numeric type. Actual: {}. In scope {}",
                 window_node.getFrameEndOffsetNode()->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
 
         window_node.getWindowFrame().end_offset = window_frame_end_constant_node->getValue();
         if (frame_end_offset_projection_names.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Window FRAME begin offset expected 1 projection name. Actual: {}",
+                "Window FRAME end offset expected 1 projection name. Actual: {}",
                 frame_end_offset_projection_names.size());
     }
 

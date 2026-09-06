@@ -6,6 +6,8 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 
+#include <cmath>
+
 
 namespace DB
 {
@@ -13,6 +15,34 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+/// `Bool` is not a number here: only the legacy analyzer leaves a frame offset in that field
+/// alternative, and the analyzer folds `true` to an integer one.
+bool isNumericFieldType(Field::Types::Which which)
+{
+    return isInt64OrUInt64FieldType(which)
+        || Field::isDecimal(which)
+        || which == Field::Types::Float64
+        || which == Field::Types::UInt128 || which == Field::Types::Int128
+        || which == Field::Types::UInt256 || which == Field::Types::Int256;
+}
+
+/// A `RANGE` offset is added to the `ORDER BY` value, so it has to order against zero, which a
+/// non-finite one does not: `nan` compares false both ways, and an infinite offset added to an
+/// infinite value yields `nan`.
+bool isValidRangeOffset(const Field & offset)
+{
+    if (!isNumericFieldType(offset.getType()))
+        return false;
+    if (offset.getType() == Field::Types::Float64 && !std::isfinite(offset.safeGet<Float64>()))
+        return false;
+    return !accurateLess(offset, Field(0));
+}
+
 }
 
 std::string WindowFunctionDescription::dump() const
@@ -90,31 +120,59 @@ void WindowFrame::toString(WriteBuffer & buf) const
 
 void WindowFrame::checkValid() const
 {
-    // Check the validity of offsets.
-    if (begin_type == BoundaryType::Offset
-        && !((begin_offset.getType() == Field::Types::UInt64
-                || begin_offset.getType() == Field::Types::Int64)
-            && begin_offset.safeGet<Int64>() >= 0
-            && begin_offset.safeGet<Int64>() < INT_MAX))
+    // `ROWS` and `GROUPS` offsets count rows and must be integer. `RANGE` offsets are in
+    // units of the `ORDER BY` column and may be fractional, so their value is checked by
+    // the window transform after coercion to that column's type.
+    if (type == FrameType::ROWS || type == FrameType::GROUPS)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Frame start offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
-            type,
-            applyVisitor(FieldVisitorToString(), begin_offset),
-            begin_offset.getType());
-    }
+        if (begin_type == BoundaryType::Offset
+                && !((begin_offset.getType() == Field::Types::UInt64
+                      || begin_offset.getType() == Field::Types::Int64)
+                     && begin_offset.safeGet<Int64>() >= 0
+                     && begin_offset.safeGet<Int64>() < INT_MAX))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Frame start offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
+                            type,
+                            applyVisitor(FieldVisitorToString(), begin_offset),
+                            begin_offset.getType());
+        }
 
-    if (end_type == BoundaryType::Offset
-        && !((end_offset.getType() == Field::Types::UInt64
-                || end_offset.getType() == Field::Types::Int64)
-            && end_offset.safeGet<Int64>() >= 0
-            && end_offset.safeGet<Int64>() < INT_MAX))
+        if (end_type == BoundaryType::Offset
+                && !((end_offset.getType() == Field::Types::UInt64
+                      || end_offset.getType() == Field::Types::Int64)
+                     && end_offset.safeGet<Int64>() >= 0
+                     && end_offset.safeGet<Int64>() < INT_MAX))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Frame end offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
+                            type,
+                            applyVisitor(FieldVisitorToString(), end_offset),
+                            end_offset.getType());
+        }
+    }
+    else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Frame end offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
-            type,
-            applyVisitor(FieldVisitorToString(), end_offset),
-            end_offset.getType());
+        // Checked before the coercion in `WindowTransform`: coercion to a lower scale can
+        // truncate a negative offset to zero, and coercion of a non-finite offset to an
+        // integer or `Decimal` column rejects it as out of range instead.
+        if (begin_type == BoundaryType::Offset && !isValidRangeOffset(begin_offset))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Frame start offset for '{}' frame must be a finite nonnegative number, '{}' of type '{}' given",
+                            type,
+                            applyVisitor(FieldVisitorToString(), begin_offset),
+                            begin_offset.getType());
+        }
+
+        if (end_type == BoundaryType::Offset && !isValidRangeOffset(end_offset))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Frame end offset for '{}' frame must be a finite nonnegative number, '{}' of type '{}' given",
+                            type,
+                            applyVisitor(FieldVisitorToString(), end_offset),
+                            end_offset.getType());
+        }
     }
 
     // Check relative positioning of offsets.
