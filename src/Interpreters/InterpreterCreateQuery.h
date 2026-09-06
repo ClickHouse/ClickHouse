@@ -108,6 +108,9 @@ private:
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode);
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
     void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database);
+    /// Rejects a SQL security clause on a dictionary that could not honour it. Must run before
+    /// `processSQLSecurityOption`, which inserts an access control entry to resolve an ephemeral definer.
+    void validateDictionarySQLSecurity(const ASTCreateQuery & create) const;
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 

@@ -11,8 +11,13 @@
 #include <Dictionaries/InvalidateQueryResponse.h>
 
 
+namespace Poco::Util { class AbstractConfiguration; }
+
 namespace DB
 {
+
+enum class NamedCollectionUsage : uint8_t;
+
 /** Allows loading dictionaries from local or remote ClickHouse instance
   *    @todo use ConnectionPoolWithFailover
   *    @todo invent a way to keep track of source modifications
@@ -72,6 +77,17 @@ public:
     /// Used for detection whether the hashtable should be preallocated
     /// (since if there is WHERE then it can filter out too much)
     bool hasWhere() const { return !configuration.where.empty(); }
+
+    /// Resolves the source's effective configuration, named-collection overrides included, so that a
+    /// caller deciding whether the source is local reaches the same answer this class will.
+    /// `config_prefix` is the dictionary's `.source` node.
+    static Configuration resolveConfiguration(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context,
+        const std::string & default_database,
+        bool created_from_ddl,
+        NamedCollectionUsage named_collection_usage);
 
 private:
     std::string getUpdateFieldAndDate();

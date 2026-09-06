@@ -94,6 +94,8 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
 
+#include <Dictionaries/ClickHouseDictionarySource.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
 #include <Compression/CompressionFactory.h>
@@ -1413,6 +1415,52 @@ namespace
         }
     }
 
+    /// Decides whether a dictionary's CLICKHOUSE source points at this server. `context` must be the
+    /// querying user's context: a named collection is authorized against the context it is passed, so
+    /// the global context would read collections the user has no grant for.
+    bool isLocalClickHouseDictionarySource(const ASTCreateQuery & create_query, ContextPtr context)
+    {
+        if (!create_query.dictionary || !create_query.dictionary->source)
+            return false;
+
+        if (Poco::toLower(create_query.dictionary->source->name) != "clickhouse")
+            return false;
+
+        try
+        {
+            /// A source parameter may be a function call such as `PORT tcpPort()`, which has no
+            /// configuration representation. Evaluate on a clone: the caller's AST must keep the
+            /// normalization that later reaches storage.
+            auto cloned = create_query.clone();
+            auto & normalized_query = cloned->as<ASTCreateQuery &>();
+            NormalizeAndEvaluateConstantsVisitor::Data visitor_data{context};
+            NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
+            visitor.visit(normalized_query.dictionary->source->ptr());
+
+            auto config = getDictionaryConfigurationFromAST(normalized_query, context);
+            return ClickHouseDictionarySource::resolveConfiguration(
+                       *config,
+                       "dictionary.source",
+                       context,
+                       create_query.getDatabase(),
+                       /*created_from_ddl=*/ true,
+                       NamedCollectionUsage::CheckAccessOnly)
+                .is_local;
+        }
+        catch (const Exception & e)
+        {
+            /// An access denial belongs to the caller: it must not be reported as a non-local source.
+            if (e.code() == ErrorCodes::ACCESS_DENIED)
+                throw;
+            return false;
+        }
+        catch (const Poco::Exception &)
+        {
+            /// An unresolvable host arrives as a DNS exception rather than a ClickHouse one.
+            return false;
+        }
+    }
+
     void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
     {
         ASTDictionary & dict = *create_query.dictionary;
@@ -1768,8 +1816,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
 
-    if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
+    /// This default covers view shapes only. A dictionary carries no clause unless one was written, and
+    /// `default_normal_view_sql_security` (`INVOKER` by default) names a type it cannot honour.
+    if (!create.sql_security && (create.is_ordinary_view || create.is_materialized_view)
+        && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
         create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
+
+    /// Runs before `processSQLSecurityOption`, which resolves an ephemeral definer by inserting a real
+    /// no-authentication account into access control: rejecting after that point would leave the
+    /// account behind with nothing to collect it.
+    if (create.is_dictionary && create.sql_security)
+        validateDictionarySQLSecurity(create);
 
     if (create.sql_security)
         processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, mode);
@@ -3734,7 +3791,52 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
     }
 }
 
-void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view, LoadingStrictnessLevel mode)
+void InterpreterCreateQuery::validateDictionarySQLSecurity(const ASTCreateQuery & create) const
+{
+    /// A short ATTACH has no definition to judge; every clause it could overwrite is refused instead.
+    if (!create.dictionary || !create.dictionary->source)
+        return;
+
+    const auto & sql_security = create.sql_security->as<const ASTSQLSecurity &>();
+
+    /// `processSQLSecurityOption` fills an unset type from this setting after this gate runs.
+    const auto effective_type
+        = sql_security.type.value_or(getContext()->getSettingsRef()[Setting::default_normal_view_sql_security]);
+
+    if (effective_type == SQLSecurityType::INVOKER)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "SQL SECURITY INVOKER can't be specified for DICTIONARY, because a dictionary is loaded "
+            "in the background and its data is shared by all users");
+
+    if (effective_type == SQLSecurityType::NONE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "SQL SECURITY NONE can't be specified for DICTIONARY. Use DEFINER to name the user whose "
+            "privileges the dictionary loads with, or omit the clause to authenticate the user given in "
+            "SOURCE");
+
+    if (effective_type != SQLSecurityType::DEFINER)
+        return;
+
+    /// Only an explicitly written type stays unresolved: an unset one gets `default_view_definer`.
+    if (sql_security.type == SQLSecurityType::DEFINER && !sql_security.definer && !sql_security.is_definer_current_user)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "SQL SECURITY DEFINER for DICTIONARY requires a definer: write DEFINER = <user> or "
+            "DEFINER = CURRENT_USER");
+
+    /// A restore sees the pre-rewrite source: `setEngine` replaces an external one with `null` later.
+    if (is_restore_from_backup && getContext()->getSettingsRef()[Setting::restore_replace_external_dictionary_source_to_null])
+        return;
+
+    /// A source that cannot be proven local is rejected too.
+    if (!isLocalClickHouseDictionarySource(create, getContext()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "DEFINER is only supported for a dictionary with a local CLICKHOUSE source. "
+            "A source pointing at another server authenticates there with its own credentials, "
+            "which a definer defined on this server cannot replace");
+}
+
+void InterpreterCreateQuery::processSQLSecurityOption(
+    ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view, LoadingStrictnessLevel mode)
 {
     /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
     if (!sql_security.type)
