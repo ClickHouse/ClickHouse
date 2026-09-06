@@ -383,7 +383,15 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
 
     /// A miss to be populated carries its own open writer; any other miss is writer-less. `claim` is
     /// filled by the claim loop below (empty for a writer-less miss, or a tail another reader leads).
-    struct MissTier { CacheWriterPtr writer; ByteRange range; CacheWriter::Claim claim; };
+    struct MissTier
+    {
+        CacheWriterPtr writer;
+        ByteRange range;
+        CacheWriter::Claim claim;
+        /// The tier's committed prefix inside `range` (size 0 == nothing committed), as reported by
+        /// `claimLeadRole`. A segment fills append-only, so everything below its end is readable now.
+        ByteRange available;
+    };
     VectorWithMemoryTracking<MissTier> miss_tiers;
     size_t next_resident = window_offset + max_serve;  /// nearest block any tier already has, ahead of the head
     for (auto & cache : cache_chain)
@@ -405,7 +413,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
                 next_resident = std::min(next_resident, resolution.range.offset);  /// a resident block ahead
                 break;
             }
-            miss_tiers.push_back(MissTier{std::move(resolution.writer), resolution.range, {}});
+            miss_tiers.push_back(MissTier{std::move(resolution.writer), resolution.range, {}, ByteRange{resolution.range.offset, 0}});
         }
     }
 
@@ -422,6 +430,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         const ByteRange avail = lead.available;
         if (avail.size && avail.offset <= window_offset && window_offset < avail.end())
             return miss_tier.writer->read(ByteRange{window_offset, serve_len(std::min(avail.end(), miss_tier.range.end()))});
+        miss_tier.available = avail;
         miss_tier.claim = std::move(lead.claim);
     }
 
@@ -439,7 +448,18 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         return readSource(window_offset, miss_end - window_offset);
     }
 
-    /// Fetch the writer ranges in one source read (across the objects they span) and populate each.
+    /// A tier's uncommitted tail `[available.end(), range.end())` - the only part of it we read from
+    /// source. Its committed prefix is served from the tier itself, and a prefix spanning the whole
+    /// range leaves the tail empty (size 0), so that tier neither fetches nor writes.
+    auto tail_to_fetch = [](const MissTier & miss_tier)
+    {
+        const size_t committed_end = miss_tier.available.size ? miss_tier.available.end() : miss_tier.range.offset;
+        const size_t lo = std::max(miss_tier.range.offset, committed_end);
+        const size_t hi = miss_tier.range.end();
+        return ByteRange{lo, lo < hi ? hi - lo : 0};
+    };
+
+    /// Fetch the writer tails in one source read (across the objects they span) and populate each.
     /// Capped at `next_resident` - the nearest block a slower tier already holds - so a gathered miss run
     /// never re-reads a suffix the filesystem cache already has; that suffix is served from the slower
     /// tier on the next window.
@@ -449,8 +469,11 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     {
         if (!miss_tier.writer)
             continue;
-        fetch_lo = std::min(fetch_lo, miss_tier.range.offset);
-        fetch_hi = std::max(fetch_hi, miss_tier.range.end());
+        const ByteRange tail = tail_to_fetch(miss_tier);
+        if (!tail.size)
+            continue;
+        fetch_lo = std::min(fetch_lo, tail.offset);
+        fetch_hi = std::max(fetch_hi, tail.end());
     }
     fetch_hi = std::min<size_t>(fetch_hi, offset_map.totalSize());
     fetch_hi = std::min(fetch_hi, next_resident);  /// do not re-read a block a slower tier already has
@@ -464,8 +487,9 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         /// that thread, not here.
         if (miss_tier.claim)
         {
-            const size_t lo = std::max(miss_tier.range.offset, fetch_lo);
-            const size_t hi = std::min(miss_tier.range.end(), fetched_end);
+            const ByteRange tail = tail_to_fetch(miss_tier);
+            const size_t lo = std::max(tail.offset, fetch_lo);
+            const size_t hi = std::min(tail.end(), fetched_end);
             /// From the whole file-level fetch, so a block straddling objects is covered.
             if (lo < hi)
             {
