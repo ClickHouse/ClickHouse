@@ -60,7 +60,7 @@ TEST(NetworkCompressionSettings, CompatibilityDerivedValuesActButAreNotSerialize
     /// value), but they must not be serialized explicitly — the server re-derives them from `compatibility`
     /// itself, and a profile may pin them as read-only. `compatibility` itself is forwarded so the server
     /// treats the helper query like an ordinary query of this session. The same rule ordinary queries follow
-    /// via `ClientBase::settingsWithoutCompatibilityDerived`.
+    /// via `ClientBase::settingsWithoutClientSideDefaults`.
     Settings settings;
     settings.set("compatibility", "26.6");
     ASSERT_TRUE(settings.isChanged("network_compression_method"));
@@ -109,7 +109,7 @@ TEST(ChooseNetworkCompressionCodec, CompatibilityRollsBackTheClientSideCodec)
 {
     Settings settings;
     settings.set("compatibility", "26.6");
-    /// What ordinary queries pass to `Connection::sendQuery` (`ClientBase::settingsWithoutCompatibilityDerived`).
+    /// What ordinary queries pass to `Connection::sendQuery` (`ClientBase::settingsWithoutClientSideDefaults`).
     Settings for_ordinary_query = settings;
     for_ordinary_query.markSettingsChangedByCompatibilityAsUnchanged();
     /// What helper queries (autocomplete, `help`, the AI metadata query) pass.

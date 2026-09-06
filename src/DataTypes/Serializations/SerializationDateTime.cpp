@@ -23,7 +23,7 @@ UInt128 SerializationDateTime::getHash(const TimezoneMixin & time_zone_)
 {
     SipHash hash;
     hash.update("DateTime");
-    auto tz = time_zone_.getTimeZone().getTimeZone();
+    const auto & tz = time_zone_.getTimeZoneName();
     hash.update(tz.size());
     hash.update(tz);
     hash.update(time_zone_.hasExplicitTimeZone());
@@ -44,9 +44,7 @@ inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings & setti
 {
     switch (settings.date_time_input_format)
     {
-        case FormatSettings::DateTimeInputFormat::Basic:
-            readDateTimeTextImpl<>(x, istr, time_zone);
-            break;
+        case FormatSettings::DateTimeInputFormat::Basic: readDateTimeTextImpl<>(x, istr, time_zone); break;
         case FormatSettings::DateTimeInputFormat::BestEffort:
             parseDateTimeBestEffort(x, istr, time_zone, DateLUT::utcTimezoneInstance());
             break;
@@ -63,9 +61,7 @@ inline bool tryReadText(time_t & x, ReadBuffer & istr, const FormatSettings & se
     bool res = false;
     switch (settings.date_time_input_format)
     {
-        case FormatSettings::DateTimeInputFormat::Basic:
-            res = tryReadDateTimeText(x, istr, time_zone);
-            break;
+        case FormatSettings::DateTimeInputFormat::Basic: res = tryReadDateTimeText(x, istr, time_zone); break;
         case FormatSettings::DateTimeInputFormat::BestEffort:
             res = tryParseDateTimeBestEffort(x, istr, time_zone, DateLUT::utcTimezoneInstance());
             break;
@@ -81,7 +77,7 @@ inline bool tryReadText(time_t & x, ReadBuffer & istr, const FormatSettings & se
 }
 
 SerializationDateTime::SerializationDateTime(const TimezoneMixin & time_zone_)
-    : TimezoneMixin(time_zone_)
+    : time_zone(time_zone_.getTimeZone())
 {
 }
 
@@ -109,9 +105,7 @@ void SerializationDateTime::serializeText(const IColumn & column, size_t row_num
     auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
     switch (settings.date_time_output_format)
     {
-        case FormatSettings::DateTimeOutputFormat::Simple:
-            writeDateTimeText(value, ostr, time_zone);
-            return;
+        case FormatSettings::DateTimeOutputFormat::Simple: writeDateTimeText(value, ostr, time_zone); return;
         case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
             writeIntText(value, ostr);
             return;

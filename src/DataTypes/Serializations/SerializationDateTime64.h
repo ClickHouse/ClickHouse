@@ -6,10 +6,12 @@
 namespace DB
 {
 
-class SerializationDateTime64 final : public SerializationDecimalBase<DateTime64>, public TimezoneMixin
+class SerializationDateTime64 final : public SerializationDecimalBase<DateTime64>
 {
 private:
     SerializationDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_);
+
+    const DateLUTImpl & time_zone;
 
 public:
     static UInt128 getHash(UInt32 scale_, const TimezoneMixin & time_zone_);

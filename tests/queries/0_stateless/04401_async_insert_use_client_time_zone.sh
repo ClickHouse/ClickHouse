@@ -61,4 +61,36 @@ SELECT 'reset_async matches server tz', (
     = (SELECT toUnixTimestamp(a) FROM ${CLICKHOUSE_DATABASE}.dt WHERE kind = 'server_ref'))
 "
 
+server_output=$(${CLICKHOUSE_CLIENT} --use_client_time_zone=0 -q "
+SELECT toString(toDateTime(1500036000)), toString(fromUnixTimestamp64Milli(toInt64(1500036000125)))
+")
+expected_output=$(printf '%s\n%s\t%s\n%s\n' "$server_output" '2017-07-14 05:40:00' '2017-07-14 05:40:00.125' "$server_output")
+actual_output=$($TZC --use_client_time_zone=1 -mn -q "
+SELECT toDateTime(1500036000), fromUnixTimestamp64Milli(toInt64(1500036000125)) SETTINGS use_client_time_zone = 0;
+SELECT toDateTime(1500036000), fromUnixTimestamp64Milli(toInt64(1500036000125));
+SELECT toDateTime(1500036000), fromUnixTimestamp64Milli(toInt64(1500036000125)) SETTINGS use_client_time_zone = 0;
+")
+if [[ "$actual_output" != "$expected_output" ]]; then
+    printf 'Expected:\n%s\nActual:\n%s\n' "$expected_output" "$actual_output"
+    exit 1
+fi
+echo 'query-local server timezone matches default'
+
+$TZC --use_client_time_zone=1 -mn -q "
+CREATE TEMPORARY TABLE client_timezone_switch (dt DateTime, dt64 DateTime64(3), kind String) ENGINE = Memory;
+INSERT INTO client_timezone_switch SETTINGS use_client_time_zone = 0, async_insert = 0
+    VALUES ('2017-07-14 05:40:00', '2017-07-14 05:40:00.125', 'server');
+INSERT INTO client_timezone_switch SETTINGS async_insert = 0
+    VALUES ('2017-07-14 05:40:00', '2017-07-14 05:40:00.125', 'client');
+SELECT 'query-local sync uses server tz',
+    toUnixTimestamp(dt) = toUnixTimestamp(toDateTime('2017-07-14 05:40:00', serverTimeZone())),
+    toUnixTimestamp64Milli(dt64) = toUnixTimestamp64Milli(toDateTime64('2017-07-14 05:40:00.125', 3, serverTimeZone()))
+FROM client_timezone_switch WHERE kind = 'server';
+SELECT 'query-local sync restores client tz',
+    toUnixTimestamp(dt) = 1500036000,
+    toUnixTimestamp64Milli(dt64) = 1500036000125
+FROM client_timezone_switch WHERE kind = 'client';
+DROP TABLE client_timezone_switch;
+"
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_DATABASE}.dt"
