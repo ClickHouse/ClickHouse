@@ -1,0 +1,14 @@
+compact advanced shared data: 1
+compact part type: Compact
+compact read cost measured: 1
+compact cancelled at least once: 1
+compact cancelled inside the reader at least once: 1
+compact part check reports raised: 0
+compact rows after cancellations: 5
+wide advanced shared data: 1
+wide part type: Wide
+wide read cost measured: 1
+wide cancelled at least once: 1
+wide cancelled inside the reader at least once: 1
+wide part check reports raised: 0
+wide rows after cancellations: 5

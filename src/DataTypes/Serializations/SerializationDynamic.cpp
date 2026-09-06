@@ -4,6 +4,7 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationDynamicHelpers.h>
+#include <DataTypes/Serializations/PrefixReadCancellationChecker.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeString.h>
@@ -379,6 +380,9 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
         UInt64 structure_version = 0;
         readBinaryLittleEndian(structure_version, *structure_stream);
         auto structure_state = std::make_shared<DeserializeBinaryBulkStateDynamicStructure>(structure_version);
+        /// The lists below are read in full before any row is produced, and the stream chooses both
+        /// their lengths and each type name, so the loops must observe cancellation from inside.
+        PrefixReadCancellationChecker cancellation_checker;
         if (structure_state->structure_version.value == SerializationVersion::FLATTENED)
         {
             /// Read the flattened list of types.
@@ -394,9 +398,12 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 }
                 else
                 {
-                    readStringBinary(data_type_name, *structure_stream);
+                    readPathNameCancellable(data_type_name, *structure_stream, cancellation_checker);
                     structure_state->flattened_data_types.push_back(getDataTypesCache().getType(data_type_name));
                 }
+                /// Granularity is one type description: decoding a single one is uninterruptible on
+                /// both branches, so a cancellation inside one is observed only once it completes.
+                cancellation_checker.check();
             }
 
             structure_state->flattened_indexes_type = getSmallestIndexesType(num_types + 1); /// +1 for NULL index.
@@ -424,20 +431,28 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 /// Native input carries the effective limit via format_settings; a V3 part read has none and decodes unlimited.
                 const size_t max_complexity = settings.format_settings ? settings.format_settings->binary.max_binary_type_complexity : 0;
                 for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
+                {
+                    /// Same between-descriptions granularity as the flattened branch above.
                     variants.push_back(decodeDataType(*structure_stream, max_complexity));
+                    cancellation_checker.check();
+                }
             }
             else
             {
                 String data_type_name;
                 for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
                 {
-                    readStringBinary(data_type_name, *structure_stream);
+                    readPathNameCancellable(data_type_name, *structure_stream, cancellation_checker);
                     variants.push_back(getDataTypesCache().getType(data_type_name));
+                    cancellation_checker.check();
                 }
             }
             /// Add shared variant, Dynamic column should always have it.
             variants.push_back(ColumnDynamic::getSharedVariantDataType());
             auto variant_type = std::make_shared<DataTypeVariant>(variants);
+            /// `DataTypeVariant`'s constructor canonicalizes by calling `getName` per decoded type,
+            /// itself a stream-sized pass that polls nothing. This bounds it from the outside.
+            cancellation_checker.check();
 
             /// Read statistics.
             if (settings.object_and_dynamic_read_statistics)
@@ -452,7 +467,10 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
 
                     /// First, read statistics for usual variants.
                     for (const auto & variant : variant_type->getVariants())
+                    {
                         readVarUInt(statistics.variants_statistics[variant->getName()], *structure_stream);
+                        cancellation_checker.check();
+                    }
 
                     /// Second, read statistics for shared variants.
                     size_t statistics_size = 0;
@@ -460,8 +478,9 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                     String variant_name;
                     for (size_t i = 0; i != statistics_size; ++i)
                     {
-                        readStringBinary(variant_name, *structure_stream);
+                        readPathNameCancellable(variant_name, *structure_stream, cancellation_checker);
                         readVarUInt(statistics.shared_variants_statistics[variant_name], *structure_stream);
+                        cancellation_checker.check();
                     }
 
                     structure_state->statistics = std::make_shared<const ColumnDynamic::Statistics>(std::move(statistics));

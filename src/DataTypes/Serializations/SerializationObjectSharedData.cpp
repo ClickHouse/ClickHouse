@@ -4,6 +4,7 @@
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
+#include <DataTypes/Serializations/PrefixReadCancellationChecker.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnMap.h>
@@ -658,15 +659,21 @@ void SerializationObjectSharedData::deserializeStructureGranulePrefix(
     if (structure_state.need_all_paths)
         reserveOrThrowTooMany(structure_granule.all_paths, structure_granule.num_paths, "paths");
 
+    /// The per-granule path list is read in full before any row of the granule is produced and the
+    /// stream chooses its length, so the loop must observe cancellation from inside.
+    PrefixReadCancellationChecker cancellation_checker;
+
     /// Read list of paths.
     for (size_t i = 0; i != structure_granule.num_paths; ++i)
     {
-        readStringBinary(path, buf);
+        readPathNameCancellable(path, buf, cancellation_checker);
         if (structure_state.requested_paths.contains(path) || structure_state.requested_paths_subcolumns.contains(path) || structure_state.checkIfPathMatchesAnyRequestedPrefix(path))
             structure_granule.position_to_requested_path[i] = path;
 
         if (structure_state.need_all_paths)
             structure_granule.all_paths.push_back(path);
+
+        cancellation_checker.check();
     }
 }
 
@@ -906,6 +913,9 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
                 size_t num_substreams = 0;
                 readVarUInt(num_substreams, *paths_substreams_stream);
                 reserveOrThrowTooMany(path_info.substreams, num_substreams, "substreams for a path");
+                /// Not checkpointed, unlike the path-name reads above: the enclosing loop covers only
+                /// the paths whose subcolumns the query asked for, and a substream name is derived by
+                /// the writer from the type's substream path rather than taken from user data.
                 for (size_t i = 0; i != num_substreams; ++i)
                 {
                     path_info.substreams.emplace_back();
@@ -1135,6 +1145,8 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         if (settings.data_part_type == MergeTreeDataPartType::Compact)
         {
             std::vector<String> paths;
+            /// Bounds the per-bucket transfers below, which run outside any prefix read.
+            PrefixReadCancellationChecker cancellation_checker;
 
             /// Collect all paths stored in this granule in all buckets.
             for (size_t bucket = 0; bucket != buckets; ++bucket)
@@ -1162,7 +1174,14 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 if (structure_granule.num_rows != limit)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected reading a single granule with {} rows, requested {} rows in Compact part in bucket {}", structure_granule.num_rows, limit, bucket);
 
-                paths.insert(paths.end(), structure_granule.all_paths.begin(), structure_granule.all_paths.end());
+                /// Moved, not copied: only safe here, where `structure_granule` is function-local,
+                /// unlike the Wide branch's cached granules.
+                paths.reserve(paths.size() + structure_granule.all_paths.size());
+                for (auto & path : structure_granule.all_paths)
+                {
+                    paths.push_back(std::move(path));
+                    cancellation_checker.check();
+                }
                 settings.path.pop_back();
 
                 /// Skip deserialization of flattened paths data/marks/substreams/etc if we can.
@@ -1316,8 +1335,19 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                         granules_limits.push_back((*structure_granules)[granule].limit);
                 }
 
+                /// Copied, not moved: these granules can come from the substreams cache shared with
+                /// other columns, so moving would empty another reader's list.
+                PrefixReadCancellationChecker cancellation_checker;
                 for (size_t granule = 0; granule != structure_granules->size(); ++granule)
-                    granules_paths[granule].insert(granules_paths[granule].end(), (*structure_granules)[granule].all_paths.begin(), (*structure_granules)[granule].all_paths.end());
+                {
+                    const auto & granule_paths = (*structure_granules)[granule].all_paths;
+                    granules_paths[granule].reserve(granules_paths[granule].size() + granule_paths.size());
+                    for (const auto & path : granule_paths)
+                    {
+                        granules_paths[granule].push_back(path);
+                        cancellation_checker.check();
+                    }
+                }
 
                 settings.path.pop_back();
             }

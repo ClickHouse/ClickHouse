@@ -5,6 +5,7 @@
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
 #include <DataTypes/Serializations/SerializationDynamicHelpers.h>
+#include <DataTypes/Serializations/PrefixReadCancellationChecker.h>
 
 
 #include <algorithm>
@@ -680,11 +681,24 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
 
         /// Now all tasks are either executing by thread pool or were already executed by this thread.
         /// Wait for all tasks to be executed.
+        ///
+        /// A cancellation never replaces a failure already held, and surfaces only when every failing
+        /// task produced one: otherwise one task's cancellation would suppress another task's genuine
+        /// read failure and leave a corrupt part unchecked. Among failures the last one still wins.
         std::exception_ptr exception;
+        bool exception_is_cancellation = false;
         for (const auto & task : tasks)
         {
-            if (auto e = task->wait())
-                exception = e;
+            auto e = task->wait();
+            if (!e)
+                continue;
+
+            const bool e_is_cancellation = isPrefixReadCancelled(e);
+            if (exception && !exception_is_cancellation && e_is_cancellation)
+                continue;
+
+            exception = e;
+            exception_is_cancellation = e_is_cancellation;
         }
 
         /// Rethrow exception if any.
@@ -735,6 +749,9 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
         UInt64 serialization_version = 0;
         readBinaryLittleEndian(serialization_version, *structure_stream);
         auto structure_state = std::make_shared<DeserializeBinaryBulkStateObjectStructure>(serialization_version);
+        /// The path lists below are read in full before any row is produced and can be arbitrarily
+        /// large, so they must observe query cancellation from inside the loops. See `PrefixReadCancellationChecker`.
+        PrefixReadCancellationChecker cancellation_checker;
         if (structure_state->serialization_version.value == SerializationVersion::FLATTENED)
         {
             /// Read the list of flattened paths. Append one path at a time (with a capped `reserve`
@@ -746,8 +763,9 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             for (size_t i = 0; i != paths_size; ++i)
             {
                 String path;
-                readStringBinary(path, *structure_stream);
+                readPathNameCancellable(path, *structure_stream, cancellation_checker);
                 structure_state->flattened_paths.push_back(std::move(path));
+                cancellation_checker.check();
             }
         }
         else if (structure_state->serialization_version.value == SerializationVersion::STRING)
@@ -771,10 +789,17 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             for (size_t i = 0; i != dynamic_paths_size; ++i)
             {
                 String path;
-                readStringBinary(path, *structure_stream);
+                readPathNameCancellable(path, *structure_stream, cancellation_checker);
                 structure_state->sorted_dynamic_paths->push_back(std::move(path));
+                cancellation_checker.check();
             }
-            structure_state->dynamic_paths.insert(structure_state->sorted_dynamic_paths->begin(), structure_state->sorted_dynamic_paths->end());
+            /// Expanded from a range `insert` so the hash inserts are checkpointed too: the path count
+            /// is unbounded, so a range `insert` would be an uninterruptible span of the same size.
+            for (const auto & path : *structure_state->sorted_dynamic_paths)
+            {
+                structure_state->dynamic_paths.insert(path);
+                cancellation_checker.check();
+            }
 
             /// If we have V3 Object serialization, read shared data serialization version.
             if (structure_state->serialization_version.value == SerializationVersion::V3)
@@ -804,7 +829,10 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                     statistics.dynamic_paths_statistics.reserve(structure_state->sorted_dynamic_paths->size());
                     /// First, read dynamic paths statistics.
                     for (const auto & path : *structure_state->sorted_dynamic_paths)
+                    {
                         readVarUInt(statistics.dynamic_paths_statistics[path], *structure_stream);
+                        cancellation_checker.check();
+                    }
 
                     /// Second, read shared data paths statistics.
                     size_t size = 0;
@@ -813,8 +841,9 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                     String path;
                     for (size_t i = 0; i != size; ++i)
                     {
-                        readStringBinary(path, *structure_stream);
+                        readPathNameCancellable(path, *structure_stream, cancellation_checker);
                         readVarUInt(statistics.shared_data_paths_statistics[path], *structure_stream);
+                        cancellation_checker.check();
                     }
 
                     structure_state->statistics = std::make_shared<const ColumnObject::Statistics>(std::move(statistics));
