@@ -134,6 +134,9 @@ const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
 const UInt64 DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION = 2;
 
 const UInt64 PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL = 2;
+
+/// Value of the constant added to a shard query whose header would otherwise have no column.
+const char * const ROW_COUNT_MARKER = "__row_count_marker";
 }
 
 namespace ProfileEvents
@@ -888,6 +891,27 @@ bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
     return rewrite;
 }
 
+/// Both steps that append to the header the marker is in are checked: the window step, which appends
+/// each window function, and the step after it, which appends each expression wrapping one. A name
+/// there equal to the marker's makes Block::insert reject the pair, so no marker may be added.
+bool isMarkerNameTaken(const SelectQueryInfo & query_info)
+{
+    /// Without an analyzer result the names are unknown, so assume the worst.
+    if (!query_info.syntax_analyzer_result)
+        return true;
+
+    const String marker_column_name = ASTLiteral(String(ROW_COUNT_MARKER)).getColumnName();
+    for (const auto & window_function : query_info.syntax_analyzer_result->window_function_asts)
+        if (window_function->getColumnName() == marker_column_name)
+            return true;
+
+    for (const auto & expression : query_info.syntax_analyzer_result->expressions_with_window_function)
+        if (expression->getColumnName() == marker_column_name)
+            return true;
+
+    return false;
+}
+
 QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     const StorageSnapshotPtr & distributed_storage_snapshot,
     const StorageID & remote_storage_id,
@@ -1047,6 +1071,23 @@ void StorageDistributed::read(
     else
     {
         header = InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+
+        /// An empty header cannot carry a row count, so add a constant to the query sent to shards.
+        /// That is the query just analysed above, so this header stays in step with it; injecting
+        /// only at the root keeps one text, and so one header, across every rank and version.
+        if (local_context->getClientInfo().distributed_depth == 0
+            && processed_stage == QueryProcessingStage::WithMergeableState
+            && query_info.has_window
+            && header->empty()
+            && !isMarkerNameTaken(query_info))
+        {
+            /// Still aliases the caller's AST, which the caller keeps using after this returns.
+            modified_query_info.query = modified_query_info.query->clone();
+            /// A literal cannot collide with a column name (cf. appendUnusedGroupByColumn).
+            modified_query_info.query->as<ASTSelectQuery &>().select()->children.emplace_back(
+                make_intrusive<ASTLiteral>(ROW_COUNT_MARKER));
+            header = InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        }
 
         modified_query_info.query = ClusterProxy::rewriteSelectQuery(
             local_context, modified_query_info.query,
