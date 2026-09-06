@@ -91,11 +91,15 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     const UInt32 left_mask = static_cast<UInt32>(lhs_subset);
     const UInt32 right_mask = static_cast<UInt32>(rhs_subset);
 
-    auto join_kind = optimizer.isValidJoinOrderMask(left_mask, right_mask);
-    if (!join_kind)
+    /// Resolve validity + the resulting (kind, strictness). With a conflict detector (CD-A/CD-C)
+    /// this uses the per-operator check (which can admit semi/anti joins), otherwise the
+    /// per-relation outer-join check with strictness fixed to All.
+    auto resolved = optimizer.resolveJoinMask(left_mask, right_mask);
+    if (!resolved)
         return;
 
-    auto kind = *join_kind;
+    auto kind = resolved->first;
+    auto strictness = resolved->second;
 
     /// `edge` aliases an internal scratch buffer that the next `collectJoinEdgesMask` call overwrites
     /// it is only read below and copied into the DP entry, so the aliasing is safe.
@@ -124,7 +128,8 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         entry.cost = plan_cost;
         entry.sel = selectivity;
         entry.kind = kind;
-        entry.estimated_rows = optimizer.estimateCardinality(dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows, selectivity, kind);
+        entry.strictness = strictness;
+        entry.estimated_rows = optimizer.estimateCardinality(dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows, selectivity, kind, strictness);
         entry.edges.assign(edge.begin(), edge.end());
     }
 }
