@@ -101,6 +101,8 @@ public:
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
+    /// Functions whose haystack the optimizer rewrites through the preprocessor. The others read the raw value.
+    static bool isPreprocessedFunction(const String & function_name);
     TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
     bool alwaysUnknownOrTrue() const override;

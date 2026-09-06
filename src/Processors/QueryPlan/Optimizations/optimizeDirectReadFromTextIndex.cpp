@@ -4,6 +4,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/assert_cast.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
@@ -71,12 +72,21 @@ struct TextIndexReadInfo
 
 using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
 
-String getNameWithoutAliases(const ActionsDAG::Node * node)
+constexpr std::string_view NULL_MAP_SUBCOLUMN = "null";
+
+const ActionsDAG::Node * removeAliases(const ActionsDAG::Node * node)
 {
     while (node->type == ActionsDAG::ActionType::ALIAS)
     {
         node = node->children[0];
     }
+
+    return node;
+}
+
+String getNameWithoutAliases(const ActionsDAG::Node * node)
+{
+    node = removeAliases(node);
 
     if (node->type == ActionsDAG::ActionType::FUNCTION)
     {
@@ -99,6 +109,23 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
         return applyVisitor(FieldVisitorToString(), node->column->getField());
 
     return node->result_name;
+}
+
+/// Returns the argument whose NULL rows make the predicate itself NULL, if there is one.
+/// Constants are skipped: a Nullable constant needle is NULL for every row or for none.
+const ActionsDAG::Node * findNullableDataArgument(const ActionsDAG::Node & function_node)
+{
+    if (!isNullableOrLowCardinalityNullable(function_node.result_type))
+        return nullptr;
+
+    for (const auto * child : function_node.children)
+    {
+        const auto * argument = removeAliases(child);
+        if (argument && !argument->column && isNullableOrLowCardinalityNullable(argument->result_type))
+            return argument;
+    }
+
+    return nullptr;
 }
 
 /// Check if a node with the given canonical name exists as a subexpression within the DAG rooted at `node`.
@@ -464,6 +491,8 @@ public:
     struct ResultReplacement
     {
         IndexReadColumns added_columns;
+        /// (Sub)columns the replacement introduced, e.g. `.null`, that must be added for reading.
+        Names added_physical_columns;
         Names removed_columns;
         const ActionsDAG::Node * filter_node = nullptr;
         /// True if any function node was rewritten.
@@ -532,6 +561,7 @@ public:
 
         Names replaced_columns = actions_dag.getRequiredColumnsNames();
         NameSet replaced_columns_set(replaced_columns.begin(), replaced_columns.end());
+        NameSet original_inputs_set(original_inputs.begin(), original_inputs.end());
 
         for (const auto & column : original_inputs)
         {
@@ -539,6 +569,12 @@ public:
                 result.removed_columns.push_back(column);
         }
 
+        for (const auto & column : replaced_columns)
+        {
+            /// Virtual columns are reported separately in `added_columns`.
+            if (!original_inputs_set.contains(column) && !isTextIndexVirtualColumn(column))
+                result.added_physical_columns.push_back(column);
+        }
         /// A virtual column is read only if its input survived `removeUnusedActions`: the rewrite can
         /// keep a different index's virtual (or the original expression) instead, leaving this one unused.
         for (auto & [index_name, virtual_column] : candidate_virtual_columns)
@@ -554,6 +590,8 @@ private:
     struct NodeReplacement
     {
         const ActionsDAG::Node * node = nullptr;
+        /// Haystack of the rewritten predicate, i.e. after the preprocessor. Set by processTextIndexFunction.
+        const ActionsDAG::Node * rewritten_haystack = nullptr;
         std::unordered_map<String, VirtualColumnDescription> added_virtual_columns;
     };
 
@@ -606,8 +644,9 @@ private:
     /// has/hasAll/hasAny bypass both transforms.
     static bool needApplyPreprocessor(const String & function_name)
     {
-        return function_name == "hasToken"
-            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+        /// Shared with MergeTreeIndexConditionText, which relies on this list to reject the index for the
+        /// other functions when the preprocessor can produce NULL.
+        return MergeTreeIndexConditionText::isPreprocessedFunction(function_name);
     }
 
     /// Returns true for functions that require applying the postprocessor to the haystack and needle.
@@ -704,13 +743,49 @@ private:
             return lhs.virtual_column_name < rhs.virtual_column_name;
         });
 
+        /// Taken from the original node because processTextIndexFunction may wrap it into an alias below.
+        const auto * nullable_argument = findNullableDataArgument(function_node);
+
+        /// Only the rewritten functions see the preprocessed haystack, and only a Nullable predicate can show
+        /// its NULLs. The source column need not be: `nullIf(str, '')` over a plain String makes NULLs too.
+        const bool preprocessed = needApplyPreprocessor(function_name)
+            && isNullableOrLowCardinalityNullable(function_node.result_type);
+
+        /// These NULLs are not in the argument's null map; only the rewritten haystack has them.
+        const bool preprocessor_makes_nulls
+            = preprocessed && anyPreprocessor(selected_conditions, [](const auto & p) { return p.producesNull(); });
+
+        /// `ifNull(str, '')` makes the predicate over a NULL row a plain 0: nothing to restore.
+        if (preprocessed && anyPreprocessor(selected_conditions, [](const auto & p) { return p.removesNull(); }))
+            nullable_argument = nullptr;
+
         if (need_transform_function)
             processTextIndexFunction(replacement, selected_conditions, context);
 
-        if (direct_read_from_text_index)
-            replaceFunctionsToVirtualColumns(replacement, selected_conditions, virtual_column_to_node, context);
+        if (preprocessor_makes_nulls)
+            nullable_argument = replacement.rewritten_haystack;
+
+        /// Nothing to restore them from: keep the original predicate so every part takes the row-level path.
+        const bool can_restore_nulls = !preprocessor_makes_nulls || nullable_argument;
+
+        if (direct_read_from_text_index && can_restore_nulls)
+            replaceFunctionsToVirtualColumns(replacement, selected_conditions, virtual_column_to_node, nullable_argument, context);
 
         return replacement;
+    }
+
+    static bool anyPreprocessor(const std::vector<SelectedCondition> & selected_conditions, auto && property)
+    {
+        return std::ranges::any_of(selected_conditions, [&](const auto & condition)
+        {
+            if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
+                return false;
+
+            /// Not through `info->index`, which is null for an inject-only entry.
+            const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition.info->condition);
+            auto preprocessor = condition_text.getPreprocessor();
+            return preprocessor && preprocessor->hasActions() && property(*preprocessor);
+        });
     }
 
     /// Applies preprocessor, tokenizer and postprocessor for text-search functions.
@@ -920,6 +995,8 @@ private:
         auto needles_column = needles_type->createColumnConst(0, needles_field);
         new_children[1] = &actions_dag.addColumn(std::move(needles_column), needles_type, applyVisitor(FieldVisitorToString(), needles_field));
 
+        replacement.rewritten_haystack = new_children[0];
+
         /// Recreate a function object because we have modified the arguments.
         FunctionOverloadResolverPtr new_function_base = FunctionFactory::instance().get(function_name, context);
         const ActionsDAG::Node * new_function_node = &actions_dag.addFunction(new_function_base, new_children, "");
@@ -930,11 +1007,50 @@ private:
         replacement.node = &actions_dag.addAlias(*new_function_node, function_node.result_name);
     }
 
+    /// Returns `if(<argument is NULL>, NULL, index_result)`.
+    /// In exact mode the argument is no longer read, so take the NULLs from its `.null` subcolumn where there
+    /// is one: `LowCardinality(Nullable)` has none, and hint mode reads the argument anyway.
+    const ActionsDAG::Node & addNullsOfArgument(
+        const ActionsDAG::Node & index_result,
+        const ActionsDAG::Node & nullable_argument,
+        bool is_exact_search,
+        const ContextPtr & context)
+    {
+        const ActionsDAG::Node * argument_is_null = nullptr;
+        DataTypePtr null_map_type = std::make_shared<DataTypeUInt8>();
+
+        if (is_exact_search
+            && nullable_argument.type == ActionsDAG::ActionType::INPUT
+            && nullable_argument.result_type->hasSubcolumn(NULL_MAP_SUBCOLUMN))
+        {
+            String null_map_name = nullable_argument.result_name + "." + String(NULL_MAP_SUBCOLUMN);
+
+            /// May already be an input, e.g. for a second predicate on the same column.
+            const auto & inputs = actions_dag.getInputs();
+            auto it = std::ranges::find(inputs, null_map_name, &ActionsDAG::Node::result_name);
+
+            argument_is_null = it != inputs.end() ? *it : &actions_dag.addInput(null_map_name, null_map_type);
+        }
+        else
+        {
+            auto is_null_function = FunctionFactory::instance().get("isNull", context);
+            argument_is_null = &actions_dag.addFunction(is_null_function, {&nullable_argument}, "");
+        }
+
+        DataTypePtr nullable_result_type = makeNullable(null_map_type);
+        MutableColumnConstPtr null_column = nullable_result_type->createColumnConst(0, Field{});
+        const auto & null_node = actions_dag.addColumn(std::move(null_column), nullable_result_type, "NULL");
+
+        auto if_function = FunctionFactory::instance().get("if", context);
+        return actions_dag.addFunction(if_function, {argument_is_null, &null_node, &index_result}, "");
+    }
+
     /// Optimizes text-search functions by replacing them with virtual columns.
     void replaceFunctionsToVirtualColumns(
         NodeReplacement & replacement,
         const std::vector<SelectedCondition> & all_conditions,
         std::unordered_map<String, const ActionsDAG::Node *> & virtual_column_to_node,
+        const ActionsDAG::Node * nullable_argument,
         const ContextPtr & context)
     {
         const ActionsDAG::Node & function_node = *replacement.node;
@@ -975,6 +1091,10 @@ private:
                     function_node.result_name);
                 return;
             }
+
+            /// The NULLs would fail the cast to the UInt8 virtual column; `addNullsOfArgument` restores them.
+            if (nullable_argument)
+                exact_default_expression = makeASTFunction("ifNull", exact_default_expression, make_intrusive<ASTLiteral>(Field(0)));
         }
 
         auto add_condition_to_input = [&](const SelectedCondition & condition)
@@ -1024,6 +1144,11 @@ private:
 
             replacement.node = &actions_dag.addFunction(function_builder, children, "");
         }
+
+        /// The UInt8 virtual column holds 0 where the predicate is NULL; `NOT`, `isNull` and reading the
+        /// value tell the two apart.
+        if (nullable_argument)
+            replacement.node = &addNullsOfArgument(*replacement.node, *nullable_argument, has_exact_search, context);
 
         /// If the type of original function does not match the type of replacement,
         /// add a cast to the replacement to match the expected type (e.g. hasAnyTokens('hello world', toNullable('world'))).
@@ -1094,7 +1219,8 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
 
     const auto & indexes = read_from_merge_tree_step.getIndexes();
     bool is_final = read_from_merge_tree_step.isQueryWithFinal();
-    read_from_merge_tree_step.createReadTasksForTextIndex(indexes->skip_indexes, result.added_columns, result.removed_columns, is_final);
+    read_from_merge_tree_step.createReadTasksForTextIndex(
+        indexes->skip_indexes, result.added_columns, result.added_physical_columns, result.removed_columns, is_final);
     return result.filter_node;
 }
 

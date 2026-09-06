@@ -432,7 +432,12 @@ public:
 
     /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
-    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
+    void createReadTasksForTextIndex(
+        const UsefulSkipIndexes & skip_indexes,
+        const IndexReadColumns & added_columns,
+        const Names & added_physical_columns,
+        const Names & removed_columns,
+        bool is_final);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
