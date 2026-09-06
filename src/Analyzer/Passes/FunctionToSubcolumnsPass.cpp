@@ -1232,6 +1232,22 @@ private:
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
 
+    /// One frame per enclosing QueryNode depth, holding the column sources that scope registered
+    /// as correlated (see enter/leaveImpl for push/pop). Subcolumn-rewrite candidates only ever
+    /// live inside a QueryNode, and a correlated column is registered on every crossed QueryNode
+    /// scope, so QueryNode frames alone cover every candidate.
+    std::vector<std::unordered_set<const IQueryTreeNode *>> correlated_sources_stack;
+
+    /// True if the column source is registered as correlated by any enclosing scope on the stack.
+    bool isColumnSourceCorrelatedInScope(const QueryTreeNodePtr & column_source) const
+    {
+        const auto * source_ptr = column_source.get();
+        for (const auto & frame : correlated_sources_stack)
+            if (frame.contains(source_ptr))
+                return true;
+        return false;
+    }
+
 public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>;
     using Base::Base;
@@ -1264,9 +1280,10 @@ public:
         if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
-        if (node->as<QueryNode>())
+        if (auto * query_node = node->as<QueryNode>())
         {
             in_where_prewhere_stack.push_back(false);
+            pushCorrelatedSourcesFrame(query_node->getCorrelatedColumns());
             return;
         }
 
@@ -1276,6 +1293,11 @@ public:
         auto [function_node, first_argument_column_node, column_source] = getTypedNodesForOptimization(node, getContext());
         if (function_node && first_argument_column_node && column_source)
         {
+            /// A correlated column must keep the identity fixed for it at analysis time, so it
+            /// cannot be rewritten to a subcolumn here (would break decorrelation).
+            if (isColumnSourceCorrelatedInScope(first_argument_column_node->getColumnSource()))
+                return;
+
             auto column = first_argument_column_node->getColumn();
             auto qualified_name = makeColumnInSource(column_source, column.name);
 
@@ -1309,6 +1331,10 @@ public:
         auto [chain_func, chain_col, chain_source, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
         if (chain_func && chain_col && chain_source)
         {
+            /// Same correlated-scope guard as the direct-match branch above.
+            if (isColumnSourceCorrelatedInScope(chain_col->getColumnSource()))
+                return;
+
             auto column = chain_col->getColumn();
 
             if (!identifiers_to_optimize.everywhere.contains(makeColumnInSource(chain_source, column.name)))
@@ -1334,7 +1360,24 @@ public:
             return;
 
         if (node->as<QueryNode>())
+        {
             in_where_prewhere_stack.pop_back();
+            correlated_sources_stack.pop_back();
+        }
+    }
+
+private:
+    /// Always pushes exactly one frame (empty for non-correlated scopes) so the stack stays in
+    /// lockstep with enter/leaveImpl.
+    void pushCorrelatedSourcesFrame(const ListNode & correlated_columns)
+    {
+        std::unordered_set<const IQueryTreeNode *> frame;
+        for (const auto & correlated_column : correlated_columns.getNodes())
+        {
+            if (const auto * column_node = correlated_column->as<ColumnNode>())
+                frame.insert(column_node->getColumnSource().get());
+        }
+        correlated_sources_stack.push_back(std::move(frame));
     }
 };
 
