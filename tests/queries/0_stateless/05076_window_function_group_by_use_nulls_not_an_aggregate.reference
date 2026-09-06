@@ -1,0 +1,63 @@
+-- window PARTITION BY over a ROLLUP key, and the key is Nullable inside the window
+a	Nullable(String)	1
+b	Nullable(String)	1
+\N	Nullable(String)	1
+-- the window really partitions: one row number per group, three without PARTITION BY
+1
+3
+-- window ORDER BY over a ROLLUP key
+a	1
+b	2
+\N	3
+-- the key as the argument of a window aggregate
+a
+a
+a
+-- the key in both the argument and the partition
+a
+b
+\N
+-- other window function names
+a	1	1	1	\N
+b	1	1	1	\N
+\N	1	1	1	\N
+-- HAVING beside the window
+a	1
+b	1
+-- QUALIFY
+a	1
+b	1
+\N	1
+-- WITH CUBE
+a	1
+b	1
+\N	1
+-- GROUPING SETS
+a	1	1
+b	1	1
+\N	1	2
+-- the resolved type of a window aggregate over the key, on a query that was already accepted
+a	Nullable(String)
+b	Nullable(String)
+\N	Nullable(String)
+-- WITH TOTALS, where `group_by_use_nulls` does not reach the key today
+a	1
+b	1
+
+	1
+-- a named window, which resolves outside the window function and already worked
+a	1
+b	1
+\N	1
+-- `grouping` keeps comparing its argument in the original form
+a	0	1
+b	0	1
+\N	1	1
+-- a nested aggregate in the window specification keeps its own argument unconverted
+a	1
+b	1
+\N	1
+-- without `group_by_use_nulls`
+	1
+a	1
+b	1

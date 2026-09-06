@@ -74,13 +74,13 @@ public:
         return alias_name_to_expressions.contains(alias);
     }
 
-    /** Returns true if the stack contains an aggregate, window, or `grouping` function.
+    /** Returns true if the stack contains an aggregate or `grouping` function.
       *
       * It is used to decide whether an expression equal to a GROUP BY key must be converted
-      * to Nullable when `group_by_use_nulls` is enabled. Arguments of aggregate and window
-      * functions are computed before the nullability is applied to the keys, and arguments
-      * of the `grouping` function only identify GROUP BY keys and are compared with them
-      * in their original form by `GroupingFunctionsResolvePass`.
+      * to Nullable when `group_by_use_nulls` is enabled. Arguments of aggregate functions are
+      * computed before the nullability is applied to the keys, and arguments of the `grouping`
+      * function only identify GROUP BY keys and are compared with them in their original form
+      * by `GroupingFunctionsResolvePass`.
       */
     bool hasAggregateOrGroupingFunction() const
     {
@@ -141,8 +141,16 @@ private:
     {
         /// The parser always lowercases the `grouping` function name (see `getFunctionLayer`
         /// in `ExpressionListParsers.cpp`), so the exact comparison is enough.
-        return AggregateFunctionFactory::instance().isAggregateFunctionName(function.getFunctionName())
-            || function.getFunctionName() == "grouping";
+        if (function.getFunctionName() == "grouping")
+            return true;
+
+        /// A window function is evaluated after aggregation, so both its arguments and its window
+        /// specification observe the GROUP BY keys already converted to Nullable. `isWindowFunction`
+        /// tests only for the window child, so it holds before the function is resolved.
+        if (function.isWindowFunction())
+            return false;
+
+        return AggregateFunctionFactory::instance().isAggregateFunctionName(function.getFunctionName());
     }
 
     QueryTreeNodes expressions;
