@@ -3900,6 +3900,37 @@ void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vec
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "The `_distance` column is an internal virtual column of vector search and cannot be referenced directly in queries. "
             "Use the distance function (e.g. `L2Distance`, `cosineDistance`) in ORDER BY instead");
+
+    /// Row-policy DAGs retain required table columns as direct passthrough outputs. The vector-column
+    /// passthrough becomes invalid after replacing the physical column with `_distance`, while other
+    /// outputs consuming the vector column make the no-rescoring rewrite inapplicable and are rejected
+    /// by the caller. Remove this redundant output from both active and deferred row-policy DAGs.
+    const auto remove_vector_column_passthrough = [&](const FilterDAGInfoPtr & filter)
+    {
+        if (!filter)
+            return;
+
+        String output_to_remove;
+        for (const auto * output : filter->actions.getOutputs())
+        {
+            if (output->result_name == vector_column
+                || (output->type == ActionsDAG::ActionType::ALIAS && output->children.at(0)->result_name == vector_column))
+            {
+                output_to_remove = output->result_name;
+                break;
+            }
+        }
+
+        if (!output_to_remove.empty())
+        {
+            filter->actions.removeUnusedResult(output_to_remove);
+            filter->actions.removeUnusedActions();
+        }
+    };
+
+    remove_vector_column_passthrough(query_info.row_level_filter);
+    remove_vector_column_passthrough(deferred_row_level_filter);
+
     std::erase(all_column_names, vector_column);
     all_column_names.emplace_back("_distance");
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
@@ -4398,7 +4429,14 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->distributed_read_param_name = distributed_read_param_name;
     /// Filters deferred until after FINAL merging: losing them would apply the filter
     /// before deduplication and return rows a newer version should have replaced.
-    cloned_step->deferred_row_level_filter = deferred_row_level_filter;
+    if (deferred_row_level_filter)
+    {
+        auto deferred_row_level_filter_copy = std::make_shared<FilterDAGInfo>();
+        deferred_row_level_filter_copy->actions = deferred_row_level_filter->actions.clone();
+        deferred_row_level_filter_copy->column_name = deferred_row_level_filter->column_name;
+        deferred_row_level_filter_copy->do_remove_column = deferred_row_level_filter->do_remove_column;
+        cloned_step->deferred_row_level_filter = std::move(deferred_row_level_filter_copy);
+    }
     cloned_step->deferred_prewhere_info = deferred_prewhere_info;
     /// Carry over the TopK marker. `tryOptimizeTopK` runs in the first optimization pass, so a clone
     /// made later (`materializeQueryPlanReferences` for a common subplan reference, `cloneSubtree` for a
