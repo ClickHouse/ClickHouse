@@ -1,0 +1,12 @@
+String linear	shared	1
+String logistic	shared	1
+linear single-level	shared	1
+linear two-level	shared	1
+logistic single-level	shared	1
+logistic two-level	shared	1
+sum control	shared	15
+control	1
+linear-single	0
+linear-two	0
+logistic-single	0
+logistic-two	0

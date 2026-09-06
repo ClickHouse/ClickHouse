@@ -1,0 +1,23 @@
+single producer, two-level threshold 0
+shared	64	2080	4096
+single producer, two-level threshold 1
+shared	64	2080	4096
+multiple producers, two-level threshold 0
+producer waited for owner-held input
+shared	128	4160	4096
+multiple producers, two-level threshold 1
+producer waited for owner-held input
+shared	128	4160	4096
+external aggregation
+producer waited for owner-held input
+shared	16	72	4096
+cancellation
+producer waited for owner-held input
+cancellation woke the producer before the owner resumed
+query failed with 394
+owner exception
+producer waited for owner-held input
+query failed with 710
+query after cancellation and exception
+shared	64	2080	4096
+external aggregation wrote a part	1

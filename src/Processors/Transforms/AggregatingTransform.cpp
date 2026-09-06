@@ -2,11 +2,15 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsNumber.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Interpreters/AdaptiveAggregationImpl.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
 #include <Processors/Chunk.h>
@@ -25,6 +29,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <utility>
 
 namespace CurrentMetrics
 {
@@ -36,31 +41,347 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
+    extern const Event AggregationSingleLowCardinalityDictionarySwitches;
+    extern const Event AggregationDictionaryBackpressureWaits;
+    extern const Event AggregationDictionaryBackpressureCancelledWaits;
 }
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char dictionary_aggregation_low_backpressure_threshold[];
+    extern const char dictionary_aggregation_argument_backpressure_threshold[];
+    extern const char dictionary_aggregation_before_drain[];
+    extern const char dictionary_aggregation_throw_before_drain[];
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+ManyAggregatedData::DictionaryAggregationBackpressure::DictionaryAggregationBackpressure()
+{
+    fiu_do_on(FailPoints::dictionary_aggregation_argument_backpressure_threshold,
+    {
+        high_watermark = 64 << 10;
+    });
+    fiu_do_on(FailPoints::dictionary_aggregation_low_backpressure_threshold,
+    {
+        high_watermark = 1;
+    });
+}
+
+ManyAggregatedData::DictionaryAggregationBackpressure::DictionaryRetention::~DictionaryRetention()
+{
+    backpressure->releaseDictionaries(dictionaries);
+}
+
+std::shared_ptr<ManyAggregatedData::DictionaryAggregationBackpressure::DictionaryRetention>
+ManyAggregatedData::DictionaryAggregationBackpressure::retainDictionaries(
+    const Columns & columns, const IColumn * grouping_dictionary)
+{
+    Columns dictionaries;
+    auto collect = [&](const IColumn & column)
+    {
+        const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column);
+        if (low_cardinality && low_cardinality->isSharedDictionary()
+            && low_cardinality->getDictionaryPtr().get() != grouping_dictionary)
+            dictionaries.push_back(low_cardinality->getDictionaryPtr());
+    };
+    for (const auto & column : columns)
+    {
+        collect(*column);
+        column->forEachSubcolumnRecursively(collect);
+    }
+    if (dictionaries.empty())
+        return {};
+
+    /// `byteSize` already includes private dictionaries. Shared argument dictionaries can
+    /// change between chunks; unlike the grouping dictionary, the shard table does not retain them.
+    auto retained = std::make_shared<DictionaryRetention>(shared_from_this());
+    retained->dictionaries.reserve(dictionaries.size());
+    /// On an allocation failure, unlock before `retained` releases the registered prefix.
+    std::lock_guard lock(mutex);
+    for (auto & dictionary : dictionaries)
+    {
+        auto [it, inserted] = dictionary_usage.try_emplace(dictionary.get(), DictionaryUsage{0, dictionary->byteSize()});
+        ++it->second.references;
+        if (inserted)
+            add(it->second.bytes);
+        /// Capacity is reserved, so recording ownership cannot throw after updating the accounting.
+        retained->dictionaries.push_back(std::move(dictionary));
+    }
+    return retained;
+}
+
+void ManyAggregatedData::DictionaryAggregationBackpressure::releaseDictionaries(Columns & dictionaries)
+{
+    if (dictionaries.empty())
+        return;
+
+    size_t bytes = 0;
+    {
+        std::lock_guard lock(mutex);
+        for (const auto & dictionary : dictionaries)
+        {
+            auto it = dictionary_usage.find(dictionary.get());
+            chassert(it != dictionary_usage.end() && it->second.references != 0);
+            if (--it->second.references == 0)
+            {
+                bytes += it->second.bytes;
+                dictionary_usage.erase(it);
+            }
+        }
+    }
+    /// Keep identities alive until they are unregistered, but free payloads before waking producers.
+    dictionaries.clear();
+    release(bytes);
+}
+
+void ManyAggregatedData::DictionaryAggregationBackpressure::release(size_t bytes)
+{
+    if (bytes == 0)
+        return;
+
+    /// Pair sequentially consistent accounting with waiter registration and its predicate
+    /// check, so skipping the mutex when there are no waiters cannot lose a wakeup.
+    const size_t previous_bytes = outstanding_bytes.fetch_sub(bytes);
+    chassert(previous_bytes >= bytes);
+    /// Waiters can use a lower, memory-dependent watermark. Notify on every release below
+    /// the upper bound, not only when crossing it, so those waiters cannot miss their threshold.
+    if (num_waiters.load() != 0 && previous_bytes - bytes <= high_watermark)
+    {
+        /// Synchronize with the predicate check before a waiter releases the mutex and sleeps.
+        {
+            std::lock_guard lock(mutex);
+        }
+        cv.notify_all();
+    }
+}
+
+bool ManyAggregatedData::DictionaryAggregationBackpressure::wait()
+{
+    if (outstanding_bytes.load(std::memory_order_relaxed) == 0)
+        return !cancelled.load(std::memory_order_relaxed);
+
+    size_t watermark = high_watermark;
+    if (auto memory_limit = getCurrentQueryHardLimit())
+    {
+        const UInt64 memory_usage = std::max<Int64>(getCurrentQueryMemoryUsage(), 0);
+        const UInt64 headroom = *memory_limit - std::min(*memory_limit, memory_usage);
+        /// Leave room for aggregate states and input chunks already in flight. Snapshot the
+        /// threshold: waiting for unrelated memory to be freed could block after all owners drain.
+        watermark = std::min<UInt64>({watermark, *memory_limit / 8, headroom / 2});
+    }
+
+    if (outstanding_bytes.load(std::memory_order_relaxed) > watermark)
+    {
+        std::unique_lock lock(mutex);
+        ++num_waiters;
+        SCOPE_EXIT({ --num_waiters; });
+        if (!cancelled.load(std::memory_order_relaxed) && outstanding_bytes.load() > watermark)
+        {
+            ProfileEvents::increment(ProfileEvents::AggregationDictionaryBackpressureWaits);
+            cv.wait(lock, [&]
+            {
+                return cancelled.load(std::memory_order_relaxed) || outstanding_bytes.load() <= watermark;
+            });
+            if (cancelled.load(std::memory_order_relaxed))
+                ProfileEvents::increment(ProfileEvents::AggregationDictionaryBackpressureCancelledWaits);
+        }
+    }
+    return !cancelled.load(std::memory_order_relaxed);
+}
+
+void ManyAggregatedData::DictionaryAggregationBackpressure::cancel()
+{
+    cancelled.store(true, std::memory_order_relaxed);
+    {
+        std::lock_guard lock(mutex);
+    }
+    cv.notify_all();
+}
+
+namespace
+{
+size_t dictionaryAggregationBlockBytes(const Columns & columns)
+{
+    size_t bytes = sizeof(ManyAggregatedData::DictionaryAggregationBlock) + columns.capacity() * sizeof(ColumnPtr);
+    /// Shared argument dictionaries are charged separately, once across all retained chunks.
+    for (const auto & column : columns)
+        bytes += column->byteSize();
+    return bytes;
+}
+}
+
+ManyAggregatedData::DictionaryAggregationShards::DictionaryAggregationShards(
+    ColumnPtr dictionary_, size_t max_shards, std::shared_ptr<std::atomic<size_t>> shard_budget_)
+    : dictionary(std::move(dictionary_))
+    , shards(max_shards)
+    , shard_budget(std::move(shard_budget_))
+{
+    shards.front() = std::make_unique<DictionaryAggregationShard>();
+}
+
+ManyAggregatedData::DictionaryAggregationShards::~DictionaryAggregationShards()
+{
+    shards.clear();
+    shard_budget->fetch_add(num_shards.load(std::memory_order_relaxed) - 1, std::memory_order_relaxed);
+}
+
+ManyAggregatedData::DictionaryAggregationShards & ManyAggregatedData::acquireDictionaryAggregationShards(const ColumnPtr & dictionary)
+{
+    std::unique_lock registry_lock(dictionary_shards_mutex);
+    auto entry_it = dictionary_shards.find(dictionary.get());
+    if (entry_it == dictionary_shards.end())
+    {
+        auto entry = std::make_unique<DictionaryAggregationShards>(dictionary, max_shards_per_dictionary, dictionary_shard_budget);
+        entry_it = dictionary_shards.emplace(dictionary.get(), std::move(entry)).first;
+    }
+
+    auto & entry = *entry_it->second;
+    ++entry.num_users;
+    const size_t old_num_shards = entry.num_shards.load(std::memory_order_relaxed);
+    const size_t new_num_shards = std::bit_floor(std::min({
+        entry.num_users, max_shards_per_dictionary,
+        old_num_shards + dictionary_shard_budget->load(std::memory_order_relaxed)}));
+    if (new_num_shards > old_num_shards)
+    {
+        for (size_t shard = old_num_shards; shard < new_num_shards; ++shard)
+            entry.shards[shard] = std::make_unique<DictionaryAggregationShard>();
+
+        /// Only acquisitions spend the budget, under the registry mutex. Destructors may
+        /// return it concurrently, but cannot invalidate the availability checked above.
+        dictionary_shard_budget->fetch_sub(new_num_shards - old_num_shards, std::memory_order_relaxed);
+        /// Do not move existing states or queues: chunks already in flight can use the old
+        /// count. Retirement and the final dictionary pre-merge combine any overlapping keys.
+        entry.num_shards.store(new_num_shards, std::memory_order_release);
+    }
+    return entry;
+}
+
+std::unique_ptr<ManyAggregatedData::DictionaryAggregationShards> ManyAggregatedData::releaseDictionaryAggregationShards(
+    DictionaryAggregationShards & shards)
+{
+    std::lock_guard registry_lock(dictionary_shards_mutex);
+    chassert(shards.num_users != 0);
+    if (--shards.num_users != 0)
+        return {};
+
+    auto entry_it = dictionary_shards.find(shards.dictionary.get());
+    chassert(entry_it != dictionary_shards.end() && entry_it->second.get() == &shards);
+    auto retired = std::move(entry_it->second);
+    dictionary_shards.erase(entry_it);
+    return retired;
+}
+
+void ManyAggregatedData::collectDictionaryAggregationVariants()
+{
+    for (auto & result : dictionary_aggregation_results)
+        if (result)
+            variants.push_back(std::move(result));
+
+    for (auto & [dictionary, shards] : dictionary_shards)
+        for (auto & shard : shards->shards)
+            if (shard && shard->variants)
+                variants.push_back(std::move(shard->variants));
+    dictionary_shards.clear();
+}
+
+ManyAggregatedData::DictionaryAggregationLease ManyAggregatedData::enqueueDictionaryAggregationBlock(
+    DictionaryAggregationShards & shards_for_dictionary,
+    size_t shard,
+    Columns columns,
+    size_t rows,
+    size_t bytes,
+    std::shared_ptr<DictionaryAggregationBackpressure::DictionaryRetention> retained_dictionaries)
+{
+    chassert(shard < shards_for_dictionary.num_shards.load(std::memory_order_acquire));
+
+    auto & dictionary_shard = *shards_for_dictionary.shards[shard];
+    std::unique_lock shard_lock(dictionary_shard.mutex);
+
+    dictionary_shard.pending_blocks.push_back({std::move(retained_dictionaries), std::move(columns), rows});
+    dictionary_shard.pending_bytes += bytes;
+    if (dictionary_shard.is_processing)
+        return {};
+
+    dictionary_shard.is_processing = true;
+
+    if (!dictionary_shard.variants)
+    {
+        dictionary_shard.variants = std::make_shared<AggregatedDataVariants>();
+        has_created_dictionary_shards.store(true, std::memory_order_relaxed);
+    }
+
+    auto variant = dictionary_shard.variants;
+    DictionaryAggregationLease lease{
+        .variants = std::move(variant),
+        .shard = &dictionary_shard,
+        .blocks = {},
+        .bytes = std::exchange(dictionary_shard.pending_bytes, 0),
+    };
+    lease.blocks.swap(dictionary_shard.pending_blocks);
+    return lease;
+}
+
+bool ManyAggregatedData::continueDictionaryAggregationShard(DictionaryAggregationLease & lease)
+{
+    chassert(lease.shard);
+    lease.blocks.clear();
+    dictionary_backpressure->release(std::exchange(lease.bytes, 0));
+
+    std::unique_lock shard_lock(lease.shard->mutex);
+    if (lease.shard->pending_blocks.empty())
+    {
+        lease.shard->is_processing = false;
+        lease.shard = nullptr;
+        lease.variants.reset();
+        return false;
+    }
+
+    lease.blocks.swap(lease.shard->pending_blocks);
+    lease.bytes = std::exchange(lease.shard->pending_bytes, 0);
+    return true;
+}
+
+void ManyAggregatedData::releaseDictionaryAggregationShard(DictionaryAggregationLease & lease)
+{
+    lease.blocks.clear();
+    dictionary_backpressure->release(std::exchange(lease.bytes, 0));
+    if (!lease.shard)
+        return;
+
+    std::lock_guard lock(lease.shard->mutex);
+    lease.shard->is_processing = false;
+    lease.shard = nullptr;
+    lease.variants.reset();
 }
 
 ManyAggregatedData::~ManyAggregatedData()
 {
     try
     {
+        /// Also collect unfinished dictionaries when aggregation was cancelled, so their
+        /// states can be destroyed in parallel below.
+        collectDictionaryAggregationVariants();
+
         if (variants.size() <= 1)
             return;
 
         // Aggregation states destruction may be very time-consuming.
         // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
         // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
+        const size_t num_threads = std::min(variants.size(), num_producers);
         const auto pool = std::make_unique<ThreadPool>(
             CurrentMetrics::DestroyAggregatesThreads,
             CurrentMetrics::DestroyAggregatesThreadsActive,
             CurrentMetrics::DestroyAggregatesThreadsScheduled,
-            variants.size());
+            num_threads);
 
         for (auto && variant : variants)
         {
@@ -1115,7 +1436,10 @@ AggregatingTransform::AggregatingTransform(
     , key_columns(params->params.keys_size)
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
+    , dictionary_backpressure(many_data->dictionary_backpressure)
     , variants(*many_data->variants[current_variant])
+    , dictionary_aggregation_result(many_data->dictionary_aggregation_results[current_variant])
+    , dictionary_shard_offset(current_variant)
     , max_threads(std::min(many_data->variants.size(), max_threads_))
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
@@ -1132,6 +1456,7 @@ AggregatingTransform::~AggregatingTransform() = default;
 
 void AggregatingTransform::onCancel() noexcept
 {
+    dictionary_backpressure->cancel();
     /// A pressure sweep checks this between chunks and buckets: it can spill gigabytes to
     /// disk, and a cancelled query must not wait that out.
     if (adaptive_context)
@@ -1234,7 +1559,20 @@ void AggregatingTransform::work()
     }
     else
     {
-        consume(std::move(current_chunk));
+        try
+        {
+            consume(std::move(current_chunk));
+        }
+        catch (...)
+        {
+            /// An exception can abandon queued fragments. Wake peers before propagating it.
+            dictionary_backpressure->cancel();
+            throw;
+        }
+        if (is_consume_finished)
+            dictionary_backpressure->cancel();
+        else if (dictionary_sharding_enabled && !dictionary_backpressure->wait())
+            is_consume_finished = true;
         read_current_chunk = false;
     }
 }
@@ -1278,16 +1616,300 @@ void AggregatingTransform::consume(Chunk chunk)
     }
     else
     {
-        if (!params->aggregator.executeOnBlock(
-                chunk.detachColumns(),
+        Columns columns = chunk.detachColumns();
+        /// `skip_merging` requires complete groups in each producer's result. Shards from
+        /// different dictionaries can contain partial results for the same key.
+        const bool can_use_dictionary_shards
+            = !skip_merging && (!adaptive_context || adaptive_context->isBaseline() || variants.empty());
+        /// Keep one shard-count snapshot for this chunk, even if another producer grows it
+        /// while the chunk is being partitioned or its leases are being drained.
+        size_t num_dictionary_shards = current_dictionary_shards
+            ? current_dictionary_shards->num_shards.load(std::memory_order_acquire) : 1;
+        IColumn::Selector dictionary_shard_selector;
+        auto dictionary = can_use_dictionary_shards
+            ? params->aggregator.getSingleLowCardinalityDictionaryForBlock(columns, num_dictionary_shards, dictionary_shard_selector)
+            : nullptr;
+        if (dictionary)
+        {
+            if (adaptive_context && !adaptive_context->isBaseline())
+            {
+                adaptive_context->standDown(
+                    AdaptiveAggregationProducer::BaselineState::Reason::SingleLowCardinalityDictionary);
+            }
+
+            const bool dictionary_changed
+                = previous_single_dictionary && previous_single_dictionary != dictionary.get();
+            if (dictionary_changed)
+            {
+                ProfileEvents::increment(ProfileEvents::AggregationSingleLowCardinalityDictionarySwitches);
+                dictionary_sharding_enabled = true;
+            }
+            previous_single_dictionary = dictionary.get();
+
+            if (!dictionary_sharding_enabled)
+            {
+                if (!params->aggregator.executeOnBlock(
+                        std::move(columns),
+                        0,
+                        num_rows,
+                        variants,
+                        key_columns,
+                        aggregate_columns,
+                        no_more_keys,
+                        adaptive_context.get()))
+                    is_consume_finished = true;
+                return;
+            }
+
+            if (!current_dictionary_shards || current_dictionary_shards->dictionary.get() != dictionary.get())
+            {
+                if (!retireCurrentDictionary())
+                {
+                    is_consume_finished = true;
+                    return;
+                }
+                current_dictionary_shards = &many_data->acquireDictionaryAggregationShards(dictionary);
+                const size_t new_num_shards = current_dictionary_shards->num_shards.load(std::memory_order_acquire);
+                if (new_num_shards != num_dictionary_shards && new_num_shards > 1)
+                {
+                    auto shard_dictionary = params->aggregator.getSingleLowCardinalityDictionaryForBlock(
+                        columns, new_num_shards, dictionary_shard_selector);
+                    if (shard_dictionary.get() != dictionary.get())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "LowCardinality dictionary changed while selecting aggregation shards");
+                }
+                num_dictionary_shards = new_num_shards;
+            }
+            auto & dictionary_shards = *current_dictionary_shards;
+            auto retained_dictionaries = dictionary_backpressure->retainDictionaries(columns, dictionary.get());
+
+            if (num_dictionary_shards == 1)
+            {
+                const size_t bytes = dictionaryAggregationBlockBytes(columns);
+                dictionary_backpressure->add(bytes);
+                auto lease = many_data->enqueueDictionaryAggregationBlock(
+                    dictionary_shards,
+                    0,
+                    std::move(columns),
+                    num_rows,
+                    bytes,
+                    std::move(retained_dictionaries));
+                if (lease && !executeDictionaryAggregationLease(std::move(lease)))
+                    is_consume_finished = true;
+                return;
+            }
+
+            std::vector<size_t> shard_sizes(num_dictionary_shards);
+            for (const size_t shard : dictionary_shard_selector)
+                ++shard_sizes[shard];
+
+            std::vector<ColumnUInt64::MutablePtr> shard_row_indexes;
+            shard_row_indexes.resize(num_dictionary_shards);
+            for (size_t shard = 0; shard < num_dictionary_shards; ++shard)
+                if (shard_sizes[shard] != 0)
+                    shard_row_indexes[shard] = ColumnUInt64::create(shard_sizes[shard]);
+
+            std::vector<size_t> shard_offsets(num_dictionary_shards);
+            for (size_t row = 0; row < num_rows; ++row)
+            {
+                const size_t shard = dictionary_shard_selector[row];
+                shard_row_indexes[shard]->getData()[shard_offsets[shard]++] = row;
+            }
+
+            std::vector<Columns> shard_columns(num_dictionary_shards);
+            for (auto & shard : shard_columns)
+                shard.reserve(columns.size());
+            for (auto & column : columns)
+            {
+                for (size_t shard = 0; shard < num_dictionary_shards; ++shard)
+                    if (shard_sizes[shard] != 0)
+                        shard_columns[shard].push_back(column->index(*shard_row_indexes[shard], 0));
+                column.reset();
+            }
+            columns.clear();
+            shard_row_indexes.clear();
+            dictionary_shard_selector.clear();
+
+            const size_t shard_mask = num_dictionary_shards - 1;
+            const size_t first_shard = dictionary_shard_offset & shard_mask;
+            dictionary_shard_offset = (first_shard + 1) & shard_mask;
+            std::vector<ManyAggregatedData::DictionaryAggregationLease> leases;
+            leases.reserve(num_dictionary_shards);
+            std::vector<size_t> shard_bytes(num_dictionary_shards);
+            size_t total_bytes = 0;
+            for (size_t shard = 0; shard < num_dictionary_shards; ++shard)
+            {
+                if (shard_sizes[shard] == 0)
+                    continue;
+                shard_bytes[shard] = dictionaryAggregationBlockBytes(shard_columns[shard]);
+                total_bytes += shard_bytes[shard];
+            }
+            /// Charge once per input chunk, before publishing any fragments to their owners.
+            dictionary_backpressure->add(total_bytes);
+            for (size_t shard_index = 0; shard_index < num_dictionary_shards; ++shard_index)
+            {
+                const size_t shard = (first_shard + shard_index) & shard_mask;
+                const size_t shard_rows = shard_sizes[shard];
+                if (shard_rows == 0)
+                    continue;
+
+                auto lease = many_data->enqueueDictionaryAggregationBlock(
+                    dictionary_shards,
+                    shard,
+                    std::move(shard_columns[shard]),
+                    shard_rows,
+                    shard_bytes[shard],
+                    retained_dictionaries);
+                if (lease)
+                    leases.push_back(std::move(lease));
+            }
+            retained_dictionaries.reset();
+
+            for (size_t lease_index = 0; lease_index < leases.size(); ++lease_index)
+            {
+                if (!executeDictionaryAggregationLease(std::move(leases[lease_index])))
+                {
+                    is_consume_finished = true;
+                    for (++lease_index; lease_index < leases.size(); ++lease_index)
+                        many_data->releaseDictionaryAggregationShard(leases[lease_index]);
+                    break;
+                }
+            }
+        }
+        else
+        {
+            dictionary_sharding_enabled |= previous_single_dictionary != nullptr;
+            previous_single_dictionary = nullptr;
+            if (!retireCurrentDictionary())
+            {
+                is_consume_finished = true;
+                return;
+            }
+            if (!params->aggregator.executeOnBlock(
+                    std::move(columns),
+                    0,
+                    num_rows,
+                    variants,
+                    key_columns,
+                    aggregate_columns,
+                    no_more_keys,
+                    adaptive_context.get()))
+                is_consume_finished = true;
+        }
+    }
+}
+
+bool AggregatingTransform::retireCurrentDictionary()
+{
+    if (!current_dictionary_shards)
+        return true;
+
+    auto retired = many_data->releaseDictionaryAggregationShards(*std::exchange(current_dictionary_shards, nullptr));
+    if (!retired)
+        return true;
+
+    /// A producer never changes registrations while it owns a lease. Thus the last user
+    /// sees fully drained shards, without acquiring their queue mutexes. A later reader of
+    /// the same dictionary can already create a new entry while this one is being retired.
+    for (auto & shard : retired->shards)
+    {
+        if (!shard)
+            continue;
+        chassert(!shard->is_processing && shard->pending_blocks.empty() && shard->pending_bytes == 0);
+        auto source = std::move(shard->variants);
+        if (!source || !source->hasData())
+            continue;
+        if (is_cancelled)
+            return false;
+
+        if (!dictionary_aggregation_result)
+            dictionary_aggregation_result = std::make_shared<AggregatedDataVariants>();
+        dictionary_aggregation_result->top_k_heap_ever_rejected |= source->topKHeapEverRejected();
+
+        /// Convert before destroying the source: the chunks take ownership of its aggregate
+        /// states and arenas. The merge copies those states into the producer's value-keyed
+        /// table rather than retaining one arena per retired dictionary. It also applies the
+        /// normal external-aggregation threshold to that table.
+        auto chunks = params->aggregator.convertToChunks(*source, /*final=*/false);
+        source.reset();
+        for (auto & chunk : chunks)
+        {
+            const size_t rows = chunk.chunk.getNumRows();
+            if (rows == 0)
+                continue;
+            if (is_cancelled)
+                return false;
+
+            auto columns = chunk.chunk.detachColumns();
+            /// The sole grouping key is first in the merge layout. Keep `mergeOnBlock` caches
+            /// bounded by this chunk, preserving key encodings with `insertData`: `cutAndCompact`
+            /// canonicalizes distinct `NaN` payloads in legacy dictionaries and would merge their states.
+            const auto & key_column = assert_cast<const ColumnLowCardinality &>(*columns[0]);
+            if (key_column.isSharedDictionary())
+            {
+                auto compact_key = key_column.cloneEmpty();
+                compact_key->reserve(rows);
+                for (size_t row = 0; row < rows; ++row)
+                {
+                    if (key_column.isNullAt(row))
+                        compact_key->insertDefault();
+                    else
+                    {
+                        auto key = key_column.getDataAt(row);
+                        compact_key->insertData(key.data(), key.size());
+                    }
+                }
+                columns[0] = std::move(compact_key);
+            }
+
+            if (!params->aggregator.mergeOnBlock(
+                    std::move(columns), rows, chunk.is_overflows, *dictionary_aggregation_result, no_more_keys, is_cancelled))
+                return false;
+        }
+    }
+
+    return true;
+}
+
+bool AggregatingTransform::executeDictionaryAggregationLease(ManyAggregatedData::DictionaryAggregationLease lease)
+{
+    SCOPE_EXIT({ many_data->releaseDictionaryAggregationShard(lease); });
+
+    if (FailPointInjection::hasAnyFailPointBeenRegistered())
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::dictionary_aggregation_before_drain);
+        fiu_do_on(FailPoints::dictionary_aggregation_throw_before_drain,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before draining a dictionary aggregation shard");
+        });
+    }
+
+    while (true)
+    {
+        for (const auto & block : lease.blocks)
+        {
+            if (is_cancelled.load(std::memory_order_relaxed))
+                return false;
+
+            const bool should_continue = params->aggregator.executeOnBlock(
+                block.columns,
                 0,
-                num_rows,
-                variants,
+                block.rows,
+                *lease.variants,
                 key_columns,
                 aggregate_columns,
                 no_more_keys,
-                adaptive_context.get()))
-            is_consume_finished = true;
+                adaptive_context.get(),
+                /*is_dictionary_shard=*/true);
+
+            if (!should_continue)
+                return false;
+        }
+
+        if (is_cancelled.load(std::memory_order_relaxed))
+            return false;
+
+        if (!many_data->continueDictionaryAggregationShard(lease))
+            return true;
     }
 }
 
@@ -1347,6 +1969,11 @@ void AggregatingTransform::initGenerate()
         return;
     }
 
+    /// Keep each producer's final dictionary registered through the barrier. There are at
+    /// most `num_producers` such dictionaries, and their tables can use the parallel final
+    /// merge instead of making the last reader merge all the final dictionary's shards.
+    many_data->collectDictionaryAggregationVariants();
+
     adaptive_engaged = adaptive_context && adaptive_context->session->initialized.load(std::memory_order_acquire);
 
     if (adaptive_engaged)
@@ -1405,8 +2032,17 @@ void AggregatingTransform::initGenerate()
     {
         if (!skip_merging)
         {
+            const bool hash_table_sizes_are_representative
+                = !many_data->has_created_dictionary_shards.load(std::memory_order_relaxed);
             auto prepared_data = params->aggregator.prepareVariantsToMerge(
-                std::move(many_data->variants), adaptive_context ? adaptive_context->session.get() : nullptr);
+                std::move(many_data->variants),
+                is_cancelled,
+                adaptive_context ? adaptive_context->session.get() : nullptr,
+                /*require_stable_bucket_hash=*/!params->final,
+                hash_table_sizes_are_representative);
+            if (is_cancelled.load(std::memory_order_relaxed))
+                return;
+
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
                 params, std::move(prepared_data_ptr), max_threads, updater, adaptive_engaged ? adaptive_context->session : nullptr));
@@ -1416,7 +2052,17 @@ void AggregatingTransform::initGenerate()
             if (updater)
                 updater->markUnsupportedCase();
 
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants), /*adaptive_session=*/nullptr);
+            const bool hash_table_sizes_are_representative
+                = !many_data->has_created_dictionary_shards.load(std::memory_order_relaxed);
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(
+                std::move(many_data->variants),
+                is_cancelled,
+                /*adaptive_session=*/nullptr,
+                /*require_stable_bucket_hash=*/!params->final,
+                hash_table_sizes_are_representative);
+            if (is_cancelled.load(std::memory_order_relaxed))
+                return;
+
             Pipes pipes;
             for (auto & variant : prepared_data)
             {

@@ -1,0 +1,11 @@
+String control	a	[10]
+String control	b	[30]
+single-level	a	[10]
+single-level	b	[30]
+two-level	a	[10]
+two-level	b	[30]
+sum control	a	30
+sum control	b	30
+control	1
+single-level	0
+two-level	0

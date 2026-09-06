@@ -1,0 +1,11 @@
+cancel owner, spill threshold 1073741824
+resume owner, spill threshold 1073741824
+shared	3	60	[10,20,30]
+cancel owner, spill threshold 1
+resume owner, spill threshold 1
+shared	3	60	[10,20,30]
+query log checks
+cancel	1073741824	1
+resume	1073741824	1
+cancel	1	1
+resume	1	1

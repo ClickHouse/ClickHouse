@@ -991,6 +991,9 @@ The server successfully detected this situation and will download merged part fr
     M(MainConfigLoads, "Number of times the main configuration was reloaded.", ValueType::Number) \
     \
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.", ValueType::Number) \
+    M(AggregationSingleLowCardinalityDictionarySwitches, "How many times an aggregation input stream switched between single-part `LowCardinality` dictionaries.", ValueType::Number) \
+    M(AggregationDictionaryBackpressureWaits, "How many times an aggregation producer waited for dictionary-shard input to drain before consuming another chunk.", ValueType::Number) \
+    M(AggregationDictionaryBackpressureCancelledWaits, "How many dictionary aggregation backpressure waits were interrupted by cancellation or an aggregation error.", ValueType::Number) \
     M(AdaptiveAggregationLocalFreezes, "How many local hash tables the adaptive aggregation froze at the freeze threshold.", ValueType::Number) \
     M(AdaptiveAggregationGiveUps, "How many threads gave up on freezing in the adaptive aggregation because their stream held few distinct keys.", ValueType::Number) \
     M(AdaptiveAggregationPressureStandDowns, "How many threads in the adaptive aggregation left the learning phase for good because memory pressure crossed the external aggregation threshold, so their local tables spill through the ordinary external aggregation.", ValueType::Number) \

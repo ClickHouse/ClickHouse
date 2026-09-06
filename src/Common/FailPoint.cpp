@@ -369,6 +369,15 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(aggregating_in_order_transform_mid_loop_pause) \
+    REGULAR(dictionary_aggregation_low_backpressure_threshold) \
+    REGULAR(dictionary_aggregation_argument_backpressure_threshold) \
+    PAUSEABLE_ONCE(dictionary_aggregation_before_drain) \
+    ONCE(dictionary_aggregation_throw_before_drain) \
+    PAUSEABLE(dictionary_aggregation_after_merge_task) \
+    PAUSEABLE(dictionary_aggregation_after_normalize_task) \
+    PAUSEABLE(dictionary_aggregation_after_normalize_batch) \
+    REGULAR(dictionary_aggregation_small_normalization_shards) \
+    ONCE(dictionary_aggregation_throw_after_normalization_split) \
     PAUSEABLE_ONCE(mysql_output_format_mid_loop_pause) \
     PAUSEABLE_ONCE(postgresql_output_format_mid_loop_pause) \
     ONCE(hash_join_throw_after_data_release) \

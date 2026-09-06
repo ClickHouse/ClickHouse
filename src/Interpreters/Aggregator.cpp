@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <optional>
 #include <unordered_map>
+#include <vector>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
 #include <Poco/Util/Application.h>
@@ -9,6 +11,7 @@
 #include <base/getL2CacheSize.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
@@ -34,7 +37,9 @@
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
 #include <Common/JSONBuilder.h>
@@ -95,6 +100,16 @@ namespace ErrorCodes
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char dictionary_aggregation_after_merge_task[];
+    extern const char dictionary_aggregation_after_normalize_task[];
+    extern const char dictionary_aggregation_after_normalize_batch[];
+    extern const char dictionary_aggregation_small_normalization_shards[];
+    extern const char dictionary_aggregation_throw_after_normalization_split[];
 }
 
 }
@@ -118,9 +133,12 @@ bool worthConvertToTwoLevel(
 }
 
 void initDataVariantsWithSizeHint(
-    DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
+    DB::AggregatedDataVariants & result,
+    DB::AggregatedDataVariants::Type method_chosen,
+    const DB::Aggregator::Params & params,
+    bool use_hash_table_size_hint = true)
 {
-    if (params.top_k)
+    if (params.top_k || !use_hash_table_size_hint)
     {
         result.init(method_chosen);
         ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
@@ -166,7 +184,8 @@ void initDataVariantsWithSizeHint(
 void updateStatistics(
     const DB::ManyAggregatedDataVariants & data_variants,
     DB::AdaptiveAggregationSession * adaptive_session,
-    const DB::StatsCollectingParams & params)
+    const DB::StatsCollectingParams & params,
+    bool hash_table_sizes_are_representative)
 {
     if (!params.isCollectionAndUseEnabled())
         return;
@@ -174,13 +193,6 @@ void updateStatistics(
     for (const auto & variants : data_variants)
         if (variants->topKHeapEverRejected())
             return;
-
-    std::vector<size_t> sizes(data_variants.size());
-    for (size_t i = 0; i < data_variants.size(); ++i)
-        sizes[i] = data_variants[i]->size();
-    const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
-    ::nth_element(sizes.begin(), median_size, sizes.end());
-    const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
 
     /// A run that staged enough records to trust the thaw sampler records the measured verdict;
     /// any other run carries the stored verdict over, so that runs without an adaptive
@@ -201,7 +213,33 @@ void updateStatistics(
             repeat_dominated = prev->adaptive_staging_repeat_dominated;
     }
 
-    DB::getHashTablesStatistics<DB::AggregationEntry>().update(
+    auto & statistics = DB::getHashTablesStatistics<DB::AggregationEntry>();
+    if (!hash_table_sizes_are_representative)
+    {
+        /// A dictionary-shard run does not have one representative table per producer, while size
+        /// hints are interpreted that way. Keep the previous sizes instead of feeding shard sizes
+        /// back as per-thread estimates on the next run.
+        if (!measured)
+            return;
+
+        DB::AggregationEntry entry{.adaptive_staging_repeat_dominated = repeat_dominated};
+        if (const auto previous = statistics.getSizeHint(params))
+        {
+            entry.sum_of_sizes = previous->sum_of_sizes;
+            entry.median_size = previous->median_size;
+        }
+        statistics.update(entry, params);
+        return;
+    }
+
+    std::vector<size_t> sizes(data_variants.size());
+    for (size_t i = 0; i < data_variants.size(); ++i)
+        sizes[i] = data_variants[i]->size();
+    const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
+    ::nth_element(sizes.begin(), median_size, sizes.end());
+    const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
+
+    statistics.update(
         {.sum_of_sizes = sum_of_sizes, .median_size = *median_size, .adaptive_staging_repeat_dominated = repeat_dominated}, params);
 }
 
@@ -806,6 +844,15 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         }
     }
 
+    can_reorder_dictionary_aggregation = canUseSingleLowCardinalityDictionary(method_chosen)
+        && std::ranges::all_of(
+            aggregate_functions,
+            [](const auto * function)
+            {
+                const auto properties = AggregateFunctionFactory::instance().tryGetProperties(function->getName(), NullsAction::EMPTY);
+                return properties && !properties->is_order_dependent;
+            });
+
     /// See `Params::aggregation_in_order` and `method_chosen_for_in_order`: the `prealloc_serialized`
     /// method serializes the whole block's keys on state construction, which is pathological for the
     /// per-run in-order path, where a fresh state is constructed for every run of equal order-key
@@ -994,6 +1041,320 @@ bool Aggregator::hasSparseArguments(const AggregateFunctionInstruction * aggrega
     return false;
 }
 
+ColumnPtr Aggregator::getSingleLowCardinalityDictionaryForBlock(
+    const Columns & columns, size_t num_shards, IColumn::Selector & selector) const
+{
+    /// Keep Top-K queries producer-local: merging retired shard candidates does not prune them.
+    if (!can_reorder_dictionary_aggregation
+        || params.keys_size != 1
+        || params.max_rows_to_group_by != 0
+        || params.top_k
+        || params.overflow_row
+        || !canUseSingleLowCardinalityDictionary(method_chosen))
+        return {};
+
+    ColumnPtr key_column = columns.at(keys_positions[0]);
+    if (params.optimize_group_by_constant_keys && isColumnConst(*key_column))
+        key_column = assert_cast<const ColumnConst &>(*key_column).getDataColumnPtr();
+    else
+        key_column = removeSpecialRepresentations(key_column)->convertToFullColumnIfConst();
+
+    const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(key_column.get());
+    if (!low_cardinality_column || !low_cardinality_column->hasSingleDictionaryForPart())
+        return {};
+
+    /// `ColumnAggregateFunction::index` retains source states and arenas that `byteSize` does not count.
+    /// Keep these inputs producer-local instead of queuing them under the dictionary-shard byte budget.
+    /// Inspect actual subcolumns as well: `Dynamic` can hide aggregate states from the input header.
+    for (const auto & column : columns)
+    {
+        bool has_aggregate_states = column->getDataType() == TypeIndex::AggregateFunction;
+        column->forEachSubcolumnRecursively([&](const IColumn & subcolumn)
+        {
+            has_aggregate_states |= subcolumn.getDataType() == TypeIndex::AggregateFunction;
+        });
+        if (has_aggregate_states)
+            return {};
+    }
+
+    if (!std::has_single_bit(num_shards))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The number of dictionary aggregation shards must be a power of two");
+
+    if (num_shards == 1)
+        return low_cardinality_column->getDictionaryPtr();
+
+    const size_t rows = columns.at(keys_positions[0])->size();
+    selector.resize(rows);
+    const auto & indexes = low_cardinality_column->getIndexes();
+    const char * positions = indexes.getRawData().data();
+    const size_t shard_mask = num_shards - 1;
+    /// Use the same high hash bits as the two-level aggregation buckets, so each shard
+    /// receives a contiguous range of buckets. Growing the shard count may leave older
+    /// states outside that range; the dictionary pre-merge still combines their equal keys.
+    const size_t shard_shift = 32 - std::countr_zero(num_shards);
+    const bool is_constant = key_column->size() == 1 && rows != 1;
+
+    auto fill_selector = [&]<typename Index>()
+    {
+        if (is_constant)
+        {
+            const size_t shard = (HashCRC32<UInt64>{}(unalignedLoad<Index>(positions)) >> shard_shift) & shard_mask;
+            std::ranges::fill(selector, shard);
+            return;
+        }
+
+        for (size_t row = 0; row < rows; ++row)
+        {
+            const UInt64 index = unalignedLoad<Index>(positions + row * sizeof(Index));
+            selector[row] = (HashCRC32<UInt64>{}(index) >> shard_shift) & shard_mask;
+        }
+    };
+
+    switch (low_cardinality_column->getSizeOfIndexType())
+    {
+        case sizeof(UInt8):
+            fill_selector.template operator()<UInt8>();
+            break;
+        case sizeof(UInt16):
+            fill_selector.template operator()<UInt16>();
+            break;
+        case sizeof(UInt32):
+            fill_selector.template operator()<UInt32>();
+            break;
+        case sizeof(UInt64):
+            fill_selector.template operator()<UInt64>();
+            break;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected dictionary index size");
+    }
+
+    return low_cardinality_column->getDictionaryPtr();
+}
+
+bool Aggregator::canUseSingleLowCardinalityDictionary(AggregatedDataVariants::Type type) const
+{
+    using Type = AggregatedDataVariants::Type;
+    switch (type)
+    {
+        /// `low_cardinality_key16` has no two-level counterpart. If an index-key table
+        /// spills, normalization would write single-level `bucket_num = -1` blocks and
+        /// the external merge could no longer bound memory one bucket at a time.
+        case Type::low_cardinality_key16:
+            return params.max_bytes_before_external_group_by == 0;
+
+        /// The existing `low_cardinality_key8` method uses a `FixedHashMap`, which is faster
+        /// than storing dictionary indexes in the `UInt64` hash table used by this method.
+        case Type::low_cardinality_key32:
+        case Type::low_cardinality_key64:
+        case Type::low_cardinality_keys128:
+        case Type::low_cardinality_keys256:
+        case Type::low_cardinality_key_string:
+        case Type::low_cardinality_key_fixed_string:
+            return true;
+        default:
+            return false;
+    }
+}
+
+const IColumn * Aggregator::getSingleLowCardinalityDictionary(const AggregatedDataVariants & result)
+{
+    if (result.type == AggregatedDataVariants::Type::low_cardinality_single_dictionary)
+        return result.low_cardinality_single_dictionary->dictionary.get();
+    if (result.type == AggregatedDataVariants::Type::low_cardinality_single_dictionary_two_level)
+        return result.low_cardinality_single_dictionary_two_level->dictionary.get();
+    return nullptr;
+}
+
+bool Aggregator::bindSingleLowCardinalityDictionary(
+    AggregatedDataVariants & result, const ColumnRawPtrs & key_columns) const
+{
+    if (!result.isSingleLowCardinalityDictionary() || key_columns.size() != 1)
+        return false;
+
+    const auto * column = typeid_cast<const ColumnLowCardinality *>(key_columns[0]);
+    if (!column)
+        return false;
+
+    if (result.type == AggregatedDataVariants::Type::low_cardinality_single_dictionary)
+        return result.low_cardinality_single_dictionary->bindDictionary(*column);
+
+    return result.low_cardinality_single_dictionary_two_level->bindDictionary(*column);
+}
+
+void Aggregator::normalizeSingleLowCardinalityDictionary(
+    AggregatedDataVariants & result, const std::atomic<bool> * is_cancelled) const
+{
+    if (!result.isSingleLowCardinalityDictionary() || (is_cancelled && is_cancelled->load(std::memory_order_relaxed)))
+        return;
+
+    CurrentThread::checkIfNotCancelled();
+
+    /// The heap's hash-table keys are dictionary indexes and cannot be used after re-keying
+    /// the table by values. Preserve its effect on statistics; the normalized method starts
+    /// a fresh heap epoch for subsequent blocks. The union of each epoch's candidates is
+    /// sufficient because a key rejected by one epoch cannot belong to the query's global Top-K.
+    result.top_k_heap_ever_rejected = result.topKHeapEverRejected();
+
+    const bool was_two_level = result.isTwoLevel();
+    AggregatedDataVariants normalized;
+    normalized.aggregator = this;
+    normalized.aggregates_pools = result.aggregates_pools;
+    normalized.aggregates_pool = result.aggregates_pool;
+    if (was_two_level && AggregatedDataVariants::isConvertibleToTwoLevel(method_chosen))
+        normalized.init(method_chosen);
+    else
+        normalized.init(method_chosen, result.sizeWithoutOverflowRow());
+    normalized.keys_size = params.keys_size;
+    normalized.key_sizes = key_sizes;
+
+    /// Initialize the final table shape before inserting anything. Converting an already
+    /// populated value-key table would temporarily allocate a third hash table while this
+    /// operation also keeps the index-key source table alive.
+    if (was_two_level && normalized.isConvertibleToTwoLevel())
+        normalized.convertToTwoLevel();
+
+    auto transfer_to = [&]<typename SourceMethod, typename DestinationMethod>(
+        SourceMethod & source_method,
+        DestinationMethod & destination_method)
+    {
+        if (source_method.data.empty())
+            return;
+
+        if (!source_method.dictionary)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Single-dictionary aggregation method has no dictionary");
+
+        static constexpr size_t max_rekey_batch_size = 65536;
+        const size_t batch_size = std::clamp<size_t>(params.max_block_size, 1, max_rekey_batch_size);
+        std::vector<AggregateDataPtr *> source_places;
+        source_places.reserve(batch_size);
+        const auto & source_dictionary = static_cast<const IColumnUnique &>(*source_method.dictionary);
+        const auto & dictionary_type = assert_cast<const DataTypeLowCardinality &>(*key_types[0]).getDictionaryType();
+        const size_t num_special_values = source_dictionary.getNestedTypeDefaultValueIndex() + 1;
+        auto dictionary_indexes = ColumnUInt64::create(num_special_values);
+        for (size_t i = 0; i < num_special_values; ++i)
+            dictionary_indexes->getData()[i] = i;
+        ColumnUInt64::MutablePtr key_indexes;
+
+        auto reset_batch = [&]
+        {
+            dictionary_indexes->getData().resize(num_special_values);
+            key_indexes = ColumnUInt64::create();
+        };
+
+        auto transfer_batch = [&]
+        {
+            if (source_places.empty())
+                return;
+
+            /// Keep per-dictionary caches bounded by the batch size, preserving the `NULL`/default
+            /// prefix and the original key encodings. `cutAndCompact` would canonicalize distinct
+            /// `NaN` payloads in older dictionaries after they already acquired separate states.
+            auto keys = IColumn::mutate(source_dictionary.getNestedNotNullableColumn()->index(*dictionary_indexes, 0));
+            MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*dictionary_type, std::move(keys));
+            auto key_column = ColumnLowCardinality::create(std::move(dictionary), std::move(key_indexes), /*is_shared=*/false);
+            ColumnRawPtrs batch_key_columns{key_column.get()};
+            typename DestinationMethod::StateNoCache state(batch_key_columns, key_sizes, aggregation_state_cache);
+            for (size_t row = 0; row < source_places.size(); ++row)
+            {
+                auto emplace_result = state.emplaceKey(destination_method.data, row, *result.aggregates_pool);
+                if (!emplace_result.isInserted())
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Different LowCardinality dictionary indexes produced the same aggregation key");
+
+                /// The dictionary is unique by key encoding, so every destination cell is new. Install
+                /// the pointer in the destination before clearing the source: on an exception,
+                /// `normalized` owns transferred states and `result` owns the rest.
+                emplace_result.setMapped(*source_places[row]);
+                *source_places[row] = nullptr;
+            }
+            source_places.clear();
+
+            if (FailPointInjection::hasAnyFailPointBeenRegistered())
+                FailPointInjection::pauseFailPoint(FailPoints::dictionary_aggregation_after_normalize_batch);
+
+            CurrentThread::checkIfNotCancelled();
+        };
+
+        reset_batch();
+        for (auto it = source_method.data.begin(); it != source_method.data.end(); ++it)
+        {
+            auto & source_place = it->getMapped();
+            if (!source_place)
+                continue;
+
+            UInt64 index = it->getKey();
+            if (index >= num_special_values)
+            {
+                index = dictionary_indexes->size();
+                dictionary_indexes->getData().push_back(it->getKey());
+            }
+            key_indexes->getData().push_back(index);
+            source_places.push_back(&source_place);
+            if (source_places.size() >= batch_size)
+            {
+                transfer_batch();
+                if (is_cancelled && is_cancelled->load(std::memory_order_relaxed))
+                    return;
+                reset_batch();
+            }
+        }
+        transfer_batch();
+    };
+
+    auto dispatch_destination = [&]<typename SourceMethod>(SourceMethod & source_method)
+    {
+#define M(NAME) \
+        else if (normalized.type == AggregatedDataVariants::Type::NAME) \
+        { \
+            transfer_to(source_method, *normalized.NAME); \
+            normalized.NAME->top_k_heap.free_states = std::move(source_method.top_k_heap.free_states); \
+        }
+
+        if (false) {} // NOLINT
+        M(low_cardinality_key16)
+        M(low_cardinality_key32)
+        M(low_cardinality_key64)
+        M(low_cardinality_keys128)
+        M(low_cardinality_keys256)
+        M(low_cardinality_key_string)
+        M(low_cardinality_key_fixed_string)
+        M(low_cardinality_key32_two_level)
+        M(low_cardinality_key64_two_level)
+        M(low_cardinality_keys128_two_level)
+        M(low_cardinality_keys256_two_level)
+        M(low_cardinality_key_string_two_level)
+        M(low_cardinality_key_fixed_string_two_level)
+        else
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant");
+#undef M
+    };
+
+    if (result.type == AggregatedDataVariants::Type::low_cardinality_single_dictionary)
+        dispatch_destination(*result.low_cardinality_single_dictionary);
+    else
+        dispatch_destination(*result.low_cardinality_single_dictionary_two_level);
+
+    /// On cancellation, `normalized` destroys transferred states and `result` retains the rest.
+    if (is_cancelled && is_cancelled->load(std::memory_order_relaxed))
+        return;
+
+    /// All keyed states now belong to `normalized`; the overflow state never moved and remains
+    /// owned by `result`. Replace only the active hash-table method and keep the original arenas.
+    result.low_cardinality_single_dictionary.reset();
+    result.low_cardinality_single_dictionary_two_level.reset();
+    result.type = normalized.type;
+
+#define M(NAME, IS_TWO_LEVEL) \
+    if (normalized.type == AggregatedDataVariants::Type::NAME) \
+        result.NAME = std::move(normalized.NAME);
+    APPLY_FOR_AGGREGATED_VARIANTS(M)
+#undef M
+
+    normalized.aggregator = nullptr;
+    normalized.type = AggregatedDataVariants::Type::EMPTY;
+}
+
 void Aggregator::executeOnBlockSmall(
     AggregatedDataVariants & result,
     size_t row_begin,
@@ -1105,13 +1466,41 @@ void NO_INLINE Aggregator::executeImpl(
     if (use_cache)
     {
         typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        auto execute = [&](auto & dispatched_state)
+        {
+            executeImpl(
+                method,
+                dispatched_state,
+                key_columns,
+                aggregates_pool,
+                row_begin,
+                row_end,
+                aggregate_instructions,
+                no_more_keys,
+                all_keys_are_const,
+                overflow_row);
+        };
+        ColumnsHashing::dispatchLowCardinalityDictionaryIndex(state, execute);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
         typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        auto execute = [&](auto & dispatched_state)
+        {
+            executeImpl(
+                method,
+                dispatched_state,
+                key_columns,
+                aggregates_pool,
+                row_begin,
+                row_end,
+                aggregate_instructions,
+                no_more_keys,
+                all_keys_are_const,
+                overflow_row);
+        };
+        ColumnsHashing::dispatchLowCardinalityDictionaryIndex(state, execute);
     }
 }
 
@@ -1321,10 +1710,17 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
         if (use_cache)
         {
             typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-            return run_slices(state, [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
+            auto execute = [&](auto & dispatched_state)
+            {
+                return run_slices(
+                    dispatched_state,
+                    [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
+            };
+            return ColumnsHashing::dispatchLowCardinalityDictionaryIndex(state, execute);
         }
         typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        return run_slices(state, [](size_t) {});
+        auto execute = [&](auto & dispatched_state) { return run_slices(dispatched_state, [](size_t) {}); };
+        return ColumnsHashing::dispatchLowCardinalityDictionaryIndex(state, execute);
     };
 
     #define M(NAME) \
@@ -2218,6 +2614,27 @@ bool Aggregator::executeOnBlock(Columns columns,
     bool & no_more_keys,
     AdaptiveAggregationProducer * adaptive) const
 {
+    return executeOnBlock(
+        columns,
+        row_begin,
+        row_end,
+        result,
+        key_columns,
+        aggregate_columns,
+        no_more_keys,
+        adaptive,
+        /*is_dictionary_shard=*/false);
+}
+
+bool Aggregator::executeOnBlock(const Columns & columns,
+    size_t row_begin, size_t row_end,
+    AggregatedDataVariants & result,
+    ColumnRawPtrs & key_columns,
+    AggregateColumns & aggregate_columns,
+    bool & no_more_keys,
+    AdaptiveAggregationProducer * adaptive,
+    bool is_dictionary_shard) const
+{
     /// When tracking the aggregation memory, the aggregator memory tracker is inserted between the thread
     /// and query memory trackers, and accounts for the aggregation state across all threads.
     const bool use_own_tracker = memory_tracker && CurrentThread::getMemoryTracker()
@@ -2228,15 +2645,6 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
-
-    /// How to perform the aggregation?
-    if (result.empty())
-    {
-        initDataVariantsWithSizeHint(result, method_chosen, params);
-        result.keys_size = params.keys_size;
-        result.key_sizes = key_sizes;
-        LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
-    }
 
     /** Constant columns are not supported directly during aggregation.
       * To make them work anyway, we materialize them.
@@ -2251,7 +2659,7 @@ bool Aggregator::executeOnBlock(Columns columns,
             all_keys_are_const &= isColumnConst(*columns.at(keys_positions[i]));
     }
 
-    /// Remember the columns we will work with
+    /// Remember the columns we will work with.
     for (size_t i = 0; i < params.keys_size; ++i)
     {
         if (all_keys_are_const)
@@ -2263,8 +2671,42 @@ bool Aggregator::executeOnBlock(Columns columns,
             materialized_columns.push_back(removeSpecialRepresentations(columns.at(keys_positions[i]))->convertToFullColumnIfConst());
             key_columns[i] = materialized_columns.back().get();
         }
+    }
 
+    if (result.empty())
+    {
+        auto initial_method = method_chosen;
+        if (canUseSingleLowCardinalityDictionary(initial_method) && key_columns.size() == 1)
+        {
+            const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(key_columns[0]);
+            if (low_cardinality_column && low_cardinality_column->hasSingleDictionaryForPart())
+            {
+                initial_method = AggregatedDataVariants::Type::low_cardinality_single_dictionary;
+                if (adaptive && !adaptive->isBaseline())
+                {
+                    adaptive->standDown(
+                        AdaptiveAggregationProducer::BaselineState::Reason::SingleLowCardinalityDictionary);
+                }
+            }
+        }
 
+        initDataVariantsWithSizeHint(result, initial_method, params, /*use_hash_table_size_hint=*/!is_dictionary_shard);
+        result.keys_size = params.keys_size;
+        result.key_sizes = key_sizes;
+        LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
+    }
+
+    if (result.isSingleLowCardinalityDictionary() && !bindSingleLowCardinalityDictionary(result, key_columns))
+    {
+        if (is_dictionary_shard)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Shared LowCardinality aggregation shard has a different dictionary");
+
+        normalizeSingleLowCardinalityDictionary(result);
+        LOG_TRACE(log, "Aggregation method normalized to: {}", result.getMethodName());
+    }
+
+    for (size_t i = 0; i < params.keys_size; ++i)
+    {
         if (!result.isLowCardinality())
         {
             auto column_no_lc = recursiveRemoveLowCardinality(key_columns[i]->getPtr());
@@ -2524,6 +2966,18 @@ void Aggregator::flushToTemporaryFile(AggregatedDataVariants & data_variants, si
 
     Stopwatch watch;
     size_t rows = data_variants.size();
+    const auto type_to_reinitialize = data_variants.type;
+
+    /// A dictionary index is meaningful only together with its part's dictionary. Temporary
+    /// files from different spills can use different dictionaries, so their bucket numbers
+    /// must be calculated from the values that are actually written to the files.
+    const bool had_dictionary_indexes = data_variants.isSingleLowCardinalityDictionary();
+    if (had_dictionary_indexes)
+    {
+        normalizeSingleLowCardinalityDictionary(data_variants);
+        if (data_variants.isConvertibleToTwoLevel() && !data_variants.isTwoLevel())
+            data_variants.convertToTwoLevel();
+    }
 
     auto & out_stream = [this, max_temp_file_size]() -> TemporaryBlockStreamHolder &
     {
@@ -2547,13 +3001,24 @@ void Aggregator::flushToTemporaryFile(AggregatedDataVariants & data_variants, si
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
+    else if (had_dictionary_indexes)
+        writeSingleLevelToTemporaryFileImpl(data_variants, out_stream);
     else
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant");
 
-    /// NOTE Instead of freeing up memory and creating new hash tables and arenas, you can re-use the old ones.
+    /// Continue with the method that aggregated this spill. In particular, an index-key method
+    /// is normalized only for the file and remains available for the next input block.
     if (reinitialize)
     {
-        data_variants.init(data_variants.type);
+        if (had_dictionary_indexes)
+        {
+            data_variants.resetAfterStateOwnershipTransfer();
+            data_variants.init(type_to_reinitialize);
+        }
+        else
+        {
+            data_variants.init(data_variants.type);
+        }
         data_variants.aggregates_pools = Arenas(1, std::make_shared<Arena>());
         data_variants.aggregates_pool = data_variants.aggregates_pools.back().get();
         if (params.overflow_row || data_variants.type == AggregatedDataVariants::Type::without_key)
@@ -2893,6 +3358,38 @@ bool Aggregator::hasTemporaryData() const
     return !tmp_files.empty();
 }
 
+void Aggregator::writeSingleLevelToTemporaryFileImpl(
+    AggregatedDataVariants & data_variants,
+    TemporaryBlockStreamHolder & out) const
+{
+    Block header;
+    for (size_t i = 0; i < params.keys_size; ++i)
+        header.insert({key_types[i]->createColumn(), key_types[i], params.keys[i]});
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+        header.insert({aggregate_state_types[i]->createColumn(), aggregate_state_types[i], params.aggregates[i].column_name});
+
+    size_t max_temporary_block_size_rows = 0;
+    size_t max_temporary_block_size_bytes = 0;
+    auto aggregated_chunks = convertToChunks(data_variants, /*final=*/false);
+    for (auto & aggregated_chunk : aggregated_chunks)
+    {
+        Block block = header.cloneEmpty();
+        block.info.bucket_num = -1;
+        block.info.is_overflows = aggregated_chunk.is_overflows;
+        block.setColumns(aggregated_chunk.chunk.detachColumns());
+
+        max_temporary_block_size_rows = std::max(max_temporary_block_size_rows, block.rows());
+        max_temporary_block_size_bytes = std::max(max_temporary_block_size_bytes, block.bytes());
+        out->write(block);
+    }
+
+    LOG_DEBUG(
+        log,
+        "Max size of temporary block: {} rows, {}.",
+        max_temporary_block_size_rows,
+        ReadableSize(max_temporary_block_size_bytes));
+}
+
 
 template <typename Method>
 void Aggregator::writeToTemporaryFileImpl(
@@ -3036,6 +3533,14 @@ Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionAndConvertToChu
     AggregatedDataVariants dst;
     dst.aggregator = this;
     dst.init(first->type, max_source_table_size / num_partitions);
+    /// `init` creates an empty method and does not copy its runtime dictionary. All sources
+    /// were already verified to use the same dictionary in `prepareVariantsToMerge`.
+    if (first->type == AggregatedDataVariants::Type::low_cardinality_single_dictionary)
+    {
+        chassert(first->low_cardinality_single_dictionary->dictionary);
+        dst.low_cardinality_single_dictionary->dictionary
+            = first->low_cardinality_single_dictionary->dictionary;
+    }
     dst.keys_size = params.keys_size;
     dst.key_sizes = key_sizes;
     dst.aggregates_pools.insert(dst.aggregates_pools.end(), first->aggregates_pools.begin(), first->aggregates_pools.end());
@@ -4480,6 +4985,9 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     /// We merge all aggregation results to the first, need to ensure non_empty_data size is greater than 1.
     for (size_t result_num = 1, size = non_empty_data.size(); result_num < size; ++result_num)
     {
+        if (is_cancelled.load(std::memory_order_relaxed))
+            return;
+
         if (!checkLimits(res->sizeWithoutOverflowRow(), no_more_keys))
             break;
 
@@ -4593,17 +5101,459 @@ void NO_INLINE Aggregator::mergeBucketImpl(
 }
 
 ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
-    ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSession * adaptive_session) const
+    ManyAggregatedDataVariants && data_variants,
+    std::atomic<bool> & is_cancelled,
+    AdaptiveAggregationSession * adaptive_session,
+    bool require_stable_bucket_hash,
+    bool hash_table_sizes_are_representative) const
 {
     if (data_variants.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Empty data passed to Aggregator::prepareVariantsToMerge.");
 
+    if (is_cancelled.load(std::memory_order_relaxed))
+        return {};
+
     LOG_TRACE(log, "Merging aggregated data");
 
-    updateStatistics(data_variants, adaptive_session, params.stats_collecting_params);
+    /// Dictionary indexes can be merged directly when all initialized variants are index-keyed
+    /// and every nonempty variant uses the exact same dictionary. This covers multiple threads
+    /// reading one part. If variants came from different parts, or one already uses value keys,
+    /// convert all remaining index-key variants to the ordinary value-key method before merging. Bucket
+    /// numbers in non-final output must also be based on values: dictionary indexes are local
+    /// to a part and cannot be compared after the chunks leave this aggregation step.
+    const IColumn * common_dictionary = nullptr;
+    /// An initialized zero-row two-level method still promotes the other methods below, so it
+    /// must force normalization when those bucket numbers will leave this aggregation step.
+    bool can_merge_dictionary_indexes = !require_stable_bucket_hash
+        || std::ranges::none_of(
+            data_variants,
+            [](const auto & data)
+            {
+                return data->type == AggregatedDataVariants::Type::low_cardinality_single_dictionary_two_level;
+            });
+    for (const auto & data : data_variants)
+    {
+        if (data->empty())
+            continue;
+
+        /// A spill leaves an initialized index-key table with no keyed rows and no dictionary.
+        /// It does not constrain the shared-dictionary comparison; the stable-bucket check above
+        /// handles the type of an empty two-level table separately. Initialized value-key tables
+        /// still participate in the final merge even with no keys, so they must force normalization.
+        if (data->isSingleLowCardinalityDictionary() && data->sizeWithoutOverflowRow() == 0)
+            continue;
+
+        const IColumn * dictionary = getSingleLowCardinalityDictionary(*data);
+        if (!dictionary || (common_dictionary && common_dictionary != dictionary))
+        {
+            can_merge_dictionary_indexes = false;
+            break;
+        }
+        common_dictionary = dictionary;
+    }
+
+    if (!can_merge_dictionary_indexes)
+    {
+        using Type = AggregatedDataVariants::Type;
+
+        /// Different dictionaries require value re-keying before the final merge, but variants
+        /// bound to the same dictionary can first merge by their UInt64 indexes. Besides making
+        /// that merge cheaper, this ensures every distinct dictionary value is materialized only
+        /// once per dictionary instead of once per reader stream.
+        struct DictionaryIndexMergeGroup
+        {
+            ManyAggregatedDataVariants variants;
+            Arenas merge_arenas;
+            bool is_two_level = false;
+            size_t rows_before = 0;
+        };
+
+        std::vector<DictionaryIndexMergeGroup> dictionary_groups;
+        /// Aggregate functions which parallelize state merges need this same pool. Leave those
+        /// on the established merge path instead of occupying the pool with outer bucket tasks.
+        if (can_reorder_dictionary_aggregation
+            && params.max_rows_to_group_by == 0
+            && !params.top_k
+            && !params.overflow_row
+            && std::ranges::none_of(
+                aggregate_functions,
+                [](const auto * function) { return function->isAbleToParallelizeMerge(); })
+            && (!adaptive_session || !adaptive_session->initialized.load(std::memory_order_acquire)))
+        {
+            std::unordered_map<const IColumn *, size_t> group_by_dictionary;
+            for (auto & data : data_variants)
+            {
+                if (!data->isSingleLowCardinalityDictionary() || data->sizeWithoutOverflowRow() == 0)
+                    continue;
+
+                const IColumn * dictionary = getSingleLowCardinalityDictionary(*data);
+                if (!dictionary)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Single-dictionary aggregation method has no dictionary");
+
+                auto [it, inserted] = group_by_dictionary.try_emplace(dictionary, dictionary_groups.size());
+                if (inserted)
+                    dictionary_groups.emplace_back();
+                dictionary_groups[it->second].variants.push_back(data);
+            }
+
+            for (auto & group : dictionary_groups)
+            {
+                if (is_cancelled.load(std::memory_order_relaxed))
+                    return {};
+
+                if (group.variants.size() < 2)
+                    continue;
+
+                ::sort(
+                    group.variants.begin(),
+                    group.variants.end(),
+                    [](const auto & lhs, const auto & rhs)
+                    {
+                        return lhs->sizeWithoutOverflowRow() > rhs->sizeWithoutOverflowRow();
+                    });
+
+                for (const auto & variant : group.variants)
+                    group.rows_before += variant->sizeWithoutOverflowRow();
+                group.is_two_level = std::ranges::any_of(
+                    group.variants,
+                    [](const auto & variant) { return variant->isTwoLevel(); });
+
+                if (group.is_two_level)
+                {
+                    for (auto & variant : group.variants)
+                        if (!variant->isTwoLevel())
+                            variant->convertToTwoLevel();
+                }
+
+                const auto expected_type = group.is_two_level
+                    ? Type::low_cardinality_single_dictionary_two_level
+                    : Type::low_cardinality_single_dictionary;
+                auto & destination = *group.variants.front();
+                for (size_t i = 1; i < group.variants.size(); ++i)
+                {
+                    auto & source = *group.variants[i];
+                    if (source.type != expected_type)
+                        throw Exception(
+                            ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS,
+                            "Cannot merge different single-dictionary aggregation variants");
+                    destination.aggregates_pools.insert(
+                        destination.aggregates_pools.end(),
+                        source.aggregates_pools.begin(),
+                        source.aggregates_pools.end());
+                    destination.top_k_heap_ever_rejected |= source.topKHeapEverRejected();
+                }
+            }
+        }
+
+        std::vector<DictionaryIndexMergeGroup *> dictionary_groups_to_merge;
+        size_t dictionary_merge_tasks = 0;
+        size_t dictionary_variants_before_merge = 0;
+        size_t dictionary_rows_before_merge = 0;
+        for (auto & group : dictionary_groups)
+        {
+            if (group.variants.size() < 2)
+                continue;
+            dictionary_groups_to_merge.push_back(&group);
+            dictionary_variants_before_merge += group.variants.size();
+            dictionary_rows_before_merge += group.rows_before;
+            dictionary_merge_tasks += group.is_two_level
+                ? decltype(AggregatedDataVariants::low_cardinality_single_dictionary_two_level)::element_type::Data::NUM_BUCKETS
+                : 1;
+        }
+
+        if (!dictionary_groups_to_merge.empty())
+        {
+            constexpr size_t max_parallel_dictionary_merges = 16;
+            const size_t num_dictionary_merge_workers
+                = std::min({params.max_threads, dictionary_merge_tasks, max_parallel_dictionary_merges});
+            for (auto * group : dictionary_groups_to_merge)
+            {
+                auto & destination = *group->variants.front();
+                group->merge_arenas.reserve(num_dictionary_merge_workers);
+                for (size_t i = 0; i < num_dictionary_merge_workers; ++i)
+                {
+                    group->merge_arenas.push_back(std::make_shared<Arena>());
+                    destination.aggregates_pools.push_back(group->merge_arenas.back());
+                }
+                destination.aggregates_pool = group->merge_arenas.front().get();
+            }
+
+            struct DictionaryMergeTask
+            {
+                DictionaryIndexMergeGroup * group;
+                Int32 bucket;
+            };
+            std::vector<DictionaryMergeTask> merge_tasks;
+            merge_tasks.reserve(dictionary_merge_tasks);
+            for (auto * group : dictionary_groups_to_merge)
+            {
+                if (group->is_two_level)
+                {
+                    constexpr size_t num_buckets
+                        = decltype(AggregatedDataVariants::low_cardinality_single_dictionary_two_level)::element_type::Data::NUM_BUCKETS;
+                    for (size_t bucket = 0; bucket < num_buckets; ++bucket)
+                        merge_tasks.push_back({group, static_cast<Int32>(bucket)});
+                }
+                else
+                {
+                    merge_tasks.push_back({group, -1});
+                }
+            }
+
+            std::atomic<size_t> next_merge_task = 0;
+            auto merge_worker = [&](size_t worker_id)
+            {
+                while (!is_cancelled.load(std::memory_order_relaxed))
+                {
+                    const size_t task_index = next_merge_task.fetch_add(1);
+                    if (task_index >= merge_tasks.size())
+                        break;
+
+                    auto & task = merge_tasks[task_index];
+                    if (task.bucket >= 0)
+                    {
+                        mergeBucketImpl<
+                            decltype(AggregatedDataVariants::low_cardinality_single_dictionary_two_level)::element_type>(
+                            task.group->variants,
+                            task.bucket,
+                            task.group->merge_arenas[worker_id].get(),
+                            is_cancelled);
+                    }
+                    else
+                    {
+                        mergeSingleLevelDataImpl<
+                            decltype(AggregatedDataVariants::low_cardinality_single_dictionary)::element_type>(
+                            task.group->variants,
+                            is_cancelled);
+                    }
+
+                    if (FailPointInjection::hasAnyFailPointBeenRegistered())
+                        FailPointInjection::pauseFailPoint(FailPoints::dictionary_aggregation_after_merge_task);
+                }
+            };
+
+            if (num_dictionary_merge_workers == 1)
+            {
+                merge_worker(0);
+            }
+            else
+            {
+                ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
+                /// Track every accepted task; `runner` waits before `merge_worker` and its captured state are destroyed.
+                runner.reserve(num_dictionary_merge_workers);
+                for (size_t i = 0; i < num_dictionary_merge_workers; ++i)
+                    runner.enqueueAndKeepTrack([&, i]() { merge_worker(i); }, Priority{});
+                runner.waitForAllToFinishAndRethrowFirstError();
+            }
+
+            /// A cancelled merge can leave source buckets untouched. Keep their destructor
+            /// ownership instead of treating those sources as fully merged below.
+            if (is_cancelled.load(std::memory_order_relaxed))
+                return {};
+
+            size_t dictionary_rows_after_merge = 0;
+            std::unordered_set<const AggregatedDataVariants *> merged_sources;
+            for (auto * group : dictionary_groups_to_merge)
+            {
+                dictionary_rows_after_merge += group->variants.front()->sizeWithoutOverflowRow();
+                for (size_t i = 1; i < group->variants.size(); ++i)
+                {
+                    group->variants[i]->aggregator = nullptr;
+                    merged_sources.insert(group->variants[i].get());
+                }
+            }
+
+            ManyAggregatedDataVariants merged_data_variants;
+            merged_data_variants.reserve(data_variants.size() - merged_sources.size());
+            for (auto & data : data_variants)
+                if (!merged_sources.contains(data.get()))
+                    merged_data_variants.push_back(std::move(data));
+            data_variants = std::move(merged_data_variants);
+            hash_table_sizes_are_representative = false;
+
+            LOG_TRACE(
+                log,
+                "Merged {} single-dictionary variants in {} dictionary groups by index into {} variants: {} rows to {} rows",
+                dictionary_variants_before_merge,
+                dictionary_groups_to_merge.size(),
+                dictionary_groups_to_merge.size(),
+                dictionary_rows_before_merge,
+                dictionary_rows_after_merge);
+        }
+
+        if (is_cancelled.load(std::memory_order_relaxed))
+            return {};
+
+        /// Large two-level index tables otherwise form an indivisible normalization task. Move
+        /// their already-independent source buckets into smaller variants so the existing worker
+        /// queue can balance the compaction and value re-keying work. Each shard gets a separate
+        /// current arena for destination keys while retaining the source aggregate-state arenas.
+        const bool can_split_normalization
+            = !params.top_k
+            && !params.overflow_row
+            && canUseSingleLowCardinalityDictionary(method_chosen);
+        constexpr size_t max_normalization_shards = 8;
+        if (can_split_normalization && params.max_threads > 1)
+        {
+            size_t target_rows_per_normalization_shard = 200'000;
+            fiu_do_on(FailPoints::dictionary_aggregation_small_normalization_shards,
+            {
+                target_rows_per_normalization_shard = 32;
+            });
+
+            ManyAggregatedDataVariants sharded_data;
+            sharded_data.reserve(data_variants.size());
+            /// Keep the caller's entries non-null until the replacement is complete: allocating
+            /// shards or growing `sharded_data` can throw, and `ManyAggregatedData` still owns them.
+            for (const auto & data : data_variants)
+            {
+                const size_t rows = data->sizeWithoutOverflowRow();
+                const bool can_split_variant
+                    = data->type == Type::low_cardinality_single_dictionary_two_level
+                    && data->without_key == nullptr
+                    && data->adaptive_merge_bucket_arenas.empty()
+                    && rows > target_rows_per_normalization_shard;
+                if (!can_split_variant)
+                {
+                    sharded_data.push_back(data);
+                    continue;
+                }
+
+                size_t num_shards = std::bit_ceil(
+                    (rows + target_rows_per_normalization_shard - 1) / target_rows_per_normalization_shard);
+                num_shards = std::min(num_shards, max_normalization_shards);
+                std::vector<AggregatedDataVariantsPtr> shards(num_shards);
+                shards[0] = data;
+                auto & source_method = *shards[0]->low_cardinality_single_dictionary_two_level;
+                const auto source_aggregate_pools = shards[0]->aggregates_pools;
+                auto assign_arenas = [&](AggregatedDataVariants & destination)
+                {
+                    destination.aggregates_pools = source_aggregate_pools;
+                    destination.aggregates_pools.push_back(std::make_shared<Arena>());
+                    destination.aggregates_pool = destination.aggregates_pools.back().get();
+                };
+                assign_arenas(*shards[0]);
+                for (size_t shard = 1; shard < num_shards; ++shard)
+                {
+                    shards[shard] = std::make_shared<AggregatedDataVariants>();
+                    auto & destination = shards[shard];
+                    destination->aggregator = this;
+                    assign_arenas(*destination);
+                    destination->init(Type::low_cardinality_single_dictionary_two_level);
+                    destination->keys_size = shards[0]->keys_size;
+                    destination->key_sizes = shards[0]->key_sizes;
+                    destination->low_cardinality_single_dictionary_two_level->dictionary = source_method.dictionary;
+                }
+
+                for (size_t bucket = 0; bucket < AggregatedDataWithUInt64KeyTwoLevel::NUM_BUCKETS; ++bucket)
+                {
+                    const size_t shard = bucket % num_shards;
+                    if (shard != 0)
+                    {
+                        auto & destination_method = *shards[shard]->low_cardinality_single_dictionary_two_level;
+                        destination_method.data.impls[bucket] = std::move(source_method.data.impls[bucket]);
+                    }
+                }
+
+                fiu_do_on(FailPoints::dictionary_aggregation_throw_after_normalization_split,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after splitting dictionary aggregation buckets");
+                });
+
+                for (auto & shard : shards)
+                    sharded_data.push_back(std::move(shard));
+                hash_table_sizes_are_representative = false;
+            }
+
+            data_variants = std::move(sharded_data);
+        }
+
+        if (is_cancelled.load(std::memory_order_relaxed))
+            return {};
+
+        std::vector<AggregatedDataVariants *> variants_to_normalize;
+        size_t rows_to_normalize = 0;
+        for (auto & data : data_variants)
+        {
+            if (!data->isSingleLowCardinalityDictionary())
+                continue;
+
+            variants_to_normalize.push_back(data.get());
+            rows_to_normalize += data->sizeWithoutOverflowRow();
+        }
+
+        /// Re-keying keeps the source and destination hash tables alive at the same time. A
+        /// fixed worker limit bounds the transient memory and contention independently of the
+        /// number of reader streams.
+        constexpr size_t min_rows_for_parallel_normalization = 100'000;
+        constexpr size_t max_parallel_normalizations = 16;
+        if (variants_to_normalize.size() > 1
+            && params.max_threads > 1
+            && rows_to_normalize >= min_rows_for_parallel_normalization)
+        {
+            /// Process the largest variants first to minimize the tail after most workers have
+            /// exhausted the shared queue.
+            ::sort(
+                variants_to_normalize.begin(),
+                variants_to_normalize.end(),
+                [](const auto * lhs, const auto * rhs)
+                {
+                    return lhs->sizeWithoutOverflowRow() > rhs->sizeWithoutOverflowRow();
+                });
+
+            std::atomic<size_t> next_variant = 0;
+            auto normalizer = [this, &variants_to_normalize, &next_variant, &is_cancelled]
+            {
+                while (!is_cancelled.load(std::memory_order_relaxed))
+                {
+                    const size_t index = next_variant.fetch_add(1);
+                    if (index >= variants_to_normalize.size())
+                        break;
+                    normalizeSingleLowCardinalityDictionary(*variants_to_normalize.at(index), &is_cancelled);
+
+                    if (FailPointInjection::hasAnyFailPointBeenRegistered())
+                        FailPointInjection::pauseFailPoint(FailPoints::dictionary_aggregation_after_normalize_task);
+                }
+            };
+
+            ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
+            const size_t num_threads
+                = std::min({params.max_threads, variants_to_normalize.size(), max_parallel_normalizations});
+            /// Track every accepted task. On an enqueue exception, `runner` waits for running
+            /// tasks before the locals captured by `normalizer` are destroyed.
+            runner.reserve(num_threads);
+            for (size_t i = 0; i < num_threads; ++i)
+                runner.enqueueAndKeepTrack([normalizer]() { normalizer(); }, Priority{});
+            runner.waitForAllToFinishAndRethrowFirstError();
+        }
+        else
+        {
+            for (auto * data : variants_to_normalize)
+            {
+                if (is_cancelled.load(std::memory_order_relaxed))
+                    return {};
+
+                normalizeSingleLowCardinalityDictionary(*data, &is_cancelled);
+
+                if (FailPointInjection::hasAnyFailPointBeenRegistered())
+                    FailPointInjection::pauseFailPoint(FailPoints::dictionary_aggregation_after_normalize_task);
+            }
+        }
+
+        if (is_cancelled.load(std::memory_order_relaxed))
+            return {};
+    }
+
+    updateStatistics(
+        data_variants,
+        adaptive_session,
+        params.stats_collecting_params,
+        hash_table_sizes_are_representative);
 
     ManyAggregatedDataVariants non_empty_data;
     non_empty_data.reserve(data_variants.size());
+    /// A frozen adaptive producer can stage every row outside its local table. Keep its
+    /// initialized method as the destination for draining that staged backlog.
     for (auto & data : data_variants)
         if (!data->empty())
             non_empty_data.push_back(data);
@@ -4693,17 +5643,21 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
 
     AggregatedDataVariantsPtr & first = non_empty_data[0];
 
-    for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
+    /// The destination must retain every source arena, but normalization shards can share them.
+    /// Keep each arena only once: final merge workers allocate through `aggregates_pools[thread]`.
+    /// Build the replacement separately so an allocation failure leaves all ownership intact.
+    Arenas merged_pools;
+    std::unordered_set<Arena *> seen_pools;
+    for (const auto & data : non_empty_data)
     {
-        if (first->type != non_empty_data[i]->type)
+        if (first->type != data->type)
             throw Exception(ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS, "Cannot merge different aggregated data variants.");
 
-        /** Elements from the remaining sets can be moved to the first data set.
-          * Therefore, it must own all the arenas of all other sets.
-          */
-        first->aggregates_pools.insert(first->aggregates_pools.end(),
-            non_empty_data[i]->aggregates_pools.begin(), non_empty_data[i]->aggregates_pools.end());
+        for (const auto & pool : data->aggregates_pools)
+            if (seen_pools.insert(pool.get()).second)
+                merged_pools.push_back(pool);
     }
+    first->aggregates_pools = std::move(merged_pools);
 
     return non_empty_data;
 }
@@ -4890,9 +5844,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         }
     };
 
-    if (use_cache)
+    auto merge_variant = [&](auto & state)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
         if (is_simple_count)
         {
             /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
@@ -4915,34 +5868,18 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
                 is_cancelled,
                 arena_for_keys);
         }
+    };
 
+    if (use_cache)
+    {
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        ColumnsHashing::dispatchLowCardinalityDictionaryIndex(state, merge_variant);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
         typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        if (is_simple_count)
-        {
-            /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
-            /// Guarding the call rather than the lambda keeps the lambda from being instantiated for one -
-            /// its body reads the count out of a mapped slot that a set cell does not have.
-            if constexpr (MapAggregationMethod<Method>)
-                merge_count_variant(state);
-        }
-        else
-        {
-            mergeStreamsImplCase(
-                aggregates_pool,
-                state,
-                data,
-                no_more_keys,
-                overflow_row,
-                row_begin,
-                row_end,
-                aggregate_columns_data,
-                is_cancelled,
-                arena_for_keys);
-        }
+        ColumnsHashing::dispatchLowCardinalityDictionaryIndex(state, merge_variant);
     }
 }
 
@@ -5389,48 +6326,37 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     /// Create a 'selector' that will contain bucket index for every row. It will be used to scatter rows to buckets.
     IColumn::Selector selector(rows);
 
+    auto build_selector = [&](auto & state)
+    {
+        for (size_t i = 0; i < rows; ++i)
+        {
+            if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+            {
+                if (state.isNullAt(i))
+                {
+                    selector[i] = 0;
+                    continue;
+                }
+            }
+
+            /// Calculate bucket number from row hash.
+            auto hash = state.getHash(method.data, i, *pool);
+            auto bucket = method.data.getBucketFromHash(hash);
+
+            selector[i] = bucket;
+        }
+    };
+
     /// Disable cache for simple count aggregation
     if (is_simple_count)
     {
         typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        for (size_t i = 0; i < rows; ++i)
-        {
-            if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
-            {
-                if (state.isNullAt(i))
-                {
-                    selector[i] = 0;
-                    continue;
-                }
-            }
-
-            /// Calculate bucket number from row hash.
-            auto hash = state.getHash(method.data, i, *pool);
-            auto bucket = method.data.getBucketFromHash(hash);
-
-            selector[i] = bucket;
-        }
+        ColumnsHashing::dispatchLowCardinalityDictionaryIndex(state, build_selector);
     }
     else
     {
         typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-        for (size_t i = 0; i < rows; ++i)
-        {
-            if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
-            {
-                if (state.isNullAt(i))
-                {
-                    selector[i] = 0;
-                    continue;
-                }
-            }
-
-            /// Calculate bucket number from row hash.
-            auto hash = state.getHash(method.data, i, *pool);
-            auto bucket = method.data.getBucketFromHash(hash);
-
-            selector[i] = bucket;
-        }
+        ColumnsHashing::dispatchLowCardinalityDictionaryIndex(state, build_selector);
     }
 
     UInt32 num_buckets = static_cast<UInt32>(destinations.size());

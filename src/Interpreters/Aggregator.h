@@ -281,6 +281,23 @@ public:
         bool & no_more_keys,
         AdaptiveAggregationProducer * adaptive) const;
 
+    /// Returns the shared dictionary when this block can use dictionary-sharded aggregation.
+    /// With multiple shards, fills the target shard of every row from its
+    /// dictionary index. The identity and indexes are stable across reader streams for one part.
+    ColumnPtr getSingleLowCardinalityDictionaryForBlock(
+        const Columns & columns, size_t num_shards, IColumn::Selector & selector) const;
+
+    /// A caller-selected dictionary shard must keep its dictionary and cannot use a size
+    /// hint intended for one table per producer. Ordinary execution may normalize on a switch.
+    bool executeOnBlock(const Columns & columns,
+        size_t row_begin, size_t row_end,
+        AggregatedDataVariants & result,
+        ColumnRawPtrs & key_columns,
+        AggregateColumns & aggregate_columns,
+        bool & no_more_keys,
+        AdaptiveAggregationProducer * adaptive,
+        bool is_dictionary_shard) const;
+
     /// One claimed batch of staged chunks into one drain table, bucket-major: bucket b's
     /// slices from all of the batch's chunks drain consecutively, so the destination subtable
     /// and its arena stay cache-hot across the whole batch instead of being revisited once per
@@ -415,8 +432,18 @@ public:
     /// reaches that, so the finish path calls this instead.
     void recordAdaptiveStagingVerdict(AdaptiveAggregationSession & shared) const;
 
+    /// `require_stable_bucket_hash` converts dictionary-index variants before they can emit
+    /// two-level bucket numbers outside this aggregation step. Single-level output is safe as-is:
+    /// its bucket number is `-1`, so the consumer partitions it again from the materialized values.
+    /// `hash_table_sizes_are_representative` is false when dictionary shards replace producer-local
+    /// tables: shard sizes cannot be reused as per-thread hints.
+    /// On cancellation, returns no variants and leaves partial results owned by `data_variants`.
     ManyAggregatedDataVariants prepareVariantsToMerge(
-        ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSession * adaptive_session) const;
+        ManyAggregatedDataVariants && data_variants,
+        std::atomic<bool> & is_cancelled,
+        AdaptiveAggregationSession * adaptive_session,
+        bool require_stable_bucket_hash = false,
+        bool hash_table_sizes_are_representative = true) const;
 
     /// Whether the variants' single-level method can be merged in hash partitions
     /// (`mergeSingleLevelPartitionAndConvertToChunk`): every method with a two-level counterpart, whose
@@ -519,6 +546,10 @@ private:
 
     AggregateFunctionsPlainPtrs aggregate_functions;
 
+    /// Reordering aggregate states by dictionary can combine non-contiguous input ranges, so every
+    /// aggregate must be known to be order independent. Producer-local index aggregation does not require this.
+    bool can_reorder_dictionary_aggregation = false;
+
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
     using NestedColumnsHolder = VectorWithMemoryTracking<VectorWithMemoryTracking<const IColumn *>>;
 
@@ -578,6 +609,14 @@ private:
       * Used in the exception handler for aggregation, since RAII in this case is not applicable.
       */
     void destroyAllAggregateStates(AggregatedDataVariants & result) const;
+
+    bool canUseSingleLowCardinalityDictionary(AggregatedDataVariants::Type type) const;
+    static const IColumn * getSingleLowCardinalityDictionary(const AggregatedDataVariants & result);
+    bool bindSingleLowCardinalityDictionary(
+        AggregatedDataVariants & result, const ColumnRawPtrs & key_columns) const;
+    /// On cancellation, the partially transferred `result` is only valid for destruction.
+    void normalizeSingleLowCardinalityDictionary(
+        AggregatedDataVariants & result, const std::atomic<bool> * is_cancelled = nullptr) const;
 
     void executeImpl(
         AggregatedDataVariants & result,
@@ -862,6 +901,10 @@ private:
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
+        TemporaryBlockStreamHolder & out) const;
+
+    void writeSingleLevelToTemporaryFileImpl(
+        AggregatedDataVariants & data_variants,
         TemporaryBlockStreamHolder & out) const;
 
     /// Parameters for parallel merge workers for single level.

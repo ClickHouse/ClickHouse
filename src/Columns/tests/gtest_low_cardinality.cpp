@@ -127,6 +127,44 @@ TEST(ColumnLowCardinality, InsertRangeFromChecksBoundsAfterSharingDictionary)
     EXPECT_TRUE(destination->empty());
 }
 
+TEST(ColumnLowCardinality, InsertionsIntoCloneEmptyPreserveSingleDictionary)
+{
+    auto dictionary_keys = ColumnUInt64::create();
+    for (UInt64 value : {0, 10})
+        dictionary_keys->insertValue(value);
+
+    ColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeUInt64(), std::move(dictionary_keys));
+
+    auto source_indexes = ColumnUInt8::create();
+    source_indexes->insertValue(1);
+    auto source = ColumnLowCardinality::create(
+        dictionary,
+        std::move(source_indexes),
+        /* is_shared = */ true,
+        /* has_single_dictionary_for_part = */ true);
+
+    auto insert_from_destination = source->cloneEmpty();
+    insert_from_destination->insertFrom(*source, 0);
+    const auto & insert_from_low_cardinality = assert_cast<const ColumnLowCardinality &>(*insert_from_destination);
+
+    EXPECT_EQ(insert_from_low_cardinality.getDictionaryPtr().get(), dictionary.get());
+    EXPECT_TRUE(insert_from_low_cardinality.isSharedDictionary());
+    EXPECT_TRUE(insert_from_low_cardinality.hasSingleDictionaryForPart());
+    EXPECT_EQ(insert_from_low_cardinality.getUInt(0), 10);
+
+    auto insert_many_from_destination = source->cloneEmpty();
+    insert_many_from_destination->insertManyFrom(*source, 0, 3);
+    const auto & insert_many_from_low_cardinality = assert_cast<const ColumnLowCardinality &>(*insert_many_from_destination);
+
+    EXPECT_EQ(insert_many_from_low_cardinality.getDictionaryPtr().get(), dictionary.get());
+    EXPECT_TRUE(insert_many_from_low_cardinality.isSharedDictionary());
+    EXPECT_TRUE(insert_many_from_low_cardinality.hasSingleDictionaryForPart());
+    ASSERT_EQ(insert_many_from_low_cardinality.size(), 3);
+    EXPECT_EQ(insert_many_from_low_cardinality.getUInt(0), 10);
+    EXPECT_EQ(insert_many_from_low_cardinality.getUInt(1), 10);
+    EXPECT_EQ(insert_many_from_low_cardinality.getUInt(2), 10);
+}
+
 TEST(ColumnLowCardinality, EmptyDictionaryEmptyIndexes)
 {
     /// Test edge case: empty dictionary (size=0) with empty indexes (num_rows=0)
