@@ -583,6 +583,34 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
+/// The recipe `equals` uses to hash a constant against an index element: the comparison is
+/// padding-aware for the string family while the hash is over the exact bytes, so a constant that
+/// cannot be brought to the element's exact byte form has to make the index decline instead of
+/// hashing a value no granule can hold. Returns a null `Field` (the `convertFieldToType` convention)
+/// in that case.
+static Field coerceConstantForBloomFilterHash(
+    const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & actual_type)
+{
+    if (isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
+    {
+        /// A `Variant` or `Dynamic` constant carries the nested padded value under its
+        /// declared type, so an active `FixedString` alternative cannot be told from a `String` one.
+        const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
+        const bool constant_may_be_fixed_string
+            = which_constant.isFixedString() || which_constant.isVariant() || which_constant.isDynamic();
+        const size_t constant_bytes = value_field.safeGet<String>().size();
+        const auto * fixed_index_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
+
+        if (constant_may_be_fixed_string && !fixed_index_type)
+            return {};
+
+        if (fixed_index_type && fixed_index_type->getN() < constant_bytes)
+            return {};
+    }
+
+    return convertFieldToType(value_field, *actual_type, value_type.get());
+}
+
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -598,6 +626,15 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         size_t row_size = column->size();
         size_t position = header.getPositionByName(key_node_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
+
+        /// A set coming from a subquery or a table keeps its own element type, and `castColumn` of a
+        /// `FixedString` element to a `String` index strips the trailing zeros the comparison honours,
+        /// so the hash would match no granule and every granule would be pruned. `traverseTreeEquals`
+        /// guards the same way. A literal `IN` list is coerced to the left-hand-side type at set build
+        /// and is byte-exact already.
+        if (!bloomFilterHashDomainMatches(type, index_type))
+            return false;
+
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
 
         /// An `Array` index holds one hash per element, so a set array is looked up by its elements
@@ -723,6 +760,13 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
             const auto & array_nested_type = array_type.getNestedType();
+
+            /// Same as for a set over a plain column above: the set keeps its own element type, and
+            /// `castColumn` of a `FixedString` element to the map's `String` value type strips the
+            /// trailing zeros the comparison honours, so the hash would match no granule.
+            if (!bloomFilterHashDomainMatches(type, array_nested_type))
+                return false;
+
             const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
         }
@@ -1064,24 +1108,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             /// Where equality compares zero-padded, the constant can equal a stored value of a different byte
             /// length, while the index holds only the hash of each value's exact bytes. It is then usable only
             /// for a `FixedString(N)` index at least as wide, where padding gives the one value that can match.
-            if (isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
-            {
-                /// A `Variant` or `Dynamic` constant carries the nested padded value under its
-                /// declared type, so an active `FixedString` alternative cannot be told from a `String` one.
-                const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
-                const bool constant_may_be_fixed_string
-                    = which_constant.isFixedString() || which_constant.isVariant() || which_constant.isDynamic();
-                const size_t constant_bytes = value_field.safeGet<String>().size();
-                const auto * fixed_index_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
-
-                if (constant_may_be_fixed_string && !fixed_index_type)
-                    return false;
-
-                if (fixed_index_type && fixed_index_type->getN() < constant_bytes)
-                    return false;
-            }
-
-            auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+            auto converted_field = coerceConstantForBloomFilterHash(value_field, value_type, actual_type);
             if (converted_field.isNull())
                 return false;
 
@@ -1224,6 +1251,19 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             const auto & index_type = header.getByPosition(position).type;
             const auto actual_type = BloomFilter::getPrimitiveType(index_type);
+
+            /// The `mapValues` index holds the map's value type, so the constant needs the same
+            /// coercion the `equals`-on-a-column path applies: hashing a 2-byte `String` constant
+            /// against granules that hashed 3-byte `FixedString` values matches nothing and prunes
+            /// every granule. The key of a `mapKeys` index comes from the map type itself and is
+            /// already in its stored form.
+            if (map_info->has_values_index && !map_info->has_keys_index)
+            {
+                const_value = coerceConstantForBloomFilterHash(const_value, value_type, actual_type);
+                if (const_value.isNull())
+                    return false;
+            }
+
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), const_value)));
 
             return true;
