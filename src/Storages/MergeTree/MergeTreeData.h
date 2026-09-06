@@ -1410,11 +1410,14 @@ public:
     /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
     /// For a part in a patch partition, `patch_part_index` must be seeded from a covered or
     /// sibling part (see `PatchPartIndex::cloneEmpty`) to keep the partition uniform.
+    /// `force_sync` fsyncs the part's files and its directory regardless of the (default-off)
+    /// `fsync_after_insert` / `fsync_part_directory` settings.
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeTransactionPtr & txn,
-        std::optional<PatchPartIndex> patch_part_index) const;
+        std::optional<PatchPartIndex> patch_part_index,
+        bool force_sync = false) const;
 
     MergeTreeDataFormatVersion format_version;
 

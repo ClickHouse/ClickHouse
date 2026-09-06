@@ -1,0 +1,7 @@
+truncate: durable
+truncate rows: 0
+drop_partition: durable
+drop_partition rows: 1000
+drop_part: durable
+drop_part rows: 0
+detach: not force-synced
