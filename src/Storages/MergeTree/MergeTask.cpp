@@ -9,6 +9,8 @@
 #include <memory>
 #include <fmt/format.h>
 
+#include <Common/checkStackSize.h>
+#include <Common/scope_guard_safe.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -20,8 +22,10 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/IAST.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -1468,10 +1472,82 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         /// selected by the projection was re-pointed by ALTER; see projectionPartHasRequiredColumns).
         /// Merging it directly would bake default values into the merged part, so rebuild from the parent
         /// instead. A parent TABLE column the parent part also lacks is a legitimate late-add and does
-        /// not count.
+        /// not count, unless its default expression references a column the projection part does not
+        /// store: then the default cannot be evaluated on the projection part, so rebuild.
         const auto projection_columns = projection.metadata->getColumns().getAllPhysical();
         const auto & parent_table_columns = global_ctx->metadata_snapshot->getColumns();
         bool projection_part_misses_column = false;
+        /// A missed column whose late-add default cannot be filled from the projection part: merging it
+        /// throws instead of yielding a stale-but-valid part, so it must rebuild in every mode.
+        bool projection_part_default_unfillable = false;
+
+        /// Whether the column's default can be evaluated on the projection part. Must stay in lockstep
+        /// with `projectionPartCanFillDefault` in `projectionsCommon.cpp`, the same rule on the read path.
+        const auto & projection_metadata_columns = projection.metadata->getColumns();
+        auto projection_part_can_fill_default = [&](const IMergeTreeDataPart & projection_part,
+                                                   const IMergeTreeDataPart & parent_part,
+                                                   const String & column_name)
+        {
+            auto can_fill = [&](const String & name, NameSet & resolving, NameSet & known_fillable, auto & self) -> bool
+            {
+                /// Incremental ALTERs can chain defaults arbitrarily deep, as on the reader's own paths.
+                checkStackSize();
+
+                if (known_fillable.contains(name))
+                    return true;
+
+                /// Only a name already on the current resolution path is a cycle, and it must be erased
+                /// on the way out: otherwise two branches sharing a dependency (`d DEFAULT e + f` with
+                /// both reading `g`) would report the second branch as a cycle.
+                if (!resolving.emplace(name).second)
+                    return false;
+                SCOPE_EXIT({ resolving.erase(name); });
+
+                /// A subcolumn has no default of its own: resolve it through its column in storage.
+                auto column_default = parent_table_columns.getDefault(name);
+                if (!column_default)
+                {
+                    auto column_in_storage = parent_table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+                    if (column_in_storage && column_in_storage->isSubcolumn())
+                        column_default = parent_table_columns.getDefault(column_in_storage->getNameInStorage());
+                }
+
+                if (!column_default || !column_default->expression)
+                {
+                    known_fillable.insert(name);
+                    return true;
+                }
+
+                /// Masks lambda formals, as the reader does when it synthesizes a default.
+                RequiredSourceColumnsVisitor::Data columns_context;
+                RequiredSourceColumnsVisitor(columns_context).visit(column_default->expression);
+                for (const auto & identifier : columns_context.requiredColumns())
+                {
+                    if ((projection_part.tryGetColumn(identifier)
+                         && projection_metadata_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier))
+                        || projection.metadata->virtuals.has(identifier))
+                        continue;
+
+                    /// Not a table column at all: nothing to resolve against the part.
+                    if (!parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier))
+                        continue;
+
+                    /// Fillable only as a late-add: a dependency the parent part still stores is
+                    /// drift, and filling it here would not match the parent read path.
+                    if (parent_part.tryGetColumn(identifier)
+                        || !projection_metadata_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier)
+                        || !self(identifier, resolving, known_fillable, self))
+                        return false;
+                }
+
+                known_fillable.insert(name);
+                return true;
+            };
+
+            NameSet resolving;
+            NameSet known_fillable;
+            return can_fill(column_name, resolving, known_fillable, can_fill);
+        };
 
         MergeTreeData::DataPartsVector projection_parts;
         for (const auto & part : global_ctx->future_part->parts)
@@ -1481,11 +1557,21 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             {
                 for (const auto & column : projection_columns)
                 {
-                    if (!it->second->tryGetColumn(column.name)
-                        && (part->tryGetColumn(column.name)
-                            || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name)))
+                    if (it->second->tryGetColumn(column.name))
+                        continue;
+
+                    /// Drift: the parent part still stores it, or it is not a parent table column.
+                    if (part->tryGetColumn(column.name)
+                        || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
+                        projection_part_misses_column = true;
+
+                    /// Merging the stale part fills this column from its default, so an unfillable one
+                    /// throws instead. Do not stop at a tolerable miss above: the column it hides may
+                    /// be the unfillable one that has to rebuild even under IGNORE.
+                    if (!projection_part_can_fill_default(*it->second, *part, column.name))
                     {
                         projection_part_misses_column = true;
+                        projection_part_default_unfillable = true;
                         break;
                     }
                 }
@@ -1494,7 +1580,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             }
         }
 
-        if (projection_part_misses_column && mode != DeduplicateMergeProjectionMode::IGNORE)
+        /// An unfillable default rebuilds in every mode; other misses stay IGNORE-tolerant (stale merge).
+        if (projection_part_misses_column
+            && (projection_part_default_unfillable || mode != DeduplicateMergeProjectionMode::IGNORE))
         {
             LOG_DEBUG(
                 ctx->log,
