@@ -373,27 +373,19 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
 
     def print_debug_info():
-        processed_files = (
-            node.query(
-                f"""
+        processed_files = node.query(
+            f"""
 select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cache where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 order by file
             """
-            )
-            .strip()
-            .split("\n")
-        )
+        ).splitlines()
         logging.debug(
             f"Processed files by node 1: {len(processed_files)}/{files_to_generate}"
         )
-        processed_files = (
-            node_2.query(
-                f"""
+        processed_files = node_2.query(
+            f"""
 select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cache where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0 order by file
             """
-            )
-            .strip()
-            .split("\n")
-        )
+        ).splitlines()
         logging.debug(
             f"Processed files by node 2: {len(processed_files)}/{files_to_generate}"
         )
@@ -403,33 +395,25 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cach
 
         info = node.query(
             f"""
-            select concat('test_',  toString(number), '.csv') as file from numbers(300)
+            select concat('test_',  toString(number), '.csv') as file from numbers({files_to_generate})
             where file not in (select splitByChar('/', file_name)[-1] from clusterAllReplicas(cluster, system.s3queue_metadata_cache)
             where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0)
             """
         )
         logging.debug(f"Unprocessed files: {info}")
 
-        files1 = (
-            node.query(
-                f"""
+        files1 = node.query(
+            f"""
             select splitByChar('/', file_name)[-1] from system.s3queue_metadata_cache
             where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0
             """
-            )
-            .strip()
-            .split("\n")
-        )
-        files2 = (
-            node_2.query(
-                f"""
+        ).splitlines()
+        files2 = node_2.query(
+            f"""
             select splitByChar('/', file_name)[-1] from system.s3queue_metadata_cache
             where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0
             """
-            )
-            .strip()
-            .split("\n")
-        )
+        ).splitlines()
 
         def intersection(list_a, list_b):
             return [e for e in list_a if e in list_b]
@@ -472,7 +456,7 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cach
         list(map(int, l.split())) for l in run_query(node_2, get_query).splitlines()
     ]
 
-    if len(res1) + len(res2) != total_rows or len(res1) <= 0 or len(res2) <= 0 or True:
+    if len(res1) + len(res2) != total_rows or len(res1) <= 0 or len(res2) <= 0:
         logging.debug(
             f"res1 size: {len(res1)}, res2 size: {len(res2)}, total_rows: {total_rows}"
         )
@@ -480,9 +464,12 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cach
 
     assert len(res1) + len(res2) == total_rows
 
-    # Checking that all engines have made progress
-    assert len(res1) > 0
-    assert len(res2) > 0
+    if mode == "unordered":
+        # Unordered mode partitions files across replicas by hash ring, so each server processes
+        # some. Ordered mode does not: a bucket goes to whichever processor wins the race for its
+        # lock, and a thread takes over another unowned bucket once it finishes its own.
+        assert len(res1) > 0
+        assert len(res2) > 0
 
     assert {tuple(v) for v in res1 + res2} == set([tuple(i) for i in total_values])
 
@@ -494,8 +481,12 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cach
 
     if mode == "ordered":
         zk = started_cluster.get_kazoo_client("zoo1")
-        processed_nodes = zk.get_children(f"{keeper_path}/buckets/")
-        assert len(processed_nodes) == shards_num
+        buckets = zk.get_children(f"{keeper_path}/buckets/")
+        assert len(buckets) == shards_num
+        # A bucket node is created together with the table metadata, but its `processed` child
+        # appears only once a file from that bucket has been committed.
+        for bucket in buckets:
+            assert zk.exists(f"{keeper_path}/buckets/{bucket}/processed")
 
     node.restart_clickhouse()
     time.sleep(10)

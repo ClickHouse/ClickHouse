@@ -322,9 +322,10 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
 
     assert len(res1) + len(res2) == total_rows
 
-    # Checking that all engines have made progress
-    assert len(res1) > 0
-    assert len(res2) > 0
+    if mode == "unordered":
+        # Ordered mode has no per-server split, so one server may process every file.
+        assert len(res1) > 0
+        assert len(res2) > 0
 
     assert {tuple(v) for v in res1 + res2} == set([tuple(i) for i in total_values])
 
