@@ -5,13 +5,15 @@
 #if USE_ROCKSDB
 
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
+#include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
 
 #include <Common/ProfileEvents.h>
 
 #include <Disks/DiskLocal.h>
 #include <Disks/SingleDiskVolume.h>
+#include <IO/HashingReadBuffer.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
 #include <Columns/ColumnConst.h>
@@ -176,8 +178,9 @@ TEST_F(SSTFixture, RoundTrip10K)
     auto cols = makeUInt64Columns(keys);
     auto block = makeUInt64Block(keys);
 
+    MergeTreeDataPartChecksums::Checksum sst_checksum;
     UInt64 written = SSTIndexWriter::writeFromBlock(
-        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context, sst_checksum);
     ASSERT_EQ(written, N);
     ASSERT_TRUE(std::filesystem::exists(finalPath()));
 
@@ -216,8 +219,9 @@ TEST_F(SSTFixture, CorruptionRebuild)
         keys.push_back(i * 3);
     auto block = makeUInt64Block(keys);
 
+    MergeTreeDataPartChecksums::Checksum sst_checksum1;
     ASSERT_EQ(SSTIndexWriter::writeFromBlock(
-                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context),
+                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context, sst_checksum1),
               keys.size());
 
     {
@@ -235,9 +239,10 @@ TEST_F(SSTFixture, CorruptionRebuild)
             << "Expected corruption detection to fail Open; got: " << status.ToString();
     }
 
-    /// Rebuild from the same input → open succeeds.
+    /// Rebuild from the same input -> open succeeds.
+    MergeTreeDataPartChecksums::Checksum sst_checksum2;
     ASSERT_EQ(SSTIndexWriter::writeFromBlock(
-                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context),
+                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context, sst_checksum2),
               keys.size());
 
     rocksdb::SstFileReader reader(makeReaderOptions());
@@ -254,10 +259,42 @@ TEST_F(SSTFixture, CorruptionRebuild)
 TEST_F(SSTFixture, EmptyInputProducesNoFile)
 {
     auto block = makeUInt64Block({});
+    MergeTreeDataPartChecksums::Checksum sst_checksum;
     UInt64 written = SSTIndexWriter::writeFromBlock(
-        *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context);
+        *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context, sst_checksum);
     EXPECT_EQ(written, 0u);
     EXPECT_FALSE(std::filesystem::exists(finalPath()));
+}
+
+/// Checksum output: `writeFromBlock` with `out_checksum` populates
+/// file_size + file_hash matching the on-disk SST.
+TEST_F(SSTFixture, ChecksumOutputMatchesFile)
+{
+    /// Non-empty input: checksum must be populated and match file size.
+    std::vector<UInt64> keys;
+    for (UInt64 i = 0; i < 200; ++i)
+        keys.push_back(i * 5);
+    auto block = makeUInt64Block(keys);
+
+    MergeTreeDataPartChecksums::Checksum sst_checksum;
+    ASSERT_EQ(SSTIndexWriter::writeFromBlock(
+                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256,
+                  getContext().context, sst_checksum),
+              keys.size());
+
+    std::error_code ec;
+    auto file_size = std::filesystem::file_size(finalPath(), ec);
+    ASSERT_FALSE(ec) << ec.message();
+    EXPECT_EQ(sst_checksum.file_size, file_size);
+
+    /// Independently recompute the hash from disk and compare.
+    {
+        ReadBufferFromFile in(finalPath());
+        HashingReadBuffer hashing_in(in);
+        hashing_in.ignoreAll();
+        EXPECT_EQ(hashing_in.count(), sst_checksum.file_size);
+        EXPECT_EQ(hashing_in.getHash(), sst_checksum.file_hash);
+    }
 }
 
 /// Row-number value encoding: SST values are UInt32 BE. End-to-end scan
@@ -270,8 +307,9 @@ TEST_F(SSTFixture, RowNumbersMonotonic)
         keys.push_back(1'000'000 + i);
     auto block = makeUInt64Block(keys);
 
+    MergeTreeDataPartChecksums::Checksum sst_checksum;
     ASSERT_EQ(SSTIndexWriter::writeFromBlock(
-                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context), N);
+                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context, sst_checksum), N);
 
     rocksdb::SstFileReader reader(makeReaderOptions());
     ASSERT_TRUE(reader.Open(finalPath()).ok());
@@ -301,9 +339,10 @@ TEST_F(SSTFixture, UnsortedBlockSortedBeforeWrite)
     Block block;
     block.insert({std::move(col), type_u64, "k"});
 
+    MergeTreeDataPartChecksums::Checksum sst_checksum;
     UInt64 written = SSTIndexWriter::writeFromBlockUnsorted(
         *storage, block, Names{"k"}, /*permutation=*/nullptr,
-        /*max_encoded_size=*/256, getContext().context);
+        /*max_encoded_size=*/256, getContext().context, sst_checksum);
     ASSERT_EQ(written, values.size());
 
     rocksdb::SstFileReader reader(makeReaderOptions());
@@ -363,9 +402,10 @@ TEST_F(SSTFixture, UnsortedNullableSortsConsistently)
     Block block;
     block.insert({std::move(col), type_nullable_u64, "k"});
 
+    MergeTreeDataPartChecksums::Checksum sst_checksum;
     UInt64 written = SSTIndexWriter::writeFromBlockUnsorted(
         *storage, block, Names{"k"}, /*permutation=*/nullptr,
-        /*max_encoded_size=*/256, getContext().context);
+        /*max_encoded_size=*/256, getContext().context, sst_checksum);
     ASSERT_EQ(written, 4u);
 
     rocksdb::SstFileReader reader(makeReaderOptions());
@@ -408,9 +448,10 @@ TEST_F(SSTFixture, UnsortedWithCallerPermutationStoresPartOffset)
     /// part is laid out as UK descending: 900, 500, 300, 200, 100.
     IColumn::Permutation pk_perm{2, 0, 4, 3, 1};
 
+    MergeTreeDataPartChecksums::Checksum sst_checksum;
     UInt64 written = SSTIndexWriter::writeFromBlockUnsorted(
         *storage, block, Names{"k"}, &pk_perm,
-        /*max_encoded_size=*/256, getContext().context);
+        /*max_encoded_size=*/256, getContext().context, sst_checksum);
     ASSERT_EQ(written, values.size());
 
     rocksdb::SstFileReader reader(makeReaderOptions());
@@ -450,11 +491,11 @@ TEST_F(SSTFixture, WriteFromBlockProducesSortedSST)
     Block block;
     block.insert({std::move(col), type_u64, "k"});
 
+    MergeTreeDataPartChecksums::Checksum sst_checksum;
     UInt64 written = SSTIndexWriter::writeFromBlock(
-        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context, sst_checksum);
     ASSERT_EQ(written, N);
     ASSERT_TRUE(std::filesystem::exists(finalPath()));
-
     rocksdb::SstFileReader reader(makeReaderOptions());
     ASSERT_TRUE(reader.Open(finalPath()).ok());
     std::unique_ptr<rocksdb::Iterator> it(reader.NewIterator(rocksdb::ReadOptions{}));
@@ -480,8 +521,9 @@ TEST_F(SSTFixture, WriteFromBlockConstUKColumnAccepted)
     Block block;
     block.insert({const_col, type_u64, "k"});
 
+    MergeTreeDataPartChecksums::Checksum sst_checksum;
     UInt64 written = SSTIndexWriter::writeFromBlock(
-        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context, sst_checksum);
     EXPECT_EQ(written, 1u);
     EXPECT_TRUE(std::filesystem::exists(finalPath()));
 }
@@ -495,8 +537,9 @@ TEST_F(SSTFixture, DuplicateKeyInBlockRejected)
     auto block = makeUInt64Block({7, 7});
     try
     {
+        MergeTreeDataPartChecksums::Checksum sst_checksum;
         SSTIndexWriter::writeFromBlock(
-            *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+            *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context, sst_checksum);
         FAIL() << "expected SUPPORT_IS_DISABLED for a duplicate UNIQUE KEY in the block";
     }
     catch (const DB::Exception & e)
@@ -511,9 +554,10 @@ TEST_F(SSTFixture, DuplicateKeyInBlockRejected)
     auto block_unsorted = makeUInt64Block({9, 3, 9});
     try
     {
+        MergeTreeDataPartChecksums::Checksum sst_checksum;
         SSTIndexWriter::write(
             *storage, block_unsorted, /*uk_names=*/Names{"k"}, /*sort_names=*/Names{"other"},
-            /*sort_reverse_flags=*/{}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+            /*sort_reverse_flags=*/{}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context, sst_checksum);
         FAIL() << "expected SUPPORT_IS_DISABLED for a duplicate UNIQUE KEY (unsorted path)";
     }
     catch (const DB::Exception & e)
@@ -541,6 +585,7 @@ TEST_F(SSTFixture, WriteDenseIndexDescPrefixFallsBackToUnsorted)
     Block block;
     block.insert({std::move(col), type_u64, "k"});
 
+    MergeTreeDataPartChecksums::Checksum sst_checksum;
     UInt64 written = SSTIndexWriter::write(
         *storage,
         block,
@@ -549,7 +594,8 @@ TEST_F(SSTFixture, WriteDenseIndexDescPrefixFallsBackToUnsorted)
         /*sort_reverse_flags=*/std::vector<bool>{true},
         /*permutation=*/nullptr,
         /*max_encoded_size=*/256,
-        getContext().context);
+        getContext().context,
+        sst_checksum);
     ASSERT_EQ(written, values.size());
     ASSERT_TRUE(std::filesystem::exists(finalPath()));
 
@@ -629,8 +675,9 @@ TEST_F(SSTFixture, WriteThroughEncryptedDiskAdapter)
     std::vector<UInt64> keys{100, 200, 300, 400, 500};
     auto block = makeUInt64Block(keys);
 
+    MergeTreeDataPartChecksums::Checksum sst_checksum;
     UInt64 written = SSTIndexWriter::writeFromBlock(
-        *enc_storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+        *enc_storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context, sst_checksum);
     ASSERT_EQ(written, keys.size());
 
     /// The file exists on the underlying local disk (encrypted on disk).
@@ -678,7 +725,7 @@ TEST_F(SSTFixture, WriteThroughEncryptedDiskAdapter)
 #if !USE_ROCKSDB
 
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
+#include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
 
 #include <Disks/DiskLocal.h>
@@ -721,14 +768,16 @@ TEST(UniqueKeyNoRocksDB, StaticWritersThrowSupportIsDisabled)
     /// Both static entry points must fail loudly on USE_ROCKSDB=0; a silent
     /// success would let the merge-write path skip index creation without the
     /// caller noticing.
+    MergeTreeDataPartChecksums::Checksum sst_checksum1;
     EXPECT_THROW(
         SSTIndexWriter::writeFromBlock(
-            *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context),
+            *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context, sst_checksum1),
         DB::Exception);
 
+    MergeTreeDataPartChecksums::Checksum sst_checksum2;
     EXPECT_THROW(
         SSTIndexWriter::writeFromBlockUnsorted(
-            *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context),
+            *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context, sst_checksum2),
         DB::Exception);
 
     EXPECT_FALSE(storage->existsFile(SSTIndexWriter::FILE_NAME));
@@ -780,7 +829,7 @@ TEST(UniqueKeyNoRocksDB, WriteDenseIndexOnInsertThrowsSupportIsDisabled)
     metadata->unique_key.column_names = {"a"};
 
     EXPECT_THROW(
-        UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
+        SSTIndexWriter::writeDenseIndexOnInsert(
             *storage, metadata, block, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context),
         DB::Exception);
 

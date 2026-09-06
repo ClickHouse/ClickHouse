@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/tests/gtest_global_context.h>
 
@@ -155,13 +156,11 @@ protected:
             writer.addEncoded(std::string_view(ek), r);
         writer.finalizeToStorage();
 
-        auto handle = openSSTReaderFromPath(storage->getFullPath() + "/" + SSTIndexWriter::FILE_NAME);
-        if (!handle.reader)
-            return nullptr;
+        auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME);
         auto bitmap = std::make_shared<DeleteBitmap>();
         for (UInt64 r : dead_rows)
             bitmap->add(r);
-        return std::make_shared<SSTProbeTargetPart>(/*part=*/nullptr, bitmap, std::move(handle));
+        return std::make_shared<SSTProbeTargetPart>(/*part=*/nullptr, bitmap, SSTReaderHandle{std::move(reader)});
     }
 
     UniqueKeyProbeSimple probeOver(ProbeTargetsSnapshot snapshot)
@@ -267,9 +266,15 @@ TEST_F(UniqueKeyProbeTest, ProbeBatchMixedOutcomes)
 
 /// ---------- SST backend specifics ----------
 
-TEST_F(UniqueKeyProbeTest, OpenMissingFileThrows)
+TEST_F(UniqueKeyProbeTest, OpenMissingFileFailsClosed)
 {
-    EXPECT_ANY_THROW(openSSTReaderFromPath((base / "does_not_exist.sst").string()));
+    /// Opening a missing sidecar through storage must fail closed: the reader
+    /// constructor throws (a returned reader is always open).
+    const String part_dir = "missing_part";
+    std::filesystem::create_directories(base / part_dir);
+    auto storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", part_dir);
+
+    EXPECT_ANY_THROW(openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME));
 }
 
 TEST_F(UniqueKeyProbeTest, FindRowIndexBatchHitsExactKeyOnly)
@@ -313,12 +318,14 @@ TEST_F(UniqueKeyProbeTest, CorruptValueSizeFailsClosed)
     /// A value whose size isn't exactly 4 bytes is a corrupt/incompatible
     /// sidecar — decoding a prefix could point at the wrong row, so the probe
     /// must throw rather than return a (wrong) hit or a miss.
-    const String path = (base / "corrupt.sst").string();
+    const String part_dir = "corrupt_part";
+    std::filesystem::create_directories(base / part_dir);
+    auto storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", part_dir);
+    const String path = storage->getFullPath() + "/" + SSTIndexWriter::FILE_NAME;
     ASSERT_TRUE(writeSSTRawValue(path, encodeKey(1), String(5, '\0'))); /// 5-byte value
 
-    auto handle = openSSTReaderFromPath(path);
-    ASSERT_TRUE(handle.reader != nullptr);
-    SSTProbeTargetPart target(/*part=*/nullptr, std::make_shared<DeleteBitmap>(), std::move(handle));
+    auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME);
+    SSTProbeTargetPart target(/*part=*/nullptr, std::make_shared<DeleteBitmap>(), SSTReaderHandle{std::move(reader)});
 
     const String e = encodeKey(1);
     std::vector<std::string_view> views{{e.data(), e.size()}};
@@ -326,7 +333,37 @@ TEST_F(UniqueKeyProbeTest, CorruptValueSizeFailsClosed)
     EXPECT_ANY_THROW(target.findRowIndexBatch(views, out));
 }
 
-/// ---------- factory switch ----------
+/// The reader can also open an SST over any externally supplied `ReadBuffer`, not
+/// just a `DataPartStorage`. Write a real SST, then read it back through a plain
+/// `ReadBufferFromFile` injected into the reader.
+TEST_F(UniqueKeyProbeTest, InjectedReadBufferProbes)
+{
+    const String part_dir = "injected_part";
+    std::filesystem::create_directories(base / part_dir);
+    auto storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", part_dir);
+
+    SSTIndexWriter writer(*storage, getContext().context);
+    writer.addEncoded(std::string_view(encodeKey(10)), 0);
+    writer.addEncoded(std::string_view(encodeKey(30)), 2);
+    writer.finalizeToStorage();
+
+    const String path = storage->getFullPath() + "/" + SSTIndexWriter::FILE_NAME;
+    ReadBufferFromFile buffer(path);
+    auto reader = openSSTReaderFromBuffer(buffer);
+
+    SSTProbeTargetPart target(/*part=*/nullptr, std::make_shared<DeleteBitmap>(),
+        SSTReaderHandle{std::move(reader)});
+
+    const String e10 = encodeKey(10);
+    const String e20 = encodeKey(20);
+    std::vector<std::string_view> views{{e10.data(), e10.size()}, {e20.data(), e20.size()}};
+    std::vector<std::optional<UInt64>> out;
+    target.findRowIndexBatch(views, out);
+
+    ASSERT_EQ(out.size(), 2u);
+    EXPECT_EQ(out[0], 0u);          /// key 10 -> row 0
+    EXPECT_FALSE(out[1].has_value()); /// key 20 absent
+}
 
 TEST_F(UniqueKeyProbeTest, FactoryBuildsWorkingProbe)
 {
@@ -399,9 +436,8 @@ TEST_F(UniqueKeyProbeTest, DecodedRowOutOfPartBoundsThrows)
     const String out_of_range_value{'\0', '\0', '\0', '\x05'}; /// BE 5
     ASSERT_TRUE(writeSSTRawValue(sst_path, encodeKey(42), out_of_range_value));
 
-    auto handle = openSSTReaderFromPath(sst_path);
-    ASSERT_TRUE(handle.reader != nullptr);
-    SSTProbeTargetPart target(part.get(), std::make_shared<DeleteBitmap>(), std::move(handle));
+    auto reader = openSSTReaderFromStorage(part_storage, SSTIndexWriter::FILE_NAME);
+    SSTProbeTargetPart target(part.get(), std::make_shared<DeleteBitmap>(), SSTReaderHandle{std::move(reader)});
 
     const String e = encodeKey(42);
     std::vector<std::string_view> views{{e.data(), e.size()}};

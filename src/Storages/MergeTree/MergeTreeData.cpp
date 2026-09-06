@@ -126,7 +126,6 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MutationCommands.h>
@@ -421,7 +420,6 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int UNIQUE_KEY_DENSE_INDEX_UNREADABLE;
     extern const int ILLEGAL_INDEX;
     extern const int ILLEGAL_STATISTICS;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
@@ -833,10 +831,6 @@ MergeTreeData::MergeTreeData(
 
     checkColumnFilenamesForCollision(metadata_.getColumns(), *settings, sanity_checks);
     checkTTLExpressions(metadata_, metadata_);
-
-    /// UNIQUE KEY — sidecar lifecycle helper. Constructed unconditionally;
-    /// methods are no-ops on non-UK tables (one pointer + one ctor call cost).
-    unique_key_dense_index_ops = std::make_unique<UniqueKeyDenseIndexOps>(*this);
 
     String reason;
     if (!canUsePolymorphicParts(*settings, reason) && !reason.empty())
@@ -3090,65 +3084,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         for (auto & part : broken_parts_to_detach)
             part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
 
-    /// UNIQUE KEY — SST sweep + per-part validation for parts that landed
-    /// without a usable sidecar (restore, freeze taken before UK shipped, or a
-    /// corrupt/truncated SST that survived because it carries no checksums.txt
-    /// entry). The active set is captured here under `part_lock`; the I/O-heavy
-    /// per-part validate+rebuild runs below, after the lock is released.
-    ///
-    /// The sweep deletes files, so it stays gated on writability. Validation is
-    /// read-only I/O and runs regardless: a UK part with a missing/corrupt SST
-    /// on readonly storage must fail the load, not activate unprobeable. (UK
-    /// tables require local disks per the storage-policy guard, so static/web
-    /// UK parts are practically unreachable — still fail closed, not skip.)
-    MutableDataPartsVector active_uk_parts_to_rebuild;
-    const bool uk_storage_is_writable = !is_static_storage && !all_disks_are_readonly && !is_table_readonly;
-    if (uk_storage_is_writable)
-        unique_key_dense_index_ops->sweepOrphans(part_lock);
-    {
-        auto metadata_snapshot_for_rebuild = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/false);
-        if (metadata_snapshot_for_rebuild && metadata_snapshot_for_rebuild->hasUniqueKey())
-        {
-            for (const auto & p : data_parts_by_info)
-            {
-                if (p->getState() == DataPartState::Active)
-                    active_uk_parts_to_rebuild.push_back(std::const_pointer_cast<IMergeTreeDataPart>(p));
-            }
-        }
-    }
-
     resetSerializationHints(part_lock);
 
     if (!(*settings)[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
         calculateColumnAndSecondaryIndexSizesImpl(part_lock);
 
-    /// Release the parts lock before the I/O-heavy UNIQUE KEY SST rebuild: it
-    /// reads each part's UK columns and writes a sidecar, and needs no
-    /// parts-collection lock (the active set was captured above under it).
     part_lock_holder.reset();
-    for (auto & p : active_uk_parts_to_rebuild)
-    {
-        try
-        {
-            unique_key_dense_index_ops->ensureValidDenseIndex(p, uk_storage_is_writable);
-        }
-        catch (...)
-        {
-            /// UNIQUE_KEY_DENSE_INDEX_UNREADABLE marks the cases where the part
-            /// must not be touched: a transient validation failure (file may be
-            /// healthy) or readonly storage (removal/rebuild/detach are writes).
-            /// Propagate it so the load fails and a retry/restart can recover.
-            if (getCurrentExceptionCode() == ErrorCodes::UNIQUE_KEY_DENSE_INDEX_UNREADABLE)
-                throw;
-            /// Otherwise the part genuinely has no usable dense index (corrupt SST
-            /// that could not be rebuilt, missing UK column, unreadable rows) — the
-            /// probe would miss its keys and let duplicates through. Detach it as
-            /// broken via the standard broken-part flow.
-            tryLogCurrentException(log,
-                fmt::format("Detaching part {} as broken: cannot build its UNIQUE KEY dense index", p->name));
-            forcefullyMovePartToDetachedAndRemoveFromMemory(p, "broken-on-start");
-        }
-    }
 
     PartLoadingTreeNodes unloaded_parts;
 
@@ -6198,12 +6139,11 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                     "ALTER TABLE ... MATERIALIZE TTL is not supported on tables with UNIQUE KEY");
 
             /// MATERIALIZE / CLEAR COLUMN rewrite the whole part via MutateTask
-            /// regardless of which column is targeted (compact and full-rewrite
-            /// parts lose all sidecars; `unique_key_index.sst` is in
-            /// `getFileNamesWithoutChecksums` → `files_to_skip`), so the dense
-            /// index is dropped even for a non-UK column. Reject both for the
-            /// whole table until mutation-side SST rebuild lands (mirrors the
-            /// REWRITE-family stance below).
+            /// regardless of which column is targeted, and the mutation path does
+            /// not (yet) rebuild `unique_key_index.sst`, so the dense index would
+            /// be lost even for a non-UK column. Reject both for the whole table
+            /// until mutation-side SST rebuild lands (mirrors the REWRITE-family
+            /// stance below).
             if (command.type == MutationCommand::MATERIALIZE_COLUMN)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER TABLE ... MATERIALIZE COLUMN `{}` is not supported on tables with UNIQUE KEY: "
@@ -8164,9 +8104,6 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
     part->removeDeleteOnDestroyMarker();
     part->removeVersionMetadata();
-
-    /// UNIQUE KEY — per-part ATTACH hook: `.sst.tmp` cleanup + rebuild.
-    unique_key_dense_index_ops->onPartAttach(part);
 }
 
 void MergeTreeData::unregisterFromMergeSelection(const MergeTreeSettingsPtr & settings)
@@ -9251,11 +9188,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
         IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", IMergeTreeDataPart::getSystemColumnsToInvalidate(part->info), getContext()->getWriteSettings());
         part->loadColumnsChecksumsIndexes(/* require_columns_checksums= */ false, /* check_consistency= */ true);
-        /// UNIQUE KEY: a restored part may not ship its `unique_key_index.sst`
-        /// (older backup, or one taken before UK). Build it here so the part is
-        /// usable; a failure throws and routes the part to `mark_broken` below
-        /// (detached), matching the fail-closed contract on every other load path.
-        unique_key_dense_index_ops->onPartAttach(part);
     };
 
     /// Broken parts can appear in a backup sometimes.

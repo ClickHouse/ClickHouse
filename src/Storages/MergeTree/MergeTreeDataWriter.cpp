@@ -26,7 +26,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
+#include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -1113,13 +1113,20 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
 
     if (metadata_snapshot->hasUniqueKey())
-        UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
+    {
+        MergeTreeDataPartChecksums::Checksum sst_checksum;
+        SSTIndexWriter::writeDenseIndexOnInsert(
             *data_part_storage,
             metadata_snapshot,
             block,
             perm_ptr,
             context->getSettingsRef()[Setting::unique_key_max_encoded_size],
-            context);
+            context,
+            sst_checksum);
+
+        /// Record the SST checksum so `checksums.txt` covers it.
+        gathered_data.checksums.addFile(SSTIndexWriter::FILE_NAME, sst_checksum);
+    }
 
     if ((*data.getSettings())[MergeTreeSetting::materialize_projections_on_insert])
     {

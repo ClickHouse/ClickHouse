@@ -8,6 +8,7 @@
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Columns/IColumn.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 
 #include <memory>
 #include <string>
@@ -19,6 +20,9 @@ namespace DB
 {
 
 class IDataPartStorage;
+struct StorageInMemoryMetadata;
+
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 
 /// Streaming writer for the per-part UNIQUE KEY dense-index SST.
@@ -43,10 +47,11 @@ public:
     /// Bloom filter bits-per-key. 10 → ~1% FPR.
     static constexpr double BLOOM_BITS_PER_KEY = 10.0;
 
-    /// Dense-index entry point. Empty `uk_names` → no-op (returns 0). Otherwise
+    /// Dense-index entry point. Empty `uk_names` -> no-op (returns 0). Otherwise
     /// dispatches to `writeFromBlock` when the block is already sorted by UK
     /// (UK is a non-Nullable ascending prefix of ORDER BY), else
     /// `writeFromBlockUnsorted` (re-sorts ascending).
+    /// `out_checksum` receives the SST file checksum (computed during the write).
     static UInt64 write(
         IDataPartStorage & part_storage,
         const Block & block,
@@ -55,7 +60,20 @@ public:
         const std::vector<bool> & sort_reverse_flags,
         const IColumn::Permutation * permutation,
         UInt64 max_encoded_size,
-        ContextPtr context);
+        ContextPtr context,
+        MergeTreeDataPartChecksums::Checksum & out_checksum);
+
+    /// INSERT-path wrapper: validates storage type, then delegates to `write`.
+    /// The caller (`MergeTreeDataWriter`) must check `hasUniqueKey()` before calling.
+    /// `out_checksum` receives the SST file checksum.
+    static void writeDenseIndexOnInsert(
+        IDataPartStorage & storage,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Block & block,
+        const IColumn::Permutation * permutation,
+        UInt64 max_encoded_size,
+        ContextPtr context,
+        MergeTreeDataPartChecksums::Checksum & out_checksum);
 
     /// Build an SST from a Block whose UK columns are in encoded-key order
     /// after applying `permutation` (or block order if null). O(N).
@@ -66,7 +84,8 @@ public:
         const Names & unique_key_column_names,
         const IColumn::Permutation * permutation,
         size_t max_encoded_size,
-        ContextPtr context);
+        ContextPtr context,
+        MergeTreeDataPartChecksums::Checksum & out_checksum);
 
     /// Non-prefix UK path: sort source rows by UK columns via
     /// `stableGetPermutation`, batch-encode in UK order via
@@ -78,7 +97,8 @@ public:
         const Names & unique_key_column_names,
         const IColumn::Permutation * permutation,
         size_t max_encoded_size,
-        ContextPtr context);
+        ContextPtr context,
+        MergeTreeDataPartChecksums::Checksum & out_checksum);
 
     /// `finalizeToStorage` is the only commit point — it closes the RocksDB
     /// writer and finalizes the part-storage `WriteBuffer`. Dropping the
@@ -96,9 +116,12 @@ public:
     UInt64 entriesAdded() const { return entries_added; }
 
     /// Finalize the SST: close the RocksDB writer, then finalize the
-    /// part-storage `WriteBuffer`. Empty input → no SST file produced;
+    /// part-storage `WriteBuffer`. Empty input -> no SST file produced;
     /// returns 0.
     UInt64 finalizeToStorage();
+
+    /// Checksum of the written SST (populated by `finalizeToStorage`).
+    MergeTreeDataPartChecksums::Checksum getSSTChecksum() const { return sst_checksum; }
 
 private:
 #if USE_ROCKSDB
@@ -118,6 +141,7 @@ private:
     IDataPartStorage & part_storage;
     UInt64 entries_added = 0;
     [[maybe_unused]] bool finalized = false;
+    MergeTreeDataPartChecksums::Checksum sst_checksum{};
 };
 
 }

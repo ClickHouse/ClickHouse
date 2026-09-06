@@ -1834,14 +1834,6 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     if (getDataPartStorage().existsFile(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME))
         result.emplace(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
 
-    /// UNIQUE KEY per-part SST. Enumerated based on the part's own on-disk
-    /// presence (a part property), not table metadata, so `MergeTreeData::backupParts`
-    /// and `DataPartsExchange::sendPart` transfer it — both build the transferred
-    /// file set from `checksums ∪ getFileNamesWithoutChecksums()`, not by globbing
-    /// the part directory.
-    if (getDataPartStorage().existsFile(SSTIndexWriter::FILE_NAME))
-        result.emplace(SSTIndexWriter::FILE_NAME);
-
     return result;
 }
 
@@ -3094,6 +3086,11 @@ void IMergeTreeDataPart::checkConsistencyBase() const
                 && !checksums.files.contains("primary" + getIndexExtension(true))))
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No checksum for {} or {}",
                             toString("primary" + getIndexExtension(false)), toString("primary" + getIndexExtension(true)));
+
+        if (metadata_snapshot->hasUniqueKey() && !isEmpty() && !parent_part
+            && !checksums.files.contains(SSTIndexWriter::FILE_NAME))
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No checksum for {}",
+                            SSTIndexWriter::FILE_NAME);
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
