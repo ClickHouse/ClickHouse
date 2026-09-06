@@ -1665,6 +1665,7 @@ The server successfully detected this situation and will download merged part fr
     M(RuntimeFilterRowsSkipped, "Number of rows in blocks that were skipped by JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterGranulesConsidered, "Number of granules examined for read time pruning by JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterGranulesDropped, "Number of granules pruned at read time by JOIN Runtime Filters", ValueType::Number) \
+    M(RuntimeFilterLookupsBeforeBuildFinished, "Number of blocks looked up in a JOIN Runtime Filter whose build side had not finished yet, which pass through unfiltered", ValueType::Number) \
     \
     M(JoinBuildPostProcessingMicroseconds, "Elapsed time of post-processing steps after building the right JOIN side.", ValueType::Microseconds) \
     \

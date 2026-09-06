@@ -146,6 +146,7 @@ static struct InitFiu
     REGULAR(dummy_failpoint) \
     ONCE(system_log_pipeline_fail_after_smt_restore) \
     REGULAR(prefetched_reader_pool_failpoint) \
+    REGULAR(runtime_filter_skip_finish_insert) \
     REGULAR(taskstats_counters_reset_throw) \
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \

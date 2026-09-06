@@ -61,6 +61,11 @@ public:
     /// A closed [min, max] envelope of the values inserted into the filter, if one can be computed
     virtual std::optional<Range> getRecordedKeyRanges() const;
 
+    /// True once the last build stream has merged into this filter and published it.
+    /// Consumers that snapshot the filter's contents (instead of only reading them once) must
+    /// check this: a snapshot taken before the build finished stays empty forever.
+    bool insertsAreFinished() const { return inserts_are_finished.load(); }
+
     /// Opt in to tracking the [min, max] key-range envelope during build.
     void enableIndexAnalysis() { index_analysis_enabled = true; }
 
@@ -184,6 +189,10 @@ public:
     {
         /// ANTI (NOT IN) can't be used as a positive IN predicate on the left side.
         if constexpr (negate)
+            return nullptr;
+        /// Read the set only after the last build stream published it (seq_cst acquire); before that a
+        /// merge stream may still be mutating it. Same publication guard as getRecordedKeyRanges().
+        if (!inserts_are_finished.load())
             return nullptr;
         /// exact_values is released once the set overflows to a bloom filter.
         if (!index_analysis_enabled || !exact_values)

@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeSet.h>
 #include <Interpreters/PreparedSets.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/FailPoint.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
 #include <Common/typeid_cast.h>
@@ -31,6 +32,7 @@ namespace ProfileEvents
     extern const Event RuntimeFilterRowsChecked;
     extern const Event RuntimeFilterRowsPassed;
     extern const Event RuntimeFilterRowsSkipped;
+    extern const Event RuntimeFilterLookupsBeforeBuildFinished;
 }
 
 namespace DB
@@ -40,6 +42,11 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char runtime_filter_skip_finish_insert[];
 }
 
 namespace
@@ -72,8 +79,12 @@ IRuntimeFilter::IRuntimeFilter(
 
 std::optional<Range> IRuntimeFilter::getRecordedKeyRanges() const
 {
-    /// inserts_are_finished (seq_cst) publishes the range without a lock.
-    if (!range_supported || !range_positive || !has_range || !inserts_are_finished.load())
+    /// inserts_are_finished (seq_cst) publishes the range without a lock, so it must be read first:
+    /// has_range, range_min and range_max are written by updateRange/mergeRange on the build side
+    /// and are only safe to read after the publication.
+    if (!inserts_are_finished.load())
+        return {};
+    if (!range_supported || !range_positive || !has_range)
         return {};
     if (range_min.isNull() || range_max.isNull())
         return {};
@@ -173,15 +184,21 @@ void IRuntimeFilter::finishInsert()
     if (filters_to_merge != 0)
         return;
 
-    inserts_are_finished = true;
-
+    /// Finalize before publishing readiness, so a concurrent find() never sees a half-built filter.
     finishInsertImpl();
+
+    inserts_are_finished = true;
 }
 
 ColumnPtr IRuntimeFilter::find(const ColumnWithTypeAndName & values) const
 {
+    /// Best-effort pre-filter: if the build side is not finished yet (probe started early), pass
+    /// all rows through. Correctness comes from the JOIN itself, so passing rows is always safe.
     if (!inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before building it was finished");
+    {
+        ProfileEvents::increment(ProfileEvents::RuntimeFilterLookupsBeforeBuildFinished);
+        return DataTypeUInt8().createColumnConst(values.column->size(), true);
+    }
 
     const size_t rows_in_block = values.column->size();
     if (shouldSkip(rows_in_block))
@@ -578,6 +595,9 @@ public:
         {
             filter->merge(runtime_filter.get());    /// Add all new keys to a existing filter
         }
+        /// Registration above already makes the filter findable by the probe side, so skipping
+        /// the call below leaves it in the registered-but-unfinished state.
+        fiu_do_on(FailPoints::runtime_filter_skip_finish_insert, { return; });
         filter->finishInsert();
     }
 

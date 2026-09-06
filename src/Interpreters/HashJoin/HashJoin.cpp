@@ -2810,6 +2810,20 @@ void HashJoin::publishSharedRuntimeFilters()
         if (!existing)
             continue;
 
+        /// The recorded key values and range are snapshotted once below, and
+        /// `SharedFixedHashTableRuntimeFilter::merge` is a no-op, so a snapshot taken while build
+        /// streams are still merging would stay empty for the rest of the query - the replacement
+        /// would permanently disable index pruning instead of only during the unfinished window.
+        /// Keep the original filter in that case; it finishes and prunes on its own.
+        if (!existing->insertsAreFinished())
+        {
+            LOG_TRACE(
+                getLogger("HashJoin"),
+                "Not publishing shared fixed-hash-table runtime filter under key '{}': the build side is not finished yet",
+                filter_key);
+            continue;
+        }
+
         /// When common_type is wide (e.g. Int64 = UInt64 promotes to Int128), per-row wide-integer
         /// arithmetic on the probe side can be slower than the existing BloomFilter; skip.
         const auto target_type = removeNullable(existing->getFilterColumnTargetType());
