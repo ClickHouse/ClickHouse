@@ -514,6 +514,8 @@ def run_fuzz_job(check_name: str):
             Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
         )
 
+    results = []
+
     if is_failed:
         if is_sanitized:
             sanitizer_oom = Shell.get_output(
@@ -542,16 +544,24 @@ def run_fuzz_job(check_name: str):
         else:
             # Check for OOM in dmesg for non-sanitized builds
             if Shell.check(f"dmesg > {dmesg_log}", verbose=True):
-                if Shell.check(
-                    f"cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
-                    verbose=True,
-                ):
+                # CIDB takes `test_name` from a sub-result's name, so a host OOM
+                # needs a named one to stay greppable. The grep is negated: it
+                # exits non-zero exactly when an OOM line is present, and
+                # `with_info_on_failure` captures that line into `info`.
+                oom_result = Result.from_commands_run(
+                    name="OOM in dmesg",
+                    command=f"! cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+                )
+                if not oom_result.is_ok():
+                    # ERROR, not FAIL: `Result.create_from` resolves an ERROR
+                    # sub-result to a job-level `error`, a `FAIL` one to `failure`.
+                    oom_result.set_status(Result.Status.ERROR)
+                    results.append(oom_result)
                     info.append("ERROR: OOM in dmesg")
                     status = Result.Status.ERROR
             else:
                 print("WARNING: dmesg not enabled")
 
-    results = []
     if is_failed and status != Result.Status.ERROR:
         # died server - lets fetch failure from log
         fuzzer_log_parser = FuzzerLogParser(
