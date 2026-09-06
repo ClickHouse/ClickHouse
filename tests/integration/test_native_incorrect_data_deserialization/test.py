@@ -95,7 +95,7 @@ def test_variant_size_less_than_discriminators_limit(started_cluster, tmp_path):
             "bash",
             "-c",
             (
-                "set +e; output=$(clickhouse local --send_logs_level=fatal "
+                "set +e; output=$(clickhouse local --tmp --send_logs_level=fatal "
                 "--query \"SELECT count(), toTypeName(x) "
                 "FROM file('/tmp/variant_size_less_than_discriminators_limit.native', 'Native', 'x Variant(String, UInt8)') "
                 "FORMAT TSV\" 2>&1); printf '%s' \"$output\""

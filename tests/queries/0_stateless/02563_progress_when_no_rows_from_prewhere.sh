@@ -6,7 +6,7 @@ set timeout 60
 match_max 10000000
 
 # Run query that filters all rows in PREWHERE
-spawn clickhouse-local --progress -m -n --query "CREATE TABLE test_progress(n UInt64) ENGINE=MergeTree ORDER BY tuple() SETTINGS index_granularity=10 AS SELECT number FROM numbers(10000); SELECT count() FROM test_progress PREWHERE sleepEachRow(0.01) OR n > 1000000 SETTINGS max_block_size=10;"
+spawn clickhouse-local --tmp --progress -m -n --query "CREATE TABLE test_progress(n UInt64) ENGINE=MergeTree ORDER BY tuple() SETTINGS index_granularity=10 AS SELECT number FROM numbers(10000); SELECT count() FROM test_progress PREWHERE sleepEachRow(0.01) OR n > 1000000 SETTINGS max_block_size=10;"
 
 # Expect that progress is updated
 expect {

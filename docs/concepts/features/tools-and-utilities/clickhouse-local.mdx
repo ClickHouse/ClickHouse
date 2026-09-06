@@ -199,7 +199,7 @@ $ clickhouse-local --copy < data.json > data.csv
 
 ## Usage {#usage}
 
-By default `clickhouse-local` has access to data of a ClickHouse server on the same host, and it does not depend on the server's configuration. It also supports loading server configuration using `--config-file` argument. For temporary data, a unique temporary data directory is created by default.
+By default `clickhouse-local` has access to data of a ClickHouse server on the same host, and it does not depend on the server's configuration. It also supports loading server configuration using `--config-file` argument. The data is stored in a designated directory for application data inside the home directory (`$XDG_DATA_HOME/clickhouse-local` or `~/.local/share/clickhouse-local` on Linux, `~/Library/Application Support/clickhouse-local` on macOS), so it survives between runs. Pass `--path` to use a different location, or `--tmp` to work with a unique temporary directory that is removed on exit. Only one instance can work with the same directory at a time.
 
 Basic usage (Linux):
 
@@ -241,6 +241,8 @@ Arguments:
 - `--logger.level` — Log level.
 - `--ignore-error` — do not stop processing if a query failed.
 - `-c`, `--config-file` — path to configuration file in same format as for ClickHouse server, by default the configuration empty.
+- `--path` — the directory for the data. By default, a designated directory for application data inside the home directory is used (`$XDG_DATA_HOME/clickhouse-local` or `~/.local/share/clickhouse-local` on Linux, `~/Library/Application Support/clickhouse-local` on macOS), and the data survives between runs.
+- `--tmp` — use a unique temporary directory for the data, which is removed on exit (this was the default behavior in older versions). Has no effect if `--path` is specified.
 - `--no-system-tables` — do not attach system tables.
 - `--help` — arguments references for `clickhouse-local`.
 - `-V`, `--version` — print version information and exit.

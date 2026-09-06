@@ -38,6 +38,9 @@ raw_query_metrics_path = f"{perf_wd}/analyze/raw-query-metrics-upload.tsv"
 # measured servers). Keep in sync with CHPC_REPORT_LOCAL_{QUERY,SERVER}_SETTINGS
 # in compare.sh.
 REPORT_LOCAL_QUERY_SETTINGS = [
+    # Report-building invocations run concurrently and must not share (and lock)
+    # the default designated data directory in the home directory.
+    "--tmp",
     # Keep report aggregations in RAM: report/tmp cannot hold a spill of the
     # heaviest randomization queries, so spilling only fails with NOT_ENOUGH_SPACE.
     "--max_bytes_before_external_group_by=0",

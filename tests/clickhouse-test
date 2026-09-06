@@ -1286,7 +1286,7 @@ def is_asan_build(args):
     binary = getattr(args, "binary", "clickhouse")
     local = find_clickhouse_command(binary, "local")
     out = shell_get_output(
-        f"{local} --query \"SELECT count() FROM system.build_options "
+        f"{local} --tmp --query \"SELECT count() FROM system.build_options "
         f"WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)\"",
         timeout=60,
     )

@@ -109,7 +109,7 @@ RUN if [ -n "${single_binary_location_url}" ]; then \
 
 # A fallback to installation from ClickHouse repository
 # It works unless the clickhouse binary already exists
-RUN clickhouse local -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
+RUN clickhouse local --tmp -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
     ; apt-get update \
     && apt-get install --yes --no-install-recommends \
         dirmngr \
@@ -147,7 +147,7 @@ RUN clickhouse local -q 'SELECT 1' >/dev/null 2>&1 && exit 0 || : \
 # post install
 # we need to allow "others" access to clickhouse folder, because docker container
 # can be started with arbitrary uid (openshift usecase)
-RUN clickhouse-local -q 'SELECT * FROM system.build_options' \
+RUN clickhouse-local --tmp -q 'SELECT * FROM system.build_options' \
     && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client \
     && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
 
