@@ -1,0 +1,40 @@
+explicit PREWHERE
+105	str105	210
+105	str105	210
+str107
+str207
+str7
+PREWHERE keeping the condition column
+105
+105	210
+PREWHERE eliminating everything
+0
+WHERE is moved to PREWHERE
+1
+210
+210
+aggregation over PREWHERE
+39900	100
+39900	100
+old analyzer
+210
+39900
+column added by ALTER
+300
+100
+0
+8
+subcolumns
+210
+str105
+Nullable and LowCardinality
+33
+67
+20
+7	7
+empty table
+0
+mutations still work
+105	211
+0
+399
