@@ -25,7 +25,22 @@ struct NodeInfo
     /// Column names resolved to their physical storage names (subcolumn suffix stripped).
     /// Used for grouping: conditions on subcolumns of the same storage column are placed into one step.
     NameSet required_storage_columns;
+    /// True if computing this node may throw an exception, so it must not be evaluated on rows
+    /// that a preceding condition rejects.
+    bool may_throw = false;
 };
+
+/// Returns the argument types of a function node, as expected by
+/// IFunctionBase::isSuitableForShortCircuitArgumentsExecution.
+/// Mirrors getDataTypesWithConstInfoFromNodes in ExpressionActions.cpp, which is file local there.
+DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawConstPtrs & nodes)
+{
+    DataTypesWithConstInfo types;
+    types.reserve(nodes.size());
+    for (const auto & child : nodes)
+        types.push_back({child->result_type, child->column != nullptr});
+    return types;
+}
 
 /// Resolves a column name to its storage (physical) name.
 /// For subcolumns like `map.key_k0`, returns `map`.
@@ -64,7 +79,36 @@ void fillRequiredColumns(
         const auto & child_info = nodes_info[child];
         node_info.required_columns.insert(child_info.required_columns.begin(), child_info.required_columns.end());
         node_info.required_storage_columns.insert(child_info.required_storage_columns.begin(), child_info.required_storage_columns.end());
+        node_info.may_throw = node_info.may_throw || child_info.may_throw;
     }
+
+    /// Reuse the predicate that the short-circuit machinery uses to decide which nodes must be
+    /// guarded (findLazyExecutedNodes in ExpressionActions.cpp). IExecutableFunction::canThrow
+    /// delegates to it as well, through FunctionToExecutableFunctionAdaptor. It is imprecise in
+    /// both directions: it reports true for merely expensive functions, and false for some
+    /// functions that do throw while parsing row values (for example addDays(String, ...) via
+    /// FunctionDateOrDateTimeAddInterval). There is no sound can-throw oracle in the tree yet,
+    /// see the TODO on canThrow in IFunctionAdaptors.h.
+    if (!node_info.may_throw && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
+        && node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children)))
+        node_info.may_throw = true;
+}
+
+/// Appends the conditions combined with AND into `atoms`, descending into nested AND nodes.
+/// The order of the original conditions is preserved: `and(A, and(B, C))` yields `A, B, C`.
+/// ActionsDAG::extractConjunctionAtoms is not reused here because it walks with a stack and thus
+/// reverses sibling order, while the step boundaries below and the evaluation order promised for a
+/// user written PREWHERE both depend on the original order.
+void flattenConjunction(const ActionsDAG::Node * node, ActionsDAG::NodeRawConstPtrs & atoms)
+{
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "and")
+    {
+        for (const auto * child : node->children)
+            flattenConjunction(child, atoms);
+        return;
+    }
+
+    atoms.push_back(node);
 }
 
 /// Stores information about a node that has already been cloned or added to one of the new DAGs.
@@ -236,7 +280,12 @@ bool tryBuildPrewhereSteps(
     const bool is_conjunction = (condition_root.type == ActionsDAG::ActionType::FUNCTION && condition_root.function_base->getName() == "and");
     if (!is_conjunction)
         return false;
-    auto condition_nodes = condition_root.children;
+    /// Nested conjunctions are flattened, so that a condition list like
+    /// `and(existing_prewhere, and(guard, throwing))` (built by optimizePrewhere when a moved WHERE
+    /// is merged into an existing PREWHERE) is grouped condition by condition below instead of
+    /// treating the inner AND as one atomic condition.
+    ActionsDAG::NodeRawConstPtrs condition_nodes;
+    flattenConjunction(&condition_root, condition_nodes);
 
     /// 2. Collect the set of columns that are used in the condition
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> nodes_info;
@@ -252,27 +301,43 @@ bool tryBuildPrewhereSteps(
     /// Conditions on subcolumns of the same column (e.g. `map.key_k0` and `map.key_k1`) are placed into one group
     /// when they appear next to each other in the condition list.
     ///
+    /// The condition list is the flattened conjunction, so a nested AND contributes its own conditions
+    /// rather than a single opaque one. The flattening keeps the original left to right order, for the
+    /// same evaluation order reason spelled out below.
+    ///
     /// Only adjacent conditions are merged to preserve the user's explicit PREWHERE evaluation order.
     /// Non-adjacent conditions on the same storage column are kept in separate steps even though this
     /// may cause redundant reads, because the user may have intentionally interleaved a guard predicate
     /// (e.g. `PREWHERE tags['safe'] != '' AND value > 0 AND toUInt64(tags['unsafe']) > 0` — the
     /// `value > 0` step must filter rows before evaluating the potentially-throwing conversion).
     ///
-    /// For the WHERE-to-PREWHERE path this is not a problem: `MergeTreeWhereOptimizer` already groups
-    /// conditions by their physical storage columns, so subcolumns of the same column arrive here adjacent.
+    /// Adjacency alone is not enough: all conditions of one step are evaluated on the same unfiltered
+    /// block, so a condition that may throw must never share a step with a preceding condition.
+    /// `MergeTreeWhereOptimizer` groups conditions by their physical storage columns, which makes a
+    /// guard and a throwing predicate over the same column adjacent, so the may_throw check below is
+    /// what keeps the guard effective.
     std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
+    /// Indices of groups whose first condition may throw. Steps are not required to materialize their
+    /// filter, so the preceding step is asked to do it, otherwise the throwing condition is evaluated
+    /// on the rows that step rejects. Recorded for every such group regardless of which columns the
+    /// two steps read, because a step never filters the block it hands over on its own.
+    std::unordered_set<size_t> groups_requiring_filtered_input;
     for (const auto & node : condition_nodes)
     {
         const auto & node_info = nodes_info[node];
-        if (!condition_groups.empty()
-            && nodes_info[condition_groups.back().front()].required_storage_columns == node_info.required_storage_columns)
+        const bool merge_into_previous_group = !condition_groups.empty() && !node_info.may_throw
+            && nodes_info[condition_groups.back().front()].required_storage_columns == node_info.required_storage_columns;
+
+        if (merge_into_previous_group)
         {
             condition_groups.back().push_back(node);
+            continue;
         }
-        else
-        {
-            condition_groups.push_back({node});
-        }
+
+        if (!condition_groups.empty() && node_info.may_throw)
+            groups_requiring_filtered_input.insert(condition_groups.size());
+
+        condition_groups.push_back({node});
     }
 
     /// 5. Build DAGs for each step
@@ -376,7 +441,9 @@ bool tryBuildPrewhereSteps(
                 /// Don't remove if it's in the list of original outputs
                 .remove_filter_column =
                     step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
-                .need_filter = force_short_circuit_execution,
+                /// A step that precedes a may_throw condition must materialize its filter, so that
+                /// the throwing condition is not evaluated on the rows this step rejects.
+                .need_filter = force_short_circuit_execution || groups_requiring_filtered_input.contains(step_index + 1),
                 .perform_alter_conversions = true,
                 .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
