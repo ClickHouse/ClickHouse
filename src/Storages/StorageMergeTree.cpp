@@ -1663,7 +1663,7 @@ bool StorageMergeTree::merge(
         /// which publishes new metadata and registers the rename mutation atomically under
         /// the same mutex, so this `OPTIMIZE`-driven merge selection cannot observe new
         /// metadata without also seeing the pending rename mutation. See #80648.
-        metadata_snapshot = getInMemoryMetadataPtr();
+        metadata_snapshot = getInMemoryMetadataPtr(/*bypass_metadata_cache=*/true);
 
         return selectPartsToMerge(
             metadata_snapshot,
