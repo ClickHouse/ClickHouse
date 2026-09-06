@@ -9713,6 +9713,11 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     /// rewritten to literals on the initiator passes this check naturally. A function unknown
     /// to the factory (e.g. a user-defined function) is conservatively treated as
     /// non-deterministic.
+    /// A column definition is only followed once: the definitions form a directed acyclic graph,
+    /// but a diamond-shaped one (`c2 ALIAS c1 + c1`, `c3 ALIAS c2 + c2`, ...) would otherwise be
+    /// walked an exponential number of times. It doubles as a backstop against a cycle in
+    /// hand-edited metadata.
+    NameSet followed_column_definitions;
     auto contains_nondeterministic_function = [&](const ASTPtr & ast, const auto & self) -> bool
     {
         /// Being deterministic for a lambda expression is completely determined by the
@@ -9724,6 +9729,50 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
 
             if (!FunctionFactory::instance().get(function->name, query_context)->isDeterministic())
                 return true;
+        }
+
+        /// A non-deterministic function can also hide inside a column's own expression. The analysis
+        /// below resolves an `ALIAS` column against the storage - that is deliberate - so `now` inside
+        /// such a definition is folded here just the same, while the asynchronous execution re-expands
+        /// the definition and evaluates it again, later.
+        ///
+        /// Only a read-time carrier is re-expanded: `QueryAnalyzer` attaches an expression to `ALIAS`
+        /// columns alone, while a stored `DEFAULT`/`MATERIALIZED` column is read as it was written, so
+        /// its definition cannot diverge between this analysis and the execution and following it
+        /// would only lose pruning for a perfectly safe predicate. `EPHEMERAL` is a computed carrier
+        /// just like `ALIAS`, so it is followed for symmetry.
+        if (const auto * identifier = ast->as<ASTIdentifier>())
+        {
+            /// The identifier is the raw text of the predicate, so the column can be spelled
+            /// qualified (`db.table.column`) or addressed through a subcolumn (`column.subcolumn`),
+            /// while `getDefault` is keyed by the bare storage column name. Look up every
+            /// contiguous range of the name parts: an accidental match with an unrelated column of
+            /// that name only costs a pruning opportunity, whereas a miss hides the very expression
+            /// this check exists to find.
+            const auto & name_parts = identifier->name_parts;
+            for (size_t begin = 0; begin < name_parts.size(); ++begin)
+            {
+                String candidate;
+                for (size_t end = begin; end < name_parts.size(); ++end)
+                {
+                    if (end > begin)
+                        candidate += ".";
+                    candidate += name_parts[end];
+
+                    if (!followed_column_definitions.emplace(candidate).second)
+                        continue;
+
+                    auto column_default = metadata_snapshot->getColumns().getDefault(candidate);
+                    if (!column_default || !column_default->expression)
+                        continue;
+
+                    if (column_default->kind != ColumnDefaultKind::Alias && column_default->kind != ColumnDefaultKind::Ephemeral)
+                        continue;
+
+                    if (self(column_default->expression, self))
+                        return true;
+                }
+            }
         }
 
         return std::ranges::any_of(ast->children, [&](const auto & child) { return self(child, self); });

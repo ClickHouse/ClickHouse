@@ -1,0 +1,10 @@
+0000000000	['1','2']
+0000000001	['1']
+deterministic alias
+0000000000	['1']
+qualified alias
+0000000000	['1','2']
+alias subcolumn
+0000000000	['1','2']
+stored default
+0000000000	['202601']
