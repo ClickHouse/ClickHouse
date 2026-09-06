@@ -20,6 +20,8 @@ covarSamp int exact	1	1	1	1
 covarSamp f64 approx	1	1	1
 corr int exact	1	1	1	1
 corr f64 approx	1	1	1
+int64 exact	1	1	1
+grouping f64 exact	1	1	1	1	1
 f32 approx	1	1
 nan-safety If	1	1	1
 inf-safety If	1
