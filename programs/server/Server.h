@@ -91,7 +91,8 @@ private:
         const std::string & protocol,
         Poco::Net::HTTPServerParams::Ptr http_params,
         AsynchronousMetrics & async_metrics,
-        bool & is_secure);
+        bool & is_secure,
+        ServerType::Type & protocol_type);
 
     using CreateServerFunc = std::function<ProtocolServerAdapter(UInt16)>;
     void createServer(
