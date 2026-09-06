@@ -8,7 +8,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/LowCardinalityExecutionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -630,6 +632,23 @@ private:
             || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
     }
 
+    /// An array of `Enum` values searched for a `String` is compared by the name of the enum value,
+    /// because the common type of `Enum` and `String` is `String`. Returns the type of the elements
+    /// in that case, and `nullptr` otherwise.
+    static const IDataTypeEnum * getEnumToCompareByName(const ColumnsWithTypeAndName & arguments)
+    {
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        if (!array_type)
+            return nullptr;
+
+        if (!isStringOrFixedString(removeNullable(removeLowCardinality(arguments[1].type))))
+            return nullptr;
+
+        /// The nested type is owned by the array type, which outlives this call.
+        const auto & nested_type = array_type->getNestedType();
+        return dynamic_cast<const IDataTypeEnum *>(removeNullable(removeLowCardinality(nested_type)).get());
+    }
+
     /** If one or both arguments passed to this function are nullable,
       * we create a new column that contains non-nullable arguments:
       *
@@ -1220,13 +1239,41 @@ private:
         Array arr = col_array->getValue<Array>();
         const IColumn * item_arg = arguments[1].column.get();
 
+        /// The elements of a constant array of `Enum` values are the numeric values of the enum, while a
+        /// `String` argument is the name of an enum value, so a direct comparison of the fields never matches.
+        /// The common type of `Enum` and `String` is `String`, hence `equals` (and the non-constant code path
+        /// below, which casts both arguments to the common type) compares them by the name of the enum value.
+        /// Do the same here by replacing the values of the constant array by their names, and by casting the
+        /// searched value to `String` as well: a `FixedString` is padded with zero bytes, which the cast to
+        /// the common type removes, so comparing its raw bytes with a name would disagree with `equals`.
+        ColumnPtr searched_value_holder;
+        const auto * enum_type = getEnumToCompareByName(arguments);
+        if (enum_type)
+        {
+            for (auto & element : arr)
+                if (!element.isNull())
+                    element = enum_type->castToName(element);
+
+            if (!isString(removeNullable(arguments[1].type)))
+            {
+                DataTypePtr string_type = std::make_shared<DataTypeString>();
+                if (arguments[1].type->isNullable())
+                    string_type = std::make_shared<DataTypeNullable>(string_type);
+
+                searched_value_holder = castColumn(arguments[1], string_type);
+                item_arg = searched_value_holder.get();
+            }
+        }
+
         if (isColumnConst(*item_arg))
         {
             ResultType current = 0;
             const auto & value = (*item_arg)[0];
             if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
             {
-                if (isColumnNullableOrLowCardinalityNullable(
+                /// The array is sorted by the numeric values of the enum, which is not the order of the names.
+                if (enum_type
+                    || isColumnNullableOrLowCardinalityNullable(
                         assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData()))
                     current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
                 else
