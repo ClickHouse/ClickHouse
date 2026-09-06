@@ -686,6 +686,55 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
     return false;
 }
 
+bool FunctionSecretArgumentsFinder::azureCollectionArgumentsAreShowable(size_t start, size_t positional_limit)
+{
+    size_t positionals = 0;
+    for (size_t i = start, size = function->arguments->size(); i < size; ++i)
+    {
+        const auto argument_function = function->arguments->at(i)->getFunction();
+        if (argument_function && argument_function->name() == "equals")
+        {
+            /// A key this rule cannot read hides which credential the override carries; a value that
+            /// is no plain literal or identifier can nest one (`headers('Authorization' = '...')`) or
+            /// be folded from an expression the destination reads and this rule does not.
+            if (argument_function->arguments && argument_function->arguments->size() == 2
+                && tryGetStringFromArgument(*argument_function->arguments->at(0), nullptr)
+                && (tryGetStringFromArgument(*argument_function->arguments->at(1), nullptr)
+                    || argument_function->arguments->at(1)->tryGetLiteralText(nullptr)))
+                continue;
+            return false;
+        }
+        if (++positionals > positional_limit || !function->arguments->at(i)->tryGetLiteralText(nullptr))
+            return false;
+    }
+
+    /// A destination reads at most one of the two mutually exclusive connection keys, and rejects a
+    /// second one only after the statement has been formatted, so a surplus one stays as written.
+    size_t connection_overrides = 0;
+    for (const auto & key : {"connection_string", "storage_account_url"})
+        for (ssize_t i = findNamedArgument(nullptr, key, start); i >= 0;
+             i = findNamedArgument(nullptr, key, static_cast<size_t>(i) + 1))
+            ++connection_overrides;
+
+    if (connection_overrides > 1)
+        return false;
+
+    for (const auto & key : {"connection_string", "storage_account_url"})
+    {
+        String value;
+        if (findNamedArgument(&value, key, start) < 0)
+            continue;
+        /// Hiding a connection string replaces its whole argument, which cannot be combined with
+        /// hiding `account_key`.
+        const auto shape = classifyAzureConnectionValue(value);
+        if (value.empty() || shape == AzureConnectionValue::Unmaskable
+            || (shape == AzureConnectionValue::ConnectionString
+                && findNamedArgument(nullptr, "account_key", start) >= 0))
+            return false;
+    }
+    return true;
+}
+
 void FunctionSecretArgumentsFinder::findURLSecretArguments(size_t url_offset)
 {
     /// `headers(...)` can appear at any position in every url form (function, cluster function, engine,
@@ -1052,30 +1101,48 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
     if (isNamedCollectionName(url_arg_idx))
     {
         /// AzureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
+        if (!azureCollectionArgumentsAreShowable(url_arg_idx + 1, /* positional_limit= */ 0))
+        {
+            maskEveryArgument();
+            return;
+        }
         if (maskAzureConnectionString(-1, true, 1))
             return;
         findSecretNamedArgument("account_key", 1);
         return;
     }
 
-    if (maskAzureConnectionString(url_arg_idx))
-        return;
-
     /// We should check other arguments first because we don't need to do any replacement in case of
     /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
     size_t count = function->arguments->size();
+    bool fourth_argument_is_format = false;
     if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
     {
         String fourth_arg;
         if (tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
-        {
-            if (fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg))
-                return;
-        }
+            fourth_argument_is_format = fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg);
+    }
+    /// 'account_key' is used in the signature: the shape above is the one that takes a format there.
+    const bool has_account_key = !fourth_argument_is_format && (url_arg_idx + 4 < count);
+
+    /// The engine reads this argument as a connection string or as a plain account url. A value of
+    /// another shape is read by neither rule below, and hiding a connection string replaces its whole
+    /// argument, which cannot be combined with hiding 'account_key'.
+    String connection_value;
+    const auto shape = tryGetStringFromArgument(url_arg_idx, &connection_value)
+        ? classifyAzureConnectionValue(connection_value)
+        : AzureConnectionValue::Unmaskable;
+    if (shape == AzureConnectionValue::Unmaskable || (shape == AzureConnectionValue::ConnectionString && has_account_key))
+    {
+        maskEveryArgument();
+        return;
     }
 
+    if (maskAzureConnectionString(url_arg_idx))
+        return;
+
     /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
-    if (url_arg_idx + 4 < count)
+    if (has_account_key)
         markSecretArgument(url_arg_idx + 4);
 }
 
@@ -1504,58 +1571,10 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageBackupSecretArguments()
 
     if (isNamedCollectionName(0))
     {
-        size_t filenames = 0;
-        for (size_t i = 1; i < count; ++i)
-        {
-            const auto argument_function = function->arguments->at(i)->getFunction();
-            if (argument_function && argument_function->name() == "equals")
-            {
-                /// A key this rule cannot read hides which credential the override carries; a value that
-                /// is no plain literal or identifier can nest one (`headers('Authorization' = '...')`).
-                if (argument_function->arguments && argument_function->arguments->size() == 2
-                    && tryGetStringFromArgument(*argument_function->arguments->at(0), nullptr)
-                    && (tryGetStringFromArgument(*argument_function->arguments->at(1), nullptr)
-                        || argument_function->arguments->at(1)->tryGetLiteralText(nullptr)))
-                    continue;
-                maskEveryArgument();
-                return;
-            }
-            if (++filenames > 1 || !function->arguments->at(i)->tryGetLiteralText(nullptr))
-            {
-                maskEveryArgument();
-                return;
-            }
-        }
-        /// The collection holds the credentials, so only an override written here can carry one. A
-        /// destination reads at most one of the two mutually exclusive connection keys, and rejects a
-        /// second one only after the statement has been formatted, so a surplus one stays as written.
-        size_t connection_overrides = 0;
-        for (const auto & key : {"connection_string", "storage_account_url"})
-            for (ssize_t i = findNamedArgument(nullptr, key, 1); i >= 0;
-                 i = findNamedArgument(nullptr, key, static_cast<size_t>(i) + 1))
-                ++connection_overrides;
-
-        /// An override this rule cannot read may hold either credential, and hiding a connection string
-        /// replaces its whole argument, which cannot be combined with hiding a second one or `account_key`.
-        if (connection_overrides > 1)
+        if (!azureCollectionArgumentsAreShowable(1, /* positional_limit= */ 1))
         {
             maskEveryArgument();
             return;
-        }
-        for (const auto & key : {"connection_string", "storage_account_url"})
-        {
-            String value;
-            if (findNamedArgument(&value, key, 1) < 0)
-                continue;
-            /// Hiding a connection string replaces its whole argument, which cannot be combined with
-            /// hiding `account_key`.
-            const auto shape = classifyAzureConnectionValue(value);
-            if (value.empty() || shape == AzureConnectionValue::Unmaskable
-                || (shape == AzureConnectionValue::ConnectionString && findNamedArgument(nullptr, "account_key", 1) >= 0))
-            {
-                maskEveryArgument();
-                return;
-            }
         }
         if (maskAzureConnectionString(-1, /* argument_is_named= */ true, 1))
             return;

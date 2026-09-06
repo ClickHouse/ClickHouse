@@ -171,6 +171,11 @@ protected:
     void findS3FunctionSecretArguments(bool is_cluster_function);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);
     bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0);
+    /// Whether the arguments an `AzureBlobStorage(named_collection, ...)` destination or table takes
+    /// from `start` can be shown: only an argument written here can carry a credential, and each has
+    /// to be readable enough to tell that it does not. `positional_limit` bounds the plain literals
+    /// read beside the overrides: one filename for a backup locator, none for a table engine.
+    bool azureCollectionArgumentsAreShowable(size_t start, size_t positional_limit);
     /// Masks the secrets of every URL form (`url`/`urlCluster` table functions, the `URL` table
     /// engine, and their named-collection variants): the userinfo password of the url positional or a
     /// named `url = ...` override, and the `headers(...)` values at any position. `url` is at

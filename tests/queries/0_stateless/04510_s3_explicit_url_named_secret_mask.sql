@@ -339,6 +339,28 @@ BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/visib
                  'visible_04510_cont5', 'visible_04510_blob5', 'visible_04510_acctname5',
                  'SEKRIT_AZ5PLAINKEY'); -- { serverError STD_EXCEPTION }
 
+-- The AzureBlobStorage table engine reads its arguments the same way: an override whose value or key
+-- this rule cannot read may hold a credential the engine does read (the parser evaluates both as
+-- constant expressions), an account url is shown only when it is a plain storage account url, and a
+-- connection value that is no string is read by neither. A connection string is hidden by replacing
+-- its whole argument, which cannot be combined with hiding a following account_key. The last two
+-- statements are the controls: the connection string alone still hides only its AccountKey, and a
+-- plain account url keeps url, container, path and account name visible beside a hidden account_key.
+CREATE TABLE t_04510_azte1 (x UInt8) ENGINE = AzureBlobStorage(nc_04510_missing,
+                 connection_string = headers('Authorization' = 'SEKRIT_AZTEHDR')); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+CREATE TABLE t_04510_azte2 (x UInt8) ENGINE = AzureBlobStorage(nc_04510_missing,
+                 upper('account_key') = 'SEKRIT_AZTEKEY'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+CREATE TABLE t_04510_azte3 (x UInt8) ENGINE = AzureBlobStorage(['SEKRIT_AZTEARR'], 'cont', 'blob'); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_04510_azte4 (x UInt8) ENGINE = AzureBlobStorage('http://localhost:11111/acct?sig=SEKRIT_AZTESAS',
+                 'cont', 'blob', 'acct', 'SEKRIT_AZTE5KEY'); -- { serverError STD_EXCEPTION }
+CREATE TABLE t_04510_azte5 (x UInt8) ENGINE = AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_AZTECS==;',
+                 'cont', 'blob', 'acct', 'SEKRIT_AZTEMIXKEY'); -- { serverError STD_EXCEPTION }
+CREATE TABLE t_04510_azte6 (x UInt8) ENGINE = AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=a;AccountKey=SEKRIT_AZTECTLCS==;',
+                 'visible_04510_teco', 'visible_04510_teblob'); -- { serverError STD_EXCEPTION }
+CREATE TABLE t_04510_azte7 (x UInt8) ENGINE = AzureBlobStorage('http://localhost:11111/visible_04510_teacct',
+                 'visible_04510_tec5', 'visible_04510_teb5', 'visible_04510_teacctname',
+                 'SEKRIT_AZTECTLKEY'); -- { serverError STD_EXCEPTION }
+
 -- Backup database engine reconstructs the nested S3 destination; extra_credentials must be masked.
 CREATE DATABASE db_04510_ec ENGINE = Backup('', S3('url_dbec', 'ak', 'SEKRIT_SAK',
                  extra_credentials(external_id = 'SEKRIT_EID'))); -- { serverError BAD_ARGUMENTS }

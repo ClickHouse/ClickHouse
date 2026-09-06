@@ -122,3 +122,43 @@ ${CLICKHOUSE_CLIENT} "${client_opts[@]}" -m -q "
 DROP TABLE ${ta};
 DROP TABLE ${tb};
 "
+
+# An Azure table definition reaches the same check, and an Azure locator can hold its credential inside
+# the account url rather than in an argument of its own.
+aza=${CLICKHOUSE_DATABASE}.az_a
+azb=${CLICKHOUSE_DATABASE}.az_b
+azmerged=${CLICKHOUSE_DATABASE}.az_merged
+azure_outer="Disk('backups', '${CLICKHOUSE_DATABASE}_azuredef_outer')"
+# A shared access signature is a credential, and the account url is plain apart from it, so a secret
+# found in the restore error can only have come from one of the two archived definitions. Neither
+# creating nor backing up the tables reads the endpoint, so no Azure service is needed here.
+azure_a="AzureBlobStorage('http://localhost:11111/devstoreaccount1?sig=SEKRITAZURESAS', 'cont', 'az_a.csv', 'CSV')"
+azure_b="AzureBlobStorage('http://localhost:11111/devstoreaccount1?sig=SEKRITAZURESAS', 'cont', 'az_b.csv', 'CSV')"
+
+${CLICKHOUSE_CLIENT} "${client_opts[@]}" -m -q "
+DROP TABLE IF EXISTS ${aza};
+DROP TABLE IF EXISTS ${azb};
+DROP TABLE IF EXISTS ${azmerged};
+CREATE TABLE ${aza} (id UInt64) ENGINE = ${azure_a};
+CREATE TABLE ${azb} (id UInt64) ENGINE = ${azure_b};
+BACKUP TABLE ${aza}, TABLE ${azb} TO ${azure_outer} FORMAT Null;
+"
+
+err=$(${CLICKHOUSE_CLIENT} "${client_opts[@]}" -q \
+    "RESTORE TABLE ${aza} AS ${azmerged}, TABLE ${azb} AS ${azmerged} FROM ${azure_outer}" 2>&1)
+
+echo '-- Azure table-level duplicate definition reached (must be 1)'
+echo "$err" | grep -c -m1 'Extracted two different create queries for the same table'
+echo '-- CANNOT_RESTORE_TABLE for the Azure definitions (must be 1)'
+echo "$err" | grep -c -m1 CANNOT_RESTORE_TABLE
+echo '-- signature occurrences in the error (must be 0)'
+echo "$err" | grep -c SEKRITAZURESAS
+echo '-- [HIDDEN] present in the error (must be 1)'
+echo "$err" | grep -c -m1 '\[HIDDEN\]'
+echo '-- restore target still named in the error (must be 1)'
+echo "$err" | grep -c -m1 az_merged
+
+${CLICKHOUSE_CLIENT} "${client_opts[@]}" -m -q "
+DROP TABLE ${aza};
+DROP TABLE ${azb};
+"
