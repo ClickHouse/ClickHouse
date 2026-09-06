@@ -76,6 +76,21 @@ SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT 
 SELECT '-- external_table_strict_query: a disjunction mixing the source and the local side is not rejected';
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE l.id = 1 OR r.flag SETTINGS external_table_strict_query = 1;
 SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l LEFT JOIN local_r AS r USING (id) WHERE l.id = 1 OR r.flag SETTINGS external_table_strict_query = 0;
+
+-- On the non-preserving side of an outer join (and on either side of a FULL JOIN) no filter is
+-- pushed down at all, so the guard sees no filter and a source predicate is accepted. The strict
+-- and non-strict counts must agree: this is a missed rejection, not a wrong answer.
+SELECT '-- external_table_strict_query: a source predicate on the non-preserving side of an outer join is not checked';
+SELECT count() FROM local_r AS l LEFT JOIN sqlite('${DB}', query('SELECT id, name FROM t1')) AS r USING (id) WHERE r.id SETTINGS external_table_strict_query = 1;
+SELECT count() FROM local_r AS l LEFT JOIN sqlite('${DB}', query('SELECT id, name FROM t1')) AS r USING (id) WHERE r.id = 1 SETTINGS external_table_strict_query = 1;
+SELECT count() FROM local_r AS l LEFT JOIN sqlite('${DB}', query('SELECT id, name FROM t1')) AS r USING (id) WHERE r.id = 1 SETTINGS external_table_strict_query = 0;
+SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l RIGHT JOIN local_r AS r USING (id) WHERE l.id = 1 SETTINGS external_table_strict_query = 1;
+SELECT count() FROM sqlite('${DB}', query('SELECT id, name FROM t1')) AS l FULL JOIN local_r AS r USING (id) WHERE l.id = 1 SETTINGS external_table_strict_query = 1;
+SELECT count() FROM local_r AS l FULL JOIN sqlite('${DB}', query('SELECT id, name FROM t1')) AS r USING (id) WHERE r.id = 1 SETTINGS external_table_strict_query = 1;
+
+SELECT '-- external_table_strict_query: the same source predicate on the preserving side or in an inner join is rejected';
+SELECT count() FROM local_r AS l RIGHT JOIN sqlite('${DB}', query('SELECT id, name FROM t1')) AS r USING (id) WHERE r.id = 1 SETTINGS external_table_strict_query = 1; -- { serverError INCORRECT_QUERY }
+SELECT count() FROM local_r AS l INNER JOIN sqlite('${DB}', query('SELECT id, name FROM t1')) AS r USING (id) WHERE r.id = 1 SETTINGS external_table_strict_query = 1; -- { serverError INCORRECT_QUERY }
 DROP TABLE local_r;
 
 SELECT '-- INSERT into a query-backed table function is rejected before schema inference';

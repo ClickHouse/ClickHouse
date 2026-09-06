@@ -32,6 +32,14 @@ val	Nullable(Float64)
 -- external_table_strict_query: a disjunction mixing the source and the local side is not rejected
 1
 1
+-- external_table_strict_query: a source predicate on the non-preserving side of an outer join is not checked
+2
+1
+1
+1
+1
+1
+-- external_table_strict_query: the same source predicate on the preserving side or in an inner join is rejected
 -- INSERT into a query-backed table function is rejected before schema inference
 -- projection-count mismatch: an explicit structure with more columns than the query pads with defaults
 1	a	0
