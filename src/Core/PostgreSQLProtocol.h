@@ -856,9 +856,7 @@ public:
             if (num_params < 0)
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
                                 "Wrong parameter count {} in Bind message, it must not be negative", num_params);
-            /// A format code only states how to decode a parameter value, and one code may be
-            /// broadcast to all parameters, so a message with no values has nothing to decode.
-            has_binary_format_param = saw_non_text_format_code && num_params > 0;
+            bool saw_param_value = false;
             for (int i = 0; i < num_params; ++i)
             {
                 Int32 sz_param = 0;
@@ -876,7 +874,11 @@ public:
                 String current_param(sz_param, 0);
                 payload_in.readStrict(current_param.data(), sz_param);
                 parameters.push_back(std::move(current_param));
+                saw_param_value = true;
             }
+            /// A format code only says how to decode a parameter value, so a message carrying no
+            /// value has nothing to decode: a NULL becomes the literal `NULL` whatever its format.
+            has_binary_format_param = saw_non_text_format_code && saw_param_value;
 
             /// Consume result format codes; this implementation always returns text.
             Int16 num_format_params_result = 0;
