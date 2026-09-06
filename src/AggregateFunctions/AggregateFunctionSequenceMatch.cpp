@@ -395,10 +395,22 @@ protected:
         return active_states.back();
     }
 
-    template <typename EventEntry, bool remember_matched_events = false>
-    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, VectorWithMemoryTracking<T> * best_matched_events = nullptr) const
+    /// `anchored`: require the match to start exactly at the given `events_it`, rather than allowing
+    /// the search to silently retry starting at later events (which it otherwise does: the leading
+    /// synthetic KleeneStar in `actions`, plus the fact that every successfully matched action is
+    /// itself a backtrack point, together let the search skip ahead and match starting anywhere in
+    /// [events_it, events_end)). Needed by callers that scan position-by-position and require the
+    /// result to be tied to a specific, known anchor rather than "the best match found anywhere in
+    /// the remaining suffix".
+    /// `shared_iteration_count`: when set, callers that make several backtrackingMatch calls to
+    /// compute a single result (e.g. a position-by-position anchored scan) can pass the same
+    /// counter into every call so `sequence_match_max_iterations` bounds the *total* work for that
+    /// one result, rather than resetting - and so no longer actually bounding anything - on each
+    /// individual call.
+    template <typename EventEntry, bool remember_matched_events = false, bool anchored = false>
+    bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, VectorWithMemoryTracking<T> * best_matched_events = nullptr, size_t * shared_iteration_count = nullptr) const
     {
-        const auto action_begin = std::begin(actions);
+        const auto action_begin = anchored ? std::next(std::begin(actions)) : std::begin(actions);
         const auto action_end = std::end(actions);
         auto action_it = action_begin;
 
@@ -414,7 +426,10 @@ protected:
 
         const auto do_push_event = [&]
         {
-            back_stack.emplace(action_it, events_it, base_it);
+            /// When anchored, the very first action must not be retried against a later event:
+            /// that would defeat the anchoring by effectively trying a different start position.
+            if (!anchored || action_it != action_begin)
+                back_stack.emplace(action_it, events_it, base_it);
 
             current_matched_events.push_back(events_it->first);
             current_matched_actions.push_back(action_it);
@@ -455,7 +470,8 @@ protected:
             return false;
         };
 
-        size_t i = 0;
+        size_t local_iteration_count = 0;
+        size_t & i = shared_iteration_count ? *shared_iteration_count : local_iteration_count;
         while (action_it != action_end && events_it != events_end)
         {
             if (action_it->type == PatternActionType::SpecificEvent)
@@ -573,6 +589,164 @@ protected:
         backtrackingMatch<EventEntry, true>(events_it, events_end, &best_matched_events);
 
         return best_matched_events;
+    }
+
+    /// Find the first matching sequence chronologically
+    template <typename EventEntry>
+    VectorWithMemoryTracking<T> backtrackingMatchEventsFirst(EventEntry & events_it, const EventEntry events_end) const
+    {
+        /// Shared across every backtrackingMatch call made below so sequence_match_max_iterations
+        /// bounds the *total* work for this one result, not just each individual call - otherwise a
+        /// position-by-position scan could do unbounded work overall despite each call on its own
+        /// staying under the limit.
+        size_t iteration_count = 0;
+
+        /// A plain (unanchored) call already correctly finds the earliest-starting *complete* match
+        /// if one exists anywhere: backtracking explores start positions in strict left-to-right
+        /// order and returns the instant any full match completes, so it can never skip a match
+        /// that starts earlier in favor of one that starts later. Try that first.
+        auto probe_it = events_it;
+        VectorWithMemoryTracking<T> whole_match;
+        if (backtrackingMatch<EventEntry, true>(probe_it, events_end, &whole_match, &iteration_count))
+            return whole_match;
+
+        /// No complete match exists anywhere. Fall back to the earliest partial, testing each
+        /// position in turn for a match starting exactly there: a plain (unanchored) call's partial
+        /// result on total failure is the longest one found anywhere in the remaining suffix, not
+        /// necessarily the one starting earliest, which would contradict the documented "first,
+        /// unlike sequenceMatchEvents which returns the longest" semantics.
+        ///
+        /// Drive the scan with a separate `anchor` iterator, advanced by exactly one candidate
+        /// position at a time, and pass a *copy* into backtrackingMatch: a time constraint
+        /// (?t>..., ?t<..., etc.) scans forward internally even on failure, unlike a plain
+        /// SpecificEvent action, so letting the anchored call mutate the scan's own iterator could
+        /// skip candidate positions entirely.
+        auto anchor = events_it;
+        while (anchor != events_end)
+        {
+            auto probe_anchor = anchor;
+            VectorWithMemoryTracking<T> current_match;
+            backtrackingMatch<EventEntry, true, true>(probe_anchor, events_end, &current_match, &iteration_count);
+
+            if (!current_match.empty())
+                return current_match;
+
+            ++anchor;
+        }
+
+        return {};
+    }
+
+    /// Find the last matching sequence chronologically. A complete match is always preferred over
+    /// a partial one - a partial result is only ever returned when no complete match exists
+    /// anywhere in the data, mirroring backtrackingMatchEventsFirst's own preference.
+    template <typename EventEntry>
+    VectorWithMemoryTracking<T> backtrackingMatchEventsLast(EventEntry & events_it, const EventEntry events_end) const
+    {
+        VectorWithMemoryTracking<T> last_matched_events;
+        auto events_it_copy = events_it;
+        bool found_complete_match = false;
+
+        /// Shared across every backtrackingMatch call made below (see backtrackingMatchEventsFirst).
+        size_t iteration_count = 0;
+
+        /// Phase 1: collect complete matches via plain (unanchored) calls. A complete match is
+        /// always unambiguous (backtracking stops the instant one completes), so this reliably
+        /// finds every non-overlapping complete match in order; the last one collected wins
+        /// outright over anything found in phase 2 below.
+        while (events_it_copy != events_end)
+        {
+            auto anchor = events_it_copy;
+            VectorWithMemoryTracking<T> current_match;
+            bool match_result = backtrackingMatch<EventEntry, true>(events_it_copy, events_end, &current_match, &iteration_count);
+
+            if (match_result)
+            {
+                last_matched_events = current_match;
+                found_complete_match = true;
+                continue;
+            }
+
+            /// No complete match exists anywhere from `anchor` onward (an unanchored call that
+            /// fails exhausts events_it_copy all the way to events_end, so rewind to where this
+            /// attempt began before falling back to an anchored, position-by-position search).
+            events_it_copy = anchor;
+            break;
+        }
+
+        if (found_complete_match)
+            return last_matched_events;
+
+        /// Phase 2: no complete match exists anywhere; find the latest anchor with any (partial)
+        /// result. A plain (unanchored) call's partial result on total failure is the longest one
+        /// found anywhere in the remaining suffix, not necessarily the one starting latest.
+        ///
+        /// Drive the scan with a separate `anchor` iterator, advanced by exactly one candidate
+        /// position at a time, and pass a *copy* into backtrackingMatch: a time constraint
+        /// (?t>..., ?t<..., etc.) scans forward internally even on failure, unlike a plain
+        /// SpecificEvent action, so letting the anchored call mutate the scan's own iterator could
+        /// skip later candidate positions entirely.
+        auto anchor = events_it_copy;
+        while (anchor != events_end)
+        {
+            auto probe_anchor = anchor;
+            VectorWithMemoryTracking<T> current_match;
+            backtrackingMatch<EventEntry, true, true>(probe_anchor, events_end, &current_match, &iteration_count);
+
+            if (!current_match.empty())
+                last_matched_events = current_match;
+
+            ++anchor;
+        }
+
+        return last_matched_events;
+    }
+
+    /// Find all non-overlapping matching sequences
+    template <typename EventEntry>
+    VectorWithMemoryTracking<VectorWithMemoryTracking<T>> backtrackingMatchEventsAll(EventEntry & events_it, const EventEntry events_end) const
+    {
+        VectorWithMemoryTracking<VectorWithMemoryTracking<T>> all_matches;
+
+        /// Shared across every backtrackingMatch call made below (see backtrackingMatchEventsFirst).
+        size_t iteration_count = 0;
+
+        /// Phase 1: collect complete matches via plain (unanchored) calls (see backtrackingMatchEventsLast).
+        while (events_it != events_end)
+        {
+            auto anchor = events_it;
+            VectorWithMemoryTracking<T> current_match;
+            bool match_result = backtrackingMatch<EventEntry, true>(events_it, events_end, &current_match, &iteration_count);
+
+            if (match_result)
+            {
+                all_matches.push_back(current_match);
+                continue;
+            }
+
+            events_it = anchor;
+            break;
+        }
+
+        /// Phase 2: append at most one trailing partial - the latest anchor with any result.
+        /// Drive the scan with a separate `anchor` iterator (see backtrackingMatchEventsLast).
+        VectorWithMemoryTracking<T> trailing_partial;
+        auto anchor = events_it;
+        while (anchor != events_end)
+        {
+            auto probe_anchor = anchor;
+            VectorWithMemoryTracking<T> current_match;
+            backtrackingMatch<EventEntry, true, true>(probe_anchor, events_end, &current_match, &iteration_count);
+
+            if (!current_match.empty())
+                trailing_partial = current_match;
+
+            ++anchor;
+        }
+        if (!trailing_partial.empty())
+            all_matches.push_back(trailing_partial);
+
+        return all_matches;
     }
 
     /// Splits the pattern into deterministic parts separated by non-deterministic fragments
@@ -771,6 +945,158 @@ private:
 };
 
 template <typename T, typename Data>
+class AggregateFunctionSequenceMatchEventsFirst final : public AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsFirst<T, Data>>
+{
+public:
+    AggregateFunctionSequenceMatchEventsFirst(const DataTypes & arguments, const Array & params, const String & pattern_)
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsFirst<T, Data>>(arguments, params, pattern_, std::make_shared<DataTypeArray>(arguments[0])) {}
+
+    using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsFirst<T, Data>>::AggregateFunctionSequenceBase;
+
+    String getName() const override { return "sequenceMatchEventsFirst"; }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        this->data(place).sort();
+        auto result_vec = getEvents(place);
+        size_t size = result_vec.size();
+
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
+
+        offsets_to.push_back(offsets_to.back() + size);
+        if (size)
+        {
+            typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+
+            for (auto it : result_vec)
+            {
+                data_to.push_back(it);
+            }
+        }
+    }
+
+private:
+    VectorWithMemoryTracking<T> getEvents(ConstAggregateDataPtr __restrict place) const
+    {
+        VectorWithMemoryTracking<T> res;
+        const auto & data_ref = this->data(place);
+
+        const auto events_begin = std::begin(data_ref.events_list);
+        const auto events_end = std::end(data_ref.events_list);
+        auto events_it = events_begin;
+
+        res = this->backtrackingMatchEventsFirst(events_it, events_end);
+
+        return res;
+    }
+};
+
+template <typename T, typename Data>
+class AggregateFunctionSequenceMatchEventsLast final : public AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsLast<T, Data>>
+{
+public:
+    AggregateFunctionSequenceMatchEventsLast(const DataTypes & arguments, const Array & params, const String & pattern_)
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsLast<T, Data>>(arguments, params, pattern_, std::make_shared<DataTypeArray>(arguments[0])) {}
+
+    using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsLast<T, Data>>::AggregateFunctionSequenceBase;
+
+    String getName() const override { return "sequenceMatchEventsLast"; }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        this->data(place).sort();
+        auto result_vec = getEvents(place);
+        size_t size = result_vec.size();
+
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
+
+        offsets_to.push_back(offsets_to.back() + size);
+        if (size)
+        {
+            typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+
+            for (auto it : result_vec)
+            {
+                data_to.push_back(it);
+            }
+        }
+    }
+
+private:
+    VectorWithMemoryTracking<T> getEvents(ConstAggregateDataPtr __restrict place) const
+    {
+        VectorWithMemoryTracking<T> res;
+        const auto & data_ref = this->data(place);
+
+        const auto events_begin = std::begin(data_ref.events_list);
+        const auto events_end = std::end(data_ref.events_list);
+        auto events_it = events_begin;
+
+        res = this->backtrackingMatchEventsLast(events_it, events_end);
+
+        return res;
+    }
+};
+
+template <typename T, typename Data>
+class AggregateFunctionSequenceMatchEventsAll final : public AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsAll<T, Data>>
+{
+public:
+    AggregateFunctionSequenceMatchEventsAll(const DataTypes & arguments, const Array & params, const String & pattern_)
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsAll<T, Data>>(
+            arguments, params, pattern_,
+            std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(arguments[0]))) {}
+
+    using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatchEventsAll<T, Data>>::AggregateFunctionSequenceBase;
+
+    String getName() const override { return "sequenceMatchEventsAll"; }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        this->data(place).sort();
+        auto all_matches = getAllEvents(place);
+
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
+
+        ColumnArray & nested_arr = assert_cast<ColumnArray &>(arr_to.getData());
+        ColumnArray::Offsets & nested_offsets = nested_arr.getOffsets();
+        typename ColumnVector<T>::Container & nested_data = assert_cast<ColumnVector<T> &>(nested_arr.getData()).getData();
+
+        for (const auto & match : all_matches)
+        {
+            for (auto timestamp : match)
+            {
+                nested_data.push_back(timestamp);
+            }
+            nested_offsets.push_back(nested_offsets.back() + match.size());
+        }
+
+        offsets_to.push_back(offsets_to.back() + all_matches.size());
+    }
+
+private:
+    VectorWithMemoryTracking<VectorWithMemoryTracking<T>> getAllEvents(ConstAggregateDataPtr __restrict place) const
+    {
+        const auto & data_ref = this->data(place);
+
+        const auto events_begin = std::begin(data_ref.events_list);
+        const auto events_end = std::end(data_ref.events_list);
+        auto events_it = events_begin;
+
+        return this->backtrackingMatchEventsAll(events_it, events_end);
+    }
+};
+
+template <typename T, typename Data>
 class AggregateFunctionSequenceCount final : public AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>
 {
 public:
@@ -870,6 +1196,9 @@ void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory)
     factory.registerFunction("sequenceMatch", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatch, AggregateFunctionSequenceMatchData>, {.description = R"DOC(Checks whether the sequence of events, ordered by the timestamp argument, contains a chain of events matching the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
     factory.registerFunction("sequenceCount", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceCount, AggregateFunctionSequenceMatchData>, {.description = R"DOC(Counts the number of non-overlapping chains of events, ordered by the timestamp argument, that match the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
     factory.registerFunction("sequenceMatchEvents", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEvents, AggregateFunctionSequenceMatchData>, {.description = R"DOC(A variant of sequenceMatch that returns information about the events that matched the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    factory.registerFunction("sequenceMatchEventsFirst", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEventsFirst, AggregateFunctionSequenceMatchData>, {.description = R"DOC(A variant of sequenceMatch that returns the timestamps of the first (chronologically) non-overlapping chain of events that matched the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    factory.registerFunction("sequenceMatchEventsLast", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEventsLast, AggregateFunctionSequenceMatchData>, {.description = R"DOC(A variant of sequenceMatch that returns the timestamps of the last (chronologically) non-overlapping chain of events that matched the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    factory.registerFunction("sequenceMatchEventsAll", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEventsAll, AggregateFunctionSequenceMatchData>, {.description = R"DOC(A variant of sequenceMatch that returns the timestamps of all non-overlapping chains of events that matched the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 
 }
