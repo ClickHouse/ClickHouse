@@ -64,18 +64,11 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} length of 'needle' argument must be greater than 0.", getName());
 
         const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(needle);
+        const size_t groups_count = Regexps::getCapturingGroupsCount(regexp, needle);
         const auto & re2 = regexp.getRE2();
 
-        if (!re2)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
-
-        const size_t groups_count = re2->NumberOfCapturingGroups();
-
-        if (!groups_count)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
-
         // Including 0-group, which is the whole regexp.
-        PODArrayWithStackMemory<std::string_view, 128> matched_groups(groups_count + 1);
+        Regexps::MatchedGroups matched_groups(groups_count + 1);
 
         ColumnArray::ColumnOffsets::MutablePtr offsets_col = ColumnArray::ColumnOffsets::create();
         ColumnString::MutablePtr data_col = ColumnString::create();
@@ -117,7 +110,7 @@ Extracts the capturing groups from the first substring matched by a regular expr
     FunctionDocumentation::Syntax syntax = "extractGroups(s, regexp)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "Input string to extract from.", {"String", "FixedString"}},
-        {"regexp", "Regular expression. Must contain at least one capturing group. Constant.", {"const String", "const FixedString"}}
+        {"regexp", "Regular expression. Must contain between 1 and 127 capturing groups. Constant.", {"const String", "const FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"If the regular expression matches, returns an array containing the captured groups (`1` to `N`, where `N` is the number of capturing groups in `regexp`) of the first match. If there is no match, returns an empty array.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {

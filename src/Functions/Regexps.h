@@ -9,6 +9,7 @@
 #include <vector>
 #include <Common/Exception.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/PODArray_fwd.h>
 #include <Common/ProfileEvents.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/likePatternToRegexp.h>
@@ -58,6 +59,32 @@ inline OptimizedRegularExpression createRegexp(const String & pattern)
         return {likePatternToRegexp(pattern), flags};
     else
         return {pattern, flags};
+}
+
+/// Upper bound on the number of capturing groups accepted by the group extracting functions. Group 0,
+/// the whole match, is not counted.
+constexpr size_t max_capturing_groups = 127;
+
+/// Group 0 followed by the capturing groups of one match. The template argument is an inline byte budget
+/// rather than an element count, so patterns with few groups are matched without an allocation.
+using MatchedGroups = PODArrayWithStackMemory<std::string_view, 128>;
+
+inline size_t getCapturingGroupsCount(const OptimizedRegularExpression & regexp, const String & pattern)
+{
+    const auto & re2 = regexp.getRE2();
+
+    if (!re2)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", pattern);
+
+    const size_t groups_count = re2->NumberOfCapturingGroups();
+
+    if (!groups_count)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", pattern);
+
+    if (groups_count > max_capturing_groups)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many groups in regexp: {}, max: {}", groups_count, max_capturing_groups);
+
+    return groups_count;
 }
 
 /// Caches compiled re2 objects for given string patterns. Intended to support the common situation of a small set of patterns which are
