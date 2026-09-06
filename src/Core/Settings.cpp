@@ -22,6 +22,7 @@
 #include <base/types.h>
 #include <Common/NamePrompter.h>
 #include <Common/typeid_cast.h>
+#include <base/sanitizer_defs.h>
 
 #include <boost/program_options.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -31,6 +32,12 @@
 
 namespace
 {
+#if defined(MEMORY_SANITIZER)
+constexpr UInt64 default_query_profiler_period_ns = 0;
+#else
+constexpr UInt64 default_query_profiler_period_ns = DB::QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS;
+#endif
+
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
 #else
@@ -77,6 +84,7 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /** List of settings: type, name, default value, description, flags
@@ -1014,7 +1022,7 @@ Possible values:
 - `0` — Do not wait.
 - `1` — Wait for own execution.
 - `2` — Wait for everyone.
-- `3` - Only wait for active replicas.
+- `3` - Only wait for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `alter_sync = 2`.
 
 Cloud default value: `0`.
 
@@ -1974,6 +1982,18 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_statistics_for_min_max_aggregation, true, R"(
+Answer `min`, `max` and `count` aggregations from per-part column statistics instead of reading data.
+
+When enabled, a query of the form `SELECT min(column), max(column), count() FROM table` without `GROUP BY` and filters
+is answered from column statistics (e.g. MinMax statistics, see the `auto_statistics_types` MergeTree setting)
+for the data parts that have them materialized, and only the remaining parts are read.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(Bool, use_top_k_dynamic_filtering, true, R"(
 Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
 
@@ -2189,8 +2209,10 @@ Ask more streams when reading from Merge table. Streams will be spread across ta
 The number of streams that read simultaneously is capped by this multiplier as well - except for a `Merge` table read with plan-based parallel replicas ([parallel_replicas_allow_merge_tables](#parallel_replicas_allow_merge_tables)), which is expanded into a union of the reads from its underlying tables and is therefore capped by [max_streams_for_union_step](#max_streams_for_union_step), like any other union.
 )", 0) \
     \
-    DECLARE(String, network_compression_method, "LZ4", R"(
-The codec for compressing the client/server and server/server communication.
+    DECLARE(String, network_compression_method, "ZSTD", R"(
+The codec for compressing the client/server and server/server communication over the native protocol.
+
+The setting does not apply to the streaming-exchange channel of distributed queries, which always uses the server default codec: every compressed frame is self-describing, so the receiver detects the codec automatically.
 
 Possible values:
 
@@ -2204,7 +2226,7 @@ Possible values:
 - [network_zstd_compression_level](#network_zstd_compression_level)
 )", 0) \
     \
-    DECLARE(Int64, network_zstd_compression_level, 1, R"(
+    DECLARE(Int64, network_zstd_compression_level, 3, R"(
 Adjusts the level of ZSTD compression. Used only when [network_compression_method](#network_compression_method) is set to `ZSTD`.
 
 Possible values:
@@ -3052,7 +3074,7 @@ If it is set to true, then a user is allowed to executed distributed DDL queries
     DECLARE(Bool, allow_suspicious_codecs, false, R"(
 If it is set to true, allow to specify meaningless compression codecs.
 )", 0) \
-    DECLARE(UInt64, query_profiler_real_time_period_ns, QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS, R"(
+    DECLARE(UInt64, query_profiler_real_time_period_ns, default_query_profiler_period_ns, R"(
 Sets the period for a real clock timer of the [query profiler](/concepts/features/performance/troubleshoot/sampling-query-profiler). Real clock timer counts wall-clock time.
 
 Possible values:
@@ -3066,13 +3088,15 @@ Possible values:
 
 - 0 for turning off the timer.
 
+Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.
+
 See also:
 
 - System table [trace_log](/reference/system-tables/trace_log)
 
 Cloud default value: `3000000000`.
 )", 0) \
-    DECLARE(UInt64, query_profiler_cpu_time_period_ns, QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS, R"(
+    DECLARE(UInt64, query_profiler_cpu_time_period_ns, default_query_profiler_period_ns, R"(
 Sets the period for a CPU clock timer of the [query profiler](/concepts/features/performance/troubleshoot/sampling-query-profiler). This timer counts only CPU time.
 
 Possible values:
@@ -3085,6 +3109,8 @@ Possible values:
   - 1000000000 (once a second) for cluster-wide profiling.
 
 - 0 for turning off the timer.
+
+Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.
 
 See also:
 
@@ -6032,14 +6058,21 @@ Possible values:
     DECLARE(UInt64, iceberg_metadata_staleness_ms, 0, R"(
 If non-zero, skip fetching iceberg metadata from remote catalog if there is a cached metadata snapshot, more recent than the given staleness window. Zero means to always fetch the latest metadata version from the remote catalog. Setting this a non-zero trades staleness to a lower latency of read operations.
 )", 0) \
-    DECLARE(NonZeroUInt64, iceberg_delete_manifest_decode_concurrency, 4, R"(
-Maximum number of Iceberg delete manifest files decoded concurrently during query execution before any data file is read.
+    DECLARE_WITH_ALIAS(NonZeroUInt64, iceberg_manifest_decode_concurrency, 4, R"(
+Maximum number of Iceberg manifest files decoded concurrently while reading a table.
 
-All delete manifests must be decoded before any data file is read, so this work sits on the critical path before the first row is returned. Decoding several at a time overlaps both the object storage round-trips and the per-row pruning work.
+Delete manifests are all decoded before any data file is read; data manifests are decoded while the list of data files for the query is produced, and new ones are decoded only as the query consumes already decoded entries. Decoding several manifests at a time overlaps the object storage round-trips and the per-entry pruning work.
 
-Higher values raise peak memory during query initialization when the Iceberg metadata files cache is disabled or full, since each in-flight manifest then holds its own decoded contents.
+Higher values raise peak memory when the Iceberg metadata files cache is disabled or full, since each in-flight manifest then holds its own decoded contents.
 
 Must be greater than zero; `1` decodes the manifests one at a time.
+)", 0, iceberg_delete_manifest_decode_concurrency) \
+    DECLARE(NonZeroUInt64, iceberg_file_entries_queue_size, 100, R"(
+Capacity of the queue between the Iceberg data manifest decode tasks and the query, in data file entries.
+
+The decode tasks pause once the queue is full and the query is not consuming, so this also bounds the read-ahead.
+
+Must be greater than zero.
 )", 0) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.
@@ -6737,6 +6770,19 @@ Possible values:
 
 - 0 - Disable
 - 1 - Enable
+)", 0) \
+    DECLARE(Bool, query_plan_propagate_predicate_across_join, true, R"(
+Toggles a query-plan-level optimization which copies filter conjuncts from one side of an
+equi-join onto the other side via equi-key substitution, so that primary-key/index pruning
+on the other side can use them.
+
+Applies when the filter and the `MergeTree` read are separated from the join only by expression
+and filter steps, and when the copied conjunct compares a primary key column with a constant
+(including `IN` with a constant set). A predicate below a nested join or below `DISTINCT`, or a
+comparison between two key columns, is left alone: it could not drive primary key pruning on the
+other side, so copying it would only add work.
+
+Only takes effect if `query_plan_enable_optimizations` is 1.
 )", 0) \
     DECLARE(Bool, query_plan_push_down_volume_reducing_functions, true, R"(
 Toggles a query-plan-level optimization which moves volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`)
@@ -8737,6 +8783,9 @@ Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or 
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
 )", 0) \
+    DECLARE(Bool, enable_join_key_only_hash_tables, true, R"(
+Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.
+)", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
 )", 0) \
     DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
@@ -8910,9 +8959,12 @@ Maximal selectivity of the filter to use the hint built from the inverted text i
 )", 0) \
     DECLARE(Bool, use_text_index_like_evaluation_by_dictionary_scan, true, R"(
 Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dictionary.
+
+The accelerated patterns are `%value%`, `value%` and `%value`, as well as the `startsWith` and `endsWith` calls that `optimize_rewrite_like_perfect_affix` rewrites into `value%` and `%value`.
 )", 0) \
     DECLARE(UInt64, text_index_like_min_pattern_length, 4, R"(
-Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern required to use the text index LIKE evaluation by the dictionary scan.
+Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern, or of a `startsWith`/`endsWith` needle,
+required to use the text index LIKE evaluation by the dictionary scan.
 Patterns shorter than this threshold match too many dictionary tokens and are skipped to avoid expensive scans.
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
@@ -9106,6 +9158,10 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
 Enable the Cascades cost-based optimizer for distributed query plans.
 Takes effect only together with `make_distributed_plan = 1`: the setting alone does not change single-node query planning.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, cascades_aggregation_pushdown, true, R"(
+Consider pushing partial aggregation below a join (eager aggregation) as a cost-based alternative in the Cascades optimizer.
+Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
+)", BETA) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", BETA) \
@@ -9183,6 +9239,14 @@ Specifies which JOIN order algorithms to attempt during query plan optimization.
  - 'dpsub' - implements DPsub algorithm which supports both inner and non-inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates.
  - 'dphyp' - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
 Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, query_plan_optimize_join_order_use_cd_a_conflict_detector, false, R"(
+Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join
+reorderings are valid using the CD-A conflict detector).
+)", EXPERIMENTAL) \
+    DECLARE(Bool, query_plan_optimize_join_order_use_cd_c_conflict_detector, false, R"(
+Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join reorderings
+are valid using the CD-C conflict detector. Takes precedence over `query_plan_optimize_join_order_use_cd_a_conflict_detector` when both are enabled.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
@@ -9395,6 +9459,7 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
     bool hasSettingsChangedByCompatibility() const { return !settings_changed_by_compatibility_setting.empty(); }
     void resetSettingsChangedByCompatibility();
+    void markSettingsChangedByCompatibilityAsUnchanged();
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
@@ -9538,6 +9603,19 @@ VectorWithMemoryTracking<String> SettingsImpl::getAllRegisteredNames() const
 
 void SettingsImpl::set(std::string_view name, const Field & value)
 {
+#if defined(MEMORY_SANITIZER)
+    if (name == "query_profiler_real_time_period_ns" || name == "query_profiler_cpu_time_period_ns")
+    {
+        if (BaseSettings::castValueUtil(name, value).safeGet<UInt64>() != 0)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The setting `{}` is not supported in a MemorySanitizer build",
+                name);
+        }
+    }
+#endif
+
     if (name == "compatibility")
     {
         if (value.getType() != Field::Types::Which::String)
@@ -9559,6 +9637,14 @@ void SettingsImpl::resetSettingsChangedByCompatibility()
 {
     for (const auto & setting_name : settings_changed_by_compatibility_setting)
         resetToDefault(setting_name);
+
+    settings_changed_by_compatibility_setting.clear();
+}
+
+void SettingsImpl::markSettingsChangedByCompatibilityAsUnchanged()
+{
+    for (const auto & setting_name : settings_changed_by_compatibility_setting)
+        markUnchanged(setting_name);
 
     settings_changed_by_compatibility_setting.clear();
 }
@@ -9696,6 +9782,11 @@ bool Settings::hasSettingsChangedByCompatibility() const
 void Settings::resetSettingsChangedByCompatibility()
 {
     impl->resetSettingsChangedByCompatibility();
+}
+
+void Settings::markSettingsChangedByCompatibilityAsUnchanged()
+{
+    impl->markSettingsChangedByCompatibilityAsUnchanged();
 }
 
 VectorWithMemoryTracking<String> Settings::getHints(const String & name) const
