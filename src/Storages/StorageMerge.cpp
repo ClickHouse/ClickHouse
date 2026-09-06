@@ -1992,7 +1992,18 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                     ColumnWithTypeAndName(std::move(database_column), lc_string_type, "_database"),
                     ColumnWithTypeAndName(std::move(table_column), lc_string_type, "_table")
                 };
-                filter->execute(block);
+
+                /// An `indexHint` argument contributes a second input for the same virtual column,
+                /// so the expression can ask for `_table` (or `_database`) more than once while the
+                /// block above holds it exactly once. Allow duplicate inputs to be bound to the same
+                /// block column - the value is the same for all of them. This is what every other
+                /// consumer of these split predicates does, see `filterBlockWithExpression`.
+                ///
+                /// The block must keep exactly one row, which the `getBool` below relies on. Deriving
+                /// it from the expression's own inputs instead would produce an empty block for a
+                /// predicate that needs no input at all, such as `indexHint(materialize(1))`, and a
+                /// filter evaluated over zero rows would read as false and deselect every table.
+                filter->execute(block, /*dry_run=*/false, /*allow_duplicates_in_input=*/true);
                 // Valid only when block has exactly one row.
                 return block.getByName(column_name).column->getBool(0);
             };
