@@ -1,8 +1,11 @@
 #pragma once
 
 #include <cstddef>
+#include <limits>
+#include <optional>
 #include <type_traits>
 
+#include <Core/Defines.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -10,6 +13,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
@@ -18,8 +23,12 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -44,9 +53,32 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
+    extern const int NO_COMMON_TYPE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 using NullMap = PaddedPODArray<UInt8>;
+
+/// True when `type` is Dynamic or Variant, at the top level or inside any chain of Tuple wrappers,
+/// each of which may be Nullable. Stops at Array/Map on purpose: equality for identical Array/Map
+/// types is itself compareAt-based, so descending there could not change the answer. forEachChild
+/// cannot express that barrier.
+inline bool hasTypeErasingElement(const IDataType & type)
+{
+    checkStackSize();
+
+    if (isDynamic(type) || isVariant(type))
+        return true;
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type.getPtr()).get()))
+    {
+        for (const auto & element : tuple_type->getElements())
+            if (hasTypeErasingElement(*element))
+                return true;
+    }
+
+    return false;
+}
 
 /// ConcreteActions -- what to do when the index was found.
 
@@ -517,14 +549,17 @@ class FunctionArrayIndex final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArrayIndex>(context); }
 
-    static FunctionPtr create(ContextPtr context)
+    FunctionArrayIndex() = default;
+
+    /// A null context is benign: `equals` then resolves with default `ComparisonParams`, so the
+    /// relation stays correct and only query settings go unapplied.
+    explicit FunctionArrayIndex(ContextPtr context)
+        : equals_resolver(FunctionFactory::instance().get("equals", context))
+        , skip_null_typed_paths(context && context->getSettingsRef()[Setting::type_json_skip_null_typed_paths])
     {
-        return std::make_shared<FunctionArrayIndex>(context->getSettingsRef()[Setting::type_json_skip_null_typed_paths]);
     }
-
-    /// The default is for Map adapters that hold this function as a member; JSON is not reachable from them.
-    explicit FunctionArrayIndex(bool skip_null_typed_paths_ = false) : skip_null_typed_paths(skip_null_typed_paths_) {}
 
     /// Get function name.
     String getName() const override { return name; }
@@ -600,18 +635,7 @@ public:
         if (auto res = executeObject(arguments, result_type))
             return res;
 
-        if (auto res = executeArrayLowCardinality(arguments))
-            return res;
-
-        auto new_arguments = arguments;
-
-        for (auto & argument : new_arguments)
-        {
-            argument.column = recursiveRemoveLowCardinality(argument.column);
-            argument.type = recursiveRemoveLowCardinality(argument.type);
-        }
-
-        return executeArrayImpl(new_arguments, result_type);
+        return executeArray(arguments, result_type);
     }
 
 private:
@@ -628,6 +652,825 @@ private:
 
         return ((isNativeNumber(inner_type_decayed) || isEnum(inner_type_decayed)) && isNativeNumber(arg_decayed))
             || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
+    }
+
+    /// Sole owner of the array-shaped dispatch, so both entry points (executeImpl and executeMap)
+    /// see the same arms in the same order. The Map path normalises cardinality before calling this,
+    /// because a Map key cannot be nullable and so cannot use the arm below that assumes it can.
+    ColumnPtr executeArray(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    {
+        if (auto res = executeErasedEquality(arguments, result_type))
+            return res;
+
+        return executeArrayAfterErasedEquality(arguments, result_type);
+    }
+
+    /// The arms that answer whenever the erased-equality one declines. Kept separate so that path can
+    /// ask them for the rows it leaves undecided without re-entering itself.
+    ColumnPtr executeArrayAfterErasedEquality(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    {
+        if (auto res = executeArrayLowCardinality(arguments))
+            return res;
+
+        auto new_arguments = arguments;
+
+        for (auto & argument : new_arguments)
+        {
+            argument.column = recursiveRemoveLowCardinality(argument.column);
+            argument.type = recursiveRemoveLowCardinality(argument.type);
+        }
+
+        return executeArrayImpl(new_arguments, result_type);
+    }
+
+    /// The common type of the array element and the needle, with the wrappers that do not affect
+    /// which equality relation applies removed.
+    static DataTypePtr tryGetDecayedCommonType(const ColumnsWithTypeAndName & arguments)
+    {
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        if (!array_type)
+            return nullptr;
+
+        auto element_type = removeNullable(recursiveRemoveLowCardinality(array_type->getNestedType()));
+        auto needle_type = removeNullable(recursiveRemoveLowCardinality(arguments[1].type));
+
+        return tryGetLeastSupertype(DataTypes{element_type, needle_type});
+    }
+
+    /// Fold a per-element `equals` result plus both operands' nullness into one match bitmap.
+    /// Two NULLs count as equal, per the documented has([NULL], NULL) -> 1 contract; an
+    /// indeterminate (NULL) comparison counts as no match.
+    static ColumnUInt8::MutablePtr foldEqualityResult(
+        const ColumnPtr & equality_result, const IColumn & elements, const IColumn & needles, size_t size)
+    {
+        auto matches = ColumnUInt8::create(size);
+        auto & matches_data = matches->getData();
+
+        auto flat_result = equality_result->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+        const auto * nullable_result = checkAndGetColumn<ColumnNullable>(flat_result.get());
+        const IColumn & result_values = nullable_result ? nullable_result->getNestedColumn() : *flat_result;
+
+        /// `equals` yields Nullable(Nothing) when no comparison is possible at all (an erased operand
+        /// with no compatible alternative and the matching *_throw_on_type_mismatch setting disabled).
+        const bool result_is_nothing = result_values.getDataType() == TypeIndex::Nothing;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            const bool element_is_null = elements.isNullAt(i);
+            const bool needle_is_null = needles.isNullAt(i);
+
+            if (element_is_null || needle_is_null)
+                matches_data[i] = element_is_null && needle_is_null;
+            else if (result_is_nothing || (nullable_result && nullable_result->isNullAt(i)))
+                matches_data[i] = 0;
+            else
+                matches_data[i] = result_values.getBool(i) ? 1 : 0;
+        }
+
+        return matches;
+    }
+
+    /// Strip a Nullable wrapper, handing back the null map column so the caller can fold the outer
+    /// nullness itself: a wrapper's isNullAt answers about the wrapper, not about a nested NULL.
+    /// The caller must keep the returned null map column alive while reading its data.
+    static ColumnWithTypeAndName unwrapNullable(const ColumnWithTypeAndName & operand, ColumnPtr & null_map_column)
+    {
+        auto full_column = operand.column->convertToFullColumnIfConst();
+        const auto * nullable_column = checkAndGetColumn<ColumnNullable>(full_column.get());
+        if (!nullable_column)
+            return operand;
+
+        null_map_column = nullable_column->getNullMapColumnPtr();
+        return {nullable_column->getNestedColumnPtr(), removeNullable(operand.type), operand.name};
+    }
+
+    /// A column positionally aligned with the original rows, plus a null map marking the rows holding
+    /// no value. A null `operand.column` means every row is NULL.
+    struct PeeledOperand
+    {
+        ColumnWithTypeAndName operand;
+        ColumnPtr null_map_column;
+    };
+
+    /// Replace a Dynamic/Variant operand by the one concrete alternative it holds, or return nothing
+    /// so the caller declines. Mirrors the two fast paths of FunctionVariantAdaptor.
+    static std::optional<PeeledOperand> tryPeelErased(const ColumnWithTypeAndName & operand)
+    {
+        if (!isDynamic(operand.type) && !isVariant(operand.type))
+            return {};
+
+        auto full_column = operand.column->convertToFullColumnIfConst();
+
+        const ColumnVariant * variant_column = nullptr;
+        DataTypes alternative_types;
+        std::optional<ColumnVariant::Discriminator> shared_variant_discriminator;
+
+        if (const auto * dynamic_column = checkAndGetColumn<ColumnDynamic>(full_column.get()))
+        {
+            variant_column = &dynamic_column->getVariantColumn();
+            alternative_types = assert_cast<const DataTypeVariant &>(*dynamic_column->getVariantInfo().variant_type).getVariants();
+            shared_variant_discriminator = dynamic_column->getSharedVariantDiscriminator();
+        }
+        else if (const auto * as_variant = checkAndGetColumn<ColumnVariant>(full_column.get()))
+        {
+            variant_column = as_variant;
+            alternative_types = assert_cast<const DataTypeVariant &>(*operand.type).getVariants();
+        }
+
+        if (!variant_column)
+            return {};
+
+        /// Every row is NULL: there is no alternative to peel, so the answer comes from the null maps
+        /// alone. Comparing anything here would fail, because a Nothing-typed argument is rejected
+        /// unless the result is Nothing too.
+        if (variant_column->hasOnlyNulls())
+            return PeeledOperand{{nullptr, operand.type, operand.name}, ColumnUInt8::create(variant_column->size(), UInt8(1))};
+
+        auto discriminator = variant_column->getGlobalDiscriminatorOfOneNoneEmptyVariant();
+        if (!discriminator || discriminator == shared_variant_discriminator)
+            return {};
+
+        const auto & alternative_type = alternative_types[*discriminator];
+
+        /// Equality for identical Array/Map types is compareAt-based, the very relation the guard
+        /// stops at, so peeling into one would reintroduce it behind the guard's back.
+        if (hasContainer(*alternative_type))
+            return {};
+
+        auto alternative_column = variant_column->getVariantPtrByGlobalDiscriminator(*discriminator);
+
+        if (alternative_column->size() == variant_column->size())
+            return PeeledOperand{{alternative_column, alternative_type, operand.name}, nullptr};
+
+        /// The alternative was reported non-empty above, so index 0 below is always in range.
+        if (alternative_column->empty())
+            return {};
+
+        /// The alternative holds only the rows that selected it, each at its own offset. Indexing by
+        /// that offset rather than expanding by a mask avoids assuming the offsets ascend with the
+        /// superproject row order, which ColumnVariant::validateState does not check.
+        const size_t rows = variant_column->size();
+        const auto local_discriminator = variant_column->localDiscriminatorByGlobal(*discriminator);
+        const auto & local_discriminators = variant_column->getLocalDiscriminators();
+        const auto & alternative_offsets = variant_column->getOffsets();
+
+        auto selector = ColumnUInt64::create(rows);
+        auto & selector_data = selector->getData();
+        auto null_map = ColumnUInt8::create(rows);
+        auto & null_map_data = null_map->getData();
+
+        for (size_t row = 0; row < rows; ++row)
+        {
+            const bool selected = local_discriminators[row] == local_discriminator;
+            null_map_data[row] = !selected;
+            /// An unselected row reads no value, so any in-range index does; 0 keeps index() in bounds.
+            selector_data[row] = selected ? alternative_offsets[row] : 0;
+        }
+
+        auto expanded = alternative_column->index(*selector, rows);
+
+        return PeeledOperand{{std::move(expanded), alternative_type, operand.name}, std::move(null_map)};
+    }
+
+    /// The erased column reached by descending `elements` through the Tuple wrappers named by
+    /// `path`, or nothing when the column shape does not match the type. Used to read a row's
+    /// discriminators at the site the peel will act on. `holder` keeps the returned column alive: a
+    /// level of the descent may materialise a temporary, which the caller must outlive.
+    static const ColumnVariant * findVariantAtPath(
+        const IColumn & elements, const VectorWithMemoryTracking<size_t> & path, ColumnPtr & holder)
+    {
+        const IColumn * current = &elements;
+        auto held = current->getPtr();
+
+        for (size_t position : path)
+        {
+            held = current->convertToFullColumnIfConst();
+            const auto * as_nullable = checkAndGetColumn<ColumnNullable>(held.get());
+            if (as_nullable)
+                held = as_nullable->getNestedColumnPtr();
+
+            const auto * as_tuple = checkAndGetColumn<ColumnTuple>(held.get());
+            if (!as_tuple || position >= as_tuple->tupleSize())
+                return nullptr;
+
+            held = as_tuple->getColumnPtr(position);
+            current = held.get();
+        }
+
+        held = current->convertToFullColumnIfConst();
+        if (const auto * as_nullable = checkAndGetColumn<ColumnNullable>(held.get()))
+            held = as_nullable->getNestedColumnPtr();
+
+        if (const auto * as_dynamic = checkAndGetColumn<ColumnDynamic>(held.get()))
+        {
+            /// The pointee lives inside the dynamic column, so that is what has to stay alive.
+            holder = held;
+            return &as_dynamic->getVariantColumn();
+        }
+
+        const auto * as_variant = checkAndGetColumn<ColumnVariant>(held.get());
+        if (as_variant)
+            holder = held;
+
+        return as_variant;
+    }
+
+    /// The path of Tuple positions leading to the first erased type inside `type`, or nothing when
+    /// `type` erases nothing. Mirrors hasTypeErasingElement's traversal, including its Array/Map stop.
+    static std::optional<VectorWithMemoryTracking<size_t>> findErasedPath(const IDataType & type)
+    {
+        checkStackSize();
+
+        if (isDynamic(type) || isVariant(type))
+            return VectorWithMemoryTracking<size_t>{};
+
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type.getPtr()).get());
+        if (!tuple_type)
+            return {};
+
+        const auto & elements = tuple_type->getElements();
+        for (size_t position = 0; position < elements.size(); ++position)
+        {
+            if (auto nested = findErasedPath(*elements[position]))
+            {
+                VectorWithMemoryTracking<size_t> path{position};
+                path.insert(path.end(), nested->begin(), nested->end());
+                return path;
+            }
+        }
+
+        return {};
+    }
+
+    /// A row's alternatives on both sides of the comparison, packed so rows agreeing on both share a
+    /// group. Both halves are ColumnVariant::Discriminator, so the pair fits a UInt16; the wider type
+    /// leaves a sentinel for a row that belongs to no group.
+    using GroupKey = UInt32;
+    static constexpr GroupKey no_group = std::numeric_limits<GroupKey>::max();
+
+    static GroupKey makeGroupKey(ColumnVariant::Discriminator elements, ColumnVariant::Discriminator needle)
+    {
+        return static_cast<GroupKey>(elements) << 8 | needle;
+    }
+
+    /// The one global discriminator every element of `row` carries, NULL_DISCRIMINATOR when it holds
+    /// only NULLs, or nothing when its elements disagree. NULLs are skipped: the peel answers those
+    /// from the null maps.
+    static std::optional<ColumnVariant::Discriminator> rowAlternative(
+        const ColumnVariant & variant_column, size_t begin, size_t end)
+    {
+        const auto & local_discriminators = variant_column.getLocalDiscriminators();
+        std::optional<ColumnVariant::Discriminator> alternative;
+
+        for (size_t position = begin; position < end; ++position)
+        {
+            auto local = local_discriminators[position];
+            if (local == ColumnVariant::NULL_DISCRIMINATOR)
+                continue;
+
+            auto global = variant_column.globalDiscriminatorByLocal(local);
+            if (!alternative)
+                alternative = global;
+            else if (*alternative != global)
+                return {};
+        }
+
+        return alternative.value_or(ColumnVariant::NULL_DISCRIMINATOR);
+    }
+
+    /// One group label per row, keyed by the alternatives it carries on both sides: a group is only
+    /// answerable as a whole if every member peels the same way. A row whose own elements disagree is
+    /// labelled no_group, and nothing means no group formed at all. A side that erases nothing gives
+    /// every row the same key half, so grouping keys off whichever side is erased.
+    static std::optional<VectorWithMemoryTracking<GroupKey>> groupRowsByAlternative(
+        const ColumnArray & array, const DataTypePtr & element_type,
+        const IColumn & needle, const DataTypePtr & needle_type)
+    {
+        const auto & offsets = array.getOffsets();
+
+        const ColumnVariant * variant_column = nullptr;
+        ColumnPtr variant_holder;
+        if (auto path = findErasedPath(*element_type))
+        {
+            variant_column = findVariantAtPath(array.getData(), *path, variant_holder);
+            if (!variant_column || variant_column->size() != array.getData().size())
+                return {};
+        }
+
+        const ColumnVariant * needle_variant = nullptr;
+        ColumnPtr needle_holder;
+        if (auto needle_path = findErasedPath(*needle_type))
+        {
+            needle_variant = findVariantAtPath(needle, *needle_path, needle_holder);
+            if (!needle_variant || needle_variant->size() != offsets.size())
+                return {};
+        }
+
+        VectorWithMemoryTracking<GroupKey> labels(offsets.size(), no_group);
+        bool any_grouped = false;
+        ColumnArray::Offset current_offset = 0;
+
+        for (size_t row = 0; row < offsets.size(); ++row)
+        {
+            auto elements_alternative = variant_column
+                ? rowAlternative(*variant_column, current_offset, offsets[row])
+                : std::optional<ColumnVariant::Discriminator>{ColumnVariant::NULL_DISCRIMINATOR};
+            current_offset = offsets[row];
+
+            if (!elements_alternative)
+                continue;
+
+            auto needle_alternative = needle_variant
+                ? rowAlternative(*needle_variant, row, row + 1)
+                : std::optional<ColumnVariant::Discriminator>{ColumnVariant::NULL_DISCRIMINATOR};
+
+            if (!needle_alternative)
+                continue;
+
+            labels[row] = makeGroupKey(*elements_alternative, *needle_alternative);
+            any_grouped = true;
+        }
+
+        if (!any_grouped)
+            return {};
+
+        return labels;
+    }
+
+    /// True when `type` is an Array or Map, at the top level or inside a chain of bare Tuple wrappers.
+    /// A Nullable wrapper ends the chain, unlike in hasTypeErasingElement: a container below one is
+    /// reached by decomposing, and `equals` decides it exactly as it decides the plain twin.
+    static bool hasContainer(const IDataType & type)
+    {
+        checkStackSize();
+
+        if (isArray(type) || isMap(type))
+            return true;
+
+        if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+        {
+            for (const auto & element : tuple_type->getElements())
+                if (hasContainer(*element))
+                    return true;
+        }
+
+        return false;
+    }
+
+    /// Split a Tuple operand into its element columns, or return nothing when it is not a plain
+    /// Tuple. A Nullable wrapper is removed by unwrapNullable before this is reached.
+    static std::optional<ColumnsWithTypeAndName> tryDecomposeTuple(const ColumnWithTypeAndName & operand)
+    {
+        auto full_column = operand.column->convertToFullColumnIfConst();
+        const auto * tuple_column = checkAndGetColumn<ColumnTuple>(full_column.get());
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(operand.type.get());
+
+        if (!tuple_column || !tuple_type || tuple_column->tupleSize() != tuple_type->getElements().size())
+            return {};
+
+        ColumnsWithTypeAndName elements;
+        elements.reserve(tuple_column->tupleSize());
+        for (size_t i = 0, size = tuple_column->tupleSize(); i < size; ++i)
+            elements.emplace_back(tuple_column->getColumnPtr(i), tuple_type->getElement(i), operand.name);
+
+        return elements;
+    }
+
+    /// Apply one wrapper level's nullness to an already-computed match bitmap: two NULLs match, a
+    /// lone NULL does not. Each level folds its own map, so an outer NULL and a nested one stay
+    /// distinguishable.
+    static void foldNullMaps(
+        PaddedPODArray<UInt8> & matches_data,
+        const ColumnWithTypeAndName & elements,
+        const ColumnPtr & elements_null_map_column,
+        const ColumnWithTypeAndName & needles,
+        const ColumnPtr & needles_null_map_column)
+    {
+        if (!elements_null_map_column && !needles_null_map_column)
+            return;
+
+        /// A column may report its own nullness too, so both sources are consulted: pairing a NULL a
+        /// wrapper knows about with one only the column knows about must still count as two NULLs.
+        for (size_t row = 0; row < matches_data.size(); ++row)
+        {
+            const bool element_is_null = isNullAtRow(elements.column, elements_null_map_column, row);
+            const bool needle_is_null = isNullAtRow(needles.column, needles_null_map_column, row);
+
+            if (element_is_null || needle_is_null)
+                matches_data[row] = element_is_null && needle_is_null;
+        }
+    }
+
+    /// Fold `equals` over `elements` against `needles` into a match bitmap. Nothing means the pair
+    /// cannot be compared, so the caller must abandon the call rather than combine a partial result.
+    /// Tuples are decomposed here because ColumnTuple has no isNullAt to report a NULL nested in one.
+    std::optional<ColumnUInt8::MutablePtr> evaluateElementwiseEquality(
+        const ColumnWithTypeAndName & elements, const ColumnWithTypeAndName & needles) const
+    {
+        checkStackSize();
+
+        const size_t rows = elements.column->size();
+
+        /// Hold the null map columns for as long as their data is read below.
+        ColumnPtr elements_null_map_column;
+        ColumnPtr needles_null_map_column;
+        auto bare_elements = unwrapNullable(elements, elements_null_map_column);
+        auto bare_needles = unwrapNullable(needles, needles_null_map_column);
+
+        /// Peel before decomposing, so an erased operand holding a Tuple reaches the branch below.
+        if (auto peeled_elements = tryPeelErased(bare_elements))
+        {
+            bare_elements = peeled_elements->operand;
+            foldNullMapInto(elements_null_map_column, peeled_elements->null_map_column);
+        }
+        else if (isDynamic(bare_elements.type) || isVariant(bare_elements.type))
+            return {};
+
+        if (auto peeled_needles = tryPeelErased(bare_needles))
+        {
+            bare_needles = peeled_needles->operand;
+            foldNullMapInto(needles_null_map_column, peeled_needles->null_map_column);
+        }
+        else if (isDynamic(bare_needles.type) || isVariant(bare_needles.type))
+            return {};
+
+        /// A Nothing-typed operand carries no value either, and comparing one is rejected outright
+        /// unless the result is Nothing too, so mark it the same way a fully-NULL erased column is.
+        markAsAllNull(bare_elements, elements_null_map_column, rows);
+        markAsAllNull(bare_needles, needles_null_map_column, rows);
+
+        /// One side holds no value in any row, so nullness alone decides every row. The surviving
+        /// side may still report its own nullness positionally, as a LowCardinality dictionary does,
+        /// so it is asked here the same way the leaf fold asks it.
+        if (!bare_elements.column || !bare_needles.column)
+        {
+            auto matches = ColumnUInt8::create(rows);
+            auto & matches_data = matches->getData();
+            for (size_t row = 0; row < rows; ++row)
+                matches_data[row] = isNullAtRow(bare_elements.column, elements_null_map_column, row)
+                    && isNullAtRow(bare_needles.column, needles_null_map_column, row);
+            return matches;
+        }
+
+        if (auto element_parts = tryDecomposeTuple(bare_elements))
+        {
+            if (auto needle_parts = tryDecomposeTuple(bare_needles); needle_parts && element_parts->size() == needle_parts->size()
+                    && !element_parts->empty())
+            {
+                /// A tuple matches iff every position does.
+                auto matches = evaluateElementwiseEquality((*element_parts)[0], (*needle_parts)[0]);
+                if (!matches)
+                    return {};
+
+                auto & matches_data = (*matches)->getData();
+
+                for (size_t i = 1, size = element_parts->size(); i < size; ++i)
+                {
+                    auto part_matches = evaluateElementwiseEquality((*element_parts)[i], (*needle_parts)[i]);
+                    if (!part_matches)
+                        return {};
+
+                    const auto & part_matches_data = (*part_matches)->getData();
+                    for (size_t row = 0; row < matches_data.size(); ++row)
+                        matches_data[row] &= part_matches_data[row];
+                }
+
+                foldNullMaps(
+                    matches_data, bare_elements, elements_null_map_column, bare_needles, needles_null_map_column);
+                return matches;
+            }
+        }
+
+        ColumnsWithTypeAndName equals_arguments{bare_elements, bare_needles};
+        ColumnPtr equality_result;
+        try
+        {
+            auto equals_function = equals_resolver->build(equals_arguments);
+            equality_result
+                = equals_function->execute(equals_arguments, equals_function->getResultType(), rows, /* dry_run = */ false);
+        }
+        catch (const Exception & e)
+        {
+            /// The peeled types are not comparable, which the comparison subsystem alone can decide:
+            /// its String arms are admitted by type and then converted per value, and a supertype it
+            /// does accept may still have no conversion. Decline, so the existing dispatch answers
+            /// exactly as it does today.
+            if (e.code() != ErrorCodes::NO_COMMON_TYPE && e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+                && e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                throw;
+            return {};
+        }
+
+        auto matches = foldEqualityResult(equality_result, *bare_elements.column, *bare_needles.column, rows);
+        foldNullMaps(matches->getData(), bare_elements, elements_null_map_column, bare_needles, needles_null_map_column);
+        return matches;
+    }
+
+    /// Whether one row of an operand holds no value: either a wrapper level said so, or the column
+    /// itself reports it. A missing column means the operand holds no value in any row.
+    static bool isNullAtRow(const ColumnPtr & column, const ColumnPtr & null_map_column, size_t row)
+    {
+        if (null_map_column && assert_cast<const ColumnUInt8 &>(*null_map_column).getData()[row])
+            return true;
+
+        return !column || column->isNullAt(row);
+    }
+
+    /// Drop a Nothing-typed operand's column and mark every row NULL instead, so the fold answers
+    /// from the null maps rather than attempting a comparison there.
+    static void markAsAllNull(ColumnWithTypeAndName & operand, ColumnPtr & null_map_column, size_t rows)
+    {
+        if (!operand.column || !isNothing(operand.type))
+            return;
+
+        operand.column = nullptr;
+        foldNullMapInto(null_map_column, ColumnUInt8::create(rows, UInt8(1)));
+    }
+
+    /// Merge a newly-peeled level's null map into the one already collected for this operand.
+    /// Both mark absent rows of the same positional space, so a row is NULL if either says so.
+    static void foldNullMapInto(ColumnPtr & accumulated, const ColumnPtr & addition)
+    {
+        if (!addition)
+            return;
+
+        if (!accumulated)
+        {
+            accumulated = addition;
+            return;
+        }
+
+        auto merged = ColumnUInt8::create(assert_cast<const ColumnUInt8 &>(*accumulated).getData().begin(),
+                                         assert_cast<const ColumnUInt8 &>(*accumulated).getData().end());
+        auto & merged_data = merged->getData();
+        const auto & addition_data = assert_cast<const ColumnUInt8 &>(*addition).getData();
+        for (size_t row = 0; row < merged_data.size(); ++row)
+            merged_data[row] |= addition_data[row];
+
+        accumulated = std::move(merged);
+    }
+
+    /// Reduce a per-element match bitmap to one result per array row.
+    ResultColumnPtr foldMatchesPerRow(const PaddedPODArray<UInt8> & matches, const ColumnArray::Offsets & offsets) const
+    {
+        auto col_result = ResultColumnType::create(offsets.size());
+        auto & result_data = col_result->getData();
+
+        ColumnArray::Offset current_offset = 0;
+        for (size_t row = 0; row < offsets.size(); ++row)
+        {
+            ResultType current = 0;
+            for (size_t j = 0, array_size = offsets[row] - current_offset; j < array_size; ++j)
+            {
+                if (!matches[current_offset + j])
+                    continue;
+
+                ConcreteAction::apply(current, j);
+
+                if constexpr (!ConcreteAction::resume_execution)
+                    break;
+            }
+            result_data[row] = current;
+            current_offset = offsets[row];
+        }
+
+        return col_result;
+    }
+
+    /// Membership over a type-erasing common type, using the registered `equals` rather than
+    /// compareAt, which for such a column orders by variant name before value.
+    /// Returns nullptr for every other common type, leaving the existing dispatch untouched.
+    ColumnPtr executeErasedEquality(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    {
+        if (!equals_resolver)
+            return nullptr;
+
+        auto common_type = tryGetDecayedCommonType(arguments);
+        if (!common_type || !hasTypeErasingElement(*common_type))
+            return nullptr;
+
+        const auto & array_type = assert_cast<const DataTypeArray &>(*arguments[0].type);
+        auto element_type = array_type.getNestedType();
+        const auto & needle_type = arguments[1].type;
+
+        /// LowCardinality elements keep their dictionary fast path, whose null-needle answer depends on
+        /// a dictionary index this comparison has no equivalent for.
+        if (element_type->lowCardinality())
+            return nullptr;
+
+        const auto * col_array_const = checkAndGetColumnConstData<ColumnArray>(arguments[0].column.get());
+        const auto * col_array = col_array_const ? col_array_const : checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+        if (!col_array)
+            return nullptr;
+
+        const auto * needle_const = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
+
+        /// Const array and const needle: one evaluation over the single logical array, so the cost
+        /// stays proportional to the array length instead of to the row count.
+        if (col_array_const && needle_const)
+        {
+            const auto & elements = col_array->getDataPtr();
+            size_t elements_count = elements->size();
+
+            auto matches = evaluateElementwiseEquality(
+                {elements, element_type, "elements"},
+                {needle_const->getDataColumnPtr()->cloneResized(1)->replicate({elements_count}), needle_type, "needle"});
+            if (!matches)
+                return nullptr;
+
+            ResultType current = 0;
+            for (size_t i = 0; i < elements_count; ++i)
+            {
+                if (!(*matches)->getData()[i])
+                    continue;
+
+                ConcreteAction::apply(current, i);
+
+                if constexpr (!ConcreteAction::resume_execution)
+                    break;
+            }
+
+            return result_type->createColumnConst(arguments[0].column->size(), current);
+        }
+
+        if (col_array_const)
+            if (auto res = executeErasedEqualityConstArray(arguments, result_type, *col_array, element_type, needle_type))
+                return res;
+
+        auto full_array = arguments[0].column->convertToFullColumnIfConst();
+        const auto & array = assert_cast<const ColumnArray &>(*full_array);
+        auto full_needle = arguments[1].column->convertToFullColumnIfConst();
+
+        if (auto matches = evaluateElementwiseEquality(
+                {array.getDataPtr(), element_type, "elements"},
+                {full_needle->replicate(array.getOffsets()), needle_type, "needle"}))
+            return foldMatchesPerRow((*matches)->getData(), array.getOffsets());
+
+        return executeErasedEqualityPerRowGroup(arguments, result_type, array, full_needle, element_type, needle_type);
+    }
+
+    /// Pairs the needles against a constant array in batches, so the temporary stays proportional to a
+    /// batch rather than to the row count. A batch whose needles cannot be compared as a whole is
+    /// grouped on its own, keeping that bound for the declining case too.
+    ColumnPtr executeErasedEqualityConstArray(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        const ColumnArray & col_array,
+        const DataTypePtr & element_type,
+        const DataTypePtr & needle_type) const
+    {
+        const auto & elements = col_array.getDataPtr();
+        const size_t elements_count = elements->size();
+        const size_t rows = arguments[0].column->size();
+
+        if (elements_count == 0 || rows == 0)
+            return nullptr;
+
+        const size_t rows_per_batch = std::max<size_t>(1, DEFAULT_BLOCK_SIZE / elements_count);
+        if (rows_per_batch >= rows)
+            return nullptr;
+
+        auto full_needle = arguments[1].column->convertToFullColumnIfConst();
+
+        auto col_result = ResultColumnType::create(rows);
+        auto & result_data = col_result->getData();
+
+        ColumnArray::Offsets batch_offsets;
+        batch_offsets.reserve(rows_per_batch);
+
+        for (size_t first_row = 0; first_row < rows; first_row += rows_per_batch)
+        {
+            const size_t batch_rows = std::min(rows_per_batch, rows - first_row);
+
+            /// One array's worth of elements per row, so these offsets both replicate the needles and
+            /// describe the row boundaries the matches are folded over.
+            batch_offsets.resize(batch_rows);
+            for (size_t row = 0; row < batch_rows; ++row)
+                batch_offsets[row] = (row + 1) * elements_count;
+
+            auto batch_elements_mutable = elements->cloneEmpty();
+            batch_elements_mutable->reserve(elements_count * batch_rows);
+            for (size_t row = 0; row < batch_rows; ++row)
+                batch_elements_mutable->insertRangeFrom(*elements, 0, elements_count);
+            ColumnPtr batch_elements = std::move(batch_elements_mutable);
+
+            auto batch_needle = full_needle->cut(first_row, batch_rows);
+
+            ColumnPtr batch_result;
+            if (auto matches = evaluateElementwiseEquality(
+                    {batch_elements, element_type, "elements"},
+                    {batch_needle->replicate(batch_offsets), needle_type, "needle"}))
+            {
+                batch_result = foldMatchesPerRow((*matches)->getData(), batch_offsets);
+            }
+            else
+            {
+                auto offsets_column = ColumnArray::ColumnOffsets::create(batch_rows);
+                offsets_column->getData().assign(batch_offsets);
+                auto batch_array = ColumnArray::create(batch_elements, std::move(offsets_column));
+
+                /// The grouping needs the array flattened and the arm below it needs it constant.
+                ColumnsWithTypeAndName batch_arguments = arguments;
+                batch_arguments[0].column = arguments[0].column->cloneResized(batch_rows);
+                batch_arguments[1].column = batch_needle;
+
+                batch_result = executeErasedEqualityPerRowGroup(
+                    batch_arguments, result_type, *batch_array, batch_needle, element_type, needle_type);
+
+                if (!batch_result)
+                    batch_result = executeArrayAfterErasedEquality(batch_arguments, result_type);
+
+                batch_result = batch_result->convertToFullColumnIfConst();
+            }
+
+            const auto & batch_data = assert_cast<const ResultColumnType &>(*batch_result).getData();
+            for (size_t row = 0; row < batch_rows; ++row)
+                result_data[first_row + row] = batch_data[row];
+        }
+
+        return col_result;
+    }
+
+    /// Second attempt after a whole-block evaluation declined. A block shares one flattened element
+    /// column, so that verdict covers the union of every row's elements; grouping asks it per row
+    /// instead. Rows left out keep the answer the existing dispatch gives them.
+    ColumnPtr executeErasedEqualityPerRowGroup(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        const ColumnArray & array,
+        const ColumnPtr & full_needle,
+        const DataTypePtr & element_type,
+        const DataTypePtr & needle_type) const
+    {
+        auto labels = groupRowsByAlternative(array, element_type, *full_needle, needle_type);
+        if (!labels)
+            return nullptr;
+
+        const size_t rows = array.size();
+        auto col_result = ResultColumnType::create(rows, ResultType(0));
+        auto & result_data = col_result->getData();
+        IColumn::Filter undecided(rows, 1);
+        bool any_group_decided = false;
+
+        /// The distinct keys present, so only groups a block really holds are built. Only a block
+        /// heterogeneous on one of the two sides reaches here: a homogeneous one was answered above.
+        UnorderedSetWithMemoryTracking<GroupKey> keys((*labels).begin(), (*labels).end());
+        keys.erase(no_group);
+
+        for (auto group_key : keys)
+        {
+            IColumn::Filter filter(rows, 0);
+            for (size_t row = 0; row < rows; ++row)
+                filter[row] = (*labels)[row] == group_key;
+
+            auto group_array = array.filter(filter, -1);
+            const auto & group = assert_cast<const ColumnArray &>(*group_array);
+
+            auto group_matches = evaluateElementwiseEquality(
+                {group.getDataPtr(), element_type, "elements"},
+                {full_needle->filter(filter, -1)->replicate(group.getOffsets()), needle_type, "needle"});
+            if (!group_matches)
+                continue;
+
+            any_group_decided = true;
+            auto group_result = foldMatchesPerRow((*group_matches)->getData(), group.getOffsets());
+
+            size_t group_row = 0;
+            for (size_t row = 0; row < rows; ++row)
+            {
+                if (!filter[row])
+                    continue;
+
+                result_data[row] = group_result->getData()[group_row++];
+                undecided[row] = 0;
+            }
+        }
+
+        /// Nothing was gained over the whole-block attempt, so leave the call as it was.
+        if (!any_group_decided)
+            return nullptr;
+
+        /// Rows left over are the ones whose elements disagree, or whose group declined; they must get
+        /// exactly the answer the existing dispatch gives them, so it is asked for just those rows.
+        const size_t undecided_rows = countBytesInFilter(undecided);
+        if (undecided_rows != 0)
+        {
+            /// Filtering keeps a constant argument constant, which these rows need: for an erased element,
+            /// a constant array's elements compare as `Field`s and a materialized one's as columns, and differ.
+            auto fallback_arguments = arguments;
+            for (auto & argument : fallback_arguments)
+                argument.column = argument.column->filter(undecided, -1);
+
+            auto fallback = executeArrayAfterErasedEquality(fallback_arguments, result_type);
+            auto fallback_values = fallback->convertToFullColumnIfConst();
+
+            size_t fallback_row = 0;
+            for (size_t row = 0; row < rows; ++row)
+                if (undecided[row])
+                    result_data[row] = assert_cast<const ResultColumnType &>(*fallback_values).getData()[fallback_row++];
+        }
+
+        return col_result;
     }
 
     /** If one or both arguments passed to this function are nullable,
@@ -939,16 +1782,16 @@ private:
         arguments_copy[0].type = std::move(array_type);
         arguments_copy[0].name = arguments[0].name;
 
-        /// executeImpl strips LowCardinality before executeArrayImpl, but the Map path bypasses it.
-        /// Strip here too so executeArrayImpl sees a ColumnNullable lookup column and fills null_map_item,
-        /// keeping null-needle semantics identical to the plain array path.
+        /// A Map key can never be Nullable, so the dictionary of a LowCardinality key column has no
+        /// null entry for executeArrayLowCardinality's index-0 NULL needle convention to name.
+        /// Normalise the cardinality away before the dispatch reaches that arm.
         for (auto & argument : arguments_copy)
         {
             argument.column = recursiveRemoveLowCardinality(argument.column);
             argument.type = recursiveRemoveLowCardinality(argument.type);
         }
 
-        return executeArrayImpl(arguments_copy, result_type);
+        return executeArray(arguments_copy, result_type);
     }
 
     /**
@@ -1343,6 +2186,10 @@ private:
         return col_res;
     }
 
-    bool skip_null_typed_paths;
+    /// Null only when default-constructed, i.e. no context was supplied at all; executeErasedEquality
+    /// then declines.
+    FunctionOverloadResolverPtr equals_resolver;
+
+    bool skip_null_typed_paths = false;
 };
 }

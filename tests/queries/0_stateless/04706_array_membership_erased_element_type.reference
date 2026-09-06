@@ -1,0 +1,172 @@
+-- Array(Dynamic), cross-width numeric needle: const, materialized, LowCardinality
+0	1	1	1	1	1	1	1	1
+1	0	0	0	0	0	0	0	0
+1	1	1
+0	1	1
+1	0	0
+1	1
+-- Array(Dynamic), FixedString needle compared zero-padded, as `=` does
+0	1	1
+1	1	1
+2	0	0
+2	2	1	1
+1	2
+-- Array(Variant)
+0	1	1
+1	0	0
+-- erasure nested in Tuple, at any depth
+1	1
+1	1
+1	1
+-- erasure behind Array/Map: equality for those containers is not decomposed, so no match
+0	0
+0	0
+0	0
+0
+1
+0
+-- NULL: two NULLs are equal, per has([NULL], NULL) -> 1
+1	1
+1	1
+0	0
+1	1	1	0
+0	1	1
+1	0	1
+0	1	1	2	2	1	1	1	1	1	1
+1	1	1	3	3	1	1	1	1	1	1
+2	0	0	0	0	0	0	1	1	1	1
+0	1
+1	0
+2	0
+-- NULL nested in Tuple: invisible at the top level, so asserted at every depth
+0	1	1	0	0	1	1	1	1
+1	0	0	1	1	0	0	0	0
+1	0	0
+1	1	0
+1	1	0
+0	1	1	0	0
+1	0	0	1	1
+1	1
+0	1	1	0	0
+1	0	0	0	0
+2	0	0	1	1
+-- Map: direct has(map, key), mapContainsKey, mapContainsValue
+0	1	1
+1	0	0
+0	1	1
+1	0	0
+0	1	1
+1	0	0
+-- out of contract: comparability that depends on the values, previous behaviour kept
+0	1
+1	0
+0	0
+1	0
+0	0
+1	0
+0	0	0
+1	0	0
+0
+-- out of contract: a single ROW holding several concrete types at once
+0	1	1	1	0	1
+1	1	2	1	0	0
+2	1	1	1	0	1
+1	2	2	0
+1
+0	1
+1	0
+2	1
+0	0	[false]
+1	0	[true]
+2	0	[true]
+-- the answer for a row never depends on which rows share its block
+one block   	0	1
+one block   	1	1
+block size 1	0	1
+block size 1	1	1
+two blocks  	0	1
+two blocks  	1	1
+needle one block   	0	1	1	1
+needle one block   	1	0	0	0
+needle block size 1	0	1	1	1
+needle block size 1	1	0	0	0
+needle two blocks  	0	1	1	1
+needle two blocks  	1	0	0	0
+needle row alone   	0	1	1	1
+needle row alone   	1	0	0	0
+const array one block   	0	0	0	0	0
+const array one block   	1	1	1	1	1
+const array block size 1	0	0	0	0	0
+const array block size 1	1	1	1	1	1
+const array row alone   	0	0	0	0	0
+const array row alone   	1	1	1	1	1
+variant needle	0	1
+variant needle	1	0
+variant needle size 1	0	1
+variant needle size 1	1	0
+variant needle alone	0	1
+variant needle alone	1	0
+plain elements one block   	0	1	1	1
+plain elements one block   	1	0	0	0
+plain elements block size 1	0	1	1	1
+plain elements block size 1	1	0	0	0
+plain elements two blocks  	0	1	1	1
+plain elements two blocks  	1	0	0	0
+plain elements row alone   	0	1	1	1
+plain elements row alone   	1	0	0	0
+plain nullable one block   	0	1
+plain nullable one block   	1	0
+plain nullable one block   	2	1
+plain nullable block size 1	0	1
+plain nullable block size 1	1	0
+plain nullable block size 1	2	1
+plain nullable row alone   	0	1
+plain nullable row alone   	1	0
+plain nullable row alone   	2	1
+tuple needle	0	1
+tuple needle	1	0
+tuple needle size 1	0	1
+tuple needle size 1	1	0
+tuple needle alone	0	1
+tuple needle alone	1	0
+no conversion	0
+1
+1
+-- NULL nested inside a non-null Nullable(Tuple(...)) wrapper
+0	1	1	0	0	0	0	1	1	1	1
+1	0	0	1	1	0	0	0	0	0	0
+2	0	0	0	0	1	1	0	0	0	0
+0	0	0	0	1
+1	1	1
+-- a Nullable(Tuple(...)) wrapper nested inside a Tuple still reaches the erased leaf
+1	1	2	2	2	2
+1	1
+-- a container under a Nullable(Tuple(...)) wrapper is decided by equals, not held back by the barrier
+hidden container materialized	0	1	1	1	1
+hidden container materialized	1	1	1	1	1
+hidden container row alone   	0	1	1
+hidden container row alone   	1	1	1
+hidden container const array 	0	1	1
+-- Map(LowCardinality(String), String): a NULL needle, whose dictionary has no null entry
+0	0	0	0
+0	0
+1	0
+1	0	1
+1	2	2	0	1
+-- non-erased fast paths are unchanged
+1	3	2	2
+1	1	2
+1	0	1
+1	1	1
+-- constant array, varying needle: the rows are paired against the array in batches, so the answer must not depend on where a batch ends
+0	0	0	75
+mixed needles batched  	300	150	150
+mixed needles grouped  	300	150	150
+mixed needles row alone	300	150	150
+1	1	2	1
+-- notHas resolves has through the same factory, so the two stay negations of one another
+0	1
+1	0
+-- arrayExists rewritten into has: the rewrite builds its own resolver, which must reach the same path
+1
+1
