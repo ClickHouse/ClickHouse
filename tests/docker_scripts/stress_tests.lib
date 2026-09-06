@@ -157,6 +157,15 @@ function configure()
 
     # since we run clickhouse from root
     sudo chown root: /var/lib/clickhouse
+
+    # Cores must land in the host-mounted /cores (stress_job.py collects only it).
+    # Written here, not in configure_limits: install.sh wipes config.d on every
+    # configure call, and the upgrade runner never calls configure_limits.
+    cat > /etc/clickhouse-server/config.d/core_path.xml <<EOL
+<clickhouse>
+    <core_path>/cores</core_path>
+</clickhouse>
+EOL
 }
 
 function configure_limits()
@@ -264,7 +273,6 @@ EOL
 
     cat > /etc/clickhouse-server/config.d/core.xml <<EOL
 <clickhouse>
-    <core_path>/cores</core_path>
 
     <remote_servers>
       <test_cluster_database_replicated>
@@ -404,6 +412,11 @@ function start_server()
         fi
         sleep 10
     done
+
+    # Positive evidence in the job log that the core limit is usable (the sudoers
+    # rlimit_core drop-in worked and the server re-raised its soft limit).
+    server_pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid 2>/dev/null)" \
+        && grep -H "^Max core file size" "/proc/${server_pid}/limits" ||:
 }
 
 function check_server_start()

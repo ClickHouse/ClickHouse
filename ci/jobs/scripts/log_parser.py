@@ -57,7 +57,10 @@ class FuzzerLogParser:
         (
             "Signal",
             "is_killed_by_signal",
-            r"Received signal.*|.*Child process was terminated by signal 9.*",
+            # Anchor to the watchdog's "<Fatal> Application: " record: keeps a
+            # live-server ShellCommand "<Error> ... Child process was terminated
+            # by signal N" from being misattributed as the server dying.
+            r"Received signal.*|<Fatal> Application: Child process was terminated by signal \d+.*",
         ),
         (
             "Memory limit exceeded",
@@ -363,6 +366,9 @@ class FuzzerLogParser:
             # distinguish them.
             result_name += f" (STID: {stack_trace_id})"
         elif is_killed_by_signal or is_segfault:
+            # The anchored watchdog match carries the "<Fatal> Application: " prefix;
+            # the "Received signal"/"Segmentation fault" alternatives never do.
+            result_name = result_name.removeprefix("<Fatal> Application: ")
             result_name += f" (STID: {stack_trace_id})"
         elif is_memory_limit_exceeded:
             result_name = "Server unresponsive: memory limit exceeded"
