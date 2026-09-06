@@ -155,7 +155,7 @@ endif()
 # Default coverage instrumentation (dumping the coverage map on exit)
 option(WITH_COVERAGE "Instrumentation for code coverage with default implementation" OFF)
 
-option(WITH_COVERAGE_DEPTH "Shadow call-stack depth tracking via -finstrument-functions-after-inlining (requires WITH_COVERAGE)" OFF)
+option(WITH_COVERAGE_DEPTH "Per-test coverage collection via SYSTEM SET COVERAGE TEST (requires WITH_COVERAGE)" OFF)
 
 option(WITH_COVERAGE_XRAY
     "Use XRay instrumentation for exact call-depth tracking (requires WITH_COVERAGE and ENABLE_XRAY). Builds with -DCLICKHOUSE_XRAY_INSTRUMENT_COVERAGE=1. XRay maps runtime function text addresses to LLVM profile records, solving the PIE FunctionPointer=0 limitation."
@@ -187,9 +187,6 @@ if (WITH_COVERAGE)
         # LLVMCoverageMapping.cpp, and SYSTEM SET COVERAGE TEST are compiled in.
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWITH_COVERAGE=1")
         set (CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -DWITH_COVERAGE=1")
-        message (STATUS "Enabled call-depth shadow stack via -finstrument-functions-after-inlining")
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -finstrument-functions-after-inlining")
-        set (CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -finstrument-functions-after-inlining")
         # -mllvm -enable-value-profiling=true activates indirect-call value profiling so that
         # __llvm_profile_instrument_target() records virtual-dispatch targets at runtime.
         # Without this flag, LLVMProfileData::Values is always NULL and indirect-call data
