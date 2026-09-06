@@ -10,15 +10,18 @@
 -- blob out from under it. The destination table is therefore dropped, the retired blobs are waited for,
 -- and the source part is reloaded: its `invalidated_system_columns.txt` must still be readable, which is
 -- what the part load requires. An uncached S3 disk is used so that the reads after the re-attach go to
--- the object storage.
+-- the object storage. `min_bytes_for_full_part_storage = 0` pins the full part storage, where
+-- `invalidated_system_columns.txt` is a file of its own: a packed part keeps it inside `data.packed`
+-- and is a different layout with a different sharing story, so the randomized threshold must not
+-- decide which one this regression exercises.
 
 DROP TABLE IF EXISTS src_05097;
 DROP TABLE IF EXISTS mid_05097;
 DROP TABLE IF EXISTS dst_05097;
 
-CREATE TABLE src_05097 (p UInt8, x UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY x SETTINGS storage_policy = 's3_no_cache';
-CREATE TABLE mid_05097 (p UInt8, x UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY x SETTINGS storage_policy = 's3_no_cache';
-CREATE TABLE dst_05097 (p UInt8, x UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY x SETTINGS storage_policy = 's3_no_cache';
+CREATE TABLE src_05097 (p UInt8, x UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY x SETTINGS storage_policy = 's3_no_cache', min_bytes_for_full_part_storage = 0;
+CREATE TABLE mid_05097 (p UInt8, x UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY x SETTINGS storage_policy = 's3_no_cache', min_bytes_for_full_part_storage = 0;
+CREATE TABLE dst_05097 (p UInt8, x UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY x SETTINGS storage_policy = 's3_no_cache', min_bytes_for_full_part_storage = 0;
 
 INSERT INTO src_05097 VALUES (1, 1), (1, 2);
 -- The moved part is written into `mid_05097` together with an `invalidated_system_columns.txt`.
