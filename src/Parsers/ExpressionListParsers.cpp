@@ -209,6 +209,18 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     auto aggregate_function = makeASTFunction(aggregate_function_name, make_intrusive<ASTAsterisk>());
     auto subquery_node = function->children[0]->children[1];
 
+    /// `x op ALL (empty set)` must be TRUE (vacuous truth), but the aggregate functions used for the rewrite
+    /// cannot express it: `singleValueOrNull` returns NULL for an empty set, so `x IN (NULL)` is FALSE, and
+    /// `min` / `max` return the default value of the type. So for ALL we also need to know whether the
+    /// right-hand side is empty. To avoid evaluating the right-hand side twice - which is observable with
+    /// non-deterministic subqueries - `count` and the aggregate are computed in a single SELECT, and the two
+    /// values are taken apart with `tupleElement` afterwards.
+    const bool vacuous_truth = type == SubqueryFunctionType::ALL;
+
+    ASTPtr projection = aggregate_function;
+    if (vacuous_truth)
+        projection = makeASTFunction("tuple", makeASTFunction("count", make_intrusive<ASTAsterisk>()), aggregate_function);
+
     auto table_expression = make_intrusive<ASTTableExpression>();
     table_expression->subquery = std::move(subquery_node);
     table_expression->children.push_back(table_expression->subquery);
@@ -221,7 +233,7 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     tables_in_select->children.push_back(std::move(tables_in_select_element));
 
     auto select_exp_list = make_intrusive<ASTExpressionList>();
-    select_exp_list->children.push_back(aggregate_function);
+    select_exp_list->children.push_back(std::move(projection));
 
     auto select_query = make_intrusive<ASTSelectQuery>();
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_exp_list);
@@ -233,7 +245,34 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
 
     auto new_subquery = make_intrusive<ASTSubquery>(std::move(select_with_union_query));
-    ast->children[0]->children.back() = std::move(new_subquery);
+
+    if (!vacuous_truth)
+    {
+        ast->children[0]->children.back() = std::move(new_subquery);
+        return true;
+    }
+
+    /// subquery --> (SELECT (count(*), aggregate_function(*)) FROM subquery)
+    ///  x op ALL subquery --> tupleElement(subquery, 1) = 0 OR x op tupleElement(subquery, 2)
+    ///
+    /// Both occurrences of the scalar subquery are textually identical, and scalar subqueries are cached by the
+    /// hash of the subquery (`ExecuteScalarSubqueriesVisitor` for the old analyzer and `evaluateScalarSubqueryIfNeeded`
+    /// for the new one), so the right-hand side is evaluated exactly once - even if it is non-deterministic,
+    /// both `tupleElement` calls observe the same evaluation.
+    auto is_empty = makeASTFunction("equals",
+        makeASTFunction("tupleElement", new_subquery->clone(), make_intrusive<ASTLiteral>(UInt64{1})),
+        make_intrusive<ASTLiteral>(UInt64{0}));
+
+    ast->children[0]->children.back()
+        = makeASTFunction("tupleElement", std::move(new_subquery), make_intrusive<ASTLiteral>(UInt64{2}));
+
+    /// Mutate ast in place to become: or(is_empty, <the original comparison>)
+    auto comparison = ast->clone();
+    auto * or_node = assert_cast<ASTFunction *>(ast.get());
+    or_node->name = "or";
+    or_node->arguments = make_intrusive<ASTExpressionList>();
+    or_node->arguments->children = {std::move(is_empty), std::move(comparison)};
+    or_node->children = {or_node->arguments};
 
     return true;
 }
