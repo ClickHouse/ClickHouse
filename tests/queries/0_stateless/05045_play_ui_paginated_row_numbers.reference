@@ -1,0 +1,13 @@
+--- the row number of a rendered row is the offset of its page plus its index within the page
+createTextNode(this._rowNumberOffset() + this._row_idx)
+--- the offset is the number of rows the server skipped for the page: size * (page - 1)
+        return size * (page - 1);
+--- no page selected is the unpaginated first page, whose offset is the zero-initialized skipped-row count
+        if (!(page >= 1) || !(size >= 1)) { return this._skipped_rows; }
+2
+--- the offset is captured before the failed run drops the page, and persisted with the snapshot
+        const skipped_rows = el._rowNumberOffset();
+                skipped_rows: skipped_rows,
+        skipped_rows: stateData.skipped_rows ?? 0,
+--- the replay of a failed snapshot numbers its rows from the persisted offset
+            el._skipped_rows = Number.isFinite(skipped_rows) && skipped_rows > 0 ? skipped_rows : 0;

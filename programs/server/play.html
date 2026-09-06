@@ -4123,6 +4123,7 @@ class QueryResultElement extends HTMLElement
         this._error = this.shadowRoot.getElementById('error');
 
         this._row_idx = 0;
+        this._skipped_rows = 0;
         this._elapsed_ns = 0;
         this._incomplete_result = false;
         this._is_explain_graph = false;
@@ -4305,6 +4306,7 @@ class QueryResultElement extends HTMLElement
         this._totals = null;
         this._header = {};
         this._row_idx = 0;
+        this._skipped_rows = 0;
         this._elapsed_ns = 0;
         this._incomplete_result = false;
         this._is_explain_graph = false;
@@ -4625,7 +4627,8 @@ class QueryResultElement extends HTMLElement
 
         let td = document.createElement('td');
         td.className = 'row-number';
-        td.appendChild(document.createTextNode(this._row_idx));
+        /// Numbered within the whole result, not within the page (see `_rowNumberOffset`).
+        td.appendChild(document.createTextNode(this._rowNumberOffset() + this._row_idx));
         tr.appendChild(td);
 
         for (const column of this._header)
@@ -5490,6 +5493,23 @@ class QueryResultElement extends HTMLElement
         const columns = Array.isArray(this._header) ? this._header.length : 0;
         if (columns <= 0) { return 0; }
         return Math.max(1, Math.min(this._max_rows, Math.floor(this._max_cells / columns)));
+    }
+
+    /// How many rows of the result come before the page being shown: the offset the server skipped for
+    /// it, `size * (page - 1)` (see `shapeUrlParams`). The row-number column counts from it, so the
+    /// numbers name the rows' positions in the whole result and stay the same rows' numbers on whatever
+    /// page they are shown - rather than restarting at 1 on every page. Zero while no page is selected,
+    /// which is the unpaginated first page.
+    ///
+    /// While no page is selected the offset is `_skipped_rows` instead, which is zero except when a
+    /// failed run's snapshot is replayed: the failure path drops the tab's shape (see `postSingle`), so
+    /// the restored element has no page to compute the offset from, and the snapshot carries the count
+    /// the rows were numbered from live (`skipped_rows`) so they restore with the same numbers.
+    _rowNumberOffset()
+    {
+        const { page, size } = this._pagination;
+        if (!(page >= 1) || !(size >= 1)) { return this._skipped_rows; }
+        return size * (page - 1);
     }
 
     /// (Re)render the pager under the table.
@@ -11596,6 +11616,12 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
         /// unreachable one they cannot clear: it may well be what failed the query (an ambiguous column
         /// name, a filter that does not type-check, or a server too old for these settings), and the
         /// error itself is still reported in full below.
+        ///
+        /// Rows that streamed before the failure were numbered from the page's offset (see
+        /// `_rowNumberOffset`), and dropping the page takes that offset away from the snapshot. Keep the
+        /// count itself, so a restore (a reload, Back/Forward, reopening the tab) replays the rows with
+        /// the numbers they had live instead of renumbering page 2 from 1.
+        const skipped_rows = el._rowNumberOffset();
         clearResultShape(tab);
         tab.logoVisible = false;
         tab.progressPhase = 'error';
@@ -11635,6 +11661,8 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
                 /// Persist the non-OK plain each-row carrier provenance. Text equality is not a
                 /// discriminator: a transport-failed partial result can contain the same object.
                 plain_http_each_row_error: !!result.plain_http_each_row_error,
+                /// The row-number offset of the rows replayed on restore (see `_rowNumberOffset`).
+                skipped_rows: skipped_rows,
                 ok: result.response_ok,
                 /// A run can fail while `response_ok` stays true (an in-band `{"exception":...}`
                 /// after rows already streamed under 200 OK); persist the failure separately so a
@@ -12734,7 +12762,12 @@ async function materializeResult(tab) {
         if (result.data || typeof result.display_error === 'string') {
             /// Replay any output that streamed before the mid-stream failure, exactly as the live
             /// path left it, with the error rendered beneath (see `renderFailedSnapshot`); replayed
-            /// table rows need the same layout pass as the success restore below.
+            /// table rows need the same layout pass as the success restore below. The rows are
+            /// numbered from the offset of the page the failed run was on (see `_rowNumberOffset`):
+            /// the shape itself was dropped by the failure, so it comes from the snapshot, validated
+            /// like the rest of it rather than trusted.
+            const skipped_rows = Math.floor(Number(result.skipped_rows));
+            el._skipped_rows = Number.isFinite(skipped_rows) && skipped_rows > 0 ? skipped_rows : 0;
             renderFailedSnapshot(el, result.data, format, result.exception_tag, result.display_error, result.plain_http_each_row_error);
             if (el.rowCount > 0) el._changeTableLayout();
         } else {
@@ -14304,6 +14337,11 @@ function saveHistory(stateData, titleForDoc, tab) {
         /// Provenance for a non-OK plain each-row exception object, used by restore instead of
         /// guessing from equal text in the response body and `display_error`.
         plain_http_each_row_error: stateData.plain_http_each_row_error ?? false,
+        /// The number of result rows before the first replayed row of a failed run: the offset of the
+        /// page it ran, kept apart from `pagination` because the failure path drops the shape (see
+        /// `postSingle`), so the replayed rows restore with the numbers they had live. Zero for
+        /// successful runs (their rows are numbered from the restored `pagination`) and legacy entries.
+        skipped_rows: stateData.skipped_rows ?? 0,
         ok: stateData.ok,
         /// Whether the run failed even though `ok` (the HTTP-level success) is true: an in-band
         /// `{"exception":...}` arriving after rows were already streamed under 200 OK. The data
