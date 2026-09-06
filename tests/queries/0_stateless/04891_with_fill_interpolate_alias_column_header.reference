@@ -1,0 +1,72 @@
+local
+0	10
+2	10
+4	14
+6	14
+8	18
+parallel replicas, shipping a plan
+0	10
+2	10
+4	14
+6	14
+8	18
+parallel replicas, shipping SQL
+0	10
+2	10
+4	14
+6	14
+8	18
+Distributed, two shards
+0	10
+0	10
+2	10
+4	14
+4	14
+6	14
+8	18
+8	18
+a body that carries a cast
+0	5
+0	5
+2	5
+4	7
+4	7
+6	7
+8	9
+8	9
+interpolating by an expression
+0	10
+0	10
+2	11
+4	14
+4	14
+6	15
+8	18
+8	18
+interpolating by a column that is not selected
+0	10
+0	10
+2	11
+4	14
+4	14
+6	15
+8	18
+8	18
+the alias appears only in ORDER BY, parallel replicas
+0	0
+0	0
+0	5
+4	7
+0	7
+8	9
+the alias appears only in ORDER BY, Distributed
+0	0
+0	0
+0	5
+0	5
+4	7
+4	7
+0	7
+8	9
+8	9
+an ORDER BY column as the INTERPOLATE target is still rejected

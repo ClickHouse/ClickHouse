@@ -542,10 +542,19 @@ SortAnalysisResult analyzeSort(
         }
     }
 
+    /// `materializeNode` wraps the node and aliases the wrapper back to the original name, so the
+    /// `materialize(...)` node is an intermediate rather than an output. `Filling` fills by it, so it has to
+    /// stay in the stream; remember the names here, where they are known.
+    NameSet materialized_sort_column_names;
+
     if (has_with_fill)
     {
         for (auto & output_node : before_sort_actions_outputs)
+        {
             output_node = &before_sort_actions->dag.materializeNode(*output_node);
+            if (!output_node->children.empty())
+                materialized_sort_column_names.insert(output_node->children.front()->result_name);
+        }
     }
 
     auto actions_step_before_sort = std::make_unique<ActionsChainStep>(before_sort_actions);
@@ -565,9 +574,71 @@ SortAnalysisResult analyzeSort(
         /// If we take getLastStepAvailableOutputColumns list, it may return non-materialized constants,
         /// so here we add materialized ORDER BY columns manually, and append everything else after.
         ActionsDAG before_interpolate_actions_dag(before_sort_actions->dag.getResultColumns());
-        for (const auto & out : actions_chain.getLastStepAvailableOutputColumns())
-            if (!before_sort_actions_dag_output_node_names.contains(out.name))
-                before_interpolate_actions_dag.getOutputs().push_back(&before_interpolate_actions_dag.addInput(out));
+
+        /** A step's available output columns are every node of its dag - the intermediates of a computed
+          * expression included - because a later step is allowed to *reference* any of them. Passing all of
+          * them through as outputs turns "referenceable" into "must be in the stream", which pins those
+          * intermediates into the header of the `Filling` step. Two query trees that differ only by whether
+          * an `ALIAS` column was inlined into its defining expression then produce different headers -
+          * `v * 2` contributes its `2` and the un-inlined `a_v` does not - and a distributed query planned
+          * one way and executed the other cannot reconcile them.
+          *
+          * Pass through only what belongs in the stream: the columns the previous step emits, the sort
+          * columns and the `materialize(...)` wrappers `Filling` fills by. Everything else stays an input,
+          * so the chain still asks the previous step to produce it and an INTERPOLATE expression naming one
+          * still resolves; it just does not travel on as a column.
+          */
+        const auto & available_columns = actions_chain.getLastStepAvailableOutputColumns();
+
+        NameSet columns_to_pass_through = materialized_sort_column_names;
+        for (const auto & column : before_sort_actions->dag.getResultColumns())
+            columns_to_pass_through.insert(column.name);
+
+        const size_t last_step_index = actions_chain.getLastStepIndex();
+        const bool know_previous_step = last_step_index > 0;
+        if (know_previous_step)
+            for (const auto & column : actions_chain.at(last_step_index - 1)->getActions()->dag.getResultColumns())
+                columns_to_pass_through.insert(column.name);
+
+        /** The INTERPOLATE expressions themselves are turned into actions later, in `Planner`, against a dag
+          * built from this step's *header*. Whatever they name therefore has to survive as a column here,
+          * even when the query does not select it. Collect those names by visiting the expressions into a
+          * throwaway dag over the same columns and reading back what it requires.
+          */
+        if (know_previous_step)
+        {
+            ActionsDAG referenced_by_interpolate_dag(available_columns);
+            referenced_by_interpolate_dag.getOutputs().clear();
+
+            PlannerActionsVisitor referenced_actions_visitor(planner_context, correlated_columns_set);
+            for (auto & interpolate_node : interpolate_list_node.getNodes())
+            {
+                auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+                auto [nodes, correlated_subtrees]
+                    = referenced_actions_visitor.visit(referenced_by_interpolate_dag, interpolate_node_typed.getInterpolateExpression());
+                correlated_subtrees.assertEmpty("in interpolate expression");
+                for (const auto * node : nodes)
+                    referenced_by_interpolate_dag.getOutputs().push_back(node);
+            }
+
+            /// `getRequiredColumnsNames` lists every INPUT, so drop the ones the expressions did not reach.
+            referenced_by_interpolate_dag.removeUnusedActions(/*allow_remove_inputs=*/true, /*allow_constant_folding=*/false);
+
+            for (const auto & name : referenced_by_interpolate_dag.getRequiredColumnsNames())
+                columns_to_pass_through.insert(name);
+        }
+
+        for (const auto & out : available_columns)
+        {
+            if (before_sort_actions_dag_output_node_names.contains(out.name))
+                continue;
+
+            const auto * input_node = &before_interpolate_actions_dag.addInput(out);
+
+            /// With no preceding step to consult, keep the previous behaviour and pass everything through.
+            if (!know_previous_step || columns_to_pass_through.contains(out.name))
+                before_interpolate_actions_dag.getOutputs().push_back(input_node);
+        }
 
         for (auto & interpolate_node : interpolate_list_node.getNodes())
         {
