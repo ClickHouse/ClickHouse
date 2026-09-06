@@ -207,6 +207,7 @@ public:
 
     void buildSetInplace(const ContextPtr & context);
 
+    const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
 

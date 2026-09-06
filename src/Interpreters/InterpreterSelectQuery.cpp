@@ -196,6 +196,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsBool query_plan_enable_optimizations;
@@ -645,6 +646,19 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         RewriteUniqToCountMatcher::Data data_rewrite_uniq_count;
         RewriteUniqToCountVisitor(data_rewrite_uniq_count).visit(query_ptr);
+    }
+
+    /// The kill switch for parallel replicas for queries with multiple tables (the analyzer applies it in `buildJoinTreeQueryPlan`).
+    /// It has to run before `JoinedTables` is constructed: `JoinedTables` captures an independent copy of the context, which the
+    /// legacy subquery paths (`JoinedTables::makeLeftTableSubquery`, `JoinedTables::rewriteDistributedInAndJoins`) reuse later,
+    /// so flipping the setting afterwards would leave those subqueries planned with parallel replicas still enabled.
+    /// `getTableExpressions` counts exactly what `JoinedTables::tablesCount` counts: `ARRAY JOIN` elements carry no table
+    /// expression and are not counted.
+    if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables] && context->canUseTaskBasedParallelReplicas()
+        && getTableExpressions(getSelectQuery()).size() > 1)
+    {
+        LOG_DEBUG(log, "Disabling parallel replicas because parallel_replicas_for_queries_with_multiple_tables is disabled and the query joins multiple tables");
+        context->setSetting("enable_parallel_replicas", Field(0));
     }
 
     JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols, options_.is_create_parameterized_view);

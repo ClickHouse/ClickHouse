@@ -48,6 +48,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ListNode.h>
@@ -94,6 +95,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -169,6 +171,7 @@ namespace Setting
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsUInt64 min_joined_block_size_rows;
     extern const SettingsUInt64 min_joined_block_size_bytes;
+    extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool query_plan_display_internal_aliases;
     extern const SettingsBool enable_lazy_columns_replication;
@@ -1681,6 +1684,70 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
     return false;
 }
 
+/// Disables parallel replicas in the context of every query carried by `node`, including `node` itself.
+/// A subquery is not planned by the `Planner` of the query that contains it: a `UNION` table expression
+/// is planned branch by branch (see `buildPlanForUnionNode`), an `IN` subquery is planned by
+/// `addBuildSubqueriesForSetsStepIfNeeded`, a materialized CTE by `addBuildSubqueriesForMaterializedCTEsIfNeeded`
+/// and a correlated subquery by `buildPlannerForCorrelatedSubquery`. Each of them builds an independent
+/// `Planner` from the subquery's own context, so it is not enough to update the context of the enclosing
+/// query: the kill switch has to reach the context of every nested `QueryNode`/`UnionNode` as well.
+/// The materialized CTE subquery is a child of its `TableNode` and the correlated subquery is a child of
+/// the expression that uses it, so a full traversal of the query tree covers all the carriers.
+void disableParallelReplicasForSubqueries(const QueryTreeNodePtr & node)
+{
+    traverseQueryTree(node, Everything{}, [](const QueryTreeNodePtr & current_node)
+    {
+        if (auto * query_node = current_node->as<QueryNode>())
+            query_node->getMutableContext()->setSetting("enable_parallel_replicas", Field{0});
+        else if (auto * union_node = current_node->as<UnionNode>())
+            union_node->getMutableContext()->setSetting("enable_parallel_replicas", Field{0});
+    });
+}
+
+}
+
+void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePtr & query_node, const PlannerContextPtr & planner_context)
+{
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    if (settings[Setting::parallel_replicas_for_queries_with_multiple_tables])
+        return;
+
+    const auto & query_node_typed = query_node->as<const QueryNode &>();
+    const auto table_expressions_stack = buildTableExpressionsStack(query_node_typed.getJoinTreeNode());
+    const bool joins_multiple_tables = std::any_of(
+        table_expressions_stack.begin(),
+        table_expressions_stack.end(),
+        [](const auto & table_expression)
+        {
+            /// `ARRAY JOIN` is not a join between tables and does not count here.
+            const auto node_type = table_expression->getNodeType();
+            return node_type == QueryTreeNodeType::JOIN || node_type == QueryTreeNodeType::CROSS_JOIN;
+        });
+
+    if (!joins_multiple_tables)
+        return;
+
+    LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because parallel_replicas_for_queries_with_multiple_tables is disabled and the query joins multiple tables");
+    planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
+
+    /// Every subquery of this query is planned by an independent `Planner` built from the
+    /// subquery's own context, so updating the query context above is not enough: the switch has to
+    /// reach the context of every query carried by the query tree - `IN` subqueries, materialized
+    /// CTE subqueries and correlated subqueries alike. All of them are still part of the tree here
+    /// (they are detached, if at all, only when their plan is built, which happens later).
+    disableParallelReplicasForSubqueries(query_node);
+
+    /// A prepared set holds its own reference to the subquery tree, taken by `collectSets` before
+    /// this point, so a set whose tree was replaced in the query tree in the meantime is not covered
+    /// by the traversal above.
+    for (const auto & set_subquery : planner_context->getPreparedSets().getSubqueries())
+        if (const auto & set_query_tree = set_subquery->getQueryTree())
+            disableParallelReplicasForSubqueries(set_query_tree);
+}
+
+namespace
+{
+
 JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_expression,
     const QueryTreeNodePtr & parent_join_tree,
     const SelectQueryInfo & select_query_info,
@@ -2815,6 +2882,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 subquery_planner_context = planner_context->getGlobalPlannerContext();
 
             auto subquery_options = select_query_options.subquery();
+
+            /// When `parallel_replicas_for_queries_with_multiple_tables` is disabled, the outer query
+            /// has already turned off parallel replicas in the planner context (see `buildJoinTreeQueryPlan`).
+            /// A subquery is planned by an independent `Planner` using its own context, so this decision
+            /// would not reach it, and a single-table subquery of a multi-table query could still be read
+            /// with parallel replicas. Propagate only the parallel replicas switch (not the whole context,
+            /// which would clobber the subquery's own settings and bound resources) to the subquery.
+            if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables]
+                && !settings[Setting::allow_experimental_parallel_reading_from_replicas])
+            {
+                disableParallelReplicasForSubqueries(table_expression);
+            }
+
             Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);
