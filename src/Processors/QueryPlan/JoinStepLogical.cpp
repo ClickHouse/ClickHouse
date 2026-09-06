@@ -2218,9 +2218,15 @@ static void serializeNodeList(
     }
 }
 
+/// A zero `flags` byte means "not a boundary", so a sender that does not set this bit and a receiver
+/// that does not know it both read today's behaviour, and the serialization version need not change.
+static constexpr UInt8 JOIN_STEP_LOGICAL_FLAG_REORDER_BOUNDARY = 1;
+
 void JoinStepLogical::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
+    if (join_reorder_boundary)
+        flags |= JOIN_STEP_LOGICAL_FLAG_REORDER_BOUNDARY;
     writeIntBinary(flags, ctx.out);
 
     writeVarUInt(1, ctx.out);
@@ -2281,7 +2287,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     SortingStep::Settings sort_settings(ctx.settings);
     JoinSettings join_settings(ctx.settings);
 
-    return std::make_unique<JoinStepLogical>(
+    auto step = std::make_unique<JoinStepLogical>(
         std::move(left_header),
         std::move(right_header),
         std::move(join_operator),
@@ -2289,6 +2295,8 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         std::move(actions_after_join),
         std::move(join_settings),
         std::move(sort_settings));
+    step->join_reorder_boundary = (flags & JOIN_STEP_LOGICAL_FLAG_REORDER_BOUNDARY) != 0;
+    return step;
 }
 
 QueryPlanStepPtr JoinStepLogical::clone() const
@@ -2339,6 +2347,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_relation = right_relation;
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
+    result_step->join_reorder_boundary = join_reorder_boundary;
 
     return result_step;
 }

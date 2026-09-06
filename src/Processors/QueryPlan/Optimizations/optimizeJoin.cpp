@@ -745,6 +745,7 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
             /// type changes being applied at the wrong step and the exception
             /// "Cannot fold actions for projection".
             allow_child_join_kind = allow_child_join_kind && child_join_step->typeChangingSides().empty();
+            allow_child_join_kind = allow_child_join_kind && !child_join_step->isJoinReorderBoundary();
             if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
             {
                 QueryGraphBuilder child_graph(graph.context);
@@ -842,7 +843,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
                     check = check->children[0];
                 }
                 auto * js = typeid_cast<JoinStepLogical *>(check->step.get());
-                if (js && !js->isOptimized() && check->children.size() == 2)
+                if (js && !js->isOptimized() && !js->isJoinReorderBoundary() && check->children.size() == 2)
                 {
                     for (auto * child : check->children)
                         for (const auto & col : *child->step->getOutputHeader())
@@ -1497,7 +1498,8 @@ static void collectJoinGraphRelationHeaders(
         const bool allow_child_join_kind
             = (isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind))
             && child_join_step->getJoinOperator().strictness == JoinStrictness::All
-            && child_join_step->typeChangingSides().empty();
+            && child_join_step->typeChangingSides().empty()
+            && !child_join_step->isJoinReorderBoundary();
 
         if (child_join_step->getJoinSettings() == join_settings && join_steps_limit > 1 && allow_child_join_kind)
         {
@@ -1594,8 +1596,18 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
     query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
 
+    const bool was_reorder_boundary = join_step->isJoinReorderBoundary();
+
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
+
+    /// `chooseJoinOrder` returns a freshly built node, so the boundary belongs on it: a fragment
+    /// cloned or serialized from here carries this root, and a receiver cannot re-derive the mark.
+    if (was_reorder_boundary)
+    {
+        if (auto * new_join_step = typeid_cast<JoinStepLogical *>(node.step.get()))
+            new_join_step->setJoinReorderBoundary();
+    }
 }
 
 }

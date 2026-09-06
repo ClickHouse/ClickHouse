@@ -187,6 +187,13 @@ public:
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
+    /// A join whose relations are numbered by their own `__tableN` sequence, independently of the
+    /// enclosing query's, so both can produce the same qualified column name. An enclosing join graph
+    /// must treat such a join as one opaque relation: it still reorders internally, but flattening it in
+    /// would put two relations of the same name in one graph, which `JoinExpressionActions` rejects.
+    bool isJoinReorderBoundary() const { return join_reorder_boundary; }
+    void setJoinReorderBoundary(bool value = true) { join_reorder_boundary = value; }
+
     /// Swap left and right sides
     void swapInputs();
 
@@ -214,6 +221,10 @@ protected:
 
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
+
+    /// Serialized and preserved by `clone`, unlike the runtime info below: a receiver handed an
+    /// already-expanded plan fragment cannot re-derive it, because no view read runs there.
+    bool join_reorder_boundary = false;
 
     /// Runtime info, do not serialize
 
