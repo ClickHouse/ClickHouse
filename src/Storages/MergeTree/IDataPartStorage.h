@@ -359,6 +359,14 @@ public:
 
     virtual SyncGuardPtr getDirectorySyncGuard() const { return nullptr; }
 
+    /// fsync the contents of every file of the part, including the files of its projections, so
+    /// that the data survives a power loss. Can be called after the part is fully written and
+    /// closed, which allows syncing many parts in one batch at the end of an INSERT instead of
+    /// one part at a time as they are written.
+    /// No-op where a finalized file is already durable (object storage), like
+    /// getDirectorySyncGuard() returning nullptr there.
+    virtual void syncFiles() const {}
+
     virtual void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
     virtual void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
 

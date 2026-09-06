@@ -62,6 +62,13 @@ void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjecti
             if (!conflicts.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);
 
+            /// A patch part is not synced when it is finalized (unless `fsync_after_insert_each_part`),
+            /// so it has to be collected here as well, otherwise the lightweight update would be
+            /// acknowledged with its patch part not made durable.
+            /// See `ReplicatedMergeTreeSink::fsyncCommittedParts`.
+            if (fsync_parts_on_finish)
+                committed_parts.push_back(part->info);
+
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), deduplication_blocks_ids, ExecutionStatus(0));
             StorageReplicatedMergeTree::incrementInsertedPartsProfileEvent(part->getType());

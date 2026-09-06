@@ -143,6 +143,9 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     , keeper_retries_info(std::move(keeper_retries_info_))
     , is_async_insert(async_insert_)
 {
+    /// Assigned here rather than in the initializer list: `storage` is declared after this member.
+    fsync_parts_on_finish = storage.shouldFsyncPartsAfterInsert();
+
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (required_quorum_size == 1)
         required_quorum_size = 0;
@@ -438,7 +441,13 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
     /// part immediately to make its rows visible without waiting for the next consume()
     /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
     if (settings[Setting::input_format_max_block_wait_ms] != 0)
+    {
         finishDelayed(zookeeper);
+        /// Such an INSERT can stay open indefinitely, so it cannot postpone the fsync of what it
+        /// has already committed until onFinish(): make each flushed block durable as it goes.
+        /// This also keeps the pending list from growing without a bound.
+        fsyncCommittedParts();
+    }
 
     if (synchronously_commit_part_for_dependent_views)
         finishDelayed(zookeeper);
@@ -496,6 +505,8 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                 {
                     // Successfully committed
                     block_ids_for_log = deduplication_blocks_ids;
+                    if (fsync_parts_on_finish)
+                        committed_parts.push_back(partition.temp_part->part->info);
                     partition.temp_part->prewarmCaches();
                     break;
                 }
@@ -1284,6 +1295,16 @@ void ReplicatedMergeTreeSink::onFinish()
     ZooKeeperWithFaultInjectionPtr zookeeper = createKeeper("ReplicatedMergeTreeSink::onFinish");
     auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeSink::onFinish");
     finishDelayed(zookeeper);
+    fsyncCommittedParts();
+}
+
+void ReplicatedMergeTreeSink::fsyncCommittedParts()
+{
+    if (committed_parts.empty())
+        return;
+
+    storage.fsyncPartsAfterInsert(committed_parts);
+    committed_parts.clear();
 }
 
 void ReplicatedMergeTreeSink::waitForQuorum(

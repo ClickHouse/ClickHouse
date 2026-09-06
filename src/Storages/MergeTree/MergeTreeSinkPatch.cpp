@@ -47,6 +47,12 @@ void MergeTreeSinkPatch::finishDelayedChunk()
         if (!conflicts.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);
 
+        /// A patch part is not synced when it is finalized (unless `fsync_after_insert_each_part`),
+        /// so it has to be collected here as well, otherwise the lightweight update would be
+        /// acknowledged with its patch part not made durable. See `MergeTreeSink::fsyncCommittedParts`.
+        if (fsync_parts_on_finish)
+            committed_parts.push_back(part->info);
+
         auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
         auto block_ids = getDeduplicationBlockIds(deduplication_hashes);
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), block_ids);
