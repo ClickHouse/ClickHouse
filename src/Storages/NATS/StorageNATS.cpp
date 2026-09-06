@@ -885,20 +885,21 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
-    /// `threadFunc` streams only while the table has dependent views, but the interpreter looks them
-    /// up again, and a `DROP VIEW` landing in between leaves it with nowhere to insert into: the
-    /// pipeline it builds then discards whatever the sources consume (see
+    /// `threadFunc` streams only while the table has ready dependent views, but the interpreter looks
+    /// them up again, and a `DROP VIEW` or `DETACH TABLE` landing in between leaves it with nowhere
+    /// to insert into: the pipeline it builds then discards whatever the sources consume (see
     /// `InsertDependenciesBuilder::createChainWithDependencies`), and the acknowledgement below
     /// would confirm to the broker messages that were never inserted anywhere. Such a cycle must not
     /// consume anything. What the consumers hold goes back to the broker when the next cycle finds
-    /// the last view gone and unsubscribes them.
-    /// This is decided by the dependency metadata, not by the shape of the pipeline: a view the
-    /// interpreter did find is share-locked for the lifetime of the pipeline, so it is still a
-    /// dependency here, and a materialized view whose target is `Null` legitimately ends in the
-    /// same discarding sink while being a view the table streams to.
-    if (DatabaseCatalog::instance().getDependentViews(getStorageID()).empty())
+    /// the last view gone and unsubscribes them, or stays with them until the view is attached again.
+    /// This repeats the readiness check of `threadFunc`, not a check of the dependency metadata or of
+    /// the shape of the pipeline: a plain `DETACH TABLE` keeps the dependency registered while the
+    /// view is gone, and a materialized view whose target is `Null` legitimately ends in the same
+    /// discarding sink while being a view the table streams to. The check can only err towards
+    /// skipping a cycle whose pipeline would have inserted somewhere, which consumes nothing.
+    if (!checkDependencies(table_id))
     {
-        LOG_DEBUG(log, "The last materialized view was dropped while the streaming cycle was being prepared, nothing to stream to");
+        LOG_DEBUG(log, "The last materialized view was dropped or detached while the streaming cycle was being prepared, nothing to stream to");
         return true;
     }
 

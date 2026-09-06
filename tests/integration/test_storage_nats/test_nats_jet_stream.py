@@ -1959,6 +1959,74 @@ def test_nats_jet_stream_does_not_acknowledge_messages_discarded_by_a_view_dropp
         "view holds {} of {} keys".format(result, total_expected))
 
 
+NOTHING_TO_STREAM_TO_LOG_LINE = "nothing to stream to"
+
+
+def test_nats_jet_stream_does_not_acknowledge_messages_discarded_by_a_view_detached_mid_cycle(nats_cluster):
+    # The detach twin of the test above. Unlike `DROP VIEW`, a plain `DETACH TABLE` keeps the view
+    # registered as a dependency of the `NATS` table, so a cycle that decides whether it has anywhere
+    # to stream to by the dependency metadata alone would go on to consume into the discarding
+    # pipeline and acknowledge. The view stays a dependency, so the consumer stays subscribed and
+    # keeps the held messages locally: they can only reach the re-attached view if the held cycle
+    # left them alone.
+    total_expected = 10
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
+
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n';
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.consume;
+        """
+    )
+    nats_helpers.wait_for_streaming_started(instance, "test.consume")
+
+    instance.query("SYSTEM ENABLE FAILPOINT nats_pause_before_building_insert_pipeline")
+    instance.query("SYSTEM WAIT FAILPOINT nats_pause_before_building_insert_pipeline PAUSE")
+
+    messages = [json.dumps({"key": key, "value": key}) for key in range(total_expected)]
+    asyncio.run(publish_messages(cluster, "test_stream", "test_subject", messages))
+    _wait_for_ack_pending(total_expected)
+
+    anchor = nats_helpers.log_line_count(instance)
+    assert anchor > 0, "log offset anchor is not a line number: {}".format(anchor)
+
+    instance.query("DETACH TABLE test.consumer")
+    instance.query("SYSTEM DISABLE FAILPOINT nats_pause_before_building_insert_pipeline")
+
+    # The released cycle must notice that the view is gone. Waiting for that makes the count below
+    # a statement about what the released cycle did with the messages, not about a view attached
+    # again before it ran.
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        if nats_helpers.count_in_log_after(instance, NOTHING_TO_STREAM_TO_LOG_LINE, anchor) > 0:
+            break
+        time.sleep(0.2)
+    else:
+        raise AssertionError("the released cycle did not report that the view was gone")
+
+    instance.query("ATTACH TABLE test.consumer")
+
+    result = instance.query_with_retry(
+        "SELECT count(DISTINCT key) FROM test.view",
+        retry_count = 60,
+        sleep_time = 1,
+        check_callback = lambda num_rows: int(num_rows) == total_expected)
+    assert int(result) == total_expected, (
+        "the cycle that had no view to stream to acknowledged the messages it discarded, "
+        "view holds {} of {} keys".format(result, total_expected))
+
+
 def _wait_for_ack_floor(expected, consumer_name = "test_consumer", time_limit_sec = 60):
     # Waits until the broker has every message up to stream sequence `expected` acknowledged, which
     # is how a stream consumed and committed in full reads from outside.
