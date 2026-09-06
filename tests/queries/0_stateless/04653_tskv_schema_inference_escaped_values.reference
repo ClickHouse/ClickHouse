@@ -1,0 +1,333 @@
+group 1: an escaped value inside a compound or a date now infers String and reads back
+c	Nullable(String)					
+[0.5]
+c	Nullable(String)					
+[1.5]
+c	Nullable(String)					
+[10]
+t	Nullable(String)					
+(1,0.5)
+m	Nullable(String)					
+{\'a\':0.5}
+c	Nullable(String)					
+[[1.5]]
+x	Nullable(String)					
+2020-01-01
+x	Nullable(String)					
+2020-01-01 00:00:01
+group 2: escaped scalars
+x	Nullable(String)					
+1.5
+x	Nullable(String)					
+10
+x	Nullable(String)					
+true
+x	Nullable(String)					
+false
+group 3: escape-free controls keep their types
+x	Nullable(Float64)					
+1.5
+x	Nullable(String)					
+007
+c	Array(Nullable(Int64))					
+[1]
+x	Nullable(Date)					
+2020-01-01
+group 4: an escape inside a quoted element keeps the compound type
+c	Array(Nullable(String))					
+['a.b']
+t	Tuple(Nullable(Int64), Nullable(String))					
+(1,'0.5')
+m	Map(String, Nullable(String))					
+{'k':'a.b'}
+c	Array(Array(Nullable(String)))					
+[['a.b']]
+m	Map(String, Nullable(Int64))					
+{'a.b':1}
+x	Nullable(String)					
+\'a.b\'
+group 5: type merging across rows
+x	Array(Nullable(Int64))					
+[]
+[2]
+x	Nullable(Float64)					
+1
+1.5
+x	Nullable(UInt64)					
+1
+18446744073709551615
+c	Array(Nullable(Float64))					
+[1]
+[1.5]
+x	Array(Nullable(Int64))					
+[]
+[2]
+[3]
+group 6: a doubled backslash is not a null
+x	Nullable(String)					
+\\N
+x	Nullable(String)					
+\\N
+1
+group 7: truncated escapes stay unreadable
+x	Nullable(String)					
+x	Nullable(String)					
+group 8: a negative integer is not widened to UInt64
+x	Nullable(String)					
+-1
+18446744073709551615
+c	Nullable(String)					
+[-1]
+[18446744073709551615]
+c	Nullable(String)					
+[[-1]]
+[[18446744073709551615]]
+c	Nullable(String)					
+(-1,1)
+(18446744073709551615,1)
+x	Nullable(String)					
+-1
+5
+18446744073709551615
+group 9: correct widening is preserved
+c	Array(Nullable(UInt64))					
+[1]
+[18446744073709551615]
+x	Nullable(Float64)					
+-1
+1.5
+x	Nullable(Int64)					
+-1
+-2
+group 10: an intra-container merge sees the negative marking
+c	Nullable(String)					
+[-1,18446744073709551615]
+c	Tuple(Nullable(Int64), Nullable(UInt64))					
+(-1,18446744073709551615)
+group 11: a negative map key is not widened to UInt64
+m	Nullable(String)					
+{-1:1}
+{18446744073709551615:1}
+c	Nullable(String)					
+[{-1:1}]
+[{18446744073709551615:1}]
+c	Nullable(String)					
+[[{-1:1}]]
+[[{18446744073709551615:1}]]
+t	Nullable(String)					
+(1,{-1:1})
+(1,{18446744073709551615:1})
+m	Nullable(String)					
+{1:{-1:1}}
+{1:{18446744073709551615:1}}
+m	Nullable(String)					
+{\'a\':{-1:1}}
+{\'a\':{18446744073709551615:1}}
+c	Nullable(String)					
+[(1,{-1:1})]
+[(1,{18446744073709551615:1})]
+m	Map(Float64, Nullable(Int64))					
+{-1:1}
+{2.5:1}
+m	Map(Int64, Nullable(Int64))					
+{-1:1}
+{-2:1}
+m	Nullable(String)					
+{\'a\':-1}
+{\'a\':18446744073709551615}
+m	Map(String, Nullable(Int64))					
+{'a':1}
+{'b':1}
+m	Map(UInt64, Nullable(Int64))					
+{1:1}
+{18446744073709551615:1}
+group 12: the negative marking survives collapsing equal types
+x	Nullable(String)					
+1
+-1
+18446744073709551615
+c	Nullable(String)					
+[-1,1]
+[18446744073709551615]
+x	Nullable(String)					
+-1
+5
+18446744073709551615
+c	Nullable(String)					
+[1,-1]
+[18446744073709551615]
+x	Nullable(UInt64)					
+1
+18446744073709551615
+c	Array(Nullable(UInt64))					
+[1]
+[18446744073709551615]
+x	Nullable(Float64)					
+-1
+1.5
+x	Nullable(Int64)					
+-1
+-2
+c	Nullable(String)					
+[NULL,-1,1]
+[18446744073709551615]
+c	Nullable(String)					
+[NULL,1,-1]
+[18446744073709551615]
+c	Array(Nullable(UInt64))					
+[NULL,1,2]
+[18446744073709551615]
+group 13: the negative marking survives the map key and value collapse
+m	Nullable(String)					
+{-1:1,1:1}
+{18446744073709551615:1}
+m	Nullable(String)					
+{\'a\':-1,\'b\':1}
+{\'a\':18446744073709551615}
+m	Nullable(String)					
+{1:1,-1:1}
+{18446744073709551615:1}
+m	Map(UInt64, Nullable(Int64))					
+{1:1,2:1}
+{18446744073709551615:1}
+m	Map(String, Nullable(UInt64))					
+{'a':1,'b':1}
+{'a':18446744073709551615}
+group 13b: the negative marking survives unifying one row\'s own map elements
+m	Nullable(String)					
+{-1:1,18446744073709551615:1}
+m	Nullable(String)					
+{\'a\':-1,\'b\':18446744073709551615}
+c	Nullable(String)					
+[{-1:1,18446744073709551615:1}]
+m	Map(Int64, Nullable(Int64))					
+{1:1,2:1}
+m	Map(Int64, Nullable(Int64))					
+{-1:1,-2:1}
+group 13c: a signed literal is not widened even when its value is not negative
+x	Nullable(String)					
+-0
+18446744073709551615
+x	Nullable(String)					
++1
+18446744073709551615
+c	Nullable(String)					
+[-0]
+[18446744073709551615]
+m	Nullable(String)					
+{-0:1}
+{18446744073709551615:1}
+m	Nullable(String)					
+{\'a\':-0}
+{\'a\':18446744073709551615}
+c	Nullable(String)					
+(-0,1)
+(18446744073709551615,1)
+x	Nullable(UInt64)					
+0
+18446744073709551615
+c	Array(Nullable(UInt64))					
+[1]
+[18446744073709551615]
+x	Nullable(String)					
+-1
+18446744073709551615
+x	Nullable(Float64)					
+-0
+18446744073709552000
+x	Nullable(Int64)					
+0
+group 13d: an explicit plus is only unreadable where the reader refuses one
+a	Nullable(UInt64)					
+1
+18446744073709551615
+a	Nullable(UInt64)					
+1
+18446744073709551615
+x	Nullable(String)					
++1
+18446744073709551615
+group 13e: a single field the value reader refuses stays a String
+x	Nullable(String)					
++1
+x	Nullable(String)					
++18446744073709551615
+x	Nullable(String)					
++0
+x	Nullable(String)					
++00
+x	Nullable(Float64)					
+1.5
+x	Nullable(Float64)					
+0
+x	Nullable(Int64)					
+-1
+x	Nullable(Int64)					
+1
+group 14: one column\'s marking does not leak into another column
+x	Nullable(Int64)					
+y	Nullable(UInt64)					
+1	\N
+-1	\N
+\N	1
+\N	18446744073709551615
+x	Nullable(Int64)					
+y	Nullable(UInt64)					
+-1	\N
+1	\N
+\N	1
+\N	18446744073709551615
+x	Nullable(Int64)					
+y	Nullable(String)					
+1	\N
+-1	\N
+\N	-1
+\N	18446744073709551615
+group 15: a sibling escaped-rule format is order-independent too
+c1	Nullable(String)					
+1
+-1
+18446744073709551615
+c1	Nullable(String)					
+-1
+1
+18446744073709551615
+c1	Nullable(UInt64)					
+1
+2
+18446744073709551615
+c1	Nullable(String)					
++1
+c1	Nullable(Float64)					
+1.5
+c1	Nullable(Int64)					
+-1
+group 15b: Regexp is order-independent too
+c1	Nullable(String)					
+1
+-1
+18446744073709551615
+c1	Nullable(String)					
+-1
+1
+18446744073709551615
+c1	Nullable(UInt64)					
+1
+2
+18446744073709551615
+c1	Nullable(String)					
++1
+c1	Nullable(Float64)					
+1.5
+c1	Nullable(Int64)					
+-1
+group 11 round trip: TSKV output for a negative map key reads back
+1
+m	Nullable(String)					
+{-1:1}
+{18446744073709551615:1}
+group 13c round trip: TSKV output for a negative zero reads back
+1
+x	Nullable(String)					
+-0
+18446744073709551615
