@@ -248,6 +248,8 @@ namespace Setting
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_full_text_index;
+    extern const SettingsBool allow_experimental_cuckoo_filter_index;
+    extern const SettingsBool allow_experimental_binary_fuse_filter_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indices;
     extern const SettingsBool allow_minmax_index_for_json;
@@ -1165,6 +1167,19 @@ void MergeTreeData::checkProperties(
                     if (index_expression_ptr)
                         checkSuspiciousIndices(index_expression_ptr);
                 }
+
+                if (index.type == "cuckoo_filter" && !attach && local_context
+                    && !local_context->getSettingsRef()[Setting::allow_experimental_cuckoo_filter_index]
+                    && !AlterCommands::isUnchangedExperimentalSkipIndex(index, old_metadata))
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Skip index type 'cuckoo_filter' is experimental. Enable setting 'allow_experimental_cuckoo_filter_index' to use it");
+                if (index.type == "binary_fuse_filter" && !attach && local_context
+                    && !local_context->getSettingsRef()[Setting::allow_experimental_binary_fuse_filter_index]
+                    && !AlterCommands::isUnchangedExperimentalSkipIndex(index, old_metadata))
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Skip index type 'binary_fuse_filter' is experimental. Enable setting 'allow_experimental_binary_fuse_filter_index' to use it");
 
                 if (!attach && !allow_minmax_index_for_json)
                     checkMinMaxIndexForJSON(index);
@@ -5502,6 +5517,18 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::enable_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Text index feature is not enabled (turn on setting 'enable_full_text_index')");
+
+    if (AlterCommands::hasNewCuckooFilterIndex(old_metadata, new_metadata)
+        && !settings[Setting::allow_experimental_cuckoo_filter_index])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Skip index type 'cuckoo_filter' is experimental. Enable setting 'allow_experimental_cuckoo_filter_index' to use it");
+
+    if (AlterCommands::hasNewBinaryFuseFilterIndex(old_metadata, new_metadata)
+        && !settings[Setting::allow_experimental_binary_fuse_filter_index])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Skip index type 'binary_fuse_filter' is experimental. Enable setting 'allow_experimental_binary_fuse_filter_index' to use it");
 
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
     ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;

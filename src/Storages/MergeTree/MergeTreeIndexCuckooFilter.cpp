@@ -1,25 +1,26 @@
-#include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
+#include <Storages/MergeTree/MergeTreeIndexCuckooFilter.h>
 
-#include <Columns/ColumnArray.h>
+#include <cmath>
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/BloomFilter.h>
 #include <Interpreters/BloomFilterHash.h>
+#include <Interpreters/CuckooFilter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
+#include <Storages/IndicesDescription.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -39,118 +40,73 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_)
-    : bits_per_row(bits_per_row_), hash_functions(hash_functions_), bloom_filters(index_columns_)
+MergeTreeIndexGranuleCuckooFilter::MergeTreeIndexGranuleCuckooFilter(double /* false_positive_rate */, size_t f_bits_, size_t index_columns_)
+    : f_bits(f_bits_), cuckoo_filters(index_columns_)
 {
     total_rows = 0;
     for (size_t column = 0; column < index_columns_; ++column)
-        bloom_filters[column] = std::make_shared<BloomFilter>(bits_per_row, hash_functions, 0);
+        cuckoo_filters[column] = std::make_shared<CuckooFilter>(CuckooFilter::empty(f_bits));
 }
 
-MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(
-    size_t bits_per_row_, size_t hash_functions_, const std::vector<HashSet<UInt64>>& column_hashes_)
-        : bits_per_row(bits_per_row_), hash_functions(hash_functions_), bloom_filters(column_hashes_.size())
+MergeTreeIndexGranuleCuckooFilter::MergeTreeIndexGranuleCuckooFilter(
+    double false_positive_rate_, size_t f_bits_, const std::vector<HashSet<UInt64>> & column_hashes_)
+    : f_bits(f_bits_), cuckoo_filters(column_hashes_.size())
 {
     if (column_hashes_.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule_index_blocks empty or total_rows is zero.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule index hash sets are empty.");
 
-    size_t bloom_filter_max_size = 0;
+    size_t max_distinct = 0;
     for (const auto & column_hash : column_hashes_)
-        bloom_filter_max_size = std::max(bloom_filter_max_size, column_hash.size());
+        max_distinct = std::max(max_distinct, column_hash.size());
 
-    static size_t atom_size = 8;
-
-    // If multiple columns are given, we will initialize all the bloom filters
-    // with the size of the highest-cardinality one. This is done for compatibility with
-    // existing binary serialization format
-    total_rows = bloom_filter_max_size;
-    size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
+    total_rows = max_distinct;
 
     for (size_t column = 0, columns = column_hashes_.size(); column < columns; ++column)
-    {
-        bloom_filters[column] = std::make_shared<BloomFilter>(bytes_size, hash_functions, 0);
-        fillingBloomFilter(bloom_filters[column], column_hashes_[column]);
-    }
+        cuckoo_filters[column] = std::make_shared<CuckooFilter>(CuckooFilter::buildFromHashes(column_hashes_[column], false_positive_rate_));
 }
 
-bool MergeTreeIndexGranuleBloomFilter::empty() const
+bool MergeTreeIndexGranuleCuckooFilter::empty() const
 {
     return !total_rows;
 }
 
-size_t MergeTreeIndexGranuleBloomFilter::memoryUsageBytes() const
+size_t MergeTreeIndexGranuleCuckooFilter::memoryUsageBytes() const
 {
     size_t sum = 0;
-    for (const auto & bloom_filter : bloom_filters)
-        sum += bloom_filter->memoryUsageBytes();
+    for (const auto & filter : cuckoo_filters)
+        sum += filter->memoryUsageBytes();
     return sum;
 }
 
-void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleCuckooFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     if (version != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
 
-    readVarUInt(total_rows, istr);
+    UInt64 total_rows_u64 = 0;
+    readVarUInt(total_rows_u64, istr);
+    total_rows = static_cast<size_t>(total_rows_u64);
 
-    static size_t atom_size = 8;
-    size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
-    size_t read_size = bytes_size;
-    for (auto & filter : bloom_filters)
+    for (auto & filter : cuckoo_filters)
     {
-        filter->resize(bytes_size);
-        if constexpr (std::endian::native == std::endian::big)
-            read_size = filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-        else
-            istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), read_size);
+        filter = std::make_shared<CuckooFilter>(CuckooFilter::empty(f_bits));
+        filter->deserializeBinary(istr, version);
     }
 }
 
-void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranuleCuckooFilter::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty bloom filter index.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty cuckoo filter index.");
 
-    writeVarUInt(total_rows, ostr);
+    writeVarUInt(static_cast<UInt64>(total_rows), ostr);
 
-    static size_t atom_size = 8;
-    size_t write_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
-    for (const auto & bloom_filter : bloom_filters)
-    {
-        if constexpr (std::endian::native == std::endian::big)
-            write_size = bloom_filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-        else
-            ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), write_size);
-    }
-}
-
-void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, const HashSet<UInt64> &hashes) const
-{
-    for (const auto & bf_base_hash : hashes)
-        for (size_t i = 0; i < hash_functions; ++i)
-            bf->addHashWithSeed(bf_base_hash.getKey(), BloomFilterHash::bf_hash_seed[i]);
+    for (const auto & filter : cuckoo_filters)
+        filter->serializeBinary(ostr);
 }
 
 namespace
 {
-
-/// True when the index column is an `Array` and the set holds an empty array. A set column that is
-/// not a `ColumnArray` cannot be inspected, so it counts as holding one.
-bool setHasEmptyArray(const DataTypePtr & index_type, const ColumnPtr & set_column, size_t row_size)
-{
-    if (!WhichDataType(index_type).isArray())
-        return false;
-
-    const auto * array_column = checkAndGetColumn<ColumnArray>(set_column.get());
-    if (!array_column)
-        return true;
-
-    for (size_t row = 0; row < row_size; ++row)
-        if (array_column->getSize(row) == 0)
-            return true;
-
-    return false;
-}
 
 ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
 {
@@ -165,18 +121,7 @@ ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
     return {ColumnTuple::create(set_elements), std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()), "dummy"};
 }
 
-bool hashMatchesFilter(const BloomFilterPtr& bloom_filter, UInt64 hash, size_t hash_functions)
-{
-    return std::all_of(BloomFilterHash::bf_hash_seed,
-                       BloomFilterHash::bf_hash_seed + hash_functions,
-                       [&](const auto &hash_seed)
-                       {
-                           return bloom_filter->findHashWithSeed(hash,
-                                                                 hash_seed);
-                       });
-}
-
-bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & bloom_filter, size_t hash_functions, bool match_all)
+bool maybeTrueOnCuckooFilter(const IColumn * hash_column, const CuckooFilterPtr & cuckoo_filter, bool match_all)
 {
     const auto * const_column = typeid_cast<const ColumnConst *>(hash_column);
     const auto * non_const_column = typeid_cast<const ColumnUInt64 *>(hash_column);
@@ -185,31 +130,19 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash column must be Const or UInt64.");
 
     if (const_column)
-    {
-        return hashMatchesFilter(bloom_filter,
-                                 const_column->getValue<UInt64>(),
-                                 hash_functions);
-    }
+        return cuckoo_filter->contains(const_column->getValue<UInt64>());
 
     const ColumnUInt64::Container & hashes = non_const_column->getData();
 
     if (match_all)
     {
-        return std::all_of(hashes.begin(),
-                           hashes.end(),
-                           [&](const auto& hash_row)
-                           {
-                               return hashMatchesFilter(bloom_filter,
-                                                        hash_row,
-                                                        hash_functions);
-                           });
+        return std::all_of(hashes.begin(), hashes.end(), [&](UInt64 hash_row) { return cuckoo_filter->contains(hash_row); });
     }
 
-    return std::any_of(
-        hashes.begin(), hashes.end(), [&](const auto & hash_row) { return hashMatchesFilter(bloom_filter, hash_row, hash_functions); });
+    return std::any_of(hashes.begin(), hashes.end(), [&](UInt64 hash_row) { return cuckoo_filter->contains(hash_row); });
 }
 
-/// Information about a Map column's presence in the bloom filter index.
+/// Information about a Map column's presence in the cuckoo filter index.
 /// Used to unify handling of both `arrayElement(map, key)` function calls
 /// and `map.key_<serialized_key>` subcolumn references produced by `FunctionToSubcolumnsPass`.
 struct MapIndexInfo
@@ -221,7 +154,7 @@ struct MapIndexInfo
     Field key_field;
 };
 
-/// Try to resolve a Map column against the bloom filter index header by the map column name
+/// Try to resolve a Map column against the cuckoo filter index header by the map column name
 /// and the key as a Field. Returns std::nullopt if neither `mapKeys(<col>)` nor `mapValues(<col>)`
 /// is present in the index.
 std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_name, const Field & key_field, const Block & header)
@@ -251,7 +184,7 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_nam
 }
 
 /// Try to parse a Map subcolumn reference like `map.key_<serialized_key>` and resolve it
-/// against the bloom filter index header. The subcolumn name format is produced by
+/// against the cuckoo filter index header. The subcolumn name format is produced by
 /// `FunctionToSubcolumnsPass`.
 std::optional<MapIndexInfo> tryParseMapSubcolumn(const String & column_name, const Block & header)
 {
@@ -307,9 +240,9 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(const RPNBuilderTreeNode &
 
 }
 
-MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
-    const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, size_t hash_functions_)
-    : WithContext(context_), header(header_), hash_functions(hash_functions_)
+MergeTreeIndexConditionCuckooFilter::MergeTreeIndexConditionCuckooFilter(
+    const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_)
+    : WithContext(context_), header(header_)
 {
     if (!predicate)
     {
@@ -324,7 +257,7 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     rpn = std::move(builder).extractRPN();
 }
 
-bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
+bool MergeTreeIndexConditionCuckooFilter::alwaysUnknownOrTrue() const
 {
     return rpnEvaluatesAlwaysUnknownOrTrue(
         rpn,
@@ -337,7 +270,7 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_NOT_IN});
 }
 
-bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const
+bool MergeTreeIndexConditionCuckooFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleCuckooFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjunction_fn) const
 {
     std::vector<BoolMask> rpn_stack;
     const auto & filters = granule->getFilters();
@@ -367,10 +300,7 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
                     const auto & filter = filters[query_index_hash.first];
                     const ColumnPtr & hash_column = query_index_hash.second;
 
-                    match_rows = maybeTrueOnBloomFilter(&*hash_column,
-                                                        filter,
-                                                        hash_functions,
-                                                        match_all);
+                    match_rows = maybeTrueOnCuckooFilter(&*hash_column, filter, match_all);
                 }
 
                 rpn_stack.emplace_back(match_rows, true);
@@ -406,20 +336,20 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
             /// No `default:` to make the compiler warn if not all enum values are handled.
         }
 
-        if (update_partial_result_disjuntion_fn)
+        if (update_partial_result_disjunction_fn)
         {
-            update_partial_result_disjuntion_fn(element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
+            update_partial_result_disjunction_fn(element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
             ++element_idx;
         }
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in MergeTreeIndexConditionCuckooFilter::mayBeTrueOnGranule");
 
     return rpn_stack[0].can_be_true;
 }
 
-bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
+bool MergeTreeIndexConditionCuckooFilter::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
 {
     {
         Field const_value;
@@ -453,11 +383,11 @@ bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTre
 namespace
 {
 
-/// Hash the JSON path string and append a predicate entry for bloom filter index.
-void fillJSONPathBloomPredicate(
+/// Hash the JSON path string and append a predicate entry for cuckoo filter index.
+void fillJSONPathCuckooPredicate(
     const JSONSubcolumnIndexInfo & json_info,
     const Block & header,
-    MergeTreeIndexConditionBloomFilter::RPNElement & out)
+    MergeTreeIndexConditionCuckooFilter::RPNElement & out)
 {
     const DataTypePtr & index_type = header.getByPosition(json_info.header_position).type;
     const auto actual_type = BloomFilter::getPrimitiveType(index_type);
@@ -469,7 +399,7 @@ void fillJSONPathBloomPredicate(
 
 }
 
-bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent)
+bool MergeTreeIndexConditionCuckooFilter::traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent)
 {
     if (!node.isFunction())
         return false;
@@ -492,17 +422,18 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     /// Handle isNotNull for JSON subcolumns: isNotNull(json.some.path)
     /// When a JSON path is absent, the value is NULL (for Dynamic/Nullable types),
     /// so isNotNull(NULL) = false — always safe to skip granules where path is absent.
-    if (function_name == "isNotNull" && arguments_size == 1)
+    /// Only for a bare atom: nested forms like isNotNull(json.a) = 0 must not use this fast path.
+    if (parent == nullptr && function_name == "isNotNull" && arguments_size == 1)
     {
         auto arg = function.getArgumentAt(0);
         if (auto json_info = tryMatchNodeToJSONIndex(arg, header, "JSONAllPaths"))
         {
             auto arg_type = arg.getDAGNode()->result_type;
-            /// It doesn't make sense to use bloom filter for isNotNull on non-Nullable type, as isNotNull will be always true.
+            /// It doesn't make sense to use cuckoo filter for isNotNull on non-Nullable type, as isNotNull will be always true.
             if (!canContainNull(*arg_type))
                 return false;
 
-            fillJSONPathBloomPredicate(*json_info, header, out);
+            fillJSONPathCuckooPredicate(*json_info, header, out);
             out.function = RPNElement::FUNCTION_HAS;
             return true;
         }
@@ -567,23 +498,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     return false;
 }
 
-/// True when converting the constant to the element type yields the exact bytes the index holds, so
-/// hashing it is equivalent to the comparison. Floats are excluded: `-0.0` equals but hashes apart.
-static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const DataTypePtr & nested_type)
-{
-    if (!value_type)
-        return false;
-
-    auto value = removeLowCardinalityAndNullable(value_type);
-    auto element = removeLowCardinalityAndNullable(nested_type);
-
-    if (isFloat(value) || isFloat(element))
-        return false;
-
-    return (isInteger(value) && isInteger(element)) || value->equals(*element);
-}
-
-bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
+bool MergeTreeIndexConditionCuckooFilter::traverseTreeIn(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
     const ConstSetPtr & prepared_set,
@@ -599,14 +514,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         size_t position = header.getPositionByName(key_node_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
-
-        /// An `Array` index holds one hash per element, so a set array is looked up by its elements
-        /// and an empty one has no hash that can stand for it. Contribute no predicate at all: a
-        /// tuple `IN` shares this element, and a sibling component would re-enable the lookup.
-        if ((function_name == "in" || function_name == "globalIn")
-            && setHasEmptyArray(index_type, converted_column, row_size))
-            return false;
-
         out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
 
         if (function_name == "in"  || function_name == "globalIn")
@@ -615,21 +522,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (function_name == "notIn"  || function_name == "globalNotIn")
             out.function = RPNElement::FUNCTION_NOT_IN;
 
-        /// `nullIn` (transform_null_in=1) selects the same rows as `in` only for a NULL-free,
-        /// single-column, non-Array set whose type matches the index; otherwise no pruning.
-        if ((function_name == "nullIn" || function_name == "globalNullIn") && prepared_set
-            && prepared_set->getDataTypes().size() == 1 && !prepared_set->hasNull()
-            && prepared_set->areTypesEqual(0, index_type)
-            && !typeid_cast<const DataTypeArray *>(index_type.get()))
-            out.function = RPNElement::FUNCTION_IN;
-
         return true;
     }
 
     /// Try to match the column name to a JSONAllPaths index for JSON subcolumn IN filtering.
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions.
     /// NOT IN is not supported because after BoolMask inversion it never skips any granules.
-    /// nullIn/globalNullIn are deliberately not wired here: JSON paths need per-path NULL checks.
     if (auto json_info = tryMatchNodeToJSONIndex(key_node, header, "JSONAllPaths"))
     {
         if (function_name != "in" && function_name != "globalIn")
@@ -640,9 +538,16 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
         auto key_type = key_node.getDAGNode()->result_type;
 
-        /// Check safety: if key type is non-Nullable and the set contains the default value,
-        /// we cannot skip granules where the path is absent.
-        if (!canContainNull(*key_type))
+        /// Check safety: in a granule where the path is absent the key evaluates to the default
+        /// value of its type, so we cannot skip such a granule when the set matches that value.
+        if (canContainNull(*key_type))
+        {
+            /// The default is `NULL`, and `NULL IN (NULL, ...)` is false unless `transform_null_in`
+            /// is enabled. `hasNull` accounts for that setting, returning false when it is disabled.
+            if (prepared_set->hasNull())
+                return false;
+        }
+        else
         {
             auto default_column_to_check = key_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
             ColumnWithTypeAndName default_column_with_type_to_check{default_column_to_check, key_type, ""};
@@ -653,7 +558,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
                 return false;
         }
 
-        fillJSONPathBloomPredicate(*json_info, header, out);
+        fillJSONPathCuckooPredicate(*json_info, header, out);
         out.function = RPNElement::FUNCTION_IN;
 
         return true;
@@ -709,7 +614,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
         if (map_info->has_keys_index)
         {
-            /// For mapKeys we serialize key argument with bloom filter
+            /// For mapKeys we serialize key argument with cuckoo filter
             size_t position = map_info->keys_index_position;
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
@@ -717,7 +622,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         }
         else if (map_info->has_values_index)
         {
-            /// For mapValues we serialize set with bloom filter
+            /// For mapValues we serialize set with cuckoo filter
             size_t row_size = column->size();
             size_t position = map_info->values_index_position;
             const DataTypePtr & index_type = header.getByPosition(position).type;
@@ -731,7 +636,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             return false;
         }
 
-        /// nullIn/globalNullIn are deliberately not wired here, as in the JSON branch above.
         if (function_name == "in" || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
 
@@ -741,119 +645,16 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return true;
     }
 
-    /// `arrayJoin(col) IN (set)` needs a set element in the granule, same as `hasAny(col, set)`.
-    /// `notIn` is not derivable: a granule holding a set element still yields rows outside the set.
-    if (function_name != "in" && function_name != "globalIn")
-        return false;
-    if (!column)
-        return false;
-
-    auto array_join_argument = key_node.getArrayJoinArgument();
-    if (!array_join_argument)
-        return false;
-
-    auto array_column_name = array_join_argument->getColumnName();
-    if (!header.has(array_column_name))
-        return false;
-
-    size_t position = header.getPositionByName(array_column_name);
-    const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
-    if (!array_type)
-        return false;
-
-    const auto & array_nested_type = array_type->getNestedType();
-    if (!bloomFilterHashDomainMatches(type, array_nested_type))
-        return false;
-
-    const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-    out.predicate.emplace_back(
-        std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, column->size())));
-    out.function = RPNElement::FUNCTION_HAS_ANY;
-    return true;
+    return false;
 }
 
 
-/// The array-search functions coerce the constant with CAST before comparing it to the elements:
-/// `hasAny`/`hasAll`, and `has`/`indexOf` over a `FixedString` element, cast both sides to the least
-/// supertype (hasAllAny.h, arrayIndex.h `executeGeneric`), and `has`/`indexOf` over a `LowCardinality`
-/// element cast the constant straight to the dictionary type (LowCardinalityExecutionHelpers.h
-/// `dictionaryIndexForConstant`). A CAST of `FixedString` to `String` strips the trailing zero
-/// padding, while `convertFieldToType` keeps it, so the index hashed a value the function never
-/// compares and wrongly pruned granules.
-///
-/// Replicate that coercion at the `Field` level: strip the padding of a `FixedString` constant, then
-/// re-pad it to the width of the element type, which is the stored form of every element the function
-/// can match. Returns a null `Field` (the `convertFieldToType` convention) when no stored element can
-/// match, or when the runtime CAST would throw `TOO_LARGE_STRING_SIZE`; the caller must then decline
-/// the index, so that the error stays reachable instead of turning into silently pruned granules.
-static Field coerceStringFieldLikeSearchFunction(
-    const Field & field, const DataTypePtr & value_type, const DataTypePtr & actual_type, bool cast_to_supertype)
-{
-    if (field.isNull())
-        return {};
-
-    String value = field.safeGet<String>();
-    const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
-
-    if (isFixedString(removeLowCardinalityAndNullable(value_type)))
-    {
-        /// The direct cast to a dictionary type rejects a `FixedString` constant wider than the
-        /// element up front, by width alone, while the supertype cast strips the padding first.
-        if (!cast_to_supertype && fixed_string_type && value.size() > fixed_string_type->getN())
-            return {};
-
-        value.resize(value.find_last_not_of('\0') + 1);
-    }
-
-    if (fixed_string_type)
-    {
-        if (value.size() > fixed_string_type->getN())
-            return {};
-
-        value.resize(fixed_string_type->getN(), '\0');
-    }
-
-    return Field(std::move(value));
-}
-
-/// True for the element/constant types whose comparison `coerceStringFieldLikeSearchFunction`
-/// replicates. Numeric elements take `executeIntegral`, which compares without coercing.
-static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const DataTypePtr & actual_type)
-{
-    return value_type
-        && isStringOrFixedString(removeLowCardinalityAndNullable(value_type))
-        && isStringOrFixedString(actual_type);
-}
-
-/// Convert a constant for hashing against the elements of an indexed array column, the way the
-/// functions built on arrayIndex.h (`has`, `indexOf`, `mapContainsKey`, `mapContainsValue`,
-/// `mapContains`, and `has` over a `Map`) compare it. Over a plain `String` element they compare
-/// the constant's raw padded bytes (arrayIndex.h `executeString`), so the padded form is the value
-/// to hash. The test must read the type before `getPrimitiveType` strips `LowCardinality`, whose
-/// elements do coerce.
-static Field convertConstantForArrayIndexFunction(
-    const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & nested_type, const DataTypePtr & actual_type)
-{
-    if (WhichDataType(removeNullable(nested_type)).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
-        return convertFieldToType(value_field, *actual_type, value_type.get());
-
-    return coerceStringFieldLikeSearchFunction(value_field, value_type, actual_type, /*cast_to_supertype=*/ !nested_type->lowCardinality());
-}
-
-static ColumnPtr createColumnFromConstantArray(
-    const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & actual_type, bool coerce_like_search_function)
+static ColumnPtr createColumnFromConstantArray(const Field & value_field, const DataTypePtr & actual_type)
 {
     if (value_field.getType() != Field::Types::Array)
         return nullptr;
 
-    DataTypePtr element_type;
-    if (coerce_like_search_function && value_type)
-        if (const auto * value_array_type = typeid_cast<const DataTypeArray *>(removeLowCardinalityAndNullable(value_type).get()))
-            element_type = value_array_type->getNestedType();
-
-    const bool coerce = element_type && searchFunctionCoercesConstant(element_type, actual_type);
     const bool is_nullable = actual_type->isNullable();
-    const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
     auto mutable_column = actual_type->createColumn();
 
     for (const auto & f : value_field.safeGet<Array>())
@@ -861,19 +662,7 @@ static ColumnPtr createColumnFromConstantArray(
         if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
             return nullptr;
 
-        /// `has(<constant array>, <indexed scalar>)` compares the `Field`s without a cast.
-        /// An over-wide value therefore cannot match a narrower `FixedString` scalar, but
-        /// `ColumnFixedString::insert` would throw while preparing the index. Decline the
-        /// index and let the function evaluate normally instead.
-        if (!coerce && fixed_string_type && f.getType() == Field::Types::String
-            && f.safeGet<String>().size() > fixed_string_type->getN())
-        {
-            return nullptr;
-        }
-
-        Field converted = coerce
-            ? coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true)
-            : convertFieldToType(f, *actual_type);
+        auto converted = convertFieldToType(f, *actual_type);
         if (converted.isNull())
             return nullptr;
 
@@ -962,7 +751,7 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
 }
 
 
-bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
+bool MergeTreeIndexConditionCuckooFilter::traverseTreeEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
     const DataTypePtr & value_type,
@@ -971,32 +760,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     const RPNBuilderTreeNode * parent)
 {
     auto key_column_name = key_node.getColumnName();
-
-    /// `arrayJoin(col) = const` needs an element equal to the constant, same as `has(col, const)`.
-    /// `notEquals` is not derivable: a granule holding the constant still yields differing rows.
-    if (function_name == "equals")
-    {
-        if (auto array_join_argument = key_node.getArrayJoinArgument())
-        {
-            auto array_column_name = array_join_argument->getColumnName();
-            if (header.has(array_column_name))
-            {
-                size_t position = header.getPositionByName(array_column_name);
-                const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
-                if (array_type && bloomFilterHashDomainMatches(value_type, array_type->getNestedType()))
-                {
-                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-                    if (converted_field.isNull())
-                        return false;
-
-                    out.function = RPNElement::FUNCTION_HAS;
-                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
-                    return true;
-                }
-            }
-        }
-    }
 
     if (header.has(key_column_name))
     {
@@ -1014,9 +777,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 if (function_name == "has" || indexOfCanUseBloomFilter(parent))
                 {
                     out.function = RPNElement::FUNCTION_HAS;
-                    const DataTypePtr & nested_type = array_type->getNestedType();
-                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(nested_type);
-                    Field converted_field = convertConstantForArrayIndexFunction(value_field, value_type, nested_type, actual_type);
+                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
+                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
                     if (converted_field.isNull())
                         return false;
 
@@ -1025,10 +787,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             }
             else if (function_name == "has")
             {
-                /// `has(<constant array>, <indexed scalar>)` compares `Field`s directly
-                /// (arrayIndex.h `executeConst`), so it needs the padded form and no coercion.
                 const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-                ColumnPtr column = createColumnFromConstantArray(value_field, value_type, actual_type, /*coerce_like_search_function=*/ false);
+                ColumnPtr column = createColumnFromConstantArray(value_field, actual_type);
 
                 if (!column)
                     return false;
@@ -1043,7 +803,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 return false;
 
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-            ColumnPtr column = createColumnFromConstantArray(value_field, value_type, actual_type, /*coerce_like_search_function=*/ true);
+            ColumnPtr column = createColumnFromConstantArray(value_field, actual_type);
 
             if (!column)
                 return false;
@@ -1060,27 +820,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-
-            /// Where equality compares zero-padded, the constant can equal a stored value of a different byte
-            /// length, while the index holds only the hash of each value's exact bytes. It is then usable only
-            /// for a `FixedString(N)` index at least as wide, where padding gives the one value that can match.
-            if (isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
-            {
-                /// A `Variant` or `Dynamic` constant carries the nested padded value under its
-                /// declared type, so an active `FixedString` alternative cannot be told from a `String` one.
-                const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
-                const bool constant_may_be_fixed_string
-                    = which_constant.isFixedString() || which_constant.isVariant() || which_constant.isDynamic();
-                const size_t constant_bytes = value_field.safeGet<String>().size();
-                const auto * fixed_index_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
-
-                if (constant_may_be_fixed_string && !fixed_index_type)
-                    return false;
-
-                if (fixed_index_type && fixed_index_type->getN() < constant_bytes)
-                    return false;
-            }
-
             auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
             if (converted_field.isNull())
                 return false;
@@ -1104,7 +843,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             return false;
 
         out.function = RPNElement::FUNCTION_EQUALS;
-        fillJSONPathBloomPredicate(*json_info, header, out);
+        fillJSONPathCuckooPredicate(*json_info, header, out);
 
         return true;
     }
@@ -1126,35 +865,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (!array_type)
             return false;
 
-        /// `mapContainsKey`/`mapContainsValue`/`mapContains`, and `has` over a `Map`, are adapters
-        /// of the same arrayIndex.h machinery, so the constant must be coerced the same way as for
-        /// `has` over an array. The `mapKeys`/`mapValues` index expression strips the
-        /// `LowCardinality` wrapper of the key/value type, so the coercion mode must be read from
-        /// the `Map` type itself, not from the index header.
-        DataTypePtr element_type;
-        if (const auto * map_type = typeid_cast<const DataTypeMap *>(key_node.getDAGNode()->result_type.get()))
-        {
-            element_type = function_name == "mapContainsValue" ? map_type->getValueType() : map_type->getKeyType();
-
-            /// The `mapContains*` adapters run over the keys/values subcolumn, which keeps the
-            /// wrapper, so they compare against the dictionary. `has` over a `Map` instead goes
-            /// through `executeMap`, which rewrites the map to an array of its keys and strips
-            /// `LowCardinality` from both arguments before comparing (arrayIndex.h), so it compares
-            /// the raw padded bytes exactly like `has` over an `Array(String)`.
-            if (function_name == "has")
-                element_type = recursiveRemoveLowCardinality(element_type);
-        }
-
         out.function = RPNElement::FUNCTION_HAS;
         const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-
-        /// Without the `Map` type the padded and the coerced form cannot be told apart.
-        if (!element_type && searchFunctionCoercesConstant(value_type, actual_type))
-            return false;
-
-        Field converted_field = element_type
-            ? convertConstantForArrayIndexFunction(value_field, value_type, element_type, actual_type)
-            : convertFieldToType(value_field, *actual_type, value_type.get());
+        auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
         if (converted_field.isNull())
             return false;
 
@@ -1233,29 +946,27 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     return false;
 }
 
-MergeTreeIndexAggregatorBloomFilter::MergeTreeIndexAggregatorBloomFilter(
-    size_t bits_per_row_, size_t hash_functions_, const Names & columns_name_)
-    : bits_per_row(bits_per_row_), hash_functions(hash_functions_), index_columns_name(columns_name_), column_hashes(columns_name_.size())
+MergeTreeIndexAggregatorCuckooFilter::MergeTreeIndexAggregatorCuckooFilter(
+    double false_positive_rate_, size_t f_bits_, const Names & columns_name_)
+    : false_positive_rate(false_positive_rate_), f_bits(f_bits_), index_columns_name(columns_name_), column_hashes(columns_name_.size())
 {
-    chassert(bits_per_row != 0);
-    chassert(hash_functions != 0);
 }
 
-bool MergeTreeIndexAggregatorBloomFilter::empty() const
+bool MergeTreeIndexAggregatorCuckooFilter::empty() const
 {
     return !total_rows;
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBloomFilter::getGranuleAndReset()
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorCuckooFilter::getGranuleAndReset()
 {
-    const auto granule = std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, column_hashes);
+    const auto granule = std::make_shared<MergeTreeIndexGranuleCuckooFilter>(false_positive_rate, f_bits, column_hashes);
     total_rows = 0;
     for (auto & hashes : column_hashes)
         hashes.clear();
     return granule;
 }
 
-void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorCuckooFilter::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
@@ -1267,10 +978,7 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
     for (size_t column = 0; column < index_columns_name.size(); ++column)
     {
         const auto & column_and_type = block.getByName(index_columns_name[column]);
-        /// A bloom filter only needs the set of distinct hashes, so for LowCardinality
-        /// columns this returns one hash per distinct dictionary value present in the
-        /// granule instead of one per row -- turning O(rows) hash-set inserts into
-        /// O(distinct). For other columns it is one hash per row, as before.
+        /// Hash only distinct dictionary values for LowCardinality columns, matching bloom_filter.
         auto index_column = BloomFilterHash::hashWithColumnDistinct(column_and_type.type, column_and_type.column, *pos, max_read_rows);
 
         const auto & index_col = checkAndGetColumn<ColumnUInt64>(*index_column);
@@ -1283,32 +991,30 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
     total_rows += max_read_rows;
 }
 
-MergeTreeIndexBloomFilter::MergeTreeIndexBloomFilter(
+MergeTreeIndexCuckooFilter::MergeTreeIndexCuckooFilter(
     StorageMetadataPtr metadata_snapshot_,
     const IndexDescription & index_,
-    size_t bits_per_row_,
-    size_t hash_functions_)
+    double false_positive_rate_,
+    size_t f_bits_)
     : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
-    , bits_per_row(bits_per_row_)
-    , hash_functions(hash_functions_)
+    , false_positive_rate(false_positive_rate_)
+    , f_bits(f_bits_)
 {
-    chassert(bits_per_row != 0);
-    chassert(hash_functions != 0);
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeIndexCuckooFilter::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, index.column_names.size());
+    return std::make_shared<MergeTreeIndexGranuleCuckooFilter>(false_positive_rate, f_bits, index.column_names.size());
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexCuckooFilter::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorBloomFilter>(bits_per_row, hash_functions, index.column_names);
+    return std::make_shared<MergeTreeIndexAggregatorCuckooFilter>(false_positive_rate, f_bits, index.column_names);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
+MergeTreeIndexConditionPtr MergeTreeIndexCuckooFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionBloomFilter>(predicate, context, index.sample_block, hash_functions);
+    return std::make_shared<MergeTreeIndexConditionCuckooFilter>(predicate, context, index.sample_block);
 }
 
 static void assertIndexColumnsType(const Block & header)
@@ -1326,11 +1032,11 @@ static void assertIndexColumnsType(const Block & header)
         if (!which.isUInt() && !which.isInt() && !which.isString() && !which.isFixedString() && !which.isFloat() &&
             !which.isDate() && !which.isDateTime() && !which.isDateTime64() && !which.isEnum() && !which.isUUID() &&
             !which.isIPv4() && !which.isIPv6())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type {} of bloom filter index.", type->getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type {} of cuckoo filter index.", type->getName());
     }
 }
 
-MergeTreeIndexPtr bloomFilterIndexCreator(
+MergeTreeIndexPtr cuckooFilterIndexCreator(
     StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     double false_positive_rate = 0.025;
@@ -1338,47 +1044,44 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
     if (index.arguments && !index.arguments->children.empty())
     {
         auto argument = getFieldFromIndexArgumentAST(index.arguments->children[0]);
-        false_positive_rate = std::min<Float64>(1.0, std::max<Float64>(argument.safeGet<Float64>(), 0.0));
+        false_positive_rate = argument.safeGet<Float64>();
     }
 
-    const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(false_positive_rate);
+    /// Same open interval as `CuckooFilter::fingerprintBitsFromFalsePositiveRate`; clamp for attach / edge metadata.
+    false_positive_rate = std::max(false_positive_rate, 1e-15);
+    false_positive_rate = std::min(false_positive_rate, 1.0 - 1e-15);
+    const size_t f_bits = CuckooFilter::fingerprintBitsFromFalsePositiveRate(false_positive_rate);
 
-    return std::make_shared<MergeTreeIndexBloomFilter>(
-        std::move(metadata_snapshot), index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);
+    return std::make_shared<MergeTreeIndexCuckooFilter>(std::move(metadata_snapshot), index, false_positive_rate, f_bits);
 }
 
-void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
+void cuckooFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
 {
     assertIndexColumnsType(index.sample_block);
-
-    /// The index hashing rejects an array of nullable elements (see `unwrapArraySlice` in
-    /// `BloomFilterHash.h`), which `assertIndexColumnsType` does not notice because it looks at the
-    /// primitive type only. Such an index is accepted at DDL and then fails every insert, merge and
-    /// mutation of the table, and the natural recovery - `DROP INDEX` - is refused while one of those
-    /// failed mutations is pending. Reject it here, like a nested array already is. Not on `ATTACH`:
-    /// a table created before this check must still load, so that its index can be dropped.
-    if (!attach)
-    {
-        for (const auto & type : index.sample_block.getDataTypes())
-        {
-            const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
-            if (array_type && array_type->getNestedType()->isNullable())
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type {} of bloom filter index.", type->getName());
-        }
-    }
 
     if (index.arguments && index.arguments->children.size() > 1)
     {
         if (!attach) /// This is for backward compatibility.
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "BloomFilter index cannot have more than one parameter.");
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Cuckoo filter index cannot have more than one parameter.");
     }
 
     if (index.arguments && !index.arguments->children.empty())
     {
         auto argument = getFieldFromIndexArgumentAST(index.arguments->children[0]);
 
-        if (!attach && (argument.getType() != Field::Types::Float64 || argument.safeGet<Float64>() < 0 || argument.safeGet<Float64>() > 1))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The BloomFilter false positive must be a double number between 0 and 1.");
+        if (!attach)
+        {
+            if (argument.getType() != Field::Types::Float64)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The cuckoo filter false positive rate must be a double strictly between 0 and 1 (exclusive).");
+
+            const Float64 fpr = argument.safeGet<Float64>();
+            if (!std::isfinite(fpr) || fpr <= 0 || fpr >= 1)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The cuckoo filter false positive rate must be a double strictly between 0 and 1 (exclusive).");
+        }
     }
 }
 
