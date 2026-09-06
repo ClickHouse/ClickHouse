@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <Common/SipHash.h>
+#include <Common/quoteString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -324,17 +325,19 @@ void ASTTableIdentifier::writeJSON(WriteBuffer & out) const
         }
         o << ']';
     }
-    if (uuid != UUIDHelpers::Nil)
+    if (has_uuid)
     {
-        /// A nested `ASTTableIdentifier` can carry a `UUID` from the parser (e.g. a `REFRESH DEPENDS ON src UUID '...'`
-        /// dependency), but a table reference is formatted through `ASTIdentifier::formatImplWithoutAlias`, which never
-        /// emits a `UUID` clause. `readJSON` therefore rejects a `UUID`-bearing reference (see the paired guard there),
-        /// so emitting `"uuid"` here would produce JSON that `formatQueryFromJSON` / `clickhouse_json` cannot read back.
-        /// Fail closed at serialization instead, honouring the contract that `parseQueryToJSON` rejects unsupported
-        /// shapes rather than emitting unreadable JSON.
+        w.writeBool("has_uuid", has_uuid);
+        if (uuid != UUIDHelpers::Nil)
+            w.writeString("uuid", toString(uuid));
+    }
+    else if (uuid != UUIDHelpers::Nil)
+    {
+        /// A `uuid` without a clause is not formatted back, so the JSON would resolve the table by
+        /// `UUID` while `formatQueryFromJSON` printed a name-only reference. Fail closed instead.
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "A nested table reference with a UUID cannot be represented as AST JSON: it cannot be formatted back to SQL "
-            "faithfully during AST JSON serialization");
+            "A nested table reference with a UUID but no UUID clause cannot be represented as AST JSON: it cannot be "
+            "formatted back to SQL faithfully during AST JSON serialization");
     }
     w.writeChildren(children);
     w.writeAlias(*this);
@@ -406,17 +409,14 @@ void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
         }
     }
     if (r.has("uuid"))
-    {
-        /// A nested `ASTTableIdentifier` can carry a `UUID` from the parser (e.g. a `REFRESH DEPENDS ON src UUID '...'`
-        /// dependency), and `getTableId` feeds that `UUID` into the executed `StorageID`. But a table reference is
-        /// formatted through `ASTIdentifier::formatImplWithoutAlias`, which never emits a `UUID` clause, so
-        /// `formatQueryFromJSON` would print a name-only reference while the JSON AST still resolves the table by
-        /// `UUID`. Reject the `UUID`-bearing nested reference at the boundary (fail closed) rather than hiding
-        /// semantic state behind a lossy round trip.
+        uuid = parseFromString<UUID>(r.getString("uuid"));
+    has_uuid = r.getBool("has_uuid");
+    /// Only a clause the parser saw is formatted back, so reject the shape whose `UUID` would resolve
+    /// the table while `formatQueryFromJSON` printed a name-only reference.
+    if (uuid != UUIDHelpers::Nil && !has_uuid)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "ASTTableIdentifier JSON must not carry a 'uuid': a nested table reference with a UUID cannot be "
-            "formatted back to SQL faithfully during AST JSON deserialization");
-    }
+            "ASTTableIdentifier JSON carries a non-Nil 'uuid' without 'has_uuid': a table reference with a UUID but no "
+            "UUID clause cannot be formatted back to SQL faithfully during AST JSON deserialization");
     r.readAlias(*this);
 }
 
@@ -477,12 +477,24 @@ void ASTTableIdentifier::resetTable(const String & database_name, const String &
     full_name.swap(identifier->full_name);
     name_parts.swap(identifier->name_parts);
     uuid = identifier->uuid;
+    /// The reference now names a different table, so a clause written for the old one no longer applies.
+    has_uuid = identifier->has_uuid;
 }
 
 void ASTTableIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(uuid);
     ASTIdentifier::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
+void ASTTableIdentifier::formatImplWithoutAlias(
+    WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    ASTIdentifier::formatImplWithoutAlias(ostr, settings, state, frame);
+    /// `has_uuid`, not `uuid != Nil`: an explicit all-zero clause parses to `Nil` and must still be
+    /// emitted, while an internally built identifier carrying a `uuid` must not be.
+    if (has_uuid)
+        ostr << " UUID " << quoteString(toString(uuid));
 }
 
 String getIdentifierName(const IAST * ast)

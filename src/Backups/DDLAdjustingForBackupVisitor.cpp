@@ -4,7 +4,10 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTRefreshStrategy.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 
@@ -83,8 +86,30 @@ namespace
             visitStorageReplicatedTableEngine(storage, data);
     }
 
+    /// A backed-up definition names its references instead of pinning them: restoring mints fresh
+    /// UUIDs and remaps only `ASTCreateQuery::uuid` and the view-target UUIDs.
+    void dropTableReferenceUUIDClauses(IAST & ast)
+    {
+        if (auto * identifier = ast.as<ASTTableIdentifier>())
+        {
+            identifier->uuid = UUIDHelpers::Nil;
+            identifier->has_uuid = false;
+        }
+
+        for (const auto & child : ast.children)
+        {
+            if (child)
+                dropTableReferenceUUIDClauses(*child);
+        }
+    }
+
     void visitCreateQuery(ASTCreateQuery & create, const DDLAdjustingForBackupVisitor::Data & data)
     {
+        if (create.select)
+            dropTableReferenceUUIDClauses(*create.select);
+        if (create.refresh_strategy)
+            dropTableReferenceUUIDClauses(*create.refresh_strategy);
+
         if (create.storage)
             visitStorage(*create.storage, data);
     }
