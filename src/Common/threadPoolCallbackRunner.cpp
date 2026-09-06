@@ -72,7 +72,19 @@ void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)
         std::unique_lock lock(mutex);
         queue.push_back(std::move(f));
 
-        startMoreThreadsIfNeeded(active_tasks_, lock);
+        try
+        {
+            startMoreThreadsIfNeeded(active_tasks_, lock);
+        }
+        catch (...)
+        {
+            /// Keep `queue` consistent with `queue_size` (as in `bulkSchedule`): the task must not
+            /// stay in the queue with no ticket for it, and the caller expects a task it failed to
+            /// schedule not to run.
+            queue.pop_back();
+            active_tasks.fetch_sub(1, std::memory_order_relaxed);
+            throw;
+        }
     }
 
     if (mode == Mode::ThreadPool)
