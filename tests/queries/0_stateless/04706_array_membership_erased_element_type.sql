@@ -692,13 +692,16 @@ DROP TABLE IF EXISTS t_const_batched;
 CREATE TABLE t_const_batched (n UInt64) ENGINE = Memory;
 INSERT INTO t_const_batched SELECT number FROM numbers(300);
 
+-- The arrays below have to reach the function as constants: the old analyzer does not constant-fold a
+-- call that takes a lambda, so building them with arrayMap leaves them materialized there and every
+-- cell in this section then silently measures the materialized path instead.
 -- 250 elements over 300 rows: more rows than one batch holds, so several batches run per block.
 SELECT
     countIf(has(a, n) != arrayExists(x -> x = n, a)) AS has_mismatches,
     countIf(indexOf(a, n) != arrayFirstIndex(x -> x = n, a)) AS index_of_mismatches,
     countIf(countEqual(a, n) != arrayCount(x -> x = n, a)) AS count_equal_mismatches,
     sum(has(a, n)) AS matched_rows
-FROM (SELECT n, arrayMap(x -> x::UInt64::Dynamic, range(0, 1000, 4)) AS a FROM t_const_batched);
+FROM (SELECT n, CAST(range(0::UInt64, 1000::UInt64, 4::UInt64) AS Array(Dynamic)) AS a FROM t_const_batched);
 
 -- Needles carrying different alternatives per row: a batch of them cannot be compared as a whole, so
 -- each such batch is grouped on its own rather than the whole block being reprocessed. A needle whose
@@ -712,7 +715,7 @@ SELECT 'mixed needles batched  ',
     sumIf(has(a, d), dynamicType(d) = 'String') AS matched_other_alternative
 FROM (
     SELECT if(n % 2, (n - 1)::String::Dynamic, n::UInt64::Dynamic) AS d,
-           arrayMap(x -> x::UInt64::Dynamic, range(0, 1000, 2)) AS a
+           CAST(range(0::UInt64, 1000::UInt64, 2::UInt64) AS Array(Dynamic)) AS a
     FROM t_const_batched
 );
 SELECT 'mixed needles grouped  ',
@@ -721,7 +724,7 @@ SELECT 'mixed needles grouped  ',
     sumIf(has(a, d), dynamicType(d) = 'String') AS matched_other_alternative
 FROM (
     SELECT if(n % 2, (n - 1)::String::Dynamic, n::UInt64::Dynamic) AS d,
-           arrayMap(x -> x::UInt64::Dynamic, range(0, 1000, 2)) AS a
+           CAST(range(0::UInt64, 1000::UInt64, 2::UInt64) AS Array(Dynamic)) AS a
     FROM t_const_batched
 ) SETTINGS max_block_size = 40;
 SELECT 'mixed needles row alone',
@@ -730,14 +733,14 @@ SELECT 'mixed needles row alone',
     sumIf(has(a, d), dynamicType(d) = 'String') AS matched_other_alternative
 FROM (
     SELECT if(n % 2, (n - 1)::String::Dynamic, n::UInt64::Dynamic) AS d,
-           arrayMap(x -> x::UInt64::Dynamic, range(0, 1000, 2)) AS a
+           CAST(range(0::UInt64, 1000::UInt64, 2::UInt64) AS Array(Dynamic)) AS a
     FROM t_const_batched
 ) SETTINGS max_block_size = 1;
 
 -- A constant array holding two alternatives cannot be compared as a whole batch, and its fallback
 -- keeps comparing the constant, so a UInt8 needle still reaches a UInt64 element. 251 elements fit
 -- 100 rows in one batch but not 300, so the two row counts must answer alike.
-WITH arrayConcat(arrayMap(x -> x::UInt64::Dynamic, range(0, 1000, 4)), ['s'::Dynamic]) AS a
+WITH arrayConcat(CAST(range(0::UInt64, 1000::UInt64, 4::UInt64) AS Array(Dynamic)), ['s'::Dynamic]) AS a
 SELECT
     (SELECT DISTINCT has(a, materialize(4::UInt8)) FROM numbers(100)) AS has_one_batch,
     (SELECT DISTINCT has(a, materialize(4::UInt8)) FROM numbers(300)) AS has_several_batches,
@@ -752,7 +755,7 @@ SELECT has(json, 'a') AS json_has, notHas(json, 'a') AS json_not_has
 FROM (SELECT CAST('{"b": 2}', 'JSON(a Nullable(Int64))') AS json)
 SETTINGS type_json_skip_null_typed_paths = 1;
 
-WITH arrayConcat(arrayMap(x -> x::UInt64::Dynamic, range(0, 1000, 4)), ['s'::Dynamic]) AS a
+WITH arrayConcat(CAST(range(0::UInt64, 1000::UInt64, 4::UInt64) AS Array(Dynamic)), ['s'::Dynamic]) AS a
 SELECT DISTINCT has(a, materialize(4::UInt8)) AS array_has, notHas(a, materialize(4::UInt8)) AS array_not_has
 FROM numbers(300);
 
