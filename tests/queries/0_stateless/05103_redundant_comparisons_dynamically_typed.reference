@@ -1,0 +1,27 @@
+json, excluding bound alone	0
+json, chain pruned	0
+json, chain kept	0
+array(dynamic), excluding bound alone	0
+array(dynamic), chain pruned	0
+array(dynamic), chain kept	0
+array(variant), excluding bound alone	0
+array(variant), chain pruned	0
+array(variant), chain kept	0
+shared field, chain pruned	0
+shared field, chain kept	0
+self-typed constant, excluding bound alone	0
+self-typed constant, chain pruned	0
+self-typed constant, chain kept	0
+shared field 3-chain, chain kept	0
+shared field 3-chain, excluding constant first	0
+shared field 3-chain, excluding constant second	0
+shared field 3-chain, merge armed with pruning off	0
+top-level variant, chain pruned	0
+plan, self-typed range conjuncts kept	2
+plan, ordinary range conjuncts pruned	1
+plan, self-typed notIn merges	0
+plan, ordinary notIn merges	1
+plan, self-typed notIn skipped with pruning off	0
+plan, ordinary notIn merges with pruning off	1
+plan, top-level variant range conjuncts kept	2
+plan, ordinary scalar range conjuncts pruned	1

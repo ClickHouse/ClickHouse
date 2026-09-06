@@ -394,6 +394,9 @@ struct ComparisonFilterInfo
     /// Set when folding changed `function` or the constant: the node must be rebuilt on emission,
     /// so that the tightened predicate reaches downstream analysis.
     bool modified = false;
+    /// A merge into `notIn` rebuilds the constant from a `Field`, which carries no discriminator, so a
+    /// comparison whose operand order comes from the discriminator stays a plain comparison.
+    bool orders_type_before_value = false;
 };
 
 /// A `Bool` column constant may be stored as `Types::Bool` (strict conversion) or as an integer
@@ -436,6 +439,22 @@ static ValueComparisonResult invertComparisonResult(ValueComparisonResult result
     default:
         return result;
     }
+}
+
+/// `IColumn::compareAt` orders a value that carries its own type by that type's place in the
+/// name-sorted alternative list before it looks at the value, while this analysis orders a `Field` by
+/// its own type tag; for `Variant(Float64, Int64)` the two are reversed.
+static bool comparisonOrdersTypeBeforeValue(const DataTypePtr & type)
+{
+    /// `hasDynamicStructure` reaches `Dynamic` and `JSON` at any depth, including a `JSON` with no
+    /// declared path, which is the only thing `forEachChild` walks for it. It is false for a `Variant`
+    /// of static alternatives, which `ColumnVariant::compareAt` still orders by discriminator.
+    if (type->hasDynamicStructure() || isVariant(type))
+        return true;
+
+    bool found = false;
+    type->forEachChild([&](const IDataType & child) { found = found || isVariant(child); });
+    return found;
 }
 
 /// Try to convert a constant to the expression's (column) type using strict (lossless) conversion.
@@ -892,6 +911,13 @@ static AddComparisonFilterResult addComparisonFilter(
     bool enable_pruning,
     const ContextPtr & context)
 {
+    /// The order this analysis puts such a value in is not the order the comparison applies to it, so
+    /// the condition's position relative to the others carries no information. Either operand decides:
+    /// a comparison is evaluated at the least common supertype, which is self-typed iff an operand is.
+    new_filter.orders_type_before_value
+        = comparisonOrdersTypeBeforeValue(expression->getResultType())
+        || comparisonOrdersTypeBeforeValue(new_filter.constant_node->getResultType());
+
     /// Pruning disabled — just store the filter without analysis.
     if (!enable_pruning)
     {
@@ -911,6 +937,12 @@ static AddComparisonFilterResult addComparisonFilter(
     /// Step 1: convert the constant to the column's type for uniform comparison.
     const auto & raw_type = expression->getResultType();
     auto expr_type = removeLowCardinality(raw_type);
+
+    if (new_filter.orders_type_before_value)
+    {
+        filter_map[expression].opaque_filters.push_back(std::move(new_filter));
+        return AddComparisonFilterResult::ADDED;
+    }
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
 
@@ -2046,7 +2078,7 @@ private:
 
             for (auto & filter : filters.opaque_filters)
             {
-                if (filter.function == ComparisonFunction::NOT_EQUALS)
+                if (filter.function == ComparisonFunction::NOT_EQUALS && !filter.orders_type_before_value)
                     not_equals_infos.push_back(&filter);
                 else
                     all_operands.emplace_back(filter.original_index, std::move(filter.original_node));
