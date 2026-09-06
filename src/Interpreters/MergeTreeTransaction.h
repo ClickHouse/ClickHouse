@@ -74,7 +74,10 @@ public:
 private:
     scope_guard beforeCommit();
     void afterCommit(CSN assigned_csn) noexcept;
-    bool rollback() noexcept;
+    /// Claims the right to roll back, without performing it: CAS `UnknownCSN -> RolledBackCSN`.
+    bool claimRollback() noexcept;
+    /// `already_claimed` skips that CAS because the caller won it through `claimRollback`.
+    bool rollback(bool already_claimed = false) noexcept;
     void afterFinalize();
 
     void checkIsNotCancelled() const;
