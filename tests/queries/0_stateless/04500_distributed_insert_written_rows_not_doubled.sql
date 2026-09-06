@@ -169,12 +169,12 @@ DROP TABLE mv_tgt_04500;
 DROP TABLE dist_04500;
 DROP TABLE local_04500;
 
--- Suppressing the nested per-shard accounting must NOT leak into a delegating storage that
--- writes through its own nested InterpreterInsertQuery. TimeSeries is the concrete case:
--- StorageTimeSeries::write -> TimeSeriesSink::createTargetPipeline does Context::createCopy and
--- builds Tags/Samples/Metrics target inserts, which DO consult the flag. If it leaked, those
--- real target writes would lose their CountingTransforms and the distributed INSERT would
--- under-report written_rows/written_bytes versus a direct insert into the same TimeSeries table.
+-- A delegating storage that writes through its own nested InterpreterInsertQuery must keep
+-- accounting those writes: they are different rows in different tables. TimeSeries is the
+-- concrete case (StorageTimeSeries::write -> TimeSeriesSink::createTargetPipeline builds the
+-- Tags/Samples/Metrics target inserts). Suppression is per-interpreter and only a forwarder
+-- sets it on the interpreter it builds, so those child inserts keep their CountingTransforms.
+-- Without them the distributed INSERT would under-report versus a direct TimeSeries insert.
 SET allow_experimental_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts_direct_04500;
@@ -202,10 +202,11 @@ INSERT INTO ts_dist_04500 (metric_name, tags, time_series)
 SYSTEM FLUSH LOGS query_log;
 
 -- The distributed insert must report the SAME written_rows as the direct insert: the TimeSeries
--- child inserts (samples/tags/metrics target tables) are still counted, not suppressed by the
--- one-shot flag. written_rows is the number of physical rows written to the three target tables
--- (deterministic); written_bytes is not compared because the distributed path re-blocks the data,
--- so its byte total legitimately differs from a direct insert. 1 means the row totals are equal.
+-- child inserts (samples/tags/metrics target tables) are still counted, because suppression is
+-- set only on the forwarder's own interpreter. written_rows is the number of physical rows
+-- written to the three target tables (deterministic); written_bytes is not compared because the
+-- distributed path re-blocks the data, so its byte total legitimately differs from a direct
+-- insert. 1 means the row totals are equal.
 SELECT
     (SELECT written_rows FROM system.query_log
        WHERE type = 'QueryFinish' AND is_initial_query AND query_kind = 'Insert'
@@ -229,3 +230,28 @@ ORDER BY event_time_microseconds DESC LIMIT 1;
 DROP TABLE ts_dist_04500;
 DROP TABLE ts_local_04500;
 DROP TABLE ts_direct_04500;
+
+-- The compound carrier: an Alias in front of the local shard table, so the distributed INSERT
+-- nests two forwarding hops. Both are suppressed and the top-level CountingTransform counts the
+-- rows once, so this reads the same 1000 / 8000 as the plain local shard above.
+DROP TABLE IF EXISTS alias_local_04500;
+DROP TABLE IF EXISTS dist_alias_04500;
+
+CREATE TABLE local_04500 (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE alias_local_04500 ENGINE = Alias(local_04500);
+CREATE TABLE dist_alias_04500 AS local_04500
+    ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), alias_local_04500, rand());
+INSERT INTO dist_alias_04500 SELECT number FROM numbers(1000)
+    SETTINGS log_comment = '04500_dist_alias_insert', log_profile_events = 1;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT written_rows, written_bytes
+FROM system.query_log
+WHERE type = 'QueryFinish' AND is_initial_query AND query_kind = 'Insert'
+  AND current_database = currentDatabase() AND log_comment = '04500_dist_alias_insert'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+DROP TABLE dist_alias_04500;
+DROP TABLE alias_local_04500;
+DROP TABLE local_04500;
