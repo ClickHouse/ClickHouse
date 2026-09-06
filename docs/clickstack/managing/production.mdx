@@ -21,7 +21,7 @@ For production deployments, [Managed ClickStack](/clickstack/getting-started/man
 
 - Automatic scaling of compute independent of storage
 - Low-cost and effectively unlimited retention based on object storage
-- The ability to independently isolate read and write workloads with Warehouses.
+- The ability to [independently isolate read and write workloads](/clickstack/managing/isolating-read-write) with Warehouses.
 - Integrated authentication
 - Automated [backups](/products/cloud/features/backups/overview)
 - Seamless upgrades
@@ -60,6 +60,10 @@ Use [**Managed Warehouses**](/products/cloud/features/infrastructure/warehouses)
 - Share the same underlying datasets across services when needed
 
 This approach ensures your existing workloads remain unaffected while allowing ClickStack to scale independently as observability data grows.
+
+#### Isolating read and write workloads {#isolating-read-write}
+
+Warehouses also allow ClickStack's own ingest and query workloads to be separated onto dedicated compute, with ingestion targeting a read-write service and the ClickStack UI running on a read-only service. This is the recommended production topology for larger deployments. See ["Isolating read and write workloads"](/clickstack/managing/isolating-read-write).
 
 For larger deployments or custom sizing guidance, please contact support for a more precise estimate.
 
