@@ -2,22 +2,148 @@
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <algorithm>
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionTopKFilter.h>
 
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsString preferred_optimize_projection_name;
+}
+}
+
 namespace DB::QueryPlanOptimizations
 {
+
+/// True when the read is already ordered by a prefix of `sort_column_name`, from the base table's
+/// sorting key or from a sorting projection the second-pass chooser would select. Runs before that
+/// chooser, so each gate below mirrors one of its gates and an uncertain case must return false.
+static bool readWouldBeInOrderForColumn(
+    ReadFromMergeTree & read_step,
+    const String & sort_column_name,
+    const SortColumnDescription & sort_col_desc,
+    bool optimize_projection,
+    bool has_query_filter)
+{
+    /// A collated order is never a key order: keys carry no collation.
+    if (sort_col_desc.collator)
+        return false;
+
+    /// A key column is stored ASC NULLS LAST or DESC NULLS FIRST, so the opposite NULL placement is
+    /// not a key order. Floats are included because NaN takes the NULL position.
+    auto null_placement_is_stored_order = [&](const DataTypePtr & key_type)
+    {
+        return sort_col_desc.nulls_direction != -1 || !(isNullableOrLowCardinalityNullable(key_type) || isFloat(*key_type));
+    };
+
+    const auto & metadata = read_step.getStorageMetadata();
+
+    const auto & sorting_key = metadata->getSortingKey();
+    if (!sorting_key.column_names.empty() && sorting_key.column_names[0] == sort_column_name)
+        return null_placement_is_stored_order(sorting_key.data_types[0]);
+
+    /// A sorting projection can only serve the read when projection optimization is enabled.
+    if (!optimize_projection)
+        return false;
+
+    /// The chooser's own eligibility gate: FINAL, sampled, distributed, unique-key and unsupported
+    /// parallel-replica reads never reach a projection, so the read stays on the base table.
+    if (!canUseProjectionForReadingStep(&read_step))
+        return false;
+
+    /// A filter lets the chooser reject the projection on cost, so selection is not predictable here.
+    if (has_query_filter)
+        return false;
+
+    const auto & preferred_projection_name
+        = read_step.getContext()->getSettingsRef()[Setting::preferred_optimize_projection_name].value;
+
+    /// The pin narrows the candidate set only when it names an existing normal projection;
+    /// otherwise every normal projection stays a candidate.
+    const bool pin_narrows_candidates = !preferred_projection_name.empty()
+        && metadata->projections.has(preferred_projection_name)
+        && metadata->projections.get(preferred_projection_name).type == ProjectionDescription::Type::Normal;
+
+    const auto & read_columns = read_step.getAllColumnNames();
+    for (const auto & projection : metadata->projections)
+    {
+        if (projection.type != ProjectionDescription::Type::Normal)
+            continue;
+
+        if (pin_narrows_candidates && projection.name != preferred_projection_name)
+            continue;
+
+        const auto & proj_sorting_key = projection.metadata->getSortingKey();
+        if (proj_sorting_key.column_names.empty() || proj_sorting_key.column_names[0] != sort_column_name)
+            continue;
+
+        if (!null_placement_is_stored_order(proj_sorting_key.data_types[0]))
+            continue;
+
+        /// A projection with its own WHERE stores a subset of rows, so it cannot serve the full read.
+        if (projection.where_clause_ast)
+            continue;
+
+        /// The projection can serve the read in-order only if it stores every column the read needs.
+        const bool stores_all_read_columns = std::ranges::all_of(
+            read_columns,
+            [&](const String & column) { return projection.sample_block.findByName(column) != nullptr; });
+
+        if (!stores_all_read_columns)
+            continue;
+
+        /// A part without a usable projection part is read from the base table under a union with
+        /// the projection read, and that branch is not in order. An empty part set is not in order
+        /// either: the chooser drops a candidate that would read nothing.
+        const auto & parts = read_step.getParts();
+        const bool projection_serves_every_part = !parts.empty()
+            && std::ranges::all_of(
+                   parts,
+                   [&](const auto & part_with_ranges)
+                   {
+                       const auto & created = part_with_ranges.data_part->getProjectionParts();
+                       auto it = created.find(projection.name);
+                       if (it == created.end() || it->second->is_broken)
+                           return false;
+
+                       /// A projection part can lack a column the re-derived projection metadata expects;
+                       /// the chooser serves it from the parent part, so the read is not in order. A column
+                       /// missing from both parts was added later and fills the same default on either path.
+                       return std::ranges::all_of(
+                           read_columns,
+                           [&](const String & column)
+                           {
+                               if (it->second->tryGetColumn(column))
+                                   return true;
+                               return !part_with_ranges.data_part->tryGetColumn(column)
+                                   && metadata->getColumns().hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column);
+                           });
+                   });
+
+        if (projection_serves_every_part)
+            return true;
+    }
+
+    return false;
+}
 
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
@@ -190,18 +316,12 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         && (!sort_column_tuple_type || !sort_column_tuple_type->getElements().empty())
         && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
 
-    /// When read-in-order optimization is enabled and the sort column is a prefix
-    /// of the storage's sorting key, the engine will read data in sorted order.
-    /// TopK dynamic filtering is counterproductive in this case: once the threshold
-    /// is established, the prewhere rejects all subsequent rows (they are beyond
-    /// the threshold in sorted order), preventing the LIMIT from triggering early
-    /// pipeline cancellation, and causing a full table scan instead.
-    if (use_dynamic_filtering && settings.read_in_order)
-    {
-        const auto & sorting_key = read_from_mergetree_step->getStorageMetadata()->getSortingKey();
-        if (!sorting_key.column_names.empty() && sorting_key.column_names[0] == sort_column_name)
-            use_dynamic_filtering = false;
-    }
+    /// On an already-sorted read the prewhere rejects every row past the threshold, so the LIMIT
+    /// never cancels the pipeline early and the whole table is scanned.
+    if (use_dynamic_filtering && settings.read_in_order
+        && readWouldBeInOrderForColumn(
+               *read_from_mergetree_step, sort_column_name, sort_col_desc, settings.optimize_projection, where_clause))
+        use_dynamic_filtering = false;
 
     /// The threshold tracker is needed for dynamic mark skipping during reads
     /// (use_skip_indexes_on_data_read) or for the prewhere dynamic filter.
