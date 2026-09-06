@@ -36,7 +36,7 @@ on:
   {EVENT}:
     branches: [{BRANCHES}]
 
-env:
+{CONCURRENCY}env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
 {ENV_CHECKOUT_REFERENCE}
@@ -45,6 +45,15 @@ env:
 
 jobs:
 {JOBS}\
+"""
+        # Two pull_request events can dispatch at one head commit onto state that
+        # praktika keys by (PR, sha) alone, so the newer run must supersede the
+        # older. The head sha is part of the group, so a push is never cancelled.
+        TEMPLATE_CONCURRENCY_PR = """\
+concurrency:
+  group: ${{{{ github.workflow }}}}-${{{{ github.event.pull_request.number }}}}-${{{{ github.event.pull_request.head.sha }}}}
+  cancel-in-progress: true
+
 """
         TEMPLATE_GH_TOKEN_PERMISSIONS = """\
 # Allow updating GH commit statuses and PR comments to post an actual job reports link
@@ -480,10 +489,15 @@ class PullRequestPushYamlGen:
                 ENV_CHECKOUT_REFERENCE = (
                     YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_PR
                 )
+                format_kwargs["CONCURRENCY"] = (
+                    YamlGenerator.Templates.TEMPLATE_CONCURRENCY_PR
+                )
             else:
                 ENV_CHECKOUT_REFERENCE = (
                     YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_DEFAULT
                 )
+                # github.event.pull_request is null on a push.
+                format_kwargs["CONCURRENCY"] = ""
         elif self.workflow_config.event in (Workflow.Event.SCHEDULE,):
             base_template = YamlGenerator.Templates.TEMPLATE_SCHEDULE
             format_kwargs = {
@@ -584,6 +598,24 @@ class PullRequestPushYamlGen:
             **format_kwargs,
         )
         res = template_1.format(*job_items)
+
+        # Only a `pull_request` event carries the context the group is keyed on, so
+        # exactly the `pull_request` workflows are the ones that reference it.
+        if self.workflow_config.event in (Workflow.Event.PULL_REQUEST,):
+            concurrency_block = (
+                "concurrency:\n"
+                "  group: ${{ github.workflow }}"
+                "-${{ github.event.pull_request.number }}"
+                "-${{ github.event.pull_request.head.sha }}\n"
+                "  cancel-in-progress: true"
+            )
+            assert (
+                concurrency_block in res
+            ), f"[{self.workflow_config.name}] misses the per-commit concurrency group"
+        else:
+            assert (
+                "github.event.pull_request" not in res
+            ), f"[{self.workflow_config.name}] must not reference github.event.pull_request"
 
         return res
 
