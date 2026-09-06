@@ -279,7 +279,7 @@ struct Client : DB::S3::Client
 
     static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration()
     {
-        DB::RemoteHostFilter remote_host_filter;
+        static const DB::RemoteHostFilter remote_host_filter;
         auto configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
             "some-region",
             remote_host_filter,
