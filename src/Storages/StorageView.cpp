@@ -438,8 +438,12 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
     /// Recursively walk the resolved query tree to find the underlying MergeTree storage.
     /// For UNION nodes, all branches must be eligible.
     /// Returns nullptr if the view is not suitable for parallel replicas.
-    std::function<StoragePtr(const IQueryTreeNode *)> find_storage = [&](const IQueryTreeNode * node) -> StoragePtr
+    /// Eligibility is decided with the context of the enclosing (sub)query: a SETTINGS clause
+    /// inside the view body overrides the outer one and is what the replicas execute with.
+    std::function<StoragePtr(const IQueryTreeNode *, const ContextPtr &)> find_storage
+        = [&](const IQueryTreeNode * node, const ContextPtr & node_context) -> StoragePtr
     {
+        ContextPtr current_context = node_context;
         while (node)
         {
             switch (node->getNodeType())
@@ -458,6 +462,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                         || hasWindowFunctionNodes(query_node.getProjectionNode()))
                         return nullptr;
 
+                    current_context = query_node.getContext();
                     node = query_node.getJoinTreeNode().get();
                     break;
                 }
@@ -479,11 +484,13 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                     /// table appears in multiple branches, reject it —
                     /// we avoid supporting it, since it requires to complicate parallel replicas protocol
                     /// and considered as not very practical case
+                    const auto union_context = union_node.getContext();
+
                     StoragePtr result;
                     std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen_ids;
                     for (const auto & query : queries)
                     {
-                        auto branch_storage = find_storage(query.get());
+                        auto branch_storage = find_storage(query.get(), union_context);
                         if (!branch_storage)
                             return nullptr;
 
@@ -503,9 +510,17 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                     /// If the table is itself a view, recursively check its inner query.
                     const auto * nested_view = typeid_cast<const StorageView *>(storage.get());
                     if (nested_view)
-                        return nested_view->getUnderlyingMergeTreeStorageForParallelReplicas(context);
+                    {
+                        /// A view is a parallel-replicas carrier only while the (sub)query reading it
+                        /// allows a view over MergeTree: that same setting decides, per replica, whether
+                        /// the expansion of this view keeps reading a share of the table or all of it.
+                        if (!current_context->getSettingsRef()[Setting::parallel_replicas_allow_view_over_mergetree])
+                            return nullptr;
 
-                    if (!isTableNodeEligibleForParallelReplicas(table_node, storage, context))
+                        return nested_view->getUnderlyingMergeTreeStorageForParallelReplicas(current_context);
+                    }
+
+                    if (!isTableNodeEligibleForParallelReplicas(table_node, storage, current_context))
                         return nullptr;
 
                     return table_node.getStorage();
@@ -517,7 +532,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
         return nullptr;
     };
 
-    return find_storage(inner_query_tree.get());
+    return find_storage(inner_query_tree.get(), context);
 }
 
 StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & snapshot, ContextPtr context) const
