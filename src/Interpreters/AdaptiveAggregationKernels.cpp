@@ -1600,14 +1600,16 @@ static size_t stagedRecordRangeBytes(const StagedChunk & chunk, size_t begin, si
     return bytes;
 }
 
-/// The records of the buckets [bucket_begin, bucket_end) of a chunk as a chunk of their own. A
-/// bucket range is a contiguous slice of every staged array, so the piece is a plain copy of
-/// that slice with the offsets rebased; buckets outside the range come out empty.
-static MutableStagedChunkPtr sliceStagedChunk(const StagedChunk & source, size_t bucket_begin, size_t bucket_end)
+/// The records [begin, end) of a chunk as a chunk of their own. The records are laid out bucket
+/// by bucket, so any record range is a contiguous slice of every staged array and the piece is a
+/// plain copy of that slice with the offsets rebased; the buckets outside the range come out
+/// empty, and a bucket the range starts or ends inside keeps the records that fell in it. The
+/// drains read a bucket's records from the piece's own offsets, so a bucket that spans two
+/// pieces is drained in two goes, into the same table if the same claim takes both pieces, and
+/// otherwise into two parts the external merge folds together.
+static MutableStagedChunkPtr sliceStagedChunk(const StagedChunk & source, size_t begin, size_t end)
 {
     const auto & src = source.keys;
-    const size_t begin = src.bucket_offsets[bucket_begin];
-    const size_t end = src.bucket_offsets[bucket_end];
     const size_t records = end - begin;
 
     /// Reserved exactly: the claim charges a chunk by its allocation (`stagedChunkBytes`), and
@@ -1661,9 +1663,11 @@ std::vector<MutableStagedChunkPtr> Aggregator::splitStagedChunkAtPartBound(
     /// no more than half a part, which caps the overshoot at half a part too. The seal keeps
     /// coalesced chunks at a few megabytes, under half the part floor for ordinary states, so
     /// only a chunk that carries one consumed block of wide keys or wide arguments, or a large
-    /// block, or records with wide states, comes out over it; such a chunk is cut here, along
-    /// bucket boundaries, into the fewest pieces the bound admits. A single bucket over the
-    /// bound - a two-hundred-and-fifty-sixth of one block - goes out as it is.
+    /// block, or records with wide states, comes out over it; such a chunk is cut here into the
+    /// fewest pieces the bound admits: along bucket boundaries where the buckets fit, and record
+    /// by record inside a bucket that is over the bound on its own, which a few records with
+    /// wide arguments routed to one bucket can be. Only a single record over the bound goes out
+    /// as it is: the drain has to hold a record whole.
     const size_t part_bytes = adaptivePressurePartBytes();
     if (part_bytes == std::numeric_limits<size_t>::max())
         return {};
@@ -1676,42 +1680,75 @@ std::vector<MutableStagedChunkPtr> Aggregator::splitStagedChunkAtPartBound(
     if (estimateAdaptiveDrainBytes(type, records, stagedChunkBytes(chunk)) <= chunk_bound)
         return {};
 
+    /// The pieces as record ranges, each filled greedily: a range takes the next bucket, or the
+    /// next record of a bucket being cut, while the estimate for the range with it stays within
+    /// the bound, and is closed before the one that would take it over.
     std::vector<std::pair<size_t, size_t>> ranges;
     size_t range_begin = 0;
     size_t range_records = 0;
     size_t range_bytes = 0;
+    const auto close_range_before = [&](size_t record)
+    {
+        ranges.emplace_back(range_begin, record);
+        range_begin = record;
+        range_records = 0;
+        range_bytes = 0;
+    };
+    const auto fits = [&](size_t more_records, size_t more_bytes)
+    {
+        return estimateAdaptiveDrainBytes(type, range_records + more_records, range_bytes + more_bytes) <= chunk_bound;
+    };
     for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
     {
         const size_t bucket_records = chunk.keys.recordsForBucket(b);
         if (!bucket_records)
             continue;
 
-        const size_t bucket_bytes = stagedRecordRangeBytes(chunk, chunk.keys.bucket_offsets[b], chunk.keys.bucket_offsets[b + 1]);
-        if (range_records
-            && estimateAdaptiveDrainBytes(type, range_records + bucket_records, range_bytes + bucket_bytes) > chunk_bound)
+        const size_t bucket_begin = chunk.keys.bucket_offsets[b];
+        const size_t bucket_end = chunk.keys.bucket_offsets[b + 1];
+        const size_t bucket_bytes = stagedRecordRangeBytes(chunk, bucket_begin, bucket_end);
+        if (fits(bucket_records, bucket_bytes))
         {
-            ranges.emplace_back(range_begin, b);
-            range_begin = b;
-            range_records = 0;
-            range_bytes = 0;
+            range_records += bucket_records;
+            range_bytes += bucket_bytes;
+            continue;
         }
-        range_records += bucket_records;
-        range_bytes += bucket_bytes;
+        if (range_records)
+            close_range_before(bucket_begin);
+        if (fits(bucket_records, bucket_bytes))
+        {
+            range_records += bucket_records;
+            range_bytes += bucket_bytes;
+            continue;
+        }
+
+        /// The bucket is over the bound on its own: cut inside it, record by record. A record's
+        /// bytes are its slice of the range measure, which for variable-width keys counts the
+        /// offset of a one-record range twice - a few bytes over per record, on the safe side.
+        for (size_t i = bucket_begin; i < bucket_end; ++i)
+        {
+            const size_t record_bytes = stagedRecordRangeBytes(chunk, i, i + 1);
+            if (range_records && !fits(1, record_bytes))
+                close_range_before(i);
+            range_records += 1;
+            range_bytes += record_bytes;
+        }
     }
-    ranges.emplace_back(range_begin, ADAPTIVE_AGGREGATION_NUM_BUCKETS);
+    ranges.emplace_back(range_begin, records);
 
     if (ranges.size() == 1)
         return {};
 
     std::vector<MutableStagedChunkPtr> pieces;
     pieces.reserve(ranges.size());
-    for (const auto & [bucket_begin, bucket_end] : ranges)
+    for (const auto & [begin, end] : ranges)
     {
-        pieces.push_back(sliceStagedChunk(chunk, bucket_begin, bucket_end));
+        pieces.push_back(sliceStagedChunk(chunk, begin, end));
 
         /// The piece is measured again as a whole, the way its range was measured bucket by
-        /// bucket, so a piece that comes out over the bound is counted: with the range sizing
-        /// exact, that can only be a single bucket that is over the bound on its own.
+        /// bucket and record by record, so a piece that comes out over the bound is counted:
+        /// with the range sizing exact, that can only be a single record that is over the bound
+        /// on its own.
         const auto & piece = *pieces.back();
         const size_t piece_records = piece.keys.size();
         if (estimateAdaptiveDrainBytes(type, piece_records, stagedRecordRangeBytes(piece, 0, piece_records)) > chunk_bound)
