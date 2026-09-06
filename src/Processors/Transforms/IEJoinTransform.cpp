@@ -1118,31 +1118,43 @@ void IEJoinAlgorithm::appendGathered(Chunk & chunk, size_t side, const ColumnUIn
 
 IColumn::Filter IEJoinAlgorithm::evaluateResidualMask(const ColumnUInt64 & left_rows, const ColumnUInt64 & right_rows)
 {
-    size_t num_rows = left_rows.size();
-    chassert(num_rows == right_rows.size());
-    produce_work += num_rows;
+    const size_t num_pairs = left_rows.size();
+    chassert(num_pairs == right_rows.size());
+    produce_work += num_pairs;
 
     Columns expression_columns;
     expression_columns.reserve(residual->inputs.size());
     for (const auto & source : residual->inputs)
         expression_columns.push_back(side_columns[source.side][source.position]->index(source.side == 0 ? left_rows : right_rows, 0));
 
+    /// The mask is indexed by candidate pair, so the residual must return one row per pair.
+    /// `executeOnColumns` reports the count its actions produced through the same reference, so
+    /// comparing it is a backstop against a row-count-changing action; it compares totals only.
+    size_t num_rows_after_execute = num_pairs;
     Columns results = residual->actions->executeOnColumns(
-        std::move(expression_columns), residual_input_header, residual_input_positions, num_rows);
+        std::move(expression_columns), residual_input_header, residual_input_positions, num_rows_after_execute);
+    if (num_rows_after_execute != num_pairs)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Residual condition of IEJoin returned {} rows for {} candidate pairs",
+            num_rows_after_execute,
+            num_pairs);
+    }
     ColumnPtr result = results.at(0)->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
 
-    IColumn::Filter mask(num_rows);
+    IColumn::Filter mask(num_pairs);
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(result.get()))
     {
         const auto & null_map = nullable->getNullMapData();
         const auto & values = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
-        for (size_t row = 0; row < num_rows; ++row)
+        for (size_t row = 0; row < num_pairs; ++row)
             mask[row] = !null_map[row] && values[row];
     }
     else
     {
         const auto & values = assert_cast<const ColumnUInt8 &>(*result).getData();
-        for (size_t row = 0; row < num_rows; ++row)
+        for (size_t row = 0; row < num_pairs; ++row)
             mask[row] = values[row] ? 1 : 0;
     }
     return mask;
