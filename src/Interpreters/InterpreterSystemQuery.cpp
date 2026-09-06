@@ -247,6 +247,30 @@ void executeCommandsAndThrowIfError(std::vector<std::function<void()>> commands)
 }
 
 
+/// The form of `SYSTEM DROP REPLICA` / `SYSTEM DROP DATABASE REPLICA` without a database or a table
+/// affects every database on the server, so it requires `SYSTEM DROP REPLICA` for all of them.
+/// Instead of silently skipping the databases the user has no access to (and possibly doing nothing at all),
+/// check the permissions in advance and tell the user which databases they are missing the privilege for.
+void checkAccessForDropWholeReplica(const ContextPtr & context, const Databases & databases, std::string_view query_name)
+{
+    auto access = context->getAccess();
+    if (access->isGranted(AccessType::SYSTEM_DROP_REPLICA))
+        return;
+
+    std::vector<String> databases_without_access;
+    for (const auto & elem : databases)
+        if (!access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
+            databases_without_access.emplace_back(elem.first);
+
+    if (!databases_without_access.empty())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Access denied for {}. Not enough permissions to drop these databases: {}",
+            query_name,
+            fmt::join(databases_without_access, ", "));
+}
+
+
 AccessType getRequiredAccessType(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge)
@@ -1661,28 +1685,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     else if (query.is_drop_whole_replica)
     {
         auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
-        auto access = getContext()->getAccess();
-        bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
-
-        /// Instead of silently failing, check the permissions to delete all databases in advance.
-        /// Throw an exception to user if the user doesn't have enough privileges to drop the replica.
-        /// Include the databases that the user needs privileges for in the exception
-        std::vector<String> required_access;
-        for (auto & elem : databases)
-        {
-            if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
-            {
-                required_access.emplace_back(elem.first);
-                LOG_INFO(log, "? Access {} denied, skipping database {}", "SYSTEM DROP REPLICA", elem.first);
-            }
-        }
-
-        if (!required_access.empty())
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "Access denied for {}. Not enough permissions to drop these databases: {}",
-                "SYSTEM DROP REPLICA",
-                fmt::join(required_access, ", "));
+        checkAccessForDropWholeReplica(getContext(), databases, "SYSTEM DROP REPLICA");
 
         /// If we are here, then the user has the necessary access to drop the replica, continue with the operation.
         for (auto & elem : databases)
@@ -2086,20 +2089,15 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     else if (query.is_drop_whole_replica)
     {
         auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
-        auto access = getContext()->getAccess();
-        bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
+        checkAccessForDropWholeReplica(getContext(), databases, "SYSTEM DROP DATABASE REPLICA");
 
+        /// If we are here, then the user has the necessary access to drop the replica, continue with the operation.
         for (auto & elem : databases)
         {
             DatabasePtr & database = elem.second;
             auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get());
             if (!replicated)
                 continue;
-            if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
-            {
-                LOG_INFO(log, "Access {} denied, skipping database {}", "SYSTEM DROP REPLICA", elem.first);
-                continue;
-            }
 
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path, query.zk_name);
             if (query.with_tables)
