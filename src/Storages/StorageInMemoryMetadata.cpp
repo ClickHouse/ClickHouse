@@ -214,7 +214,11 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     /// reads. Inside the body it would be resolved and access-checked as the definer (or with no user at all),
     /// which would let the invoker probe columns of the underlying tables through the row count. The outer
     /// query has already applied the key to the view's own columns, so the body reads without it.
-    const bool drop_custom_key = context->canUseParallelReplicasCustomKey();
+    ///
+    /// The key is dropped both when the invoker's context has custom-key parallel replicas active and when the
+    /// query merely supplied the key: the activation settings may come from the definer's profile (or from the
+    /// default profile for `NONE`), and the invoker's key would then be evaluated in the body all the same.
+    const bool drop_custom_key = context->canUseParallelReplicasCustomKey() || changed_settings.tryGet("parallel_replicas_custom_key");
 
     if (sql_security_type == SQLSecurityType::NONE)
     {

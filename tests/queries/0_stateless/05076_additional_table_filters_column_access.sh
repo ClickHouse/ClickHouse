@@ -12,9 +12,12 @@ T='prod_customer_token_25_8_secret'
 u_low="u_low_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_alias="u_alias_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_view="u_view_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+u_def="u_def_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+p_def="p_def_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 $CLICKHOUSE_CLIENT -n -q "
-DROP USER IF EXISTS $u_low, $u_alias, $u_view;
+DROP USER IF EXISTS $u_low, $u_alias, $u_view, $u_def;
+DROP SETTINGS PROFILE IF EXISTS $p_def;
 
 CREATE TABLE t (id UInt8, public_label String, secret_token String, tup Tuple(a String), alias_col String ALIAS secret_token) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t VALUES (1, 'customer_1', 'prod_customer_token_25_8_secret', ('ta')), (2, 'customer_2', 'other_customer_private_token', ('tb'));
@@ -33,6 +36,11 @@ CREATE VIEW pv_def SQL SECURITY DEFINER DEFINER = CURRENT_USER AS SELECT id, pub
 CREATE USER $u_low IDENTIFIED WITH plaintext_password BY 'password';
 CREATE USER $u_alias IDENTIFIED WITH plaintext_password BY 'password';
 CREATE USER $u_view IDENTIFIED WITH plaintext_password BY 'password';
+-- The definer's profile activates custom-key parallel replicas, so the invoker only has to supply the key.
+CREATE USER $u_def IDENTIFIED WITH plaintext_password BY 'password';
+CREATE SETTINGS PROFILE $p_def SETTINGS cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling' TO $u_def;
+GRANT SELECT ON $DB.t TO $u_def;
+CREATE VIEW v_def_prof SQL SECURITY DEFINER DEFINER = $u_def AS SELECT id, public_label FROM t;
 
 GRANT SELECT(id, public_label) ON $DB.t TO $u_low;
 GRANT SELECT(id, public_label) ON $DB.d TO $u_low;
@@ -42,6 +50,7 @@ GRANT SELECT(alias_col) ON $DB.t TO $u_alias;
 GRANT SELECT ON $DB.v_def TO $u_view;
 GRANT SELECT ON $DB.v_def_shadow TO $u_view;
 GRANT SELECT ON $DB.v_none_shadow TO $u_view;
+GRANT SELECT ON $DB.v_def_prof TO $u_view;
 GRANT SELECT(id, public_label) ON $DB.pv_def TO $u_low;
 "
 
@@ -138,25 +147,32 @@ run "$u_view" "SELECT count() FROM v_def SETTINGS enable_analyzer=$analyzer, clu
 echo "-- analyzer=$analyzer: 24 none view, filter keyed by underlying table over denied column"
 run "$u_view" "SELECT count() FROM v_none_shadow SETTINGS enable_analyzer=$analyzer, additional_table_filters = {'$DB.t': 'secret_token = ''$T'''}"
 
+# The invoker's context does not activate custom-key parallel replicas, so the outer query never applies the key.
+# The definer's profile activates them inside the body, where the invoker's key over the denied column would be
+# evaluated as the definer: replica 1 of 2 would keep only the row with the real secret and the count would be 1.
+echo "-- analyzer=$analyzer: 25 definer view, custom key supplied by the invoker, activated by the definer's profile"
+run "$u_view" "SELECT count() FROM v_def_prof SETTINGS enable_analyzer=$analyzer, parallel_replicas_count = 2, parallel_replica_offset = 1, parallel_replicas_custom_key = 'secret_token = ''$T'''"
+
 done
 
 # The analyzer resolves a parameterized view as a table function node wrapping the view storage, and the filter
 # access check has a dedicated branch for it. The legacy interpreter does not apply additional_table_filters
 # keyed by a parameterized view at all, so these cases are analyzer-only.
-echo "-- analyzer=1: 25 definer parameterized view, filter over denied view column"
+echo "-- analyzer=1: 26 definer parameterized view, filter over denied view column"
 run "$u_low" "SELECT count() FROM pv_def(min_id = 1) SETTINGS enable_analyzer=1, additional_table_filters = {'pv_def': 'secret_token = ''$T'''}"
 
-echo "-- analyzer=1: 26 definer parameterized view, qualified key, filter over denied view column"
+echo "-- analyzer=1: 27 definer parameterized view, qualified key, filter over denied view column"
 run "$u_low" "SELECT count() FROM pv_def(min_id = 1) SETTINGS enable_analyzer=1, additional_table_filters = {'$DB.pv_def': 'secret_token = ''$T'''}"
 
-echo "-- analyzer=1: 27 definer parameterized view, filter over granted view column"
+echo "-- analyzer=1: 28 definer parameterized view, filter over granted view column"
 run "$u_low" "SELECT count() FROM pv_def(min_id = 1) SETTINGS enable_analyzer=1, additional_table_filters = {'pv_def': 'public_label = ''customer_1'''}"
 
-echo "-- analyzer=1: 28 definer parameterized view, no filter"
+echo "-- analyzer=1: 29 definer parameterized view, no filter"
 run "$u_low" "SELECT count() FROM pv_def(min_id = 1) SETTINGS enable_analyzer=1"
 
 $CLICKHOUSE_CLIENT -n -q "
 DROP VIEW IF EXISTS pv_def;
+DROP VIEW IF EXISTS v_def_prof;
 DROP VIEW IF EXISTS v_none_shadow;
 DROP VIEW IF EXISTS v_def_shadow;
 DROP VIEW IF EXISTS v_def;
@@ -164,7 +180,8 @@ DROP VIEW IF EXISTS v_inv;
 DROP TABLE IF EXISTS d3;
 DROP TABLE IF EXISTS d;
 DROP TABLE IF EXISTS t;
-DROP USER IF EXISTS $u_low, $u_alias, $u_view;
+DROP USER IF EXISTS $u_low, $u_alias, $u_view, $u_def;
+DROP SETTINGS PROFILE IF EXISTS $p_def;
 "
 
 rm -f "$err_file"

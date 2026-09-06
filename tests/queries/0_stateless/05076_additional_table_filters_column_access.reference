@@ -46,6 +46,8 @@ UNKNOWN_IDENTIFIER
 1
 -- analyzer=1: 24 none view, filter keyed by underlying table over denied column
 2
+-- analyzer=1: 25 definer view, custom key supplied by the invoker, activated by the definer's profile
+2
 -- analyzer=0: 01 control
 ACCESS_DENIED
 -- analyzer=0: 02 filter over denied column
@@ -94,11 +96,13 @@ UNKNOWN_IDENTIFIER
 1
 -- analyzer=0: 24 none view, filter keyed by underlying table over denied column
 2
--- analyzer=1: 25 definer parameterized view, filter over denied view column
+-- analyzer=0: 25 definer view, custom key supplied by the invoker, activated by the definer's profile
+2
+-- analyzer=1: 26 definer parameterized view, filter over denied view column
 ACCESS_DENIED
--- analyzer=1: 26 definer parameterized view, qualified key, filter over denied view column
+-- analyzer=1: 27 definer parameterized view, qualified key, filter over denied view column
 ACCESS_DENIED
--- analyzer=1: 27 definer parameterized view, filter over granted view column
+-- analyzer=1: 28 definer parameterized view, filter over granted view column
 1
--- analyzer=1: 28 definer parameterized view, no filter
+-- analyzer=1: 29 definer parameterized view, no filter
 2
