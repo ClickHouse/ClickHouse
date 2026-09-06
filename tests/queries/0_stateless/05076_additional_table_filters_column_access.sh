@@ -26,6 +26,9 @@ CREATE VIEW v_def SQL SECURITY DEFINER DEFINER = CURRENT_USER AS SELECT id, publ
 -- and must not be re-evaluated over the table inside the DEFINER/NONE body.
 CREATE VIEW v_def_shadow SQL SECURITY DEFINER DEFINER = CURRENT_USER AS SELECT id, public_label, '' AS secret_token FROM t;
 CREATE VIEW v_none_shadow SQL SECURITY NONE AS SELECT id, public_label, '' AS secret_token FROM t;
+-- The DEFINER body reads secret_token from t as the definer, so the view's own column-level grants are the only
+-- gate for a filter keyed by the parameterized view.
+CREATE VIEW pv_def SQL SECURITY DEFINER DEFINER = CURRENT_USER AS SELECT id, public_label, secret_token FROM t WHERE id >= {min_id:UInt8};
 
 CREATE USER $u_low IDENTIFIED WITH plaintext_password BY 'password';
 CREATE USER $u_alias IDENTIFIED WITH plaintext_password BY 'password';
@@ -39,6 +42,7 @@ GRANT SELECT(alias_col) ON $DB.t TO $u_alias;
 GRANT SELECT ON $DB.v_def TO $u_view;
 GRANT SELECT ON $DB.v_def_shadow TO $u_view;
 GRANT SELECT ON $DB.v_none_shadow TO $u_view;
+GRANT SELECT(id, public_label) ON $DB.pv_def TO $u_low;
 "
 
 err_file="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.err"
@@ -136,7 +140,23 @@ run "$u_view" "SELECT count() FROM v_none_shadow SETTINGS enable_analyzer=$analy
 
 done
 
+# The analyzer resolves a parameterized view as a table function node wrapping the view storage, and the filter
+# access check has a dedicated branch for it. The legacy interpreter does not apply additional_table_filters
+# keyed by a parameterized view at all, so these cases are analyzer-only.
+echo "-- analyzer=1: 25 definer parameterized view, filter over denied view column"
+run "$u_low" "SELECT count() FROM pv_def(min_id = 1) SETTINGS enable_analyzer=1, additional_table_filters = {'pv_def': 'secret_token = ''$T'''}"
+
+echo "-- analyzer=1: 26 definer parameterized view, qualified key, filter over denied view column"
+run "$u_low" "SELECT count() FROM pv_def(min_id = 1) SETTINGS enable_analyzer=1, additional_table_filters = {'$DB.pv_def': 'secret_token = ''$T'''}"
+
+echo "-- analyzer=1: 27 definer parameterized view, filter over granted view column"
+run "$u_low" "SELECT count() FROM pv_def(min_id = 1) SETTINGS enable_analyzer=1, additional_table_filters = {'pv_def': 'public_label = ''customer_1'''}"
+
+echo "-- analyzer=1: 28 definer parameterized view, no filter"
+run "$u_low" "SELECT count() FROM pv_def(min_id = 1) SETTINGS enable_analyzer=1"
+
 $CLICKHOUSE_CLIENT -n -q "
+DROP VIEW IF EXISTS pv_def;
 DROP VIEW IF EXISTS v_none_shadow;
 DROP VIEW IF EXISTS v_def_shadow;
 DROP VIEW IF EXISTS v_def;
