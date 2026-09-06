@@ -2204,6 +2204,37 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     query_plan.addStep(std::move(filter_step));
 }
 
+/// Replace a header that holds nothing but row-count-only columns (or no column at all) with one
+/// canonical materialized marker, so that the row count has a column to live in.
+void addRowCountMarkerStepIfNeeded(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
+{
+    ColumnIdentifierSet row_count_only_identifiers;
+    for (const auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
+    {
+        if (const auto & column_identifier = table_expression_data.getRowCountOnlyColumnIdentifier())
+            row_count_only_identifiers.insert(*column_identifier);
+    }
+
+    if (row_count_only_identifiers.empty())
+        return;
+
+    const auto & header = query_plan.getCurrentHeader();
+    for (const auto & column : *header)
+    {
+        if (!row_count_only_identifiers.contains(column.name))
+            return;
+    }
+
+    ActionsDAG marker_dag(header->getNamesAndTypesList());
+    auto marker_type = std::make_shared<DataTypeUInt8>();
+    marker_dag.getOutputs()
+        = {&marker_dag.materializeNode(marker_dag.addColumn(marker_type->createColumnConst(0, 0u), marker_type, "__row_count_marker"))};
+
+    auto marker_step = std::make_unique<ExpressionStep>(header, std::move(marker_dag));
+    marker_step->setStepDescription("Row count marker for zero-column mergeable state");
+    query_plan.addStep(std::move(marker_step));
+}
+
 void addReadFromQueryResultCacheStep(
     QueryPlan & query_plan,
     std::unique_ptr<SourceFromChunks> source,
@@ -3047,6 +3078,11 @@ void Planner::buildPlanForQueryNode()
         // For additional_result_filter setting
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
+
+    /// A header carrying nothing but row-count-only columns cannot express "N rows" across a
+    /// mergeable-stage boundary, and both sides must derive the same header.
+    if (!query_processing_info.isFinalizingStage() && query_plan.isInitialized())
+        addRowCountMarkerStepIfNeeded(query_plan, planner_context);
 
     const auto & client_info = query_context->getClientInfo();
 
