@@ -24,6 +24,9 @@ INSERT INTO t VALUES (1, 'customer_1', 'prod_customer_token_25_8_secret', ('ta')
 CREATE TABLE d (id UInt8, public_label String, secret_token String) ENGINE = Distributed(test_shard_localhost, currentDatabase(), t);
 CREATE TABLE d3 (id UInt8, public_label String, secret_token String) ENGINE = Distributed(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t);
 CREATE VIEW v_inv SQL SECURITY INVOKER AS SELECT id, public_label FROM t;
+-- A trivial view over the one-shard, three-replica Distributed table: the analyzer can inline the body and
+-- read d3 directly (optimize_trivial_view_pushdown_to_distributed), so the custom key is shipped to the replicas.
+CREATE VIEW v_inv_d3 SQL SECURITY INVOKER AS SELECT id, public_label FROM d3;
 CREATE VIEW v_def SQL SECURITY DEFINER DEFINER = CURRENT_USER AS SELECT id, public_label FROM t;
 -- The view column secret_token shadows the denied table column: a custom key over it resolves on the view,
 -- and must not be re-evaluated over the table inside the DEFINER/NONE body.
@@ -46,6 +49,7 @@ GRANT SELECT(id, public_label) ON $DB.t TO $u_low;
 GRANT SELECT(id, public_label) ON $DB.d TO $u_low;
 GRANT SELECT(id, public_label) ON $DB.d3 TO $u_low;
 GRANT SELECT ON $DB.v_inv TO $u_low;
+GRANT SELECT ON $DB.v_inv_d3 TO $u_low;
 GRANT SELECT(alias_col) ON $DB.t TO $u_alias;
 GRANT SELECT ON $DB.v_def TO $u_view;
 GRANT SELECT ON $DB.v_def_shadow TO $u_view;
@@ -170,6 +174,16 @@ run "$u_low" "SELECT count() FROM pv_def(min_id = 1) SETTINGS enable_analyzer=1,
 echo "-- analyzer=1: 29 definer parameterized view, no filter"
 run "$u_low" "SELECT count() FROM pv_def(min_id = 1) SETTINGS enable_analyzer=1"
 
+# The pushdown replaces the read from the view with a read from d3; the key must be checked against d3 there too.
+echo "-- analyzer=1: 30 trivial view over the replicas, pushdown, custom key over denied column"
+run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM v_inv_d3) SETTINGS enable_analyzer=1, optimize_trivial_view_pushdown_to_distributed = 1, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'secret_token = ''$T'''"
+
+echo "-- analyzer=1: 31 trivial view over the replicas, pushdown, custom key over granted column"
+run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM v_inv_d3) SETTINGS enable_analyzer=1, optimize_trivial_view_pushdown_to_distributed = 1, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'id'"
+
+echo "-- analyzer=1: 32 trivial view over the replicas, no pushdown, custom key over denied column"
+run "$u_low" "SELECT sum(c) FROM (SELECT count() AS c FROM v_inv_d3) SETTINGS enable_analyzer=1, optimize_trivial_view_pushdown_to_distributed = 0, max_parallel_replicas = 3, allow_experimental_parallel_reading_from_replicas = 1, parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'secret_token = ''$T'''"
+
 $CLICKHOUSE_CLIENT -n -q "
 DROP VIEW IF EXISTS pv_def;
 DROP VIEW IF EXISTS v_def_prof;
@@ -177,6 +191,7 @@ DROP VIEW IF EXISTS v_none_shadow;
 DROP VIEW IF EXISTS v_def_shadow;
 DROP VIEW IF EXISTS v_def;
 DROP VIEW IF EXISTS v_inv;
+DROP VIEW IF EXISTS v_inv_d3;
 DROP TABLE IF EXISTS d3;
 DROP TABLE IF EXISTS d;
 DROP TABLE IF EXISTS t;

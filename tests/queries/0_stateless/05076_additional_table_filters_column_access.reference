@@ -106,3 +106,9 @@ ACCESS_DENIED
 1
 -- analyzer=1: 29 definer parameterized view, no filter
 2
+-- analyzer=1: 30 trivial view over the replicas, pushdown, custom key over denied column
+ACCESS_DENIED
+-- analyzer=1: 31 trivial view over the replicas, pushdown, custom key over granted column
+2
+-- analyzer=1: 32 trivial view over the replicas, no pushdown, custom key over denied column
+ACCESS_DENIED

@@ -2296,6 +2296,24 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 checkAccessRightsForFilter(dist_filter_query_tree, dist_table_node, inner_context);
                             }
 
+                            /// The pushed-down read goes through `StorageDistributed::read` under inner_context, which
+                            /// ships `parallel_replicas_custom_key` to the replicas as a filter over the columns of the
+                            /// `Distributed` table. The check for a direct `Distributed` read above only ran for the
+                            /// view's own storage, so repeat it here for the table the read is actually handed to. For
+                            /// `SQL SECURITY NONE` the override context has already dropped the invoker's key, so the
+                            /// check is a no-op there.
+                            const auto & underlying_dist_cluster = *underlying_dist->as<const StorageDistributed &>().getCluster();
+                            if (inner_context->canUseParallelReplicasCustomKeyForCluster(underlying_dist_cluster))
+                            {
+                                auto custom_key_ast = parseCustomKeyForTable(
+                                    inner_context->getSettingsRef()[Setting::parallel_replicas_custom_key], *inner_context);
+                                checkAccessRightsForFilter(
+                                    buildFilterQueryTree(
+                                        custom_key_ast, std::static_pointer_cast<ITableExpressionNode>(dist_table_node), inner_context),
+                                    dist_table_node,
+                                    inner_context);
+                            }
+
                             /// Replace the view's table expression in the outer query with the
                             /// inlined inner query tree. StorageDistributed will then replace
                             /// the distributed table node (now deep inside the subquery) with
