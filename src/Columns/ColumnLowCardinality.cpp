@@ -7,10 +7,14 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <base/types.h>
 #include <base/sort.h>
 #include <base/scope_guard.h>
+
+#include <bit>
+#include <limits>
 
 
 namespace DB
@@ -30,6 +34,28 @@ void throwUnexpectedLowCardinalityIndexType(size_t size)
 
 namespace
 {
+    bool dictionaryHasFloatingPointValues(const IColumnUnique & dictionary)
+    {
+        return WhichDataType(dictionary.getNestedNotNullableColumn()->getDataType()).isFloat();
+    }
+
+    template <typename T, typename UInt>
+    UInt64 getCanonicalFloatingPointBits(T value)
+    {
+        if (value == T{})
+            return 0;
+        if (isNaN(value))
+            return std::numeric_limits<UInt>::max();
+        return std::bit_cast<UInt>(value);
+    }
+
+    UInt64 getCanonicalFloatingPointBits(const IColumnUnique & dictionary, size_t index)
+    {
+        if (WhichDataType(dictionary.getNestedNotNullableColumn()->getDataType()).isFloat64())
+            return getCanonicalFloatingPointBits<Float64, UInt64>(dictionary.getFloat64(index));
+        return getCanonicalFloatingPointBits<Float32, UInt32>(dictionary.getFloat32(index));
+    }
+
     void checkColumn(const IColumn & column)
     {
         if (!dynamic_cast<const IColumnUnique *>(&column))
@@ -251,7 +277,7 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
         empty()
         && low_cardinality_src->isSharedDictionary()
         && getDictionary().nestedColumnIsNullable() == low_cardinality_src->getDictionary().nestedColumnIsNullable()
-        && !WhichDataType(low_cardinality_src->getDictionary().getNestedNotNullableColumn()->getDataType()).isFloat()
+        && !dictionaryHasFloatingPointValues(low_cardinality_src->getDictionary())
         && getDictionary().structureEquals(low_cardinality_src->getDictionary()))
         setSharedDictionary(low_cardinality_src->getDictionaryPtr());
 
@@ -442,7 +468,7 @@ size_t ColumnLowCardinality::getEqualRangeEndAssumeSorted(size_t begin, size_t e
     /// dictionary built from deserialized data is not canonicalized (insert-time canonicalization unifies the
     /// NaNs of freshly inserted data, but does not apply when reading back, and -0.0 is not unified at all), so
     /// it can hold such value-equal entries separately. So for a floating-point inner type we compare values.
-    if (WhichDataType(getDictionary().getNestedNotNullableColumn()->getDataType()).isFloat())
+    if (dictionaryHasFloatingPointValues(getDictionary()))
         return IColumn::getEqualRangeEndAssumeSorted(begin, end, nan_direction_hint);
 
     /// We only require equal values to be contiguous. If the column is sorted, then equal values are contiguous.
@@ -454,6 +480,10 @@ bool ColumnLowCardinality::hasEqualValues() const
 {
     if (getDictionary().size() <= 1)
         return true;
+
+    /// This method is also used to skip hash-based scattering, for example when partitioning `MergeTree` blocks.
+    /// Floating-point values that compare equal can have distinct hashes, so only equal dictionary indexes prove
+    /// that all rows can safely take the same hash-based path.
     return getIndexes().hasEqualValues();
 }
 
@@ -692,12 +722,25 @@ size_t ColumnLowCardinality::estimateCardinalityInPermutedRange(const Permutatio
         return range_size;
 
     HashSet<UInt64> elements;
+    const bool compare_values = dictionaryHasFloatingPointValues(getDictionary());
+    bool has_null = false;
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
-        UInt64 index = getIndexes().getUInt(permutation[i]);
-        elements.insert(index);
+        const UInt64 index = getIndexes().getUInt(permutation[i]);
+        if (!compare_values)
+        {
+            elements.insert(index);
+        }
+        else if (getDictionary().isNullAt(index))
+        {
+            has_null = true;
+        }
+        else
+        {
+            elements.insert(getCanonicalFloatingPointBits(getDictionary(), index));
+        }
     }
-    return elements.size();
+    return elements.size() + has_null;
 }
 
 VectorWithMemoryTracking<MutableColumnPtr> ColumnLowCardinality::scatter(size_t num_columns, const Selector & selector) const
