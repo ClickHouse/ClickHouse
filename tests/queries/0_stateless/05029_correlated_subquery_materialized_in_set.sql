@@ -10,6 +10,7 @@
 
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
+SET enable_materialized_cte = 1;
 
 -- { echoOn }
 
@@ -65,5 +66,38 @@ FROM (EXPLAIN PLAN SELECT (SELECT x) FROM (SELECT arrayJoin([1, 2, 3]) AS x GROU
 
 SELECT countIf(explain LIKE '%CreatingSet (Create set for subquery)%') AS builders, countIf(explain LIKE '%DelayedCreatingSets%') AS placeholders, countIf(explain LIKE '%CreatingSets (Create sets before main query execution)%') AS set_gates
 FROM (EXPLAIN PLAN SELECT (SELECT x) FROM (SELECT arrayJoin([1, 2, 3]) AS x GROUP BY x, x IN (SELECT 2)) SETTINGS correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_default_join_kind = 'left');
+
+-- A set whose source reads a MATERIALIZED CTE must be built after the CTE is materialized. The set
+-- gate is attached over the whole plan, so it has to stay under the CTE gate.
+WITH mat AS MATERIALIZED (SELECT 2 AS y)
+SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT y FROM mat) AS m GROUP BY x, m)) ORDER BY s
+SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
+
+WITH mat AS MATERIALIZED (SELECT 2 AS y)
+SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT y FROM mat) AS m GROUP BY x, m)) ORDER BY s
+SETTINGS correlated_subqueries_use_in_memory_buffer = 1;
+
+-- A non-right decorrelation join kind takes the same path with the buffer setting left at its default.
+WITH mat AS MATERIALIZED (SELECT 2 AS y)
+SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT y FROM mat) AS m GROUP BY x, m)) ORDER BY s
+SETTINGS correlated_subqueries_default_join_kind = 'left';
+
+-- The same CTE read both inside the duplicated body and outside it: one writer, readers on both
+-- sides of the set gate.
+WITH mat AS MATERIALIZED (SELECT 2 AS y)
+SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT y FROM mat) AS m GROUP BY x, m)) AS t WHERE s IN (SELECT y FROM mat) ORDER BY s
+SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
+
+WITH mat AS MATERIALIZED (SELECT 2 AS y)
+SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT y FROM mat) AS m GROUP BY x, m)) AS t WHERE s IN (SELECT y FROM mat) ORDER BY s
+SETTINGS correlated_subqueries_use_in_memory_buffer = 1;
+
+-- The ordering is structural: the CTE gate stays at the plan root, matched without a leading
+-- wildcard because only the root step is unindented, and the set gate sits under it.
+SELECT countIf(explain LIKE 'MaterializingCTEs%') AS cte_gate_at_root, countIf(explain LIKE '%CreatingSets (Create sets before main query execution)%') AS set_gates
+FROM (EXPLAIN PLAN WITH mat AS MATERIALIZED (SELECT 2 AS y) SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT y FROM mat) AS m GROUP BY x, m)) SETTINGS correlated_subqueries_use_in_memory_buffer = 0);
+
+SELECT countIf(explain LIKE 'MaterializingCTEs%') AS cte_gate_at_root, countIf(explain LIKE '%CreatingSets (Create sets before main query execution)%') AS set_gates
+FROM (EXPLAIN PLAN WITH mat AS MATERIALIZED (SELECT 2 AS y) SELECT * FROM (SELECT (SELECT x) AS s, m FROM (SELECT arrayJoin([1, 2, 3]) AS x, x IN (SELECT y FROM mat) AS m GROUP BY x, m)) SETTINGS correlated_subqueries_use_in_memory_buffer = 1);
 
 -- { echoOff }
