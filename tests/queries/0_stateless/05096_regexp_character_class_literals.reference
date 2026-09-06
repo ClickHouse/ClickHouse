@@ -14,6 +14,10 @@ the same over a table, where the prefilter is used
 5
 a pattern with a non-constant needle takes the same path
 3
+the replaceRegexpAll to replaceRegexpOne rewrite sees the alternation
+ZZZ
+ZZZ
+3
 ordinary classes still prefilter the same way
 2
 2

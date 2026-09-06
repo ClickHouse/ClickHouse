@@ -29,6 +29,14 @@ SELECT countIf(match(s, 'abc[[]|')) FROM t_regexp_class;
 SELECT 'a pattern with a non-constant needle takes the same path';
 SELECT count() FROM t_regexp_class WHERE match(s, concat('[]a', materialize(']b')));
 
+-- The same tracker decides whether `optimize_rewrite_regexp_functions` may turn `replaceRegexpAll`
+-- into `replaceRegexpOne`: it declines for a pattern with a top-level alternation, and with the
+-- alternation hidden the rewrite dropped every match after the first.
+SELECT 'the replaceRegexpAll to replaceRegexpOne rewrite sees the alternation';
+SELECT replaceRegexpAll(materialize('[[a'), '[[]|a$', 'Z');
+SELECT replaceRegexpAll(materialize('[[a'), '[[]|a$', 'Z') SETTINGS optimize_rewrite_regexp_functions = 0;
+SELECT countMatches(materialize('[[a'), '[[]|a$');
+
 SELECT 'ordinary classes still prefilter the same way';
 SELECT count() FROM t_regexp_class WHERE match(s, '[az]b');
 SELECT countIf(match(s, '[az]b')) FROM t_regexp_class;
