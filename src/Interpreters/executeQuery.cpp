@@ -153,6 +153,7 @@ namespace ProfileEvents
     extern const Event ASTFuzzerQueries;
     extern const Event ASTFuzzerSkippedBackupRestore;
     extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
+    extern const Event ASTFuzzerSkippedCollaborativeWorker;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -3391,6 +3392,17 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     if (context->getClientInfo().is_replicated_database_internal || context->getZooKeeperMetadataTransaction())
     {
         ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedReplicatedDDLInternal);
+        return;
+    }
+
+    /// A collaborative worker's context holds a replica identity and a coordination channel that belong
+    /// to the initiator's in-flight read, not to this query, and both are copied into the fuzz context:
+    /// merge_tree_all_ranges_callback plus number_of_current_replica for a parallel replicas participant,
+    /// next_task_callback for a cluster function worker. Fuzzing here re-enters that channel under a
+    /// borrowed replica number. The initiator still fuzzes its own client query.
+    if (context->getClientInfo().collaborate_with_initiator)
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedCollaborativeWorker);
         return;
     }
 
