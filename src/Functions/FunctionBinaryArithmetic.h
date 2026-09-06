@@ -3842,12 +3842,17 @@ public:
             // Division is undefined at zero, so we must not report monotonicity:
             // - divide(const, x) or intDiv(const, x) at x = 0 (right_arg_is_zero)
             // - divide(x, 0) or intDiv(x, 0) where the constant divisor is 0 (right_const_is_zero)
+            // Only division reads these, and an IP-tagged `Field` cannot be compared with a number.
             bool is_div_function = name_view == "divide" || name_view == "intDiv";
-            bool right_arg_is_zero = left.column && isColumnConst(*left.column) && accurateEquals(left_point, Field(0));
-            bool right_const_is_zero = right.column && isColumnConst(*right.column) && accurateEquals((*right.column)[0], Field(0));
+            if (is_div_function)
+            {
+                bool right_arg_is_zero = left.column && isColumnConst(*left.column) && accurateEquals(left_point, Field(0));
+                bool right_const_is_zero
+                    = right.column && isColumnConst(*right.column) && accurateEquals((*right.column)[0], Field(0));
 
-            if (is_div_function && (right_arg_is_zero || right_const_is_zero))
-                return {false, true, false, false};
+                if (right_arg_is_zero || right_const_is_zero)
+                    return {false, true, false, false};
+            }
 
             return {true, true, false, false};
         }
@@ -4018,11 +4023,15 @@ public:
             const auto & const_side = (right.column && isColumnConst(*right.column)) ? right : left;
             if (const_side.column && isColumnConst(*const_side.column))
             {
-                auto constant = (*const_side.column)[0];
+                /// Compared against numbers below, so an IP operand must be substituted first.
+                auto constant = getArithmeticField((*const_side.column)[0]);
                 if (accurateEquals(constant, Field(0)))
                     return {true, true, false, false}; /// x * 0 is constant, trivially monotonic but not strict
 
                 auto ret_type = removeNullable(removeLowCardinality(return_type));
+
+                const Field left_normalized = getArithmeticField(left_point);
+                const Field right_normalized = getArithmeticField(right_point);
 
                 bool is_constant_positive = accurateLess(Field(0), constant);
 
@@ -4081,8 +4090,8 @@ public:
 
                 auto overflows = [&]<typename T>(std::type_identity<T> tag)
                 {
-                    return check_overflow(left_point, constant, tag)
-                        || check_overflow(right_point, constant, tag);
+                    return check_overflow(left_normalized, constant, tag)
+                        || check_overflow(right_normalized, constant, tag);
                 };
 
                 WhichDataType which(ret_type->getTypeId());
