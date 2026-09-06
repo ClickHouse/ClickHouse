@@ -16,7 +16,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Sinks/NullSink.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -42,7 +41,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -102,22 +100,6 @@ namespace FailPoints
 {
 extern const char nats_pause_before_building_insert_pipeline[];
 }
-
-namespace
-{
-
-/// The insert pipeline `InterpreterInsertQuery` builds for a streaming table without dependent views
-/// ends in a `NullSinkToStorage`: it discards what is inserted rather than failing, see
-/// `InsertDependenciesBuilder::createChainWithDependencies`.
-bool insertsNowhere(const QueryPipeline & pipeline)
-{
-    return std::ranges::any_of(
-        pipeline.getProcessors(),
-        [](const auto & processor) { return typeid_cast<const NullSinkToStorage *>(processor.get()) != nullptr; });
-}
-
-}
-
 
 StorageNATS::StorageNATS(
     const StorageID & table_id_,
@@ -905,11 +887,16 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
 
     /// `threadFunc` streams only while the table has dependent views, but the interpreter looks them
     /// up again, and a `DROP VIEW` landing in between leaves it with nowhere to insert into: the
-    /// pipeline it builds then discards whatever the sources consume, and the acknowledgement below
+    /// pipeline it builds then discards whatever the sources consume (see
+    /// `InsertDependenciesBuilder::createChainWithDependencies`), and the acknowledgement below
     /// would confirm to the broker messages that were never inserted anywhere. Such a cycle must not
     /// consume anything. What the consumers hold goes back to the broker when the next cycle finds
     /// the last view gone and unsubscribes them.
-    if (insertsNowhere(block_io.pipeline))
+    /// This is decided by the dependency metadata, not by the shape of the pipeline: a view the
+    /// interpreter did find is share-locked for the lifetime of the pipeline, so it is still a
+    /// dependency here, and a materialized view whose target is `Null` legitimately ends in the
+    /// same discarding sink while being a view the table streams to.
+    if (DatabaseCatalog::instance().getDependentViews(getStorageID()).empty())
     {
         LOG_DEBUG(log, "The last materialized view was dropped while the streaming cycle was being prepared, nothing to stream to");
         return true;
