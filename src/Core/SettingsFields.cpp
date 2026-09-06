@@ -559,7 +559,19 @@ void SettingFieldURI::readBinary(ReadBuffer & in)
 {
     String str;
     readStringBinary(str, in);
-    *this = Poco::URI{str};
+    *this = parseURI(str);
+}
+
+Poco::URI SettingFieldURI::parseURI(const String & str)
+{
+    try
+    {
+        return Poco::URI{str};
+    }
+    catch (const Poco::SyntaxException & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse URI: {}", e.displayText());
+    }
 }
 
 

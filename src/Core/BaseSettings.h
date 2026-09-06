@@ -42,6 +42,11 @@ struct BaseSettingsHelpers
     static void warningSettingNotFound(std::string_view name);
     static void flushWarnings();
 
+    /// The value as it is echoed in the "while setting '<name>' to value <value>" context of a rejected value.
+    /// A URI-typed setting may carry basic-auth credentials, so a password of the form `scheme://user:password@`
+    /// is masked the same way it is masked in queries.
+    static String formatValueForErrorMessage(const Field & value);
+
     /// Serialization helpers
     static void writeString(std::string_view str, WriteBuffer & out);
     static String readString(ReadBuffer & in);
@@ -413,10 +418,28 @@ void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
-        accessor.setValue(*this, index, value);
-    else
+    /// An unknown name is resolved outside the block that adds the context: its message already names
+    /// the setting (and suggests a correction), so nothing has to be added to it.
+    const size_t index = accessor.find(name);
+    if (index == static_cast<size_t>(-1))
+    {
         getCustomSetting(name) = value;
+        return;
+    }
+
+    /// A value of the wrong type or out of range is reported by the setting field itself, which does not
+    /// know its own name: `SETTINGS max_threads = 'abc'` used to say only "Cannot parse input: expected
+    /// 'eof' before: 'abc'", and `SETTINGS max_block_size = 0` only "A setting's value has to be greater
+    /// than 0". Name the setting and the value, the way `stringToValueUtil` already does.
+    try
+    {
+        accessor.setValue(*this, index, value);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while setting '{}' to value {}", name, BaseSettingsHelpers::formatValueForErrorMessage(value));
+        throw;
+    }
 }
 
 template <typename TTraits>
@@ -643,12 +666,27 @@ Field BaseSettings<TTraits>::castValueUtil(std::string_view name, const Field & 
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    const size_t index = accessor.find(name);
+    if (index == static_cast<size_t>(-1))
+    {
+        if constexpr (Traits::allow_custom_settings)
+            return value;
+        else
+            BaseSettingsHelpers::throwSettingNotFound(name);
+    }
+
+    /// This is where a value given in a `SETTINGS` clause or by `SET` is checked, so it is where the
+    /// message for a value of the wrong type or out of range is produced. The setting field itself does
+    /// not know its own name, so name it here, the way `stringToValueUtil` already does.
+    try
+    {
         return accessor.castValueUtil(index, value);
-    if constexpr (Traits::allow_custom_settings)
-        return value;
-    else
-        BaseSettingsHelpers::throwSettingNotFound(name);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while setting '{}' to value {}", name, BaseSettingsHelpers::formatValueForErrorMessage(value));
+        throw;
+    }
 }
 
 template <typename TTraits>

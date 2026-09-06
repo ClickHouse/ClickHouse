@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# The message comes from the setting's field, which does not know its own name, so a value of the wrong
+# type or out of range used to be reported without saying which setting was being set.
+# `UInt64` prints as `unsigned long` on Linux and as `unsigned long long` on macOS, so the type name in
+# the out-of-range message is normalized to the former.
+run()
+{
+    echo "--- $1"
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "$1" 2>&1 \
+        | grep -m1 -oE 'Code: [0-9]+\. DB::Exception: .*' \
+        | sed -e 's/^Code: \([0-9]*\)\. DB::Exception: /Code: \1. /' \
+              -e 's/: While executing .*//' -e 's/ (version [^)]*)$//' \
+              -e 's/unsigned long long/unsigned long/'
+}
+
+echo '=== a value of the wrong type or out of range names the setting and the value'
+run "SELECT 1 SETTINGS max_threads = 'abc'"
+run "SELECT 1 SETTINGS max_threads = -1"
+run "SELECT 1 SETTINGS max_block_size = 0"
+run "SELECT 1 SETTINGS max_memory_usage = '10 elephants'"
+run "SET max_threads = 'abc'"
+
+echo
+echo '=== a malformed URI is rejected the same way: it names the setting, and a password in the value is masked'
+# `Poco::URI` reports a malformed string with its own exception type, which used to escape without the
+# name of the setting. The setting may carry basic-auth credentials, which must not be echoed back.
+run "SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://['"
+run "SET format_avro_schema_registry_url = 'http://['"
+run "SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://user:s3cret@['"
+echo "password echoed: $(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://user:s3cret@['" 2>&1 | grep -c 's3cret')"
+
+echo
+echo '=== an unknown setting keeps the message it had, with no context appended'
+# The text of that message depends on whether custom-setting prefixes are configured, so assert the two
+# things that matter: the hint survives, and no ": while setting ..." is appended to it.
+unknown=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "SELECT 1 SETTINGS max_threadz = 4" 2>&1)
+echo "code: $(echo "$unknown" | grep -oE 'UNKNOWN_SETTING' | head -1)"
+echo "hint: $(echo "$unknown" | grep -oE "Maybe you meant \['max_threads'\]" | head -1)"
+echo "context appended: $(echo "$unknown" | grep -c 'while setting')"
+
+echo
+echo '=== values that are fine still work'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "SELECT 1 SETTINGS max_threads = 4"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "SELECT 1 SETTINGS max_memory_usage = '1G'"
