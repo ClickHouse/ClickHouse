@@ -13,6 +13,7 @@ class Element
         this.children = [];
         this.style = {};
         this.listeners = {};
+        this.classList = { add() {}, remove() {} };
     }
     appendChild(child)
     {
@@ -101,6 +102,26 @@ async function main()
     assert.ok(graph.children.some(frame => frame.textContent.includes('Frame display limit')));
     assert.equal(api.freshFlameGraphState().types.size, 0);
     console.log('PASS DOM frame budget and independent fresh query state');
+
+    const Result = vm.runInNewContext('(class {'
+        + extract("    clear()\n    {\n        /// This result's rows", '    /// Select a cell and move keyboard focus to it.')
+        + '})', { hideImagePreviewOwnedBy() {}, clearTimeout() {}, freshFlameGraphState: api.freshFlameGraphState });
+    const result = new Result();
+    for (const field of ['_dataTable', '_graph', '_chart', '_dataUnparsed', '_error', '_dataDiv', '_pager', '_logsContent',
+        '_flameGraph', '_flameStatus', '_metricsTable', '_metricsBody', '_resultGroup', '_logsDiv', '_metricsDiv',
+        '_flameDiv', '_viewToggle', '_btnLogs', '_btnResult'])
+        result[field] = new Element();
+    result._clearElement = element => element.replaceChildren();
+    result._clearImage = () => {};
+    result._view = 'flame';
+    result._flameDiv.style.display = 'block';
+    result._flame_data = state;
+    result.clear();
+    assert.equal(result._view, 'result');
+    assert.equal(result._resultGroup.style.display, '');
+    assert.equal(result._flameDiv.style.display, 'none');
+    assert.equal(result._flame_data.types.size, 0);
+    console.log('PASS clearing a flame view restores only the result view and discards profiler samples');
     console.log('All scenarios passed');
 }
 
