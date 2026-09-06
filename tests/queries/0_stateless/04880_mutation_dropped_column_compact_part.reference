@@ -1,0 +1,28 @@
+compact
+part_type	Compact
+h_has_files_before	1
+h_in_part_not_in_metadata	1
+unfinished_mutations	0
+unknown_identifier_failures	0
+rows_sum_digest	100	5050	3316964675657091280
+h_has_files_after	0
+wide
+part_type	Wide
+h_has_files_before	1
+h_in_part_not_in_metadata	1
+unfinished_mutations	0
+unknown_identifier_failures	0
+rows_sum_digest	100	5050	3316964675657091280
+h_has_files_after	0
+materialize ttl only drop parts
+ttl_part_type	Compact
+ttl_rows_survive	100
+ttl_h_in_part_not_in_metadata	1
+ttl_unfinished_mutations	0
+ttl_unknown_identifier_failures	0
+ttl_rows_digest	100	10902439880810631721
+ttl_h_has_files_after	0
+column still in metadata
+unfinished_mutations	0
+b_type	Int64
+rows_sum	100	4950
