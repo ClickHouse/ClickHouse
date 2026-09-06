@@ -7,6 +7,11 @@
 
 SET prefer_localhost_replica = 0;
 
+-- Pinned off: with a serialized plan the `Merge` gets an empty header for its `Distributed` child
+-- at `FetchColumns`, so on master every query over this shape already fails with
+-- `THERE_IS_NO_COLUMN` - a set-free `PREWHERE k < 4` included. #113413 covers that, not this test.
+SET serialize_query_plan = 0;
+
 CREATE TABLE t_fc_u (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE t_fc_i (k UInt64, v Int64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_fc_u SELECT number, number FROM numbers(4);
