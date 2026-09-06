@@ -307,10 +307,12 @@ CREATE TABLE system.errors
     `last_error_format_string` String,
     `last_error_trace` Array(UInt64),
     `remote` UInt8,
-    `query_id` String
+    `query_id` String,
+    `last_error_symbols` Array(LowCardinality(String)),
+    `last_error_lines` Array(LowCardinality(String))
 )
 ENGINE = SystemErrors
-COMMENT 'Contains a list of all errors which have ever happened including the error code, last time and message with unsymbolized stacktrace.'
+COMMENT 'Contains a list of all errors which have ever happened including the error code, last time, message, the raw address stacktrace and its symbolized function names and source locations.'
 CREATE TABLE system.events
 (
     `event` String,
