@@ -191,7 +191,7 @@ const QuotaTypeInfo & QuotaTypeInfo::get(QuotaType type)
         case QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS:
         {
             static const auto info = make_info(
-                "FAILED_SEQUENTIAL_AUtheNTICATIONS",
+                "FAILED_SEQUENTIAL_AUTHENTICATIONS",
                 "The current number of consecutive authentication failures within the current period of time.",
                 "The maximum number of consecutive authentication failures allowed within the specified period of time.",
                 1

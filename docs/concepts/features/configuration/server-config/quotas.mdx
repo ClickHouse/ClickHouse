@@ -113,6 +113,25 @@ Here are the amounts that can be restricted:
 
 `queries_per_normalized_hash` – The maximum number of executions of any single normalized query. Normalized queries are queries with literals replaced by placeholders, so `SELECT 1` and `SELECT 2` are considered the same normalized query. This limit is tracked per distinct normalized query pattern independently.
 
+In addition to the predefined amounts above, a limit can be set on any profile event (see the [system.events](/reference/system-tables/events) table) by using the event name as the tag, for example:
+
+```xml
+<interval>
+    <duration>86400</duration>
+    <!-- At most 100000 S3 GET requests and 50 failed queries per day. -->
+    <S3GetObject>100000</S3GetObject>
+    <FailedQuery>50</FailedQuery>
+</interval>
+```
+
+The same can be expressed with the DDL syntax:
+
+```sql
+CREATE QUOTA s3_reads FOR INTERVAL 1 day MAX S3GetObject = 100000, FailedQuery = 50 TO my_user;
+```
+
+Unlike the predefined amounts, profile events are accounted once per query, at the moment the query finishes (successfully or with an error): a query that crosses the limit is still allowed to finish, and subsequent queries are rejected until the interval ends. The consumption is reported in the `profile_events` column of the [system.quotas_usage](/reference/system-tables/quotas_usage) table. Profile events accumulated outside of queries (for example, by background merges) are not charged to quotas.
+
 If the limit is exceeded for at least one time interval, an exception is thrown with a text about which restriction was exceeded, for which interval, and when the new interval begins (when queries can be sent again).
 
 <Note>

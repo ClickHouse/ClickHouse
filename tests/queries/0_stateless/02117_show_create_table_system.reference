@@ -867,7 +867,8 @@ CREATE TABLE system.quota_limits
     `max_execution_time` Nullable(Float64),
     `max_written_bytes` Nullable(UInt64),
     `max_failed_sequential_authentications` Nullable(UInt64),
-    `max_queries_per_normalized_hash` Nullable(UInt64)
+    `max_queries_per_normalized_hash` Nullable(UInt64),
+    `max_profile_events` Map(String, UInt64)
 )
 ENGINE = SystemQuotaLimits
 COMMENT 'Contains information about maximums for all intervals of all quotas. Any number of rows or zero can correspond to specific quota.'
@@ -901,7 +902,9 @@ CREATE TABLE system.quota_usage
     `failed_sequential_authentications` Nullable(UInt64),
     `max_failed_sequential_authentications` Nullable(UInt64),
     `queries_per_normalized_hash` Nullable(UInt64),
-    `max_queries_per_normalized_hash` Nullable(UInt64)
+    `max_queries_per_normalized_hash` Nullable(UInt64),
+    `profile_events` Map(String, UInt64),
+    `max_profile_events` Map(String, UInt64)
 )
 ENGINE = SystemQuotaUsage
 COMMENT 'Contains quota usage by the current user: how much is used and how much is left.'
@@ -951,7 +954,9 @@ CREATE TABLE system.quotas_usage
     `failed_sequential_authentications` Nullable(UInt64),
     `max_failed_sequential_authentications` Nullable(UInt64),
     `queries_per_normalized_hash` Nullable(UInt64),
-    `max_queries_per_normalized_hash` Nullable(UInt64)
+    `max_queries_per_normalized_hash` Nullable(UInt64),
+    `profile_events` Map(String, UInt64),
+    `max_profile_events` Map(String, UInt64)
 )
 ENGINE = SystemQuotasUsage
 COMMENT 'Contains quota usage by all users.'

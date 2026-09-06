@@ -8,6 +8,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <base/range.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -199,6 +200,23 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
                 interval.max[quota_type_i] = *limits.max[quota_type_i];
             interval.used[quota_type_i] = 0;
         }
+
+        interval.profile_event_limits.reserve(limits.profile_events_max.size());
+        for (const auto & [event_name, event_max] : limits.profile_events_max)
+        {
+            auto event = ProfileEvents::tryGetByName(event_name);
+            if (!event)
+            {
+                /// The quota may have been written by a version with a different set of profile
+                /// events. The unknown limit is preserved in the definition but has no effect.
+                LOG_WARNING(getLogger("QuotaCache"), "Quota {} defines a limit over an unknown profile event {}; this limit is ignored",
+                    backQuote(quota->getName()), backQuote(event_name));
+                continue;
+            }
+            auto & entry = interval.profile_event_limits.emplace_back();
+            entry.event = *event;
+            entry.max = event_max;
+        }
     }
 
     /// Order intervals by durations from largest to smallest.
@@ -234,6 +252,16 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
                 new_interval.used[quota_type_i].store(current_interval.used[quota_type_i].load());
                 new_interval.end_of_interval.store(current_interval.end_of_interval.load());
             }
+
+            /// The sets of limited profile events may differ; keep the consumption of the events
+            /// present in both. (The lists are tiny - only explicitly mentioned events are there.)
+            for (auto & new_limit : new_interval.profile_event_limits)
+                for (const auto & old_limit : current_interval.profile_event_limits)
+                    if (old_limit.event == new_limit.event)
+                    {
+                        new_limit.used.store(old_limit.used.load());
+                        break;
+                    }
         }
         it->second = new_intervals;
     }
@@ -418,11 +446,20 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_c
         new_quotas->push_back(std::move(single));
     }
 
+    /// Whether any governing quota defines limits over profile events. For NORMALIZED_QUERY_HASH
+    /// keyed quotas the session-level intervals are built from the same limits as the per-hash
+    /// ones, so checking the session intervals covers them too.
+    bool has_profile_event_limits = false;
+    for (const auto & single : *new_quotas)
+        for (const auto & interval : single->intervals->intervals)
+            has_profile_event_limits |= !interval.profile_event_limits.empty();
+
     /// Publish the new set: store `quotas` (always non-null, possibly empty) before updating the
     /// `empty` flag, so a concurrent reader never observes `empty == false` with a stale set.
     bool is_empty = new_quotas->empty();
     enabled.quotas.store(new_quotas);
     enabled.empty = is_empty;
+    enabled.has_profile_event_limits = has_profile_event_limits;
 }
 
 

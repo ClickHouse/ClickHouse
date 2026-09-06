@@ -37,6 +37,84 @@ struct EnabledQuota::Impl
     }
 
 
+    [[noreturn]] static void throwQuotaExceedForProfileEvent(
+        const String & user_name,
+        const String & quota_name,
+        ProfileEvents::Event event,
+        QuotaValue used,
+        QuotaValue max,
+        std::chrono::seconds duration,
+        std::chrono::system_clock::time_point end_of_interval)
+    {
+        throw Exception(ErrorCodes::QUOTA_EXCEEDED, "Quota for user {} for {} has been exceeded: {} = {}/{}. "
+                        "Interval will end at {}. Name of quota template: {}",
+                        backQuote(user_name), to_string(duration),
+                        ProfileEvents::getName(event), used, max,
+                        to_string(end_of_interval), backQuote(quota_name));
+    }
+
+
+    static void usedProfileEvents(
+        const String & user_name,
+        const Intervals & intervals,
+        const ProfileEvents::Counters::Snapshot & counters,
+        std::chrono::system_clock::time_point current_time,
+        bool check_exceeded)
+    {
+        for (const auto & interval : intervals.intervals)
+        {
+            for (const auto & limit : interval.profile_event_limits)
+            {
+                QuotaValue value = counters[limit.event];
+                if (!value)
+                    continue;
+
+                QuotaValue used = (limit.used += value);
+                QuotaValue max = limit.max;
+                if (!max)
+                    continue;
+
+                if (used > max)
+                {
+                    bool counters_were_reset = false;
+                    auto end_of_interval = interval.getEndOfInterval(current_time, counters_were_reset);
+                    if (counters_were_reset)
+                        used = (limit.used += value);
+
+                    if (check_exceeded && (used > max))
+                        throwQuotaExceedForProfileEvent(user_name, intervals.quota_name, limit.event, used, max, interval.duration, end_of_interval);
+                }
+            }
+        }
+    }
+
+
+    static void checkExceededProfileEvents(
+        const String & user_name,
+        const Intervals & intervals,
+        std::chrono::system_clock::time_point current_time)
+    {
+        for (const auto & interval : intervals.intervals)
+        {
+            for (const auto & limit : interval.profile_event_limits)
+            {
+                QuotaValue used = limit.used;
+                QuotaValue max = limit.max;
+                if (!max)
+                    continue;
+
+                if (used > max)
+                {
+                    bool counters_were_reset = false;
+                    auto end_of_interval = interval.getEndOfInterval(current_time, counters_were_reset);
+                    if (!counters_were_reset)
+                        throwQuotaExceedForProfileEvent(user_name, intervals.quota_name, limit.event, used, max, interval.duration, end_of_interval);
+                }
+            }
+        }
+    }
+
+
     static void used(
         const String & user_name,
         const Intervals & intervals,
@@ -137,6 +215,7 @@ struct EnabledQuota::Impl
     {
         for (auto quota_type : collections::range(QuotaType::MAX))
             checkExceeded(user_name, intervals, quota_type, current_time);
+        checkExceededProfileEvents(user_name, intervals, current_time);
     }
 
     static std::chrono::system_clock::duration randomDuration(std::chrono::seconds max)
@@ -191,6 +270,7 @@ EnabledQuota::Interval & EnabledQuota::Interval::operator =(const Interval & src
         max[quota_type_i] = src.max[quota_type_i];
         used[quota_type_i].store(src.used[quota_type_i].load());
     }
+    profile_event_limits = src.profile_event_limits;
 
     /// Copy per-hash map.
     /// Use std::scoped_lock to acquire both mutexes with deadlock avoidance,
@@ -248,6 +328,9 @@ std::chrono::system_clock::time_point EnabledQuota::Interval::getEndOfInterval(s
     {
         boost::range::fill(used, 0);
 
+        for (const auto & limit : profile_event_limits)
+            limit.used.store(0);
+
         /// Also clear per-hash counters.
         {
             std::lock_guard lock(per_hash_mutex);
@@ -283,6 +366,9 @@ std::optional<QuotaUsage> EnabledQuota::Intervals::getUsage(std::chrono::system_
                 out.max[quota_type_i] = in.max[quota_type_i];
             out.used[quota_type_i] = in.used[quota_type_i];
         }
+        out.profile_events.reserve(in.profile_event_limits.size());
+        for (const auto & limit : in.profile_event_limits)
+            out.profile_events.push_back({.event = limit.event, .used = limit.used.load(), .max = limit.max});
     }
     return usage;
 }
@@ -425,6 +511,36 @@ void EnabledQuota::usedForQuery(UInt64 normalized_query_hash, std::initializer_l
             continue;
         for (const auto & usage : usages)
             Impl::used(getUserName(), *target, usage.first, usage.second, current_time, check_exceeded);
+    }
+}
+
+
+void EnabledQuota::usedProfileEvents(UInt64 normalized_query_hash, const ProfileEvents::Counters::Snapshot & counters, bool check_exceeded) const
+{
+    if (empty)
+        return;
+    auto loaded = quotas.load();
+    auto current_time = std::chrono::system_clock::now();
+    for (const auto & quota : *loaded)
+    {
+        auto target = resolveTargetIntervals(*quota, normalized_query_hash);
+        if (target)
+            Impl::usedProfileEvents(getUserName(), *target, counters, current_time, check_exceeded);
+    }
+}
+
+
+void EnabledQuota::checkExceededProfileEvents(UInt64 normalized_query_hash) const
+{
+    if (!hasProfileEventLimits())
+        return;
+    auto loaded = quotas.load();
+    auto current_time = std::chrono::system_clock::now();
+    for (const auto & quota : *loaded)
+    {
+        auto target = resolveTargetIntervals(*quota, normalized_query_hash);
+        if (target)
+            Impl::checkExceededProfileEvents(getUserName(), *target, current_time);
     }
 }
 
