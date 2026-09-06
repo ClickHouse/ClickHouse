@@ -163,8 +163,14 @@ public:
         return argument_types_[0];
     }
 
-    /// Parameters are non-semantic here and never reach the serialized state, so parameterized and
-    /// parameterless states share one representation and stay Merge-/CAST-compatible.
+    /// `argMin` and `argMax` accept parameters but never read them: the parameters are not part of
+    /// the state's identity and never reach the serialized state, so parameterized and parameterless
+    /// states share one representation and stay Merge-/CAST-compatible.
+    DataTypePtr getStateType() const override
+    {
+        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, Array{});
+    }
+
     DataTypePtr getNormalizedStateType() const override
     {
         DataTypes normalized_argument_types;
