@@ -28,6 +28,8 @@ namespace DB
 /// Double quote the string.
 String doubleQuoteString(std::string_view x);
 
+String doubleQuoteStringSQLite(std::string_view x);
+
 /// Quote the identifier with backquotes.
 String backQuote(std::string_view x);
 

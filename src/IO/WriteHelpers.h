@@ -642,6 +642,19 @@ inline void writeQuotedStringSQLite(std::string_view ref, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
+/// SQLite identifiers: a " is escaped by doubling it; every other byte, backslash included, is literal.
+inline void writeDoubleQuotedStringSQLite(std::string_view ref, WriteBuffer & buf)
+{
+    writeChar('"', buf);
+    for (char c : ref)
+    {
+        if (c == '"')
+            writeChar('"', buf);
+        writeChar(c, buf);
+    }
+    writeChar('"', buf);
+}
+
 inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
 {
     writeAnyQuotedString<'"'>(s, buf);
