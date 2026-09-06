@@ -83,7 +83,6 @@ protected:
 
     virtual void consume(Chunk chunk) = 0;
     virtual void generate() = 0;
-    virtual void serialize();
 
     SortDescription description;
     size_t max_merged_block_size;
@@ -103,7 +102,6 @@ protected:
     {
         Consume = 0,
         Generate,
-        Serialize,
     };
 
     Stage stage = Stage::Consume;
@@ -118,7 +116,6 @@ protected:
 
 private:
     Status prepareConsume();
-    Status prepareSerialize();
     Status prepareGenerate();
 };
 
