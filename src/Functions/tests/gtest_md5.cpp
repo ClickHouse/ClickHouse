@@ -19,6 +19,10 @@
 namespace
 {
 
+using StrChars = DB::ColumnString::Chars;
+using StrOffsets = DB::ColumnString::Offsets;
+using FixedChars = DB::ColumnFixedString::Chars;
+
 std::string digestToHex(const uint8_t * digest)
 {
     std::ostringstream oss;
@@ -129,6 +133,11 @@ struct ScalarMD5Trait
     {
         DB::TargetSpecific::Default::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
     }
+
+    static void computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
+    {
+        DB::TargetSpecific::Default::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
+    }
 };
 
 #if defined(__AVX2__)
@@ -143,6 +152,11 @@ struct AVX2MD5Trait
     static void compute(const uint8_t * const inputs[], const size_t lengths[], uint8_t * output, size_t actual_count)
     {
         DB::TargetSpecific::Default::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
+    }
+
+    static void computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
+    {
+        DB::TargetSpecific::Default::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
     }
 };
 
@@ -165,6 +179,11 @@ struct AVX512MD5Trait
     {
         DB::TargetSpecific::x86_64_v4::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
     }
+
+    static void computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
+    {
+        DB::TargetSpecific::x86_64_v4::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
+    }
 };
 
 #endif
@@ -181,6 +200,11 @@ struct ASIMDMD5Trait
     static void compute(const uint8_t * const inputs[], const size_t lengths[], uint8_t * output, size_t actual_count)
     {
         DB::TargetSpecific::Default::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
+    }
+
+    static void computeColumn(const StrChars & data, const StrOffsets & offsets, FixedChars & chars_to, size_t rows)
+    {
+        DB::TargetSpecific::Default::md5BatchColumnString<Ops>(data, offsets, chars_to, rows);
     }
 };
 
@@ -412,6 +436,159 @@ TYPED_TEST(MD5MultiBufTest, StressRandom)
             }
         }
     }
+}
+
+
+// ============================================================
+// Driver-level test. The driver groups rows by block count inside a window, and a server run reaches
+// only the one Ops width runtime dispatch picks; a gtest reaches every width this build compiles.
+// ============================================================
+
+enum class ColumnShape
+{
+    Spread, /// wide block-count spread: profitable in every window
+    Flat, /// constant length: the column-level gate declines
+    Mixed, /// spread first half, constant second half: windows decide differently
+    Periodic, /// one long row per window, all at the same offset: no window can gain
+    AboveCapHalf, /// one-block first half, above-the-cap second half: the second half reaches stage 2
+    LeadingSpread, /// one spread window, then constant length: only the first window can gain
+    MidSpread, /// the only window that can gain sits at the unclamped last probe index, behind declining ones
+};
+
+std::vector<std::string> makeTestColumn(ColumnShape shape, size_t rows)
+{
+    std::mt19937_64 rng(0x5eed5eed5eed5eedULL); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
+    std::vector<std::string> out;
+    out.reserve(rows);
+
+    /// `p * whole_windows / MD5_GROUP_PROBE_WINDOWS` at p = P - 1, deliberately WITHOUT the clamp
+    /// `md5GroupingPays` applies: a row count that leaves this at or below MD5_GROUP_DECLINE_BUDGET has
+    /// the screen probe the gainable window, and one that leaves it past the bound does not.
+    constexpr size_t window = DB::TargetSpecific::Default::MD5_GROUP_WINDOW;
+    const size_t gain_window = (DB::TargetSpecific::Default::MD5_GROUP_PROBE_WINDOWS - 1) * (rows / window)
+        / DB::TargetSpecific::Default::MD5_GROUP_PROBE_WINDOWS;
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        bool spread = shape == ColumnShape::Spread || (shape == ColumnShape::Mixed && i < rows / 2)
+            || (shape == ColumnShape::LeadingSpread && i < DB::TargetSpecific::Default::MD5_GROUP_WINDOW)
+            || (shape == ColumnShape::MidSpread && i / window == gain_window);
+
+        size_t len = 64;
+        if (spread)
+        {
+            /// 0 / 1..40 / 200..500 / 4000..4200 bytes is 1 / 1 / 4..8 / 63..66 blocks, so rows on
+            /// both sides of the 64-block histogram cap are present.
+            switch (rng() % 10)
+            {
+                case 0: len = 0; break;
+                case 1: case 2: case 3: case 4: case 5: case 6: len = 1 + rng() % 40; break;
+                case 7: case 8: len = 200 + rng() % 301; break;
+                default: len = 4000 + rng() % 201; break;
+            }
+        }
+        else if (shape == ColumnShape::Periodic)
+        {
+            /// 4100 B is 65 blocks and 1..40 B is one, so every window holds one long row and 1023
+            /// short ones, and its own rows can save at most one iteration per batch boundary.
+            len = i % DB::TargetSpecific::Default::MD5_GROUP_WINDOW == 0 ? 4100 : 1 + rng() % 40;
+        }
+        else if (shape == ColumnShape::AboveCapHalf)
+        {
+            /// 4550 B is 72 blocks, the fewest for which the capped bound passes while the true counts
+            /// tie, so the second half's windows are placed and then declined on their exact score.
+            len = i < rows / 2 ? 20 : 4550;
+        }
+
+        std::string s(len, '\0');
+        for (size_t k = 0; k < len; ++k)
+            s[k] = static_cast<char>('a' + (rng() % 26));
+        out.push_back(std::move(s));
+    }
+
+    return out;
+}
+
+/// Digests are the same whichever order the rows are hashed in, so which order ran is only visible
+/// through these counters. Asserting them is what makes a test notice grouping silently stopping.
+template <typename Trait>
+void checkColumnMD5(ColumnShape shape, size_t rows, size_t expect_grouped, size_t expect_declined)
+{
+    const auto inputs = makeTestColumn(shape, rows);
+
+    auto col = DB::ColumnString::create();
+    for (const auto & s : inputs)
+        col->insertData(s.data(), s.size());
+
+    const ProfileEvents::Count grouped_before = ProfileEvents::global_counters[ProfileEvents::MD5GroupedRows];
+    const ProfileEvents::Count declined_before = ProfileEvents::global_counters[ProfileEvents::MD5GroupingDeclinedRows];
+
+    FixedChars digests;
+    digests.resize(rows * 16);
+    Trait::computeColumn(col->getChars(), col->getOffsets(), digests, rows);
+
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::MD5GroupedRows] - grouped_before, expect_grouped)
+        << "rows hashed in grouped order";
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::MD5GroupingDeclinedRows] - declined_before, expect_declined)
+        << "rows admitted by the column screen and then hashed in column order";
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const std::string expected = referenceMD5Hex(inputs[i]);
+        const std::string got = digestToHex(reinterpret_cast<const uint8_t *>(digests.data()) + i * 16);
+        if (expected != got)
+            FAIL() << "\nrow " << i << " of " << rows << ", length " << inputs[i].size() << "\n  expected: " << expected
+                   << "\n  got:      " << got;
+    }
+}
+
+TYPED_TEST(MD5MultiBufTest, ColumnBlockCountGrouping)
+{
+    /// 8192 rows clears the column screen's row minimum at every Ops width, and Mixed's halves are
+    /// window-aligned, so its windows split into grouped and declining ones.
+    checkColumnMD5<TypeParam>(ColumnShape::Spread, 8192, 8192, 0);
+    checkColumnMD5<TypeParam>(ColumnShape::Flat, 8192, 0, 0);
+    checkColumnMD5<TypeParam>(ColumnShape::Mixed, 8192, 4096, 4096);
+}
+
+TYPED_TEST(MD5MultiBufTest, ColumnBlockCountGroupingPartialWindow)
+{
+    /// 8709 is neither a multiple of the window nor of any batch width, so the last window is short and
+    /// its last grouped batch holds fewer rows than there are lanes.
+    checkColumnMD5<TypeParam>(ColumnShape::Spread, 8709, 8709, 0);
+}
+
+TYPED_TEST(MD5MultiBufTest, ColumnScreenPeriodicLengths)
+{
+    /// One long row per window, all at the same offset: no window's own rows can save enough to group,
+    /// so the column screen must decline and neither counter may fire.
+    checkColumnMD5<TypeParam>(ColumnShape::Periodic, 8192, /*grouped*/ 0, /*declined*/ 0);
+}
+
+TYPED_TEST(MD5MultiBufTest, ColumnGroupingDeclinedAfterPlacement)
+{
+    /// Rows above the histogram cap all tie, so the bound passes and the placement is the identity:
+    /// these windows are declined on their exact score, which is the only path that reaches it.
+    checkColumnMD5<TypeParam>(ColumnShape::AboveCapHalf, 8192, /*grouped*/ 0, /*declined*/ 8192);
+}
+
+TYPED_TEST(MD5MultiBufTest, ColumnGroupingDeclineBudget)
+{
+    /// Only the first window gains: the screen admits the column on it, and the constant-length ones
+    /// each decline. The counters must sum to less than the 14300 rows, because scoring stops once
+    /// declining windows outrun grouped ones and the rest is hashed unscored. 14300 leaves that rest a
+    /// partial batch wide on the wider kernels, so its trailing short batch is covered too.
+    checkColumnMD5<TypeParam>(ColumnShape::LeadingSpread, 14300, /*grouped*/ 1024, /*declined*/ 10240);
+}
+
+TYPED_TEST(MD5MultiBufTest, ColumnScreenProbesOnlyReachableWindows)
+{
+    /// Window w is entered with at most w declines behind it, so the decline budget cannot skip a
+    /// window at or below it. 16385 rows put MidSpread's gainable window at that bound, where the
+    /// screen probes it and the driver groups it; 18433 rows put it one past, where the screen does
+    /// not probe it and the column runs in order having scored nothing.
+    checkColumnMD5<TypeParam>(ColumnShape::MidSpread, 16385, /*grouped*/ 1024, /*declined*/ 10240);
+    checkColumnMD5<TypeParam>(ColumnShape::MidSpread, 18433, /*grouped*/ 0, /*declined*/ 0);
 }
 
 } // anonymous namespace
