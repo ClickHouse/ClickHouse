@@ -136,6 +136,10 @@ private:
         ContextPtr settings_context;
         std::unordered_set<String> recursive;
         std::unordered_set<String> plain;
+        /// The recursive names whose `WITH` element is being walked. Inside its own definition a
+        /// recursive name is visible at any depth whatever the setting says: `QueryAnalyzer` binds
+        /// the recursive table in the member's own scope rather than looking it up as a CTE.
+        std::unordered_set<String> defining;
     };
 
     /// Innermost last. A `deque` keeps references valid while inner scopes are pushed and popped.
@@ -172,6 +176,19 @@ private:
         std::unordered_set<String>::node_type node;
     };
 
+    /// Marks a recursive name as being defined for the object's lifetime.
+    struct DefiningAlias
+    {
+        DefiningAlias(Scope & scope_, const String & name_) : scope(scope_), name(name_) { scope.defining.insert(name); }
+        ~DefiningAlias() { scope.defining.erase(name); }
+
+        DefiningAlias(const DefiningAlias &) = delete;
+        DefiningAlias & operator=(const DefiningAlias &) = delete;
+
+        Scope & scope;
+        const String name;
+    };
+
     static void appendSettings(SettingsChanges & changes, const ASTSelectQuery & select);
 
     /// The settings in effect at `select`, and whether a plain `WITH` alias of an enclosing
@@ -181,17 +198,18 @@ private:
     /// The scope whose binding of `name` is in effect, or nullptr when it is not an alias.
     Scope * findScopeDeclaring(const String & name) const
     {
-        bool plain_visible = true;
+        bool inherited_visible = true;
         for (auto it = scopes.rbegin(); it != scopes.rend(); ++it)
         {
-            /// A recursive name is visible in its own definition, which is a nested `SELECT`.
-            if (it->recursive.contains(name))
+            /// A recursive name is visible everywhere inside its own definition, whose
+            /// self-reference sits in a nested `SELECT`.
+            if (it->defining.contains(name))
                 return &*it;
-            if (plain_visible && it->plain.contains(name))
+            /// Outside its definition a name, plain or recursive, is visible in the declaring
+            /// `SELECT`, and reaches a nested one only when every scope in between inherits.
+            if (inherited_visible && (it->plain.contains(name) || it->recursive.contains(name)))
                 return &*it;
-            /// A plain name of an enclosing `SELECT` reaches this one only when every scope in
-            /// between inherits.
-            plain_visible = plain_visible && it->inherit_from_outer;
+            inherited_visible = inherited_visible && it->inherit_from_outer;
         }
         return nullptr;
     }
@@ -227,18 +245,31 @@ private:
         const ASTPtr with = select.with();
         if (with)
         {
-            /// A recursive alias is visible inside its own definition, a plain one is not.
+            /// Every name is registered before any element is walked, as `QueryAnalyzer` does, so
+            /// an element may reference a later one. Inside its own definition a plain name still
+            /// denotes a table, so it is masked while its element is walked; a recursive name
+            /// references itself there.
+            auto & names = select.recursive_with ? scope.recursive : scope.plain;
+            for (const auto & child : with->children)
+                if (const auto * with_element = child->as<ASTWithElement>())
+                    names.insert(with_element->name);
+
             for (auto & child : with->children)
             {
-                if (!select.recursive_with)
-                    visit(child);
-                if (typeid_cast<ASTWithElement *>(child.get()))
+                const auto * with_element = child->as<ASTWithElement>();
+                if (!with_element)
                 {
-                    const auto & name = child->as<ASTWithElement>()->name;
-                    if (select.recursive_with)
-                        scope.recursive.insert(name);
-                    else
-                        scope.plain.insert(name);
+                    visit(child);
+                }
+                else if (select.recursive_with)
+                {
+                    DefiningAlias defining_alias(scope, with_element->name);
+                    visit(child);
+                }
+                else
+                {
+                    MaskedAlias masked_alias(scope, with_element->name);
+                    visit(child);
                 }
             }
         }
@@ -248,7 +279,7 @@ private:
 
         for (auto & child : select.children)
         {
-            if (select.recursive_with || child != with)
+            if (child != with)
                 visit(child);
         }
 

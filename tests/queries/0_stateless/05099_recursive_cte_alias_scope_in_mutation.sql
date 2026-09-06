@@ -317,4 +317,57 @@ ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
     WHERE id = 1 SETTINGS mutations_sync = 2;
 SELECT 'C32', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
 
+-- A plain CTE may reference a later one: every name is registered before any element is walked,
+-- as the analyzer does, so `b` inside `a` is the CTE (7) and not the table (9 in the session
+-- database, 19 in the updated table's), both live and after the definition is parsed again.
+CREATE TABLE b (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO b VALUES (9);
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.b (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.b VALUES (19);
+CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v14 AS
+    WITH a AS (SELECT * FROM b), b AS (SELECT 7 AS x) SELECT * FROM a;
+SELECT 'W10', x FROM {CLICKHOUSE_DATABASE_1:Identifier}.v14;
+DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.v14;
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.v14;
+SELECT 'W11', x FROM {CLICKHOUSE_DATABASE_1:Identifier}.v14;
+
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (WITH a AS (SELECT max(x) AS x FROM b), b AS (SELECT 7 AS x) SELECT x FROM a)
+    WHERE id = 1 SETTINGS mutations_sync = 2;
+SELECT 'W12', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
+-- The reverse order still resolves the same way (7).
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (WITH b AS (SELECT 7 AS x), a AS (SELECT max(x) AS x FROM b) SELECT x FROM a)
+    WHERE id = 1 SETTINGS mutations_sync = 2;
+SELECT 'C33', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
+-- Without `enable_global_with_statement` the body of `a` is a nested SELECT that does not see
+-- the sibling `b`, so there it denotes the updated table's `b` (19).
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (WITH a AS (SELECT max(x) AS x FROM b), b AS (SELECT 7 AS x) SELECT x FROM a)
+    WHERE id = 1 SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
+SELECT 'C34', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
+-- Outside its own definition a recursive name is an ordinary CTE of the declaring SELECT: without
+-- `enable_global_with_statement` a nested consumer does not see it and reads the updated table's
+-- `src` (2), while in the declaring SELECT itself the name is the alias (7) either way.
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (WITH RECURSIVE src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src)) WHERE id = 1
+    SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
+SELECT 'W13', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (WITH RECURSIVE src AS (SELECT 7 AS id) SELECT max(id) FROM src) WHERE id = 1
+    SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
+SELECT 'C35', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
+-- Inside its own definition the recursive name stays visible at any depth, so a self-reference
+-- two SELECTs down still builds 1..4 rather than reading the table.
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
+    UPDATE v = (WITH RECURSIVE src AS (SELECT 1 AS id UNION ALL SELECT id + 1 FROM (SELECT id FROM src) WHERE id < 4)
+                SELECT sum(id) FROM src) WHERE id = 1
+    SETTINGS mutations_sync = 2, enable_global_with_statement = 0;
+SELECT 'C36', v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
+
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
