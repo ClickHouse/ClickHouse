@@ -1,0 +1,16 @@
+has_prefetching_concat_final
+1
+no_prefetching_residual_filter_final
+0	1
+residual_filter_final_correctness
+1	1
+no_prefetching_aggregation_in_order_final
+0	1
+aggregation_in_order_final_correctness
+1	1
+no_prefetching_limit_by_in_order_final
+0	1
+limit_by_in_order_final_correctness
+1
+lazy_final_inner_join_correctness
+1

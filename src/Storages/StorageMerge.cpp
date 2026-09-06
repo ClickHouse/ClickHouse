@@ -58,6 +58,7 @@
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
@@ -833,6 +834,36 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
     pushed_down_filters.push_back(std::move(filter));
 }
 
+/// Mirrors the `passed_residual_cpu_step` check that `optimizeReadInOrder` does for a direct
+/// `ReadFromMergeTree`, but for the child plans of a `Merge` table. The residual filter of the outer
+/// query is pushed *into* the child plan, above the child read, where `PrefetchingConcatProcessor`
+/// would collapse the streams and serialize it. The outer pass cannot see those steps - it only sees
+/// `ReadFromMerge` - so the check has to happen here.
+static void preferMultipleStreamsForResidualCPUWork(QueryPlan::Node * node, bool passed_residual_cpu_step)
+{
+    if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+    {
+        if (passed_residual_cpu_step)
+            read_from_merge_tree->setPreferMultipleStreams();
+        return;
+    }
+
+    /// Unlike `findReadingStep`, a non-trivial `ExpressionStep` is NOT counted here: only filters
+    /// of the outer query are pushed into the child plans, while its expressions (e.g. a monotonic
+    /// `ORDER BY` key) stay above `ReadFromMerge`, where `findReadingStep` sees them and forwards
+    /// the opt-out via `ReadFromMerge::setPreferMultipleStreams`. The child plans do contain
+    /// `ExpressionStep`s, but those are `ReadFromMerge`'s own plumbing added by
+    /// `convertAndFilterSourceStream` (header conversion with `materialize` / casts, alias
+    /// materialization, missing defaults) - counting them would disable
+    /// `PrefetchingConcatProcessor` for every `Merge` table read.
+    passed_residual_cpu_step = passed_residual_cpu_step
+        || typeid_cast<FilterStep *>(node->step.get()) != nullptr
+        || typeid_cast<ArrayJoinStep *>(node->step.get()) != nullptr;
+
+    for (auto * child : node->children)
+        preferMultipleStreamsForResidualCPUWork(child, passed_residual_cpu_step);
+}
+
 void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     filterTablesAndCreateChildrenPlans();
@@ -842,6 +873,15 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         pipeline.init(Pipe(std::make_shared<NullSource>(output_header)));
         return;
     }
+
+    /// Residual per-row work of the outer query is pushed *into* the child plans, above the child
+    /// reads, where `PrefetchingConcatProcessor` would collapse the streams and serialize it. Only
+    /// here are the child plans final (filter push-down runs after `requestReadingInOrder`), so this
+    /// is the earliest point at which the check can see those steps.
+    if (order_info)
+        for (const auto & child_plan : *child_plans)
+            if (child_plan.plan.isInitialized())
+                preferMultipleStreamsForResidualCPUWork(child_plan.plan.getRootNode(), /* passed_residual_cpu_step */ false);
 
     QueryPlanResourceHolder resources;
     VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines;
@@ -2312,6 +2352,24 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     order_info = order_info_;
     query_info.input_order_info = order_info;
     return true;
+}
+
+void ReadFromMerge::setPreferMultipleStreams()
+{
+    filterTablesAndCreateChildrenPlans();
+
+    /// The opt-out has to reach the child `ReadFromMergeTree` steps: it is their
+    /// `PrefetchingConcatProcessor` that would otherwise collapse a single-part filtered read into
+    /// a single stream and serialize the per-stream work above the `Merge` table.
+    auto prefer_multiple_streams = [](ReadFromMergeTree & read_from_merge_tree)
+    {
+        read_from_merge_tree.setPreferMultipleStreams();
+        return true;
+    };
+
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), prefer_multiple_streams);
 }
 
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)

@@ -200,6 +200,10 @@ public:
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
+    /// Forwards `ReadFromMergeTree::setPreferMultipleStreams` to every child reading step, so that
+    /// per-stream work installed above a `Merge` table is not serialized by the child reads.
+    void setPreferMultipleStreams();
+
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     QueryPlanRawPtrs getChildPlans() override;

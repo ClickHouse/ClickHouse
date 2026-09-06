@@ -177,6 +177,10 @@ public:
 
     void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_);
 
+    /// True when `pushLimitByIntoSort` attached a per-stream `LIMIT BY` hint to this sort.
+    /// See `addPerStreamLimitByIfNeeded`.
+    bool hasLimitByHint() const { return !limit_by_columns.empty(); }
+
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 

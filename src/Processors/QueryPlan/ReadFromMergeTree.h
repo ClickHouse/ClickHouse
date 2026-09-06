@@ -359,6 +359,10 @@ public:
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
+    void copyVirtualRowConversions(const ReadFromMergeTree & other)
+    {
+        virtual_row_conversion = other.virtual_row_conversion;
+    }
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
@@ -383,6 +387,21 @@ public:
     bool requestOutputEachPartitionThroughSeparatePortForCreatingSet();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
+
+    /// Signal that downstream needs multiple output streams (e.g. aggregation-in-order).
+    /// When set, PrefetchingConcatProcessor will not be used to avoid collapsing parallel streams.
+    void setPreferMultipleStreams() { prefer_multiple_streams = true; }
+    bool getPreferMultipleStreams() const { return prefer_multiple_streams; }
+
+    /// For optimizations that rebuild the reading step (e.g. lazy `FINAL`): carry over the fact that
+    /// reading in order was requested through `requestReadingInOrder`, together with the opt-outs
+    /// already stamped into `prefer_multiple_streams`, so the rebuilt read keeps the same
+    /// `PrefetchingConcatProcessor` eligibility as the original.
+    void setReadInOrderRequestedByPlanOptimizer() { read_in_order_requested_by_plan_optimizer = true; }
+    bool isReadInOrderRequestedByPlanOptimizer() const { return read_in_order_requested_by_plan_optimizer; }
+
+    void setQueryTaskSizeLimit(UInt64 query_task_size_limit_) { query_task_size_limit = query_task_size_limit_; }
+    UInt64 getQueryTaskSizeLimit() const { return query_task_size_limit; }
 
     /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY, DISTINCT and
     /// window functions.
@@ -552,6 +571,17 @@ private:
 
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
+
+    /// Set by aggregation-in-order optimizer to prevent PrefetchingConcat from collapsing streams.
+    bool prefer_multiple_streams = false;
+
+    /// True when reading in order was requested through `requestReadingInOrder` (the query-plan
+    /// optimizer entry points: `optimizeReadInOrder`, `applyOrder`, and `ReadFromMerge` forwarding).
+    /// The legacy path (`InterpreterSelectQuery` with `query_plan_read_in_order = 0`, including the
+    /// `query_info.order_optimizer` branch of `ReadFromMerge::createChildrenPlans`) sets
+    /// `query_info.input_order_info` directly instead, bypassing the opt-outs that stamp
+    /// `prefer_multiple_streams`; PrefetchingConcat must stay disabled there.
+    bool read_in_order_requested_by_plan_optimizer = false;
 
     PartitionIdToMaxBlockPtr max_block_numbers_to_read;
 
