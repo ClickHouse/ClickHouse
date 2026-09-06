@@ -299,6 +299,7 @@ TEST(ColumnArray, InsertManyFromNonAliasedString)
     ASSERT_NE(bulk->getDataPtr().get(), source->getDataPtr().get());
 
     bulk->insertManyFrom(*source, 1, 3);
+    bulk->insertManyFrom(*source, 2, 2);
     for (size_t i = 0; i < 3; ++i)
         scalar->insertFrom(*source, 1);
     for (size_t i = 0; i < 2; ++i)
