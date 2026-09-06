@@ -29,8 +29,7 @@ public:
     DatabaseBackup(const String & name, const String & metadata_path, const Configuration & config, ContextPtr context);
 
     /// Whether a locator arrived with the query being executed, or was read back from a definition
-    /// this server stored or an archive holds. Only a locator of the first kind reaches the server as
-    /// text no parser has accepted yet.
+    /// this server stored or an archive holds.
     enum class LocatorSource
     {
         Query,
@@ -47,11 +46,10 @@ public:
     /// function form such an argument holds, and any other argument unchanged; a string that does not
     /// decode is rejected without quoting it, because it carries credentials.
     /// Parses without limits: a stored definition must decode whatever was accepted when it was
-    /// written, and rejecting it here would leave a database that cannot be loaded or restored.
+    /// written, or the database it names can no longer be loaded.
     static ASTPtr normalizeLegacyLocator(const ASTPtr & locator);
 
-    /// As above, for a locator that arrived with `query_context`'s query. That text has not been
-    /// parsed before, so it is held to the parser limits of the session that sent it.
+    /// As above, under the parser and tree limits of `query_context`'s session.
     static ASTPtr normalizeLegacyLocatorFromQuery(const ASTPtr & locator, const ContextPtr & query_context);
 
     String getEngineName() const override { return "Backup"; }

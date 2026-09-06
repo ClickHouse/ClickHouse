@@ -64,6 +64,8 @@ namespace Setting
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_ast_depth;
+    extern const SettingsUInt64 max_ast_elements;
 }
 
 namespace ErrorCodes
@@ -558,7 +560,17 @@ ASTPtr DatabaseBackup::normalizeLegacyLocator(const ASTPtr & locator)
 ASTPtr DatabaseBackup::normalizeLegacyLocatorFromQuery(const ASTPtr & locator, const ContextPtr & query_context)
 {
     const Settings & settings = query_context->getSettingsRef();
-    return normalizeLegacyLocatorWithLimits(locator, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    ASTPtr parsed
+        = normalizeLegacyLocatorWithLimits(locator, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+    /// The statement reached the tree limits carrying the locator as one string literal, so they were
+    /// checked against a tree this locator was not yet part of.
+    if (settings[Setting::max_ast_depth])
+        parsed->checkDepth(settings[Setting::max_ast_depth]);
+    if (settings[Setting::max_ast_elements])
+        parsed->checkSize(settings[Setting::max_ast_elements]);
+
+    return parsed;
 }
 
 void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context, LocatorSource locator_source)
