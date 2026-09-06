@@ -9,10 +9,18 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 TIMEOUT_SECONDS = 120
 
+# `clickhouse-test` prints this file when the test fails, and it names it after the test case -
+# the `.sh` wrapper - not after this script. Writing anywhere else means the trace of a failure in
+# CI is collected and then never shown, which is the only record of what the client did.
 DEBUG_LOG = os.path.join(
     os.environ["CLICKHOUSE_TMP"],
-    os.path.basename(os.path.abspath(__file__)).strip(".python") + ".debuglog",
+    os.path.basename(os.path.abspath(__file__)).removesuffix(".python") + ".sh.debuglog",
 )
+
+# Set when the pseudo-terminal reaches end of file: the client is gone. Every later read then
+# returns at once and every write is silently discarded, so without noticing it the test runs to
+# the end and reports every expectation as unmet, saying nothing about the client having died.
+client_gone = False
 
 FINAL_ANSWER = "MOCK-DONE"
 
@@ -137,6 +145,7 @@ def make_config(port):
 
 
 def drain(master, debug_log_fd, idle):
+    global client_gone
     while True:
         r, _, _ = select.select([master], [], [], idle)
         if not r:
@@ -144,14 +153,17 @@ def drain(master, debug_log_fd, idle):
         try:
             chunk = os.read(master, 65536)
         except OSError:
+            client_gone = True
             break
         if not chunk:
+            client_gone = True
             break
         debug_log_fd.write(repr(chunk) + "\n")
         debug_log_fd.flush()
 
 
 def read_until(master, debug_log_fd, predicate, timeout):
+    global client_gone
     output = ""
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -161,8 +173,10 @@ def read_until(master, debug_log_fd, predicate, timeout):
         try:
             chunk = os.read(master, 65536)
         except OSError:
+            client_gone = True
             break
         if not chunk:
+            client_gone = True
             break
         debug_log_fd.write(repr(chunk) + "\n")
         debug_log_fd.flush()
@@ -170,6 +184,24 @@ def read_until(master, debug_log_fd, predicate, timeout):
         if predicate(output):
             return output
     return output
+
+
+def report_client_if_gone(child_pid):
+    """Print how the client ended if it is gone. The expected output has no such line, so it
+    shows up in the diff of the failure instead of leaving only unmet expectations behind."""
+    if not client_gone:
+        return
+    try:
+        _, status = os.waitpid(child_pid, os.WNOHANG)
+    except ChildProcessError:
+        print("client_gone: already reaped")
+        return
+    if os.WIFSIGNALED(status):
+        print(f"client_gone: killed by signal {os.WTERMSIG(status)}")
+    elif os.WIFEXITED(status):
+        print(f"client_gone: exited with code {os.WEXITSTATUS(status)}")
+    else:
+        print("client_gone: yes")
 
 
 def main():
@@ -199,17 +231,19 @@ def main():
         read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
 
         # The temporary tables must be created in the same session the agent runs in. Every
-        # statement waits for the client to be back at the prompt: `replxx` submits everything
-        # that is already buffered when it starts reading as a single statement, so on a slow
-        # build (a sanitizer one), where the client needs more than a fixed idle period to get
-        # there, typing ahead would merge the statements with the question that follows them and
-        # the `?` would never start the agent.
+        # statement waits for the timing line the interactive client prints when a query is done:
+        # `replxx` submits everything that is already buffered when it starts reading as a single
+        # statement, so typing ahead would merge the statements with the question that follows
+        # them and the `?` would never start the agent. Waiting for the prompt would not prevent
+        # it: `replxx` repaints the prompt while the line is being typed, so it is back in the
+        # output before the statement has been submitted, let alone run.
         for statement in SETUP:
             os.write(master, statement.encode() + b"\n")
-            read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+            read_until(master, debug_log_fd, lambda o: "Elapsed:" in o, TIMEOUT_SECONDS)
 
         os.write(master, b"? read the tables\n")
         read_until(master, debug_log_fd, lambda o: FINAL_ANSWER in o, TIMEOUT_SECONDS)
+        report_client_if_gone(child_pid)
 
         # Every tool call is answered in the history of the last request, keyed by its id.
         results = {}
