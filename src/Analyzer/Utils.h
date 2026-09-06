@@ -243,7 +243,9 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     const ContextPtr & context);
 
 
-Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
+/// With `date_time_as_numbers`, a `DateTime` leaf becomes its raw Unix timestamp instead of local date-time
+/// text; valid only where the literal's declared type is re-applied to it.
+Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool date_time_as_numbers);
 
 /// True if a value of this type may contain a decimal-backed leaf (Decimal/Time64, or a Dynamic that
 /// can hold one) that needs the exact serialization provided by columnConstantToExactLiteralAST.
@@ -253,8 +255,8 @@ bool typeMayContainDecimal(const IDataType & type);
 /// DateTime64, Time64, including those nested in Array/Tuple/Map/Variant/Dynamic) exactly so they
 /// round-trip across distributed / serialized-plan boundaries without going through Float64 or the
 /// DateTime text-parsing heuristics. Decimal-free values use the same representation as
-/// getFieldFromColumnForASTLiteral.
-ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type);
+/// getFieldFromColumnForASTLiteral. `date_time_as_numbers` is forwarded to it.
+ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers);
 
 /// Wrap `value` in `_CAST(value, type_name)`, but skip the wrapping when `value` is already a
 /// `_CAST(..., type_name)` to the same type (e.g. the exact carrier produced for a scalar
