@@ -3184,7 +3184,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsBenignSetWatchesInLog
 /// `AddWatch`, `CheckWatch` and `RemoveWatch` only touch the watch maps, which are not part of the
 /// snapshot and are never resolved against the tree, so replaying them after orphan cleanup ends in
 /// the same state as on an unrepaired replica -- even when they name a pruned path. They must not
-/// block recovery, while a request that does read the tree right after them still must.
+/// block recovery.
 TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsPersistentWatchOpsOnRemovedSubtreeInLogTail)
 {
     if (GetParam().use_lsmt_storage)
@@ -3222,11 +3222,40 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsPersistentWatchOpsOnR
     changelog.end_of_append_batch(0, 0);
     waitDurableLogs(changelog);
 
+    ASSERT_FALSE(state_machine->getRemovedOrphanSubtreeRoots().empty());
     EXPECT_FALSE(
         state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot()).has_value());
+    /// A clean scan is final: the verifier forgets the removed roots once the tail is known to be safe.
+    EXPECT_TRUE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+}
 
-    /// Control: the watch entries are skipped, not the scan -- a read of the pruned path placed after
-    /// them is still reported, at its own index.
+/// The watch entries are skipped, not the scan: a request that does read the tree right after them is
+/// still reported, at its own index.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalStillRefusesTreeReadAfterPersistentWatchOpsInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+
+    auto add_watch = std::make_shared<Coordination::ZooKeeperAddWatchRequest>();
+    add_watch->path = "/missing/child";
+    add_watch->mode = Coordination::AddWatchRequest::AddWatchMode::PERSISTENT;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), add_watch));
+
     auto get = std::make_shared<Coordination::ZooKeeperGetRequest>();
     get->path = "/missing/child";
     appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), get));
@@ -3235,7 +3264,7 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsPersistentWatchOpsOnR
 
     auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
     ASSERT_TRUE(conflict.has_value());
-    EXPECT_EQ(conflict->log_idx, 5);
+    EXPECT_EQ(conflict->log_idx, 3);
     EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::Get));
     EXPECT_EQ(conflict->request_path, "/missing/child");
     EXPECT_EQ(conflict->subtree_root, "/missing");
