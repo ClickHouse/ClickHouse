@@ -973,6 +973,7 @@ The server successfully detected this situation and will download merged part fr
     M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.", ValueType::Number) \
     M(SleepFunctionMicroseconds, "Time set to sleep in a sleep function (sleep, sleepEachRow).", ValueType::Microseconds) \
     M(SleepFunctionElapsedMicroseconds, "Time spent sleeping in a sleep function (sleep, sleepEachRow).", ValueType::Microseconds) \
+    M(SystemPartsEnumerationSlowdownSleeps, "Number of sleeps of the test-only failpoint 'slowdown_system_parts_enumeration' while filling the tables of the system.parts family. Always zero outside of tests.", ValueType::Number) \
     \
     M(ThreadPoolReaderPageCacheHit, "Number of times the read inside ThreadPoolReader was done from the page cache.", ValueType::Number) \
     M(ThreadPoolReaderPageCacheHitBytes, "Number of bytes read inside ThreadPoolReader when it was done from the page cache.", ValueType::Bytes) \

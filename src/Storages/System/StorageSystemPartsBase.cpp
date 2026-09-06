@@ -1,4 +1,7 @@
+#include <base/sleep.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -24,6 +27,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/DatabaseCatalog.h>
 
 namespace
@@ -35,6 +39,11 @@ constexpr auto * active_column_name = "active";
 constexpr auto * storage_uuid_column_name = "storage_uuid";
 }
 
+namespace ProfileEvents
+{
+    extern const Event SystemPartsEnumerationSlowdownSleeps;
+}
+
 namespace DB
 {
 namespace Setting
@@ -42,9 +51,131 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
-StoragesInfoStreamBase::StoragesInfoStreamBase(ContextPtr context)
-    : query_id(context->getCurrentQueryId()), lock_timeout(std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds())), next_row(0), rows(0)
+namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
+    extern const int DEADLOCK_AVOIDED;
+}
+
+namespace FailPoints
+{
+    extern const char slowdown_system_parts_enumeration[];
+}
+
+void slowDownSystemPartsEnumeration([[maybe_unused]] const String & table_name)
+{
+    fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
+    {
+        /// Slow down only the tables with a special name prefix, so that the tests using
+        /// this failpoint do not affect concurrent queries over the tables of other tests.
+        if (table_name.starts_with("t_slowdown_system_parts"))
+        {
+            ProfileEvents::increment(ProfileEvents::SystemPartsEnumerationSlowdownSleeps);
+            sleepForMilliseconds(500);
+        }
+    });
+}
+
+void slowDownSystemPartsColumnsEnumeration([[maybe_unused]] const String & table_name, [[maybe_unused]] size_t column_position)
+{
+    fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
+    {
+        /// Sleep at the same cadence as the cancellation checkpoints of the column-enumeration
+        /// loops, so that a test can prove by counting the sleeps that those checkpoints stop
+        /// the eager result building on a table with many columns per part.
+        if (column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && table_name.starts_with("t_slowdown_system_parts"))
+        {
+            ProfileEvents::increment(ProfileEvents::SystemPartsEnumerationSlowdownSleeps);
+            sleepForMilliseconds(500);
+        }
+    });
+}
+
+void slowDownSystemPartsDiscovery([[maybe_unused]] const String & table_name)
+{
+    fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
+    {
+        /// Sleep on every walked table of the storage-discovery prepass, so that a test can prove
+        /// by counting the sleeps that the cancellation checkpoint of the walk stops it. The
+        /// narrower name prefix keeps the walk fast for the tables that test the later
+        /// per-part / per-column checkpoints.
+        if (table_name.starts_with("t_slowdown_system_parts_discovery"))
+        {
+            ProfileEvents::increment(ProfileEvents::SystemPartsEnumerationSlowdownSleeps);
+            sleepForMilliseconds(500);
+        }
+    });
+}
+
+void slowDownSystemPartsMetadataEnumeration([[maybe_unused]] const String & table_name, [[maybe_unused]] size_t column_position)
+{
+    fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
+    {
+        /// Sleep at the same cadence as the cancellation checkpoints of the column-metadata
+        /// prepasses, so that a test can prove by counting the sleeps that those checkpoints
+        /// stop the prepass on a table with many columns. The narrower name prefix keeps the
+        /// prepass fast for the tables that test the later per-part / per-column checkpoints.
+        if (column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && table_name.starts_with("t_slowdown_system_parts_meta"))
+        {
+            ProfileEvents::increment(ProfileEvents::SystemPartsEnumerationSlowdownSleeps);
+            sleepForMilliseconds(500);
+        }
+    });
+}
+
+StoragesInfoStreamBase::StoragesInfoStreamBase(ContextPtr context)
+    : query_id(context->getCurrentQueryId()), lock_timeout(std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds())), query_status(context->getProcessListElement()), next_row(0), rows(0)
+{
+}
+
+StoragesInfo StoragesInfoStreamBase::next()
+{
+    while (next_row < rows)
+    {
+        /// The check is needed because if many tables were dropped concurrently,
+        /// this loop can spend a long time skipping them, retaking the locks.
+        /// Note: in the 'break' mode `checkTimeLimit` returns false instead of throwing, and the
+        /// enumeration stops here rather than walking the remaining storages.
+        if (query_status && !query_status->checkTimeLimit())
+            return {};
+
+        StoragesInfo info;
+
+        info.database = (*database_column)[next_row].safeGet<String>();
+        info.table = (*table_column)[next_row].safeGet<String>();
+        UUID storage_uuid = (*storage_uuid_column)[next_row].safeGet<UUID>();
+
+        auto is_same_table = [&storage_uuid, this] (size_t row) -> bool
+        {
+            return (*storage_uuid_column)[row].safeGet<UUID>() == storage_uuid;
+        };
+
+        /// We may have two rows per table which differ in 'active' value.
+        /// If rows with 'active = 0' were not filtered out, this means we
+        /// must collect the inactive parts. Remember this fact in StoragesInfo.
+        for (; next_row < rows && is_same_table(next_row); ++next_row)
+        {
+            const auto active = (*active_column)[next_row].safeGet<UInt64>();
+            if (active == 0)
+                info.need_inactive_parts = true;
+        }
+
+        info.storage = storages.at(storage_uuid);
+
+        /// For table not to be dropped and set of columns to remain constant.
+        if (!tryLockTable(info))
+            continue;
+
+        info.engine = info.storage->getName();
+
+        info.data = dynamic_cast<MergeTreeData *>(info.storage.get());
+        if (!info.data)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown engine {}", info.engine);
+
+        return info;
+    }
+
+    return {};
 }
 
 bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot)
@@ -67,42 +198,66 @@ bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const St
     return has_state_column;
 }
 
+namespace
+{
+
+/// A callback for the part enumeration in MergeTreeData to stop it on query cancellation or a time limit.
+/// checkTimeLimit returns false (instead of throwing) only in the 'break' overflow mode, where an
+/// enumeration that stops early is consistent with the semantics of the mode.
+/// Note that the whole result of these tables is built as a single chunk after the enumeration, so
+/// a query that runs into its deadline delivers no rows at all: the chunk is never handed over to
+/// the rest of the pipeline. The point of the checkpoints is therefore to stop the work quickly,
+/// not to hand out the rows that were collected before the deadline.
+std::function<bool()> makeNeedStopCallback(const QueryStatusPtr & query_status)
+{
+    if (!query_status)
+        return {};
+
+    return [query_status] { return !query_status->checkTimeLimit(); };
+}
+
+}
+
 MergeTreeData::DataPartsVector
-StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
+StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status) const
 {
     using State = MergeTreeData::DataPartState;
     using Kind = MergeTreeData::DataPartKind;
+
+    auto need_stop = makeNeedStopCallback(query_status);
 
     if (need_inactive_parts)
     {
         /// If has_state_column is requested, return all states.
         if (!has_state_column)
-            return data->getDataPartsVectorForInternalUsage({State::Active, State::Outdated}, {Kind::Regular, Kind::Patch}, &state);
+            return data->getDataPartsVectorForInternalUsage({State::Active, State::Outdated}, {Kind::Regular, Kind::Patch}, &state, need_stop);
 
-        return data->getAllDataPartsVector(&state);
+        return data->getAllDataPartsVector(&state, need_stop);
     }
 
-    return data->getDataPartsVectorForInternalUsage({State::Active}, {Kind::Regular, Kind::Patch}, &state);
+    return data->getDataPartsVectorForInternalUsage({State::Active}, {Kind::Regular, Kind::Patch}, &state, need_stop);
 }
 
 MergeTreeData::ProjectionPartsVector
-StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
+StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status) const
 {
     auto metadata_snapshot = data->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     if (metadata_snapshot->projections.empty())
         return {};
 
+    auto need_stop = makeNeedStopCallback(query_status);
+
     using State = MergeTreeData::DataPartState;
     if (need_inactive_parts)
     {
         /// If has_state_column is requested, return all states.
         if (!has_state_column)
-            return data->getProjectionPartsVectorForInternalUsage({State::Active, State::Outdated}, &state);
+            return data->getProjectionPartsVectorForInternalUsage({State::Active, State::Outdated}, &state, need_stop);
 
-        return data->getAllProjectionPartsVector(&state);
+        return data->getAllProjectionPartsVector(&state, need_stop);
     }
 
-    return data->getProjectionPartsVectorForInternalUsage({State::Active}, &state);
+    return data->getProjectionPartsVectorForInternalUsage({State::Active}, &state, need_stop);
 }
 
 StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_database, std::optional<ActionsDAG> filter_by_other_columns, ContextPtr context)
@@ -150,17 +305,36 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
 
             IColumn::Offsets offsets(rows);
 
+            /// Enumerating all tables of all databases can take a long time on a server with many tables,
+            /// and this is done eagerly before returning the first row, so check for query cancellation
+            /// and time limits here. If the time limit is exceeded in the 'break' mode,
+            /// stop the enumeration instead of walking the remaining storages.
+            bool time_limit_exceeded = false;
+
             for (size_t i = 0; i < rows; ++i)
             {
+                offsets[i] = offsets[i - 1];
+
+                if (time_limit_exceeded)
+                    continue;
+
                 String database_name = (*database_column_for_filter)[i].safeGet<String>();
                 const DatabasePtr & database = databases.at(database_name);
                 const bool check_access_for_tables_in_db
                     = check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
-                offsets[i] = offsets[i - 1];
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
+                    if (query_status && !query_status->checkTimeLimit())
+                    {
+                        time_limit_exceeded = true;
+                        break;
+                    }
+
                     String table_name = iterator->name();
+
+                    slowDownSystemPartsDiscovery(table_name);
+
                     StoragePtr storage = iterator->table();
                     if (!storage)
                         continue;
@@ -332,8 +506,16 @@ void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline
 
     MutableColumns res_columns = header->cloneEmptyColumns();
 
+    /// The whole result is built eagerly here, so without this check a cancelled or timed out
+    /// query would keep building rows over every storage until the very end.
+    /// If the time limit is exceeded in the 'break' mode, stop instead of failing the query.
+    QueryStatusPtr query_status = context->getProcessListElement();
+
     while (StoragesInfo info = stream->next())
     {
+        if (query_status && !query_status->checkTimeLimit())
+            break;
+
         storage->processNextStorage(context, res_columns, columns_mask, info, has_state_column);
     }
 
@@ -379,8 +561,52 @@ VirtualColumnsDescription StorageSystemPartsBase::createVirtuals()
 
 bool StoragesInfoStreamBase::tryLockTable(StoragesInfo & info)
 {
-    info.table_lock = info.storage->tryLockForShare(query_id, Poco::Timespan(lock_timeout.count() * 1000));
-    // nullptr means table was dropped while acquiring the lock
-    return info.table_lock != nullptr;
+    /// Acquire the lock in short slices, polling the query status between the attempts,
+    /// so that a killed or soft-timed-out query does not sit inside RWLockImpl::getLock
+    /// for the whole lock_acquire_timeout while a concurrent DDL query holds the drop lock.
+    static constexpr std::chrono::milliseconds cancellation_check_period{100};
+
+    std::chrono::milliseconds remaining = lock_timeout;
+    const bool infinite_lock_timeout = lock_timeout == std::chrono::milliseconds::zero();
+    while (true)
+    {
+        const auto attempt_timeout = query_status
+            ? (infinite_lock_timeout ? cancellation_check_period : std::min(remaining, cancellation_check_period))
+            : remaining;
+        try
+        {
+            info.table_lock = info.storage->tryLockForShare(query_id, Poco::Timespan(attempt_timeout.count() * 1000));
+            // nullptr means table was dropped while acquiring the lock
+            return info.table_lock != nullptr;
+        }
+        catch (Exception & e)
+        {
+            if (e.code() != ErrorCodes::DEADLOCK_AVOIDED)
+                throw;
+
+            if (!infinite_lock_timeout)
+            {
+                remaining -= attempt_timeout;
+                if (remaining.count() <= 0)
+                {
+                    /// The exception from the last attempt describes only the final slice, so a query
+                    /// that really waited the whole lock_acquire_timeout would report a timeout of
+                    /// 100 ms. Amend it with the total wait, and keep the rest of the message: it
+                    /// carries the owner query ids of the lock.
+                    if (attempt_timeout != lock_timeout)
+                        e.addMessage("The total lock acquisition timeout of {} ms has been exhausted; the lock was "
+                            "acquired in {} ms slices with query cancellation checks between the attempts",
+                            lock_timeout.count(), cancellation_check_period.count());
+                    throw;
+                }
+            }
+
+            /// Throws if the query is cancelled or the time limit is exceeded in the 'throw' overflow mode.
+            /// In the 'break' mode it returns false instead: give up on this table, and the caller
+            /// stops instead of failing the query.
+            if (query_status && !query_status->checkTimeLimit())
+                return false;
+        }
+    }
 }
 }
