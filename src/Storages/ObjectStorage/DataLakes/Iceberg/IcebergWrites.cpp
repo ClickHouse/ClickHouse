@@ -1489,6 +1489,14 @@ bool IcebergStorageSink::initializeMetadata()
         /// Invalidate the cache so the next reader gets the latest version, which a concurrent catalog update may have changed.
         persistent_table_components.invalidateMetadataCache();
     }
+    catch (const Exception & e)
+    {
+        /// An unestablished commit may have taken effect, which makes these manifests, manifest list
+        /// and data files the ones the current snapshot references.
+        if (!Iceberg::isCommitStateUnknown(e))
+            cleanup(false);
+        throw;
+    }
     catch (...)
     {
         cleanup(false);
