@@ -7,10 +7,12 @@
 namespace DB
 {
 
-class SerializationDateTime final : public SerializationNumber<UInt32>, public TimezoneMixin
+class SerializationDateTime final : public SerializationNumber<UInt32>
 {
 private:
     explicit SerializationDateTime(const TimezoneMixin & time_zone_);
+
+    const DateLUTImpl & time_zone;
 
 public:
     static UInt128 getHash(const TimezoneMixin & time_zone_);

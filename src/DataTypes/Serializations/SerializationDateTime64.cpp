@@ -18,10 +18,9 @@ namespace ErrorCodes
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
-SerializationDateTime64::SerializationDateTime64(
-    UInt32 scale_, const TimezoneMixin & time_zone_)
+SerializationDateTime64::SerializationDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_)
     : SerializationDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_)
-    , TimezoneMixin(time_zone_)
+    , time_zone(time_zone_.getTimeZone())
 {
 }
 
@@ -30,7 +29,7 @@ UInt128 SerializationDateTime64::getHash(UInt32 scale_, const TimezoneMixin & ti
     SipHash hash;
     hash.update("DateTime64");
     hash.update(scale_);
-    auto tz = time_zone_.getTimeZone().getTimeZone();
+    const auto & tz = time_zone_.getTimeZoneName();
     hash.update(tz.size());
     hash.update(tz);
     hash.update(time_zone_.hasExplicitTimeZone());
@@ -103,9 +102,7 @@ static inline void readText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, con
 {
     switch (settings.date_time_input_format)
     {
-        case FormatSettings::DateTimeInputFormat::Basic:
-            readDateTime64Text(x, scale, istr, time_zone);
-            return;
+        case FormatSettings::DateTimeInputFormat::Basic: readDateTime64Text(x, scale, istr, time_zone); return;
         case FormatSettings::DateTimeInputFormat::BestEffort:
             parseDateTime64BestEffort(x, scale, istr, time_zone, DateLUT::utcTimezoneInstance());
             return;
@@ -120,8 +117,7 @@ tryReadText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, const FormatSetting
 {
     switch (settings.date_time_input_format)
     {
-        case FormatSettings::DateTimeInputFormat::Basic:
-            return tryReadDateTime64Text(x, scale, istr, time_zone);
+        case FormatSettings::DateTimeInputFormat::Basic: return tryReadDateTime64Text(x, scale, istr, time_zone);
         case FormatSettings::DateTimeInputFormat::BestEffort:
             return tryParseDateTime64BestEffort(x, scale, istr, time_zone, DateLUT::utcTimezoneInstance());
         case FormatSettings::DateTimeInputFormat::BestEffortUS:

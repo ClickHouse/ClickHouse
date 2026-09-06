@@ -43,7 +43,7 @@ std::string DataTypeDateTime64::doGetName() const
         return std::string(getFamilyName()) + "(" + std::to_string(this->scale) + ")";
 
     WriteBufferFromOwnString out;
-    out << "DateTime64(" << this->scale << ", " << quote << getDateLUTTimeZone(time_zone) << ")";
+    out << "DateTime64(" << this->scale << ", " << quote << getTimeZoneName() << ")";
     return out.str();
 }
 
@@ -65,10 +65,10 @@ SerializationPtr DataTypeDateTime64::doGetSerialization(const SerializationInfoS
 {
     if (!has_explicit_time_zone)
     {
-        const auto & effective_tz = DateLUT::instance();
+        const auto & effective_tz = DateLUT::getTimeZone();
         if (&effective_tz != &time_zone)
         {
-            TimezoneMixin overridden(effective_tz.getTimeZone());
+            TimezoneMixin overridden(effective_tz.getName());
             return SerializationDateTime64::create(scale, overridden);
         }
     }
@@ -78,9 +78,9 @@ SerializationPtr DataTypeDateTime64::doGetSerialization(const SerializationInfoS
 std::string getDateTimeTimezone(const IDataType & data_type)
 {
     if (const auto * type = typeid_cast<const DataTypeDateTime *>(&data_type))
-        return type->hasExplicitTimeZone() ? getDateLUTTimeZone(type->getTimeZone()) : std::string();
+        return type->hasExplicitTimeZone() ? type->getTimeZoneName() : std::string();
     if (const auto * type = typeid_cast<const DataTypeDateTime64 *>(&data_type))
-        return type->hasExplicitTimeZone() ? getDateLUTTimeZone(type->getTimeZone()) : std::string();
+        return type->hasExplicitTimeZone() ? type->getTimeZoneName() : std::string();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get time zone from type {}", data_type.getName());
 }

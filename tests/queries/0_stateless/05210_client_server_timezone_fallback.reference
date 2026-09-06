@@ -1,0 +1,4 @@
+initial_use_client_time_zone=0: local fallback preserved
+initial_use_client_time_zone=1: local fallback preserved
+reconnect_server_timezone='': local fallback preserved
+reconnect_server_timezone='Invalid/ServerTimezone': local fallback preserved

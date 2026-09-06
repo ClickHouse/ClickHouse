@@ -26,7 +26,7 @@ String DataTypeDateTime::doGetName() const
         return "DateTime";
 
     WriteBufferFromOwnString out;
-    out << "DateTime(" << quote << time_zone.getTimeZone() << ")";
+    out << "DateTime(" << quote << getTimeZoneName() << ")";
     return out.str();
 }
 
@@ -42,11 +42,10 @@ SerializationPtr DataTypeDateTime::doGetSerialization(const SerializationInfoSet
     if (!has_explicit_time_zone)
     {
         /// When no explicit timezone, resolve the effective timezone (respects session_timezone).
-        /// This is called once per formatter (not per row), so the cost of DateLUT::instance() is negligible.
-        const auto & effective_tz = DateLUT::instance();
+        const auto & effective_tz = DateLUT::getTimeZone();
         if (&effective_tz != &time_zone)
         {
-            TimezoneMixin overridden(effective_tz.getTimeZone());
+            TimezoneMixin overridden(effective_tz.getName());
             return SerializationDateTime::create(overridden);
         }
     }
