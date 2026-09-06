@@ -3316,46 +3316,73 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
 
     PartLoadingTreeNodes parts_to_add;
 
+    /// Collect the nodes still to load. Only an already-indexed *active* part shadows its subtree;
+    /// a not-yet-indexed node is a load candidate and an already-indexed *non-active* node is
+    /// descended through to reach descendants it no longer shadows. Caller must hold `lockParts()`.
+    std::function<void(const PartLoadingTree::NodePtr &)> seed = [&](const auto & node)
+    {
+        auto it = data_parts_by_info.find(node->info);
+        if (it == data_parts_by_info.end())
+        {
+            parts_to_add.emplace_back(node);
+            return;
+        }
+        if ((*it)->getState() != DataPartState::Active)
+            for (const auto & [_, child] : node->children)
+                seed(child);
+    };
+
     {
         auto part_lock = lockParts();
-
-        /// Collect only "the most covering" parts from the top level of the tree.
-        loading_tree.traverse(/*recursive=*/ false, [&, this](const auto & node)
-        {
-            if (auto it = data_parts_by_info.find(node->info); it == data_parts_by_info.end())
-                parts_to_add.emplace_back(node);
-        });
+        loading_tree.traverse(/*recursive=*/ false, [&](const auto & node) { seed(node); });
     }
 
     bool have_non_adaptive_parts = false;
     bool have_lightweight_in_parts = false;
     bool have_parts_with_version_metadata = false;
 
-    for (const auto & my_part : parts_to_add)
+    /// Iterate by index and copy the `shared_ptr`: `seed` appends committed children to
+    /// `parts_to_add` below via `emplace_back`, so a range-based loop or a reference into the
+    /// vector would be a use-after-reallocation bug when it grows.
+    /// NOLINTNEXTLINE(modernize-loop-convert)
+    for (size_t i = 0; i < parts_to_add.size(); ++i)
     {
+        /// NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
+        auto my_part = parts_to_add[i];
         auto res = loadDataPartWithRetries(
             my_part->info, my_part->name, my_part->disk,
             DataPartState::PreActive, data_parts_mutex, loading_parts_initial_backoff_ms,
             loading_parts_max_backoff_ms, loading_parts_max_tries);
 
-        if (res.is_broken)
+        /// Committing a broken or rolled-back (`Outdated`) part would reset it to `PreActive` and
+        /// re-activate it. Skip it and re-seed its children instead so a descendant already indexed
+        /// non-active by an earlier refresh is descended through rather than dropped. Mirrors the
+        /// `!is_active_part` orphan promotion in `loadDataPartsFromDisk`.
+        if (res.is_broken || res.part->getState() == DataPartState::Outdated)
         {
-            LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
-        }
-        else
-        {
+            if (res.is_broken)
+                LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
+
+            if (!my_part->children.empty())
             {
                 auto part_lock = lockParts();
-                Transaction transaction(*this, nullptr);
-                preparePartForCommit(res.part, transaction, part_lock, false, false);
-                transaction.commit(part_lock);
+                for (const auto & [_, child] : my_part->children)
+                    seed(child);
             }
-
-            bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
-            have_non_adaptive_parts |= !is_adaptive;
-            have_lightweight_in_parts |= res.part->hasLightweightDelete();
-            have_parts_with_version_metadata |= res.part->wasInvolvedInTransaction();
+            continue;
         }
+
+        {
+            auto part_lock = lockParts();
+            Transaction transaction(*this, nullptr);
+            preparePartForCommit(res.part, transaction, part_lock, false, false);
+            transaction.commit(part_lock);
+        }
+
+        bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
+        have_non_adaptive_parts |= !is_adaptive;
+        have_lightweight_in_parts |= res.part->hasLightweightDelete();
+        have_parts_with_version_metadata |= res.part->wasInvolvedInTransaction();
     }
 
     has_non_adaptive_index_granularity_parts = have_non_adaptive_parts;
