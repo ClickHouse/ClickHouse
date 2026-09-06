@@ -502,7 +502,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         if (auto json_info = tryMatchNodeToJSONIndex(key_node, index_columns, "JSONAllPaths"))
         {
             auto key_type = key_node.getDAGNode()->result_type;
-            if (!isJSONPathFilterSafe(key_type, value_field))
+            if (!isJSONPathFilterSafe(key_type, value_field, value_type))
                 return false;
 
             out.key_column = json_info->header_position;
