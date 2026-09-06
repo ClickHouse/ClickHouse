@@ -30,7 +30,17 @@ ReadBufferFromFileView::ReadBufferFromFileView(
 
 void ReadBufferFromFileView::prefetch(Priority priority)
 {
-    executeWithOriginalBuffer([&]{ impl->prefetch(priority); });
+    size_t impl_buffer_end = 0;
+    executeWithOriginalBuffer([&]
+    {
+        impl->prefetch(priority);
+        impl_buffer_end = impl->getPosition() + impl->available();
+    });
+
+    /// A prefetch reads nothing, but it republishes the unclamped buffer, so the clamp has to be
+    /// applied again: without the offset below `resizeWorkingBuffer` sees no excess and does nothing.
+    file_offset_of_buffer_end = impl_buffer_end;
+    resizeWorkingBuffer();
 }
 
 void ReadBufferFromFileView::setReadUntilPosition(size_t position)
@@ -40,14 +50,31 @@ void ReadBufferFromFileView::setReadUntilPosition(size_t position)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "Cannot read until position: {}. File size is {}", position, getFileSize());
 
-    executeWithOriginalBuffer([&]{ impl->setReadUntilPosition(*read_until_position); });
+    size_t impl_buffer_end = 0;
+    executeWithOriginalBuffer([&]
+    {
+        impl->setReadUntilPosition(*read_until_position);
+        impl_buffer_end = impl->getPosition() + impl->available();
+    });
+
+    /// `impl` is the only source of truth for where the exposed buffer ends: `resizeWorkingBuffer`
+    /// may have left this offset clamped to a bound that has just grown.
+    file_offset_of_buffer_end = impl_buffer_end;
     resizeWorkingBuffer();
 }
 
 void ReadBufferFromFileView::setReadUntilEnd()
 {
     read_until_position.reset();
-    executeWithOriginalBuffer([&]{ impl->setReadUntilPosition(right_bound); });
+
+    size_t impl_buffer_end = 0;
+    executeWithOriginalBuffer([&]
+    {
+        impl->setReadUntilPosition(right_bound);
+        impl_buffer_end = impl->getPosition() + impl->available();
+    });
+
+    file_offset_of_buffer_end = impl_buffer_end;
     resizeWorkingBuffer();
 }
 
