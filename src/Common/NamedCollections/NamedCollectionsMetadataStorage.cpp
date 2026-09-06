@@ -1,5 +1,7 @@
 #include <filesystem>
+#include <optional>
 #include <Core/Settings.h>
+#include <Disks/LocalDirectorySyncGuard.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -43,6 +45,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int SYNTAX_ERROR;
 }
 
 static const std::string named_collections_storage_config_path = "named_collections_storage";
@@ -73,6 +76,11 @@ public:
     virtual bool removeIfExists(const std::string & path) = 0;
 
     virtual bool isReplicated() const = 0;
+
+    /// Whether stored files are encrypted. When true, a parse failure while loading a
+    /// collection is treated as a wrong-key/corruption signal that must surface, rather
+    /// than a torn-plaintext-file to be skipped at startup.
+    virtual bool isEncrypted() const { return false; }
 
     virtual bool waitUpdate(size_t /* timeout */) { return false; }
 };
@@ -148,19 +156,44 @@ public:
                 file_name);
         }
 
-        fs::create_directories(root_path);
+        const bool fsync = getContext()->getSettingsRef()[Setting::fsync_metadata];
+
+        createDirectoriesAndSync(root_path, fsync);
 
         auto tmp_path = getPath(file_name + ".tmp");
         auto write_data = writeHook(data);
-        WriteBufferFromFile out(tmp_path, write_data.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(write_data, out);
 
-        out.next();
-        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-            out.sync();
-        out.close();
+        /// The temporary file is opened with O_EXCL, so one left behind by a failed attempt would
+        /// make every later attempt fail too.
+        try
+        {
+            WriteBufferFromFile out(tmp_path, write_data.size(), O_WRONLY | O_CREAT | O_EXCL);
+            writeString(write_data, out);
 
-        fs::rename(tmp_path, getPath(file_name));
+            out.next();
+            if (fsync)
+                out.sync();
+            out.close();
+
+            /// Opened before the rename, so a directory that cannot be opened does not leave the
+            /// rename committed, and synced after it, so the collection is not reported as created
+            /// until its new directory entry is durable.
+            const auto final_path = getPath(file_name);
+            std::optional<CheckedDirectorySync> dir_sync;
+            if (fsync)
+                dir_sync.emplace(fs::path(final_path).parent_path().string());
+
+            fs::rename(tmp_path, final_path);
+
+            if (dir_sync)
+                dir_sync->sync();
+        }
+        catch (...)
+        {
+            std::error_code remove_ec;
+            fs::remove(tmp_path, remove_ec);
+            throw;
+        }
     }
 
     virtual std::string writeHook(const std::string & data) const
@@ -180,7 +213,22 @@ public:
 
     bool removeIfExists(const std::string & file_name) override
     {
-        return fs::remove(getPath(file_name));
+        const auto path = getPath(file_name);
+
+        /// Opened before the unlink, so a directory that cannot be opened does not leave the
+        /// collection removed, and synced after it, so a DROP is not reported as done while the
+        /// removal could still revert and resurrect the collection.
+        std::optional<CheckedDirectorySync> dir_sync;
+        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+            dir_sync.emplace(fs::path(path).parent_path().string());
+
+        if (!fs::remove(path))
+            return false;
+
+        if (dir_sync)
+            dir_sync->sync();
+
+        return true;
     }
 
 protected:
@@ -393,6 +441,8 @@ public:
         algorithm = FileEncryption::parseAlgorithmFromString(config.getString("named_collections_storage.algorithm", "aes_128_ctr"));
     }
 
+    bool isEncrypted() const override { return true; }
+
     std::string readHook(const std::string & data) const override
     {
         ReadBufferFromString in(data);
@@ -497,6 +547,21 @@ NamedCollectionsMap NamedCollectionsMetadataStorage::getAll() const
                 continue;
             }
             throw;
+        }
+        catch (const Exception & e)
+        {
+            /// Only unparseable content of a plain local file counts as corruption. On encrypted
+            /// storage a parse failure means a wrong key, since the fingerprint is not validated
+            /// before decryption, and on replicated storage the error is operational, so both
+            /// surface rather than dropping a collection that is present.
+            if (storage->isReplicated() || storage->isEncrypted() || e.code() != ErrorCodes::SYNTAX_ERROR)
+                throw;
+            /// A parse error quotes the text it failed on, which here can be credentials, so
+            /// only the code is logged.
+            LOG_ERROR(getLogger("NamedCollectionsMetadataStorage"),
+                "Skipping named collection '{}': metadata file failed to parse, error code {}",
+                collection_name, e.code());
+            continue;
         }
     }
     return result;

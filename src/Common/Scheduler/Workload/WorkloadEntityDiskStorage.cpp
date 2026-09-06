@@ -8,6 +8,8 @@
 
 #include <Core/Settings.h>
 
+#include <Disks/LocalDirectorySyncGuard.h>
+
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -24,6 +26,7 @@
 #include <Poco/Logger.h>
 
 #include <filesystem>
+#include <optional>
 
 namespace fs = std::filesystem;
 
@@ -185,10 +188,10 @@ void WorkloadEntityDiskStorage::loadEntitiesImpl()
 }
 
 
-void WorkloadEntityDiskStorage::createDirectory()
+void WorkloadEntityDiskStorage::createDirectory(bool fsync)
 {
     std::error_code create_dir_error_code;
-    fs::create_directories(dir_path, create_dir_error_code);
+    createDirectoriesAndSync(dir_path, fsync, create_dir_error_code);
     if (!fs::exists(dir_path) || !fs::is_directory(dir_path) || create_dir_error_code)
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Couldn't create directory {} reason: '{}'",
                         dir_path, create_dir_error_code.message());
@@ -204,7 +207,8 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::storeEntit
     bool replace_if_exists,
     const Settings & settings)
 {
-    createDirectory();
+    const bool fsync = settings[Setting::fsync_metadata];
+    createDirectory(fsync);
     String file_path = getFilePath(entity_type, entity_name);
     LOG_DEBUG(log, "Storing workload entity {} to file {}", backQuote(entity_name), file_path);
 
@@ -225,14 +229,24 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::storeEntit
         writeString(create_entity_query->formatWithSecretsOneLine(), out);
         writeChar('\n', out);
         out.next();
-        if (settings[Setting::fsync_metadata])
+        if (fsync)
             out.sync();
         out.close();
+
+        /// Opened before the rename, so a directory that cannot be opened does not leave the
+        /// rename committed, and synced after it, so the entity is not reported as created
+        /// until its new directory entry is durable.
+        std::optional<CheckedDirectorySync> dir_sync;
+        if (fsync)
+            dir_sync.emplace(fs::path(file_path).parent_path().string());
 
         if (replace_if_exists)
             fs::rename(temp_file_path, file_path);
         else
             renameNoReplace(temp_file_path, file_path);
+
+        if (dir_sync)
+            dir_sync->sync();
     }
     catch (...)
     {
@@ -246,13 +260,20 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::storeEntit
 
 
 WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::removeEntityImpl(
-    const ContextPtr & /*current_context*/,
+    const ContextPtr & current_context,
     WorkloadEntityType entity_type,
     const String & entity_name,
     bool throw_if_not_exists)
 {
     String file_path = getFilePath(entity_type, entity_name);
     LOG_DEBUG(log, "Removing workload entity {} stored in file {}", backQuote(entity_name), file_path);
+
+    /// Opened before the unlink, so a directory that cannot be opened does not leave the entity
+    /// removed, and synced after it, so a DROP is not reported as done while the removal could
+    /// still revert and resurrect the entity.
+    std::optional<CheckedDirectorySync> dir_sync;
+    if (current_context->getSettingsRef()[Setting::fsync_metadata])
+        dir_sync.emplace(fs::path(file_path).parent_path().string());
 
     bool existed = fs::remove(file_path);
 
@@ -263,6 +284,9 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityDiskStorage::removeEnti
         else
             return OperationResult::Failed;
     }
+
+    if (dir_sync)
+        dir_sync->sync();
 
     LOG_TRACE(log, "Entity {} removed", backQuote(entity_name));
     return OperationResult::Ok;
