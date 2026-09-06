@@ -492,6 +492,19 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, no integration tests updates"
 
+    # When the PR carries a functional or integration test, `new_tests_check.check`
+    # decides the bug fix on the per-arch validators for those and returns before it
+    # reads the unit validator, so a merge-base unit build has no verdict to contribute.
+    if (
+        _is_bugfix_pr()
+        and job_name == JobNames.BUGFIX_VALIDATE_UT
+        and (
+            has_new_functional_tests(_info_cache.get_changed_files())
+            or has_new_integration_tests(_info_cache.get_changed_files())
+        )
+    ):
+        return True, "Skipped, the functional/integration bugfix validation owns the verdict"
+
     # skip AMD perf tests for non-performance update (ARM runs by default)
     if (
         " Performance Improvement" not in _info_cache.pr_body
