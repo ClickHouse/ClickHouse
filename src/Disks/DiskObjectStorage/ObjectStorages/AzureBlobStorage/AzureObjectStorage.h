@@ -130,6 +130,9 @@ public:
     }
 
 private:
+    /// Deletes one blob. When `object.etag` is set, only that generation is deleted (`If-Match`);
+    /// a blob that has since been overwritten is left in place and `FILE_CHANGED_DURING_READ` is
+    /// thrown, whatever `if_exists` says.
     void removeObjectImpl(
         const StoredObject & object,
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,

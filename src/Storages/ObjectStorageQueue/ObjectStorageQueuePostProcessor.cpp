@@ -452,6 +452,12 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                         Azure::Storage::Blobs::BlobClient blobClient = src_client->GetBlobClient(object_from.remote_path);
                         auto properties = blobClient.GetProperties().Value;
                         auto blob_size = properties.BlobSize;
+                        /// The generation of the source that this attempt moves: the copy and the
+                        /// delete below are both pinned to it, so a source blob overwritten at any
+                        /// point in between is never deleted without its newer generation having
+                        /// been copied. Either step then fails with `FILE_CHANGED_DURING_READ`, and
+                        /// the retry starts over from the properties of the new generation.
+                        const String src_etag = AzureBlobStorage::getETagOrEmpty(properties.ETag);
                         auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
                         auto request_settings = azure_storage->getSettings();
                         auto read_settings = getReadSettings();
@@ -467,6 +473,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             connection_params.getContainer(),
                             /* src_blob */ object_from.remote_path,
                             blob_size,
+                            src_etag,
                             move_container,
                             /* dest_blob */ object_to.remote_path,
                             request_settings,
@@ -475,7 +482,9 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             scheduler
                         );
                         LOG_INFO(log, "Removing object {}", object_from.remote_path);
-                        object_storage->removeObjectIfExists(object_from);
+                        StoredObject copied_generation = object_from;
+                        copied_generation.etag = src_etag;
+                        object_storage->removeObjectIfExists(copied_generation);
                     });
                     moved_objects += 1;
                 }
