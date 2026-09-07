@@ -5,8 +5,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
 
-#include <optional>
-
 namespace DB
 {
 
@@ -46,58 +44,21 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
-class ProcessorMemoryUsageScope
-{
-public:
-    explicit ProcessorMemoryUsageScope(Int64 & memory_usage_delta_)
-        : thread(current_thread)
-    {
-        if (thread)
-        {
-            previous_memory_usage_delta = thread->current_processor_memory_usage_delta;
-            thread->current_processor_memory_usage_delta = &memory_usage_delta_;
-        }
-    }
-
-    ~ProcessorMemoryUsageScope()
-    {
-        if (thread)
-            thread->current_processor_memory_usage_delta = previous_memory_usage_delta;
-    }
-
-private:
-    ThreadStatus * thread = nullptr;
-    Int64 * previous_memory_usage_delta = nullptr;
-};
-
-void ExecutionThreadContext::executeJob()
+static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_progress_callback)
 {
     try
     {
-        auto & processor = *node->processor();
+        if (node->processor()->isSpillable() && CurrentThread::getGroup())
+            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(node->processor());
 
-        if (processor.isSpillable())
-        {
-            if (auto group = CurrentThread::getGroup())
-                group->memory_spill_scheduler->checkAndSpill(node->processor());
-        }
-
-        if (profile_processors)
-        {
-            ProcessorMemoryUsageScope memory_usage_scope(processor.memory_usage_delta);
-            processor.work();
-        }
-        else
-        {
-            processor.work();
-        }
+        node->processor()->work();
 
         /// Update read progress only for source nodes.
         bool is_source = node->back_edges.empty();
 
         if (is_source && read_progress_callback)
         {
-            if (auto read_progress = processor.getReadProgress())
+            if (auto read_progress = node->processor()->getReadProgress())
             {
                 if (read_progress->counters.total_rows_approx)
                     read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
@@ -106,7 +67,7 @@ void ExecutionThreadContext::executeJob()
                     read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
 
                 if (!read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits))
-                    processor.cancel();
+                    node->processor()->cancel();
             }
         }
     }
@@ -137,9 +98,14 @@ bool ExecutionThreadContext::executeTask()
         execution_time_watch.emplace();
 #endif
 
+    /// The thread counters only grow, so the difference around `executeJob` is the memory activity of this processor.
+    ThreadStatus * thread_status = profile_processors ? current_thread : nullptr;
+    UInt64 memory_allocated_bytes_before = thread_status ? thread_status->memory_allocated_bytes : 0;
+    UInt64 memory_freed_bytes_before = thread_status ? thread_status->memory_freed_bytes : 0;
+
     try
     {
-        executeJob();
+        executeJob(node, read_progress_callback);
         ++node->num_executed_jobs;
     }
     catch (...)
@@ -151,6 +117,13 @@ bool ExecutionThreadContext::executeTask()
     {
         UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
         node->processor()->elapsed_ns += elapsed_ns;
+
+        if (thread_status)
+        {
+            node->processor()->memory_allocated_bytes += thread_status->memory_allocated_bytes - memory_allocated_bytes_before;
+            node->processor()->memory_freed_bytes += thread_status->memory_freed_bytes - memory_freed_bytes_before;
+        }
+
         if (trace_processors)
             span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
     }

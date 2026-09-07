@@ -340,7 +340,8 @@ public:
         UInt64 input_bytes = 0;
         UInt64 output_rows = 0;
         UInt64 output_bytes = 0;
-        Int64 memory_usage_delta = 0;
+        UInt64 memory_allocated_bytes = 0;
+        UInt64 memory_freed_bytes = 0;
     };
     ProcessorsProfileLogInfo getProcessorsProfileLogInfo() const;
 
@@ -378,7 +379,7 @@ public:
 
     /// Returns true if processor can spill memory to disk.
     /// Aggregate, join and sort processors can be spillable.
-    /// For the memory spill scheduler, unspillable processors are not tracked.
+    /// For unspillable processors, the memory usage is not tracked.
     inline bool isSpillable() const { return spillable; }
 
     virtual ProcessorMemoryStats getMemoryStats()
@@ -397,11 +398,12 @@ protected:
     bool spillable = false;
 
 private:
-    /// For processors_profile_log execution stats:
+    /// For:
     /// - elapsed_ns
-    /// - memory_usage_delta
+    /// - memory_allocated_bytes
+    /// - memory_freed_bytes
     friend class ExecutionThreadContext;
-    /// For processors_profile_log wait stats:
+    /// For
     /// - input_wait_elapsed_ns
     /// - output_wait_elapsed_ns
     friend class ExecutingGraph;
@@ -414,7 +416,8 @@ private:
     uint64_t input_wait_elapsed_ns = 0;
     Stopwatch output_wait_watch;
     uint64_t output_wait_elapsed_ns = 0;
-    Int64 memory_usage_delta = 0;
+    UInt64 memory_allocated_bytes = 0;
+    UInt64 memory_freed_bytes = 0;
 
     size_t stream_number = NO_STREAM;
 

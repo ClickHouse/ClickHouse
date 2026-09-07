@@ -39,7 +39,8 @@ struct ProcessorProfileLogElement
     size_t input_bytes{};
     size_t output_rows{};
     size_t output_bytes{};
-    Int64 memory_usage_delta{};
+    UInt64 memory_allocated_bytes{};
+    UInt64 memory_freed_bytes{};
 
     static std::string name() { return "ProcessorsProfileLog"; }
     static ColumnsDescription getColumnsDescription();

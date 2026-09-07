@@ -18,7 +18,6 @@
 #include <cerrno>
 #include <cstdlib>
 #include <limits>
-#include <utility>
 
 namespace DB::ErrorCodes
 {
@@ -171,35 +170,34 @@ TEST(AllocationInterceptors, MallocZeroFreeDoesNotCauseNegativeDrift)
     EXPECT_GE(total_memory_tracker.get() - before_global, -64 * 1024);
 }
 
-TEST(AllocationInterceptors, CurrentProcessorMemoryUsageDeltaTracksAllocFreeEvents)
+TEST(AllocationInterceptors, ThreadMemoryAllocatedAndFreedBytes)
 {
     MainThreadStatus::getInstance();
     CurrentThread::flushUntrackedMemory();
 
     auto & thread = CurrentThread::get();
-    Int64 delta = 0;
-    Int64 * previous_delta = std::exchange(thread.current_processor_memory_usage_delta, &delta);
-    SCOPE_EXIT({
-        thread.current_processor_memory_usage_delta = previous_delta;
-        CurrentThread::flushUntrackedMemory();
-    });
+    SCOPE_EXIT({ CurrentThread::flushUntrackedMemory(); });
+
+    const UInt64 allocated_before = thread.memory_allocated_bytes;
+    const UInt64 freed_before = thread.memory_freed_bytes;
 
     std::ignore = CurrentMemoryTracker::alloc(4096);
-    EXPECT_EQ(delta, 4096);
+    EXPECT_EQ(thread.memory_allocated_bytes - allocated_before, 4096);
+    EXPECT_EQ(thread.memory_freed_bytes - freed_before, 0);
 
-    std::ignore = CurrentMemoryTracker::free(1024);
-    EXPECT_EQ(delta, 3072);
+    std::ignore = CurrentMemoryTracker::free(4096);
+    EXPECT_EQ(thread.memory_allocated_bytes - allocated_before, 4096);
+    EXPECT_EQ(thread.memory_freed_bytes - freed_before, 4096);
 
-    std::ignore = CurrentMemoryTracker::free(3072);
-    EXPECT_EQ(delta, 0);
-
+    /// Memory blocked on the process level is not counted.
     {
         MemoryTrackerBlockerInThread blocker(VariableContext::Process);
         std::ignore = CurrentMemoryTracker::alloc(2048);
         std::ignore = CurrentMemoryTracker::free(2048);
     }
 
-    EXPECT_EQ(delta, 0);
+    EXPECT_EQ(thread.memory_allocated_bytes - allocated_before, 4096);
+    EXPECT_EQ(thread.memory_freed_bytes - freed_before, 4096);
 }
 
 namespace

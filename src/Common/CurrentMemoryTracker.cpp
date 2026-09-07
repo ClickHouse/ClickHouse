@@ -44,18 +44,6 @@ MemoryTracker * getMemoryTracker()
     return nullptr;
 }
 
-void addCurrentProcessorMemoryUsageDelta(DB::ThreadStatus * thread, Int64 delta, VariableContext blocker_level)
-{
-    if (!delta || !thread->current_processor_memory_usage_delta)
-        return;
-
-    /// Attribute only memory that is tracked on the query/process level.
-    if (blocker_level <= VariableContext::Process)
-        return;
-
-    *thread->current_processor_memory_usage_delta += delta;
-}
-
 }
 
 using DB::current_thread;
@@ -119,7 +107,10 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
             }
         }
 
-        addCurrentProcessorMemoryUsageDelta(current_thread, size, blocker_level);
+        /// Memory blocked on the query/process level is not attributed to the thread.
+        if (blocker_level > VariableContext::Process)
+            current_thread->memory_allocated_bytes += static_cast<UInt64>(size);
+
         return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
     }
 
@@ -194,7 +185,10 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
                 std::ignore = memory_tracker->free(-untracked_memory, /*_sample_probability=*/ 0.0);
         }
 
-        addCurrentProcessorMemoryUsageDelta(current_thread, -size, blocker_level);
+        /// Memory blocked on the query/process level is not attributed to the thread.
+        if (blocker_level > VariableContext::Process)
+            current_thread->memory_freed_bytes += static_cast<UInt64>(size);
+
         return AllocationTrace(current_thread->getEffectiveSampleProbability(size));
     }
 
