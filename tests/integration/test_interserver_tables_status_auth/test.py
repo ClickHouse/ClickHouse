@@ -80,6 +80,50 @@ def read_varstring(sock):
     return recv_exact(sock, read_varuint(sock))
 
 
+def open_interserver_connection(node):
+    """Connect and complete an interserver handshake that the server accepts. The Hello
+    names cluster `mismatch` (which has a secret) so the handshake is accepted into
+    interserver mode, where nothing is authenticated yet."""
+    hello = (
+        varuint(0)
+        + varstring("test")           # client name
+        + varuint(24)                 # version major
+        + varuint(3)                  # version minor
+        + varuint(OLD_REVISION)       # tcp protocol revision
+        + varstring("")               # default database
+        + varstring(USER_INTERSERVER_MARKER)
+        + varstring("")               # password (empty -> interserver mode)
+        + varstring("mismatch")       # cluster name (must exist and have a secret)
+        + varstring("")               # salt
+    )
+    sock = socket.create_connection((node.ip_address, 9000), timeout=20)
+    sock.settimeout(20)
+    sock.sendall(hello)
+    # Consume the server Hello (old-revision layout: no nonce, no chunking).
+    read_varuint(sock)      # packet type (Hello)
+    read_varstring(sock)    # server name
+    read_varuint(sock)      # version major
+    read_varuint(sock)      # version minor
+    read_varuint(sock)      # revision
+    read_varstring(sock)    # timezone
+    read_varstring(sock)    # display name
+    read_varuint(sock)      # version patch
+    return sock
+
+
+def wait_for_log_growth(node, needles, baseline, timeout=60):
+    """Poll until one of `needles` occurs more often in the node's log than in `baseline`,
+    returning the final counts (parallel to `needles`) grown or not. The verdict is logged
+    while the connection handler unwinds, so an assertion evaluated without this barrier
+    could be satisfied by reading the log too early."""
+    deadline = time.monotonic() + timeout
+    while True:
+        counts = [int(node.count_in_log(needle)) for needle in needles]
+        if any(c > b for c, b in zip(counts, baseline)) or time.monotonic() > deadline:
+            return counts
+        time.sleep(0.5)
+
+
 def test_old_protocol_unauthenticated_request_is_rejected(started_cluster):
     """An old-protocol peer sends no secret hash; with the require-auth setting on
     (the default), the server must reject it instead of disclosing table status.
@@ -158,23 +202,12 @@ def test_new_protocol_wrong_secret_request_is_rejected(started_cluster):
 
 
 def test_data_packet_before_query_is_not_deserialized(started_cluster):
-    """A `Data` packet arriving before any `Query` must be rejected without its Native
-    block being read. The Hello names cluster `mismatch` (which has a secret) so the
-    handshake is accepted into interserver mode, where nothing is authenticated yet. The
-    block declares a column type that does not exist, so reading the payload would hand
-    that name to `DataTypeFactory` and log it as an unknown family."""
-    hello = (
-        varuint(0)
-        + varstring("test")           # client name
-        + varuint(24)                 # version major
-        + varuint(3)                  # version minor
-        + varuint(OLD_REVISION)       # tcp protocol revision
-        + varstring("")               # default database
-        + varstring(USER_INTERSERVER_MARKER)
-        + varstring("")               # password (empty -> interserver mode)
-        + varstring("mismatch")       # cluster name (must exist and have a secret)
-        + varstring("")               # salt
-    )
+    """A `Data` packet arriving before any `Query` must be rejected without its payload
+    being read. Two connections cover the two halves of that: the first sends a complete
+    block declaring a column type that does not exist, so reading the payload would hand
+    that name to `DataTypeFactory` and log it as an unknown family; the second sends the
+    packet type alone and half-closes, so a handler that needs any payload byte reaches
+    end-of-stream instead of the rejection."""
     # Uncompressed: the compression method is only negotiated while a query is processed.
     # rows=0 carries no column data, since the type name precedes it on the wire.
     data_packet = (
@@ -190,19 +223,8 @@ def test_data_packet_before_query_is_not_deserialized(started_cluster):
     before_read = int(node_a.count_in_log(BOGUS_TYPE_READ))
     before_rejected = int(node_a.count_in_log(DATA_REJECTED))
 
-    sock = socket.create_connection((node_a.ip_address, 9000), timeout=20)
-    sock.settimeout(20)
+    sock = open_interserver_connection(node_a)
     try:
-        sock.sendall(hello)
-        # Consume the server Hello (old-revision layout: no nonce, no chunking).
-        read_varuint(sock)      # packet type (Hello)
-        read_varstring(sock)    # server name
-        read_varuint(sock)      # version major
-        read_varuint(sock)      # version minor
-        read_varuint(sock)      # revision
-        read_varstring(sock)    # timezone
-        read_varstring(sock)    # display name
-        read_varuint(sock)      # version patch
         sock.sendall(data_packet)
         try:
             data = sock.recv(4096)
@@ -212,16 +234,9 @@ def test_data_packet_before_query_is_not_deserialized(started_cluster):
     finally:
         sock.close()
 
-    # The verdict is logged while the connection handler unwinds, so wait for either
-    # outcome: reading the log too early would satisfy the absence assertion on its own.
-    after_read, after_rejected = before_read, before_rejected
-    deadline = time.monotonic() + 60
-    while time.monotonic() < deadline:
-        after_read = int(node_a.count_in_log(BOGUS_TYPE_READ))
-        after_rejected = int(node_a.count_in_log(DATA_REJECTED))
-        if after_read > before_read or after_rejected > before_rejected:
-            break
-        time.sleep(0.5)
+    after_read, after_rejected = wait_for_log_growth(
+        node_a, [BOGUS_TYPE_READ, DATA_REJECTED], [before_read, before_rejected]
+    )
 
     assert after_read == before_read, (
         f"the type name {BOGUS_TYPE} came off the wire and reached DataTypeFactory: the "
@@ -230,3 +245,29 @@ def test_data_packet_before_query_is_not_deserialized(started_cluster):
     assert (
         after_rejected > before_rejected
     ), "the Data packet was not rejected with UNEXPECTED_PACKET_FROM_CLIENT"
+
+    # The block above shows no type was constructed; this one shows no payload byte was
+    # needed at all. The write side is closed right after the packet type, so a handler
+    # that reads the external table name first ends at end-of-stream and never rejects.
+    before_type_only = int(node_a.count_in_log(DATA_REJECTED))
+
+    sock = open_interserver_connection(node_a)
+    try:
+        sock.sendall(varuint(2))    # Protocol::Client::Data, with no body at all
+        sock.shutdown(socket.SHUT_WR)
+        try:
+            data = sock.recv(4096)
+        except ConnectionResetError:
+            data = b""
+        assert not data, "server answered a Data packet sent before any query"
+    finally:
+        sock.close()
+
+    (after_type_only,) = wait_for_log_growth(
+        node_a, [DATA_REJECTED], [before_type_only]
+    )
+
+    assert after_type_only > before_type_only, (
+        "the Data packet was not rejected on its packet type alone, so a payload byte "
+        "was required"
+    )
