@@ -82,7 +82,8 @@ for hedged in (0, 1):
         "None", 0, "1",
     )
     http(query(hedged, nested="'1'", outer="send_profile_traces=0"), "JSONEachPacketString", 1, "0")
-    for opt_out in ("0", "'false'", "DEFAULT"):
+    http(query(hedged, nested="1", outer="send_profile_traces=DEFAULT"), "JSONEachPacketString", 1, "0")
+    for opt_out in ("0", "'false'"):
         http(query(hedged, nested=opt_out), "JSONEachPacketString", 1, "0")
     http(query(hedged, nested="'not-a-bool'"), "JSONEachPacketString", 1, expect_error=True)
 

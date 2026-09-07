@@ -31,7 +31,7 @@ void prepareSecondaryQuerySettings(Settings & settings);
 
 /// Remove SQL opt-ins to profile trace delivery from an already-cloned forwarded query. The wire
 /// setting carries the effective opt-in after transport queues have been initialized. Keep explicit
-/// opt-outs and `DEFAULT`, so a nested query can still disable delivery. The caller must prune emptied
+/// opt-outs and `DEFAULT` clauses with their normal query-scope semantics. The caller must prune emptied
 /// settings clauses before formatting the query, as `removeSettingsFromQuery` does.
 void stripProfileTraceOptInsFromQuery(const ASTPtr & query);
 
