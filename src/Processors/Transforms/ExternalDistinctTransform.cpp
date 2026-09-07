@@ -269,7 +269,7 @@ void ExternalDistinctTransform::connectMergedStream(const Processors & merged_st
 
 void ExternalDistinctTransform::attachSpilledRun(const ProcessorPtr & source, const ProcessorPtr & sink, RunKind kind)
 {
-    external_merging_sorted->addInput();
+    external_merging_sorted->addInput(*spill_layout.getSpillHeader());
     connect(source->getOutputs().back(), external_merging_sorted->getInputs().back());
 
     outputs.emplace_back(*spill_layout.getSpillHeader(), this);
@@ -298,7 +298,7 @@ void ExternalDistinctTransform::attachSpilledRun(const ProcessorPtr & source, co
 
 void ExternalDistinctTransform::attachInMemoryTail(const ProcessorPtr & source)
 {
-    external_merging_sorted->addInput();
+    external_merging_sorted->addInput(*spill_layout.getSpillHeader());
     connect(source->getOutputs().back(), external_merging_sorted->getInputs().back());
     external_merging_sorted->setHaveAllInputs();
     merge_inputs_finalized = true;

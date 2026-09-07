@@ -68,7 +68,7 @@ IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
 
     auto & source = processors.front();
 
-    static_cast<MergingSortedTransform &>(*external_merging_sorted).addInput();
+    static_cast<MergingSortedTransform &>(*external_merging_sorted).addInput(header_without_constants);
     connect(source->getOutputs().back(), external_merging_sorted->getInputs().back());
 
     if (processors.size() > 1)
