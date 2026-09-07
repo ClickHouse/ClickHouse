@@ -1,0 +1,51 @@
+---
+description: 'Puffin 포맷에 대한 문서'
+keywords: ['Puffin']
+slug: /interfaces/formats/Puffin
+title: 'Puffin'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/) 파일을 읽기 위한 입력 형식입니다.
+
+이 형식은 `deletion-vector-v1` blob에서 삭제된 행 위치를 노출합니다. 지원되는 blob 타입은 이것뿐이며, 다른 blob 타입(예: `apache-datasketches-theta-v1`)이 포함된 파일은 거부됩니다.
+puffin 파일에 여러 `deletion-vector-v1` blob이 포함되어 있으면 이 형식은 각 blob당 하나의 행을 출력합니다.
+
+고정 출력 컬럼:
+
+* `referenced_data_file` (`String`) - 삭제 벡터가 적용되는 데이터 파일의 위치(`referenced-data-file` blob 속성)
+* `deleted_rows` (`Array(UInt64)`) - 삭제 벡터의 roaring 비트맵에 따라 삭제된 64비트 행 위치
+
+선언된 `cardinality`가 절대 머티리얼라이즈 상한을 초과하는 삭제 벡터는 `deleted_rows`를 요청하면 거부됩니다. Footer의 `deletion-vector-v1` 속성(`cardinality`가 부호 없는 정수로 파싱되는지 여부 포함)은 항상 검증됩니다. `referenced_data_file`만 선택하면 디스크의 payload I/O를 건너뛰므로 엔벌로프, CRC, roaring 역직렬화 및 머티리얼라이즈 상한 검사도 건너뜁니다. 이는 경로만 조회하는 PROJECTION이 blob 크기 상한까지 읽지 않도록 하기 위한 의도된 동작입니다.
+
+디스크에 저장된 `deletion-vector-v1` blob의 길이는 절대 상한으로 제한됩니다(Iceberg의 2 GiB 콘텐츠 크기 검사와 일치). `deleted_rows`를 요청하면 reader는 전체 payload를 할당하기 전에 엔벌로프 헤더(결합된 길이 및 magic)를 확인하고, 제한된 읽기 후 CRC를 검증합니다.
+
+LZ4로 압축된 puffin footer와 비압축 puffin footer를 모두 지원합니다. Footer payload 크기(및 선언된 LZ4 콘텐츠 크기)는 해당하는 경우 압축률과 절대 상한으로 제한되며, 크기가 너무 큰 footer는 할당 전에 거부됩니다.
+
+출력 컬럼의 부분 집합만 요청할 수 있습니다. 형식 생성 시 예상치 못한 컬럼명이나 타입이 포함된 사용자 제공 구조는 거부됩니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+참조된 데이터 파일에서 삭제된 행 위치를 읽습니다:
+
+```sql
+SELECT referenced_data_file, deleted_rows
+FROM file(deletes.puffin, Puffin);
+```
+
+삭제된 위치를 개별 행으로 펼칩니다:
+
+```sql
+SELECT referenced_data_file, row_number
+FROM file(deletes.puffin, Puffin)
+ARRAY JOIN deleted_rows AS row_number
+ORDER BY referenced_data_file, row_number;
+```
+
+삭제 벡터를 읽기 전에 `PuffinMetadata`를 사용하여 푸터 blob 디스크립터를 확인합니다.
