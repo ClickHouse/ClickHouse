@@ -322,7 +322,7 @@ namespace
     /// covered by the wrapped disk's own check (see #18794). Which path is a real host path depends
     /// on the delegate: a local disk exposes one directly, while a remote one exposes only its
     /// metadata root - and that root is local exactly when its metadata storage says so. An object
-    /// storage's own getPath() is not usable here, since it can be a bare remote key prefix.
+    /// storage's own `getPath` is not usable here, since it can be a bare remote key prefix.
     void warnIfEncryptedRootIsAffectedByExt4Bug(
         IDisk & delegate, const String & disk_path, const String & disk_absolute_path, const String & encrypted_name)
     {
@@ -340,7 +340,7 @@ namespace
                 warnIfAffectedByExt4CorruptionKernelBug(
                     (std::filesystem::path(metadata_storage->getPath()) / disk_path).string(), description);
 
-            /// `isRemote()` above is the disk's, and a DiskObjectStorage reports it whatever its backend
+            /// `isRemote` above is the disk's, and a `DiskObjectStorage` reports it whatever its backend
             /// is. A local object storage resolves blob keys under its key prefix on this host, so with
             /// plain metadata that prefix, not the metadata root, is where the encrypted data lands.
             auto object_storage = delegate.getObjectStorage();

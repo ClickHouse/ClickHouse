@@ -1014,7 +1014,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     try
     {
         const char * filename = "/proc/sys/fs/file-max";
-        /// The value can be as large as 2^63 - 1, so don't use the int-typed readNumber() here.
+        /// The value can be as large as 2^63 - 1, so don't use the int-typed `readNumber` here.
         ReadBufferFromFile in(filename);
         UInt64 system_wide_max_open_files = 0;
         readText(system_wide_max_open_files, in);
