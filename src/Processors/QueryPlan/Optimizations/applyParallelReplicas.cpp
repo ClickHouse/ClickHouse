@@ -220,9 +220,9 @@ static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag)
     return false;
 }
 
-/// True if any step in the fragment references such an unshippable subquery set (in a WHERE/HAVING filter,
-/// an expression, or a source step's row-level filter or PREWHERE). Used to keep that fragment local
-/// instead of shipping it.
+/// True if any step in the fragment references such an unshippable subquery set - in a filter, an
+/// expression, or a source step's row-level filter or PREWHERE. Used to keep that fragment local instead of
+/// shipping it.
 static bool fragmentHasUnshippableSubquerySet(const QueryPlan::Node * node)
 {
     if (!node)
