@@ -91,22 +91,43 @@ def git_ok(*args, cwd):
     )
 
 
-def flag_values(command, flag):
+def gh_calls(log):
+    """Each logged `gh` invocation, as its own argv list.
+
+    A NUL cannot occur inside an argument, while a space and a newline can, so the
+    stub delimits arguments with NUL and leads each record with its argument count.
+    """
+    fields = log.split("\0")[:-1] if log else []
+    calls = []
+    i = 0
+    while i < len(fields):
+        count = int(fields[i])
+        calls.append(fields[i + 1 : i + 1 + count])
+        i += 1 + count
+    return calls
+
+
+def gh_creates(log):
+    """The `pr create` calls, matched on the subcommand rather than anywhere in the
+    argv: a `--body` carries free text and could otherwise name one."""
+    return [argv for argv in gh_calls(log) if argv[:2] == ["pr", "create"]]
+
+
+def flag_values(argv, flag):
     """Every value `flag` is given, '' for a trailing one that `gh` would reject."""
-    tokens = command.split()
     return [
-        tokens[i + 1] if i + 1 < len(tokens) else ""
-        for i, token in enumerate(tokens)
+        argv[i + 1] if i + 1 < len(argv) else ""
+        for i, token in enumerate(argv)
         if token == flag
     ]
 
 
-def api_fields(command):
+def api_fields(argv):
     """The payload fields `gh api` will send, in the spellings pflag accepts. A bare
     `key=value` is not one: `gh` reads it as a second positional and refuses the call
     with "accepts 1 arg(s), received 2"."""
     fields = {}
-    tokens = command.split()
+    tokens = argv
     for i, token in enumerate(tokens):
         if token in ("-f", "--raw-field", "-F", "--field"):
             pair = tokens[i + 1] if i + 1 < len(tokens) else ""
@@ -121,11 +142,11 @@ def api_fields(command):
     return fields
 
 
-def api_method(command):
+def api_method(argv):
     """The method `gh api` will use: an explicit override in any of the spellings
     pflag accepts, else POST because the command adds parameters (`gh api --help`).
     A `GET` merely reads the endpoint."""
-    tokens = command.split()
+    tokens = argv
     for i, token in enumerate(tokens):
         if token in ("--method", "-X"):
             return tokens[i + 1] if i + 1 < len(tokens) else ""
@@ -133,7 +154,7 @@ def api_method(command):
             return token.split("=", 1)[1]
         if token.startswith("-X") and len(token) > 2:
             return token[2:]
-    return "POST" if api_fields(command) else "GET"
+    return "POST" if api_fields(argv) else "GET"
 
 
 class ReleaseE2E:
@@ -266,8 +287,50 @@ class ReleaseE2E:
         # successful `gh pr list --json` prints when nothing matches, so the retried
         # strict reads succeed and report "no PR".
         (self.bindir / "gh").write_text(
-            f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{self.root}/gh.log"\n'
-            'sub="$1 $2"\n'
+            '#!/bin/sh\nsub="$1 $2"\n'
+            # Each option belongs to the subcommand that defines it, so the table is per
+            # subcommand: one another subcommand takes is unknown here. An unlisted
+            # subcommand falls through to the dispatch, which records it as unmodelled.
+            'case "$sub" in\n'
+            '  "pr list")        vf=" --repo --head --state --json --label --search "; rq=""; known=1 ;;\n'
+            # `gh pr create` prompts for a title and a body it is not given, and refuses
+            # rather than prompting when it is not on a terminal.
+            '  "pr create")      vf=" --repo --head --base --title --body --label ";'
+            ' rq=" --title --body "; known=1 ;;\n'
+            '  "auth setup-git") vf=" "; rq=""; known=1 ;;\n'
+            '  "api "*)          vf=" -f -F --raw-field --field -X --method -H "; rq=""; known=1 ;;\n'
+            "  *) known=0 ;;\n"
+            "esac\n"
+            # `gh` refuses argv it cannot account for. Every call this stub answers is
+            # `gh <group> <verb-or-endpoint>`, so two positionals are expected, and an
+            # option is accountable only if it is this subcommand's and gets its value.
+            'if [ "$known" = 1 ]; then\n'
+            '  pos=0; skip=0; bad=""; seen=""\n'
+            '  for a in "$@"; do\n'
+            '    if [ "$skip" = 1 ]; then skip=0; continue; fi\n'
+            '    case "$a" in\n'
+            "      --*=*) name=${a%%=*}; joined=1 ;;\n"
+            '      -[fFXH]?*) rest=${a#??}; name=${a%"$rest"}; joined=1 ;;\n'
+            '      -*) name="$a"; joined=0 ;;\n'
+            "      *) pos=$((pos + 1)); continue ;;\n"
+            "    esac\n"
+            '    case "$vf" in\n'
+            '      *" $name "*) seen="$seen $name"; [ "$joined" = 1 ] || skip=1 ;;\n'
+            '      *) bad="$a"; break ;;\n'
+            "    esac\n"
+            "  done\n"
+            "  for r in $rq; do\n"
+            '    case " $seen " in *" $r "*) ;; *) bad="$r missing" ;; esac\n'
+            "  done\n"
+            '  if [ "$pos" != 2 ] || [ "$skip" = 1 ] || [ -n "$bad" ]; then\n'
+            '    echo "release-e2e stub: gh cannot account for this argv [$*]" >&2\n'
+            "    exit 1\n"
+            "  fi\n"
+            "fi\n"
+            # Logged after the refusal, so the log holds the calls this stub answered.
+            # A caller that treats a failed `gh` as a warning would otherwise leave a
+            # refused request in the log for the assertions to read as a completed one.
+            f'printf "%s\\0" "$#" "$@" >> "{self.root}/gh.log"\n'
             'head=""; repo=""; state=""; json=""; prev=""\n'
             'for a in "$@"; do\n'
             '  case "$prev" in\n'
@@ -561,9 +624,9 @@ class ReleaseE2E:
         # The target has to be read off the create itself. The reuse lookup that
         # precedes it names the same branch, so a whole-log match for a flag would
         # hold even with no create at all.
-        creates = [line for line in gh_log.splitlines() if "pr create" in line]
+        creates = gh_creates(gh_log)
         check(len(creates) == 1, f"want exactly one `pr create`, got {len(creates)}")
-        create = creates[0] if creates else ""
+        create = creates[0] if creates else []
         # Only the cut branch is an LTS line, so its label is there exactly when the
         # release type was read from it rather than from the bumped master. An absent
         # `--base` is the repository default branch, which is master.
@@ -583,13 +646,12 @@ class ReleaseE2E:
         # all hold, so all four are matched; compared as a list, so a duplicate of one
         # call is not a match for the other.
         labels = []
-        for line in gh_log.splitlines():
-            tokens = line.split()
-            if tokens[:1] == ["api"]:
-                fields = api_fields(line)
+        for argv in gh_calls(gh_log):
+            if argv[:1] == ["api"]:
+                fields = api_fields(argv)
                 labels.append((
-                    tokens[1],
-                    api_method(line),
+                    argv[1] if len(argv) > 1 else "",
+                    api_method(argv),
                     fields.get("name", ""),
                     fields.get("color", ""),
                 ))
@@ -632,7 +694,7 @@ class ReleaseE2E:
             "the rerun did not reuse the existing release PR",
         )
         check(
-            self.stub_log("gh").count("pr create") == 1,
+            len(gh_creates(self.stub_log("gh"))) == 1,
             "the rerun created a second release PR",
         )
 
