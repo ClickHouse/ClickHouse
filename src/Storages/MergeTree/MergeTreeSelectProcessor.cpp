@@ -481,7 +481,12 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+            {
+                /// A read-pool-local cancellation is used to finish a partial result normally.
+                /// Query-level cancellation must still propagate to the client.
+                CurrentThread::checkIfNotCancelled();
                 break;
+            }
             throw;
         }
     }

@@ -384,6 +384,39 @@ def test_prefetch_stops_after_native_client_cancel(
     )
 
 
+def test_prefetch_stops_after_kill_query(s3_cancellation_table):
+    node, table = s3_cancellation_table
+    query_id = uuid.uuid4().hex
+    failpoint = "s3_read_before_get_object"
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    query_future = executor.submit(
+        node.query_and_get_answer_with_error,
+        make_s3_cancellation_query(
+            table,
+            extra_settings="allow_prefetched_read_pool_for_remote_filesystem=1",
+        ),
+        query_id=query_id,
+    )
+
+    try:
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+        node.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
+        wait_until_query_is_cancelled(node, query_id)
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+
+        answer, error = query_future.result(timeout=10)
+        assert answer == "", answer
+        assert "QUERY_WAS_CANCELLED" in error, error
+    finally:
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    assert_no_s3_requests(node, query_id)
+
+
 @pytest.mark.parametrize(
     "predicate,index_settings",
     [
