@@ -17,7 +17,7 @@ Result type matches input float type.
 Float64
 Float32
 BFloat16
-Per-row n via a column.
+Selected n from 0 to past the mantissa width (Float64).
 0	0011111111111111111111111111111111111111111111111111111111111111
 1	0011111111111111111111111111111111111111111111111111111111111110
 2	0011111111111111111111111111111111111111111111111111111111111100
@@ -26,6 +26,7 @@ Per-row n via a column.
 30	0011111111111111111111111111111111000000000000000000000000000000
 52	0011111111110000000000000000000000000000000000000000000000000000
 100	0011111111110000000000000000000000000000000000000000000000000000
+Selected n from 0 to past the mantissa width (Float32).
 0	00111111111111111111111111111111
 1	00111111111111111111111111111110
 2	00111111111111111111111111111100
@@ -34,6 +35,7 @@ Per-row n via a column.
 20	00111111111100000000000000000000
 23	00111111100000000000000000000000
 100	00111111100000000000000000000000
+Selected n from 0 to past the mantissa width (BFloat16).
 0	0011111111111111
 1	0011111111111110
 2	0011111111111100
@@ -64,12 +66,12 @@ Inf stays Inf.
 1
 1
 7F80
-Large UInt64 n is clamped, not treated as negative, on both paths.
+Large UInt64 n is clamped.
 1
 1
 1
 1
-Constant n of every native integer type agrees with the per-row path.
+Every native integer type is accepted for n.
 1
 1
 1
@@ -78,16 +80,28 @@ Constant n of every native integer type agrees with the per-row path.
 1
 1
 1
-Negative constant n is rejected during analysis.
-A pruned branch of `if` hides a negative constant n.
+A non-constant n is rejected.
+A Dynamic first argument resolves the function at execution time.
 1
-Short-circuit guards a negative per-row n.
-2
-materialize(): per-row path equals const path.
+An expression that folds to a constant is accepted.
 1
 1
+A pruned branch of `if` hides an invalid n.
 1
-Const vs per-row parity across many rows.
+A NULL argument gives NULL.
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+\N	Nullable(Float64)
+\N
+0	1.2339999999385327
+1	\N
+2	1.2339999999385327
+3	\N
+Nullable arguments agree with the non-nullable path.
+Nullable(Float64)
+1
+1
+1
 1
 1
 1
@@ -98,9 +112,29 @@ Subnormals behavior.
 1
 1
 1
-SIMD parity over many rows (Float64): finite, NaN, Inf, subnormal.
+Vectorized kernel matches a bitmask oracle (Float64).
+1100	0
+Vectorized kernel matches a bitmask oracle (Float32).
+1100	0
+Vectorized kernel matches a bitmask oracle (BFloat16).
+1100	0
+The primary key is usable through floatBitTrim.
+7281
+2231
+10001
+1	1	1	1
 0
-SIMD parity over many rows (Float32): finite, NaN, Inf, subnormal.
+Trimming zero bits returns the argument bit for bit.
+0	0	0
+Materialized LowCardinality and sparse columns.
+LowCardinality(Float64)
+1
+1
+20006	104
+LowCardinality(Float64)
 0
-SIMD parity over many rows (BFloat16): finite, NaN, Inf, subnormal.
+0
+1	2
+Sparse
+0
 0

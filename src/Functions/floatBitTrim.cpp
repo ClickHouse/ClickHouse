@@ -1,10 +1,13 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <base/BFloat16.h>
+#include <base/DecomposedFloat.h>
 #include <base/bit_cast.h>
 #include <base/defines.h>
 #include <Common/TargetSpecific.h>
@@ -14,61 +17,54 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_COLUMN;
 extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
 
 template <typename Float>
-struct FloatTraits;
-template <>
-struct FloatTraits<Float64>
-{
-    using UInt = UInt64;
-    static constexpr UInt abs_mask = 0x7FFFFFFFFFFFFFFFULL;
-    static constexpr UInt inf_bits = 0x7FF0000000000000ULL;
-};
-template <>
-struct FloatTraits<Float32>
-{
-    using UInt = UInt32;
-    static constexpr UInt abs_mask = 0x7FFFFFFFu;
-    static constexpr UInt inf_bits = 0x7F800000u;
-};
-template <>
-struct FloatTraits<BFloat16>
-{
-    using UInt = UInt16;
-    static constexpr UInt abs_mask = 0x7FFF;
-    static constexpr UInt inf_bits = 0x7F80;
-};
-
-template <typename Float, typename UInt = typename FloatTraits<Float>::UInt>
-inline Float processOne(Float v, UInt mask)
+struct TrimTraits
 {
     using Traits = FloatTraits<Float>;
+    using UInt = typename Traits::UInt;
+
+    static constexpr size_t mantissa_bits = Traits::mantissa_bits;
+    /// Everything but the sign bit.
+    static constexpr UInt abs_mask = static_cast<UInt>((UInt{1} << (Traits::bits - 1)) - 1);
+    /// Exponent all ones and mantissa zero. With the sign dropped, anything greater is a `NaN`.
+    static constexpr UInt inf_bits
+        = static_cast<UInt>(((UInt{1} << Traits::exponent_bits) - 1) << Traits::mantissa_bits);
+};
+
+template <typename Float>
+inline Float processOne(Float v, typename TrimTraits<Float>::UInt mask)
+{
+    using Traits = TrimTraits<Float>;
+    using UInt = typename Traits::UInt;
     const UInt bits = bit_cast<UInt>(v);
     const UInt is_nan = ((bits & Traits::abs_mask) > Traits::inf_bits) ? UInt(~UInt{0}) : UInt{0};
     return bit_cast<Float>(bits & (mask | is_nan));
 }
 
 MULTITARGET_FUNCTION_X86_V4(
-    MULTITARGET_FUNCTION_HEADER(template <typename Float, typename UInt> void NO_INLINE),
+    MULTITARGET_FUNCTION_HEADER(template <typename Float> void NO_INLINE),
     processRangeImpl,
-    MULTITARGET_FUNCTION_BODY((const Float * __restrict src, Float * __restrict dst, UInt mask, size_t n) {
+    MULTITARGET_FUNCTION_BODY((const Float * __restrict src, Float * __restrict dst, typename TrimTraits<Float>::UInt mask, size_t n) {
         for (size_t i = 0; i < n; ++i)
             dst[i] = processOne(src[i], mask);
     }))
 
-template <typename Float, typename UInt>
-void processRange(const Float * src, Float * dst, UInt mask, size_t n)
+template <typename Float>
+void processRange(const Float * src, Float * dst, typename TrimTraits<Float>::UInt mask, size_t n)
 {
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
-        return processRangeImpl_x86_64_v4<Float, UInt>(src, dst, mask, n);
+        return processRangeImpl_x86_64_v4<Float>(src, dst, mask, n);
 #endif
-    processRangeImpl<Float, UInt>(src, dst, mask, n);
+    processRangeImpl<Float>(src, dst, mask, n);
 }
 
 class FunctionFloatBitTrim : public IFunction
@@ -80,9 +76,25 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Clearing the low mantissa bits is `floor(|x| / 2^n) * 2^n` with the sign kept, which is
+    /// non-decreasing across the whole sign-magnitude float line, for every `n` including 0.
+    bool hasInformationAboutMonotonicity() const override { return true; }
+
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        return !arguments[1].is_const;
+        if (!type.isValueRepresentedByNumber())
+            return {};
+        /// `NaN` is returned unchanged and is unordered, so a range touching it carries no
+        /// information. This mirrors `PositiveMonotonicity`, which `roundToExp2` uses.
+        if (isNaNField(left) || isNaNField(right))
+            return {};
+        /// Not strict: many inputs collapse onto the same output.
+        return {.is_monotonic = true};
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -104,15 +116,18 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        if (!arguments[1].column || !isColumnConst(*arguments[1].column))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of {} must be constant", getName());
+
         auto result_type = getReturnTypeImpl(DataTypes{arguments[0].type, arguments[1].type});
 
-        const auto & bits_column = arguments[1].column;
-        if (bits_column && isColumnConst(*bits_column) && !WhichDataType(arguments[1].type).isNativeUInt() && bits_column->getInt(0) < 0)
-            throw Exception(
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                "Number of bits to trim in {} must be non-negative, got {}",
-                getName(),
-                bits_column->getInt(0));
+        if (isNativeInt(arguments[1].type))
+        {
+            const Int64 n = arguments[1].column->getInt(0);
+            if (n < 0)
+                throw Exception(
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Second argument of {} must be non-negative, got {}", getName(), n);
+        }
 
         return result_type;
     }
@@ -121,87 +136,43 @@ public:
     {
         WhichDataType which(arguments[0].type);
         if (which.isFloat32())
-            return executeForType<Float32, UInt32, 23>(arguments, input_rows_count);
+            return executeForType<Float32>(arguments, input_rows_count);
         if (which.isFloat64())
-            return executeForType<Float64, UInt64, 52>(arguments, input_rows_count);
+            return executeForType<Float64>(arguments, input_rows_count);
         if (which.isBFloat16())
-            return executeForType<BFloat16, UInt16, 7>(arguments, input_rows_count);
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type for {}", getName());
+            return executeForType<BFloat16>(arguments, input_rows_count);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Function {} got argument of type {}, which its return type check should have rejected",
+            getName(),
+            arguments[0].type->getName());
     }
 
 private:
-    template <typename MaskType, size_t MantissaBits, typename BitsToTrimType>
-    static MaskType getMask(BitsToTrimType n_raw)
+    template <typename Float>
+    static typename TrimTraits<Float>::UInt getMask(UInt64 n_raw)
     {
-        if constexpr (std::is_signed_v<BitsToTrimType>)
-        {
-            if (n_raw < 0) [[unlikely]]
-                throw Exception(
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "Number of bits to trim in {} must be non-negative, got {}",
-                    name,
-                    static_cast<Int64>(n_raw));
-        }
-        /// Clamp at MantissaBits
-        const UInt64 n = std::min<UInt64>(static_cast<UInt64>(n_raw), MantissaBits);
-        /// n is clamped to MantissaBits (52|23|7)), so shift is defined
+        using MaskType = typename TrimTraits<Float>::UInt;
+        /// Clamp at the mantissa width (52|23|7)
+        const UInt64 n = std::min<UInt64>(n_raw, TrimTraits<Float>::mantissa_bits);
         return static_cast<MaskType>(~((static_cast<MaskType>(1) << n) - 1));
     }
 
-    template <typename Float, typename MaskType, size_t MantissaBits>
+    template <typename Float>
     static ColumnPtr executeForType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
     {
-        auto values_col = arguments[0].column->convertToFullColumnIfConst();
-        const auto & bits_col_ptr = arguments[1].column;
+        using MaskType = typename TrimTraits<Float>::UInt;
 
-        const auto & values = assert_cast<const ColumnVector<Float> &>(*values_col).getData();
+        const auto & values = assert_cast<const ColumnVector<Float> &>(*arguments[0].column).getData();
+        const auto mask = getMask<Float>(arguments[1].column->getUInt(0));
+
+        /// An `n` of 0 keeps every bit, so the argument column is already the result
+        if (mask == static_cast<MaskType>(~MaskType{0}))
+            return arguments[0].column;
 
         auto result = ColumnVector<Float>::create(input_rows_count);
-        auto & result_data = result->getData();
-
-        WhichDataType bits_which(arguments[1].type);
-
-        if (isColumnConst(*bits_col_ptr))
-        {
-            /// `getInt` wraps a `UInt64` above 2^63 into a negative value, which would be rejected as negative.
-            const auto mask = bits_which.isNativeUInt() ? getMask<MaskType, MantissaBits>(bits_col_ptr->getUInt(0))
-                                                        : getMask<MaskType, MantissaBits>(bits_col_ptr->getInt(0));
-            processRange(values.data(), result_data.data(), mask, input_rows_count);
-            return result;
-        }
-
-        if (bits_which.isUInt8())
-            runVariable<Float, MaskType, MantissaBits, UInt8>(values, *bits_col_ptr, result_data, input_rows_count);
-        else if (bits_which.isUInt16())
-            runVariable<Float, MaskType, MantissaBits, UInt16>(values, *bits_col_ptr, result_data, input_rows_count);
-        else if (bits_which.isUInt32())
-            runVariable<Float, MaskType, MantissaBits, UInt32>(values, *bits_col_ptr, result_data, input_rows_count);
-        else if (bits_which.isUInt64())
-            runVariable<Float, MaskType, MantissaBits, UInt64>(values, *bits_col_ptr, result_data, input_rows_count);
-        else if (bits_which.isInt8())
-            runVariable<Float, MaskType, MantissaBits, Int8>(values, *bits_col_ptr, result_data, input_rows_count);
-        else if (bits_which.isInt16())
-            runVariable<Float, MaskType, MantissaBits, Int16>(values, *bits_col_ptr, result_data, input_rows_count);
-        else if (bits_which.isInt32())
-            runVariable<Float, MaskType, MantissaBits, Int32>(values, *bits_col_ptr, result_data, input_rows_count);
-        else if (bits_which.isInt64())
-            runVariable<Float, MaskType, MantissaBits, Int64>(values, *bits_col_ptr, result_data, input_rows_count);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected integer type for second argument of {}", name);
-
+        processRange(values.data(), result->getData().data(), mask, input_rows_count);
         return result;
-    }
-
-    template <typename Float, typename MaskType, size_t MantissaBits, typename BitsType>
-    static void runVariable(
-        const PaddedPODArray<Float> & values, const IColumn & bits_col, PaddedPODArray<Float> & result_data, size_t input_rows_count)
-    {
-        const auto & bits_data = assert_cast<const ColumnVector<BitsType> &>(bits_col).getData();
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            const auto mask = getMask<MaskType, MantissaBits>(bits_data[i]);
-            result_data[i] = processOne(values[i], mask);
-        }
     }
 };
 
@@ -221,17 +192,20 @@ Special values:
 - Infinity is returned unchanged.
 - Subnormal values may become zero, because their significant bits live in the low mantissa bits that are zeroed.
 
-A negative `n` throws `ARGUMENT_OUT_OF_BOUND`.
+`n` must be a constant non-negative integer; a non-constant `n` throws `ILLEGAL_COLUMN` and a
+negative `n` throws `ARGUMENT_OUT_OF_BOUND`.
 )";
     FunctionDocumentation::Syntax syntax = "floatBitTrim(value, n)";
     FunctionDocumentation::Arguments arguments
         = {{"value", "Floating-point value to trim.", {"BFloat16", "Float32", "Float64"}},
-           {"n", "Number of low mantissa bits to zero.", {"UInt8", "UInt16", "UInt32", "UInt64", "Int8", "Int16", "Int32", "Int64"}}};
+           {"n",
+            "Number of low mantissa bits to zero. Must be a non-negative constant.",
+            {"UInt8", "UInt16", "UInt32", "UInt64", "Int8", "Int16", "Int32", "Int64"}}};
     FunctionDocumentation::ReturnedValue returned_value
         = {"Returns `value` with the lowest `n` mantissa bits zeroed, of the same type as `value`.", {"BFloat16", "Float32", "Float64"}};
     FunctionDocumentation::Examples examples = {{"Trim 20 mantissa bits", "SELECT floatBitTrim(1.234::Float64, 20)", "1.2339999999385327"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionFloatBitTrim>(documentation);
