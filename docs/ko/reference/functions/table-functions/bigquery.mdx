@@ -1,0 +1,168 @@
+---
+description: '공개 데이터셋을 포함한 Google BigQuery 테이블에서 SELECT 및 INSERT 쿼리를 실행할 수 있습니다.'
+sidebarTitle: 'bigquery'
+slug: /sql-reference/table-functions/bigquery
+title: 'bigquery'
+doc_type: 'reference'
+---
+
+{/*자동 생성 시작*/}
+
+공개 데이터셋을 포함해 [Google BigQuery](https://cloud.google.com/bigquery)의 테이블에서 `SELECT` 및 `INSERT` 쿼리를 수행할 수 있습니다. 테이블 구조는 BigQuery 테이블 스키마에서 자동으로 추론됩니다.
+
+읽기에는 BigQuery REST API(`tabledata.list`)를 사용하므로 네이티브 테이블만 읽을 수 있으며, 뷰, materialized view, 외부 테이블은 읽을 수 없습니다. 쓰기에는 스트리밍 삽입(`tabledata.insertAll`)을 사용하며, 이를 사용하려면 프로젝트에서 청구를 활성화해야 합니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+bigquery(project, dataset, table[, access_token][, key = value, ...])
+bigquery(named_collection[, key = value, ...])
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+| 인수             | 설명                                                                                                |
+| -------------- | ------------------------------------------------------------------------------------------------- |
+| `project`      | 데이터셋을 소유하는 Google Cloud 프로젝트입니다. 공개 데이터셋의 경우 데이터셋이 속한 프로젝트이며, 예를 들어 `bigquery-public-data`가 있습니다. |
+| `dataset`      | 데이터셋 이름입니다.                                                                                       |
+| `table`        | 테이블 이름입니다.                                                                                        |
+| `access_token` | OAuth 2.0 액세스 토큰입니다(선택적 위치 인수이며, [인증](#authentication)을 참조하십시오).                                  |
+
+`project`, `dataset`, `table`, `access_token` 인수는 `key = value` 형식으로도 지정할 수 있습니다. 위치 인수는 이 순서대로 해당 슬롯을 채우며, 인수를 위치 인수와 키로 모두 지정하거나 동일한 키를 두 번 지정하면 오류가 발생합니다.
+
+다음 인수는 `key = value` 형식(또는 명명된 컬렉션의 키)으로 지정할 수 있습니다.
+
+| 키                     | 설명                                                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `access_token`        | OAuth 2.0 액세스 토큰입니다.                                                                                        |
+| `service_account_key` | JSON 포맷으로 된 Google 서비스 계정 키 파일의 내용입니다.                                                                      |
+| `client_id`           | OAuth 2.0 클라이언트 ID입니다(`client_secret` 및 `refresh_token`과 함께 사용됨).                                           |
+| `client_secret`       | OAuth 2.0 클라이언트 시크릿입니다.                                                                                     |
+| `refresh_token`       | OAuth 2.0 갱신 토큰입니다.                                                                                         |
+| `billing_project`     | 할당량과 청구를 연결할 선택적 프로젝트입니다(`X-Goog-User-Project` 헤더로 전송됨).                                                    |
+| `base_url`            | API 엔드포인트입니다. 기본값은 `https://bigquery.googleapis.com`이며, 테스트 및 에뮬레이터용으로 변경할 수 있습니다.                          |
+| `token_url`           | 테스트 및 에뮬레이터용 OAuth 토큰 엔드포인트 재정의입니다. 기본값은 서비스 계정 키의 `token_uri` 또는 `https://oauth2.googleapis.com/token`입니다. |
+
+<div id="authentication">
+  ## 인증
+</div>
+
+인증 메서드는 정확히 하나만 제공해야 합니다. BigQuery는 익명 액세스를 허용하지 않으므로 공개 데이터셋에도 자격 증명이 필요합니다.
+
+1. **액세스 토큰**. 예를 들어 `gcloud auth print-access-token`으로 가져올 수 있는 유효한 OAuth 2.0 액세스 토큰입니다. 토큰은 빠르게 만료되며(일반적으로 1시간 후), 이 메서드는 대화형 사용에 가장 적합합니다.
+2. **서비스 계정 키**(서버에 권장). Google Cloud IAM에서 생성한 키 파일의 내용을 `service_account_key` 인수로 전달합니다. ClickHouse는 키를 사용해 JWT에 서명하고 이를 액세스 토큰으로 교환하며, 자동으로 갱신합니다.
+3. **갱신 토큰**. `client_id`, `client_secret`, `refresh_token`을 전달합니다. 예를 들어 `gcloud auth application-default login`을 실행한 후 `~/.config/gcloud/application_default_credentials.json`에서 가져올 수 있습니다.
+
+각 쿼리에서 자격 증명을 지정하지 않으려면 [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)에 자격 증명을 저장하십시오. 명명된 컬렉션에서 생성한 영구 테이블(`BigQuery` 테이블 엔진 또는 `CREATE TABLE ... AS bigquery(...)` 사용)은 해당 컬렉션의 종속성으로 등록됩니다. 따라서 테이블이 존재하는 동안에는 `DROP NAMED COLLECTION`이 차단됩니다.
+
+<div id="data-type-mapping">
+  ## 데이터 타입 매핑
+</div>
+
+| BigQuery 타입           | ClickHouse 타입                                                                                                                            |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `STRING`              | [String](/ko/reference/data-types/string)                                                                                                   |
+| `BYTES`               | [String](/ko/reference/data-types/string) (원시 바이트)                                                                                          |
+| `INTEGER` / `INT64`   | [Int64](/ko/reference/data-types/int-uint)                                                                                                  |
+| `FLOAT` / `FLOAT64`   | [Float64](/ko/reference/data-types/float)                                                                                                   |
+| `BOOLEAN` / `BOOL`    | [Bool](/ko/reference/data-types/boolean)                                                                                                    |
+| `TIMESTAMP`           | [DateTime64(6, &#39;UTC&#39;)](/ko/reference/data-types/datetime64)                                                                         |
+| `DATE`                | [Date32](/ko/reference/data-types/date32)                                                                                                   |
+| `TIME`                | [Time64(6)](/ko/reference/data-types/time64)                                                                                                |
+| `DATETIME`            | [DateTime64(6, &#39;UTC&#39;)](/ko/reference/data-types/datetime64)                                                                         |
+| `NUMERIC` / `DECIMAL` | [Decimal(38, 9)](/ko/reference/data-types/decimal), 또는 매개변수화된 경우 `Decimal(P, S)`                                                            |
+| `BIGNUMERIC`          | [Decimal(76, 38)](/ko/reference/data-types/decimal), 또는 매개변수화된 경우 `Decimal(P, S)`                                                           |
+| `GEOGRAPHY`           | [Geometry](/ko/reference/data-types/geo#geometry) (WKT에서 파싱)                                                                                |
+| `JSON`                | [String](/ko/reference/data-types/string)                                                                                                   |
+| `INTERVAL`            | [String](/ko/reference/data-types/string)                                                                                                   |
+| `RANGE`               | [String](/ko/reference/data-types/string) (읽기 전용)                                                                                           |
+| `RECORD` / `STRUCT`   | [Tuple](/ko/reference/data-types/tuple), 또는 `NULLABLE` 모드에서는 [널 허용](/ko/reference/data-types/nullable)(`Tuple`)                                |
+| `REPEATED` 모드         | 원소 타입의 [배열](/ko/reference/data-types/array). BigQuery 배열에는 `NULL` 원소를 포함할 수 없으므로 원소는 `Nullable`이 아닙니다(`RECORD` 원소의 경우 `Array(Tuple(...))`). |
+| `NULLABLE` 모드         | [널 허용](/ko/reference/data-types/nullable) (`GEOGRAPHY` 제외. `Geometry` 타입은 자체적으로 `NULL`을 포함할 수 있음)                                           |
+
+참고:
+
+* BigQuery `DATETIME`에는 시간대 정보가 없으므로, 표시되는 값이 서버 시간대에 따라 달라지지 않도록 `DateTime64(6, 'UTC')`에 매핑됩니다.
+* `NULLABLE` `RECORD`는 `Nullable(Tuple(...))`에 매핑되므로 전체 레코드가 `NULL`인 경우 기본값으로 구성된 `Tuple`로 축약되지 않고 `NULL`로 유지됩니다. ClickHouse에서는 `Array`가 `Nullable` 내부에 있을 수 없으므로 `NULL` 배열(또는 빈 배열)은 빈 배열이 됩니다. BigQuery 배열에는 `NULL` 원소를 포함할 수 없으므로(`ARRAY<T>`는 `ARRAY<T NOT NULL>`과 동일함), `REPEATED` 필드의 원소 타입은 `Nullable`이 아닙니다(`Array(T)`, `RECORD` 원소인 경우 `Array(Tuple(...))`). `tabledata.list` 응답의 `NULL` 원소는 잘못된 입력으로 거부됩니다.
+* `bigquery` 테이블 함수를 통해 `Nullable(Tuple(...))` 컬럼을 읽고 쓰는 데는 추가 설정이 필요하지 않습니다. 이러한 컬럼을 포함하는 영구 `BigQuery` 엔진 테이블을 생성하려면(구조를 추론하든 명시적으로 선언하든) 다른 모든 `Nullable(Tuple)` 컬럼과 마찬가지로 `enable_nullable_tuple_type` 설정이 필요합니다. 컬럼을 명시적으로 선언할 때는 이 설정을 피하기 위해 `RECORD` 필드를 일반 `Tuple(...)`로 선언할 수도 있지만, 이 경우 전체 레코드 `NULL`은 기본 튜플로 강제 변환됩니다. 추론된 타입과 허용되는 유일한 차이는 `RECORD`의 `Tuple`을 감싸는 `Nullable`을 제거하는 것이며, 해당 레코드에서만 가능합니다. 널 허용 여부를 다른 내부 또는 외부 레코드로 옮길 수는 없습니다.
+* `GEOGRAPHY`는 [Geometry](/ko/reference/data-types/geo#geometry)에 매핑됩니다. BigQuery는 `GEOGRAPHY` 값을 [WKT](https://en.wikipedia.org/wiki/Well-known_text_representation_of_geometry) 텍스트로 전송하며, 읽을 때 `Geometry`의 해당 대안(`Point`, `MultiPoint`, `Ring`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`으로 구성된 `Variant`)으로 파싱되고 쓸 때는 다시 WKT로 직렬화됩니다. `GEOMETRYCOLLECTION` 및 빈 지오메트리(예: `POINT EMPTY`)에는 대응하는 `Geometry`가 없으므로, 이러한 값이 포함된 행을 읽으면 오류가 발생합니다. `Variant`는 자체적으로 `NULL`을 저장할 수 있으므로 `NULLABLE` `GEOGRAPHY` 필드는 `Nullable(Geometry)`가 아닌 `Geometry`에 매핑되며, `NULL`도 왕복 시 보존됩니다.
+* `JSON`은 [JSON](/ko/reference/data-types/newjson) 데이터 타입이 아니라 `String`에 매핑됩니다. ClickHouse `JSON` 타입은 최상위 수준에서 객체(`{...}`)만 허용하는 반면, BigQuery `JSON` 값은 스칼라, 배열 또는 `null` 등 모든 JSON 값이 될 수 있어 이러한 값을 포함한 테이블을 읽을 수 없기 때문입니다. 또한 `JSON`은 `Nullable`로 감쌀 수 없으므로 `NULLABLE` 컬럼의 SQL `NULL`이 보존되지 않습니다. `String` 매핑은 무손실이며, 최상위 객체는 `CAST(value AS JSON)`으로 변환할 수 있습니다.
+* 정수부가 38자리를 초과하는 `BIGNUMERIC` 값은 `Decimal(76, 38)`에 저장할 수 없으며 오류가 발생합니다.
+* `DateTime64`/`Date32` 범위(1900-2299년)를 벗어나는 `TIMESTAMP` 및 `DATE` 값은 지원되지 않습니다.
+* `RANGE` 컬럼은 읽기 전용입니다. `tabledata.insertAll`은 `RANGE<T>` 값을 구조화된 `{start, end}` 객체로 기대하지만, 이를 `String` 매핑으로부터 재구성할 수 없으므로 `RANGE` 컬럼에 삽입하면 오류가 발생합니다.
+* `INT64` 값은 `tabledata.insertAll`에 10진수 문자열로 전송됩니다. API가 JSON 숫자를 double로 파싱하므로, 그렇지 않으면 `[-2^53 + 1, 2^53 - 1]` 범위를 벗어나는 값이 손상되기 때문입니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+`gcloud` 토큰을 사용하여 공개 데이터셋을 읽습니다:
+
+```sql
+SELECT word, sum(word_count) AS c
+FROM bigquery('bigquery-public-data', 'samples', 'shakespeare', '<access token>')
+GROUP BY word
+ORDER BY c DESC
+LIMIT 5;
+```
+
+서비스 계정 키 파일을 사용하여 비공개 테이블을 읽습니다:
+
+```sql
+SELECT count()
+FROM bigquery('my-project', 'my_dataset', 'my_table',
+              service_account_key = '{"type": "service_account", "private_key": "...", "client_email": "...", ...}');
+```
+
+데이터 삽입(스트리밍 삽입, 청구 활성화 필요):
+
+```sql
+INSERT INTO FUNCTION bigquery('my-project', 'my_dataset', 'my_table', '<access token>')
+SELECT number AS id, toString(number) AS name FROM numbers(10);
+```
+
+명명된 컬렉션을 사용합니다.
+
+```xml
+<clickhouse>
+    <named_collections>
+        <my_bigquery>
+            <project>my-project</project>
+            <dataset>my_dataset</dataset>
+            <service_account_key><![CDATA[{"type": "service_account", ...}]]></service_account_key>
+        </my_bigquery>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+SELECT * FROM bigquery(my_bigquery, table = 'my_table');
+```
+
+<div id="limitations">
+  ## 제한 사항
+</div>
+
+* 네이티브 BigQuery 테이블만 읽을 수 있습니다. 뷰와 외부 테이블을 읽으려면 BigQuery 쿼리 작업을 실행해야 하지만, 이 함수는 이를 수행하지 않습니다.
+* `RANGE` 컬럼은 `String`으로 읽을 수 있지만 쓸 수는 없습니다. `RANGE` 컬럼에 삽입하면 오류가 발생합니다.
+* `GEOMETRYCOLLECTION`이거나 비어 있는 도형인 `GEOGRAPHY` 값은 `Geometry` 유형으로 표현할 수 없으므로, 이러한 값을 포함한 행을 읽으면 오류가 발생합니다. BigQuery는 이 위치에서 `NULL`을 허용하지 않으므로, `REQUIRED` `GEOGRAPHY` 필드에 `NULL` `Geometry`를 쓰거나 `REPEATED` `GEOGRAPHY` 필드의 요소로 쓰는 작업은 거부됩니다.
+* 프레디케이트는 푸시다운되지 않습니다. `tabledata.list`는 테이블의 행만 나열하며 필터링 매개변수를 제공하지 않습니다(페이지네이션, 컬럼 선택, 포맷 옵션만 지원함). 필터링하려면 BigQuery 쿼리 작업을 실행해야 하지만, 이 함수는 이를 수행하지 않습니다. 따라서 `WHERE` 조건은 행을 다운로드한 후 ClickHouse에서 적용됩니다. 전송되는 데이터 양을 줄이려면 컬럼 선택을 사용하십시오.
+* 반면 `LIMIT`는 읽는 데이터 양을 줄입니다. `maxResults`를 `max_block_size`로 설정해 페이지를 지연 요청하며, 쿼리에 필요한 만큼의 행을 확보하면 추가 페이지를 요청하지 않습니다. 단순한 `LIMIT n`의 경우(`WHERE`, `GROUP BY`, `ORDER BY`가 없고 `n`이 `max_block_size`보다 작은 경우) ClickHouse는 `max_block_size`를 `n`으로 낮추므로, 정확히 `n`개 행을 가져오기 위해 정확히 한 번만 요청합니다. 그렇지 않으면 제한을 넘는 첫 페이지 경계에서 읽기가 중단되며, 초과분은 한 페이지 미만입니다.
+* 명시적인 컬럼 목록을 `tabledata.list`에 전달하여, 읽기는 쿼리 분석 시점의 스키마에 고정됩니다. 컬럼 목록이 요청 URL 길이 제한을 초과하는 매우 넓은 읽기(예: 수천 개 컬럼이 있는 테이블에서 `SELECT *`)는 고정 없이 읽는 대신 쿼리가 거부됩니다(고정되지 않은 읽기는 동시 스키마 변경으로 인해 정렬이 어긋날 수 있음). 목록이 제한에 맞도록 더 적은 컬럼을 선택하십시오. 동일한 URL 길이 제한은 페이지네이션 요청 전마다 확인됩니다(각 페이지에는 불투명한 `pageToken`이 포함됨). 따라서 이후 페이지가 제한에 맞지 않는 읽기는 중간에 실패하는 대신 동일한 오류와 함께 거부됩니다.
+* BigQuery 테이블의 스키마를 읽은 뒤 테이블이 변경되면, 일치하지 않는 데이터를 묵묵히 반환하거나 쓰는 대신 쿼리가 거부됩니다. 읽기 직전과 `INSERT`가 첫 행 스트리밍을 시작하기 전에 라이브 스키마를 다시 가져와 분석된 스키마와 비교합니다. 스키마와 데이터는 별도의 REST 요청으로 가져오므로, 이 확인과 후속 요청 사이에 발생하는 스키마 변경 가능성은 제거할 수 없습니다.
+* 비교 대상은 쿼리 분석에 사용된 스키마 스냅샷입니다. 이 스냅샷은 테이블 함수가 구조를 확인할 때 생성되며, 영속 테이블(`BigQuery` 엔진 테이블 또는 동일한 방식으로 컬럼을 유지하는 `CREATE TABLE ... AS bigquery(...)`로 생성된 테이블)의 경우에는 `CREATE`, `ATTACH` 또는 서버 재시작 후 처음 읽거나 쓸 때 생성됩니다. 테이블 메타데이터에는 BigQuery 스키마가 아니라 매핑된 ClickHouse 컬럼이 유지되므로, 테이블이 분리된 상태이거나 서버가 중지된 동안 발생한 스키마 변경은 거부되지 않고 다음 쿼리에서 반영됩니다. 선언된 컬럼은 여전히 라이브 스키마에 대해 검증되고 행은 해당 스키마를 사용해 디코딩되므로, 매핑된 ClickHouse 유형을 유지하는 변경(예: `STRING`에서 `BYTES`로)은 동일한 컬럼 유형에서 새 유형의 규칙에 따라 읽힙니다.
+* 스트리밍 삽입으로 기록된 행은 BigQuery 스트리밍 버퍼에 저장되며, 이후 읽기에서 표시되기까지 시간이 걸릴 수 있습니다.
+* 대규모 `INSERT`는 일괄 처리로 `tabledata.insertAll`에 전송됩니다. 요청당 최대 500개 행으로 제한되며, 각 요청이 BigQuery의 10 MB 요청 크기 제한을 넘지 않도록 분할됩니다(이 제한보다 큰 단일 행은 명확한 오류와 함께 거부됨).
+* 쓰기는 원자적으로 처리되지 않으며, 단일 `tabledata.insertAll` 요청도 일부만 성공할 수 있습니다. BigQuery는 요청에 포함된 일부 행은 커밋하고 나머지 행은 `insertErrors`와 함께 거부할 수 있습니다. 또한 요청은 서로 독립적으로 커밋되므로, 앞선 배치가 수락된 후 후속 배치가 거부될 수 있습니다. 두 경우 모두 쿼리에서 오류가 보고되지만, 이미 커밋된 행은 BigQuery에 그대로 남습니다. 중복을 줄이기 위해 각 행은 쿼리 ID와 스트림에서의 행 순번을 기반으로 생성된 안정적인 `insertId`와 함께 전송됩니다. BigQuery는 이를 사용해 스트리밍 삽입 윈도우 내에서 최선 노력 방식으로 중복을 제거합니다. BigQuery의 `insertId` 128자 제한을 초과하는 `query_id`는 고정 길이 접두사로 해시되며, 이 접두사는 해당 `query_id`에 대해 항상 동일하게 유지됩니다. `insertId`는 행 순번에 따라 달라지므로, 재실행 시 행이 동일한 순서로 생성될 때만 중복 제거를 안정적으로 수행할 수 있습니다. 배치의 전송 수준 재시도는 항상 안전하지만, 동일한 `query_id`로 같은 `INSERT`를 다시 실행할 때는 행이 동일한 순서로 제공되는 경우에만 중복이 제거됩니다(예: 단일 스레드 삽입 또는 그 밖의 결정론적 순서 지정. 시도 간 청크 순서가 달라질 수 있는 병렬 `INSERT ... SELECT`에서는 `max_threads = 1` 및 `max_insert_threads = 1`을 설정하십시오).
+
+<div id="related">
+  ## 관련 항목
+</div>
+
+* [`BigQuery` 테이블 엔진](/ko/reference/engines/table-engines/integrations/bigquery)
+
+{/*AUTOGENERATED_END*/}

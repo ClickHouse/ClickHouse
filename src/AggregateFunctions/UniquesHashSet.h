@@ -13,6 +13,15 @@
 #include <Common/HashTable/Hash.h>
 
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+}
+
+
 /** Approximate calculation of anything, as usual, is constructed according to the following scheme:
   * - some data structure is used to calculate the value of X;
   * - Not all values are added to the data structure, but only selected ones (according to some selectivity criteria);
@@ -76,6 +85,11 @@ private:
     using Value = UInt64;
     using HashValue = UInt32;
     using Allocator = HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>;
+
+    /// Thinning leaves at most 2 ^ (32 - skip_degree) hashes, and `shrinkIfNeed()` raises the
+    /// degree only while more than UNIQUES_HASH_MAX_SIZE of them remain, so one degree past the
+    /// thinning budget is the last it can produce.
+    static constexpr UInt8 max_skip_degree = UNIQUES_HASH_BITS_FOR_SKIP + 1;
 
     UInt32 m_size;          /// Number of elements
     UInt8 size_degree{};      /// The size of the table as a power of 2
@@ -267,6 +281,11 @@ private:
             {
                 while (m_size > UNIQUES_HASH_MAX_SIZE)
                 {
+                    if (unlikely(skip_degree >= max_skip_degree))
+                        throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
+                            "Cannot thin out UniquesHashSet: {} elements remain at the maximum skip degree of {}",
+                            static_cast<size_t>(m_size), static_cast<size_t>(max_skip_degree));
+
                     ++skip_degree;
                     rehash();
                 }
@@ -423,13 +442,19 @@ public:
           */
         res += (intHashCRC32(m_size) & ((1ULL << skip_degree) - 1));
 
+        size_t p32 = 1ULL << 32;
+
+        /// The correction below is undefined once the thinned count reaches the hash space:
+        /// report the largest count it can express.
+        if (unlikely(res >= p32))
+            res = p32 - 1;
+
         /** Correction of a systematic error due to collisions during hashing in UInt32.
           * `fixed_res(res)` formula
           * - with how many different elements of fixed_res,
           *   when randomly scattered across 2^32 buckets,
           *   filled buckets with average of res is obtained.
           */
-        size_t p32 = 1ULL << 32;
         size_t fixed_res = static_cast<size_t>(round(static_cast<double>(p32) * (log(p32) - log(p32 - res))));
         return fixed_res;
     }
@@ -486,6 +511,12 @@ public:
         has_zero = false;
 
         DB::readBinaryLittleEndian(skip_degree, rb);
+
+        if (unlikely(skip_degree > max_skip_degree))
+            throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
+                "Cannot read UniquesHashSet: skip degree is {}, which exceeds the maximum value of {}",
+                static_cast<size_t>(skip_degree), static_cast<size_t>(max_skip_degree));
+
         DB::readVarUInt(m_size, rb);
 
         if (m_size > UNIQUES_HASH_MAX_SIZE)

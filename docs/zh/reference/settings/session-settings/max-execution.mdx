@@ -57,7 +57,8 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 <Note>
   只有在数据处理过程中的特定位置才会检查是否超时，因此查询也只能在这些位置停止。
-  目前无法在聚合状态合并期间或查询分析期间停止，
+  目前无法在聚合状态合并期间停止，也无法在大多数查询分析期间停止
+  (建立到远程副本的连接是可以停止的位置之一) ，
   因此实际运行时间会高于此设置的值。
 </Note>
 
