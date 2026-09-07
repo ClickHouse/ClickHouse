@@ -1800,12 +1800,21 @@ TEST(SchedulerSpaceShared, UnprotectedGrowthDoesNotJoinProtectedRecoveryEpisode)
     r.registerResource();
 
     ManualAllocation protected_heavy(queue, "protected_heavy", 8000, true, protectedFromEvictionPolicy(1));
-    ManualAllocation unprotected(queue, "unprotected", 1000);
     protected_heavy.protectAfterPressureRounds(1);
 
     protected_heavy.increaseAsync(5000);
-    unprotected.increaseAsync(2000);
     ASSERT_TRUE(protected_heavy.waitPressureCountFor(1, std::chrono::seconds(5)));
+
+    /// Establish recovery before adding the competing increase. Otherwise its smaller fair key
+    /// lets the unprotected request reach eviction first and block the protected request's pressure
+    /// notification while the limit waits for the victim to release memory.
+    ManualAllocation unprotected(queue, "unprotected", 1000);
+    unprotected.increaseAsync(2000);
+
+    std::promise<bool> parked;
+    auto parked_future = parked.get_future();
+    t.scheduler.event_queue.enqueue([&] { parked.set_value(unprotected.isIncreaseSuspended()); });
+    ASSERT_TRUE(parked_future.get()) << "The unprotected request did not join the initial recovery search";
 
     /// The first release guarantees that the unprotected request has participated in a complete
     /// search round. The second makes it resurface again while both increases remain impossible.
@@ -2788,6 +2797,9 @@ TEST(SchedulerSpaceShared, ConcurrentFittingArrivalsAllProgress)
 /// crash (and as a precise use-after-free under ASan).
 TEST(SchedulerSpaceShared, DetachingLimitCancelsQueuedSuction)
 {
+    /// Re-exec the child: a fork inherits the global thread pool's state but none of its workers.
+    /// Starting the scheduler in that child can hang before reaching any of the bounded waits.
+    ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
     ASSERT_EXIT(
         {
             SpaceSharedTest t;
@@ -3501,6 +3513,7 @@ TEST(SchedulerSpaceShared, SuctionCapAppliesWhenReservedCapacityMakesGrowthFit)
 /// Run in a subprocess because admitting two owners used to trigger a scheduler-thread assertion.
 TEST(SchedulerSpaceShared, SiblingLimitsSharePolicySuctionSlot)
 {
+    ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
     for (const String & policy_kind : {String("fair"), String("precedence")})
     {
         SCOPED_TRACE(policy_kind);
@@ -3593,3 +3606,4 @@ TEST(SchedulerSpaceShared, SiblingLimitsSharePolicySuctionSlot)
             "");
     }
 }
+
