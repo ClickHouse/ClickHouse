@@ -1096,10 +1096,9 @@ void RemoteQueryExecutor::finish()
 
 void RemoteQueryExecutor::cancel()
 {
-    /// `finish` holds `was_cancelled_mutex` across an unbounded blocking read, and
-    /// `ExecutingGraph::cancel` drives this for every processor in turn under `processors_mutex`, so
-    /// this must not wait for it. Acquiring `was_cancelled_mutex` while still holding the gate is what
-    /// makes the check meaningful: a `finish` that owns that mutex has already incremented the counter.
+    /// `finish` can hold `was_cancelled_mutex` across an unbounded blocking read, and this runs from a
+    /// sweep that must not stall, so it must not wait for that mutex. Taking it while still holding the
+    /// gate is what makes the check meaningful: a `finish` that owns it already incremented the counter.
     UniqueLock gate(finish_gate_mutex);
     if (finish_in_progress)
         return;
