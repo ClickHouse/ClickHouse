@@ -65,7 +65,8 @@ void checkObjectExists(
     const String & bucket,
     const String & key,
     const String & version_id = {},
-    std::string_view description = {});
+    std::string_view description = {},
+    const std::function<void()> & cancellation_hook = {});
 
 bool isNotFoundError(Aws::S3::S3Errors error);
 bool isAuthenticationError(Aws::S3::S3Errors error);

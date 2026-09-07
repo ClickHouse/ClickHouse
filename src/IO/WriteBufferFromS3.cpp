@@ -233,9 +233,9 @@ void WriteBufferFromS3::finalizeImpl()
 
     if (request_settings[S3RequestSetting::check_objects_after_upload])
     {
-        S3::checkObjectExists(*client_ptr, bucket, key, {}, "Immediately after upload");
+        S3::checkObjectExists(*client_ptr, bucket, key, {}, "Immediately after upload", cancellation_hook);
 
-        size_t actual_size = S3::getObjectSize(*client_ptr, bucket, key, {});
+        size_t actual_size = S3::getObjectSize(*client_ptr, bucket, key, {}, cancellation_hook);
         if (actual_size != total_size)
             throw Exception(
                     ErrorCodes::S3_ERROR,

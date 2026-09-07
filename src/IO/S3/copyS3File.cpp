@@ -269,7 +269,7 @@ namespace
         void checkObjectAfterUpload()
         {
             LOG_TRACE(log, "Checking object {} exists after upload", dest_key);
-            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, "Immediately after upload");
+            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, "Immediately after upload", cancellation_hook);
             LOG_TRACE(log, "Object {} exists after upload", dest_key);
         }
 

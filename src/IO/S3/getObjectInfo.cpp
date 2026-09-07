@@ -225,9 +225,10 @@ void checkObjectExists(
     const String & bucket,
     const String & key,
     const String & version_id,
-    std::string_view description)
+    std::string_view description,
+    const std::function<void()> & cancellation_hook)
 {
-    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, {}, {});
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, {}, {}, cancellation_hook);
     if (object_info)
         return;
     throw S3Exception(error.GetErrorType(), "{}Object {} in bucket {} suddenly disappeared: {}",
