@@ -286,12 +286,15 @@ struct InjectionModel
 
 struct Client : DB::S3::Client
 {
-    explicit Client(std::shared_ptr<S3MemStrore> mock_s3_store, DB::HTTPHeaderEntries extra_headers = {})
+    explicit Client(
+        std::shared_ptr<S3MemStrore> mock_s3_store,
+        DB::HTTPHeaderEntries extra_headers = {},
+        DB::HTTPHeaderEntries access_headers = {})
         : DB::S3::Client(
             100,
             DB::S3::ServerSideEncryptionKMSConfig(),
             std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
-            GetClientConfiguration(std::move(extra_headers)),
+            GetClientConfiguration(std::move(extra_headers), std::move(access_headers)),
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
             DB::S3::ClientSettings{
                 .use_virtual_addressing = true,
@@ -302,14 +305,18 @@ struct Client : DB::S3::Client
         , store(mock_s3_store)
     {}
 
-    static std::shared_ptr<Client> CreateClient(String bucket = "mock-s3-bucket", DB::HTTPHeaderEntries extra_headers = {})
+    static std::shared_ptr<Client> CreateClient(
+        String bucket = "mock-s3-bucket",
+        DB::HTTPHeaderEntries extra_headers = {},
+        DB::HTTPHeaderEntries access_headers = {})
     {
         auto s3store = std::make_shared<S3MemStrore>();
         s3store->CreateBucket(bucket);
-        return std::make_shared<Client>(s3store, std::move(extra_headers));
+        return std::make_shared<Client>(s3store, std::move(extra_headers), std::move(access_headers));
     }
 
-    static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration(DB::HTTPHeaderEntries extra_headers = {})
+    static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration(
+        DB::HTTPHeaderEntries extra_headers = {}, DB::HTTPHeaderEntries access_headers = {})
     {
         DB::RemoteHostFilter remote_host_filter;
         auto configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
@@ -329,6 +336,7 @@ struct Client : DB::S3::Client
         /// aborts every request in debug/sanitizer builds.
         configuration.retryStrategy = std::make_shared<DB::S3::Client::RetryStrategy>(configuration.retry_strategy);
         configuration.extra_headers = std::move(extra_headers);
+        configuration.access_headers = std::move(access_headers);
         return configuration;
     }
 
@@ -1699,6 +1707,57 @@ TEST_P(SyncAsync, CompleteMultipartUploadAbsorbsNoSuchUploadWithRequestPayerHead
     EXPECT_EQ(client->counters.headObject, 1u);
 }
 
+/// An `access_header` authenticates the request on a header-authenticated endpoint. Like the
+/// transport and billing headers, it does not change which object a successful completion produces,
+/// so it must not disable the replay recovery. Note that the very same header name spelled as a
+/// generic `header` is not exempt -- see `...ReportsNoSuchUploadWhenWriteHasExtraHeader`.
+TEST_P(SyncAsync, CompleteMultipartUploadAbsorbsNoSuchUploadWithAccessHeader)
+{
+    client = MockS3::Client::CreateClient(
+        bucket,
+        /* extra_headers = */ {{"custom-auth-token", "ignore-tokens"}},
+        /* access_headers = */ {{"Custom-Auth-Token", "ignore-tokens"}});
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    auto buffer = getWriteBuffer("complete_multipart_upload_access_header");
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["complete_multipart_upload_access_header"], "A");
+    EXPECT_EQ(client->counters.headObject, 1u);
+}
+
+/// An `access_header` may name any header at all, including one from the `x-amz-` namespace, which
+/// is where S3 puts the headers that do change the stored object. The exemption must stay closed
+/// for those: `x-amz-tagging` is not represented by the completed part list.
+TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadWhenAccessHeaderIsAMZHeader)
+{
+    client = MockS3::Client::CreateClient(
+        bucket,
+        /* extra_headers = */ {{"x-amz-tagging", "kind=temporary"}},
+        /* access_headers = */ {{"x-amz-tagging", "kind=temporary"}});
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    EXPECT_THROW({
+        auto buffer = getWriteBuffer("complete_multipart_upload_amz_access_header");
+        buffer->write('A');
+
+        getAsyncPolicy().setAutoExecute(true);
+        buffer->finalize();
+    }, DB::S3Exception);
+
+    EXPECT_EQ(client->counters.headObject, 0u);
+}
+
 /// A genuinely aborted upload also answers NoSuchUpload, but the key holds an unrelated earlier
 /// object. Acknowledging it would report a write that never stored any of its data.
 TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadForForeignObject) {
@@ -1862,6 +1921,23 @@ TEST_F(CopyS3FileCompletionRecoveryTest, AbsorbsNoSuchUploadWithRequestPayerHead
 
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["copy_completion_recovery_request_payer"], payload);
+    EXPECT_EQ(client->counters.headObject, 1u);
+}
+
+/// The `access_header` exemption must hold on the copy path too: per-request authentication does not
+/// change which object a successful completion produces.
+TEST_F(CopyS3FileCompletionRecoveryTest, AbsorbsNoSuchUploadWithAccessHeader)
+{
+    client = MockS3::Client::CreateClient(
+        bucket,
+        /* extra_headers = */ {{"custom-auth-token", "ignore-tokens"}},
+        /* access_headers = */ {{"custom-auth-token", "ignore-tokens"}});
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
+
+    runCopy("copy_completion_recovery_access_header");
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["copy_completion_recovery_access_header"], payload);
     EXPECT_EQ(client->counters.headObject, 1u);
 }
 

@@ -207,6 +207,10 @@ public:
     bool hasKMSHeaders() const { return sse_kms_config.key_id.has_value(); }
     bool hasExtraHeadersRequiringFullWriteIdentity() const;
 
+    /// Whether `name` is carried by the configuration's `access_header` list, i.e. per-request
+    /// authentication rather than a generic `header` / `headers(...)` entry.
+    bool isAccessHeader(const std::string & name) const;
+
     Model::HeadObjectOutcome HeadObject(HeadObjectRequest & request) const;
     Model::GetObjectTaggingOutcome GetObjectTagging(GetObjectTaggingRequest & request) const;
     Model::ListObjectsV2Outcome ListObjectsV2(ListObjectsV2Request & request) const;

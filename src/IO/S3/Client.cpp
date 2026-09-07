@@ -195,6 +195,11 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
     assert_cast<const Client::RetryStrategy &>(*client_config.retryStrategy);
 }
 
+bool isAMZHeader(std::string_view name)
+{
+    return name.size() >= 6 && equalsCaseInsensitive(name.substr(0, 6), "x-amz-");
+}
+
 void addAdditionalAMZHeadersToCanonicalHeadersList(
     Aws::AmazonWebServiceRequest & request,
     const HTTPHeaderEntries & extra_headers
@@ -202,7 +207,7 @@ void addAdditionalAMZHeadersToCanonicalHeadersList(
 {
     for (const auto & [name, value] : extra_headers)
     {
-        if (name.size() >= 6 && equalsCaseInsensitive(name.substr(0, 6), "x-amz-"))
+        if (isAMZHeader(name))
         {
             request.SetAdditionalCustomHeaderValue(name, value);
         }
@@ -268,11 +273,30 @@ bool Client::hasExtraHeadersRequiringFullWriteIdentity() const
     /// request but do not change which object a successful completion produces.
     for (const auto & header : client_configuration.extra_headers)
     {
-        if (!equalsCaseInsensitive(header.name, "x-amz-request-payer")
-            && !equalsCaseInsensitive(header.name, "x-amz-expected-bucket-owner"))
-            return true;
+        if (equalsCaseInsensitive(header.name, "x-amz-request-payer")
+            || equalsCaseInsensitive(header.name, "x-amz-expected-bucket-owner"))
+            continue;
+
+        /// The `access_header` carrier is per-request authentication for a header-authenticated
+        /// endpoint, so it is exempt for the same reason: it authorizes the request without
+        /// changing the object a successful completion produces. Only outside the `x-amz-`
+        /// namespace, though -- that is where S3 puts the headers which do change the stored
+        /// object (metadata, tagging, storage class, encryption, checksums), and an
+        /// `access_header` is free to name any header at all.
+        if (!isAMZHeader(header.name) && isAccessHeader(header.name))
+            continue;
+
+        return true;
     }
     return false;
+}
+
+bool Client::isAccessHeader(const std::string & name) const
+{
+    return std::any_of(
+        client_configuration.access_headers.begin(),
+        client_configuration.access_headers.end(),
+        [&](const auto & access_header) { return equalsCaseInsensitive(access_header.name, name); });
 }
 
 std::unique_ptr<Client> Client::create(

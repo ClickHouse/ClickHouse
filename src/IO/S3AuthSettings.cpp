@@ -213,6 +213,16 @@ HTTPHeaderEntries S3AuthSettings::getHeaders() const
 }
 
 
+HTTPHeaderEntries S3AuthSettings::getMergedAccessHeaders() const
+{
+    bool auth_settings_is_default = !impl->isChanged("access_key_id");
+    if (access_headers.empty() || !auth_settings_is_default)
+        return {};
+
+    return access_headers;
+}
+
+
 void S3AuthSettings::serialize(WriteBuffer & out, ContextPtr) const
 {
     impl->writeChangedBinary(out);

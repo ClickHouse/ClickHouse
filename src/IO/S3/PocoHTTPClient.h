@@ -77,6 +77,11 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     HTTPRequestThrottler request_throttler;
 
     HTTPHeaderEntries extra_headers;
+    /// The subset of `extra_headers` that came from the `access_header` configuration carrier, i.e.
+    /// per-request authentication for header-authenticated endpoints. They must be sent on every
+    /// request but, unlike a generic `header` / `headers(...)` entry, they are not part of the write's
+    /// object identity, so `Client::hasExtraHeadersRequiringFullWriteIdentity` can ignore them.
+    HTTPHeaderEntries access_headers;
     String http_client;
     String service_account;
     String metadata_service;

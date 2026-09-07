@@ -240,6 +240,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     String secret_access_key = auth_settings[S3AuthSetting::secret_access_key];
     String session_token = auth_settings[S3AuthSetting::session_token];
     auto headers = auth_settings.getHeaders();
+    client_configuration.access_headers = auth_settings.getMergedAccessHeaders();
     String server_side_encryption_customer_key_base64 = auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
     auto server_side_encryption_kms_config = auth_settings.server_side_encryption_kms_config;
 
@@ -257,6 +258,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         && is_loading_from_existing_metadata)
     {
         headers.clear();
+        client_configuration.access_headers.clear();
         server_side_encryption_customer_key_base64.clear();
         server_side_encryption_kms_config = {};
     }

@@ -59,6 +59,11 @@ struct S3AuthSettings
     bool canBeUsedByUser(const String & user) const { return users.empty() || users.contains(user); }
     HTTPHeaderEntries getHeaders() const;
 
+    /// The `access_header` entries that `getHeaders` actually merges into its result, i.e. an empty list
+    /// when explicit credentials take over. Lets a caller tell the per-request authentication carrier
+    /// apart from generic `header` / `headers(...)` entries after the two have been merged.
+    HTTPHeaderEntries getMergedAccessHeaders() const;
+
     /// Clear request-auth material that may have been merged in from the server `<s3>`/endpoint config (generic
     /// headers, per-request access headers, and the SSE-C key / SSE-KMS config), so a credential-restricted
     /// path that supplies its own (or no) credentials does not also send the server's headers or encryption
