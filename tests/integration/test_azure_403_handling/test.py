@@ -289,7 +289,9 @@ def test_non_retryable_error_still_marks_part_broken(
             node.query(f"SYSTEM DISABLE FAILPOINT {pause_failpoint}")
         node.query("SYSTEM DISABLE FAILPOINT azure_inject_bad_request")
         if executor:
-            executor.shutdown(wait=False, cancel_futures=True)
+            executor.shutdown(wait=True, cancel_futures=True)
+        # Stop part recovery before it can consume the next test's Azure failpoint.
+        node.query(f"DROP TABLE {table} SYNC")
 
 
 def test_permanent_forbidden_on_write_fails(started_cluster):
