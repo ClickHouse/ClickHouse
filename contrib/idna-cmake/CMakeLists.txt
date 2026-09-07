@@ -8,6 +8,8 @@ endif()
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/idna")
 
 set (SRCS
+    "${LIBRARY_DIR}/src/id_tables.cpp"
+    "${LIBRARY_DIR}/src/identifier.cpp"
     "${LIBRARY_DIR}/src/idna.cpp"
     "${LIBRARY_DIR}/src/mapping.cpp"
     "${LIBRARY_DIR}/src/mapping_tables.cpp"

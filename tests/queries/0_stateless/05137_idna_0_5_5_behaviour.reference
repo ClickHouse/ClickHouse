@@ -1,0 +1,12 @@
+-- ToUnicode leaves invalid xn-- labels untouched instead of emitting replacement characters
+xn--zn7c.com
+xn--hdhxn--
+a.b.c.xn--pokxncvks
+xn--a.ß
+-- punycodeDecode rejects invalid input instead of returning garbage
+
+
+-- The bidi rule rejects labels which mix Arabic-Indic digits with strong LTR characters
+
+
+
