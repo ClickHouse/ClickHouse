@@ -294,6 +294,32 @@ void Set::checkIsCreated() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
 }
 
+std::shared_ptr<const PlainRanges> Set::getPlainRanges() const
+{
+    /// The result is cached on first use, so reading `set_elements` before the set is filled would not
+    /// merely give one wrong answer - it would pin an empty range set for every later caller.
+    checkIsCreated();
+
+    callOnce(
+        plain_ranges_once,
+        [this]
+        {
+            /// A tuple set has no single-column range representation; leave the cache null.
+            if (set_elements.size() != 1)
+                return;
+
+            const auto & column = *set_elements.front();
+            Ranges ranges;
+            ranges.reserve(column.size());
+            for (size_t i = 0; i < column.size(); ++i)
+                ranges.emplace_back(column[i]);
+
+            plain_ranges = std::make_shared<const PlainRanges>(ranges, /*may_have_intersection*/ true, /*ordered*/ false);
+        });
+
+    return plain_ranges;
+}
+
 Columns Set::getSetElements() const
 {
     checkIsCreated();
