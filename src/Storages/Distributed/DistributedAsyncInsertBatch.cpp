@@ -54,7 +54,7 @@ namespace ErrorCodes
 }
 
 /// Can the batch be split and send files from batch one-by-one instead?
-static bool isSplittableErrorCode(int code, bool remote)
+bool isSplittableErrorCode(int code, bool remote)
 {
     return code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
         /// FunctionRange::max_elements and similar
@@ -195,37 +195,20 @@ bool DistributedAsyncInsertBatch::recoverBatch()
         ReadBufferFromFile in{parent.current_batch_file_path};
         while (!in.eof())
         {
-            UInt64 idx = 0;
+            UInt64 idx;
             in >> idx >> "\n";
             files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
         }
     }
 
-    /// A quarantined file proves that every preceding file was already processed,
-    /// because split batches handle files in order. File names are not reused after
-    /// restart because initialization scans the broken directory too. Finalize any
-    /// acknowledged predecessors left behind by an abnormal shutdown.
-    size_t processed_files = 0;
-    for (size_t i = 0; i != files.size(); ++i)
-    {
-        const auto broken_file = fs::path(parent.broken_path) / fs::path(files[i]).filename();
-        if (fs::exists(broken_file))
-            processed_files = i + 1;
-    }
-
-    if (processed_files)
-    {
-        auto dir_sync_guard = parent.getDirectorySyncGuard(parent.relative_path);
-        for (size_t i = 0; i != processed_files; ++i)
-        {
-            if (fs::exists(files[i]))
-                parent.markAsSend(files[i]);
-        }
-        files.erase(files.begin(), files.begin() + processed_files);
-    }
-
     /// Files are removed in order, so a missing prefix was already processed
     /// before an abnormal shutdown. Keep the surviving suffix in its persisted order.
+    ///
+    /// A quarantined twin in the broken directory does not prove that the files listed
+    /// before it were sent: older servers skipped files that failed with a transient
+    /// error and went on with the next one, so a batch written by such a server can
+    /// hold an unsent file in front of a quarantined one. Never finalize a file that
+    /// still exists here. Resending it may duplicate rows, deleting it loses them.
     auto first_existing_file = files.begin();
     while (first_existing_file != files.end() && !fs::exists(*first_existing_file))
     {
@@ -245,7 +228,7 @@ bool DistributedAsyncInsertBatch::recoverBatch()
 
         try
         {
-            ReadBufferFromFile header_buffer(file);
+            ReadBufferFromFile header_buffer(files.back());
             const DistributedAsyncInsertHeader & header = DistributedAsyncInsertHeader::read(header_buffer, parent.log);
             if (header.rows)
             {

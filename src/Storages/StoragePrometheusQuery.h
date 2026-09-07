@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 #include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
 
 
@@ -9,7 +9,7 @@ namespace DB
 {
 
 /// Represents a storage for table function prometheusQuery().
-class StoragePrometheusQuery : public StorageWithCommonVirtualColumns
+class StoragePrometheusQuery : public IStorage
 {
 public:
     struct Configuration
@@ -24,9 +24,7 @@ public:
 
     std::string getName() const override { return "PrometheusQuery"; }
 
-    static VirtualColumnsDescription createVirtuals();
-
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

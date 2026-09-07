@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Common/SettingsChanges.h>
-#include <Common/assert_cast.h>
 
 #include <Core/NamesAndTypes.h>
+#include <Core/Field.h>
 
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -63,7 +63,7 @@ using QueryNodePtr = std::shared_ptr<QueryNode>;
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 
-class QueryNode final : public ITableExpressionNode
+class QueryNode final : public IQueryTreeNode
 {
 public:
     /// Construct query node with context and changed settings
@@ -328,28 +328,15 @@ public:
     }
 
     /// Get JOIN TREE section node
-    const ITableExpressionNode & getJoinTree() const
-    {
-        return children[join_tree_child_index]->assertTableExpression();
-    }
-
-    /// Get JOIN TREE section node
-    QueryTreeNodePtr & getJoinTreeNode()
+    const QueryTreeNodePtr & getJoinTree() const
     {
         return children[join_tree_child_index];
     }
 
     /// Get JOIN TREE section node
-    const QueryTreeNodePtr & getJoinTreeNode() const
+    QueryTreeNodePtr & getJoinTree()
     {
         return children[join_tree_child_index];
-    }
-
-    /// Get JOIN TREE section node
-    TableExpressionNodePtr getJoinTreeNodeTyped() const
-    {
-        children[join_tree_child_index]->assertTableExpression();
-        return static_pointer_cast<ITableExpressionNode>(children[join_tree_child_index]);
     }
 
     /// Returns true if query node PREWHERE section is not empty, false otherwise
@@ -696,11 +683,6 @@ public:
     void setProjectionAliasesToOverride(Names pr_aliases)
     {
         projection_aliases_to_override = std::move(pr_aliases);
-    }
-
-    const Names & getProjectionAliasesToOverride() const
-    {
-        return projection_aliases_to_override;
     }
 
 protected:

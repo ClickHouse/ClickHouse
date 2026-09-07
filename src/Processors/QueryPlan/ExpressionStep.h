@@ -45,14 +45,13 @@ public:
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
+    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
     /// Prevent future input removal by removeUnusedColumns.
     /// Used when extra columns were absorbed from a child step that cannot reduce its output
     /// (e.g., ReadFromMergeTree with FINAL must keep sort key columns).
     void setPreventInputRemoval() { prevent_input_removal = true; }
-    bool isInputRemovalPrevented() const { return prevent_input_removal; }
 
 private:
     void updateOutputHeader() override;

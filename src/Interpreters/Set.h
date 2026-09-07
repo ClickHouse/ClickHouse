@@ -4,12 +4,9 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
 #include <Interpreters/SetKeys.h>
-#include <Core/PlainRanges.h>
 #include <Storages/MergeTree/BoolMask.h>
 
-#include <Common/callOnce.h>
 #include <Common/SharedMutex.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
 
 
@@ -17,7 +14,6 @@ namespace DB
 {
 
 struct Range;
-using Ranges = VectorWithMemoryTracking<Range>;
 
 class Context;
 class IFunctionBase;
@@ -25,7 +21,7 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 using Sizes = std::vector<size_t>;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 class Chunk;
 
@@ -39,8 +35,6 @@ public:
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
     Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_);
-
-    bool transformNullIn() const { return transform_null_in; }
 
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
@@ -64,9 +58,6 @@ public:
     /// finishInsert and isCreated are thread-safe
     bool isCreated() const { return is_created.load(); }
 
-    /// Whether the set building was stopped early because of size limits with OverflowMode::BREAK.
-    bool isTruncated() const { return is_truncated.load(); }
-
     void checkIsCreated() const;
 
     void processDateTime64Column(const ColumnWithTypeAndName & column_to_cast, ColumnPtr & result, ColumnPtr & null_map_holder, ConstNullMapPtr & null_map) const;
@@ -88,13 +79,6 @@ public:
     bool hasExplicitSetElements() const { return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data.getTotalRowCount()); }
     bool hasSetElements() const { return !set_elements.empty(); }
     Columns getSetElements() const;
-
-    /// The elements of a single-column set viewed as sorted, non-overlapping ranges, built once and
-    /// shared afterwards. Deriving them costs one `Field` per element plus an O(N log N) sort, which is
-    /// substantial for a large set, and every consumer of the same set derives exactly the same value —
-    /// notably the two plan builds that automatic parallel replicas performs for one query.
-    /// Returns null for a multi-column (tuple) set, which has no single-column range representation.
-    std::shared_ptr<const PlainRanges> getPlainRanges() const;
 
     void checkColumnsNumber(size_t num_key_columns) const;
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
@@ -147,9 +131,6 @@ private:
     /// Check if set contains all the data.
     std::atomic<bool> is_created = false;
 
-    /// Whether the set was truncated due to overflow with OverflowMode::BREAK.
-    std::atomic<bool> is_truncated = false;
-
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(
         const ColumnRawPtrs & key_columns,
@@ -160,9 +141,6 @@ private:
     /// Collected elements of `Set`.
     /// It is necessary for the index to work on the primary key in the IN statement.
     MutableColumns set_elements;
-
-    mutable std::shared_ptr<const PlainRanges> plain_ranges;
-    mutable OnceFlag plain_ranges_once;
 
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
@@ -215,6 +193,10 @@ using ConstSetPtr = std::shared_ptr<const Set>;
 using Sets = std::vector<SetPtr>;
 
 
+class IFunction;
+using FunctionPtr = std::shared_ptr<IFunction>;
+
+
 /// Class for checkInRange function.
 class MergeTreeSetIndex
 {
@@ -224,8 +206,8 @@ public:
       */
     struct KeyTuplePositionMapping
     {
-        size_t tuple_index{};
-        size_t key_index{};
+        size_t tuple_index;
+        size_t key_index;
         std::vector<FunctionBasePtr> functions;
     };
 
@@ -235,13 +217,7 @@ public:
 
     bool hasMonotonicFunctionsChain() const;
 
-    BoolMask checkInRange(const Ranges & key_ranges, const DataTypes & data_types, bool single_point = false) const;
-
-    /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
-    /// `key_col_to_sparse_pos` maps key index to position in `sparse_hyperrectangle`, or -1 if not tracked.
-    /// If some key column >= `key_col_to_sparse_pos`.size(), it is considered as not tracked.
-    /// See KeyCondition::checkInRange for explanation of relevant parameters.
-    BoolMask checkInRange(const std::vector<int> & key_col_to_sparse_pos, const Ranges & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point = false) const;
+    BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
 
     const Columns & getOrderedSet() const { return ordered_set; }
 
