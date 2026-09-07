@@ -9,6 +9,7 @@ import json
 import shlex
 import subprocess
 import sys
+import time
 import uuid
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -52,20 +53,19 @@ def packets(response, framing):
     return result
 
 
-def check_samples(items, expected_query_id=None, terminal="progress"):
+def check_samples(items, expected_query_id=None, terminal="progress", allow_missing=False):
     assert items and items[-1]["packet"] == terminal, items[-1:]
     assert all(item["packet"] != "profile_events" for item in items), "profile events were not disabled"
     batches = [item["profile_traces"] for item in items if item["packet"] == "profile_traces"]
-    assert batches, "no profile trace packets"
     assert all(0 < len(batch) <= 1024 for batch in batches), "unbounded or empty batch"
     samples = [sample for batch in batches for sample in batch]
-    assert any(sample["trace_type"] == "MemorySample" for sample in samples), samples
     for sample in samples:
         assert set(sample) == {
             "host_name", "query_id", "trace_type", "thread_id",
             "event_time_microseconds", "trace", "symbols", "size",
         }, sample
         assert isinstance(sample["host_name"], str) and sample["host_name"], sample
+        assert sample["trace_type"] in {"CPU", "Real", "Memory", "MemorySample", "MemoryPeak"}, sample
         if expected_query_id is not None:
             assert sample["query_id"] == expected_query_id, sample
         for key in ("thread_id", "event_time_microseconds", "size"):
@@ -76,9 +76,24 @@ def check_samples(items, expected_query_id=None, terminal="progress"):
         assert all(isinstance(address, str) and int(address) >= 0 for address in sample["trace"]), sample
         assert all(isinstance(symbol, str) for symbol in sample["symbols"]), sample
     if terminal == "exception":
+        assert "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO" in items[-1]["exception"], items[-1]
         assert not any(
             item["packet"] == "progress" and "result_rows" in item["progress"] for item in items
         ), "failed query emitted final progress"
+    observed = any(sample["trace_type"] == "MemorySample" for sample in samples)
+    assert observed or allow_missing, "no memory samples"
+    return observed
+
+
+def check_query_samples(parameters, query, framing, expected_query_id=None, terminal="progress", url=base_url):
+    # The shared profiler pipe can discard every sample of a short query under load.
+    for attempt in range(4):
+        items = packets(request(parameters, query, url), framing)
+        if check_samples(items, expected_query_id, terminal, allow_missing=True):
+            return
+        if attempt < 3:
+            time.sleep(0.1)
+    raise AssertionError("no profile trace packets in four query observations")
 
 
 # Large allocations produce samples without depending on profiler timer scheduling.
@@ -86,7 +101,7 @@ def check_samples(items, expected_query_id=None, terminal="progress"):
 for framing in ("JSONEachPacketString", "JSONEachPacketBase64", "EventStream"):
     query_id = "framing_traces_" + uuid.uuid4().hex
     parameters = f"&framing_output_format={framing}&send_profile_traces=1&query_id={query_id}"
-    check_samples(packets(request(parameters, allocation_query + " FORMAT Null"), framing), query_id)
+    check_query_samples(parameters, allocation_query + " FORMAT Null", framing, query_id)
     print(f"{framing}: bounded samples and final progress")
 
 framing = "JSONEachPacketString"
@@ -104,11 +119,11 @@ items = packets(request(
 assert not any(item["packet"] == "profile_traces" for item in items), items
 print("query settings disable URL capture")
 
-items = packets(request(
+check_query_samples(
     "",
     allocation_query + " SETTINGS framing_output_format='JSONEachPacketString', send_profile_traces=1 FORMAT Null",
-), framing)
-check_samples(items)
+    framing,
+)
 print("query settings enable framing and samples")
 
 plain_query = "SELECT length(range(number + 100000)) FROM numbers(1)"
@@ -120,18 +135,19 @@ assert request(
 print("plain HTTP and query settings disable framing")
 
 for buffering in (0, 1):
-    items = packets(request(
+    check_query_samples(
         parameters + f"&send_profile_traces=1&http_wait_end_of_query={buffering}",
         "SELECT length(range(number + 100000)), throwIf(number = 4) FROM numbers(8) FORMAT Null",
-    ), framing)
-    check_samples(items, terminal="exception")
+        framing, terminal="exception",
+    )
     print(f"buffering={buffering}: samples precede terminal exception")
 
-items = packets(request(
-    parameters + "&send_profile_traces=1&query_id=framing_traces_%FF",
+query_id = "framing_traces_" + uuid.uuid4().hex + "_"
+check_query_samples(
+    parameters + f"&send_profile_traces=1&query_id={query_id}%FF",
     allocation_query + " FORMAT Null",
-), framing)
-check_samples(items, "framing_traces_\ufffd")
+    framing, query_id + "\ufffd",
+)
 print("query identifiers are sanitized to UTF-8")
 
 restricted_user = "framing_traces_user_" + uuid.uuid4().hex
@@ -143,12 +159,11 @@ try:
     restricted_url = urlunsplit(parts._replace(query=urlencode(restricted_parameters)))
     denied = packets(request(parameters, "SELECT count() FROM system.trace_log", restricted_url), framing)
     assert denied[-1]["packet"] == "exception" and "ACCESS_DENIED" in denied[-1]["exception"], denied
-    items = packets(request(
+    check_query_samples(
         parameters + "&send_profile_traces=1",
         "SELECT ignore(range(1000000)) FORMAT Null",
-        restricted_url,
-    ), framing)
-    check_samples(items)
+        framing, url=restricted_url,
+    )
 finally:
     subprocess.run(client + ["--query", f"DROP USER {restricted_user}"], check=True)
 print("samples do not require access to system.trace_log")

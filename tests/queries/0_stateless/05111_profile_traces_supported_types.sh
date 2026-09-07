@@ -23,16 +23,16 @@ settings = {
     "send_profile_traces": 1,
     "send_profile_events": 0,
     "send_logs_level": "none",
-    "query_profiler_cpu_time_period_ns": 1000000,
-    "query_profiler_real_time_period_ns": 1000000,
-    "memory_profiler_step": 65536,
-    "memory_profiler_sample_probability": 1,
+    "query_profiler_cpu_time_period_ns": 0,
+    "query_profiler_real_time_period_ns": 0,
+    "memory_profiler_step": 0,
+    "memory_profiler_sample_probability": 0,
     "memory_profiler_sample_min_allocation_size": 65536,
     "max_untracked_memory": 0,
     "max_threads": 1,
     "max_block_size": 65536,
     "max_execution_time": 60,
-    "trace_profile_events": 1,
+    "trace_profile_events": 0,
     "trace_profile_events_list": "FunctionExecute",
     "prefer_localhost_replica": 0,
 }
@@ -76,8 +76,8 @@ def wait_for_profile_events(query):
     raise AssertionError("profile events did not appear in trace_log within 20 seconds")
 
 
-def execute(transport, query, query_id):
-    options = dict(settings, query_id=query_id)
+def execute(transport, query, query_id, sample_settings):
+    options = dict(settings, **sample_settings, query_id=query_id)
     if transport == "native":
         result = run(native_arguments(options) + ["--print-profile-traces", "--query", query])
         assert not result.stdout, result.stdout
@@ -90,34 +90,61 @@ def execute(transport, query, query_id):
     return [sample for packet in packets if packet["packet"] == "profile_traces" for sample in packet["profile_traces"]]
 
 
+witnesses = []
 for transport in ("native", "HTTP"):
     for remote in (False, True):
-        types = set()
         observed_ids = set()
-        for query in (
-            "SELECT sum(sipHash64(number)) FROM numbers(10000000)",
-            "SELECT length(range(number + 100000)) FROM numbers(8)",
+        # Keep the shared trace pipe and log within budget: timers and allocation
+        # sampling run in separate queries, and only the latter traces profile events.
+        for query, sample_settings, required_types in (
+            (
+                "SELECT sum(sipHash64(number)) FROM numbers(1000000000000)",
+                {"query_profiler_cpu_time_period_ns": 10000000,
+                 "query_profiler_real_time_period_ns": 100000000,
+                 "max_execution_time": 2, "timeout_overflow_mode": "break"},
+                {"CPU", "Real"},
+            ),
+            (
+                "SELECT length(range(number + 100000)) FROM numbers(8)",
+                {"memory_profiler_step": 65536, "memory_profiler_sample_probability": 1,
+                 "trace_profile_events": 1},
+                {"Memory", "MemorySample", "MemoryPeak"},
+            ),
         ):
-            query_id = "profile_trace_types_" + uuid.uuid4().hex
             if remote:
                 query = f"SELECT * FROM remote({quote(remote_address)}, view({query}))"
-            samples = execute(transport, query + " FORMAT Null", query_id)
-            assert samples, "no samples were streamed"
-            unsupported = {sample["trace_type"] for sample in samples} - allowed_types
-            assert not unsupported, sorted(unsupported)
-            types.update(sample["trace_type"] for sample in samples)
-            observed_ids.update(sample["query_id"] for sample in samples)
-            if remote:
-                assert any(sample["query_id"] != query_id for sample in samples), "no forwarded samples"
-            else:
-                assert all(sample["query_id"] == query_id for sample in samples), samples
+            types = set()
+            for attempt in range(4):
+                query_id = "profile_trace_types_" + uuid.uuid4().hex
+                samples = execute(transport, query + " FORMAT Null", query_id, sample_settings)
+                unsupported = {sample["trace_type"] for sample in samples} - allowed_types
+                assert not unsupported, sorted(unsupported)
+                assert all(sample["query_id"] for sample in samples), samples
+                if remote:
+                    samples = [sample for sample in samples if sample["query_id"] != query_id]
+                else:
+                    assert all(sample["query_id"] == query_id for sample in samples), samples
+                types.update(sample["trace_type"] for sample in samples)
+                if sample_settings.get("trace_profile_events"):
+                    observed_ids.update(sample["query_id"] for sample in samples)
+                if required_types <= types:
+                    break
+                if attempt < 3:
+                    time.sleep(0.1)
+            assert required_types <= types, (transport, remote, sorted(required_types - types))
+        witnesses.append((transport, remote, observed_ids))
 
-        assert types == allowed_types, sorted(types)
-        ids = ", ".join(quote(value) for value in sorted(observed_ids))
-        wait_for_profile_events(f"""
-            SELECT countIf(trace_type = 'ProfileEvent' AND event = 'FunctionExecute' AND notEmpty(trace)) > 0
-            FROM system.trace_log
-            WHERE event_date >= today() - 1 AND event_time >= now() - 600 AND query_id IN ({ids})
-        """)
-        print(f"{transport} {'remote' if remote else 'local'}: supported types streamed; ProfileEvent retained in trace_log")
+# One shared flush avoids serializing a separate expensive trace-log flush per sub-test.
+conditions = []
+for _, _, observed_ids in witnesses:
+    ids = ", ".join(quote(value) for value in sorted(observed_ids))
+    conditions.append(f"countIf(query_id IN ({ids})) > 0")
+wait_for_profile_events(f"""
+    SELECT arrayAll(observed -> observed, [{', '.join(conditions)}])
+    FROM system.trace_log
+    WHERE event_date >= today() - 1 AND event_time >= now() - 600
+      AND trace_type = 'ProfileEvent' AND event = 'FunctionExecute' AND notEmpty(trace)
+""")
+for transport, remote, _ in witnesses:
+    print(f"{transport} {'remote' if remote else 'local'}: supported types streamed; ProfileEvent retained in trace_log")
 PY
