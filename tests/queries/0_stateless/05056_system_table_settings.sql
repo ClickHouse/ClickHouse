@@ -57,12 +57,17 @@ ORDER BY name;
 
 SELECT '-- the columns shared with system.merge_tree_settings agree, except where the definition differs';
 -- A `MergeTree` table reports what `system.merge_tree_settings` reports, with the same column
--- names, types and meanings. The one row that differs is `index_granularity`: the table's stored
--- definition states it, because `loadFromQuery` writes the immutable settings into the `CREATE`
--- query, so for the table it is `changed` while for the server it is not.
+-- names, types and meanings, for every setting the table's own definition does not state.
+--
+-- The definition-stated rows are excluded rather than enumerated. `loadFromQuery` writes the
+-- immutable settings into the stored `CREATE` query, so which settings end up stated depends on
+-- what a `<merge_tree>` configuration section sets - `index_granularity` always, and more on a
+-- server that configures more. Naming the expected rows would pin this test to one server's
+-- configuration; excluding them states the invariant that actually holds.
 SELECT name FROM (
     SELECT name, value, `default`, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier
-    FROM system.table_settings WHERE database = currentDatabase() AND table = 'mt' AND alias_for = ''
+    FROM system.table_settings
+    WHERE database = currentDatabase() AND table = 'mt' AND alias_for = '' AND source != 'definition'
     EXCEPT
     SELECT name, value, `default`, changed, description, min, max, disallowed_values, readonly, type, is_obsolete, tier
     FROM system.merge_tree_settings)

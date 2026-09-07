@@ -2,13 +2,21 @@
 -- is told apart from the two statements it shares a prefix with, and that its filters reach through.
 
 DROP TABLE IF EXISTS mt;
-CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS min_bytes_for_wide_part = 12345;
+-- `Memory` rather than `MergeTree`, deliberately: it has five settings and no server configuration
+-- section sets any of them. A `<merge_tree>` section does exist on real servers - the CI ones set a
+-- dozen settings - and an unfiltered `SHOW CHANGED` on a `MergeTree` table then lists whatever that
+-- section happened to change, which is not the same on two installations. What is under test here
+-- is the statement and its filters, and those need a table whose settings only this test writes.
+CREATE TABLE mt (a UInt64) ENGINE = Memory SETTINGS max_bytes_to_keep = 8192, min_bytes_to_keep = 4096;
+
+SELECT '-- every setting, changed or not';
+SHOW TABLE SETTINGS FROM mt;
 
 SELECT '-- only what something other than the default set';
 SHOW CHANGED TABLE SETTINGS FROM mt;
 
 SELECT '-- one setting, by name';
-SHOW TABLE SETTINGS FROM mt LIKE 'min_bytes_for_wide_part';
+SHOW TABLE SETTINGS FROM mt LIKE 'min_bytes_to_keep';
 
 SELECT '-- ILIKE is case-insensitive';
 SHOW CHANGED TABLE SETTINGS FROM mt ILIKE 'MIN_BYTES%';

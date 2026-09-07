@@ -31,8 +31,11 @@ SELECT count() FROM system.engine_settings AS s
 INNER JOIN (SELECT name FROM system.table_engines WHERE NOT supports_settings) AS e
 ON e.name = s.engine_name;
 
--- Every setting must render; a value with no string form used to throw.
-SELECT count() > 0 FROM system.engine_settings WHERE name = 'storage_catalog_type';
+-- Every setting must render. `storage_catalog_type` used to throw because its default enum value
+-- had no string form, and that one setting made every query against this table fail. Read every
+-- value rather than counting that one row: the data lake engines are absent from some builds, so
+-- the row is not always there, but whatever is there still has to render.
+SELECT count() > 0 FROM (SELECT value FROM system.engine_settings);
 
 -- Engines of one data lake family are backed by the same settings struct, so each must report the
 -- same settings whichever storage backend it names. `DeltaLakeLocal` did not: it was registered

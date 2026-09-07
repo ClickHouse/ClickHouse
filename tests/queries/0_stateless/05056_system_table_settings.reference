@@ -36,7 +36,6 @@ allow_experimental_block_number_column	0	default	enable_block_number_column
 enable_block_number_column	0	default	
 index_granularity	4096	definition	
 -- the columns shared with system.merge_tree_settings agree, except where the definition differs
-index_granularity
 -- settings the engine makes read-only are reported as such
 1
 -- filtering by database reaches the scan
