@@ -1127,7 +1127,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::calculateBytesAllocate
     bytes_allocated += attributes.size() * sizeof(attributes.front());
 
     for (const auto & container : key_attribute.containers)
-        bytes_allocated += container.size();
+        bytes_allocated += container.getBufferSizeInBytes();
 
     for (auto & attribute : attributes)
     {
