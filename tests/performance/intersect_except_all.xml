@@ -23,6 +23,8 @@
     <!-- String key (key_string). -->
     <query>SELECT count() FROM (SELECT toString(number) AS s FROM numbers_mt(2000000) EXCEPT ALL SELECT toString(number) AS s FROM numbers_mt(1000000)) SETTINGS max_threads = {threads}</query>
 
-    <!-- DISTINCT: the final DISTINCT runs per partition without merging the streams. -->
+    <!-- DISTINCT: executed as a semi join followed by the parallel final DISTINCT. -->
     <query>SELECT count() FROM (SELECT number % 1000000 AS n FROM numbers_mt(3000000) INTERSECT DISTINCT SELECT number FROM numbers_mt(2000000)) SETTINGS max_threads = {threads}</query>
+    <!-- DISTINCT with the set-operation step: the final DISTINCT runs per partition without merging the streams. -->
+    <query>SELECT count() FROM (SELECT number % 1000000 AS n FROM numbers_mt(3000000) INTERSECT DISTINCT SELECT number FROM numbers_mt(2000000)) SETTINGS max_threads = {threads}, optimize_rewrite_intersect_except_to_join = 0</query>
 </test>

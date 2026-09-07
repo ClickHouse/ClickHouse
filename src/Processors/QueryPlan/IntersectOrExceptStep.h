@@ -25,6 +25,8 @@ public:
     QueryPlanStepPtr clone() const override;
 
     /// Both inputs are hash-scattered by the whole row, so the output streams are disjoint by all columns.
+    /// The scatter partition count can still be clamped to one for an extreme stream count; a single
+    /// stream is trivially disjoint, so the property stays correct.
     bool isPartitioned() const { return max_threads > 1; }
     bool isSerializable() const override { return true; }
     void serialize(Serialization & ctx) const override;

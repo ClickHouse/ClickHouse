@@ -23,6 +23,18 @@ duplicates and constants
 1
 1
 1
+several generated subqueries
+a
+1
+1
+1
+1
+join algorithms without semi joins keep the set-operation step
+0
+1
+2
+3
+4
 inside IN and a CTE
 2000
 200	100	299

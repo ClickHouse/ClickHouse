@@ -19,6 +19,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool optimize_rewrite_intersect_except_to_join;
 }
 
@@ -54,10 +55,20 @@ QueryTreeNodePtr makeFunction(const String & name, QueryTreeNodes arguments, con
     return function_node;
 }
 
-QueryTreeNodePtr makeSubquery(QueryTreeNodePtr join_tree, QueryTreeNodes projection, const NamesAndTypes & projection_columns, const ContextPtr & context)
+/// The analyzer assigned its unique `__tableN` aliases before this pass, and the planner identifies columns by
+/// the alias of their table expression, so every subquery created here needs an alias of its own.
+struct SubqueryAliases
+{
+    size_t counter = 0;
+    String next() { return "__intersect_except_" + std::to_string(++counter); }
+};
+
+QueryTreeNodePtr makeSubquery(
+    QueryTreeNodePtr join_tree, QueryTreeNodes projection, const NamesAndTypes & projection_columns, SubqueryAliases & aliases, const ContextPtr & context)
 {
     auto query_node = std::make_shared<QueryNode>(Context::createCopy(context));
     query_node->setIsSubquery(true);
+    query_node->setAlias(aliases.next());
     query_node->getJoinTreeNode() = std::move(join_tree);
     query_node->getProjection().getNodes() = std::move(projection);
     query_node->resolveProjectionColumns(projection_columns);
@@ -72,12 +83,15 @@ struct JoinSide
 };
 
 /// The arm as a join side with the union's result types, converted once in a wrapping subquery when they differ.
-JoinSide makeJoinSide(const QueryTreeNodePtr & arm, NamesAndTypes arm_columns, const NamesAndTypes & result_columns, const ContextPtr & context)
+JoinSide makeJoinSide(
+    const QueryTreeNodePtr & arm, NamesAndTypes arm_columns, const NamesAndTypes & result_columns, SubqueryAliases & aliases, const ContextPtr & context)
 {
     if (auto * query_node = arm->as<QueryNode>())
         query_node->setIsSubquery(true);
     else
         arm->as<UnionNode &>().setIsSubquery(true);
+    if (!arm->hasAlias())
+        arm->setAlias(aliases.next());
 
     bool same_types = true;
     for (size_t i = 0; i < arm_columns.size(); ++i)
@@ -90,10 +104,10 @@ JoinSide makeJoinSide(const QueryTreeNodePtr & arm, NamesAndTypes arm_columns, c
     for (size_t i = 0; i < arm_columns.size(); ++i)
         projection.push_back(createCastFunction(makeColumn(arm_columns[i], arm), result_columns[i].type, context));
 
-    return {makeSubquery(arm, std::move(projection), result_columns, context), result_columns};
+    return {makeSubquery(arm, std::move(projection), result_columns, aliases, context), result_columns};
 }
 
-QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, const ContextPtr & context)
+QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, SubqueryAliases & aliases, const ContextPtr & context)
 {
     const auto strictness = union_node.getUnionMode() == SelectUnionMode::INTERSECT_DISTINCT ? JoinStrictness::Semi : JoinStrictness::Anti;
     const auto & arms = union_node.getQueries().getNodes();
@@ -113,11 +127,11 @@ QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, const ContextPtr &
     }
 
     /// Fold from the left: the result of the previous join is the left side of the next one.
-    auto left = makeJoinSide(arms.front(), std::move(arm_columns.front()), result_columns, context);
+    auto left = makeJoinSide(arms.front(), std::move(arm_columns.front()), result_columns, aliases, context);
     QueryTreeNodePtr result;
     for (size_t arm_index = 1; arm_index < arms.size(); ++arm_index)
     {
-        auto right = makeJoinSide(arms[arm_index], std::move(arm_columns[arm_index]), result_columns, context);
+        auto right = makeJoinSide(arms[arm_index], std::move(arm_columns[arm_index]), result_columns, aliases, context);
 
         QueryTreeNodes key_conditions;
         key_conditions.reserve(result_columns.size());
@@ -134,7 +148,7 @@ QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, const ContextPtr &
         for (size_t i = 0; i < result_columns.size(); ++i)
             projection.push_back(makeColumn(left.columns[i], left.node));
 
-        result = makeSubquery(std::move(join_node), std::move(projection), result_columns, context);
+        result = makeSubquery(std::move(join_node), std::move(projection), result_columns, aliases, context);
         left = {result, result_columns};
     }
 
@@ -142,13 +156,30 @@ QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, const ContextPtr &
     auto & result_query = result->as<QueryNode &>();
     result_query.setIsDistinct(true);
     result_query.setIsSubquery(union_node.isSubquery());
-    result_query.setAlias(union_node.getAlias());
+    if (union_node.hasAlias())
+        result_query.setAlias(union_node.getAlias());
     result_query.setOriginalAST(union_node.getOriginalAST());
     return result;
 }
 
-/// The replaced union nodes, kept alive so that the columns of the outer queries still sourced by them can be re-pointed.
-using Replacements = std::unordered_map<const IQueryTreeNode *, std::pair<QueryTreeNodePtr, QueryTreeNodePtr>>;
+/// Whether one of the enabled join algorithms can execute a semi or anti join of two subqueries.
+bool joinAlgorithmSupportsSemiJoin(const Settings & settings)
+{
+    for (const auto algorithm : settings[Setting::join_algorithm].value)
+        if (algorithm == JoinAlgorithm::DEFAULT || algorithm == JoinAlgorithm::AUTO || algorithm == JoinAlgorithm::HASH
+            || algorithm == JoinAlgorithm::PARALLEL_HASH || algorithm == JoinAlgorithm::GRACE_HASH || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE)
+            return true;
+    return false;
+}
+
+struct Replacement
+{
+    /// Kept alive so that the columns of the outer queries still sourced by the union node can be re-pointed.
+    QueryTreeNodePtr union_node;
+    QueryTreeNodePtr join_query;
+};
+
+using Replacements = std::unordered_map<const IQueryTreeNode *, Replacement>;
 
 class RewriteIntersectExceptToJoinVisitor : public InDepthQueryTreeVisitorWithContext<RewriteIntersectExceptToJoinVisitor>
 {
@@ -161,18 +192,18 @@ public:
     /// Bottom-up, so that the arms of a set operation are already rewritten when it is.
     void leaveImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_rewrite_intersect_except_to_join])
+        if (!getSettings()[Setting::optimize_rewrite_intersect_except_to_join] || !joinAlgorithmSupportsSemiJoin(getSettings()))
             return;
 
         const auto * union_node = node->as<UnionNode>();
-        if (!union_node || union_node->hasRecursiveCTETable())
+        if (!union_node || union_node->hasRecursiveCTETable() || union_node->isCorrelated())
             return;
 
         const auto union_mode = union_node->getUnionMode();
         if (union_mode != SelectUnionMode::INTERSECT_DISTINCT && union_mode != SelectUnionMode::EXCEPT_DISTINCT)
             return;
 
-        auto join_query = buildJoinQuery(*union_node, getContext());
+        auto join_query = buildJoinQuery(*union_node, aliases, getContext());
         if (!join_query)
             return;
 
@@ -182,11 +213,12 @@ public:
                 arm->as<QueryNode &>().setIsDistinct(false);
 
         rewritten.insert(join_query.get());
-        replacements.emplace(node.get(), std::pair{node, join_query});
+        replacements.emplace(node.get(), Replacement{node, join_query});
         node = std::move(join_query);
     }
 
 private:
+    SubqueryAliases aliases;
     std::unordered_set<const IQueryTreeNode *> rewritten;
 };
 
@@ -207,7 +239,7 @@ public:
 
         auto it = replacements.find(source.get());
         if (it != replacements.end())
-            column_node->setColumnSource(std::static_pointer_cast<ITableExpressionNode>(it->second.second));
+            column_node->setColumnSource(std::static_pointer_cast<ITableExpressionNode>(it->second.join_query));
     }
 
 private:
