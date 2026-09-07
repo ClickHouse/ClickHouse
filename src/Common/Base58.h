@@ -29,7 +29,5 @@ constexpr auto BASE58_ENCODED_64_LEN = 88UL;
 
 size_t encodeBase58_32(const UInt8 * src, UInt8 * dst);
 size_t encodeBase58_64(const UInt8 * src, UInt8 * dst);
-std::optional<size_t> decodeBase58_32(const UInt8 * src, size_t src_length, UInt8 * dst);
-std::optional<size_t> decodeBase58_64(const UInt8 * src, size_t src_length, UInt8 * dst);
 
 }

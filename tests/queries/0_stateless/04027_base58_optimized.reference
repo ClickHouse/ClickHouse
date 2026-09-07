@@ -21,7 +21,7 @@ btc
 1
 64-byte leading zeros
 1
-overflow fallback
+large decoded values
 1
 1
 1
@@ -54,11 +54,14 @@ size hint 64
 1
 1
 size hint overflow
+size hint rejects any other decoded length
+1
+1
 tryBase58Decode with size hint
 1
 1
 1
-size hint fallback to generic
+size hint other than 32 or 64 places no requirement
 1
 bulk round-trip
 1
@@ -81,3 +84,4 @@ word storage threshold
 1
 1
 1
+size hint rejects an impossible length without converting

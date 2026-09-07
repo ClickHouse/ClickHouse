@@ -68,13 +68,22 @@ struct Base58DecodeTraits
         return decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation);
     }
 
+    /// A hint of 32 or 64 also rejects a value that does not decode to exactly that many bytes, which
+    /// is the documented contract of the argument.
     static std::optional<size_t> performWithSizeHint(std::string_view src, UInt8 * dst, size_t expected_size, const std::function<void()> & check_cancellation = {})
     {
-        if (expected_size == 32)
-            return decodeBase58_32(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
-        if (expected_size == 64)
-            return decodeBase58_64(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
-        return decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation);
+        /// `n` bytes need at least `n` characters (all zero bytes) and at most the encoded length of the
+        /// largest `n`-byte value, so an input outside that window is rejected without converting it.
+        if (expected_size == 32 && (src.size() < 32 || src.size() > BASE58_ENCODED_32_LEN))
+            return {};
+        if (expected_size == 64 && (src.size() < 64 || src.size() > BASE58_ENCODED_64_LEN))
+            return {};
+
+        const std::optional<size_t> decoded_size
+            = decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation);
+        if (decoded_size && (expected_size == 32 || expected_size == 64) && *decoded_size != expected_size)
+            return {};
+        return decoded_size;
     }
 };
 }

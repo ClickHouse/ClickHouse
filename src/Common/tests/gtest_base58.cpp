@@ -181,9 +181,11 @@ TEST(Base58, Scalar32)
         EXPECT_EQ(encoded, v.encoded) << "id=" << v.id;
         EXPECT_EQ(encoded, slowEncode32(v.decoded)) << "id=" << v.id;
 
-        uint8_t decoded[32] = {};
+        /// `decodeBase58` holds its intermediate words in `dst`, so the buffer follows the documented
+        /// `src_length` capacity rather than the 32 bytes the result occupies.
+        UInt8 decoded[BASE58_ENCODED_32_LEN] = {};
         auto result
-            = decodeBase58_32_fd(reinterpret_cast<const uint8_t *>(v.encoded.data()), v.encoded.size(), decoded);
+            = decodeBase58(reinterpret_cast<const UInt8 *>(v.encoded.data()), v.encoded.size(), decoded);
         ASSERT_TRUE(result.has_value()) << "id=" << v.id;
         EXPECT_EQ(*result, 32u) << "id=" << v.id;
         EXPECT_EQ(0, memcmp(decoded, v.decoded.data(), 32)) << "id=" << v.id;
@@ -198,9 +200,9 @@ TEST(Base58, Scalar64)
         EXPECT_EQ(encoded, v.encoded) << "id=" << v.id;
         EXPECT_EQ(encoded, slowEncode64(v.decoded)) << "id=" << v.id;
 
-        uint8_t decoded[64] = {};
+        UInt8 decoded[BASE58_ENCODED_64_LEN] = {};
         auto result
-            = decodeBase58_64_fd(reinterpret_cast<const uint8_t *>(v.encoded.data()), v.encoded.size(), decoded);
+            = decodeBase58(reinterpret_cast<const UInt8 *>(v.encoded.data()), v.encoded.size(), decoded);
         ASSERT_TRUE(result.has_value()) << "id=" << v.id;
         EXPECT_EQ(*result, 64u) << "id=" << v.id;
         EXPECT_EQ(0, memcmp(decoded, v.decoded.data(), 64)) << "id=" << v.id;
@@ -340,8 +342,9 @@ TEST(Base58, Generic)
     std::vector<size_t> lengths;
     for (size_t length = 0; length <= 64; ++length)
         lengths.push_back(length);
-    for (size_t length : {100UL, 127UL, 128UL, 200UL, 232UL, 233UL, 234UL, 235UL, 255UL, 256UL, 344UL, 345UL, 346UL,
-                          347UL, 348UL, 349UL, 350UL, 400UL, 511UL, 512UL, 1000UL, 1024UL})
+    /// 467 and 697 are the stack-array cutoffs, where the words move from the stack into `dst`.
+    for (size_t length : {100UL, 127UL, 128UL, 200UL, 255UL, 256UL, 400UL, 466UL, 467UL, 468UL, 511UL, 512UL,
+                          696UL, 697UL, 698UL, 1000UL, 1024UL})
         lengths.push_back(length);
 
     for (size_t length : lengths)
@@ -358,15 +361,22 @@ TEST(Base58, Generic)
 
 /// Eleven characters is the only body length whose value may exceed a `UInt64`, since
 /// 58^10 <= 2^64 - 1 < 58^11, so it is the only length the short decode path can decline for size.
-TEST(Base58, GenericElevenCharacterBoundary)
+/// Ten and twelve bracket it: ten is the largest length that always fits, and twelve is the shortest
+/// input the general path handles outright, with a two-character leading pass.
+TEST(Base58, GenericShortDecodeBoundary)
 {
     for (std::string_view encoded : {
+             "2111111111",  /// ten characters, the largest length whose value always fits a `UInt64`
+             "zzzzzzzzzz",  /// 58^10 - 1, the largest ten-character value
              "21111111111", /// 58^10, the smallest eleven-character value, and it still fits a `UInt64`
              "jpXCZedGfVQ", /// 2^64 - 1, the largest value the short path may hold
              "jpXCZedGfVR", /// 2^64, the smallest it may not
              "jpXCZedGfVS", /// 2^64 + 1
              "sQm6nKp8qFD", /// midway between 2^64 and 58^11
              "zzzzzzzzzzz", /// 58^11 - 1, the largest eleven-character value
+             "211111111111", /// 58^11, the smallest twelve-character value
+             "jpXCZedGfVR1", /// twelve characters whose leading pass is not all zeros
+             "zzzzzzzzzzzz", /// 58^12 - 1, the largest twelve-character value
          })
     {
         const std::string expected = referenceDecode(std::string(encoded));
@@ -386,13 +396,37 @@ TEST(Base58, GenericElevenCharacterBoundary)
     EXPECT_FALSE(decodeBase58(reinterpret_cast<const UInt8 *>("jpXCZedGfV0"), 11, out).has_value());
 }
 
-/// The callback fires on accumulated inner-loop work, so how often it fires must not depend on how many
-/// input elements one iteration consumes. Each pass adds `word_count * <elements per pass> * <word width>`
-/// to a counter that resets on reaching the threshold, discarding the overshoot: an exact integer function of
-/// the body length, asserted exactly, so retuning the accounting or `work_per_check` must update it.
+/// The most significant word's digit count is what sets the output length, `10 * (words - 1) + digits`,
+/// so an encoded length of 1 modulo 10 is a top word that expanded to a single digit and one of 0 modulo
+/// 10 is a top word that expanded to all ten. Both are searched for rather than assumed.
+TEST(Base58, GenericTopWordDigits)
+{
+    bool saw_one_digit = false;
+    bool saw_all_digits = false;
+
+    for (size_t length = 9; length <= 300; ++length)
+        for (const std::string & body : {bodyOfLength(length, 0), std::string(length, '\xFF'), std::string(length, '\x01')})
+        {
+            const size_t digits = (referenceEncode(body).size() - 1) % BASE58_ENCODE_WORD_DIGITS + 1;
+            if (digits == 1)
+                saw_one_digit = true;
+            else if (digits == BASE58_ENCODE_WORD_DIGITS)
+                saw_all_digits = true;
+            else
+                continue;
+            checkGenericRoundTrip(body);
+        }
+
+    EXPECT_TRUE(saw_one_digit);
+    EXPECT_TRUE(saw_all_digits);
+}
+
+/// The callback fires on accumulated inner-loop work, and the accounting scales with the pass width, so
+/// widening a pass keeps a comparable interval rather than checking less often. The count is an integer
+/// function of the body length, so it is asserted exactly.
 TEST(Base58, GenericCancellationInterval)
 {
-    constexpr size_t expected_calls = 64;
+    constexpr size_t expected_calls = 63;
 
     const std::string body = bodyOfLength(10000, 0);
 
@@ -431,9 +465,6 @@ TEST(Base58, GenericCancellationInterval)
 
 TEST(Base58, DecodeInvalid)
 {
-    uint8_t out32[32] = {};
-    uint8_t out64[64] = {};
-
     /// The generic decoder must reject an invalid character wherever it appears, including inside the
     /// short leading pass and at a pass boundary.
     for (size_t length = 1; length <= 12; ++length)
@@ -449,72 +480,20 @@ TEST(Base58, DecodeInvalid)
                 expectGuardIntact(out, length, "decodeBase58 (invalid input)");
             }
 
-    // Characters excluded from the base58 alphabet.
-    for (std::string_view bad : {
-             "0111111111111111111111111111111111111111111"sv, // '0'
-             "O111111111111111111111111111111111111111111"sv, // 'O'
-             "I111111111111111111111111111111111111111111"sv, // 'I'
-             "l111111111111111111111111111111111111111111"sv, // 'l'
-         })
-    {
-        EXPECT_FALSE(decodeBase58_32_fd(reinterpret_cast<const uint8_t *>(bad.data()), bad.size(), out32).has_value())
-            << bad;
-    }
-
-    // Too short for 32-byte output: minimum is 32 chars (all-zero input encodes to 32 '1's).
-    EXPECT_FALSE(
-        decodeBase58_32_fd(
-            reinterpret_cast<const uint8_t *>("1111111111111111111111111111111"), 31, out32)
-            .has_value());
-
-    // Too long for 32-byte output (BASE58_ENCODED_32_LEN = 44).
-    EXPECT_FALSE(
-        decodeBase58_32_fd(
-            reinterpret_cast<const uint8_t *>("111111111111111111111111111111111111111111111"), 45, out32)
-            .has_value());
-
-    // 44 'z's: value overflows 32 bytes (58^44 > 2^256), must be rejected.
-    EXPECT_FALSE(
-        decodeBase58_32_fd(
-            reinterpret_cast<const uint8_t *>("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"), 44, out32)
-            .has_value());
-
-    // Too many leading '1's: 31 zeros + 0x01 encodes to 31 '1's + '2', so 32 '1's + '2' must fail.
-    {
-        std::string extra = "1" + std::string(test_data_32[1].encoded);
-        EXPECT_FALSE(
-            decodeBase58_32_fd(reinterpret_cast<const uint8_t *>(extra.data()), extra.size(), out32).has_value());
-    }
-
-    // Too short for 64-byte output: minimum is 64 chars (all-zero input encodes to 64 '1's).
-    EXPECT_FALSE(
-        decodeBase58_64_fd(
-            reinterpret_cast<const uint8_t *>("1111111111111111111111111111111111111111111111111111111111111111"), 63, out64)
-            .has_value());
-
-    // Too long for 64-byte output (BASE58_ENCODED_64_LEN = 88).
-    EXPECT_FALSE(
-        decodeBase58_64_fd(
-            reinterpret_cast<const uint8_t *>("11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"),
-            89,
-            out64)
-            .has_value());
-
-    // 88 'z's: value overflows 64 bytes (58^88 > 2^512), must be rejected.
-    EXPECT_FALSE(
-        decodeBase58_64_fd(
-            reinterpret_cast<const uint8_t *>("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"),
-            88,
-            out64)
-            .has_value());
-
-    // Invalid character in 64-byte input.
-    EXPECT_FALSE(
-        decodeBase58_64_fd(
-            reinterpret_cast<const uint8_t *>("0111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"),
-            88,
-            out64)
-            .has_value());
+    /// The same in a long input, where 44 characters are a four-character leading pass and four full
+    /// passes: the positions below put the invalid character in the leading pass, inside the second and
+    /// the fourth full pass, and last, so rejection is exercised after several passes have run.
+    for (size_t position : {size_t{0}, size_t{4}, size_t{13}, size_t{30}, size_t{43}})
+        for (char bad : {'0', 'O', 'I', 'l'})
+        {
+            std::string input(44, 'z');
+            input[position] = bad;
+            std::vector<UInt8> out(input.size() + GUARD_SIZE, GUARD_BYTE);
+            EXPECT_FALSE(
+                decodeBase58(reinterpret_cast<const UInt8 *>(input.data()), input.size(), out.data()).has_value())
+                << "position " << position << " character " << bad;
+            expectGuardIntact(out, input.size(), "decodeBase58 (invalid input)");
+        }
 }
 
 } // namespace DB
