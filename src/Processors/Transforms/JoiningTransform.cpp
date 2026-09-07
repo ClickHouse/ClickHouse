@@ -135,7 +135,7 @@ IProcessor::Status JoiningTransform::prepare()
             if (finish_counter->isLast())
             {
                 is_last_drained = true;
-                join->onProbePhaseFinish(match_counter ? match_counter->get() : 0);
+                join->onProbePhaseFinish(match_counter ? match_counter->get() : std::optional<size_t>(0));
             }
         }
 
@@ -272,7 +272,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
 
     if (data.is_last)
     {
-        matched_right_rows += join_result->getMatchedRightRows();
+        addMatchedRightRows(matched_right_rows, join_result->getMatchedRightRows());
         join_result.reset();
     }
 

@@ -106,7 +106,7 @@ public:
 
     void onBuildPhaseFinish() override;
 
-    void onProbePhaseFinish(size_t matched_right_rows) override
+    void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override
     {
         hash_table_matches = matched_right_rows;
         probe_phase_finished = true;
@@ -141,7 +141,7 @@ private:
     bool probe_phase_finished = false;
     bool use_zero_copy_right = false;
     bool use_zero_copy_left = false;
-    size_t hash_table_matches = 0;
+    std::optional<size_t> hash_table_matches;
     std::once_flag row_store_init_flag;
 
     HashJoinStatsCollectingParams stats_collecting_params;
