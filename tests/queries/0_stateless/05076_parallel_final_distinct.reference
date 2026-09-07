@@ -23,8 +23,8 @@ size limits keep the merge
     Resize 4 → 1
       (Distinct)
       DistinctTransform × 4
-sorted input keeps its streams
-  (Distinct)
-  DistinctSortedStreamTransform
-        (Distinct)
-        DistinctSortedStreamTransform
+sorted input is not scattered
+(Distinct)
+DistinctSortedStreamTransform
+(Distinct)
+DistinctSortedStreamTransform
