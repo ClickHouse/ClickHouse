@@ -118,6 +118,14 @@ SELECT c0.`Null`, isNull(c0.`Null`), c0.c FROM file(currentDatabase() || '_04401
 SELECT `c0.null`, `c0.c` FROM file(currentDatabase() || '_04401_nullname.arrow', 'Arrow', '`c0.null` UInt8, `c0.c` Nullable(String)') ORDER BY `c0.c` SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
 SELECT c0.null, c0.c FROM file(currentDatabase() || '_04401_nullname.arrow', 'Arrow', 'c0 Nullable(Tuple(`Null` Nullable(Tuple(v UInt32)), c String))') ORDER BY c0.c;
 
+-- An element may be named like a virtual subcolumn of its own parent, so `size0` here is both a
+-- declared element and the array's length. The flattened read resolves it the way a direct
+-- `SELECT c0.size0` does, which is the length; a sibling element still reads its own data.
+INSERT INTO FUNCTION file(currentDatabase() || '_04401_size0.arrow', 'Arrow')
+SELECT CAST([(1, 'a'), (2, 'b')], 'Array(Tuple(size0 UInt32, x String))') AS c0;
+SELECT `c0.size0`, `c0.x` FROM file(currentDatabase() || '_04401_size0.arrow', 'Arrow', '`c0.size0` UInt64, `c0.x` Array(String)');
+SELECT c0.size0, c0.x FROM file(currentDatabase() || '_04401_size0.arrow', 'Arrow', 'c0 Array(Tuple(size0 UInt32, x String))');
+
 -- The flattened read and the direct subcolumn read go through the same function, so they agree on
 -- the reported case too.
 SELECT `s.v` FROM file(currentDatabase() || '_04401.arrow', 'Arrow', '`s.v` Int32');
