@@ -205,6 +205,8 @@ FROM urlCluster(
 
 The archive is distributed using the same `StorageObjectStorageCluster` implementation as `s3Cluster`. The [cluster_function_process_archive_on_multiple_nodes](/operations/settings/settings#cluster_function_process_archive_on_multiple_nodes) setting controls whether files from one archive can be processed on multiple cluster nodes.
 
+The [`allow_archive_path_syntax`](/operations/settings/settings#allow_archive_path_syntax) setting is enabled by default. To use `::` literally in a URL instead of interpreting it as archive syntax, disable this setting for the query.
+
 Wildcards can be used both in the archive URL and in the path inside the archive. Expanding `*` or `**` in the URL requires [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages).
 
 ## Globs in URL {#globs-in-url}

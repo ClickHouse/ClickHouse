@@ -591,6 +591,8 @@ SELECT *
 FROM url('https://example.com/dataset.zip :: data/*.csv');
 ```
 
+The [`allow_archive_path_syntax`](/operations/settings/settings#allow_archive_path_syntax) setting is enabled by default. While it is enabled, a URL containing `::` that matches the archive-path syntax is interpreted as an archive and member path. To use `::` literally in a URL, disable `allow_archive_path_syntax` for the query.
+
 Archive access is read-only. The server must report the archive size so ClickHouse can issue range requests.
 
 ## Globs in URL {#globs-in-url}
