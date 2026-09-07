@@ -25,6 +25,56 @@ def new_backup_name():
     return f"Disk('backups', '{backup_id_counter}/')"
 
 
+def backup_entries(backup_id):
+    """Every entry recorded in the backup, the deduplicated ones included.
+
+    Listing the files with `find` is not enough. With `deduplicate_files` on - the default - an entry
+    whose content already appeared in the same backup is recorded as a reference and no second file is
+    written, so a path can be absent from the file listing while the backup does hold it. `.backup`
+    names every entry.
+    """
+    manifest = instance.exec_in_container(
+        ["bash", "-c", f"cat /backups/{backup_id}/.backup"]
+    )
+    return re.findall(r"<name>(.*?)</name>", manifest)
+
+
+def create_materialized_postgresql_table(pg_table, rows):
+    """A standalone `MaterializedPostgreSQL` table in `default`, synchronized, and its nested table name.
+
+    The table name is the caller's to keep short: the replication slot name PostgreSQL is asked for is
+    derived from it and from the database name, and PostgreSQL caps a slot name at 63 characters.
+    """
+    pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
+    pg_manager.create_postgres_table(pg_table)
+    instance.query(
+        f"INSERT INTO postgres_database.{pg_table} SELECT number, number FROM numbers({rows})"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS default.{pg_table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE default.{pg_table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', '{pg_table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        pg_table,
+        postgres_database=pg_manager.get_default_database(),
+        materialized_database="default",
+    )
+
+    nested_table = instance.query(
+        "SELECT toString(uuid) || '_nested' FROM system.tables "
+        f"WHERE database = 'default' AND name = '{pg_table}'"
+    ).strip()
+    assert nested_table.endswith("_nested"), nested_table
+    return nested_table
+
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -1056,20 +1106,6 @@ def test_nested_table_named_by_its_own_element_beside_a_database_element_is_back
     ).strip()
     assert nested_table.endswith("_nested"), nested_table
 
-    def backup_entries(backup_id):
-        """Every entry recorded in the backup, the deduplicated ones included.
-
-        Listing the files with `find` is not enough here. With `deduplicate_files` on - the default -
-        an entry whose content already appeared in the same backup is recorded as a reference and no
-        second file is written. The outer table backs up the very same parts as its nested table, so
-        whichever of the two paths is collected second has no files of its own and a `find` would
-        report it missing. `.backup` names both.
-        """
-        manifest = instance.exec_in_container(
-            ["bash", "-c", f"cat /backups/{backup_id}/.backup"]
-        )
-        return re.findall(r"<name>(.*?)</name>", manifest)
-
     # 1. Control: the `DATABASE` element on its own still hides the nested table, so the difference
     #    below is the second element and nothing else.
     instance.query("BACKUP DATABASE default TO Disk('backups', 'mpg_beside_db_control/')")
@@ -1864,3 +1900,107 @@ def test_partition_scope_wide_element_excluding_data_leaves_the_named_partition(
     )
 
     instance.query("DROP DATABASE partition_scope_wide_excluded_db")
+
+
+def test_except_tables_on_the_outer_table_keeps_its_nested_table_internal():
+    """`EXCEPT TABLES` must not be able to hide the table that makes a nested table recognisable.
+
+    A `MaterializedPostgreSQL` nested table is classified through the outer table whose UUID its name
+    carries, and that classification runs over the enumeration. `EXCEPT TABLES db.pg` removed the
+    outer table from the enumeration *before* the classification, so nothing in it owned
+    `<uuid>_nested` any more, the nested table was taken for an ordinary table, and the user who
+    excluded the outer table got its hidden table in the backup instead - as a user-visible table
+    that a restore brings back.
+
+    Both arms exclude the outer table and neither may leak the nested one: through a `DATABASE`
+    element and through an `ALL` element, because both carry their own `EXCEPT TABLES`.
+    """
+    pg_table = "mpg_except_tbls"
+    # The name is not needed here - the assertions match the `_nested` marker, because a backup path
+    # escapes the UUID in the name (`-` becomes `%2D`) - but the call is what creates the table.
+    create_materialized_postgresql_table(pg_table, 30)
+
+    # 1. A DATABASE element excluding the outer table.
+    instance.query(
+        f"BACKUP DATABASE default EXCEPT TABLES {pg_table} "
+        "TO Disk('backups', 'mpg_except_tables_db/')"
+    )
+    from_database = backup_entries("mpg_except_tables_db")
+    assert not any(
+        "_nested" in path for path in from_database
+    ), f"nested table leaked into the backup: {from_database}"
+    assert not any(
+        f"/{pg_table}" in path or path.endswith(f"{pg_table}.sql")
+        for path in from_database
+    ), f"the excluded outer table is in the backup: {from_database}"
+
+    # 2. The same exclusion written on an ALL element.
+    instance.query(
+        f"BACKUP ALL EXCEPT DATABASE system EXCEPT TABLES default.{pg_table} "
+        "TO Disk('backups', 'mpg_except_tables_all/')"
+    )
+    from_all = backup_entries("mpg_except_tables_all")
+    assert not any(
+        "_nested" in path for path in from_all
+    ), f"nested table leaked into the backup: {from_all}"
+    assert not any(
+        f"/{pg_table}" in path or path.endswith(f"{pg_table}.sql")
+        for path in from_all
+    ), f"the excluded outer table is in the backup: {from_all}"
+
+    instance.query(f"DROP TABLE IF EXISTS default.{pg_table} SYNC")
+    pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
+
+
+def test_except_data_on_a_nested_table_is_rejected_when_the_outer_table_is_excluded():
+    """The clause on a nested table stays refused when `EXCEPT TABLES` names the outer table.
+
+    Both clauses in one query:
+
+        BACKUP DATABASE db EXCEPT TABLES db.pg EXCEPT DATA FROM TABLE db.`<uuid>_nested`
+
+    `EXCEPT TABLES` used to take the outer table out of the enumeration before the classification, so
+    the nested table was not recognised as inner and the clause naming it was silently accepted -
+    which is the same escape as the leak above, seen from the validation side. It has to be refused
+    with `INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION`, as it is when the outer table is not excluded.
+    """
+    pg_table = "mpg_ex_tbl_rej"
+    nested_table = create_materialized_postgresql_table(pg_table, 30)
+
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"BACKUP DATABASE default EXCEPT TABLES {pg_table} "
+            f"EXCEPT DATA FROM TABLE `{nested_table}` TO {new_backup_name()}"
+        )
+    assert "INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION" in str(exc_info.value), str(
+        exc_info.value
+    )
+
+    # Negative control: an ordinary table of the same shape, whose UUID owns nothing, still takes the
+    # clause in the very same query shape - the rejection comes from the outer table, not the name.
+    nested_like = "aabbccdd-eeff-0011-2233-445566778899_nested"
+    instance.query("DROP DATABASE IF EXISTS except_tables_shape_db")
+    instance.query("CREATE DATABASE except_tables_shape_db")
+    instance.query(
+        f"CREATE TABLE except_tables_shape_db.`{nested_like}` (id UInt64) ENGINE = MergeTree ORDER BY id"
+    )
+    instance.query(f"INSERT INTO except_tables_shape_db.`{nested_like}` VALUES (1), (2)")
+    instance.query(
+        "CREATE TABLE except_tables_shape_db.other (id UInt64) ENGINE = MergeTree ORDER BY id"
+    )
+
+    control_backup = new_backup_name()
+    instance.query(
+        f"BACKUP DATABASE except_tables_shape_db EXCEPT TABLES other "
+        f"EXCEPT DATA FROM TABLE `{nested_like}` TO {control_backup}"
+    )
+    instance.query("DROP DATABASE except_tables_shape_db")
+    instance.query(f"RESTORE DATABASE except_tables_shape_db FROM {control_backup}")
+    assert (
+        instance.query(f"SELECT count() FROM except_tables_shape_db.`{nested_like}`")
+        == "0\n"
+    )
+    instance.query("DROP DATABASE except_tables_shape_db")
+
+    instance.query(f"DROP TABLE IF EXISTS default.{pg_table} SYNC")
+    pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
