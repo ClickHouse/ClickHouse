@@ -1355,3 +1355,109 @@ def test_partition_scope_excluded_partitioned_element_leaves_only_the_other():
     assert _restored_partitions("partition_scope_guard_db", backup_name) == "2\t1\n"
 
     instance.query("DROP DATABASE partition_scope_guard_db")
+
+
+def test_partition_scope_database_element_wants_the_whole_table():
+    """A `DATABASE` element asking for the whole table must not be narrowed by a partitioned element.
+
+    `partitionsWithData` consults only the single-table elements, but `isTableDataExcluded` consults the
+    wide elements too, so the two disagreed about the same table: the `DATABASE` element made the data
+    eligible for backup, and then the partition scope of the unrelated single-table element decided how
+    much of it was written. The backup silently held one partition of a database the user asked for in
+    full.
+
+    This is the cross-element form of
+    `test_partition_scope_whole_table_element_wins_over_partitioned_element` - the same "a request for
+    more data is not a licence to drop the rest" rule, between a wide element and a single-table one.
+    """
+    _create_partitioned_table("partition_scope_database_db")
+
+    backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP DATABASE partition_scope_database_db, "
+        f"TABLE partition_scope_database_db.t PARTITION '1' TO {backup_name}"
+    )
+
+    # The `DATABASE` element asked for the whole table, which subsumes the partitioned element.
+    assert (
+        _restored_partitions("partition_scope_database_db", backup_name)
+        == "1\t2\n2\t1\n"
+    )
+
+    instance.query("DROP DATABASE partition_scope_database_db")
+
+
+def test_partition_scope_partitioned_element_before_database_element():
+    """The same as above with the elements the other way round, since neither order is privileged.
+
+    Worth its own test because the single-table element is recorded in `tables` and the wide one in
+    `all_tables_elements`, two separate containers consulted at different points, so an order
+    dependence would not be visible in either one alone.
+    """
+    _create_partitioned_table("partition_scope_database_first_db")
+
+    backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP TABLE partition_scope_database_first_db.t PARTITION '1', "
+        f"DATABASE partition_scope_database_first_db TO {backup_name}"
+    )
+
+    assert (
+        _restored_partitions("partition_scope_database_first_db", backup_name)
+        == "1\t2\n2\t1\n"
+    )
+
+    instance.query("DROP DATABASE partition_scope_database_first_db")
+
+
+def test_partition_scope_all_element_wants_the_whole_table():
+    """An `ALL` element asks for the whole table just as a `DATABASE` element does.
+
+    `ALL` and `DATABASE` both arrive as one `all_tables_elements` entry, so this shares the defect and
+    the fix, but it is pinned separately because that is the bot's second reported shape and because
+    only `ALL` reaches tables in databases the query never names.
+
+    Bare `ALL` is used deliberately: `ALL EXCEPT DATABASE system` cannot be combined with another
+    element in either position - the name list swallows the comma before the next element, the same
+    parser limitation `e7f7dc81914` recorded for `EXCEPT TABLES`.
+    """
+    _create_partitioned_table("partition_scope_all_db")
+
+    backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP ALL, TABLE partition_scope_all_db.t PARTITION '1' TO {backup_name}"
+    )
+
+    assert (
+        _restored_partitions("partition_scope_all_db", backup_name) == "1\t2\n2\t1\n"
+    )
+
+    instance.query("DROP DATABASE partition_scope_all_db")
+
+
+def test_partition_scope_wide_element_excluding_data_leaves_the_named_partition():
+    """The over-shoot guard: a wide element that excludes the data must not widen the partition scope.
+
+    Without this, a fix that simply forced the whole table whenever any wide element selected the table
+    would pass the three tests above and still be wrong here: the `DATABASE` element excludes this
+    table's data, so it asks for none of it, and the only element wanting data asked for `part = 1`
+    alone. `part = 2` must not appear.
+
+    It is the case that already behaved correctly, so it passes both before and after the fix - which
+    is exactly what makes it useful.
+    """
+    _create_partitioned_table("partition_scope_wide_excluded_db")
+
+    backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP TABLE partition_scope_wide_excluded_db.t PARTITION '1', "
+        f"DATABASE partition_scope_wide_excluded_db "
+        f"EXCEPT DATA FROM TABLE partition_scope_wide_excluded_db.t TO {backup_name}"
+    )
+
+    # Only the single-table element wants data, and it named `part = 1`.
+    assert (
+        _restored_partitions("partition_scope_wide_excluded_db", backup_name) == "1\t2\n"
+    )
+
+    instance.query("DROP DATABASE partition_scope_wide_excluded_db")
