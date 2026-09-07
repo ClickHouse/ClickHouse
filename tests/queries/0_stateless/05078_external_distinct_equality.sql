@@ -1,6 +1,6 @@
--- The first two-row chunk is deduplicated by the hash set and triggers spilling. Later chunks use
--- sort equality. Signed zeros and NaN payloads therefore retain both binary representatives only when
--- both reach the hash set before spilling; otherwise their first representative determines the result.
+-- The first two-row chunk is deduplicated by the hash set and triggers spilling. Later chunks use sort
+-- equality. Signed zeros and `NaN` payloads therefore retain both binary representatives only when both
+-- reach the hash set before spilling; otherwise their first representative determines the result.
 SET max_threads = 1;
 SET max_block_size = 2;
 SET max_bytes_before_external_distinct = 1;

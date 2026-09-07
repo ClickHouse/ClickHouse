@@ -14,9 +14,9 @@ SET max_bytes_in_distinct = 0;
 -- so the assertions below match plain `Skip stream merging: 1` lines.
 SET explain_query_plan_default = 'legacy';
 
--- The assertions below grep the DISTINCT transform names in the EXPLAIN PIPELINE output; disable
--- external DISTINCT so that the final DISTINCT stays a plain DistinctTransform instead of
--- ExternalDistinctTransform.
+-- The assertions below grep the `DISTINCT` transform names in the EXPLAIN PIPELINE output; disable external
+-- `DISTINCT` so that the final `DISTINCT` stays a plain `DistinctTransform` instead of
+-- `ExternalDistinctTransform`.
 SET max_bytes_ratio_before_external_distinct = 0;
 
 -- { echo }

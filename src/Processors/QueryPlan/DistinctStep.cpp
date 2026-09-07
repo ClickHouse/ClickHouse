@@ -73,8 +73,8 @@ bool preliminaryDistinctIsUseful(size_t max_threads)
     return max_threads > 1;
 }
 
-/// The min-combination of the absolute and the ratio thresholds, the same as for external GROUP BY
-/// (Aggregator::Params::getMaxBytesBeforeExternalGroupBy).
+/// The min-combination of the absolute and the ratio thresholds, the same as for external `GROUP BY`
+/// (`Aggregator::Params::getMaxBytesBeforeExternalGroupBy`).
 static size_t getMaxBytesBeforeExternalDistinct(size_t max_bytes_before_external_distinct, double max_bytes_ratio_before_external_distinct)
 {
     std::optional<size_t> threshold;
@@ -213,10 +213,10 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     if (!pre_distinct && !skip_stream_merging)
         pipeline.resize(1);
 
-    /// When the stream is sorted by a prefix of the distinct columns, deduplicate by ranges of equal
-    /// prefix values, hashing only the remaining columns within a range (and with no remaining columns,
-    /// keeping one row per range without hashing at all). This holds at most one range in memory, so
-    /// none of the external DISTINCT machinery below applies to it.
+    /// When the stream is sorted by a prefix of the distinct columns, deduplicate by ranges of equal prefix
+    /// values, hashing only the remaining columns within a range (and with no remaining columns, keeping
+    /// one row per range without hashing at all). This holds at most one range in memory, so none of the
+    /// external `DISTINCT` machinery below applies to it.
     if (!distinct_sort_desc.empty())
     {
         pipeline.addSimpleTransform(

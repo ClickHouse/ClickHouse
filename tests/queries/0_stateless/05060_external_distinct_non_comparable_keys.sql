@@ -16,18 +16,19 @@ SELECT count() FROM (EXPLAIN PIPELINE SELECT DISTINCT s FROM states) WHERE expla
 SELECT count() FROM (SELECT DISTINCT s FROM states) SETTINGS log_comment = '05060_external_distinct_non_comparable_keys/state_count';
 SELECT sum(finalizeAggregation(s)), min(finalizeAggregation(s)), max(finalizeAggregation(s)) FROM (SELECT DISTINCT s FROM states) SETTINGS log_comment = '05060_external_distinct_non_comparable_keys/state_values';
 
--- The state key mixed with a comparable key.
+-- A serialized state key can be combined with a comparable key.
 SELECT count() FROM (SELECT DISTINCT s, g % 2 AS parity FROM states) SETTINGS log_comment = '05060_external_distinct_non_comparable_keys/mixed_keys';
 
--- The DISTINCT after an ORDER BY keeps the sorted order across the spill also with a serialized key (the
--- sort is by an expression, so that the DISTINCT is the hash-based one above the sort, not the in-order one).
+-- The `DISTINCT` after an `ORDER BY` keeps the sorted order across the spill also with a serialized key
+-- (the sort is by an expression, so that the `DISTINCT` is the hash-based one above the sort, not the
+-- in-order one).
 SELECT count(), groupArray(x) = arraySort(groupArray(x)) FROM (SELECT x FROM (SELECT DISTINCT s, x FROM states ORDER BY x + 1)) SETTINGS max_threads = 1, log_comment = '05060_external_distinct_non_comparable_keys/ordered';
 
--- States whose serializations differ in length (sets of one to four elements).
+-- Sets of one to four elements produce serializations of different lengths.
 SELECT count(), arraySort(groupArray(finalizeAggregation(u)))
 FROM (SELECT DISTINCT u FROM (SELECT uniqExactState(v) AS u FROM (SELECT number % 40 AS x, intDiv(number, 40) AS g, arrayJoin(range(1 + (number % 40) % 4)) AS v FROM numbers(4000)) GROUP BY x, g)) SETTINGS log_comment = '05060_external_distinct_non_comparable_keys/variable_length';
 
--- The same results without the spill.
+-- Disabling spilling produces the same results.
 SELECT count() FROM (SELECT DISTINCT s FROM states) SETTINGS max_bytes_before_external_distinct = 0, log_comment = '05060_external_distinct_non_comparable_keys/disabled_count';
 SELECT sum(finalizeAggregation(s)), min(finalizeAggregation(s)), max(finalizeAggregation(s)) FROM (SELECT DISTINCT s FROM states) SETTINGS max_bytes_before_external_distinct = 0, log_comment = '05060_external_distinct_non_comparable_keys/disabled_values';
 SELECT count() FROM (SELECT DISTINCT s, g % 2 AS parity FROM states) SETTINGS max_bytes_before_external_distinct = 0, log_comment = '05060_external_distinct_non_comparable_keys/disabled_mixed_keys';

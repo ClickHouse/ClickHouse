@@ -589,11 +589,9 @@ struct HashMethodKeysFixed
         }
     }
 
-    /// The order in which the prepared-keys packing lays the columns out in the packed key: grouped by
-    /// the value size, in the descending order. Returns std::nullopt when the prepared keys are not
-    /// used (then the columns are packed in their original order). This is the single source of the
-    /// rule; the consumers that read the keys back must unpack in the same order (see
-    /// unpackFixedKeyIntoColumns).
+    /// Returns the column order used to pack prepared keys: descending value size.
+    /// Returns `std::nullopt` when packing uses the original column order.
+    /// `unpackFixedKeyIntoColumns` uses the same order to recover key values.
     static std::optional<std::vector<size_t>> packedKeysOrder(const Sizes & key_sizes)
     {
         if (!usePreparedKeys(key_sizes))

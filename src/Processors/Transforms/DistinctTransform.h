@@ -44,20 +44,19 @@ private:
     size_t unique_rows_observed = 0;
 };
 
-/// The streaming hash-based DISTINCT: emits the first occurrence of each key as soon as it is seen.
-/// The deduplication logic itself lives in DistinctSetFilter (shared with ExternalDistinctTransform,
-/// which additionally spills to disk under memory pressure).
+/// The streaming hash-based `DISTINCT`: emits the first occurrence of each key as soon as it is seen. The
+/// deduplication logic itself lives in `DistinctSetFilter` (shared with `ExternalDistinctTransform`, which
+/// additionally spills to disk under memory pressure).
 class DistinctTransform final : public ISimpleTransform
 {
 public:
     /// `allow_abandoning_` permits giving up on mostly-unique input (see `DeduplicationAbandonController`):
     /// the output is then no longer fully deduplicated, so it must only be enabled when the consumer
-    /// deduplicates the output anyway.
-    /// `skip_null_keys_` drops rows with a NULL in any key column instead of emitting them (see
-    /// DistinctSetFilter); it must only be enabled when the consumer drops them anyway.
-    /// `max_bytes_before_pass_through_` is a query-memory threshold for preliminary `DISTINCT` followed
-    /// by an exact deduplicating consumer. When exceeded, the transform frees its set and passes through
-    /// subsequent rows, giving up any remaining local limit hint. Zero disables this memory policy.
+    /// deduplicates the output anyway. `skip_null_keys_` drops rows with a `NULL` in any key column instead
+    /// of emitting them (see `DistinctSetFilter`); it must only be enabled when the consumer drops them
+    /// anyway. `max_bytes_before_pass_through_` is a query-memory threshold for preliminary `DISTINCT`
+    /// followed by an exact deduplicating consumer. When exceeded, the transform frees its set and passes
+    /// through subsequent rows, giving up any remaining local limit hint. Zero disables this memory policy.
     DistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,

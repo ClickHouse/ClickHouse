@@ -8,9 +8,9 @@
 namespace DB
 {
 
-/// A sink that writes the incoming stream of blocks into a temporary file.
-/// It has an extra dummy output port that is connected to the processor that spawned it,
-/// so that the pipeline stays connected (see MergeSortingTransform::updatePipeline).
+/// Writes incoming blocks to an owned temporary stream. Its extra output carries no data and finishes
+/// after the file is finalized. The pipeline connects this completion signal to the reader or to a
+/// processor that coordinates when reading may start.
 class BufferingToFileSink : public ISink
 {
 public:
@@ -29,9 +29,10 @@ private:
     LoggerPtr log;
 };
 
-/// A source that reads back the blocks written by the corresponding BufferingToFileSink.
-/// It has an extra dummy input port connected to the sink's dummy output port, so it starts
-/// producing data only after the sink finishes writing.
+/// Reads a completed temporary stream after its extra input finishes. This input carries no data;
+/// the pipeline connects it to the sink's completion signal or to a coordinating processor.
+/// The source borrows the holder owned by `BufferingToFileSink`. The pipeline retains both processors
+/// throughout execution, keeping the holder alive while this source reads.
 class BufferingFromFileSource : public ISource
 {
 public:

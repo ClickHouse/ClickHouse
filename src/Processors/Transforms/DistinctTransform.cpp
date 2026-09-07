@@ -53,7 +53,7 @@ void DistinctTransform::transform(Chunk & chunk)
     if (!distinct_set)
         return;
 
-    /// A constant NULL key component makes every key contain a NULL, so a consumer that skips NULL
+    /// A constant `NULL` key component makes every key contain a `NULL`, so a consumer that skips `NULL`
     /// keys drops all rows; emit nothing and stop the input.
     if (distinct_set->hasConstNullKey())
     {
@@ -89,10 +89,10 @@ void DistinctTransform::transform(Chunk & chunk)
 
     if (abandon_controller)
     {
-        /// The rate is measured against the rows the transform received: the rows dropped as NULL keys
-        /// (in the skip_null_keys mode, inside the filter) count as removed by the deduplication, so a
-        /// stream that mostly consists of NULL keys keeps the transform even when the non-NULL part is
-        /// unique - dropping the NULL rows is exactly the reduction the consumer benefits from.
+        /// The rate is measured against the rows the transform received: the rows dropped as `NULL` keys
+        /// (in the `skip_null_keys` mode, inside the filter) count as removed by the deduplication, so a
+        /// stream that mostly consists of `NULL` keys keeps the transform even when the non-`NULL` part is
+        /// unique - dropping the `NULL` rows is exactly the reduction the consumer benefits from.
         if (abandon_controller->update(num_rows, chunk.getNumRows(), distinct_set->getTotalByteCount()))
         {
             /// The new rows of the current chunk are still emitted (the following chunks flow

@@ -9,8 +9,8 @@ SET allow_preliminary_distinct_abandoning = 0;
 SELECT count(), arraySort(groupArray(finalizeAggregation(s))) = arrayMap(x -> [concat(toString(x), repeat(char(0, 120, 255), 1 + x * 1024))], range(5)) FROM (SELECT DISTINCT initializeAggregation('groupArrayState', concat(toString(number % 5), repeat(char(0, 120, 255), 1 + (number % 5) * 1024))) AS s FROM numbers(20)) SETTINGS max_bytes_before_external_distinct = 0;
 SELECT count(), arraySort(groupArray(finalizeAggregation(s))) = arrayMap(x -> [concat(toString(x), repeat(char(0, 120, 255), 1 + x * 1024))], range(5)) FROM (SELECT DISTINCT initializeAggregation('groupArrayState', concat(toString(number % 5), repeat(char(0, 120, 255), 1 + (number % 5) * 1024))) AS s FROM numbers(20)) SETTINGS max_bytes_before_external_distinct = 1;
 
--- Each state contains three 6 MiB strings and exceeds the suppression run target.
--- Extraction must accommodate the entire state and restore all of its values.
+-- Each state contains three 6 MiB strings and exceeds the suppression run target. Extraction must
+-- accommodate the entire state and restore all of its values.
 WITH repeat(repeat(char(0, 120, 255), 32), 64 * 1024) AS payload
 SELECT
     count(),

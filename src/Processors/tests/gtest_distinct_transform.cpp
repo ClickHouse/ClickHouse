@@ -29,7 +29,7 @@ Chunk makeChunk(const std::vector<UInt64> & values)
     return Chunk(std::move(columns), values.size());
 }
 
-/// Runs the chunks through a DistinctTransform and returns the total number of the output rows.
+/// Runs the chunks through a `DistinctTransform` and returns the total number of the output rows.
 size_t runDistinct(SharedHeader header, Chunks chunks, bool allow_abandoning, bool skip_null_keys)
 {
     auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
@@ -126,7 +126,7 @@ TEST(DistinctTransformSkipNullKeys, DropsNullKeyRows)
         return chunks;
     };
 
-    /// With the skipping the NULL rows are dropped entirely; without it NULL is one distinct value.
+    /// With the skipping the `NULL` rows are dropped entirely; without it `NULL` is one distinct value.
     EXPECT_EQ(runDistinct(header, make_chunks(), /*allow_abandoning=*/ false, /*skip_null_keys=*/ true), 2u);
     EXPECT_EQ(runDistinct(header, make_chunks(), /*allow_abandoning=*/ false, /*skip_null_keys=*/ false), 3u);
 }
@@ -150,7 +150,7 @@ TEST(DistinctTransformSkipNullKeys, ConstNullKeyEmitsNothing)
         return chunks;
     };
 
-    /// A constant NULL key makes every key contain a NULL: with the skipping nothing is emitted, while
+    /// A constant `NULL` key makes every key contain a `NULL`: with the skipping nothing is emitted, while
     /// without it the constant-columns-only special case returns a single row.
     EXPECT_EQ(runDistinct(header, make_chunks(), /*allow_abandoning=*/ false, /*skip_null_keys=*/ true), 0u);
     EXPECT_EQ(runDistinct(header, make_chunks(), /*allow_abandoning=*/ false, /*skip_null_keys=*/ false), 1u);
@@ -178,8 +178,8 @@ TEST(DistinctTransformSkipNullKeys, DropsLowCardinalityNullableNullRows)
         return chunks;
     };
 
-    /// The NULL rows of a LowCardinality(Nullable) key are the rows referencing the dictionary's NULL
-    /// entry; with the skipping they are dropped entirely, without it NULL is one distinct value.
+    /// The `NULL` rows of a `LowCardinality(Nullable)` key are the rows referencing the dictionary's
+    /// `NULL` entry; with the skipping they are dropped entirely, without it `NULL` is one distinct value.
     EXPECT_EQ(runDistinct(header, make_chunks(), /*allow_abandoning=*/ false, /*skip_null_keys=*/ true), 2u);
     EXPECT_EQ(runDistinct(header, make_chunks(), /*allow_abandoning=*/ false, /*skip_null_keys=*/ false), 3u);
 }

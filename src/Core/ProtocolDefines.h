@@ -109,7 +109,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 14 registers the `IntersectOrExcept` step, so a plan with `INTERSECT` or `EXCEPT`
 /// can be shipped under `make_distributed_plan`.
 /// Version 15 adds the `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct`
-/// plan setting names (external DISTINCT) and the input-order flag of the `Distinct` step.
+/// plan setting names (external `DISTINCT`) and the input-order flag of the `Distinct` step.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 15;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front

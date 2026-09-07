@@ -20,27 +20,24 @@ class DistinctStep : public ITransformingStep
 public:
     struct Settings
     {
-        /// Restrictions on the maximum size of the DISTINCT set.
+        /// Restrictions on the maximum size of the `DISTINCT` set.
         SizeLimits set_size_limits;
 
         UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
 
-        /// The external DISTINCT thresholds. The effective limit is their min-combination, computed when
-        /// the pipeline is built (both zero - external DISTINCT is disabled).
+        /// The pipeline combines these thresholds into the smaller enabled spill trigger.
+        /// Setting both to zero disables external `DISTINCT`.
         UInt64 max_bytes_before_external_distinct = 0;
         double max_bytes_ratio_before_external_distinct = 0.;
 
-        /// The spill-related members are consumed only when external DISTINCT is enabled, but they
-        /// must hold valid values even in the default-constructed struct: internal DISTINCT steps
-        /// built with it (e.g. the set transfer of a distributed plan) are serialized through
-        /// updatePlanSettings, and e.g. the buffer size is a non-zero plan setting. The defaults
-        /// mirror the defaults of the corresponding query settings.
+        /// Internal steps serialize these settings through `updatePlanSettings` even when spilling is
+        /// disabled. Defaults match the query settings, including the required nonzero buffer size.
         size_t min_free_disk_space = 0;
         String temporary_files_codec = "LZ4";
         UInt64 temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
 
-        /// External DISTINCT disabled (e.g. deduplication during merges, which must not depend on
-        /// query-level settings or query memory tracking).
+        /// Disables external `DISTINCT` for internal operations, such as merge deduplication, that do
+        /// not use query settings or query memory tracking.
         Settings() = default;
         explicit Settings(const DB::Settings & settings_);
         explicit Settings(const QueryPlanSerializationSettings & settings_);
@@ -95,11 +92,11 @@ public:
     /// into a single stream.
     void skipStreamMerging() { skip_stream_merging = true; }
 
-    /// The step must return the rows in their input order: it runs above the ORDER BY sorting of its
-    /// query (set by the planners), or the optimizer propagates a global order through it, which the
-    /// steps above may rely on (set by the applyOrder optimization). The in-memory DISTINCT keeps the
-    /// order by construction; a spilling one restores it after merging its runs (see
-    /// ExternalDistinctTransform).
+    /// The step must return the rows in their input order: it runs above the `ORDER BY` sorting of its
+    /// query (set by the planners), or the optimizer propagates a global order through it, which the steps
+    /// above may rely on (set by the `applyOrder` optimization). The in-memory `DISTINCT` keeps the order
+    /// by construction; a spilling one restores it after merging its runs (see
+    /// `ExternalDistinctTransform`).
     void preserveInputOrder() { preserve_input_order = true; }
     bool preservesInputOrder() const { return preserve_input_order; }
 

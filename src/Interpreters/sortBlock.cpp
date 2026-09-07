@@ -174,7 +174,7 @@ void getBlockSortPermutationImpl(
         /// The single-column sort does not track the equal ranges: the galloping search finds them in the
         /// sorted order of the permutation, cheaply both for the long ranges of a skewed input and for the
         /// singleton ranges of a distinct one. Every probe is a virtual comparison, so the linear probe is
-        /// kept short (as in IColumn::getEqualRangeEndAssumeSorted); the comparison honors the collation.
+        /// kept short (as in `IColumn::getEqualRangeEndAssumeSorted`); the comparison honors the collation.
         if (equal_ranges)
         {
             static constexpr size_t linear_probe = 8;

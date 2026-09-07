@@ -29,11 +29,11 @@ using namespace DB;
 ///
 /// `QueryPlanSerializationSettings` is a strict named schema: `writeChangedBinary` writes every touched
 /// entry by name and `readBinary` throws on a name it does not know. Writing either name towards a peer
-/// that predates it would make every serialized DISTINCT plan unreadable there. Leaving them off costs
-/// nothing: such a peer has no external DISTINCT at all, so it runs the in-memory DISTINCT, exactly as
+/// that predates it would make every serialized `DISTINCT` plan unreadable there. Leaving them off costs
+/// nothing: such a peer has no external `DISTINCT` at all, so it runs the in-memory `DISTINCT`, exactly as
 /// with the feature disabled, and the result is identical either way.
 ///
-/// The input-order flag of the step (see DistinctStep::preserveInputOrder) is gated the same way: it is
+/// The input-order flag of the step (see `DistinctStep::preserveInputOrder`) is gated the same way: it is
 /// written only towards a peer at the version that introduced it, and a peer below that version cannot
 /// spill, so it keeps the input order anyway.
 namespace
@@ -126,10 +126,10 @@ TEST(ExternalDistinctPlanSetting, NotCarriedTowardsAPeerThatPredatesTheNames)
 
 TEST(ExternalDistinctPlanSetting, DisabledStepCarriesExplicitZerosToAPeerThatKnowsTheNames)
 {
-    /// An assignment marks a plan setting as changed whatever the value, so a step with external
-    /// DISTINCT disabled (e.g. the internal DISTINCT steps built with the default-constructed
-    /// settings) ships explicit zeros to a peer at the current version: the initiator's decision
-    /// reaches the receiver instead of being left to its defaults.
+    /// An assignment marks a plan setting as changed whatever the value, so a step with external `DISTINCT`
+    /// disabled (e.g. the internal `DISTINCT` steps built with the default-constructed settings) ships
+    /// explicit zeros to a peer at the current version: the initiator's decision reaches the receiver
+    /// instead of being left to its defaults.
     const auto settings = serializeDistinctStep(DistinctStep::Settings{}, current_version);
     EXPECT_TRUE(wireCarries(settings, "max_bytes_before_external_distinct"));
     EXPECT_TRUE(wireCarries(settings, "max_bytes_ratio_before_external_distinct"));
@@ -137,9 +137,9 @@ TEST(ExternalDistinctPlanSetting, DisabledStepCarriesExplicitZerosToAPeerThatKno
 
 TEST(ExternalDistinctPlanSetting, DefaultsToPreFeatureBehaviorWhenAbsent)
 {
-    /// A new worker reading a plan of an initiator that predates external DISTINCT does not receive the
-    /// thresholds at all. Its defaults must preserve the behavior of that initiator (no spilling)
-    /// instead of arming a mode the initiator could not have selected.
+    /// A new worker reading a plan of an initiator that predates external `DISTINCT` does not receive the
+    /// thresholds at all. Its defaults must preserve the behavior of that initiator (no spilling) instead
+    /// of arming a mode the initiator could not have selected.
     QueryPlanSerializationSettings settings;
     EXPECT_EQ(settings[QueryPlanSerializationSetting::max_bytes_before_external_distinct], 0);
     EXPECT_EQ(settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_distinct], 0.);
@@ -163,8 +163,8 @@ TEST(ExternalDistinctPlanSetting, InputOrderFlagRoundTripsAtTheCurrentVersion)
 
 TEST(ExternalDistinctPlanSetting, InputOrderFlagIsNotCarriedTowardsAnOlderPeer)
 {
-    /// The older peer reads the step in its own format, without the flag; it runs the in-memory
-    /// DISTINCT, which keeps the input order by construction.
+    /// The older peer reads the step in its own format, without the flag; it runs the in-memory `DISTINCT`,
+    /// which keeps the input order by construction.
     const auto header = makeHeader();
     EXPECT_FALSE(inputOrderFlagAfterRoundTrip(makeStep(header, /*preserve_input_order=*/ true), header, pre_setting_version));
 }

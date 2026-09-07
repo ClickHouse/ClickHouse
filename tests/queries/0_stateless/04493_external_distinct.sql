@@ -1,7 +1,7 @@
 -- Isolate from the default ratio threshold: the spill must be triggered only by the explicit settings.
 SET max_bytes_ratio_before_external_distinct = 0;
 
--- The result of DISTINCT with the spill must be identical to the in-memory result.
+-- The result of `DISTINCT` with the spill must be identical to the in-memory result.
 SELECT count(), sum(cityHash64(k)) FROM (SELECT DISTINCT number % 300000 AS k FROM numbers_mt(3000000)) SETTINGS max_bytes_before_external_distinct = 0;
 SELECT count(), sum(cityHash64(k)) FROM (SELECT DISTINCT number % 300000 AS k FROM numbers_mt(3000000)) SETTINGS max_bytes_before_external_distinct = '4M';
 
@@ -11,7 +11,7 @@ SELECT count(), sum(cityHash64(k)) FROM (SELECT DISTINCT number % 100000 AS k FR
 -- The same query executed through the serialized query plan (the step settings round-trip).
 SELECT count(), sum(cityHash64(k)) FROM (SELECT DISTINCT number % 100000 AS k FROM numbers(300000)) SETTINGS max_bytes_before_external_distinct = 1, max_block_size = 65409, max_untracked_memory = 0, serialize_query_plan = 1;
 
--- The spillable transform is used only when the threshold is set, and never for DISTINCT in order.
+-- The spillable transform is used only when the threshold is set, and never for `DISTINCT` in order.
 SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 2 AS k FROM numbers(1) SETTINGS max_bytes_before_external_distinct = 1) WHERE explain LIKE '%ExternalDistinctTransform%';
 SELECT count() FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 2 AS k FROM numbers(1) SETTINGS max_bytes_before_external_distinct = 0) WHERE explain LIKE '%ExternalDistinctTransform%';
 SELECT count() FROM (EXPLAIN PIPELINE SELECT DISTINCT k FROM (SELECT number AS k FROM numbers(10) ORDER BY k) SETTINGS max_bytes_before_external_distinct = 1, optimize_distinct_in_order = 1) WHERE explain LIKE '%ExternalDistinctTransform%';

@@ -16,9 +16,8 @@
 
 using namespace DB;
 
-/// sortBlockAndDeduplicate keeps the first row of every range of rows that are equal on the sort description.
-/// Every block below carries an `arrival` column with the position of the row in the input, so a test can see
-/// which row of an equal range survived: with the stable sort it must be the first-received one.
+/// With stable sorting, `sortBlockAndDeduplicate` retains the first input row for each sort key.
+/// The `arrival` payload records input positions so the tests can identify the retained rows.
 namespace
 {
 
@@ -135,7 +134,7 @@ TEST(SortBlockAndDeduplicate, NullsAreOneKey)
     Block block{{ColumnNullable::create(std::move(nested), std::move(null_map)), nullable_type, "k"}, arrivals(4)};
     sortBlockAndDeduplicate(block, ascending({"k"}), IColumn::PermutationSortStability::Stable);
 
-    /// NULLs sort last (nulls_direction = 1); the first NULL row and the first 1 row survive.
+    /// `NULL` values sort last (`nulls_direction` = 1); the first `NULL` row and the first 1 row survive.
     EXPECT_EQ(block.rows(), 2u);
     EXPECT_EQ(values(block, "arrival"), (std::vector<UInt64>{1, 0}));
 }

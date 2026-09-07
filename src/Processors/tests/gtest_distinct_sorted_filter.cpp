@@ -150,9 +150,9 @@ TEST(DistinctSortedFilter, EmptyOutputChunk)
 
 TEST(DistinctSortedFilter, SortEqualRowsCollapse)
 {
-    /// 0. and -0. compare equal in the sort order: after the spill they are deduplicated as one value
-    /// (like DISTINCT in order does), even though the in-memory hash DISTINCT distinguishes them by
-    /// the binary representation.
+    /// 0. and -0. compare equal in the sort order: after the spill they are deduplicated as one value (like
+    /// `DISTINCT` in order does), even though the in-memory hash `DISTINCT` distinguishes them by the
+    /// binary representation.
     auto filter = makeFilter();
     auto result = filter.filter(makeFloatChunk({-0., 0., 0.}, {0, 0, 0}), /*strip_flag=*/ false);
     EXPECT_EQ(extractFloatKeys(result).size(), 1u);

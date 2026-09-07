@@ -204,8 +204,8 @@ struct SetMethodKeysFixed
     using State = ColumnsHashing::HashMethodKeysFixed<typename Data::value_type, Key, SetMethodMapped<Data>,
         has_nullable_keys, false, set_method_use_cache<Data, true>>;
 
-    /// `unpack_order` is the order in which the columns were packed into the key, if it differs from
-    /// the original one (see HashMethodKeysFixed::packedKeysOrder).
+    /// `unpack_order` is the order in which the columns were packed into the key, if it differs from the
+    /// original one (see `HashMethodKeysFixed::packedKeysOrder`).
     static void insertKeyIntoColumns(
         const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes, const std::vector<size_t> * unpack_order)
     {
@@ -225,11 +225,9 @@ struct SetMethodHashed
     using State = ColumnsHashing::HashMethodHashed<typename Data::value_type, SetMethodMapped<Data>, set_method_use_cache<Data, true>>;
 };
 
-/// For the general case, like `SetMethodHashed`, but the key is the serialization of all the key columns,
-/// kept in the string pool of the set, instead of a 128-bit hash of it: more memory per key, and in
-/// exchange exact comparisons and keys that can be materialized back into columns (see
-/// insertKeyIntoColumns). Not chosen by chooseMethod - a consumer that needs the keys back asks for it and
-/// passes createContext() to the State.
+/// Stores serialized keys in the set's string pool, allowing exact comparisons and key extraction.
+/// `chooseMethod` does not select this method; consumers that need extractable generic keys select it
+/// explicitly and pass `createContext` to `State`.
 template <typename TData>
 struct SetMethodSerialized
 {
@@ -240,8 +238,7 @@ struct SetMethodSerialized
 
     using State = ColumnsHashing::HashMethodSerialized<typename Data::value_type, SetMethodMapped<Data>, false, false>;
 
-    /// The State requires a context of its own type. The keys are serialized with the default settings,
-    /// which insertKeyIntoColumns reads them back with.
+    /// `State` serializes keys with the default settings, which `insertKeyIntoColumns` also uses.
     static ColumnsHashing::HashMethodContextPtr createContext()
     {
         return State::createContext(ColumnsHashing::HashMethodContextSettings{});
@@ -284,7 +281,7 @@ struct NonClearableSet
     /// Support for nullable keys (for DISTINCT implementation).
     std::unique_ptr<SetMethodKeysFixed<HashSet<UInt128, UInt128HashCRC32>, true>>            nullable_keys128;
     std::unique_ptr<SetMethodKeysFixed<HashSet<UInt256, UInt256HashCRC32>, true>>            nullable_keys256;
-    /// The general method that keeps the keys (see SetMethodSerialized).
+    /// The general method that keeps the keys (see `SetMethodSerialized`).
     std::unique_ptr<SetMethodSerialized<HashSetWithSavedHash<std::string_view>>>             serialized;
     /** Unlike Aggregator, `concat` method is not used here.
       * This is done because `hashed` method, although slower, but in this case, uses less RAM.
@@ -310,7 +307,7 @@ struct ClearableSet
     /// Support for nullable keys (for DISTINCT implementation).
     std::unique_ptr<SetMethodKeysFixed<ClearableHashSet<UInt128, UInt128HashCRC32>, true>>           nullable_keys128;
     std::unique_ptr<SetMethodKeysFixed<ClearableHashSet<UInt256, UInt256HashCRC32>, true>>           nullable_keys256;
-    /// The general method that keeps the keys (see SetMethodSerialized).
+    /// The general method that keeps the keys (see `SetMethodSerialized`).
     std::unique_ptr<SetMethodSerialized<ClearableHashSetWithSavedHash<std::string_view>>>            serialized;
     /** Unlike Aggregator, `concat` method is not used here.
       * This is done because `hashed` method, although slower, but in this case, uses less RAM.
@@ -341,7 +338,7 @@ struct CountingSet
 
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt128, Count, UInt128HashCRC32>, true>>             nullable_keys128;
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32>, true>>             nullable_keys256;
-    /// The general method that keeps the keys (see SetMethodSerialized).
+    /// The general method that keeps the keys (see `SetMethodSerialized`).
     std::unique_ptr<SetMethodSerialized<HashMapWithSavedHash<std::string_view, Count>>>               serialized;
 };
 

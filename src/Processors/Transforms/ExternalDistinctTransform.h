@@ -20,8 +20,8 @@ class MergingSortedTransform;
 /// external-memory threshold. Its set retains extractable keys, including serialized keys when needed.
 ///
 /// At the first spill, the set's keys become sorted suppression runs carrying already-emitted flags.
-/// Extraction fills one bounded run at a time and waits for its file to finish before continuing. The
-/// set is released after its last keys are extracted. Further input becomes sorted, locally deduplicated
+/// Extraction prepares one run at a time with a soft byte target and waits for its file to finish.
+/// The set is released after its last keys are extracted. Further input becomes sorted, locally deduplicated
 /// runs, and output waits until all input is consumed. `DistinctSpillLayout` owns the column conversions.
 ///
 /// `MergingSortedTransform` merges the runs, including any in-memory tail, and `DistinctSortedFilter`

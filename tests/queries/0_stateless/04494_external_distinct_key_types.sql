@@ -17,9 +17,9 @@ SELECT count() FROM (SELECT DISTINCT (number % 10, toString(number % 7)) AS t FR
 SELECT count() FROM (SELECT DISTINCT range(number % 5) AS a FROM numbers(10000)) SETTINGS log_comment = '04494_external_distinct_key_types/array';
 
 -- Values that compare equal in the sort order (0. and -0., NaNs with different payloads) may be
--- deduplicated as one value once the spill is involved - the same equality DISTINCT in order uses -
--- while a value class fully processed in memory keeps the binary distinction. Whatever the timing,
--- the result contains no binary duplicates and no value class is lost.
+-- deduplicated as one value once the spill is involved - the same equality `DISTINCT` in order uses - while
+-- a value class fully processed in memory keeps the binary distinction. Whatever the timing, the result
+-- contains no binary duplicates and no value class is lost.
 SELECT count() = uniqExact(reinterpretAsUInt64(k)), countIf(k = 0) BETWEEN 1 AND 2, countIf(isNaN(k)) BETWEEN 1 AND 2, count() BETWEEN 2 AND 4
 FROM
 (
@@ -28,7 +28,7 @@ FROM
 )
 SETTINGS max_block_size = 2, log_comment = '04494_external_distinct_key_types/float_classes';
 
--- DISTINCT over constant columns only: there is nothing to spill, the in-memory DISTINCT is used.
+-- `DISTINCT` over constant columns only: there is nothing to spill, the in-memory `DISTINCT` is used.
 SELECT DISTINCT 1, '1' FROM numbers(5) SETTINGS log_comment = '04494_external_distinct_key_types/constants';
 SELECT DISTINCT 1, '1' ORDER BY 1 LIMIT 1 BY 2 SETTINGS log_comment = '04494_external_distinct_key_types/constant_limit';
 
@@ -36,8 +36,8 @@ SELECT DISTINCT 1, '1' ORDER BY 1 LIMIT 1 BY 2 SETTINGS log_comment = '04494_ext
 SELECT count() FROM (SELECT DISTINCT s FROM (SELECT number % 3 AS g, uniqExactState(number) AS s FROM numbers(100) GROUP BY g)) SETTINGS log_comment = '04494_external_distinct_key_types/non_comparable';
 SELECT count() FROM (EXPLAIN PIPELINE SELECT DISTINCT s FROM (SELECT number % 3 AS g, uniqExactState(number) AS s FROM numbers(100) GROUP BY g)) WHERE explain LIKE '%ExternalDistinctTransform%' SETTINGS log_comment = '04494_external_distinct_key_types/non_comparable_plan';
 
--- The flag column of the spilled runs must not clash with a user column of the same name (the old
--- analyzer keeps plain column names in the DISTINCT header).
+-- The flag column of the spilled runs must not clash with a user column of the same name (the old analyzer
+-- keeps plain column names in the `DISTINCT` header).
 SELECT count() FROM (SELECT DISTINCT number % 100 AS __distinct_already_emitted FROM numbers(1000)) SETTINGS enable_analyzer = 0, log_comment = '04494_external_distinct_key_types/service_name';
 
 -- A constant non-key column alongside a real key: the first run rebuilds the constant from the header.

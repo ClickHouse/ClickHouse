@@ -103,7 +103,7 @@ def test_max_bytes_ratio_before_external_distinct(node):
     if node.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer uses more memory, making precise memory limit testing unreliable")
 
-    # Peak memory usage: ~14GiB (the DISTINCT hash set of 100M unique ~85-byte strings)
+    # Peak memory usage: ~14GiB (the `DISTINCT` hash set of 100M unique ~85-byte strings)
     query = """
     SELECT count() FROM (SELECT DISTINCT repeat(number::String, 10) AS k FROM numbers(100e6)) FORMAT Null
     """

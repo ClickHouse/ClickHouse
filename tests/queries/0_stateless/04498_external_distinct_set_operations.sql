@@ -1,5 +1,5 @@
--- The DISTINCT of UNION DISTINCT / INTERSECT DISTINCT / EXCEPT DISTINCT goes through the same
--- DistinctStep and must be able to spill.
+-- The `DISTINCT` of `UNION DISTINCT` / `INTERSECT DISTINCT` / `EXCEPT DISTINCT` goes through the same
+-- `DistinctStep` and must be able to spill.
 SET max_bytes_ratio_before_external_distinct = 0;
 SET max_bytes_before_external_distinct = 1;
 SET max_untracked_memory = 0;

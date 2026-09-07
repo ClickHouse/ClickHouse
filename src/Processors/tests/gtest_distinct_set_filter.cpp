@@ -258,7 +258,7 @@ TEST(DistinctSetFilterSemantics, ThrowModeAllowsReachingTheLimitExactly)
     SizeLimits limits(/*max_rows=*/ 2, /*max_bytes=*/ 0, OverflowMode::THROW);
     DistinctSetFilter filter(header, {}, limits);
 
-    /// The 'throw' mode uses a strict comparison: a set of exactly max_rows keys is allowed.
+    /// The 'throw' mode uses a strict comparison: a set of exactly `max_rows` keys is allowed.
     EXPECT_EQ(filter.filter(Chunk({makeColumn({1, 2})}, 2)).getNumRows(), 2u);
     EXPECT_ANY_THROW(filter.filter(Chunk({makeColumn({3})}, 1)));
 }
@@ -283,8 +283,8 @@ TEST(DistinctSetFilterSemantics, BreakModeKeepsTheCrossingChunkAndReportsTheLimi
 
 TEST(DistinctSetFilterSemantics, LowCardinalityPathMatchesGenericPath)
 {
-    /// The LowCardinality fast path must produce exactly the same distinct rows as the generic hash
-    /// path over the equal data.
+    /// The `LowCardinality` fast path must produce exactly the same distinct rows as the generic hash path
+    /// over the equal data.
     auto lc_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     const Block lc_header = {ColumnWithTypeAndName(lc_type, "k")};
     const Block str_header = {ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "k")};
@@ -319,8 +319,7 @@ TEST(DistinctSetFilterSemantics, LowCardinalityPathMatchesGenericPath)
 
 TEST(DistinctSetFilterExtraction, Keys32TwoSmallColumns)
 {
-    /// UInt8 + UInt16 pack into 3 bytes -> the keys32 method, with the prepared-keys reordering
-    /// (the wider column is packed first).
+    /// `UInt8` and `UInt16` use `keys32`, with the wider column packed first.
     const Block header
         = {ColumnWithTypeAndName(std::make_shared<DataTypeUInt8>(), "a"),
            ColumnWithTypeAndName(std::make_shared<DataTypeUInt16>(), "b")};
@@ -332,7 +331,7 @@ TEST(DistinctSetFilterExtraction, Keys32TwoSmallColumns)
 
 TEST(DistinctSetFilterExtraction, Keys256MultipleColumns)
 {
-    /// Three UInt64 columns pack into 24 bytes -> the keys256 method.
+    /// Three `UInt64` columns occupy 24 bytes and use `keys256`.
     const Block header
         = {ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "a"),
            ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "b"),
@@ -360,7 +359,7 @@ TEST(DistinctSetFilterExtraction, NullableKeys256TwoColumns)
         return ColumnPtr(std::move(column));
     };
 
-    /// Two nullable UInt64 columns: 16 bytes of values plus the null bitmap -> nullable_keys256.
+    /// Two nullable `UInt64` columns need 16 value bytes plus a null bitmap and use `nullable_keys256`.
     const Block header
         = {ColumnWithTypeAndName(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "a"),
            ColumnWithTypeAndName(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "b")};
@@ -384,8 +383,7 @@ TEST(DistinctSetFilterExtraction, MixedNullableAndPlainColumns)
         return ColumnPtr(std::move(column));
     };
 
-    /// A nullable and a plain column together -> nullable_keys128 with a non-nullable member,
-    /// exercising the per-column nullability branch of the unpacking.
+    /// A nullable and a plain column use `nullable_keys128`, exercising both nullability paths in unpacking.
     const Block header
         = {ColumnWithTypeAndName(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()), "a"),
            ColumnWithTypeAndName(std::make_shared<DataTypeUInt32>(), "b")};
@@ -398,7 +396,7 @@ TEST(DistinctSetFilterExtraction, MixedNullableAndPlainColumns)
 namespace
 {
 
-/// A LowCardinality(String) column of `num_rows` rows whose dictionary holds at least `dictionary_size`
+/// A `LowCardinality(String)` column of `num_rows` rows whose dictionary holds at least `dictionary_size`
 /// entries: the rows are cut from a column that used them all, and a cut keeps the dictionary.
 ColumnPtr makeLowCardinalityColumnWithLargeDictionary(const DataTypePtr & lc_type, size_t dictionary_size, size_t num_rows)
 {
@@ -418,9 +416,9 @@ ColumnPtr makeLowCardinalityColumnWithLargeDictionary(const DataTypePtr & lc_typ
 
 TEST(DistinctSetFilterSemantics, LowCardinalityBitmapsCountTowardsTheByteSize)
 {
-    /// The LowCardinality fast path keeps a bitmap of the seen indices per dictionary. Its size is that
-    /// of the dictionary, not of the data seen, so a few rows over a large dictionary occupy far more
-    /// than their keys in the set, and the reported size must include it.
+    /// The `LowCardinality` fast path keeps a bitmap of the seen indices per dictionary. Its size is that
+    /// of the dictionary, not of the data seen, so a few rows over a large dictionary occupy far more than
+    /// their keys in the set, and the reported size must include it.
     auto lc_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     const Block header = {ColumnWithTypeAndName(lc_type, "k")};
     const size_t dictionary_size = 200000;
@@ -496,7 +494,7 @@ TEST(DistinctSetFilterSemantics, DuplicateKeysEnforceByteLimit)
 
 TEST(DistinctSetFilterExtraction, SerializedKeysOnRequest)
 {
-    /// Two String keys fall to the generic `hashed` method, which cannot materialize the keys back; a
+    /// Two `String` keys fall to the generic `hashed` method, which cannot materialize the keys back; a
     /// consumer that needs them gets the `serialized` method instead, which stores them.
     const Block header
         = {ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "a"), ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "b")};

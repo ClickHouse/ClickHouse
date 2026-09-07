@@ -57,8 +57,8 @@ def test_multiple_local_disk():
 
 
 def test_multiple_local_disk_distinct():
-    # The query has no ORDER BY / GROUP BY, so the temporary-file log lines below can only come from
-    # the external DISTINCT spill.
+    # The query has no `ORDER BY` / `GROUP BY`, so the temporary-file log lines below can only come from the
+    # external `DISTINCT` spill.
     query = "SELECT count() FROM (SELECT DISTINCT number FROM numbers(1e7))"
     settings = {
         "max_bytes_ratio_before_external_distinct": 0,
@@ -94,8 +94,8 @@ def test_remote_disk():
 
 
 def test_remote_disk_distinct():
-    # The query has no ORDER BY / GROUP BY, so the temporary-file log line below can only come from
-    # the external DISTINCT spill.
+    # The query has no `ORDER BY` / `GROUP BY`, so the temporary-file log line below can only come from the
+    # external `DISTINCT` spill.
     query = "SELECT count() FROM (SELECT DISTINCT number FROM numbers(1e7))"
     settings = {
         "max_bytes_ratio_before_external_distinct": 0,

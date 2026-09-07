@@ -127,7 +127,7 @@ void convertSetSourceForDistributedPlan(QueryPlan & source_plan, const ContextPt
     /// values, so task serialization checks it against the actual columns. A truncated set
     /// would change results, so the mode is throw.
     const auto & settings = context->getSettingsRef();
-    /// Default-constructed step settings: this internal DISTINCT must not depend on the user's DISTINCT
+    /// Default-constructed step settings: this internal `DISTINCT` must not depend on the user's `DISTINCT`
     /// limits or spill to disk; only the transfer limit applies.
     DistinctStep::Settings distinct_settings;
     distinct_settings.set_size_limits = SizeLimits(settings[Setting::max_rows_to_transfer], 0, OverflowMode::THROW);

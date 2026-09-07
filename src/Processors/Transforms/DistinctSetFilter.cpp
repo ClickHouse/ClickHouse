@@ -63,8 +63,8 @@ struct DistinctLowCardinalityFilter::DictionariesState
 
     struct LCDictState
     {
-        /// seen_indices[idx] == 1 means dictionary index `idx` has been seen
-        /// at least once for this dictionary identity.
+        /// `seen_indices[idx] == 1` means dictionary index `idx` has been seen at least once for this
+        /// dictionary identity.
         PaddedPODArray<UInt8> seen_indices;
 
         /// Number of dictionary indices we have seen at least once. When this
@@ -73,7 +73,7 @@ struct DistinctLowCardinalityFilter::DictionariesState
         UInt64 seen_count = 0;
     };
 
-    /// Per-dictionary state which may cover multiple IColumns.
+    /// Per-dictionary state which may cover multiple `IColumn` instances.
     std::unordered_map<LCDictionaryKey, LCDictState, LCDictionaryKeyHash> lc_dict_states;
 };
 
@@ -109,8 +109,7 @@ std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(const
 
     auto & state = dictionaries_state->lc_dict_states[dict_key];
 
-    /// The first time we see this dictionary, initialize the seen_indices array to keep track which entries
-    /// in the dictionary have been seen.
+    /// Size the bitmap to the current dictionary, retaining entries already observed.
     chassert(state.seen_count <= dict_size);
     if (state.seen_indices.size() != dict_size)
     {
@@ -189,10 +188,10 @@ std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(const
 namespace
 {
 
-/// Builds the DISTINCT filter for a chunk: filter[i] == 1 for rows whose key was not in the set yet
-/// (the rows are inserted into the set). mask[i] == 0 marks rows excluded from the deduplication -
-/// known duplicates by the LowCardinality dictionary index, or NULL-key rows in the skip_null_keys
-/// mode - which are never inserted; mask may be nullptr.
+/// Builds the `DISTINCT` filter for a chunk: `filter[i] == 1` for rows whose key was not in the set yet (the
+/// rows are inserted into the set). `mask[i] == 0` marks rows excluded from the deduplication - known
+/// duplicates by the `LowCardinality` dictionary index, or `NULL`-key rows in the `skip_null_keys` mode -
+/// which are never inserted; `mask` may be `nullptr`.
 template <typename Method>
 void buildDistinctFilter(
     Method & method,
@@ -234,8 +233,8 @@ void buildDistinctFilter(
     }
 }
 
-/// Mark rows whose `LowCardinality` index is the dictionary's NULL entry with 0 in `keep`, allocating
-/// the filter lazily on the first such row.
+/// Mark rows whose `LowCardinality` index is the dictionary's `NULL` entry with 0 in `keep`, allocating the
+/// filter lazily on the first such row.
 void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Filter & keep, size_t num_rows)
 {
     const size_t null_index = column.getDictionary().getNullValueIndex();
@@ -281,8 +280,8 @@ DistinctSetFilter::DistinctSetFilter(
 
     if (skip_null_keys)
     {
-        /// A constant NULL key component is not a key column (constants are excluded above), but it
-        /// makes every key contain a NULL, so with the skipping enabled nothing can be emitted at all.
+        /// A constant `NULL` key component is not a key column (constants are excluded above), but it makes
+        /// every key contain a `NULL`, so with the skipping enabled nothing can be emitted at all.
         const size_t num_columns = columns.empty() ? header.columns() : columns.size();
         for (size_t i = 0; i < num_columns; ++i)
         {
@@ -408,7 +407,7 @@ std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys(
 
 Chunk DistinctSetFilter::filter(Chunk chunk)
 {
-    /// Convert to full columns, because SetVariants for sparse and const columns is not implemented.
+    /// Convert to full columns, because `SetVariants` for sparse and const columns is not implemented.
     removeSpecialColumnRepresentations(chunk);
     convertToFullIfConst(chunk);
 
@@ -420,13 +419,12 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
     for (auto pos : key_columns_pos)
         column_ptrs.emplace_back(columns[pos].get());
 
-    /// The consumer skips rows with a NULL in any key component, so they carry no value downstream.
-    /// Instead of pre-filtering the chunk, the NULL rows are masked out of the deduplication: they are
-    /// neither inserted into the set nor selected for the output, and they leave the chunk together
-    /// with the duplicates in the single filtering at the end. extractNestedColumnsAndNullMap also
-    /// replaces the nullable key pointers with their nested columns, so the keys are hashed by the
-    /// nested values, the same way the set fill hashes them (the values at the masked rows are never
-    /// read).
+    /// The consumer skips rows with a `NULL` in any key component, so they carry no value downstream.
+    /// Instead of pre-filtering the chunk, the `NULL` rows are masked out of the deduplication: they are
+    /// neither inserted into the set nor selected for the output, and they leave the chunk together with
+    /// the duplicates in the single filtering at the end. `extractNestedColumnsAndNullMap` also replaces
+    /// the nullable key pointers with their nested columns, so the keys are hashed by the nested values,
+    /// the same way the set fill hashes them (the values at the masked rows are never read).
     ColumnPtr null_map_holder;
 
     /// Declared outside of the branch: the deduplication mask below may point at it.
@@ -443,8 +441,8 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
                 keep[i] = !(*null_map)[i];
         }
 
-        /// `LowCardinality(Nullable)` keys are not unwrapped by extractNestedColumnsAndNullMap: their
-        /// NULL rows are the rows referencing the dictionary's NULL entry.
+        /// `LowCardinality(Nullable)` keys are not unwrapped by `extractNestedColumnsAndNullMap`: their
+        /// `NULL` rows are the rows referencing the dictionary's `NULL` entry.
         for (const auto * column : column_ptrs)
             if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(column);
                 low_cardinality && low_cardinality->nestedIsNullable())
@@ -462,7 +460,7 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
             return {};
     }
 
-    /// The NULL-key rows and the rows that are known duplicates by their LowCardinality index are
+    /// The `NULL`-key rows and the rows that are known duplicates by their `LowCardinality` index are
     /// masked out of the deduplication the same way.
     const IColumn::Filter * mask = nullptr;
     if (lc_mask && !keep.empty())
@@ -480,7 +478,7 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
     {
         auto type = SetVariants::chooseMethod(column_ptrs, key_sizes);
         /// The generic method keeps only a hash per key; a consumer that materializes the keys back needs
-        /// them stored (see SetMethodSerialized).
+        /// them stored (see `SetMethodSerialized`).
         if (require_extractable_keys && type == SetVariants::Type::hashed)
         {
             type = SetVariants::Type::serialized;
@@ -507,11 +505,10 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
     const auto new_set_size = data->getTotalRowCount();
     const size_t num_selected = new_set_size - old_set_size;
 
-    /// A `LowCardinality` dictionary can grow the retained bitmap memory without adding new keys.
-    /// With the 'throw' overflow mode `check` throws; with 'break' it returns false: the limit is
-    /// recorded (see isLimitReached), but the new rows of the current chunk are still returned - their
-    /// keys are already in the set, and 'break' means return a partial result as if the source data
-    /// ran out, not discard it.
+    /// A `LowCardinality` dictionary can grow the retained bitmap memory without adding new keys. With the
+    /// 'throw' overflow mode `check` throws; with 'break' it returns false: the limit is recorded (see
+    /// `isLimitReached`), but the new rows of the current chunk are still returned - their keys are already
+    /// in the set, and 'break' means return a partial result as if the source data ran out, not discard it.
     if (!set_size_limits.check(new_set_size, getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         limit_reached = true;
 

@@ -138,8 +138,8 @@ template <typename TData, bool has_nullable_keys, bool has_low_cardinality, bool
 void AggregationMethodKeysFixed<TData, has_nullable_keys, has_low_cardinality, consecutive_keys_optimization>::insertKeyIntoColumns(
     const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes, const IColumn::SerializationSettings *)
 {
-    /// The caller has already shuffled the columns into the packing order (see shuffleKeyColumns), so
-    /// the key bytes map onto the columns sequentially and no unpack order is needed.
+    /// The caller has already shuffled the columns into the packing order (see `shuffleKeyColumns`), so the
+    /// key bytes map onto the columns sequentially and no unpack order is needed.
     unpackFixedKeyIntoColumns<has_nullable_keys>(key, /*unpack_order=*/ nullptr, key_columns, key_sizes);
 }
 

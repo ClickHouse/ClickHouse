@@ -54,7 +54,7 @@ IProcessor::Status BufferingFromFileSource::prepare()
     if (!inputs.front().isFinished())
     {
         if (inputs.front().hasData())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The dummy input of BufferingFromFileSource must not carry data");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The completion input of BufferingFromFileSource must not carry data");
 
         inputs.front().setNeeded();
         return Status::NeedData;
