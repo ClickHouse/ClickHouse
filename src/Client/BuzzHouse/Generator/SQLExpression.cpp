@@ -532,11 +532,16 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
     return res;
 }
 
-void StatementGenerator::generateExprIn(RandomGenerator & rg, ExprInType * expr)
+void StatementGenerator::generateExprIn(RandomGenerator & rg, const bool allow_empty, ExprInType * expr)
 {
     const uint32_t nopt = rg.nextSmallNumber();
 
-    if (nopt < 5 && this->allow_subqueries)
+    if (allow_empty && rg.nextMediumNumber() < 4)
+    {
+        /// `x IN ()` and `x IN []` are valid, and always evaluate to 0
+        expr->set_empty_list(rg.nextBool());
+    }
+    else if (nopt < 5 && this->allow_subqueries)
     {
         this->generateSubquery(rg, expr->mutable_sel());
     }
@@ -659,7 +664,9 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             {
                 this->generateExpression(rg, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
             }
-            generateExprIn(rg, ein->mutable_in_type());
+            /// An empty set on the right requires a single expression on the left,
+            /// otherwise the tuple sizes don't match
+            generateExprIn(rg, nclauses == 1, ein->mutable_in_type());
             this->depth--;
         }
         break;
@@ -674,7 +681,8 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             this->depth++;
             this->generateExpression(rg, eany->mutable_expr());
             this->width++;
-            generateExprIn(rg, eany->mutable_in_type());
+            /// ANY/ALL/SOME don't accept an empty set
+            generateExprIn(rg, false, eany->mutable_in_type());
             this->width--;
             this->depth--;
         }

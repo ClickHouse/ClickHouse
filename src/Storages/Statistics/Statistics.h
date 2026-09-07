@@ -56,6 +56,18 @@ struct StatisticsUtils
     /// Heap bytes owned by a Field beyond sizeof(Field): the length of a String value, 0 for
     /// scalar types. Used for cache-weight accounting of statistics holding min/max Fields.
     static size_t fieldMemoryUsageBytes(const Field & field);
+
+    /// Fold `value` into the running minimum (`updateMin`) or maximum (`updateMax`) accumulator.
+    ///
+    /// Statistics are accumulated chunk by chunk, so the raw `Field` ordering is not enough for
+    /// floating point columns: `IColumn::getExtremes` skips `NaN` and reports it only when every
+    /// value in the chunk is `NaN`, and every comparison against `NaN` is false, so an early
+    /// all-`NaN` chunk would keep `NaN` as the extremum forever. Use the same IEEE-754 rule as
+    /// `SingleValueDataFixed::setIfSmaller` / `SingleValueDataFixed::setIfGreater`, which the
+    /// `min` and `max` aggregate functions themselves use: `NaN` never replaces a non-`NaN`
+    /// accumulator, and anything replaces a `NaN` accumulator. A `NULL` `value` is ignored.
+    static void updateMin(Field & accumulator, const Field & value);
+    static void updateMax(Field & accumulator, const Field & value);
 };
 
 class IStatistics;
@@ -240,6 +252,13 @@ private:
 
 void removeImplicitStatistics(ColumnsDescription & columns);
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
+
+/// Whether statistics record the exact minimum and maximum of a column of this type. Only
+/// numeric-like columns are tracked, and by both statistics types that store min/max: `minmax`
+/// declines the other types outright (`minMaxStatisticsValidator`), while `basic` is declared for
+/// every column type but leaves its min/max sub-statistics unpopulated
+/// (`StatisticsBasic::hasNumericMinMax`).
+bool canStatisticsTrackMinMax(const DataTypePtr & data_type);
 
 
 }
