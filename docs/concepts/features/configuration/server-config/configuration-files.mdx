@@ -17,7 +17,7 @@ The ClickHouse server can be configured with configuration files in XML or YAML 
 In most installation types, the ClickHouse server runs with `/etc/clickhouse-server/config.xml` as the default configuration file, but it is also possible to specify the location of the configuration file manually at server startup using command line option `--config-file` or `-C`.
 Additional configuration files may be placed into directory `config.d/` relative to the main configuration file, for example into directory `/etc/clickhouse-server/config.d/`.
 Files in this directory and the main configuration are merged in a preprocessing step before the configuration is applied in ClickHouse server.
-Configuration fragments are merged in lexicographical order by their full paths. For files in the standard `config.d/` directory, this is equivalent to ordering by file name. The legacy `conf.d/` directory is also merged; because `conf.d` sorts before `config.d`, all its fragments are processed first when both directories exist.
+Configuration files are merged in alphabetical order.
 To simplify updates and improve modularization, it is a best practice to keep the default `config.xml` file unmodified and place additional customization into `config.d/`.
 The ClickHouse keeper configuration lives in `/etc/clickhouse-keeper/keeper_config.xml`.
 Similarly, additional configuration files for Keeper need to be placed in `/etc/clickhouse-keeper/keeper_config.d/`.
@@ -167,12 +167,8 @@ Resulting in configuration:
 
 It is also possible to replace parts of the configuration by file contents. This can be done in two ways:
 
-- *Substituting Values*: If an element has the attribute `incl`, its value will be replaced by the content of the referenced file. The path to the file with substitutions is set by the [`include_from`](/reference/settings/server-settings/settings/other#include_from) element in the server config; there is no default path, so substitutions are only read when it is specified. The substitution values are specified in `/clickhouse/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify attribute `optional="true"` (for example, settings for [macros](/reference/settings/server-settings/settings/other#macros)).
+- *Substituting Values*: If an element has the attribute `incl`, its value will be replaced by the content of the referenced file. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [`include_from`](/reference/settings/server-settings/settings#include_from) element in the server config. The substitution values are specified in `/clickhouse/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify attribute `optional="true"` (for example, settings for [macros](/reference/settings/server-settings/settings#macros)).
 - *Substituting elements*: If you want to replace the entire element with a substitution, use `include` as the element name. The element name `include` can be combined with the attribute `from_zk = "/path/to/node"`. In this case, the element value is replaced by the contents of the ZooKeeper node at `/path/to/node`. This also works with you store an entire XML subtree as a Zookeeper node, it will be fully inserted into the source element.
-
-<Note>
-Changed in version 26.8: before that version, the file `/etc/metrika.xml` was used implicitly whenever it existed, even when `include_from` was not specified. If you rely on that file, specify its path in `include_from` explicitly. Note that `include_from` is read from each configuration file individually: files that are loaded separately from the main server configuration — the users' configuration (e.g. `users.xml` when it is not included in the main file) and XML dictionary configurations — each need their own `include_from` element; specifying it only in the main server configuration does not apply to them.
-</Note>
 
 An example of this is shown below:
 
@@ -194,7 +190,7 @@ If you want to merge the substituting content with the existing configuration in
 ## Encrypting and hiding configuration {#encryption}
 
 You can use symmetric encryption to encrypt a configuration element, for example, a plaintext password or private key.
-To do so, first configure the [encryption codec](/reference/statements/create/table/codec#encryption-codecs), then add the attribute `encrypted_by` with the name of the encryption codec as the value to the element to encrypt.
+To do so, first configure the [encryption codec](/reference/statements/create/table#encryption-codecs), then add the attribute `encrypted_by` with the name of the encryption codec as the value to the element to encrypt.
 
 Unlike attributes `from_zk`, `from_env` and `incl`, or element `include`, no substitution (i.e. decryption of the encrypted value) is performed in the preprocessed file.
 Decryption happens only at runtime in the server process.
@@ -318,7 +314,6 @@ The `config.xml` file can specify a separate config with user settings, profiles
 User configuration can be split into separate files similar to `config.xml` and `config.d/`.
 The directory name is defined as `users_config` setting without `.xml` postfix concatenated with `.d`.
 The directory `users.d` is used by default, as `users_config` defaults to `users.xml`.
-User configuration fragments are merged in lexicographical order by their full paths. For files in the standard `users.d/` directory, this is equivalent to ordering by file name. The legacy `conf.d/` directory is also merged; because `conf.d` sorts before `users.d`, all its fragments are processed first when both directories exist.
 
 Note that configuration files are first [merged](#merging) taking into account settings, and includes are processed after that.
 

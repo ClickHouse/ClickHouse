@@ -122,14 +122,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
     {
         for (const auto & name_value : async_metrics_values)
         {
-            if (name_value.second.isMap())
-            {
-                /// A key-value metric is sent as one path component deeper: `<prefix>.<metric>.<key>`.
-                for (const auto & [key, value] : name_value.second.key_values)
-                    key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first + "." + key, value);
-            }
-            else
-                key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first, name_value.second.value);
+            key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first, name_value.second.value);
         }
     }
 

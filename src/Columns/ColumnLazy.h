@@ -117,8 +117,6 @@ public:
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
 
-    [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
-
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
@@ -147,7 +145,6 @@ public:
     void updateInplaceFrom(const Patch & patch) override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
     UInt64 getNumberOfDefaultRows() const override;
-    bool hasOnlyTypeDefaults() const override;
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
     void finalize() override;
     bool isFinalized() const override;

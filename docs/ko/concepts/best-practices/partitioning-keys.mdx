@@ -32,7 +32,7 @@ ORDER BY (town, street)
 PARTITION BY toStartOfMonth(date)
 ```
 
-행 집합이 테이블에 삽입될 때마다, 삽입된 모든 행을 포함하는 단일 데이터 파트를 (at[ least](/ko/reference/settings/session-settings/max-insert#max_insert_block_size)) 하나만 생성하는 대신([여기](/ko/concepts/core-concepts/parts)에서 설명한 것처럼), ClickHouse는 삽입된 행들에서 각 고유한 파티션 키 값마다 새 데이터 파트를 하나씩 생성합니다:
+행 집합이 테이블에 삽입될 때마다, 삽입된 모든 행을 포함하는 단일 데이터 파트를 (at[ least](/ko/reference/settings/session-settings#max_insert_block_size)) 하나만 생성하는 대신([여기](/ko/concepts/core-concepts/parts)에서 설명한 것처럼), ClickHouse는 삽입된 행들에서 각 고유한 파티션 키 값마다 새 데이터 파트를 하나씩 생성합니다:
 
 <Image img="/images/bestpractices/partitions.webp" size="lg" alt="파티션" />
 
@@ -62,7 +62,7 @@ ClickHouse 서버는 먼저 위 다이어그램에 개략적으로 표시된 4�
   ## 낮은 카디널리티 파티셔닝 키 선택
 </div>
 
-중요한 점은 파트 수가 많아질수록 쿼리 성능에 부정적인 영향을 미친다는 것입니다. 따라서 ClickHouse는 파트 수가 [전체](/ko/reference/settings/merge-tree-settings/max-parts#max_parts_in_total) 또는 [파티션별](/ko/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert)로 지정된 한도를 초과하면 삽입 요청에 대해 [“too many parts”](/ko/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) 오류로 응답합니다.
+중요한 점은 파트 수가 많아질수록 쿼리 성능에 부정적인 영향을 미친다는 것입니다. 따라서 ClickHouse는 파트 수가 [전체](/ko/reference/settings/merge-tree-settings#max_parts_in_total) 또는 [파티션별](/ko/reference/settings/merge-tree-settings#parts_to_throw_insert)로 지정된 한도를 초과하면 삽입 요청에 대해 [“too many parts”](/ko/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) 오류로 응답합니다.
 
 파티셔닝 키에 적절한 **카디널리티**를 선택하는 것은 매우 중요합니다. 카디널리티가 높은 파티셔닝 키, 즉 서로 다른 파티션 값의 수가 많은 경우에는 데이터 파트가 과도하게 늘어날 수 있습니다. ClickHouse는 파티션 간에는 파트를 머지하지 않으므로, 파티션이 너무 많으면 병합되지 않은 파트가 지나치게 많아지고 결국 “Too many parts” 오류가 발생합니다. [머지(Merge)는 필수적입니다](/ko/concepts/core-concepts/merges). 머지는 저장소 단편화를 줄이고 쿼리 속도를 최적화하는 데 중요하지만, 카디널리티가 높은 파티션에서는 이러한 병합 이점을 얻을 수 없습니다.
 

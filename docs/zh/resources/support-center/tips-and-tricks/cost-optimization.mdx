@@ -30,7 +30,7 @@ description: '来自 ClickHouse 社区 meetup 的成本优化策略，包含真�
 
 当 Microsoft Clarity 需要处理数百 TB 的数据时，他们发现压缩方案的选择会对成本产生巨大影响。在这样的规模下，哪怕只节省一点存储空间都很重要，因此他们面临着一个经典取舍：性能还是存储成本。Microsoft Clarity 处理着海量数据——所有账户每月总计 2 PB 的未压缩数据，在 8 个节点上每小时处理约 60,000 次查询，并为数百万个网站提供数十亿次页面浏览。在这种规模下，压缩策略就成了关键的成本因素。
 
-他们最初使用的是 ClickHouse 默认的 [LZ4](/zh/reference/statements/create/table/codec#lz4) 压缩，但随后发现，改用 [ZSTD](/zh/reference/statements/create/table/codec#zstd) 可以显著节省成本。虽然 LZ4 速度更快，但 ZSTD 能提供更高的压缩率，代价是性能略有下降。经过对两种方案的测试后，他们作出了战略性决定：优先考虑存储节省。结果非常显著：大型表的存储占用减少了 50%，同时对摄取和查询的性能影响仍在可控范围内。
+他们最初使用的是 ClickHouse 默认的 [LZ4](/zh/reference/statements/create/table#lz4) 压缩，但随后发现，改用 [ZSTD](/zh/reference/statements/create/table#zstd) 可以显著节省成本。虽然 LZ4 速度更快，但 ZSTD 能提供更高的压缩率，代价是性能略有下降。经过对两种方案的测试后，他们作出了战略性决定：优先考虑存储节省。结果非常显著：大型表的存储占用减少了 50%，同时对摄取和查询的性能影响仍在可控范围内。
 
 **关键结果：**
 

@@ -26,7 +26,6 @@ MergingSortedTransform::MergingSortedTransform(
     const std::optional<String> & filter_column_name_,
     bool use_average_block_sizes,
     bool apply_virtual_row_conversions,
-    size_t virtual_row_prefetch_window,
     bool have_all_inputs_)
     : IMergingTransform(
         num_inputs,
@@ -46,8 +45,7 @@ MergingSortedTransform::MergingSortedTransform(
         out_row_sources_buf_,
         filter_column_name_,
         use_average_block_sizes,
-        apply_virtual_row_conversions,
-        virtual_row_prefetch_window)
+        apply_virtual_row_conversions)
 {
 }
 

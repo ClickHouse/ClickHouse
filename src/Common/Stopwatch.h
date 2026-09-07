@@ -16,9 +16,7 @@
 ///    Similar to CLOCK_MONOTONIC, but provides access to a raw hardware-based
 ///    time that is not subject to NTP adjustments or the incremental
 ///    adjustments performed by adjtime(3).
-/// Emscripten defines `CLOCK_MONOTONIC_RAW` but `clock_gettime` returns EINVAL for it, so it
-/// cannot be the default there - see the note on `CLOCK_MONOTONIC_COARSE` in `base/time.h`.
-#if defined(CLOCK_MONOTONIC_RAW) && !defined(OS_WASM)
+#ifdef CLOCK_MONOTONIC_RAW
 static constexpr clockid_t STOPWATCH_DEFAULT_CLOCK = CLOCK_MONOTONIC_RAW;
 #else
 static constexpr clockid_t STOPWATCH_DEFAULT_CLOCK = CLOCK_MONOTONIC;

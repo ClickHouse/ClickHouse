@@ -14,7 +14,7 @@ keywords: ['vector', 'جمع السجلات', 'Observability', 'إدخال ال�
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
@@ -22,8 +22,8 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 ويتميّز ClickHouse في تخزين بيانات السجلات وتحليلها بفضل إمكانات الضغط الممتازة لديه (حتى [170x](https://clickhouse.com/blog/log-compression-170x) للسجلات)
 وقدرتِه على تجميع كميات كبيرة من البيانات بسرعة.
 
-يوضح لك هذا الدليل كيفية استخدام خط أنابيب البيانات الشائع [Vector](https://vector.dev/docs/introduction/) لتتبّع ملف سجل Nginx وإرساله إلى ClickHouse.
-والخطوات أدناه متشابهة عند تتبّع أي نوع من ملفات السجل.
+يوضح لك هذا الدليل كيفية استخدام خط أنابيب البيانات الشائع [Vector](https://vector.dev/docs/about/what-is-vector/) لمراقبة ملف سجل Nginx وإرساله إلى ClickHouse.
+والخطوات أدناه متشابهة عند مراقبة أي نوع من ملفات السجل.
 
 **المتطلبات الأساسية:**
 
@@ -31,7 +31,9 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 * لديك Vector مثبت
 
 <Steps>
-  <Step title="أنشئ قاعدة بيانات وجدولًا" id="1-create-a-database-and-table">
+  <Step>
+    ## أنشئ قاعدة بيانات وجدولًا
+
     عرّف جدولًا لتخزين أحداث السجل:
 
     1. ابدأ بإنشاء قاعدة بيانات جديدة باسم `nginxdb`:
@@ -55,7 +57,9 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
     </Note>
   </Step>
 
-  <Step title="تهيئة Nginx" id="2--configure-nginx">
+  <Step>
+    ## تهيئة Nginx
+
     في هذه الخطوة، ستتعرّف على كيفية تهيئة logging في Nginx.
 
     1. تُرسل الخاصية `access_log` التالية السجلات إلى `/var/log/nginx/my_access.log` بتنسيق **combined**.
@@ -84,7 +88,9 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
     ```
   </Step>
 
-  <Step title="تكوين Vector" id="3-configure-vector">
+  <Step>
+    ## تكوين Vector
+
     يجمع Vector السجلات والمقاييس والتتبعات، ويحوّلها ويوجّهها (ويُشار إليها باسم **المصادر**) إلى العديد من المزوّدين المختلفين (ويُشار إليهم باسم **الوجهات**)؛ بما في ذلك التوافق الجاهز مع ClickHouse.
     تُعرَّف المصادر والوجهات في ملف تكوين باسم **vector.toml**.
 
@@ -116,7 +122,9 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
     <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="عرض سجلات ClickHouse بتنسيق جدولي" />
   </Step>
 
-  <Step title="تحليل السجلات" id="4-parse-the-logs">
+  <Step>
+    ## تحليل السجلات
+
     يُعدّ تخزين السجلات في ClickHouse أمرًا رائعًا، غير أن تخزين كل حدث كسلسلة نصية واحدة لا يتيح إجراء تحليل يُذكر للبيانات.
     سنتناول بعد ذلك كيفية تحليل أحداث السجلات باستخدام [طريقة العرض المُجسَّدة](/ar/concepts/features/materialized-views/incremental-materialized-view).
 
