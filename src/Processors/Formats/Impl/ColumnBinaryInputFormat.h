@@ -42,7 +42,6 @@ private:
     uint64_t validateDescriptorsAndGetFrameEnd(std::span<const uint8_t> hdr_desc, uint32_t num_cols, size_t hdr_desc_size) const;
 
     SharedHeader header_;
-    FormatSettings format_settings_;
     bool eof_ = false;
 };
 

@@ -1307,112 +1307,6 @@ TEST(ColumnBinary, ArrayTupleRoundTrip)
     }
 }
 
-// ── column_binary_max_frame_size must be enforced before preallocation ───────
-//
-// The setting is checked both in precomputeSerializedSize (before the caller
-// allocates a buffer sized from its return value, as the buffered WASM path
-// does) and in consume (before actually writing). This test targets the
-// precompute-time check specifically: a large row count with a tiny
-// max_frame_size must throw before any oversized allocation happens.
-
-TEST(ColumnBinary, MaxFrameSizeRejectsOversizedPrecompute)
-{
-    DataTypes types = {std::make_shared<DataTypeString>()};
-    auto col = ColumnString::create();
-    for (int i = 0; i < 1000; ++i)
-        col->insertData("0123456789", 10);
-    size_t rows = col->size();
-    Block header;
-    header.insert(ColumnWithTypeAndName{std::move(col), types[0], "col0"});
-    Block block_for_precompute = header;
-
-    WriteBufferFromOwnString obuf;
-    ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
-                                    /*disable_preallocation=*/false, /*max_frame_size=*/64);
-    // Exercise precomputeSerializedSize directly (not write()/consume()): this is the entry
-    // point a caller preallocating from its return value uses, e.g. the buffered WASM path.
-    EXPECT_THROW(output.precomputeSerializedSize(block_for_precompute, rows), DB::Exception);
-}
-
-// A frame within the configured limit must still succeed normally.
-
-TEST(ColumnBinary, MaxFrameSizeAllowsFrameWithinLimit)
-{
-    DataTypes types = {std::make_shared<DataTypeUInt8>()};
-    auto col = ColumnUInt8::create();
-    col->getData().push_back(static_cast<UInt8>(42));
-    Block header;
-    header.insert(ColumnWithTypeAndName{std::move(col), types[0], "col0"});
-
-    WriteBufferFromOwnString obuf;
-    {
-        ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
-                                        /*disable_preallocation=*/false, /*max_frame_size=*/1024);
-        output.write(header);
-    }
-    obuf.finalize();
-
-    ReadBufferFromString rb{obuf.str()};
-    ColumnBinaryInputFormat input(rb, header, RowInputFormatParams{}, FormatSettings{});
-    auto chunk = input.read();
-    ASSERT_EQ(chunk.getNumColumns(), 1u);
-    ASSERT_EQ(chunk.getNumRows(), 1u);
-    const auto & decoded = typeid_cast<const ColumnUInt8 &>(*chunk.getColumns()[0]);
-    EXPECT_EQ(decoded.getData()[0], 42);
-}
-
-// ── column_binary_max_frame_size = 0 must mean "no cap", not a zero-byte limit ──
-//
-// 0 is the setting's compatibility-fallback value for a `compatibility` setting
-// pinned to a version before this setting existed (SettingsChangesHistory.cpp).
-// Checking `frame_size > max_frame_size_` without special-casing 0 would reject
-// every non-empty frame in that configuration, breaking every ColumnBinary
-// read/write and every buffered WASM call using it. Exercise all three
-// enforcement sites: output precompute, output consume/write, and input read.
-
-TEST(ColumnBinary, MaxFrameSizeZeroMeansUnlimitedOnPrecompute)
-{
-    DataTypes types = {std::make_shared<DataTypeString>()};
-    auto col = ColumnString::create();
-    for (int i = 0; i < 1000; ++i)
-        col->insertData("0123456789", 10);
-    size_t rows = col->size();
-    Block header;
-    header.insert(ColumnWithTypeAndName{std::move(col), types[0], "col0"});
-    Block block_for_precompute = header;
-
-    WriteBufferFromOwnString obuf;
-    ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
-                                    /*disable_preallocation=*/false, /*max_frame_size=*/0);
-    EXPECT_NO_THROW(output.precomputeSerializedSize(block_for_precompute, rows));
-}
-
-TEST(ColumnBinary, MaxFrameSizeZeroMeansUnlimitedRoundTrip)
-{
-    DataTypes types = {std::make_shared<DataTypeString>()};
-    auto col = ColumnString::create();
-    for (int i = 0; i < 1000; ++i)
-        col->insertData("0123456789", 10);
-    Block header;
-    header.insert(ColumnWithTypeAndName{std::move(col), types[0], "col0"});
-
-    WriteBufferFromOwnString obuf;
-    {
-        ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
-                                        /*disable_preallocation=*/false, /*max_frame_size=*/0);
-        output.write(header);
-    }
-    obuf.finalize();
-
-    FormatSettings format_settings;
-    format_settings.column_binary.max_frame_size = 0;
-    ReadBufferFromString rb{obuf.str()};
-    ColumnBinaryInputFormat input(rb, header, RowInputFormatParams{}, format_settings);
-    auto chunk = input.read();
-    ASSERT_EQ(chunk.getNumColumns(), 1u);
-    ASSERT_EQ(chunk.getNumRows(), 1000u);
-}
-
 // ── Frame validator must reject descriptors pointing into header/descriptor metadata ──
 //
 // A descriptor with data_offset=0, data_size=1 leaves data_end unchanged at
@@ -1666,7 +1560,7 @@ TEST(ColumnBinary, PrecomputeStripsSparseAndMatchesConsume)
 
     WriteBufferFromOwnString obuf;
     ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
-                                    /*disable_preallocation=*/false, /*max_frame_size=*/0);
+                                    /*disable_preallocation=*/false);
 
     std::optional<uint64_t> precomputed;
     ASSERT_NO_THROW(precomputed = output.precomputeSerializedSize(block, rows));
@@ -1708,7 +1602,7 @@ TEST(ColumnBinary, WriterRejectsColumnCountMismatch)
 
         WriteBufferFromOwnString obuf;
         ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
-                                        /*disable_preallocation=*/false, /*max_frame_size=*/0);
+                                        /*disable_preallocation=*/false);
         EXPECT_THROW(output.precomputeSerializedSize(block, 1), DB::Exception);
         EXPECT_THROW(output.write(block), DB::Exception);
     }
@@ -1722,7 +1616,7 @@ TEST(ColumnBinary, WriterRejectsColumnCountMismatch)
 
         WriteBufferFromOwnString obuf;
         ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
-                                        /*disable_preallocation=*/false, /*max_frame_size=*/0);
+                                        /*disable_preallocation=*/false);
         EXPECT_THROW(output.precomputeSerializedSize(block, 1), DB::Exception);
         EXPECT_THROW(output.write(block), DB::Exception);
     }
@@ -1748,7 +1642,7 @@ TEST(ColumnBinary, WriterRejectsColumnTypeMismatch)
 
         WriteBufferFromOwnString obuf;
         ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
-                                        /*disable_preallocation=*/false, /*max_frame_size=*/0);
+                                        /*disable_preallocation=*/false);
         EXPECT_THROW(output.precomputeSerializedSize(block, 1), DB::Exception);
         EXPECT_THROW(output.write(block), DB::Exception);
     }
@@ -1765,7 +1659,7 @@ TEST(ColumnBinary, WriterRejectsColumnTypeMismatch)
 
         WriteBufferFromOwnString obuf;
         ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
-                                        /*disable_preallocation=*/false, /*max_frame_size=*/0);
+                                        /*disable_preallocation=*/false);
         EXPECT_THROW(output.precomputeSerializedSize(block, 1), DB::Exception);
         EXPECT_THROW(output.write(block), DB::Exception);
     }
@@ -1780,7 +1674,7 @@ TEST(ColumnBinary, WriterRejectsColumnTypeMismatch)
 
         WriteBufferFromOwnString obuf;
         ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
-                                        /*disable_preallocation=*/false, /*max_frame_size=*/0);
+                                        /*disable_preallocation=*/false);
         EXPECT_NO_THROW(output.precomputeSerializedSize(block, 1));
         EXPECT_NO_THROW(output.write(block));
     }

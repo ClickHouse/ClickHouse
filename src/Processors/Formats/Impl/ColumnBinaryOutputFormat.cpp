@@ -109,17 +109,6 @@ std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const
         cursor = ColumnBinaryWire::buildColDescriptor(actual, is_const, is_nullable, col_rows, cursor, desc);
     }
 
-    // Callers that preallocate straight from this return value (e.g. the buffered WASM guest
-    // buffer) would otherwise allocate an oversized buffer before consume()'s equivalent check
-    // ever runs. Throw here too so an oversized frame is rejected before any allocation happens,
-    // not only before the actual write.
-    // 0 is the pre-existing-setting compatibility fallback and means "no cap", not a literal
-    // zero-byte limit — see the matching check in consume() below.
-    if (max_frame_size_ != 0 && cursor - hdr_desc_size > max_frame_size_)
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "ColumnBinary: frame data size {} exceeds column_binary_max_frame_size limit {}",
-            cursor - hdr_desc_size, max_frame_size_);
-
     return cursor;
 }
 
@@ -187,14 +176,6 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
         cursor = ColumnBinaryWire::buildColDescriptor(actual, is_const, is_nullable, col_rows, cursor, descs[i]);
     }
 
-    // Mirror ColumnBinaryInputFormat's read-side check: reject before allocating/writing
-    // rather than emitting a frame the same setting would refuse to read back. 0 means
-    // "no cap" (the pre-existing-setting compatibility fallback), not a zero-byte limit.
-    if (max_frame_size_ != 0 && cursor - hdr_desc_size > max_frame_size_)
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "ColumnBinary: frame data size {} exceeds column_binary_max_frame_size limit {}",
-            cursor - hdr_desc_size, max_frame_size_);
-
     // Get write destination: use the pre-allocated region in out when available,
     // otherwise fall back to a temporary buffer (e.g. when the caller did not
     // pre-allocate via precomputeSerializedSize, such as in tests or the legacy
@@ -245,12 +226,10 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
 }
 
 ColumnBinaryOutputFormat::ColumnBinaryOutputFormat(WriteBuffer & out_, SharedHeader header,
-                                                   bool disable_preallocation,
-                                                   UInt64 max_frame_size)
+                                                   bool disable_preallocation)
     : IOutputFormat(header, out_)
     , header_(header)
     , disable_preallocation_(disable_preallocation)
-    , max_frame_size_(max_frame_size)
 {
     // Reject unsupported signatures (nested Nullable/Variant, Map, >8-byte fixed-width
     // types) here so callers find out at format construction, not on the first block.
@@ -269,8 +248,7 @@ void registerOutputFormatColumnBinary(FormatFactory & factory)
         return std::make_shared<ColumnBinaryOutputFormat>(
             buf,
             std::make_shared<const Block>(sample),
-            format_settings.column_binary.disable_preallocation,
-            format_settings.column_binary.max_frame_size);
+            format_settings.column_binary.disable_preallocation);
     });
     factory.markOutputFormatSupportsParallelFormatting("ColumnBinary");
     factory.markOutputFormatNotTTYFriendly("ColumnBinary");

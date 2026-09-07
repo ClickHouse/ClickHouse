@@ -1097,8 +1097,8 @@ inline MutableColumnPtr readColumnFromDesc(
         for (uint32_t i = 0; i < rows_to_dec; ++i)
         {
             // Widen before the multiply: i * 8u computed in uint32_t arithmetic wraps for
-            // i >= 0x20000000, which a large enough frame (raised column_binary_max_frame_size,
-            // or an oversized WASM guest output) can reach.
+            // i >= 0x20000000, which a large enough frame (an uncapped writer, or an oversized
+            // WASM guest output) can reach.
             uint64_t wire_end   = unalignedLoad<uint64_t>(wire_offsets + (static_cast<uint64_t>(i) + 1u) * 8u);
             uint64_t wire_start = unalignedLoad<uint64_t>(wire_offsets + static_cast<uint64_t>(i) * 8u);
             if (wire_start != expected_start)

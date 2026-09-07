@@ -22,10 +22,9 @@ ColumnBinaryInputFormat::ColumnBinaryInputFormat(
     ReadBuffer & buf,
     const Block & header,
     const RowInputFormatParams & /*params*/,
-    const FormatSettings & settings)
+    const FormatSettings & /*settings*/)
     : IInputFormat(std::make_shared<const Block>(header), &buf)
     , header_(std::make_shared<const Block>(header))
-    , format_settings_(settings)
 {
     // Reject unsupported signatures (nested Nullable/Variant, Map, >8-byte fixed-width
     // types) here so callers find out at format construction, not on the first block.
@@ -101,15 +100,6 @@ uint64_t ColumnBinaryInputFormat::validateDescriptorsAndGetFrameEnd(
     if (data_end < static_cast<uint64_t>(hdr_desc_size))
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "ColumnBinary: descriptor references data before descriptor table end");
-
-    // 0 is the pre-existing-setting compatibility fallback (this setting did not exist before
-    // 26.7) and means "no cap", matching the pre-setting unlimited behavior — not a literal
-    // zero-byte limit, which would reject every non-empty frame.
-    if (format_settings_.column_binary.max_frame_size != 0
-        && data_end - static_cast<uint64_t>(hdr_desc_size) > format_settings_.column_binary.max_frame_size)
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "ColumnBinary: frame data size {} exceeds column_binary_max_frame_size limit {}",
-            data_end - hdr_desc_size, format_settings_.column_binary.max_frame_size);
 
     return data_end;
 }
@@ -189,12 +179,26 @@ Chunk ColumnBinaryInputFormat::read()
 
         data_end = validateDescriptorsAndGetFrameEnd(frame_storage, num_cols, hdr_desc_size);
 
-        // Read the column data section exactly.
+        // Read the column data section, growing the buffer only as far as bytes actually
+        // arrive. `data_end` comes from descriptors that are just bytes off the wire, so
+        // sizing the buffer from it in one step would let a sixteen-byte frame claiming a
+        // huge `data_size` make us zero-fill (`std::vector::resize` value-initializes)
+        // gigabytes before `readStrict` discovers there was nothing to read. Reading in
+        // bounded chunks caps the over-allocation at one chunk beyond the real input and
+        // still fails on the short read, so a truncated or malicious frame is rejected
+        // without a limit on how large an honest frame may be.
         if (data_end > static_cast<uint64_t>(hdr_desc_size))
         {
-            const size_t data_bytes = static_cast<size_t>(data_end - hdr_desc_size);
-            frame_storage.resize(data_end);
-            in->readStrict(reinterpret_cast<char *>(frame_storage.data() + hdr_desc_size), data_bytes);
+            static constexpr size_t read_chunk_bytes = 1024 * 1024;
+            size_t remaining = static_cast<size_t>(data_end - hdr_desc_size);
+            while (remaining > 0)
+            {
+                const size_t chunk = std::min(remaining, read_chunk_bytes);
+                const size_t old_size = frame_storage.size();
+                frame_storage.resize(old_size + chunk);
+                in->readStrict(reinterpret_cast<char *>(frame_storage.data() + old_size), chunk);
+                remaining -= chunk;
+            }
         }
 
         frame = frame_storage;
