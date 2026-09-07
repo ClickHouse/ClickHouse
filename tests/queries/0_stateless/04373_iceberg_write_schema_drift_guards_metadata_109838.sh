@@ -182,6 +182,30 @@ SYSTEM DROP ICEBERG METADATA CACHE;
 INSERT INTO ${TABLE} SELECT 2, 'b';
 " 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
 
+# --- retry: same-schema-id narrowed schema -> BAD_ARGUMENTS ------------------------------------
+# Fewer fields under the same schema id: the input header the sink was built with no longer fits
+# the refreshed schema, so the column-count check rejects it before the field-by-field compare.
+reset
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json';
+INSERT INTO ${TABLE} SELECT 1, 'a';
+"
+publish_next_metadata retry_same_schema_id_narrowed <<'PY'
+import json, os, sys
+md = sys.argv[1]
+m = json.load(open(os.path.join(md, 'v2.metadata.json')))
+for s in m['schemas']:
+    if s['schema-id'] == m['current-schema-id']:
+        s['fields'] = [f for f in s['fields'] if f['name'] != 'c1']
+m['last-updated-ms'] = m.get('last-updated-ms', 0) + 60000
+tmp = os.path.join(md, '.tmp_v3'); json.dump(m, open(tmp, 'w'))
+os.rename(tmp, os.path.join(md, 'v3.metadata.json'))
+PY
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+SYSTEM DROP ICEBERG METADATA CACHE;
+INSERT INTO ${TABLE} SELECT 2, 'b';
+" 2>&1 | grep -oF "BAD_ARGUMENTS" | head -1
+
 # --- retry: no semantics-affecting drift -> still succeeds -------------------------------------
 reset
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
