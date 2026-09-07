@@ -384,6 +384,9 @@ struct SetVariantsTemplate: public Variant
 
     void init(Type type_);
 
+    /// Estimates additional buffer memory for new keys in an initialized set, excluding arena growth.
+    size_t estimateGrowthMemory(size_t additional_keys) const requires std::is_same_v<Variant, NonClearableSet>;
+
     size_t getTotalRowCount() const;
     /// Counts the size in bytes of the Set buffer and the size of the `string_pool`
     size_t getTotalByteCount() const;

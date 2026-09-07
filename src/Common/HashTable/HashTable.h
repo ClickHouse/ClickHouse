@@ -1492,6 +1492,26 @@ public:
         return grower.bufSize() * sizeof(Cell);
     }
 
+    /// Estimates the additional memory charged while inserting this many new keys. Each resize charges
+    /// its replacement before releasing the old buffer's accounting, even when allocation grows in place.
+    /// Capacity gained by preceding resizes remains charged throughout subsequent resizes.
+    size_t estimateGrowthMemory(size_t additional_keys) const
+    {
+        auto projected_grower = grower;
+        const size_t initial_bytes = getBufferSizeInBytes();
+        const size_t projected_size = m_size + additional_keys;
+        size_t buffer_bytes = initial_bytes;
+        size_t peak_extra_bytes = 0;
+        while (projected_grower.overflow(projected_size))
+        {
+            projected_grower.increaseSize();
+            const size_t next_bytes = allocCheckOverflow(projected_grower.bufSize());
+            peak_extra_bytes = std::max(peak_extra_bytes, buffer_bytes - initial_bytes + next_bytes);
+            buffer_bytes = next_bytes;
+        }
+        return peak_extra_bytes;
+    }
+
     size_t getBufferSizeInCells() const
     {
         return grower.bufSize();
