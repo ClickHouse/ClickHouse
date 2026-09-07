@@ -116,8 +116,9 @@ DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
 {
     for (auto & type : types)
     {
-        /// Strip LowCardinality recursively to match what insertFromColumns does:
-        /// it calls recursiveRemoveLowCardinality on the column side.
+        /// Strip LowCardinality recursively to match what setHeader/insertFromColumns do:
+        /// insertFromColumns calls convertToFullIfNeeded which recursively strips LC from
+        /// compound types like Tuple(LowCardinality(T), ...).
         type = recursiveRemoveLowCardinality(type);
 
         if (!transform_null_in)
@@ -161,7 +162,9 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
         }
 
         /// Strip LowCardinality recursively from set_elements_types so they match what
-        /// recursiveRemoveLowCardinality does to columns in insertFromColumns.
+        /// convertToFullIfNeeded (which is recursive) does to columns in insertFromColumns.
+        /// Without this, compound types like Tuple(LowCardinality(T), ...) keep LowCardinality
+        /// in the type while the column has it stripped, causing type/column mismatches later.
         set_elements_types.back() = recursiveRemoveLowCardinality(set_elements_types.back());
     }
 
@@ -239,7 +242,7 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        holder.materialized_columns.emplace_back(recursiveRemoveLowCardinality(columns.at(i)->convertToFullIfWrapped()));
+        holder.materialized_columns.emplace_back(columns.at(i)->convertToFullIfNeeded());
         holder.key_columns.emplace_back(holder.materialized_columns.back().get());
     }
 
@@ -588,11 +591,9 @@ void NO_INLINE Set::executeImplCase(
     Arena pool;
     typename Method::State state(key_columns, key_sizes, nullptr);
 
-    /// Clustered key columns (e.g. a primary key prefix) arrive in runs of equal consecutive
-    /// rows. The consecutive-keys optimization in ColumnsHashing handles them inside `findKey`:
-    /// the last-element cache compares the key with the previous row's before probing the hash
-    /// table, and `HashMethodHashed` additionally compares the raw key bytes before even
-    /// calculating the hash.
+    /// NOTE Optimization is not used for consecutive identical strings.
+
+    /// For all rows
     for (size_t i = 0; i < rows; ++i)
     {
         if (has_null_map && (*null_map)[i])
@@ -703,7 +704,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_sparse_pos, const Ranges & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_sparse_pos, const std::vector<Range> & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point) const
 {
     auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
     {
@@ -872,7 +873,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
     return {can_be_true, true};
 }
 
-BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTypes & data_types, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
 {
     size_t tuple_size = indexes_mapping.size();
 

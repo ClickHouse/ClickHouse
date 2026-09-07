@@ -43,7 +43,6 @@ public:
     void insert(const Field &) override;
     bool tryInsert(const Field &) override { return false; }
     bool isDefaultAt(size_t) const override;
-    bool hasOnlyTypeDefaults() const override { return false; }
 
     std::string_view getDataAt(size_t) const override
     {

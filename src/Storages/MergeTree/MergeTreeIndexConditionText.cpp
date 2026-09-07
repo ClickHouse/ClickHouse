@@ -1,12 +1,9 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 
-#include "config.h"
-
 #include <set>
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
-#include <Common/likePatternToRegexp.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
@@ -21,15 +18,12 @@
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/TokenizerFactory.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
-#include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexCache.h>
-#include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnTuple.h>
@@ -41,7 +35,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
@@ -111,8 +104,6 @@ void TextSearchQuery::initializeHash()
                 hash_state.update(required_substring);
                 hash_state.update(is_trivial);
                 hash_state.update(required_substring_is_prefix);
-                /// Without it `^lit` and `^lit$` would hash the same, as neither compiles a re2 pattern.
-                hash_state.update(pattern.getMatchKind());
             }
         }
     }
@@ -134,16 +125,13 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & index_sample_block,
-    const std::optional<String> & normalized_index_column_name_,
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_)
     : WithContext(context_)
     , header(index_sample_block)
-    , normalized_index_column_name(normalized_index_column_name_)
-    , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
-    , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
+    , tokenizer(tokenizer_)
     , preprocessor(preprocessor_)
     , has_preprocessor(preprocessor && preprocessor->hasActions())
     , postprocessor(postprocessor_)
@@ -171,8 +159,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     else
         tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, local_cache_max_size, 0, 1.0);
 
-    use_global_header_cache = settings[Setting::use_text_index_header_cache];
-    if (use_global_header_cache)
+    if (settings[Setting::use_text_index_header_cache])
         header_cache = context_->getTextIndexHeaderCache();
     else
         header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, local_cache_max_size, 0, 1.0);
@@ -262,25 +249,6 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "multiMatchAny";
 }
 
-bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const
-{
-    /// The third argument of hasToken is a start position, not a tokenizer.
-    if (function_name != "hasAnyTokens" && function_name != "hasAllTokens" && function_name != "hasPhrase")
-        return false;
-
-    Field const_value;
-    DataTypePtr const_type;
-
-    if (!node.tryGetConstant(const_value, const_type) || const_value.getType() != Field::Types::String)
-        return false;
-
-    auto argument_tokenizer = TokenizerFactory::instance().get(const_value.safeGet<String>());
-    if (argument_tokenizer->getDescription() != tokenizer->getDescription())
-        return false;
-
-    return true;
-}
-
 TextIndexDirectReadMode MergeTreeIndexConditionText::getHintOrNoneMode() const
 {
     const auto & settings = getContext()->getSettingsRef();
@@ -350,18 +318,6 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
     return rpn_element.text_search_queries.front();
 }
 
-bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node & node) const
-{
-    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.size() != 3)
-        return true;
-
-    RPNBuilderTreeContext rpn_tree_context(getContext());
-    RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
-    const auto function_node = rpn_node.toFunctionNode();
-
-    return tokenizerArgumentMatchesIndex(node.function_base->getName(), function_node.getArgumentAt(2));
-}
-
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
 {
     if (query.getTokens().empty() && query.getPatterns().empty() && query.getDirectReadMode() == TextIndexDirectReadMode::Hint)
@@ -401,100 +357,14 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_HAS_ANY_ELEMENTS});
 }
 
-namespace
-{
-
-/// Returns whether a text search query may match some row in current_range,
-/// given the per-granule analysis state of the query (query_builder).
-///
-/// A query in `Any` mode folds postings by union, so the folded
-/// posting list is complete only when the postings of all tokens have been read.
-///
-/// A query in `All` mode folds postings by intersection, so a partially folded
-/// posting list is a superset of the result and can be used for pruning right away.
-bool queryMayBeTrueInRange(
-    const TextSearchQuery & query,
-    const TextIndexAnalyzer::QueryBuilder & query_builder,
-    const std::optional<RowsRange> & current_range,
-    TextSearchMode search_mode)
-{
-    /// Failure dominates bypass — a proven-empty query stays empty even when pattern analysis is incomplete.
-    if (query_builder.is_failed)
-        return false;
-
-    /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.getPatterns().empty())
-        return true;
-
-    if (!current_range.has_value())
-        return true;
-
-    if (!query_builder.rows_range.has_value())
-        return false;
-
-    if (!query_builder.rows_range->intersectWith(*current_range))
-        return false;
-
-    if (!query_builder.postings.has_value())
-        return true;
-
-    if (search_mode == TextSearchMode::All || !query_builder.needReadPostings())
-    {
-        /// An allocation-free check that the folded posting list has a value in the closed range of rows.
-        return roaring::api::roaring_bitmap_intersect_with_range(
-            &query_builder.postings->roaring,
-            current_range->begin,
-            static_cast<UInt64>(current_range->end) + 1);
-    }
-
-    return true;
-}
-
-bool hasAnyTokensInRange(const TextSearchQuery & query, const TextIndexAnalyzer::QueryBuilder & query_builder, const std::optional<RowsRange> & current_range)
-{
-    if (query.getTokens().empty())
-        return false;
-
-    return queryMayBeTrueInRange(query, query_builder, current_range, TextSearchMode::Any);
-}
-
-bool hasAnyPatternsInRange(const TextSearchQuery & query, const TextIndexAnalyzer::QueryBuilder & query_builder, const std::optional<RowsRange> & current_range)
-{
-    if (query.getPatterns().empty())
-        return false;
-
-    return queryMayBeTrueInRange(query, query_builder, current_range, TextSearchMode::Any);
-}
-
-bool hasAllTokensOrEmptyInRange(const TextSearchQuery & query, const TextIndexAnalyzer::QueryBuilder & query_builder, const std::optional<RowsRange> & current_range)
-{
-    if (query.getTokens().empty())
-        return true;
-
-    return queryMayBeTrueInRange(query, query_builder, current_range, TextSearchMode::All);
-}
-
-bool hasAllTokensInRange(const TextSearchQuery & query, const TextIndexAnalyzer::QueryBuilder & query_builder, const std::optional<RowsRange> & current_range)
-{
-    if (query.getTokens().empty())
-        return false;
-
-    return queryMayBeTrueInRange(query, query_builder, current_range, TextSearchMode::All);
-}
-
-}
-
 bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     const auto * granule = typeid_cast<const MergeTreeIndexGranuleText *>(idx_granule.get());
     if (!granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index condition got a granule with the wrong type.");
 
-    const auto & analyzer = granule->getAnalyzer();
-    const auto & current_range = granule->getCurrentRange();
-
     /// Check like in KeyCondition.
-    absl::InlinedVector<BoolMask, 8> rpn_stack;
+    std::vector<BoolMask> rpn_stack;
     size_t element_idx = 0;
     for (const auto & element : rpn)
     {
@@ -506,8 +376,7 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
-            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAnyPatternsInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = granule->hasAnyQueryPatterns(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
 
         }
@@ -515,16 +384,14 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
-            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAnyTokensInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = granule->hasAnyQueryTokens(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS)
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
-            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAllTokensInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = granule->hasAllQueryTokens(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_PHRASE)
@@ -533,16 +400,14 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             /// Actual positional phrase checking is done at the row level via position data.
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
-            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAllTokensInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = granule->hasAllQueryTokens(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS)
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
-            const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-            bool exists_in_granule = hasAllTokensOrEmptyInRange(*text_search_query, query_builder, current_range);
+            bool exists_in_granule = granule->hasAllQueryTokensOrEmpty(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ANY_ELEMENTS)
@@ -552,9 +417,7 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
 
             for (const auto & text_search_query : element.text_search_queries)
             {
-                const auto & query_builder = analyzer.getQueryBuilder(*text_search_query);
-
-                if (hasAllTokensOrEmptyInRange(*text_search_query, query_builder, current_range))
+                if (granule->hasAllQueryTokensOrEmpty(*text_search_query))
                 {
                     exists_in_granule = true;
                     break;
@@ -676,17 +539,8 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         if (traverseJSONSubcolumnKeyNode(function, out))
             return true;
 
-        if (function_arguments_size == 3)
-        {
-            /// The index path tokenizes needles with the index tokenizer, so it can answer the
-            /// predicate only when the tokenizer argument denotes that same tokenizer.
-            if (!tokenizerArgumentMatchesIndex(function_name, function.getArgumentAt(2)))
-                return false;
-        }
-        else if (function_arguments_size != 2)
-        {
+        if (function_arguments_size != 2)
             return false;
-        }
 
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
@@ -808,15 +662,15 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringLikeToTokens
 {
     VectorWithMemoryTracking<String> tokens;
     const String & raw = field.safeGet<String>();
-    const String processed = has_preprocessor ? preprocessor->processConstant(raw) : String{};
-    const String & pattern = has_preprocessor ? processed : raw;
-
-    /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
-    /// granule holding matching rows. No tokens means "cannot prune", as for a pattern like `LIKE '%a%'`.
-    if (likePatternHasUnknownBackslashEscape(pattern))
-        return tokens;
-
-    tokenizer->stringLikeToTokens(pattern.data(), pattern.size(), tokens);
+    if (has_preprocessor)
+    {
+        const String processed = preprocessor->processConstant(raw);
+        tokenizer->stringLikeToTokens(processed.data(), processed.size(), tokens);
+    }
+    else
+    {
+        tokenizer->stringLikeToTokens(raw.data(), raw.size(), tokens);
+    }
     if (!has_postprocessor)
         return tokenizer->compactTokens(tokens);
 
@@ -940,11 +794,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     auto direct_read_mode = getDirectReadMode(function_name);
 
     auto index_column_name = index_column_node.getColumnName();
-    bool has_index_column = hasIndexForColumn(index_column_name);
-    bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
-    bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
+    bool has_index_column = header.has(index_column_name);
+    bool has_map_keys_column = header.has(fmt::format("mapKeys({})", index_column_name));
+    bool has_map_values_column = header.has(fmt::format("mapValues({})", index_column_name));
 
-    bool candidate_for_exact_mode = true;
     if (traverseMapElementValueNode(index_column_node, value_field))
     {
         has_index_column = true;
@@ -952,13 +805,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// If we use index on `mapValues(m)` for `func(m['key'], 'value')`, we can use direct read only as a hint
         /// because we have to match the specific key to the value and therefore execute a real filter.
         direct_read_mode = getHintOrNoneMode();
-        candidate_for_exact_mode = false;
     }
     else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
     {
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
-        candidate_for_exact_mode = false;
         bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
 
         /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
@@ -982,7 +833,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             {
                 has_index_column = true;
                 direct_read_mode = getHintOrNoneMode();
-                candidate_for_exact_mode = false;
             }
         }
     }
@@ -1043,19 +893,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "equals")
     {
-        if (!value_data_type.isStringOrFixedString())
-            return false;
-
-        /// Special case: Don't use the index if the needle is empty.
-        /// - Reason 1: The index doesn't index empty values (regardless of the tokenizer). So this needle
-        ///   is invalid.
-        /// - Reason 2: We also end up here if optimizer rule `optimize_empty_string_comparisons` (default: 1)
-        ///   is disabled, i.e. `col = ''` is _not_ rewritten into `empty(col)`. The latter doesn't
-        ///   use the index (because it doesn't support `empty`). For consistency, make sure `equals('')`
-        ///   behaves the same.
-        if (value_field.safeGet<String>().empty())
-            return false;
-
         auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
@@ -1170,26 +1007,21 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        // hasToken and hasTokenOrNull are legacy functions which assume splitByNonAlpha as
-        /// tokenizer. The text index can answer it only correctly if this is the index tokenizer.
-        /// In all other cases, bypass the index.
-        if (tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha)
-            return false;
-
-        /// Unlike hasToken, hasTokenOrNull is never rewritten to direct-read, so the pre/postprocessor
-        /// is also not applied to its needle. Using the index here (where stringToTokens does apply them,
-        /// e.g. mapping a dropped token to the empty sentinel that prunes every granule) would disagree
-        /// with the scan result. Bail out so the index is not used for hasTokenOrNull when a
-        /// pre/postprocessor is configured; the plain index path is unaffected.
+        /// Unlike hasToken, hasTokenOrNull is never rewritten on the direct-read / row-scan path, so the
+        /// pre/postprocessor is not applied to its row-level needle. Using the index here (where
+        /// stringToTokens does apply them, e.g. mapping a dropped token to the empty sentinel that prunes
+        /// every granule) would disagree with the row-level result. Bail out so the index is not used for
+        /// hasTokenOrNull when a pre/postprocessor is configured; the plain index path is unaffected.
         if (function_name == "hasTokenOrNull" && (has_preprocessor || has_postprocessor))
             return false;
 
-        /// A needle containing a token separator is invalid for `hasToken` and the brute-force scan raises
-        /// BAD_ARGUMENTS for this. hasToken uses Exact direct read, so the index would tokenize the needle and
-        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception.
-        /// Therefore bypass the index and do a brute-force scan. hasTokenOrNull is not affected: it returns NULL
-        ///
-        /// A separator is any ASCII non-alphanumeric character.
+        /// stringToTokens applies both preprocessor and postprocessor.
+        /// A needle containing a token separator is invalid for hasToken and raises BAD_ARGUMENTS during a
+        /// brute-force scan. hasToken uses Exact direct read, so the index would tokenize the needle and
+        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception;
+        /// bypass the index so the row-level function runs. hasTokenOrNull is not affected: it returns NULL
+        /// instead of throwing and only uses the index for granule pruning, which never changes its result.
+        /// A separator is any ASCII non-alphanumeric character, matching HasTokenImpl.
         if (function_name == "hasToken"
             && std::ranges::any_of(value_field.safeGet<String>(), [](unsigned char c) { return isASCII(c) && !isAlphaNumericASCII(c); }))
             return false;
@@ -1212,8 +1044,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 if (std::ranges::none_of(string_needle, [](unsigned char c) { return !isASCII(c) || isAlphaNumericASCII(c); }))
                     return false;
             }
-            /// - If the needle does contain word characters (e.g. "abc" with ngrams(4)), it is valid but too short for the index's tokenizer:
-            ///   Fall through but push "" so all granules are pruned and the query returns 0 rows.
             tokens.push_back("");
         }
 
@@ -1223,31 +1053,15 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasPhrase")
     {
-        /// Only splitByNonAlpha, splitByString, splitByRegexp, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
+        /// Only splitByNonAlpha, splitByString, ngrams, and asciiCJK tokenizers are supported with the `hasPhrase` function.
         static const std::unordered_set<std::string_view> supported_tokenizers = {
             SplitByNonAlphaTokenizer::getExternalName(),
             SplitByStringTokenizer::getExternalName(),
-            SplitByRegexpTokenizer::getExternalName(),
             AsciiCJKTokenizer::getExternalName(),
-#if USE_ICU
-            IcuTokenizer::getExternalName(),
-#endif
             NgramsTokenizer::getExternalName(),
         };
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
             return false;
-
-        /// The postprocessor in `optimizeDirectReadFromTextIndex` rejoins the normalized tokens with a
-        /// space and re-tokenizes them, and validates each token with the `splitByNonAlpha` separator rule.
-        /// Both assumptions are wrong for `splitByRegexp`: its separator need not be whitespace (so the rejoin
-        /// would collapse tokens, causing false negatives) and its tokens may contain characters such as `#` or
-        /// `+` (which the validation would reject). Rather than bypassing the index - which would silently fall
-        /// back to the default `splitByNonAlpha` and produce false positives - reject this combination
-        /// explicitly. `splitByRegexp` + `hasPhrase` without a postprocessor is fully supported.
-        if (tokenizer->getType() == ITokenizer::Type::SplitByRegexp && has_postprocessor)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Function 'hasPhrase' is not supported on a text index that uses the 'splitByRegexp' tokenizer and a postprocessor");
 
         const String value = preprocessor->processConstant(value_field.safeGet<String>());
 
@@ -1298,8 +1112,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "startsWith" && tokenizer->supportsStringLike())
     {
-        if (!value_data_type.isStringOrFixedString())
-            return false;
         auto tokens = substringToTokens(value_field, true, false);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
@@ -1307,8 +1119,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "endsWith" && tokenizer->supportsStringLike())
     {
-        if (!value_data_type.isStringOrFixedString())
-            return false;
         auto tokens = substringToTokens(value_field, false, true);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
@@ -1333,12 +1143,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             auto patterns = stringLikeToPatterns(value_field, false);
             if (patterns.size() == 1)
             {
-                const auto pattern_read_mode = candidate_for_exact_mode ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
-
                 out.function = RPNElement::FUNCTION_LIKE;
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
-                        function_name, TextSearchMode::Any, pattern_read_mode, VectorWithMemoryTracking<String>(), std::move(patterns)));
+                        function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact, VectorWithMemoryTracking<String>(), std::move(patterns)));
                 return true;
             }
         }
@@ -1364,12 +1172,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         auto patterns = stringLikeToPatterns(value_field, true);
         if (patterns.size() == 1)
         {
-            const auto pattern_read_mode = candidate_for_exact_mode ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
-
             out.function = RPNElement::FUNCTION_LIKE;
             out.text_search_queries.emplace_back(
                 std::make_shared<TextSearchQuery>(
-                    function_name, TextSearchMode::Any, pattern_read_mode, VectorWithMemoryTracking<String>(), std::move(patterns)));
+                    function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact, VectorWithMemoryTracking<String>(), std::move(patterns)));
             return true;
         }
         return false;
@@ -1459,17 +1265,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 return false;
             }
 
-            /// `multiMatchAny` is executed by vectorscan, which compiles each pattern as a NUL-terminated
-            /// C-string (`hs_compile_multi` takes no length), so it stops at the first NUL byte. The regexp
-            /// analyzer below is binary-safe and keeps the NUL as a literal, so it would extract a required
-            /// substring spanning the NUL that the matcher never requires, and the index would wrongly prune
-            /// granules that the function matches. Truncate the pattern at the first NUL to analyze exactly
-            /// what vectorscan sees. (This differs from `match`, which is executed by binary-safe re2.)
-            String pattern_string = pattern.safeGet<String>();
-            if (const auto nul_pos = pattern_string.find('\0'); nul_pos != String::npos)
-                pattern_string.resize(nul_pos);
-
-            auto tokens_for_queries = regexpToTokensForQueries(pattern_string);
+            auto tokens_for_queries = regexpToTokensForQueries(pattern.safeGet<String>());
 
             if (tokens_for_queries.empty())
             {
@@ -1622,7 +1418,7 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
         if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
         {
             const auto column_name = function.getArgumentAt(0).getColumnName();
-            return hasIndexForColumn(fmt::format("mapValues({})", column_name));
+            return header.has(fmt::format("mapValues({})", column_name));
         }
         return false;
     }
@@ -1723,7 +1519,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
-        return hasIndexForColumn(node.getColumnName())
+        return header.has(node.getColumnName())
             || hasIndexForMapElementValue(node)
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
     };

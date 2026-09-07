@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 
 from confluent_kafka.avro.cached_schema_registry_client import (
     CachedSchemaRegistryClient,
@@ -46,7 +47,29 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    k.clean_test_database_and_topics(instance, cluster)
+    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
+    admin_client = k.get_admin_client(cluster)
+
+    def get_topics_to_delete():
+        return [t for t in admin_client.list_topics() if not t.startswith("_")]
+
+    topics = get_topics_to_delete()
+    logging.debug(f"Deleting topics: {topics}")
+    result = admin_client.delete_topics(topics)
+    for topic, error in result.topic_error_codes:
+        if error != 0:
+            logging.warning(f"Received error {error} while deleting topic {topic}")
+        else:
+            logging.info(f"Deleted topic {topic}")
+
+    retries = 0
+    topics = get_topics_to_delete()
+    while len(topics) != 0:
+        logging.info(f"Existing topics: {topics}")
+        if retries >= 5:
+            raise Exception(f"Failed to delete topics {topics}")
+        retries += 1
+        time.sleep(0.5)
     yield  # run test
 
 
@@ -63,7 +86,9 @@ def kafka_setup_teardown():
 def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator):
     # data was dumped from clickhouse itself in a following manner
     # clickhouse-client --format=Native --query='SELECT toInt64(number) as id, toUInt16( intDiv( id, 65536 ) ) as blockNo, reinterpretAsString(19777) as val1, toFloat32(0.5) as val2, toUInt8(1) as val3 from numbers(100) ORDER BY id' | xxd -ps | tr -d '\n' | sed 's/\(..\)/\\x\1/g'
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = k.KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     all_formats = {
         ## Text formats ##

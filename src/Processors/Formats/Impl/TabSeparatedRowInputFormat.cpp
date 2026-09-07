@@ -527,12 +527,12 @@ Only a small set of symbols are escaped. You can easily stumble onto a string va
 
 Arrays are written as a list of comma-separated values in `[]`. Number items in the array are formatted as normally. `Date` and `DateTime` types are written in single quotes. Strings are written in single quotes with the same escaping rules as above.
 
-[NULL](/reference/syntax) is formatted according to setting [format_tsv_null_representation](/reference/settings/formats/format#format_tsv_null_representation) (default value is `\N`).
+[NULL](/sql-reference/syntax.md) is formatted according to setting [format_tsv_null_representation](/operations/settings/settings-formats.md/#format_tsv_null_representation) (default value is `\N`).
 
 In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to ENUM id.
-If input data contains only ENUM ids, it's recommended to enable the setting [input_format_tsv_enum_as_number](/reference/settings/formats/input-format#input_format_tsv_enum_as_number) to optimize ENUM parsing.
+If input data contains only ENUM ids, it's recommended to enable the setting [input_format_tsv_enum_as_number](/operations/settings/settings-formats.md/#input_format_tsv_enum_as_number) to optimize ENUM parsing.
 
-Each element of [Nested](/reference/data-types/nested-data-structures/index) structures is represented as an array.
+Each element of [Nested](/sql-reference/data-types/nested-data-structures/index.md) structures is represented as an array.
 
 For example:
 
@@ -626,16 +626,16 @@ The output will be in tab separated format:
 
 | Setting                                                                                                                                                          | Description                                                                                                                                                                                                                                    | Default |
 |------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`format_tsv_null_representation`](/reference/settings/formats/format#format_tsv_null_representation)                                             | Custom NULL representation in TSV format.                                                                                                                                                                                                      | `\N`    |
-| [`input_format_tsv_empty_as_default`](/reference/settings/formats/input-format#input_format_tsv_empty_as_default)                                       | treat empty fields in TSV input as default values. For complex default expressions [input_format_defaults_for_omitted_fields](/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields) must be enabled too. | `false` |
-| [`input_format_tsv_enum_as_number`](/reference/settings/formats/input-format#input_format_tsv_enum_as_number)                                           | treat inserted enum values in TSV formats as enum indices.                                                                                                                                                                                     | `false` |
-| [`input_format_tsv_use_best_effort_in_schema_inference`](/reference/settings/formats/input-format#input_format_tsv_use_best_effort_in_schema_inference) | use some tweaks and heuristics to infer schema in TSV format. If disabled, all fields will be inferred as Strings.                                                                                                                             | `true`  |
-| [`output_format_tsv_crlf_end_of_line`](/reference/settings/formats/output-format#output_format_tsv_crlf_end_of_line)                                     | if it is set true, end of line in TSV output format will be `\r\n` instead of `\n`.                                                                                                                                                            | `false` |
-| [`input_format_tsv_crlf_end_of_line`](/reference/settings/formats/input-format#input_format_tsv_crlf_end_of_line)                                       | if it is set true, end of line in TSV input format will be `\r\n` instead of `\n`.                                                                                                                                                             | `false` |
-| [`input_format_tsv_skip_first_lines`](/reference/settings/formats/input-format#input_format_tsv_skip_first_lines)                                       | skip specified number of lines at the beginning of data.                                                                                                                                                                                       | `0`     |
-| [`input_format_tsv_detect_header`](/reference/settings/formats/input-format#input_format_tsv_detect_header)                                             | automatically detect header with names and types in TSV format.                                                                                                                                                                                | `true`  |
-| [`input_format_tsv_skip_trailing_empty_lines`](/reference/settings/formats/input-format#input_format_tsv_skip_trailing_empty_lines)                     | skip trailing empty lines at the end of data.                                                                                                                                                                                                  | `false` |
-| [`input_format_tsv_allow_variable_number_of_columns`](/reference/settings/formats/input-format#input_format_tsv_allow_variable_number_of_columns)       | allow variable number of columns in TSV format, ignore extra columns and use default values on missing columns.                                                                                                                                | `false` |
+| [`format_tsv_null_representation`](/operations/settings/settings-formats.md/#format_tsv_null_representation)                                             | Custom NULL representation in TSV format.                                                                                                                                                                                                      | `\N`    |
+| [`input_format_tsv_empty_as_default`](/operations/settings/settings-formats.md/#input_format_tsv_empty_as_default)                                       | treat empty fields in TSV input as default values. For complex default expressions [input_format_defaults_for_omitted_fields](/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) must be enabled too. | `false` |
+| [`input_format_tsv_enum_as_number`](/operations/settings/settings-formats.md/#input_format_tsv_enum_as_number)                                           | treat inserted enum values in TSV formats as enum indices.                                                                                                                                                                                     | `false` |
+| [`input_format_tsv_use_best_effort_in_schema_inference`](/operations/settings/settings-formats.md/#input_format_tsv_use_best_effort_in_schema_inference) | use some tweaks and heuristics to infer schema in TSV format. If disabled, all fields will be inferred as Strings.                                                                                                                             | `true`  |
+| [`output_format_tsv_crlf_end_of_line`](/operations/settings/settings-formats.md/#output_format_tsv_crlf_end_of_line)                                     | if it is set true, end of line in TSV output format will be `\r\n` instead of `\n`.                                                                                                                                                            | `false` |
+| [`input_format_tsv_crlf_end_of_line`](/operations/settings/settings-formats.md/#input_format_tsv_crlf_end_of_line)                                       | if it is set true, end of line in TSV input format will be `\r\n` instead of `\n`.                                                                                                                                                             | `false` |
+| [`input_format_tsv_skip_first_lines`](/operations/settings/settings-formats.md/#input_format_tsv_skip_first_lines)                                       | skip specified number of lines at the beginning of data.                                                                                                                                                                                       | `0`     |
+| [`input_format_tsv_detect_header`](/operations/settings/settings-formats.md/#input_format_tsv_detect_header)                                             | automatically detect header with names and types in TSV format.                                                                                                                                                                                | `true`  |
+| [`input_format_tsv_skip_trailing_empty_lines`](/operations/settings/settings-formats.md/#input_format_tsv_skip_trailing_empty_lines)                     | skip trailing empty lines at the end of data.                                                                                                                                                                                                  | `false` |
+| [`input_format_tsv_allow_variable_number_of_columns`](/operations/settings/settings-formats.md/#input_format_tsv_allow_variable_number_of_columns)       | allow variable number of columns in TSV format, ignore extra columns and use default values on missing columns.                                                                                                                                | `false` |
 )DOCS_MD"});
 
     factory.setDocumentation("TabSeparatedRaw", Documentation{
@@ -646,13 +646,13 @@ The output will be in tab separated format:
 
 ## Description {#description}
 
-Differs from the [`TabSeparated`](/reference/formats/TabSeparated/TabSeparated) format in that rows are written without escaping.
+Differs from the [`TabSeparated`](/interfaces/formats/TabSeparated) format in that rows are written without escaping.
 
 :::note
 When parsing with this format, tabs or line-feeds are not allowed in each field.
 :::
 
-For a comparison of the `TabSeparatedRaw` format and the `RawBlob` format see: [Raw Formats Comparison](/reference/formats/RawBLOB#raw-formats-comparison)
+For a comparison of the `TabSeparatedRaw` format and the `RawBlob` format see: [Raw Formats Comparison](../RawBLOB.md/#raw-formats-comparison)
 
 ## Example usage {#example-usage}
 
@@ -729,7 +729,7 @@ The output will be in tab separated format:
 
 ## Description {#description}
 
-Differs from the [`TabSeparatedWithNames`](/reference/formats/TabSeparated/TabSeparatedWithNames) format,
+Differs from the [`TabSeparatedWithNames`](./TabSeparatedWithNames.md) format, 
 in that the rows are written without escaping.
 
 :::note
@@ -813,7 +813,7 @@ date    season  home_team       away_team       home_team_goals away_team_goals
 
 ## Description {#description}
 
-Differs from the [`TabSeparatedWithNamesAndTypes`](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes) format,
+Differs from the [`TabSeparatedWithNamesAndTypes`](./TabSeparatedWithNamesAndTypes.md) format,
 in that the rows are written without escaping.
 
 :::note
@@ -893,21 +893,21 @@ Date    Int16   LowCardinality(String)  LowCardinality(String)  Int8    Int8
 
     factory.setDocumentation("TabSeparatedWithNames", Documentation{
         .description = R"DOCS_MD(
-| Input | Output | Alias          |
-|-------|--------|----------------|
+| Input | Output | Alias                          |
+|-------|--------|--------------------------------|
 |     ✔    |     ✔     | `TSVWithNames` |
 
 ## Description {#description}
 
-Differs from the [`TabSeparated`](/reference/formats/TabSeparated/TabSeparated) format in that the column names are written in the first row.
+Differs from the [`TabSeparated`](./TabSeparated.md) format in that the column names are written in the first row.
 
 During parsing, the first row is expected to contain the column names. You can use column names to determine their position and to check their correctness.
 
-<Note>
-If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to `1`,
-the columns from the input data will be mapped to the columns of the table by their names, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
+:::note
+If setting [`input_format_with_names_use_header`](../../../operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to `1`,
+the columns from the input data will be mapped to the columns of the table by their names, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](../../../operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
 Otherwise, the first row will be skipped.
-</Note>
+:::
 
 ## Example usage {#example-usage}
 
@@ -980,21 +980,21 @@ date    season  home_team       away_team       home_team_goals away_team_goals
 
     factory.setDocumentation("TabSeparatedWithNamesAndTypes", Documentation{
         .description = R"DOCS_MD(
-| Input | Output | Alias                  |
-|-------|--------|------------------------|
+| Input | Output | Alias                                          |
+|-------|--------|------------------------------------------------|
 |     ✔    |     ✔     | `TSVWithNamesAndTypes` |
 
 ## Description {#description}
 
-Differs from the [`TabSeparated`](/reference/formats/TabSeparated/TabSeparated) format in that the column names are written to the first row, while the column types are in the second row.
+Differs from the [`TabSeparated`](./TabSeparated.md) format in that the column names are written to the first row, while the column types are in the second row.
 
-<Note>
-- If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to `1`,
-the columns from the input data will be mapped to the columns in the table by their names, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
+:::note
+- If setting [`input_format_with_names_use_header`](../../../operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to `1`,
+the columns from the input data will be mapped to the columns in the table by their names, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](../../../operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
-- If setting [`input_format_with_types_use_header`](/reference/settings/formats/input-format#input_format_with_types_use_header) is set to `1`,
+- If setting [`input_format_with_types_use_header`](../../../operations/settings/settings-formats.md/#input_format_with_types_use_header) is set to `1`,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
-</Note>
+:::
 
 ## Example usage {#example-usage}
 

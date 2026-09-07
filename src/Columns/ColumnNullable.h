@@ -64,8 +64,6 @@ public:
     UInt64 getUInt(size_t n) const override;
     Int64 getInt(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return isNullAt(n); }
-
-    bool hasOnlyTypeDefaults() const override;
     std::string_view getDataAt(size_t) const override;
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
@@ -131,7 +129,6 @@ public:
 #endif
 
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator &) const override;
-    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int null_direction_hint, Permutation & res) const override;
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -210,9 +207,6 @@ public:
     bool onlyNull() const override { return nested_column->isDummy(); }
     bool isCollationSupported() const override { return nested_column->isCollationSupported(); }
 
-    void serializeAsComparable(size_t n, String & out) const override;
-    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map) const override;
-
 
     /// Return the column that represents values.
     IColumn & getNestedColumn() { return *nested_column; }
@@ -257,19 +251,12 @@ public:
     bool hasStatistics() const override { return nested_column->hasStatistics(); }
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 
-    void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map) override;
-    void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
-
 private:
     WrappedPtr nested_column;
     WrappedPtr null_map;
 
     template <bool negative>
     void applyNullMapImpl(const NullMap & map, size_t offset = 0);
-
-    /// Probe the nested column's comparable serialization once so unsupported nested
-    /// types are rejected even on all-NULL blocks. Shared by the single-row and batch paths.
-    void validateNestedComparable() const;
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator * collator=nullptr) const;
 

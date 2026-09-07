@@ -93,7 +93,6 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context_,
         const Block & index_sample_block,
-        const std::optional<String> & normalized_index_column_name_,
         TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
@@ -115,8 +114,6 @@ public:
 
     /// Create text search query for the function node if it is suitable for optimization.
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
-    /// Whether the index can answer the predicate of the function node.
-    bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
     /// Returns generated virtual column name for the replacement of related function node.
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
@@ -125,7 +122,6 @@ public:
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
     TokensCardinalitiesCachePtr cardinalitiesCache() const { return cardinalities_cache; }
-    bool useGlobalHeaderCache() const { return use_global_header_cache; }
 
     TokenizerPtr getTokenizer() const { return tokenizer; }
     MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
@@ -163,10 +159,6 @@ private:
 
     bool traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const;
 
-    /// Whether the function accepts a tokenizer definition as its third argument and the given node
-    /// is a constant one that denotes the index tokenizer.
-    bool tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const;
-
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
         const RPNBuilderTreeNode & index_column_node,
@@ -195,18 +187,12 @@ private:
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
-    bool hasIndexForColumn(const String & column_name) const { return header.has(column_name) || column_name == normalized_index_column_name; }
-
     /// Returns true if all tokens must be read for text index analysis
     /// and we cannot exit analysis earlier if some of the tokens are missing in granule.
     /// E.g. "hasAnyTokens(s, 'tokens')" or "hasAllTokens(s, 'tokens1') OR hasAllTokens(s, 'tokens2')""
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
-    std::optional<String> normalized_index_column_name;
-    /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
-    /// share mutable parsing state; null otherwise.
-    std::shared_ptr<const ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
     RPN rpn;
     PreparedSetsPtr prepared_sets;
@@ -231,8 +217,6 @@ private:
     TextIndexTokensCachePtr tokens_cache;
     /// Cache for headers of the text index
     TextIndexHeaderCachePtr header_cache;
-    /// Whether the global header cache is used or a local per-query one.
-    bool use_global_header_cache = false;
     /// Cache for posting lists of tokens (and phrase-search results, keyed with the Phrase discriminator).
     TextIndexPostingsCachePtr postings_cache;
     /// Cache for tokens cardinalities
