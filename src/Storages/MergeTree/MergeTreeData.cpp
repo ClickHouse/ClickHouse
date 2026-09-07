@@ -2614,8 +2614,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     const DiskPtr & part_disk_ptr,
     MergeTreeDataPartState to_state,
     DB::SharedMutex & part_loading_mutex,
-    bool covering_part_is_non_transactional,
-    const String & covering_part_name)
+    const PartLoadingTree::NodePtr & part_loading_node)
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::loadDataPart");
     LOG_TRACE(log, "Loading {} part {} from disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
@@ -2714,7 +2713,10 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     /// Before publication: a background merge started by `startup` also stamps removal TIDs, and it can
     /// see this part as soon as it is in `data_parts_indexes`.
-    completeRemovalOfCoveredPart(res.part, covering_part_is_non_transactional, covering_part_name, log.load());
+    if (part_loading_node)
+        completeRemovalOfCoveredPart(
+            res.part, part_loading_node->covering_part_is_non_transactional, part_loading_node->covering_part_name,
+            log.load());
 
     res.part->setState(to_state);
 
@@ -2762,8 +2764,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     size_t initial_backoff_ms,
     size_t max_backoff_ms,
     size_t max_tries,
-    bool covering_part_is_non_transactional,
-    const String & covering_part_name)
+    const PartLoadingTree::NodePtr & part_loading_node)
 {
     auto handle_exception = [&, this](std::exception_ptr exception_ptr, size_t try_no)
     {
@@ -2782,9 +2783,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     {
         try
         {
-            return loadDataPart(
-                part_info, part_name, part_disk_ptr, to_state, part_loading_mutex,
-                covering_part_is_non_transactional, covering_part_name);
+            return loadDataPart(part_info, part_name, part_disk_ptr, to_state, part_loading_mutex, part_loading_node);
         }
         catch (...)
         {
@@ -3633,8 +3632,7 @@ try
             auto res = loadDataPartWithRetries(
                 my_part->info, my_part->name, my_part->disk,
                 DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
-                loading_parts_max_backoff_ms, loading_parts_max_tries,
-                my_part->covering_part_is_non_transactional, my_part->covering_part_name);
+                loading_parts_max_backoff_ms, loading_parts_max_tries, my_part);
 
             ++num_loaded_parts;
             if (res.is_broken)
