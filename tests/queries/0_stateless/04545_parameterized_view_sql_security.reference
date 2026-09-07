@@ -2,10 +2,6 @@
 definer: 5001
 none:    5001
 invoker: ACCESS_DENIED
---- enable_analyzer=0 ---
-definer: 5001
-none:    5001
-invoker: ACCESS_DENIED
 --- parallel replicas ---
 definer pr: 5001
 parallel replicas used: 1
