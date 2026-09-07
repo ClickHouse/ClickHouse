@@ -11,6 +11,7 @@
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -40,6 +41,26 @@ Block InterpreterExistsQuery::getSampleBlock()
 
 QueryPipeline InterpreterExistsQuery::executeImpl()
 {
+    /// Resolves a name that must be answered for as a dictionary only. Any failure of the lookup
+    /// is reported as "no such object" instead of propagating: see the call sites for why the
+    /// source object's own error must stay hidden behind a read-only `Overlay` facade.
+    auto tryGetDictionaryFailClosed = [this](const StorageID & id) -> StoragePtr
+    {
+        try
+        {
+            return DatabaseCatalog::instance().tryGetTable(id, getContext());
+        }
+        catch (...)
+        {
+            /// Ok to swallow: fail closed. The error resurfaces for a caller who is allowed to
+            /// see the object as a table and really accesses it.
+            tryLogCurrentException(
+                __PRETTY_FUNCTION__,
+                fmt::format("Hidden from the caller: failed to resolve {} as a dictionary", id.getNameForLogs()));
+            return nullptr;
+        }
+    };
+
     ASTQueryWithTableAndOutput * exists_query = nullptr;
     bool result = false;
 
@@ -75,7 +96,15 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
                 /// existence.
                 if (facade->isSourceTableVisibleNoLoad(table, getContext(), AccessType::SHOW_DICTIONARIES))
                 {
-                    auto storage = DatabaseCatalog::instance().tryGetTable(dictionary_id, getContext());
+                    /// The lookup itself can throw the source object's own load / startup /
+                    /// metadata error, and a dictionary-only caller has proven nothing about a
+                    /// source object that is *not* a dictionary, so such an error must not surface:
+                    /// it would distinguish a hidden non-dictionary object from a missing name and
+                    /// reopen the oracle. Any failure to positively identify a dictionary is
+                    /// remasked as "does not exist", exactly as `SHOW CREATE DICTIONARY` does. The
+                    /// swallowed error is not lost: it resurfaces for a caller allowed to see the
+                    /// object as a table.
+                    auto storage = tryGetDictionaryFailClosed(dictionary_id);
                     result = storage && storage->isDictionary();
 
                     /// Re-verify against the loaded storage: the name could have started resolving
@@ -183,7 +212,14 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
 
         if (source_visible)
         {
-            auto storage = DatabaseCatalog::instance().tryGetTable({database, dictionary}, getContext());
+            /// Behind a read-only `Overlay` facade the lookup can throw the source object's own
+            /// load / startup / metadata error, while `SHOW DICTIONARIES` proves nothing about a
+            /// source object that is not a dictionary: remask any such failure as "does not
+            /// exist", exactly as `SHOW CREATE DICTIONARY` does (see `EXISTS <name>` above).
+            auto storage = DatabaseOverlay::isReadonlyFacade(
+                               DatabaseCatalog::instance().tryGetDatabase(database).get())
+                ? tryGetDictionaryFailClosed(StorageID{database, dictionary})
+                : DatabaseCatalog::instance().tryGetTable({database, dictionary}, getContext());
             result = storage && storage->isDictionary();
 
             /// Re-verify against the loaded storage: the name could have started resolving to a
