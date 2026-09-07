@@ -1406,19 +1406,38 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
         /// dry-run path such as `CREATE VIEW v AS SELECT UNIQUE(SELECT number FROM numbers(3))`
         /// would fail even though the same `SELECT` executes normally.
         auto placeholder_column = ColumnUInt8::create();
-        /// Use a truthy value for the placeholder. While the `materialize` wrapper below
-        /// prevents normal constant folding, some only-analyze consumers execute projection
-        /// actions while constructing a sample block. A false placeholder could then make a
-        /// valid view definition such as `intDiv(1, UNIQUE(...))` fail validation.
+        /// Use a truthy value for the placeholder. The `materialize` wrapper below prevents
+        /// constant folding, but some only-analyze consumers execute projection actions while
+        /// constructing a sample block. A false placeholder could then make a valid view
+        /// definition such as `intDiv(1, UNIQUE(...))` fail validation with a division by zero.
         placeholder_column->getData().push_back(static_cast<UInt8>(1));
         ConstantValue placeholder_value(ColumnConst::create(std::move(placeholder_column), 1), std::make_shared<DataTypeUInt8>());
         auto placeholder_const_node = std::make_shared<ConstantNode>(std::move(placeholder_value), new_unique_subquery);
 
-        /// Keep the placeholder constant. `materialize` turns it into the default value while
-        /// sample-block actions are built, which makes `CREATE VIEW ... intDiv(1, UNIQUE(...))`
-        /// fail analysis with division by zero. The original query is retained for execution, so
-        /// this value is used only while deriving the result type and header.
-        node = std::move(placeholder_const_node);
+        /// The placeholder value is fabricated, so it must not be observable by outer constant
+        /// folding or branch pruning. A bare `ConstantNode` of type `UInt8` is accepted as a
+        /// compile-time truth value by `tryExtractConstantFromConditionNode`, so the `if` and
+        /// `multiIf` fast paths below would prune a branch by the placeholder: validating
+        /// `CREATE VIEW v AS SELECT if(UNIQUE((SELECT 1 UNION ALL SELECT 1)), 1, no_such_column)`
+        /// would swallow the `UNKNOWN_IDENTIFIER` of the branch that actually runs, because at
+        /// execution time the predicate is false and the `else` branch is taken.
+        ///
+        /// Wrap the constant in `materialize`: it is not suitable for constant folding and it also
+        /// breaks constness, so value-sensitive outer functions run over the rows of the
+        /// `only_analyze` sample block instead of evaluating the fabricated boolean. An identity
+        /// wrapper such as `__scalarSubqueryResult` would not be enough — it forwards the
+        /// `ColumnConst`, so projection actions built over the sample block would still compute
+        /// e.g. `intDiv` on the placeholder. The `UInt8` result type is preserved, so the
+        /// analyze-time and the execute-time headers still agree.
+        ///
+        /// The constant-only contexts (`LIMIT`/`OFFSET`, window frame offsets, `WITH FILL`) never
+        /// reach this branch: they set `constant_expression_in_resolve_process`, which is part of
+        /// `analysis_needs_real_value` above, so the predicate is really evaluated there.
+        auto placeholder_wrapper_node = std::make_shared<FunctionNode>("materialize");
+        placeholder_wrapper_node->getArguments().getNodes().push_back(std::move(placeholder_const_node));
+        auto placeholder_wrapper_function = FunctionFactory::instance().get("materialize", scope.context);
+        placeholder_wrapper_node->resolveAsFunction(placeholder_wrapper_function->build(placeholder_wrapper_node->getArgumentColumns()));
+        node = std::move(placeholder_wrapper_node);
         return {unique_projection_name};
     }
 
