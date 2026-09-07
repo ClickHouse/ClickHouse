@@ -1,0 +1,23 @@
+<clickhouse>
+<remote_servers>
+    <cluster>
+        <shard>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>ch1</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </cluster>
+</remote_servers>
+
+<macros>
+        <shard>01</shard>
+</macros>
+
+<!-- A name-based template, the form the engine's own documentation recommends. Unlike the
+     {uuid}-based default it splices the table's own name into the path, so a name is only safe
+     while it stays a single path component. -->
+<default_replica_path>/clickhouse/tables/{database}/{table}</default_replica_path>
+
+</clickhouse>

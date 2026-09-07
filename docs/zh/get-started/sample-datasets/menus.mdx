@@ -135,9 +135,9 @@ clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_defa
 
 我们禁用 `format_csv_allow_single_quotes`，因为数据字段只使用双引号，而单引号可以出现在值中，不应让 CSV parser 产生误判。
 
-我们禁用 [input&#95;format&#95;null&#95;as&#95;default](/zh/reference/settings/formats#input_format_null_as_default)，因为我们的数据中没有 [NULL](/zh/reference/settings/formats#input_format_null_as_default)。否则 ClickHouse 会尝试解析 `\N` 序列，从而可能与数据中的 `\` 混淆。
+我们禁用 [input&#95;format&#95;null&#95;as&#95;default](/zh/reference/settings/formats/input-format#input_format_null_as_default)，因为我们的数据中没有 [NULL](/zh/reference/settings/formats/input-format#input_format_null_as_default)。否则 ClickHouse 会尝试解析 `\N` 序列，从而可能与数据中的 `\` 混淆。
 
-设置 [date&#95;time&#95;input&#95;format best&#95;effort](/zh/reference/settings/formats#date_time_input_format) 允许以多种格式解析 [DateTime](/zh/reference/data-types/datetime) 字段。例如，不带秒的 ISO-8601 格式 (如 &#39;2000-01-01 01:02&#39;) 也能被识别。如果不启用此设置，则只允许固定的 DateTime 格式。
+设置 [date&#95;time&#95;input&#95;format best&#95;effort](/zh/reference/settings/formats/date-time#date_time_input_format) 允许以多种格式解析 [DateTime](/zh/reference/data-types/datetime) 字段。例如，不带秒的 ISO-8601 格式 (如 &#39;2000-01-01 01:02&#39;) 也能被识别。如果不启用此设置，则只允许固定的 DateTime 格式。
 
 <div id="denormalize-data">
   ## 对数据进行反规范化

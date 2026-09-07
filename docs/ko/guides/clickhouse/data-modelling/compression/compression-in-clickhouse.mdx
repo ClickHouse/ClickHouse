@@ -71,8 +71,8 @@ GROUP BY name
 <Accordion title="compact 파트와 wide 파트에 대한 참고 사항">
   `compressed_size` 또는 `uncompressed_size` 값이 `0`으로 표시된다면, 이는
   파트 유형이 `wide`가 아니라 `compact`이기 때문일 수 있습니다([`system.parts`](/ko/reference/system-tables/parts)의 [`part_type`] 설명 참조).
-  파트 포맷은 설정 [`min_bytes_for_wide_part`](/ko/reference/settings/merge-tree-settings#min_bytes_for_wide_part)
-  및 [`min_rows_for_wide_part`](/ko/reference/settings/merge-tree-settings#min_rows_for_wide_part)로 제어됩니다. 즉, 삽입된
+  파트 포맷은 설정 [`min_bytes_for_wide_part`](/ko/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part)
+  및 [`min_rows_for_wide_part`](/ko/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part)로 제어됩니다. 즉, 삽입된
   데이터로 생성된 파트가 앞서 언급한 설정값을 초과하지 않으면, 해당 파트는 wide가 아니라 compact로 생성되며
   `compressed_size` 또는 `uncompressed_size` 값이 표시되지 않습니다.
 
@@ -141,7 +141,7 @@ GROUP BY name
 
 > 위 쿼리는 system 데이터베이스의 `columns` 테이블을 사용합니다. 이 데이터베이스는 ClickHouse가 관리하며, 쿼리 성능 메트릭부터 백그라운드 클러스터 로그까지 유용한 정보가 풍부하게 담겨 있습니다. 더 자세히 알고 싶다면 [&quot;System Tables and a Window into the Internals of ClickHouse&quot;](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)와 관련 글[[1]](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)[[2]](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)을 참고하시기 바랍니다.
 
-테이블의 전체 크기를 요약하려면 위 쿼리를 다음과 같이 단순화할 수 있습니다:
+테이블의 전체 크기만 요약하려면 위 쿼리를 다음과 같이 단순화할 수 있습니다:
 
 ```sql
 SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
@@ -236,7 +236,7 @@ ClickHouse는 다양한 코덱과 압축 알고리즘을 지원합니다. 다음
 | **패턴을 모를 때는 `Gorilla`와 `T64`?** | 데이터 패턴이 불분명하다면 `Gorilla`와 `T64`를 시도해볼 만합니다.                                                                                                                                                                                                   |
 | **게이지 데이터에는 `Gorilla` 사용**      | `Gorilla`는 부동소수점 데이터, 특히 게이지 측정값처럼 무작위 스파이크를 나타내는 데이터에 효과적일 수 있습니다.                                                                                                                                                                           |
 
-추가 옵션은 [여기](/ko/reference/statements/create/table#column_compression_codec)에서 확인하십시오.
+추가 옵션은 [여기](/ko/reference/statements/create/table/codec)에서 확인하십시오.
 
 아래에서는 `Id`, `ViewCount`, `AnswerCount`에 `Delta` 코덱을 지정합니다. 이 값들이 순서 지정 키와 선형적인 상관관계가 있어 Delta 인코딩의 이점을 얻을 것이라고 가정합니다.
 

@@ -166,7 +166,7 @@ CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 ```
 
-Lorsque le serveur ClickHouse exécute de nombreuses requêtes concurrentes avec [plusieurs threads](/fr/reference/settings/session-settings#max_threads) et que tous les slots CPU sont utilisés, l’état de surcharge est atteint. Dans cet état, chaque slot CPU libéré est réattribué au workload approprié conformément aux politiques d’ordonnancement. Pour les requêtes partageant le même workload, les slots sont alloués en round robin. Pour les requêtes appartenant à des workloads distincts, les slots sont alloués selon les poids, priorités et limites spécifiés pour les workloads.
+Lorsque le serveur ClickHouse exécute de nombreuses requêtes concurrentes avec [plusieurs threads](/fr/reference/settings/session-settings/max-threads#max_threads) et que tous les slots CPU sont utilisés, l’état de surcharge est atteint. Dans cet état, chaque slot CPU libéré est réattribué au workload approprié conformément aux politiques d’ordonnancement. Pour les requêtes partageant le même workload, les slots sont alloués en round robin. Pour les requêtes appartenant à des workloads distincts, les slots sont alloués selon les poids, priorités et limites spécifiés pour les workloads.
 
 Le temps CPU est consommé par les threads lorsqu’ils ne sont pas bloqués et travaillent sur des tâches gourmandes en CPU. À des fins d’ordonnancement, on distingue deux types de threads :
 
@@ -198,18 +198,18 @@ CREATE WORKLOAD ingestion IN production
 
 Cet exemple de configuration fournit des pools de slots CPU distincts pour admin et production. Le pool de production est partagé entre l’analytics et l’ingestion. En outre, si le pool de production est surchargé, 9 slots libérés sur 10 seront réattribués aux requêtes analytiques si nécessaire. Les requêtes d’ingestion ne recevraient alors qu’1 slot sur 10 pendant les périodes de surcharge. Cela peut améliorer la latence des requêtes orientées utilisateur. L’analytics a sa propre limite de 60 threads concurrents, ce qui laisse toujours au moins 40 threads pour prendre en charge l’ingestion. En l’absence de surcharge, l’ingestion peut utiliser les 100 threads.
 
-Pour exclure une requête de l’ordonnancement CPU, définissez le paramètre de requête [use&#95;concurrency&#95;control](/fr/reference/settings/session-settings#use_concurrency_control) sur 0.
+Pour exclure une requête de l’ordonnancement CPU, définissez le paramètre de requête [use&#95;concurrency&#95;control](/fr/reference/settings/session-settings/use#use_concurrency_control) sur 0.
 
 L’ordonnancement CPU n’est pas encore pris en charge pour les merge et les mutations.
 
 Pour garantir des allocations équitables entre les workloads, il est nécessaire d’effectuer une préemption et une réduction dynamique pendant l’exécution de la requête. La préemption est activée avec le paramètre serveur `cpu_slot_preemption`. S’il est activé, chaque thread renouvelle périodiquement son slot CPU (selon le paramètre serveur `cpu_slot_quantum_ns`). Un tel renouvellement peut bloquer l’exécution si le CPU est surchargé. Lorsque l’exécution reste bloquée pendant une durée prolongée (voir le paramètre serveur `cpu_slot_preemption_timeout_ms`), la requête réduit alors sa capacité, et le nombre de threads exécutés en parallèle diminue dynamiquement. Notez que l’équité du temps CPU est garantie entre les workloads, mais qu’entre les requêtes d’un même workload, elle peut ne pas être respectée dans certains cas limites.
 
 <Warning>
-  L’ordonnancement des slots permet de contrôler la [concurrence des requêtes](/fr/reference/settings/session-settings#max_threads), mais ne garantit pas une allocation équitable du temps CPU, sauf si le paramètre serveur `cpu_slot_preemption` est défini sur `true` ; sinon, l’équité est assurée en fonction du nombre d’allocations de slots CPU entre les workloads concurrents. Cela n’implique pas une quantité égale de secondes CPU, car sans préemption, un slot CPU peut être conservé indéfiniment. Un thread acquiert un slot au début et le libère une fois le travail terminé.
+  L’ordonnancement des slots permet de contrôler la [concurrence des requêtes](/fr/reference/settings/session-settings/max-threads#max_threads), mais ne garantit pas une allocation équitable du temps CPU, sauf si le paramètre serveur `cpu_slot_preemption` est défini sur `true` ; sinon, l’équité est assurée en fonction du nombre d’allocations de slots CPU entre les workloads concurrents. Cela n’implique pas une quantité égale de secondes CPU, car sans préemption, un slot CPU peut être conservé indéfiniment. Un thread acquiert un slot au début et le libère une fois le travail terminé.
 </Warning>
 
 <Note>
-  La déclaration d’une ressource CPU désactive l’effet des paramètres [`concurrent_threads_soft_limit_num`](/fr/reference/settings/server-settings/settings#concurrent_threads_soft_limit_num) et [`concurrent_threads_soft_limit_ratio_to_cores`](/fr/reference/settings/server-settings/settings#concurrent_threads_soft_limit_ratio_to_cores). À la place, le workload setting `max_concurrent_threads` est utilisé pour limiter le nombre de CPU alloués à une charge de travail spécifique. Pour retrouver le comportement précédent, créez uniquement la ressource WORKER THREAD, définissez `max_concurrent_threads` pour la charge de travail `all` sur la même valeur que `concurrent_threads_soft_limit_num`, puis utilisez le paramètre de requête `workload = "all"`. Cette configuration correspond au paramètre [`concurrent_threads_scheduler`](/fr/reference/settings/server-settings/settings#concurrent_threads_scheduler) défini sur la valeur &quot;fair&#95;round&#95;robin&quot;.
+  La déclaration d’une ressource CPU désactive l’effet des paramètres [`concurrent_threads_soft_limit_num`](/fr/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) et [`concurrent_threads_soft_limit_ratio_to_cores`](/fr/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores). À la place, le workload setting `max_concurrent_threads` est utilisé pour limiter le nombre de CPU alloués à une charge de travail spécifique. Pour retrouver le comportement précédent, créez uniquement la ressource WORKER THREAD, définissez `max_concurrent_threads` pour la charge de travail `all` sur la même valeur que `concurrent_threads_soft_limit_num`, puis utilisez le paramètre de requête `workload = "all"`. Cette configuration correspond au paramètre [`concurrent_threads_scheduler`](/fr/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) défini sur la valeur &quot;fair&#95;round&#95;robin&quot;.
 </Note>
 
 <div id="threads_vs_cpus">
@@ -258,7 +258,7 @@ Ici, nous limitons le nombre total de threads pour toutes les requêtes à 2 foi
 </div>
 
 <Note>
-  La planification des réservations de mémoire est expérimentale. Elle ne prend effet que lorsqu&#39;une ressource `MEMORY RESERVATION` existe, et sa syntaxe SQL ainsi que son comportement peuvent évoluer dans les versions futures. Elle n&#39;est pas encore prise en charge pour les merges et les mutations, et l&#39;éviction d&#39;une requête en cours s&#39;effectue au mieux : elle prend effet au prochain point de synchronisation mémoire de la requête, et non instantanément.
+  La planification des réservations de mémoire est expérimentale. Elle ne prend effet que lorsqu&#39;une ressource `MEMORY RESERVATION` existe, et sa syntaxe SQL ainsi que son comportement peuvent évoluer dans les versions futures. Elle n&#39;est pas encore prise en charge pour les merge et les mutations, et l&#39;éviction d&#39;une requête en cours s&#39;effectue au mieux : elle prend effet au prochain point de synchronisation mémoire de la requête, et non instantanément.
 </Note>
 
 Pour activer les réservations de mémoire pour les workloads, créez une ressource MEMORY RESERVATION et définissez au moins une limite pour la mémoire totale réservée à l&#39;aide des paramètres de workload :
@@ -305,12 +305,12 @@ Tout workload avec une limite `max_memory` garantit que la mémoire totale allou
   Si l&#39;éviction est empêchée ou ne libère pas assez de mémoire, la nouvelle allocation est bloquée jusqu&#39;à ce qu&#39;une quantité suffisante de mémoire soit libérée. Ces règles permettent la mise en file d&#39;attente des requêtes excessives en fonction de la pression mémoire et offrent un moyen pratique d&#39;éviter les erreurs MEMORY&#95;LIMIT&#95;EXCEEDED.
 
 <Note>
-  Les limites de workload sont indépendantes des autres moyens de limiter la consommation de mémoire, comme le paramètre de requête [max&#95;memory&#95;usage](/fr/reference/settings/session-settings#max_memory_usage). Elles peuvent être utilisées ensemble pour mieux contrôler la consommation de mémoire. Il est possible de définir des limites mémoire indépendantes en fonction des utilisateurs (et non des workloads). Cette approche est moins flexible et n&#39;offre pas de fonctionnalités comme la réservation de mémoire et la mise en file d&#39;attente des requêtes en attente. Voir [Memory overcommit](/fr/concepts/features/configuration/settings/memory-overcommit)
+  Les limites de workload sont indépendantes des autres moyens de limiter la consommation de mémoire, comme le paramètre de requête [max&#95;memory&#95;usage](/fr/reference/settings/session-settings/max-memory-usage#max_memory_usage). Elles peuvent être utilisées ensemble pour mieux contrôler la consommation de mémoire. Il est possible de définir des limites mémoire indépendantes en fonction des utilisateurs (et non des workloads). Cette approche est moins flexible et n&#39;offre pas de fonctionnalités comme la réservation de mémoire et la mise en file d&#39;attente des requêtes en attente. Voir [Memory overcommit](/fr/concepts/features/configuration/settings/memory-overcommit)
 </Note>
 
 Le paramètre de workload `max_waiting_queries` limite le nombre d&#39;allocations en attente pour le workload. Lorsque la limite est atteinte, le serveur renvoie une erreur `SERVER_OVERLOADED`. Notez que `max_waiting_queries` n&#39;est pas hérité par les workloads enfants et n&#39;a de sens que pour les workloads feuille.
 
-L&#39;ordonnancement de la réservation de mémoire n&#39;est pas encore pris en charge pour les fusions et les mutations.
+L&#39;ordonnancement de la réservation de mémoire n&#39;est pas encore pris en charge pour les merge et les mutations.
 
 Seules les requêtes dont le paramètre `reserve_memory` est supérieur à zéro peuvent être bloquées dans l’attente d’une réservation de mémoire. Cependant, les requêtes pour lesquelles `reserve_memory` vaut zéro sont elles aussi prises en compte dans l’empreinte mémoire de leur workload, et elles peuvent être évincées si nécessaire afin de libérer de la mémoire pour d’autres allocations en attente ou en augmentation. Les requêtes sans marquage de workload approprié ne sont pas soumises à l’ordonnancement de la réservation de mémoire et ne peuvent pas être évincées par le planificateur.
 
@@ -345,7 +345,7 @@ CREATE RESOURCE query (QUERY)
 CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_second = 10, max_burst_queries = 20
 ```
 
-Le paramètre de workload `max_concurrent_queries` limite le nombre de requêtes concurrentes pouvant s’exécuter simultanément pour un workload donné. Il s’agit de l’équivalent du paramètre de requête [`max_concurrent_queries_for_all_users`](/fr/reference/settings/session-settings#max_concurrent_queries_for_all_users) et du paramètre du serveur [max&#95;concurrent&#95;queries](/fr/reference/settings/server-settings/settings#max_concurrent_queries). Les requêtes async insert et certaines requêtes spécifiques, comme KILL, ne sont pas comptabilisées dans cette limite.
+Le paramètre de workload `max_concurrent_queries` limite le nombre de requêtes concurrentes pouvant s’exécuter simultanément pour un workload donné. Il s’agit de l’équivalent du paramètre de requête [`max_concurrent_queries_for_all_users`](/fr/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) et du paramètre du serveur [max&#95;concurrent&#95;queries](/fr/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries). Les requêtes async insert et certaines requêtes spécifiques, comme KILL, ne sont pas comptabilisées dans cette limite.
 
 Les paramètres de workload `max_queries_per_second` et `max_burst_queries` limitent le nombre de requêtes pour le workload à l’aide d’un mécanisme de limitation de débit de type token bucket. Cela garantit que, sur tout intervalle de temps `T`, pas plus de `max_queries_per_second * T + max_burst_queries` nouvelles requêtes ne commenceront à s’exécuter.
 
@@ -462,45 +462,6 @@ graph TD
 * `precedence_allocation` - applique l’éviction selon une précédence statique (une valeur plus faible signifie une précédence plus élevée) ; une allocation en attente de précédence plus élevée évince les allocations de précédence plus faible ; les nœuds enfants doivent spécifier `precedence` (la valeur par défaut est 0).
 * `queue` - feuille de la hiérarchie capable de contenir des allocations en cours d’exécution et en attente.
 
-<div id="deprecated-configuration">
-  ## Configuration XML obsolète
-</div>
-
-Une autre façon d’indiquer quels disques sont utilisés par une ressource consiste à utiliser le `storage_configuration` du serveur :
-
-Pour activer la planification des E/S pour un disque spécifique, vous devez spécifier `read_resource` et/ou `write_resource` dans la configuration de stockage. Cela indique à ClickHouse quelle ressource utiliser pour chaque requête de lecture et d’écriture sur le disque concerné. Les ressources de lecture et d’écriture peuvent faire référence au même nom de ressource, ce qui est utile pour les SSD locaux ou les HDD. Plusieurs disques différents peuvent également faire référence à la même ressource, ce qui est utile pour les disques distants si vous souhaitez permettre une répartition équitable de la bande passante réseau entre, par exemple, les workloads &quot;production&quot; et &quot;development&quot;.
-
-Exemple :
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        ...
-        <disks>
-            <s3>
-                <type>s3</type>
-                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
-            </s3>
-        </disks>
-        <policies>
-            <s3_main>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_main>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-Notez que les options de configuration du serveur priment sur la méthode SQL de définition des ressources.
-
 <div id="see-also">
   ## Voir aussi
 </div>
@@ -508,12 +469,12 @@ Notez que les options de configuration du serveur priment sur la méthode SQL de
 * [system.scheduler](/fr/reference/system-tables/scheduler)
 * [system.workloads](/fr/reference/system-tables/workloads)
 * [system.resources](/fr/reference/system-tables/resources)
-* [merge&#95;workload](/fr/reference/settings/merge-tree-settings#merge_workload) paramètre de MergeTree
-* [merge&#95;workload](/fr/reference/settings/server-settings/settings#merge_workload) paramètre global du serveur
-* [mutation&#95;workload](/fr/reference/settings/merge-tree-settings#mutation_workload) paramètre de MergeTree
-* [mutation&#95;workload](/fr/reference/settings/server-settings/settings#mutation_workload) paramètre global du serveur
-* [workload&#95;path](/fr/reference/settings/server-settings/settings#workload_path) paramètre global du serveur
-* [workload&#95;zookeeper&#95;path](/fr/reference/settings/server-settings/settings#workload_zookeeper_path) paramètre global du serveur
-* [cpu&#95;slot&#95;preemption](/fr/reference/settings/server-settings/settings#cpu_slot_preemption) paramètre global du serveur
-* [cpu&#95;slot&#95;quantum&#95;ns](/fr/reference/settings/server-settings/settings#cpu_slot_quantum_ns) paramètre global du serveur
-* [cpu&#95;slot&#95;preemption&#95;timeout&#95;ms](/fr/reference/settings/server-settings/settings#cpu_slot_preemption_timeout_ms) paramètre global du serveur
+* [merge&#95;workload](/fr/reference/settings/merge-tree-settings/merge#merge_workload) paramètre de MergeTree
+* [merge&#95;workload](/fr/reference/settings/server-settings/settings/merge#merge_workload) paramètre global du serveur
+* [mutation&#95;workload](/fr/reference/settings/merge-tree-settings/other#mutation_workload) paramètre de MergeTree
+* [mutation&#95;workload](/fr/reference/settings/server-settings/settings/other#mutation_workload) paramètre global du serveur
+* [workload&#95;path](/fr/reference/settings/server-settings/settings/workload#workload_path) paramètre global du serveur
+* [workload&#95;zookeeper&#95;path](/fr/reference/settings/server-settings/settings/workload#workload_zookeeper_path) paramètre global du serveur
+* [cpu&#95;slot&#95;preemption](/fr/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption) paramètre global du serveur
+* [cpu&#95;slot&#95;quantum&#95;ns](/fr/reference/settings/server-settings/settings/cpu-slot#cpu_slot_quantum_ns) paramètre global du serveur
+* [cpu&#95;slot&#95;preemption&#95;timeout&#95;ms](/fr/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption_timeout_ms) paramètre global du serveur
