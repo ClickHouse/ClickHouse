@@ -55,6 +55,11 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&profile=${profile_bg}&run_query_in_bac
 echo "-- SET in one statement is unaffected"
 ${CLICKHOUSE_CLIENT} -m -q "SET profile = '${profile}', wait_for_async_insert = 1; $Q"
 
+echo "-- a profile in a subquery's SETTINGS clause keeps the explicit values too"
+# `max_result_rows` is left to the profile, so the row changes too if the clause is never applied.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" \
+    -d "SELECT * FROM ($Q SETTINGS profile = '${profile}', wait_for_async_insert = 1)"
+
 echo "-- a setting a query may not set is not restored over the profile"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&profile=${profile_ms}&max_sessions_for_user=0" \
     -d "SELECT getSetting('max_sessions_for_user')"
