@@ -3002,7 +3002,9 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                     nested_tables[search_nested_table_name] = {block_ptr, column_extractor};
                 }
 
-                auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(search_column_name);
+                /// The requested spelling, not the lower-cased one: the helper matches names
+                /// case-insensitively itself, and an exact element name outranks a folded match.
+                auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(header_column.name);
                 if (nested_column)
                 {
                     column = *nested_column;

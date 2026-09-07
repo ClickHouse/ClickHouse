@@ -177,8 +177,8 @@ GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullable)
     ASSERT_FALSE(col_a->column->isNullAt(2));
 }
 
-/// Readers lowercase the requested name before it reaches the extractor, while subcolumn names are
-/// case-sensitive, so a mixed-case declared element (`A`) requested as `a` must still be found.
+/// Subcolumn names are case-sensitive, so a mixed-case declared element (`A`) requested as `a` is
+/// reachable only through the case-insensitive fallback.
 GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullableCaseInsensitive)
 {
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
@@ -199,7 +199,7 @@ GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullableCase
 
     NestedColumnExtractHelper extractor(block, /*case_insentive_=*/true);
 
-    /// Requested lowercased, as the reader passes it.
+    /// A spelling that is no element name of its own resolves case-insensitively.
     auto col_a = extractor.extractColumn("x.a");
     ASSERT_TRUE(col_a.has_value());
     ASSERT_EQ(col_a->type->getName(), "Nullable(Tuple(b Nullable(UInt32)))");
@@ -209,8 +209,8 @@ GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullableCase
     ASSERT_FALSE(col_a->column->isNullAt(2));
 }
 
-/// Mirror of the previous test for the opposite spelling: `StorageHive::read` does NOT lowercase the
-/// request, so a non-lowercased suffix (`A`) reaches the resolver against a declared lowercase `a`.
+/// Mirror of the previous test for the opposite spelling: an upper-cased suffix (`A`) against a
+/// declared lowercase `a`.
 GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullableCaseInsensitiveRawSpelling)
 {
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
@@ -231,7 +231,6 @@ GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullableCase
 
     NestedColumnExtractHelper extractor(block, /*case_insentive_=*/true);
 
-    /// Requested with the original (non-lowercased) spelling, as StorageHive passes it.
     auto col_a = extractor.extractColumn("x.A");
     ASSERT_TRUE(col_a.has_value());
     ASSERT_EQ(col_a->type->getName(), "Nullable(Tuple(b Nullable(UInt32)))");
@@ -349,8 +348,8 @@ GTEST_TEST(NestedUtils, extractLowCardinalityLeafFromNullableTupleBecomesLowCard
     ASSERT_TRUE(col_v->column->isNullAt(1));
 }
 
-/// Element names only have to be unique case-sensitively, so under case-insensitive extraction one
-/// request matches both `A` and `a`. Declaration order decides, as it does for a block column.
+/// Element names only have to be unique case-sensitively, so `A` and `a` can be siblings. Each is
+/// its own match; only a spelling that is neither folds onto one of them, in declaration order.
 GTEST_TEST(NestedUtils, extractCaseCollidingElementPairsColumnWithItsOwnDeclaredType)
 {
     DataTypePtr nullable_uint = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>());
@@ -372,18 +371,21 @@ GTEST_TEST(NestedUtils, extractCaseCollidingElementPairsColumnWithItsOwnDeclared
     Block block;
     block.insert({std::move(column), outer_tuple, "x"});
 
-    /// The readers lowercase the requested spelling, so `x.a` is what arrives here.
     NestedColumnExtractHelper extractor(block, /*case_insentive_=*/true);
-    auto col = extractor.extractColumn("x.a");
-    ASSERT_TRUE(col.has_value());
 
-    /// `A` wins the case-insensitive lookup, so the extracted type must be `A`'s nullable one and
-    /// its real NULL row must stay NULL, rather than `a`'s non-nullable one.
-    ASSERT_EQ(col->type->getName(), "Nullable(Tuple(b Nullable(UInt32)))");
-    ASSERT_EQ(col->column->size(), 3u);
-    ASSERT_FALSE(col->column->isNullAt(0));
-    ASSERT_TRUE(col->column->isNullAt(1));
-    ASSERT_FALSE(col->column->isNullAt(2));
+    /// Each declared spelling names its own element, the way `SELECT x.<name>` does, so `a` must
+    /// answer with `a`'s non-nullable type even though `A` is listed first.
+    auto lower = extractor.extractColumn("x.a");
+    ASSERT_TRUE(lower.has_value());
+    ASSERT_EQ(lower->type->getName(), "Tuple(b UInt32)");
+
+    auto upper = extractor.extractColumn("x.A");
+    ASSERT_TRUE(upper.has_value());
+    ASSERT_EQ(upper->type->getName(), "Nullable(Tuple(b Nullable(UInt32)))");
+    ASSERT_EQ(upper->column->size(), 3u);
+    ASSERT_FALSE(upper->column->isNullAt(0));
+    ASSERT_TRUE(upper->column->isNullAt(1));
+    ASSERT_FALSE(upper->column->isNullAt(2));
 }
 
 GTEST_TEST(NestedUtils, extractPathsOfRootWhoseSubcolumnsCannotBeListed)
@@ -416,11 +418,18 @@ GTEST_TEST(NestedUtils, extractPathsOfRootWhoseSubcolumnsCannotBeListed)
     ASSERT_EQ(absent->column->size(), 1u);
     ASSERT_TRUE(absent->column->isNullAt(0));
 
-    /// The readers lowercase the requested spelling, and such a path has no declared spelling to
-    /// map it onto, so case-insensitive matching must reach it as it came.
+    /// Such a path has no declared spelling to map onto, so case-insensitive matching must reach it
+    /// as it came.
     NestedColumnExtractHelper case_insensitive_extractor(block, /*case_insentive_=*/true);
     auto folded = case_insensitive_extractor.extractColumn("j.b");
     ASSERT_TRUE(folded.has_value());
     ASSERT_EQ(folded->name, "j.b");
     ASSERT_EQ(applyVisitor(FieldVisitorToString(), (*folded->column)[0]), "2");
+
+    /// `A` is no path of its own here, but every spelling resolves against a JSON root, so the
+    /// declared `a` must be matched before the request is resolved as an absent dynamic path.
+    auto folded_typed = case_insensitive_extractor.extractColumn("j.A");
+    ASSERT_TRUE(folded_typed.has_value());
+    ASSERT_EQ(folded_typed->type->getName(), "UInt32");
+    ASSERT_EQ(applyVisitor(FieldVisitorToString(), (*folded_typed->column)[0]), "1");
 }

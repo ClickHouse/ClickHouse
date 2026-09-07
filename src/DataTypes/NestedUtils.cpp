@@ -696,8 +696,9 @@ const NestedColumnExtractHelper::Subcolumns & NestedColumnExtractHelper::subcolu
                     auto path = substream_path;
                     path.resize(prefix_len);
                     /// The first spelling wins, as it does in `IDataType::getSubcolumnData`.
-                    subcolumns.path_by_name.try_emplace(
-                        case_insentive ? boost::to_lower_copy(name) : name, std::move(path));
+                    subcolumns.path_by_name.try_emplace(name, std::move(path));
+                    if (case_insentive)
+                        subcolumns.name_by_lowercase.try_emplace(boost::to_lower_copy(name), name);
                 }
                 substream_path[i].visited = true;
             }
@@ -714,16 +715,20 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::resolveSubcolumn
     String declared_name = subcolumn_name;
     if (case_insentive)
     {
-        /// The root is `Block::findByName`'s first case-insensitive match, so map the requested
-        /// spelling to a declared one in that same first-match order. An addressable path that no
-        /// listing can name, such as a JSON path, has no declared spelling and is requested as it came.
+        /// Match the listed spellings before resolving the request itself, since a root that accepts
+        /// any path answers every spelling: a JSON path absent from the listing is a `Dynamic` of
+        /// NULLs, which would shadow a declared path differing only by case. A declared spelling is
+        /// its own match; anything else folds onto one in listing order.
         const auto declared_names = root.type->getSubcolumnNames();
-        const auto declared_it = std::find_if(
-            declared_names.begin(),
-            declared_names.end(),
-            [&](const auto & candidate) { return boost::iequals(candidate, subcolumn_name); });
-        if (declared_it != declared_names.end())
-            declared_name = *declared_it;
+        if (std::find(declared_names.begin(), declared_names.end(), subcolumn_name) == declared_names.end())
+        {
+            const auto declared_it = std::find_if(
+                declared_names.begin(),
+                declared_names.end(),
+                [&](const auto & candidate) { return boost::iequals(candidate, subcolumn_name); });
+            if (declared_it != declared_names.end())
+                declared_name = *declared_it;
+        }
     }
 
     const auto subcolumn_type = root.type->tryGetSubcolumnType(declared_name);
@@ -747,8 +752,15 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(co
     if (!subcolumns.complete)
         return resolveSubcolumn(*root, nested_names.second, column_name);
 
-    const auto it
-        = subcolumns.path_by_name.find(case_insentive ? boost::to_lower_copy(nested_names.second) : nested_names.second);
+    /// A spelling that is itself a subcolumn name resolves to it, as it does in
+    /// `IDataType::getSubcolumnData`; only one that names none is matched case-insensitively.
+    auto it = subcolumns.path_by_name.find(nested_names.second);
+    if (it == subcolumns.path_by_name.end() && case_insentive)
+    {
+        const auto folded = subcolumns.name_by_lowercase.find(boost::to_lower_copy(nested_names.second));
+        if (folded != subcolumns.name_by_lowercase.end())
+            it = subcolumns.path_by_name.find(folded->second);
+    }
     if (it == subcolumns.path_by_name.end())
         return {};
 

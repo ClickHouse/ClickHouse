@@ -131,8 +131,10 @@ private:
     /// `createFromPath`, so listing must not reach that far or every name would be materialized.
     struct Subcolumns
     {
-        /// Keyed the way this helper matches names: lower-cased when matching is case-insensitive.
+        /// Keyed by the declared spelling, the way `IDataType::getSubcolumnData` matches a name.
         std::unordered_map<String, ISerialization::SubstreamPath> path_by_name;
+        /// Lower-cased spelling to the declared one, filled only when matching is case-insensitive.
+        std::unordered_map<String, String> name_by_lowercase;
         /// When false the set could not be listed up front and `path_by_name` says nothing about a miss.
         bool complete = false;
     };

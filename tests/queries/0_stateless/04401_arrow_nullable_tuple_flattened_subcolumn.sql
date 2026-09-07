@@ -63,10 +63,9 @@ SELECT c0 FROM values('c0 Tuple(a Nullable(Tuple(b Nullable(UInt32))), c String)
 SELECT `c0.a`, isNull(`c0.a`), `c0.c` FROM file(currentDatabase() || '_04401_gen.orc', 'ORC', '`c0.a` Nullable(Tuple(b Nullable(UInt32))), `c0.c` String') ORDER BY `c0.c`;
 
 -- Same genuinely-declared Nullable(Tuple) descendant but with a mixed-case declared element (A) read
--- under case-insensitive column matching. The reader lowercases the requested name before the
--- declared-type lookup, so the lookup must match the declared element name case-insensitively;
--- otherwise the genuine NULL is lost (collapsed to a default tuple) at
--- allow_nullable_tuple_in_extracted_subcolumns=0.
+-- under case-insensitive column matching. A requested name that is no element name of its own must
+-- still match a declared one case-insensitively; otherwise the genuine NULL is lost (collapsed to a
+-- default tuple) at allow_nullable_tuple_in_extracted_subcolumns=0.
 INSERT INTO FUNCTION file(currentDatabase() || '_04401_ci.arrow', 'Arrow')
 SELECT c0 FROM values('c0 Tuple(A Nullable(Tuple(b Nullable(UInt32))), C String)', (tuple(tuple(10), 'p')), (tuple(NULL, 'q')), (tuple(tuple(30), 'r')));
 SELECT `c0.a`, isNull(`c0.a`), `c0.c` FROM file(currentDatabase() || '_04401_ci.arrow', 'Arrow', '`c0.a` Nullable(Tuple(b Nullable(UInt32))), `c0.c` String') ORDER BY `c0.c` SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
@@ -117,6 +116,16 @@ SELECT `c0.Null`, isNull(`c0.Null`), `c0.c` FROM file(currentDatabase() || '_044
 SELECT c0.`Null`, isNull(c0.`Null`), c0.c FROM file(currentDatabase() || '_04401_nullname.arrow', 'Arrow', 'c0 Nullable(Tuple(`Null` Nullable(Tuple(v UInt32)), c String))') ORDER BY c0.c;
 SELECT `c0.null`, `c0.c` FROM file(currentDatabase() || '_04401_nullname.arrow', 'Arrow', '`c0.null` UInt8, `c0.c` Nullable(String)') ORDER BY `c0.c` SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
 SELECT c0.null, c0.c FROM file(currentDatabase() || '_04401_nullname.arrow', 'Arrow', 'c0 Nullable(Tuple(`Null` Nullable(Tuple(v UInt32)), c String))') ORDER BY c0.c;
+
+-- Case-insensitive column matching folds `Null` and the parent's virtual `null` onto one spelling,
+-- so the declared element must keep winning its own exact name rather than the parent's null map,
+-- for every reader that resolves a flattened name.
+INSERT INTO FUNCTION file(currentDatabase() || '_04401_nullci.arrow', 'Arrow')
+SELECT c0 FROM values('c0 Nullable(Tuple(`Null` UInt8, c String))', (tuple(7, 'p')), (NULL), (tuple(9, 'r')));
+SELECT `c0.Null`, `c0.c` FROM file(currentDatabase() || '_04401_nullci.arrow', 'Arrow', '`c0.Null` UInt8, `c0.c` String') ORDER BY `c0.c` SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
+INSERT INTO FUNCTION file(currentDatabase() || '_04401_nullci.orc', 'ORC')
+SELECT c0 FROM values('c0 Nullable(Tuple(`Null` UInt8, c String))', (tuple(7, 'p')), (NULL), (tuple(9, 'r')));
+SELECT `c0.Null`, `c0.c` FROM file(currentDatabase() || '_04401_nullci.orc', 'ORC', '`c0.Null` UInt8, `c0.c` String') ORDER BY `c0.c` SETTINGS input_format_orc_case_insensitive_column_matching = 1;
 
 -- An element may be named like a virtual subcolumn of its own parent, so `size0` here is both a
 -- declared element and the array's length. The flattened read resolves it the way a direct

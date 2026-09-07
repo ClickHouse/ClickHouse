@@ -906,7 +906,9 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                     auto helper = std::make_shared<NestedColumnExtractHelper>(*block, case_insensitive);
                     extractor_it = nested_extractors.emplace(search_nested, std::make_pair(block, helper)).first;
                 }
-                if (auto nested_column = extractor_it->second.second->extractColumn(search_name))
+                /// The requested spelling, not the lower-cased one: the helper matches names
+                /// case-insensitively itself, and an exact element name outranks a folded match.
+                if (auto nested_column = extractor_it->second.second->extractColumn(header_column.name))
                 {
                     column = *nested_column;
                     if (case_insensitive)
