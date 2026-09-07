@@ -1918,9 +1918,8 @@ catch (...)
 
 static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poco::Util::AbstractConfiguration & config_)
 {
-    /// No ext4 probe here: both callers hold `shared->mutex` and reporting a warning takes it
-    /// again. `setTemporaryStoragePath` probes before it locks, and the cache path that
-    /// `setTemporaryStorageInCache` passes is already probed by `FileCache` itself.
+    /// `_tmp_default` is an internal helper disk that does not probe its own root: its path is
+    /// probed by `setTemporaryStoragePath`, and for the cache case by `FileCache` itself.
     auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0, config_, "storage_configuration.disks._tmp_default");
     VolumePtr volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
     return volume;
@@ -1928,7 +1927,7 @@ static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poc
 
 void Context::setTemporaryStoragePath(const String & path, size_t max_size)
 {
-    /// Before the lock: reporting a warning takes `shared->mutex`, which is not recursive.
+    /// The `_tmp_default` disk built below is exempt from the probe, so its path is probed here.
     warnIfAffectedByExt4CorruptionKernelBug(path, "the temporary storage path");
 
     std::lock_guard lock(shared->mutex);
