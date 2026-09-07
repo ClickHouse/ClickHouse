@@ -178,11 +178,8 @@ struct Configuration
         }
         if (mode != Mode::Dense)
         {
-            for (const Event event : requiredHotEvents())
-            {
-                if (layout.slot_of[event] >= layout.hot_count)
-                    COUNTER_EXPERIMENT_FAIL("Counter experiment: required signal or allocation event is cold", 78);
-            }
+            if (!layout.reserveHotEvents(requiredHotEvents()))
+                COUNTER_EXPERIMENT_FAIL("Counter experiment: invalid mandatory events or insufficient hot capacity", 78);
         }
         if (const char * diagnostics_path = std::getenv("CH_COUNTER_DIAGNOSTICS"))
         {

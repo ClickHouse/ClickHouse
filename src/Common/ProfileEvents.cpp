@@ -2,6 +2,8 @@
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ProfileEventsNonAllocatingEvents.h>
+#include <Common/MemoryTracker.h>
 #if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
 #include <Common/ProfileEventsPagedExperiment/adapter.h>
 #endif
@@ -1765,20 +1767,14 @@ constexpr Event END = Event(__COUNTER__);
 #if defined(PROFILE_EVENTS_PAGED_EXPERIMENT)
 static_assert(static_cast<size_t>(END) == PagedExperimentStorage::EventCount);
 
-std::array<uint16_t, 10> PagedExperiment::requiredHotEvents() noexcept
+std::span<const uint16_t> PagedExperiment::requiredHotEvents() noexcept
 {
-    return {
-        static_cast<uint16_t>(QueryProfilerConcurrencyOverruns),
-        static_cast<uint16_t>(QueryProfilerSignalOverruns),
-        static_cast<uint16_t>(QueryProfilerErrors),
-        static_cast<uint16_t>(QueryProfilerRuns),
-        static_cast<uint16_t>(CannotWriteToWriteBufferDiscard),
-        static_cast<uint16_t>(MemoryAllocatedWithoutCheck),
-        static_cast<uint16_t>(MemoryAllocatedWithoutCheckBytes),
-        static_cast<uint16_t>(QueryMemoryLimitExceeded),
-        static_cast<uint16_t>(GlobalMemoryLimitExceeded),
-        static_cast<uint16_t>(PageCacheOvercommitResize),
+    static const std::array required = {
+#define M(NAME) static_cast<uint16_t>(NAME),
+        APPLY_FOR_NON_ALLOCATING_PROFILE_EVENTS(M)
+#undef M
     };
+    return required;
 }
 #endif
 
@@ -2258,6 +2254,12 @@ void Counters::increment(Event event, Count amount)
 
     if (unlikely(send_to_trace_log))
         DB::TraceSender::send(DB::TraceType::ProfileEvent, StackTrace(), {.event = event, .increment = amount});
+}
+
+void Counters::incrementNonAllocating(NonAllocatingEvent event, Count amount) noexcept
+{
+    DENY_ALLOCATIONS_IN_SCOPE;
+    increment(event.value(), amount);
 }
 
 void Counters::incrementNoTrace(Event event, Count amount)

@@ -62,7 +62,7 @@ def main():
         if process.returncode != code or (message and message not in text):
             raise ValueError(f'{name}: exit {process.returncode}, expected {code}; inspect log')
         item = {'name': name, 'returncode': process.returncode, 'log_sha256': digest(out/(name+'.log'))}
-        if test == 'normal':
+        if test in ['normal', 'reserved_updates', 'allocation_failure']:
             data = diagnostics.read_bytes()
             d = dict(zip(FIELDS, struct.unpack('<24Q', data)))
             assert d['magic'] == 0x4350455850455231 and d['version'] == 1 and d['ready'] == 1
@@ -71,7 +71,14 @@ def main():
             base = 2 if backend == 'paged' and hot < 1562 else 1
             assert d['initial_allocations_sum'] == 2 * base
             assert d['published_cold_allocations_sum'] == d['final_allocations_sum'] - 2 * base
-            assert d['published_cold_allocations_sum'] == 0 if hot == 1562 or backend == 'dense' else d['published_cold_allocations_sum'] > 0
+            if test == 'reserved_updates':
+                assert d['published_cold_allocations_sum'] == 0
+                assert d['final_requested_sum'] == d['initial_requested_sum']
+                assert d['final_usable_sum'] == d['initial_usable_sum']
+            elif test == 'allocation_failure':
+                assert d['published_cold_allocations_sum'] == 1
+            else:
+                assert d['published_cold_allocations_sum'] == 0 if hot == 1562 or backend == 'dense' else d['published_cold_allocations_sum'] > 0
             assert d['final_requested_sum'] >= d['initial_requested_sum']
             assert d['final_usable_sum'] >= d['final_requested_sum']
             if backend == 'dense':
@@ -81,16 +88,23 @@ def main():
             item['diagnostics'] = d
         receipt['tests'].append(item)
 
+    run('reservation_layout', test='reservations')
+    for backend in ['dense', 'paged']:
+        for hot in [128, 1562]:
+            run(f'{backend}_reserved_hot{hot}', backend=backend, hot=hot, test='reserved_updates',
+                overrides={'CH_COUNTER_LAYOUT': str(unprotected)})
+    run('paged_cold_allocation_failure', test='allocation_failure', overrides={'CH_COUNTER_LAYOUT': str(unprotected)})
     for backend in ['dense', 'paged']:
         for hot in [128, 1562]:
             run(f'{backend}_hot{hot}', backend=backend, hot=hot)
+    run('reserved_from_reverse_rank', overrides={'CH_COUNTER_LAYOUT': str(unprotected)})
     for backend in ['paged']:
         run(backend+'_cold_signal', backend=backend, test='cold_signal', code=80, message='cold signal event is unsupported')
         run(backend+'_recursive_cold', backend=backend, test='recursive_cold', code=79, message='recursive cold update is unsupported')
     invalid = [
         ('hot_zero', {'CH_COUNTER_HOT': '0'}), ('hot_large', {'CH_COUNTER_HOT': '1563'}),
         ('mode', {'CH_COUNTER_STORAGE': 'unknown'}), ('page', {'CH_COUNTER_PAGE': '3'}),
-        ('duplicate', {'CH_COUNTER_LAYOUT': str(duplicate)}), ('unprotected', {'CH_COUNTER_LAYOUT': str(unprotected)}),
+        ('duplicate', {'CH_COUNTER_LAYOUT': str(duplicate)}), ('hot_too_small', {'CH_COUNTER_HOT': '9'}),
         ('missing_layout', {'CH_COUNTER_LAYOUT': str(out/'absent')}),
     ]
     for name, overrides in invalid:

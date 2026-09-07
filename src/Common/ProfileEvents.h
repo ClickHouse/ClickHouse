@@ -36,6 +36,7 @@ namespace ProfileEvents
     using AlignedCounters = std::unique_ptr<Count[], AlignedCountersDeleter>;
 
     class Counters;
+    class NonAllocatingEvent;
 
     /// Counters - how many times each event happened
     extern Counters global_counters;
@@ -126,6 +127,10 @@ namespace ProfileEvents
         Count operator[] (Event event) const { return load(event); }
 
         void increment(Event event, Count amount = 1);
+
+        /// The event must have reserved backing at every parent. Retains ordinary tracing.
+        /// Debug allocation checks enforce the contract where supported.
+        void incrementNonAllocating(NonAllocatingEvent event, Count amount = 1) noexcept;
         void incrementNoTrace(Event event, Count amount = 1);
         void incrementSignalSafe(Event event, Count amount = 1);
 

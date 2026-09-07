@@ -8,6 +8,7 @@
 #include <memory>
 #include <new>
 #include <stdexcept>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -49,6 +50,36 @@ struct Layout
     std::array<Event, EventCount> slot_of{};
     /// Shared inverse permutation for traversal; no per-counter allocation.
     std::array<Event, EventCount> event_at_slot{};
+
+    /// Stable partition: mandatory events first, then the remaining frequency rank.
+    /// Invalid reservations leave the layout unchanged.
+    bool reserveHotEvents(std::span<const Event> required) noexcept
+    {
+        if (required.size() > hot_count)
+            return false;
+
+        std::array<bool, EventCount> reserved{};
+        for (const Event event : required)
+        {
+            if (event >= EventCount || reserved[event])
+                return false;
+            reserved[event] = true;
+        }
+
+        std::array<Event, EventCount> ordered{};
+        size_t position = 0;
+        for (const Event event : event_at_slot)
+            if (reserved[event])
+                ordered[position++] = event;
+        for (const Event event : event_at_slot)
+            if (!reserved[event])
+                ordered[position++] = event;
+
+        event_at_slot = ordered;
+        for (size_t slot = 0; slot < EventCount; ++slot)
+            slot_of[event_at_slot[slot]] = static_cast<Event>(slot);
+        return true;
+    }
 
     explicit Layout(size_t hot_count_, const std::vector<Event> & permutation = {})
         : hot_count(hot_count_)
