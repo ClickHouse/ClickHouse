@@ -18,6 +18,7 @@
 #include "Poco/Net/Utility.h"
 #include "Poco/File.h"
 #include "Poco/Path.h"
+#include "Poco/String.h"
 #include "Poco/DirectoryIterator.h"
 #include "Poco/RegularExpression.h"
 #include "Poco/Timestamp.h"
@@ -316,7 +317,33 @@ void Context::init(const Params& params)
 		else
 			SSL_CTX_set_verify(_pSSLContext, params.verificationMode, &SSLManager::verifyClientCallback);
 
-		SSL_CTX_set_cipher_list(_pSSLContext, params.cipherList.c_str());
+		// Only ':', ' ', ';' and ',' separate items in an OpenSSL cipher list, so a newline or
+		// tab is a lexing error rather than padding.
+		std::string cipherList = Poco::trim(params.cipherList);
+
+		// The reason code below only describes this call if the queue is empty on entry: the
+		// default-CA probing above leaves errors queued for candidate paths it discards, and
+		// ERR_peek_error() returns the oldest entry.
+		ERR_clear_error();
+		if (SSL_CTX_set_cipher_list(_pSSLContext, cipherList.c_str()) != 1)
+		{
+			unsigned long err = ERR_peek_error();
+
+			// Manually unwrap ERR_GET_REASON(err) due to ossl_unused
+			// https://github.com/openssl/openssl/issues/16776
+			bool noCipherMatch = (err & ERR_SYSTEM_FLAG) == 0 && (err & ERR_REASON_MASK) == SSL_R_NO_CIPHER_MATCH;
+
+			// A list that lexes but selects no TLS 1.2 or older cipher is legitimate - a
+			// TLS 1.3 only deployment reaches this - so only an unlexable list is an error.
+			if (noCipherMatch)
+				ERR_clear_error();
+			else
+			{
+				std::string msg = Utility::getLastError();
+				throw SSLContextException(std::string("Cannot set cipher list ") + cipherList, msg);
+			}
+		}
+
 		SSL_CTX_set_verify_depth(_pSSLContext, params.verificationDepth);
 		SSL_CTX_set_mode(_pSSLContext, SSL_MODE_AUTO_RETRY);
 		SSL_CTX_set_session_cache_mode(_pSSLContext, SSL_SESS_CACHE_OFF);
