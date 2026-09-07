@@ -6,6 +6,7 @@
 #include <IO/S3Settings.h>
 #include <base/types.h>
 #include <IO/S3/Client.h>
+#include <functional>
 
 namespace DB::S3
 {
@@ -36,7 +37,8 @@ ObjectInfo getObjectInfo(
     const String & key,
     const String & version_id = {},
     bool with_metadata = false,
-    bool with_tags = false);
+    bool with_tags = false,
+    const std::function<void()> & cancellation_hook = {});
 
 ObjectAttributes getObjectTags(
     const S3::Client & client,
@@ -48,7 +50,8 @@ size_t getObjectSize(
     const S3::Client & client,
     const String & bucket,
     const String & key,
-    const String & version_id = {});
+    const String & version_id = {},
+    const std::function<void()> & cancellation_hook = {});
 
 bool objectExists(
     const S3::Client & client,
