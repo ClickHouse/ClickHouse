@@ -758,7 +758,13 @@ private:
             available_columns.pop_back();
         serialization->deserializeBinary(*column, buffer, format_settings);
         ++shared_value_depth;
-        emitValue(hash_path, logical_path, role, type, *column, 0, true, type_info, should_index);
+        if (type_info.raw_value)
+        {
+            if (should_index)
+                emitScalar(hash_path, logical_path, role, *column, 0, true, type_info);
+        }
+        else
+            emitValue(hash_path, logical_path, role, type, *column, 0, true, type_info, should_index);
         --shared_value_depth;
         column->popBack(1);
         available_columns.push_back(std::move(column));
