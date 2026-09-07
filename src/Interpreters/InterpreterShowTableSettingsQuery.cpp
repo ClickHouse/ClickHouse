@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterShowTableSettingsQuery.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTShowTableSettingsQuery.h>
@@ -46,6 +47,17 @@ BlockIO InterpreterShowTableSettingsQuery::execute()
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
+
+    /// `system.table_settings` shows a data lake catalog or a remote database only when the
+    /// corresponding setting allows it, and `show_data_lake_catalogs_in_system_tables` is off by
+    /// default. Naming such a database explicitly is an unambiguous request for it, so enable it
+    /// for this query - the same thing `InterpreterShowTablesQuery` does for `SHOW TABLES`.
+    const auto & query = query_ptr->as<ASTShowTableSettingsQuery &>();
+    const String database = getContext()->resolveDatabase(query.database);
+    if (DatabaseCatalog::instance().isDatalakeCatalog(database))
+        query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
+    if (DatabaseCatalog::instance().isRemoteDatabase(database))
+        query_context->setSetting("show_remote_databases_in_system_tables", true);
 
     return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }

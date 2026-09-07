@@ -32,6 +32,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool format_display_secrets_in_show_and_select;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+    extern const SettingsBool show_remote_databases_in_system_tables;
 }
 
 namespace
@@ -423,12 +425,19 @@ void ReadFromSystemTableSettings::initializePipeline(QueryPipelineBuilder & pipe
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+    /// The same database selection as `system.tables` and `system.columns`, rather than the
+    /// unconditional exclusion that `system.constraints`, `system.projections` and
+    /// `system.data_skipping_indices` use. Those skip an external database because a table in one
+    /// has no ClickHouse constraints, projections or skipping indices to report - there is genuinely
+    /// nothing there. Settings are not like that: `StorageMySQL` and the data lake storages both
+    /// answer `getTableSettings`, so excluding them would hide rows this table exists to show.
+    const auto & settings = context->getSettingsRef();
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
+        .with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables],
+        .with_remote_databases = settings[Setting::show_remote_databases_in_system_tables]});
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
-            continue;
-        if (database->isExternal())
             continue;
         column->insert(database_name);
     }

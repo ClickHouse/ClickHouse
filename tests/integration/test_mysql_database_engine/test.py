@@ -79,6 +79,57 @@ class MySQLNodeInstance:
             self.mysql_connection.close()
 
 
+def test_table_settings_for_mysql_database(started_cluster):
+    """`system.table_settings` reaches tables inside a MySQL database.
+
+    It selects databases the same way `system.tables` and `system.columns` do, rather than
+    excluding every external database the way `system.constraints` and `system.projections` do.
+    Those exclude one because a table in it has no ClickHouse constraints or projections to report;
+    a `StorageMySQL` table does have settings, so the same exclusion would hide real rows.
+    """
+    with contextlib.closing(
+        MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_settings_database")
+        mysql_node.query("CREATE DATABASE test_settings_database DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query(
+            "CREATE TABLE `test_settings_database`.`t` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;"
+        )
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_settings_database")
+        clickhouse_node.query(
+            "CREATE DATABASE test_settings_database ENGINE = MySQL("
+            f"'mysql80:3306', 'test_settings_database', 'root', '{mysql_pass}')"
+        )
+
+        settings = clickhouse_node.query(
+            "SELECT name FROM system.table_settings "
+            "WHERE database = 'test_settings_database' AND table = 't' ORDER BY name"
+        )
+        assert "connection_pool_size" in settings
+
+        # The statement reaches them too, and does so without the caller having to know that a
+        # setting governs whether the database is visible at all.
+        shown = clickhouse_node.query(
+            "SHOW TABLE SETTINGS FROM test_settings_database.t"
+        )
+        assert "connection_pool_size" in shown
+
+        # And the setting still governs it: turning it off hides the database again.
+        hidden = clickhouse_node.query(
+            "SELECT count() FROM system.table_settings WHERE database = 'test_settings_database' "
+            "SETTINGS show_remote_databases_in_system_tables = 0"
+        )
+        assert hidden.strip() == "0"
+
+        mysql_node.query("DROP DATABASE test_settings_database")
+        clickhouse_node.query("DROP DATABASE test_settings_database")
+
+
 def test_mysql_ddl_for_mysql_database(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(
