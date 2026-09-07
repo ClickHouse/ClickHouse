@@ -15,6 +15,9 @@ default-port
 80
 host-no-dot
 0
+query-fragment
+8080
+8080
 ipv4
 0
 80
@@ -32,6 +35,9 @@ default-port
 80
 host-no-dot
 0
+query-fragment
+8080
+8080
 ipv6
 0
 0
@@ -50,5 +56,8 @@ ipv6-RFC
 80
 443
 ipv6-RFC-userinfo
+80
+80
+ipv6-RFC-query-fragment
 80
 80

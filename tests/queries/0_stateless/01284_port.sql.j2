@@ -26,6 +26,10 @@ select port{{ suffix }}('http://foobar.com/', toUInt16(80));
 select 'host-no-dot';
 select port{{ suffix }}('//foobar:80/');
 
+select 'query-fragment';
+select port{{ suffix }}('http://foobar.com:8080?x=1');
+select port{{ suffix }}('http://foobar.com:8080#fragment');
+
 {%- endfor %}
 
 --
@@ -55,3 +59,8 @@ select portRFC('http://[2001:db8::8a2e:370:7334]/', toUInt16(443));
 select 'ipv6-RFC-userinfo';
 select portRFC('http://user@[2001:db8::8a2e:370:7334]:80/');
 select portRFC('http://user:password@[2001:db8::8a2e:370:7334]:80/');
+
+-- '?' and '#' after the port are terminators for a bracketed IPv6 host too
+select 'ipv6-RFC-query-fragment';
+select portRFC('http://[2001:db8::8a2e:370:7334]:80?x=1');
+select portRFC('http://[2001:db8::8a2e:370:7334]:80#fragment');
