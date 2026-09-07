@@ -31,6 +31,13 @@ SELECT tupleElement(arrayNormalizedGini(range(number + 2), range(number + 2)), 3
 FROM numbers(2)
 SETTINGS max_block_size = 1;
 
+-- Mismatched arrays must still be rejected when the mismatch appears in a later row.
+SELECT arrayNormalizedGini(
+    range(if(number = 0, 1, 2)),
+    range(if(number = 0, 1, 3)))
+FROM numbers(2)
+SETTINGS max_block_size = 2; -- { serverError ILLEGAL_COLUMN }
+
 -- Grouped arrays are a realistic source of different per-row array lengths.
 SELECT tupleElement(arrayNormalizedGini(predictions, labels), 3)
 FROM
