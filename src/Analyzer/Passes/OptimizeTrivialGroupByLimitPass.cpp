@@ -8,8 +8,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
-#include <Columns/IColumn.h>
-#include <Interpreters/convertColumnToType.h>
+#include <Interpreters/convertFieldToType.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <base/arithmeticOverflow.h>
 
@@ -30,12 +29,12 @@ namespace
 /// values as `Int64`/`Float64`, so `safeGet<UInt64>` would throw on them.
 /// Returns `std::nullopt` for negative or fractional values so the caller
 /// can skip the optimization in those cases.
-std::optional<UInt64> tryGetNonNegativeUInt64(const ConstantNode & node)
+std::optional<UInt64> tryGetNonNegativeUInt64(const Field & field)
 {
-    ColumnPtr converted = convertColumnToTypeOrNull(*node.getColumn(), node.getResultType(), std::make_shared<DataTypeUInt64>());
-    if (!converted)
+    const Field converted = convertFieldToType(field, DataTypeUInt64());
+    if (converted.isNull())
         return std::nullopt;
-    return converted->getUInt(0);
+    return converted.safeGet<UInt64>();
 }
 
 }
@@ -73,13 +72,13 @@ void OptimizeTrivialGroupByLimitPass::run(QueryTreeNodePtr & query_tree_node, Co
     if (!mode_is_any && mode_is_changed)
         return;
 
-    auto limit = tryGetNonNegativeUInt64(query->getLimit()->as<ConstantNode &>());
+    auto limit = tryGetNonNegativeUInt64(query->getLimit()->as<ConstantNode &>().getValue());
     if (!limit)
         return;
     UInt64 offset = 0;
     if (query->hasOffset())
     {
-        auto maybe_offset = tryGetNonNegativeUInt64(query->getOffset()->as<ConstantNode &>());
+        auto maybe_offset = tryGetNonNegativeUInt64(query->getOffset()->as<ConstantNode &>().getValue());
         if (!maybe_offset)
             return;
         offset = *maybe_offset;

@@ -1,7 +1,4 @@
 #include <memory>
-#include <optional>
-#include <string_view>
-#include <vector>
 #include <Server/PostgreSQLHandler.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
@@ -11,7 +8,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
-#include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Server/TCPServer.h>
@@ -20,8 +16,6 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
-#include <Common/SettingSource.h>
-#include <Common/SettingsChanges.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
@@ -29,7 +23,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTCopyQuery.h>
 #include <Parsers/ParserCopyQuery.h>
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -65,170 +58,14 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsString default_session_user;
-}
-
 namespace ErrorCodes
 {
-    extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int SYNTAX_ERROR;
     extern const int OPENSSL_ERROR;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
-}
-
-namespace
-{
-
-/// Some PostgreSQL drivers issue session-management commands during connection
-/// setup or teardown that have no ClickHouse equivalent, for example `RESET ALL`
-/// and `UNLISTEN *` sent by the Skunk driver. Instead of failing such a command
-/// with a syntax error, ClickHouse accepts it as a no-op and replies with a
-/// `CommandComplete` carrying the matching PostgreSQL command tag. See issue
-/// https://github.com/ClickHouse/ClickHouse/issues/12476.
-///
-/// Returns the command tag to report if `query` is such a no-op command, or
-/// std::nullopt if the query must be executed normally. None of the recognized
-/// keywords (`UNLISTEN`, `RESET`, `DISCARD`) is a valid ClickHouse statement
-/// start, so there are no false positives.
-///
-/// This is applied only in the simple-query (`Q`) protocol path, consistent with the other
-/// driver-compatibility no-ops (`BEGIN` / `COMMIT` / `SET application_name`): drivers emit these
-/// session-management commands as plain, unparameterized statements, so there is no reason to run
-/// them through the extended `Parse` / `Bind` / `Execute` flow, and the extended path deliberately
-/// performs no such driver-specific rewriting.
-std::optional<String> classifyNoOpDriverCommand(const String & query)
-{
-    /// Only treat the packet as a no-op when it consists of a single statement. A simple-query
-    /// packet may contain several `;`-separated statements; if we shortcut on the leading keyword
-    /// we would acknowledge the whole packet and silently skip the rest (e.g. `RESET ALL; SELECT 1`
-    /// or, worse, `RESET ALL; DROP TABLE t`). An interior `;` — anything other than trailing
-    /// whitespace after it — means there is more than one statement, so bail out and let the normal
-    /// multi-statement splitter handle it.
-    if (const size_t semicolon = query.find(';'); semicolon != String::npos)
-    {
-        for (size_t i = semicolon + 1; i < query.size(); ++i)
-        {
-            const char c = query[i];
-            if (c != ' ' && c != '\t' && c != '\n' && c != '\r' && c != '\f' && c != '\v')
-                return std::nullopt;
-        }
-    }
-
-    /// Enough to cover the longest recognized command plus its argument: a PostgreSQL identifier
-    /// is at most 63 bytes, and a qualified `RESET extension.setting` name consists of two of them.
-    /// If the normalized prefix fills this budget completely, the statement may continue beyond it,
-    /// so we could not verify that nothing trails the argument — treat it as not recognized.
-    static constexpr size_t max_prefix_len = 160;
-    String prefix = PostgreSQLProtocol::Messaging::CommandComplete::extractNormalizedPrefix(query, max_prefix_len);
-    if (prefix.size() == max_prefix_len)
-        return std::nullopt;
-
-    /// The multi-statement guard above rejected any statement after an interior `;`, so the only
-    /// `;` that can remain is a single trailing one (with trailing whitespace already collapsed).
-    /// Drop it so it is not mistaken for a command argument below.
-    while (!prefix.empty() && (prefix.back() == ';' || prefix.back() == ' '))
-        prefix.pop_back();
-
-    /// `extractNormalizedPrefix` already uppercased the text and collapsed runs of
-    /// whitespace to single spaces, so a keyword is a run of 'A'..'Z'. Take the next
-    /// such run, skipping a leading space; this also stops at a `;` or `*`.
-    size_t pos = 0;
-    const auto take_word = [&]() -> String
-    {
-        while (pos < prefix.size() && prefix[pos] == ' ')
-            ++pos;
-        const size_t start = pos;
-        while (pos < prefix.size() && prefix[pos] >= 'A' && prefix[pos] <= 'Z')
-            ++pos;
-        return prefix.substr(start, pos - start);
-    };
-    const auto has_more = [&]() -> bool
-    {
-        while (pos < prefix.size() && prefix[pos] == ' ')
-            ++pos;
-        return pos < prefix.size();
-    };
-
-    /// An argument in the normalized prefix: an identifier — a letter or `_` followed by letters,
-    /// digits, `_` or `$` (the text is already uppercased). With `allow_dots`, a qualified name
-    /// such as `EXTENSION.SETTING` (for `RESET`) is a single token as well.
-    const auto take_identifier = [&](bool allow_dots) -> String
-    {
-        while (pos < prefix.size() && prefix[pos] == ' ')
-            ++pos;
-        const size_t start = pos;
-        if (pos < prefix.size() && ((prefix[pos] >= 'A' && prefix[pos] <= 'Z') || prefix[pos] == '_'))
-        {
-            ++pos;
-            while (pos < prefix.size()
-                && ((prefix[pos] >= 'A' && prefix[pos] <= 'Z') || (prefix[pos] >= '0' && prefix[pos] <= '9')
-                    || prefix[pos] == '_' || prefix[pos] == '$' || (allow_dots && prefix[pos] == '.')))
-                ++pos;
-        }
-        return prefix.substr(start, pos - start);
-    };
-
-    /// Not `const`: the early returns below move it out, and `performance-no-automatic-move`
-    /// (clang-tidy) rejects returning a `const` local because constness prevents the move.
-    String command = take_word();
-
-    /// The keyword must end at a word boundary: `RESET1FOO` must not be taken for `RESET`.
-    if (pos < prefix.size() && prefix[pos] != ' ')
-        return std::nullopt;
-
-    /// Accept the connection-cleanup commands the Skunk driver actually sends: `RESET { name | ALL }`
-    /// and `UNLISTEN { channel | * }`, reporting the bare keyword as the tag. `LISTEN` and `NOTIFY`
-    /// are deliberately NOT accepted here: unlike `UNLISTEN` (idempotent unsubscribe-all cleanup),
-    /// they are application-visible PostgreSQL pub/sub operations, and this handler never delivers a
-    /// `NotificationResponse`, so acknowledging them would turn an unsupported feature into a silent
-    /// false success instead of a plain error. Issue #12476 only asks for `UNLISTEN *` / `RESET ALL`.
-    ///
-    /// Accept exactly one argument — an identifier (for `RESET` possibly a qualified
-    /// `extension.setting` name; `ALL` is itself covered as an identifier), or `*` for `UNLISTEN` —
-    /// and require the statement to end right after it, so that malformed variants such as a bare
-    /// `RESET`, `RESET foo bar` or `UNLISTEN * garbage` are not acknowledged as success but fall
-    /// through to the normal error path. Valid forms that no driver is known to emit — quoted
-    /// identifiers and multi-word variants such as `RESET SESSION AUTHORIZATION` — likewise fall
-    /// through, as before this change.
-    if (command == "UNLISTEN" || command == "RESET")
-    {
-        String arg;
-        if (command == "UNLISTEN" && has_more() && prefix[pos] == '*')
-        {
-            arg = "*";
-            ++pos;
-        }
-        else
-        {
-            arg = take_identifier(/* allow_dots = */ command == "RESET");
-        }
-        if (arg.empty() || has_more())
-            return std::nullopt;
-        return command;
-    }
-
-    if (command == "DISCARD")
-    {
-        /// PostgreSQL accepts only `DISCARD { ALL | PLANS | SEQUENCES | TEMP | TEMPORARY }`
-        /// (with `TEMPORARY` normalized to `TEMP`). Reject a bare `DISCARD` or an unknown
-        /// subcommand such as `DISCARD FOO` instead of claiming success for a command we were
-        /// never asked to emulate.
-        String arg = take_word();
-        if (arg == "TEMPORARY")
-            arg = "TEMP";
-        if ((arg == "ALL" || arg == "PLANS" || arg == "SEQUENCES" || arg == "TEMP") && !has_more())
-            return command + " " + arg;
-        return std::nullopt;
-    }
-
-    return std::nullopt;
-}
-
 }
 
 PostgreSQLHandler::PostgreSQLHandler(
@@ -241,8 +78,7 @@ PostgreSQLHandler::PostgreSQLHandler(
     bool ssl_enabled_,
     bool secure_required_,
     Int32 connection_id_,
-    std::optional<String> default_session_user_,
-    VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
+    std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -255,7 +91,6 @@ PostgreSQLHandler::PostgreSQLHandler(
     , ssl_enabled(ssl_enabled_)
     , secure_required(secure_required_)
     , connection_id(connection_id_)
-    , default_session_user(std::move(default_session_user_))
     , read_event(read_event_)
     , write_event(write_event_)
     , authentication_manager(auth_methods_)
@@ -320,8 +155,6 @@ PostgreSQLHandler::PostgreSQLHandler(
                 disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_1;
             else if (token == "tlsv1_2")
                 disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_2;
-            else if (token == "tlsv1_3")
-                disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_3;
         }
 
         extended_verification = config.getBool(prefix + Poco::Net::SSLManager::CFG_EXTENDED_VERIFICATION, false);
@@ -363,15 +196,6 @@ void PostgreSQLHandler::run()
             PostgreSQLProtocol::Messaging::FrontMessageType message_type = message_transport->receiveMessageType();
             if (!tcp_server.isOpen())
                 return;
-
-            /// After an extended-query error PostgreSQL ignores all messages in
-            /// the current cycle until `Sync` restores a well-defined state.
-            if (ignore_until_sync && message_type != PostgreSQLProtocol::Messaging::FrontMessageType::SYNC)
-            {
-                message_transport->dropMessage();
-                continue;
-            }
-
             switch (message_type)
             {
                 case PostgreSQLProtocol::Messaging::FrontMessageType::QUERY:
@@ -450,28 +274,7 @@ bool PostgreSQLHandler::startup()
     }
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> start_up_msg = receiveStartupMessage(payload_size);
-
-    /// An empty user name means the default session user: the `default_session_user`
-    /// server setting, possibly overridden for this listener in the `protocols` section.
-    /// If the resolved name is empty too (explicitly configured to prohibit connections
-    /// without a user name), authentication fails on the empty user name below.
-    if (start_up_msg->user.empty())
-        start_up_msg->user = default_session_user
-            ? *default_session_user
-            : String(server.context()->getServerSettings()[ServerSetting::default_session_user]);
-
     const auto & user_name = start_up_msg->user;
-    if (user_name.empty())
-    {
-        auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from PostgreSQL startup message");
-        session->onAuthenticationFailure(user_name, socket().peerAddress(), exception);
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "28P01", "Invalid user or password"),
-            true);
-        return false;
-    }
-
     authentication_manager.authenticate(user_name, *session, *message_transport, socket().peerAddress());
 
     try
@@ -479,15 +282,7 @@ bool PostgreSQLHandler::startup()
         session->makeSessionContext();
         session->sessionContext()->setDefaultFormat("PostgreSQLWire");
         if (!start_up_msg->database.empty())
-        {
-            /// `database` is a real setting, so enforce its constraints on the startup-message
-            /// database too, consistently with `USE`, `SET database = ...` and the HTTP
-            /// `?database=...` parameter.
-            SettingsChanges database_change;
-            database_change.setSetting("database", start_up_msg->database);
-            session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
             session->sessionContext()->setCurrentDatabase(start_up_msg->database);
-        }
     }
     catch (const Exception & exc)
     {
@@ -581,7 +376,7 @@ void PostgreSQLHandler::makeSecureConnectionSSL() {}
 
 void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::StartupMessage & start_up_message)
 {
-    auto & parameters = start_up_message.parameters;
+    std::unordered_map<String, String> & parameters = start_up_message.parameters;
 
     if (parameters.contains("application_name"))
         message_transport->send(PostgreSQLProtocol::Messaging::ParameterStatus("application_name", parameters["application_name"]));
@@ -636,68 +431,6 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
 
     LOG_DEBUG(log, "Successfully received Startup message");
     return message;
-}
-
-/// PostgreSQL clients qualify catalog tables and functions with the `pg_catalog`
-/// schema, e.g. `pg_catalog.pg_class` or `pg_catalog.pg_table_is_visible(c.oid)`
-/// (psql does so for the `\d` command). ClickHouse has no `pg_catalog` database:
-/// the catalog tables are emulated with per-session temporary views
-/// (see `initializeSystemTables`) and the functions are registered globally.
-/// Removing the qualifier at the token level maps such queries onto them.
-/// String literals are left intact - only a `pg_catalog` identifier that is not
-/// itself qualified and is followed by a dot and another identifier is removed.
-static String removePgCatalogQualifier(const String & query)
-{
-    if (!query.contains("pg_catalog"))
-        return query;
-
-    std::vector<Token> tokens;
-    Lexer lexer(query.data(), query.data() + query.size());
-    for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
-        tokens.push_back(token);
-
-    auto is_pg_catalog = [](const Token & token)
-    {
-        std::string_view text(token.begin, token.size());
-        return (token.type == TokenType::BareWord && text == "pg_catalog")
-            || (token.type == TokenType::QuotedIdentifier && text == "\"pg_catalog\"");
-    };
-
-    auto next_significant = [&](size_t i) -> std::optional<size_t>
-    {
-        for (size_t j = i + 1; j < tokens.size(); ++j)
-            if (tokens[j].isSignificant())
-                return j;
-        return std::nullopt;
-    };
-
-    String result;
-    result.reserve(query.size());
-    std::optional<size_t> prev_emitted_significant;
-    for (size_t i = 0; i < tokens.size(); ++i)
-    {
-        const Token & token = tokens[i];
-        if (is_pg_catalog(token)
-            && (!prev_emitted_significant || tokens[*prev_emitted_significant].type != TokenType::Dot))
-        {
-            auto dot = next_significant(i);
-            if (dot && tokens[*dot].type == TokenType::Dot)
-            {
-                auto after_dot = next_significant(*dot);
-                if (after_dot
-                    && (tokens[*after_dot].type == TokenType::BareWord || tokens[*after_dot].type == TokenType::QuotedIdentifier))
-                {
-                    /// Skip the qualifier and the dot (and anything insignificant in between).
-                    i = *dot;
-                    continue;
-                }
-            }
-        }
-        result.append(token.begin, token.end);
-        if (token.isSignificant())
-            prev_emitted_significant = i;
-    }
-    return result;
 }
 
 bool PostgreSQLHandler::processCopyQuery(const String & query)
@@ -838,7 +571,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         auto [ast, io] = executeQuery(select_query, query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pulling());
         message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(static_cast<Int32>(io.pipeline.getHeader().columns())));
-        VectorWithMemoryTracking<char> result_buf;
+        std::vector<char> result_buf;
         WriteBufferFromVectorImpl<decltype(result_buf)> output_buffer(result_buf);
         auto format_ptr = FormatFactory::instance().getOutputFormat(toString(copy_query->format), output_buffer, io.pipeline.getHeader(), query_context);
         auto executor = std::make_unique<PullingPipelineExecutor>(io.pipeline);
@@ -861,9 +594,6 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
 
 void PostgreSQLHandler::processQuery()
 {
-    /// Output position before the currently executing statement. If a statement
-    /// fails when nothing has been sent for it yet, the session can be kept alive.
-    size_t out_bytes_before_statement = out->count();
     try
     {
         std::unique_ptr<PostgreSQLProtocol::Messaging::Query> query =
@@ -885,26 +615,16 @@ void PostgreSQLHandler::processQuery()
             return;
         }
 
-        /// Accept driver-specific session-management commands (e.g. `RESET ALL`,
-        /// `UNLISTEN *`) as no-ops instead of failing them with a syntax error.
-        if (auto noop_command_tag = classifyNoOpDriverCommand(query->query))
-        {
-            message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(std::move(*noop_command_tag)), true);
-            return;
-        }
-
-        String query_text = removePgCatalogQualifier(query->query);
-
         const auto & settings = session->sessionContext()->getSettingsRef();
         std::vector<String> queries;
 
-        if (processPrepareStatement(query_text))
+        if (processPrepareStatement(query->query))
             return;
 
-        if (processDeallocate(query_text))
+        if (processDeallocate(query->query))
             return;
 
-        if (processCopyQuery(query_text))
+        if (processCopyQuery(query->query))
             return;
 
         pcg64_fast gen{randomSeed()};
@@ -920,11 +640,11 @@ void PostgreSQLHandler::processQuery()
             should_init_system_tables = false;
         }
 
-        if (processExecute(query_text, query_context))
+        if (processExecute(query->query, query_context))
             return;
 
         auto parse_res = splitMultipartQuery(
-            query_text,
+            query->query,
             queries,
             settings[Setting::max_query_size],
             settings[Setting::max_parser_depth],
@@ -944,7 +664,6 @@ void PostgreSQLHandler::processQuery()
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(sql_query);
 
-            out_bytes_before_statement = out->count();
             UInt64 affected_rows = executeQueryWithTracking(std::move(sql_query), query_context, command);
 
             message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, static_cast<Int32>(affected_rows)), true);
@@ -953,19 +672,10 @@ void PostgreSQLHandler::processQuery()
     }
     catch (const Exception & e)
     {
-        bool nothing_sent_for_failed_statement = out->count() == out_bytes_before_statement;
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        /// A failed query does not terminate the session in PostgreSQL: the server
-        /// sends `ErrorResponse` and returns to the `ReadyForQuery` state. This is
-        /// only safe while nothing has been sent for the failed statement -
-        /// otherwise the output stream may be cut in the middle of a message and
-        /// continuing would desynchronize the protocol framing, so in that case
-        /// tear the connection down.
-        if (nothing_sent_for_failed_statement)
-            return;
         throw;
     }
 }
@@ -1083,7 +793,7 @@ void PostgreSQLHandler::processParseQuery()
 
         auto statement = make_intrusive<ASTPreparedStatement>();
         statement->function_name = query->function_name;
-        statement->function_body = removePgCatalogQualifier(query->sql_query);
+        statement->function_body = query->sql_query;
         prepared_statements_manager.addStatement(statement.get());
         message_transport->send(PostgreSQLProtocol::Messaging::ParseQueryComplete(), true);
     }
@@ -1093,7 +803,7 @@ void PostgreSQLHandler::processParseQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        ignore_until_sync = true;
+        throw;
     }
 }
 
@@ -1113,7 +823,7 @@ void PostgreSQLHandler::processBindQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        ignore_until_sync = true;
+        throw;
     }
 }
 
@@ -1130,16 +840,12 @@ void PostgreSQLHandler::processDescribeQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        ignore_until_sync = true;
+        throw;
     }
 }
 
 void PostgreSQLHandler::processExecuteQuery()
 {
-    /// Output position before the statement, mirroring `processQuery`: keeping
-    /// the session alive after a failure is only safe while nothing has been
-    /// sent for the failed statement.
-    size_t out_bytes_before_statement = out->count();
     try
     {
         std::unique_ptr<PostgreSQLProtocol::Messaging::ExecuteQuery> query =
@@ -1177,21 +883,10 @@ void PostgreSQLHandler::processExecuteQuery()
     }
     catch (const Exception & e)
     {
-        bool nothing_sent_for_failed_statement = out->count() == out_bytes_before_statement;
         message_transport->send(
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        /// Recovering to `Sync` is only safe while nothing has been sent for the
-        /// failed statement - otherwise the output stream may be cut in the
-        /// middle of a message and continuing would desynchronize the protocol
-        /// framing, so in that case tear the connection down (as `processQuery`
-        /// does for the simple-query protocol).
-        if (nothing_sent_for_failed_statement)
-        {
-            ignore_until_sync = true;
-            return;
-        }
         throw;
     }
 }
@@ -1255,7 +950,7 @@ void PostgreSQLHandler::processCloseQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        ignore_until_sync = true;
+        throw;
     }
 }
 
@@ -1271,7 +966,6 @@ void PostgreSQLHandler::processSyncQuery()
         /// (see `attachBindQuery`), so resetting the single bind slot is
         /// equivalent — the next Parse/Bind/Execute pair starts from a clean state.
         prepared_statements_manager.resetBindQuery();
-        ignore_until_sync = false;
     }
     catch (const Exception & e)
     {
@@ -1346,67 +1040,28 @@ SELECT * FROM VALUES(
     (1114, 11, 'timestamp', 0, 0, 'b', 253, 0, 0, 'D')
 ))");
 
-    /// Fixed rows are the namespaces PostgreSQL clients expect to always exist
-    /// (their well-known oids are hardcoded in some drivers, e.g. 11 for `pg_catalog`).
-    /// The rest of the namespaces are the real databases; their oids are synthesized
-    /// by hashing the name, consistently with `relnamespace` in `pg_class` below.
-    /// The offset 16384 mirrors PostgreSQL, where oids below 16384 are reserved for
-    /// the system, so synthesized oids cannot collide with the well-known ones.
-    /// `SQL SECURITY INVOKER` makes the view run with the privileges of the session
-    /// user. `system.databases` is implicitly SELECTable by every user and hides
-    /// the databases the user has no `SHOW` privilege for, so the view exposes
-    /// exactly the metadata already visible to that user - definer rights would
-    /// bypass this filtering and leak the existence of unrelated databases.
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace SQL SECURITY INVOKER AS
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace AS
 SELECT * FROM VALUES(
     'oid UInt32, nspname String',
     (11,    'pg_catalog'),
     (2200,  'public'),
+    (132,   'information_schema'),
     (11519, 'pg_toast'),
     (99,    'pg_temp_1'),
     (100,   'pg_toast_temp_1')
-)
-UNION ALL
-SELECT toUInt32(16384 + sipHash64(name) % 4294900000) AS oid, name AS nspname
-FROM system.databases)");
+))");
 
-    /// Fixed rows (oid, relkind) are preserved for driver compatibility; they belong
-    /// to the `pg_catalog` namespace, which clients such as psql filter out.
-    /// The rest are the tables of the current database - the analog of the PostgreSQL
-    /// search path - which makes commands like `\d` in psql list the actual tables.
-    /// `relam` is the access method: 2 (`heap`) for tables and 0 for views, as in PostgreSQL.
-    /// `SQL SECURITY INVOKER` for the same reason as `pg_namespace` above:
-    /// `system.tables` hides the tables the session user cannot `SHOW`.
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class SQL SECURITY INVOKER AS
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class AS
 SELECT * FROM VALUES(
-    'oid UInt32, relname String, relnamespace UInt32, relowner UInt32, relam UInt32, relkind String',
-    (1259, '', 11, 10, 2, 'r'),
-    (2615, '', 11, 10, 2, 'i'),
-    (1247, '', 11, 10, 2, 'r'),
-    (3079, '', 11, 10, 2, 'v'),
-    (1260, '', 11, 10, 2, 'c'),
-    (1255, '', 11, 10, 2, 'f'),
-    (3476, '', 11, 10, 2, 'm'),
-    (3074, '', 11, 10, 2, 'S')
-)
-UNION ALL
-SELECT
-    toUInt32(16384 + sipHash64(database, name) % 4294900000) AS oid,
-    name AS relname,
-    toUInt32(16384 + sipHash64(database) % 4294900000) AS relnamespace,
-    toUInt32(10) AS relowner,
-    toUInt32(if(endsWith(engine, 'View'), 0, 2)) AS relam,
-    multiIf(engine = 'MaterializedView', 'm', endsWith(engine, 'View'), 'v', 'r') AS relkind
-FROM system.tables
-WHERE database = currentDatabase() AND NOT is_temporary)");
-
-    /// Table access methods. Newer psql versions join `pg_am` in the query behind
-    /// the `\d` command. ClickHouse table engines have no PostgreSQL equivalent,
-    /// so everything is presented as the default `heap` access method.
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_am AS
-SELECT * FROM VALUES(
-    'oid UInt32, amname String, amtype String',
-    (2, 'heap', 't')
+    'oid UInt32, relkind String',
+    (1259, 'r'),
+    (2615, 'i'),
+    (1247, 'r'),
+    (3079, 'v'),
+    (1260, 'c'),
+    (1255, 'f'),
+    (3476, 'm'),
+    (3074, 'S')
 ))");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_proc AS

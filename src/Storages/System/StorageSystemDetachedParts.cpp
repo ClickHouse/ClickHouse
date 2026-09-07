@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDetachedParts.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -18,7 +17,6 @@
 #include <IO/SharedThreadPools.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -46,7 +44,6 @@ void calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & from, UIn
 
 UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk, const String & from)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageSystemDetachedParts::calculateTotalSizeOnDisk");
     UInt64 total_size = 0;
     try
     {
@@ -116,7 +113,6 @@ protected:
 
     Chunk generate() override
     {
-        auto component_guard = Coordination::setCurrentComponent("DetachedPartsSource::generate");
         MutableColumns new_columns = getPort().getHeader().cloneEmptyColumns();
         chassert(!new_columns.empty());
 
@@ -181,8 +177,6 @@ private:
             /// Passing a reference to worker_state is safe, because the variable outlives runner
             auto worker = [&worker_state] ()
             {
-                auto component_guard = Coordination::setCurrentComponent("DetachedPartsSource::calculatePartSizeOnDisk");
-
                 for (auto id = worker_state.next_task++; id < worker_state.tasks.size(); id = worker_state.next_task++)
                 {
                     auto & task = worker_state.tasks.at(id);
@@ -199,8 +193,6 @@ private:
 
     void generateRows(MutableColumns & new_columns, size_t max_rows)
     {
-        auto component_guard = Coordination::setCurrentComponent("DetachedPartsSource::generateRows");
-
         chassert(current_info);
 
         auto rows = std::min(max_rows, detached_parts.size());
@@ -393,6 +385,3 @@ void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipe
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDetachedParts) }
