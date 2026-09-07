@@ -34,6 +34,14 @@ $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS oracle_definition_materialized;
     DROP TABLE IF EXISTS oracle_definition_ephemeral;
     DROP TABLE IF EXISTS oracle_definition_alias_engine;
+    DROP TABLE IF EXISTS oracle_definition_row_policy;
+    DROP TABLE IF EXISTS oracle_definition_det_row_policy;
+    DROP TABLE IF EXISTS oracle_definition_definer_src;
+    DROP VIEW IF EXISTS oracle_definition_definer_view;
+    DROP ROW POLICY IF EXISTS oracle_definition_nondet_filter ON oracle_definition_row_policy;
+    DROP ROW POLICY IF EXISTS oracle_definition_det_filter ON oracle_definition_det_row_policy;
+    DROP ROW POLICY IF EXISTS oracle_definition_definer_filter ON oracle_definition_definer_src;
+    DROP USER IF EXISTS oracle_definition_definer_${CLICKHOUSE_DATABASE};
     DROP VIEW IF EXISTS oracle_definition_mv;
     DROP VIEW IF EXISTS oracle_definition_nondet_view;
     DROP VIEW IF EXISTS oracle_definition_det_view;
@@ -99,6 +107,35 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO oracle_definition_ephemeral SELECT number FROM numbers(50);
     ALTER TABLE oracle_definition_ephemeral ADD COLUMN e UInt32 EPHEMERAL rand();
     ALTER TABLE oracle_definition_ephemeral ADD COLUMN r UInt32 DEFAULT e;
+
+    -- A row policy for the current user filters every read of the table it is attached to, and
+    -- its filter lives on the policy rather than in the table's metadata, so two reads of these
+    -- unchanged 50 rows return different subsets of them.
+    CREATE TABLE oracle_definition_row_policy (k UInt32) ENGINE = MergeTree ORDER BY k;
+    INSERT INTO oracle_definition_row_policy SELECT number FROM numbers(50);
+    CREATE ROW POLICY oracle_definition_nondet_filter ON oracle_definition_row_policy
+        USING (rand() % 2) = 0 TO ALL;
+
+    -- Same shape, deterministic filter: separates \"screen a non-deterministic policy\" from
+    -- \"reject every table that has a policy\".
+    CREATE TABLE oracle_definition_det_row_policy (k UInt32) ENGINE = MergeTree ORDER BY k;
+    INSERT INTO oracle_definition_det_row_policy SELECT number FROM numbers(50);
+    CREATE ROW POLICY oracle_definition_det_filter ON oracle_definition_det_row_policy
+        USING k < 1000000 TO ALL;
+
+    -- A \`DEFINER\` view evaluates its body as the definer, so the policy a read of it applies is
+    -- the definer's: this body names only \`k\`, the reader below has no policy on the base table,
+    -- and two reads of it still return different subsets.
+    CREATE TABLE oracle_definition_definer_src (k UInt32) ENGINE = MergeTree ORDER BY k;
+    INSERT INTO oracle_definition_definer_src SELECT number FROM numbers(50);
+    CREATE USER oracle_definition_definer_${CLICKHOUSE_DATABASE} IDENTIFIED WITH no_password;
+    GRANT SELECT ON ${CLICKHOUSE_DATABASE}.oracle_definition_definer_src
+        TO oracle_definition_definer_${CLICKHOUSE_DATABASE};
+    CREATE ROW POLICY oracle_definition_definer_filter ON oracle_definition_definer_src
+        USING (rand() % 2) = 0 TO oracle_definition_definer_${CLICKHOUSE_DATABASE};
+    CREATE VIEW oracle_definition_definer_view
+        DEFINER = oracle_definition_definer_${CLICKHOUSE_DATABASE} SQL SECURITY DEFINER
+        AS SELECT k FROM oracle_definition_definer_src;
 
     -- \`Alias\` reports its own engine name while reading, and reporting the metadata of,
     -- its target, so the target view's body is reachable but not named here.
@@ -314,7 +351,24 @@ assert_screened "IN over a non-deterministic definition" oracle_definition_in_vi
 assert_reaches_oracle "IN over a deterministic definition" oracle_definition_in_det_view \
     "SELECT k FROM oracle_definition_src WHERE k IN oracle_definition_in_det_view;"
 
+assert_screened "row policy with a non-deterministic filter" oracle_definition_row_policy \
+    "SELECT k FROM oracle_definition_row_policy WHERE k > 5;"
+
+assert_reaches_oracle "row policy with a deterministic filter" oracle_definition_det_row_policy \
+    "SELECT k FROM oracle_definition_det_row_policy WHERE k > 5;"
+
+assert_screened "DEFINER view over the definer's row policy" oracle_definition_definer_view \
+    "SELECT k FROM oracle_definition_definer_view WHERE k > 5;"
+
 $CLICKHOUSE_CLIENT --query "
+    DROP VIEW oracle_definition_definer_view;
+    DROP ROW POLICY oracle_definition_definer_filter ON oracle_definition_definer_src;
+    DROP USER oracle_definition_definer_${CLICKHOUSE_DATABASE};
+    DROP TABLE oracle_definition_definer_src;
+    DROP ROW POLICY oracle_definition_det_filter ON oracle_definition_det_row_policy;
+    DROP ROW POLICY oracle_definition_nondet_filter ON oracle_definition_row_policy;
+    DROP TABLE oracle_definition_det_row_policy;
+    DROP TABLE oracle_definition_row_policy;
     DROP VIEW oracle_definition_mv;
     DROP TABLE oracle_definition_alias_engine;
     DROP TABLE oracle_definition_ephemeral;

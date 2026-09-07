@@ -1,5 +1,6 @@
 #include <Interpreters/QueryOracleChecker.h>
 
+#include <Access/EnabledRowPolicies.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Common/ProfileEvents.h>
@@ -978,6 +979,12 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
                 /// Match the engine name: `isView()` is also true for `MaterializedView`.
                 if (storage->getName() == "View")
                 {
+                    /// A `DEFINER` view evaluates its body as the definer, so the row policies a read
+                    /// of it applies are that user's, while the screen below resolves them for the
+                    /// current one. `NONE` runs with no user at all, where no policy applies.
+                    if (metadata->sql_security_type == SQLSecurityType::DEFINER)
+                        return true;
+
                     /// `hasSelectQuery()` tests `select_query`, which `StorageView`
                     /// never sets; `inner_query` is what `readImpl` evaluates.
                     const auto & inner_query = metadata->getSelectQuery().inner_query;
@@ -992,6 +999,14 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
                 for (const auto & column : metadata->getColumns())
                     if (column.default_desc.expression)
                         definitions.push_back(column.default_desc.expression);
+
+                /// A row policy filters every read of this name for the current user, with an
+                /// expression stored on the policy rather than in this metadata; the lookup a read
+                /// performs resolves a policy on the table and, failing that, one on the database.
+                auto row_policy = context->getRowPolicyFilter(
+                    resolved.getDatabaseName(), resolved.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+                if (row_policy && row_policy->expression)
+                    definitions.push_back(row_policy->expression);
 
                 for (const auto & definition : definitions)
                     if (hasNonDeterministicFunctionsImpl(definition, context)
