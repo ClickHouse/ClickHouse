@@ -47,7 +47,7 @@ struct StackBounds
 
 constinit thread_local StackBounds stack_bounds;
 
-/// STACK_SIZE_FREE_RATIO below is calibrated against ~8 MiB thread stacks: its TSan value would
+/// `STACK_SIZE_FREE_RATIO` below is calibrated against ~8 MiB thread stacks: its TSan value would
 /// leave a 320 KiB coroutine stack 16 KiB, less than an ordinary secure handshake already uses.
 constexpr size_t COROUTINE_STACK_RESERVE = 64 * 1024;
 }
@@ -157,7 +157,7 @@ void checkStackSize()
         uintptr_t frame = reinterpret_cast<uintptr_t>(frame_address);
         uintptr_t lowest = reinterpret_cast<uintptr_t>(bounds.lowest);
 
-        /// resume() publishes the coroutine before switching to it, so frames of the parent stack
+        /// `resume` publishes the coroutine before switching to it, so frames of the parent stack
         /// reach this point as well. Only the coroutine's own frames are measurable here.
         if (frame < lowest || frame - lowest >= bounds.size)
             return;

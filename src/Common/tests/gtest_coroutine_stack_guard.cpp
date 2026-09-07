@@ -37,12 +37,12 @@ struct Observations
     bool past_allowance = false;
 };
 
-size_t NO_INLINE recurseUntilGuardTrips(size_t depth, const char * first_frame, Observations & observations)
+size_t NO_INLINE recurseUntilGuardTrips(size_t depth, uintptr_t first_frame, Observations & observations)
 {
     checkStackSize();
 
     char here = static_cast<char>(depth);
-    if (first_frame - &here >= static_cast<ptrdiff_t>(recursion_budget))
+    if (first_frame - reinterpret_cast<uintptr_t>(&here) >= recursion_budget)
     {
         observations.budget_reached = true;
         return depth;
@@ -61,12 +61,12 @@ struct CheckingOnDestruction
 
 /// Descends without checking, so every destructor unwound from the bottom runs deeper than the
 /// guard's allowance.
-size_t NO_INLINE descendThenSuspend(size_t depth, const char * first_frame, Observations & observations, const SuspendCallback & suspend_callback)
+size_t NO_INLINE descendThenSuspend(size_t depth, uintptr_t first_frame, Observations & observations, const SuspendCallback & suspend_callback)
 {
     CheckingOnDestruction unwind_probe;
 
     char here = static_cast<char>(depth);
-    if (first_frame - &here >= static_cast<ptrdiff_t>(recursion_budget))
+    if (first_frame - reinterpret_cast<uintptr_t>(&here) >= recursion_budget)
     {
         /// Establishes that the destructors above are ones a check would have thrown from, which is
         /// what makes the teardown assertions non-vacuous.
@@ -100,6 +100,7 @@ struct CoroutineTask : public AsyncTask
     void run(AsyncCallback, SuspendCallback suspend_callback) override
     {
         char first_frame = 0;
+        const uintptr_t first_frame_address = reinterpret_cast<uintptr_t>(&first_frame);
         observations.ran = true;
 
         switch (shape)
@@ -108,10 +109,10 @@ struct CoroutineTask : public AsyncTask
                 checkStackSize();
                 return;
             case Shape::RecurseUntilGuardTrips:
-                recurseUntilGuardTrips(0, &first_frame, observations);
+                recurseUntilGuardTrips(0, first_frame_address, observations);
                 return;
             case Shape::DescendThenSuspend:
-                descendThenSuspend(0, &first_frame, observations, suspend_callback);
+                descendThenSuspend(0, first_frame_address, observations, suspend_callback);
                 return;
         }
     }
@@ -139,15 +140,29 @@ private:
 /// The usable stack is `default_stack_size` rounded up to a page, with the guard page on top of it
 /// rather than inside it. An 8 MiB thread stack cannot satisfy this, so the assertion also rules out
 /// a throw that came from the thread path against the wrong bounds.
-void expectCoroutineStackSizeReported(const std::string & message)
+void expectCoroutineStackBounds(const std::string & message)
 {
-    const std::string marker = "maximum stack size: ";
-    const size_t at = message.find(marker);
-    ASSERT_NE(at, std::string::npos) << message;
+    const std::string max_marker = "maximum stack size: ";
+    const size_t max_at = message.find(max_marker);
+    ASSERT_NE(max_at, std::string::npos) << message;
 
-    const size_t reported = std::stoull(message.substr(at + marker.size()));
+    const size_t reported = std::stoull(message.substr(max_at + max_marker.size()));
     EXPECT_GE(reported, CoroutineStack::default_stack_size) << message;
     EXPECT_LT(reported, CoroutineStack::default_stack_size + static_cast<size_t>(getPageSize())) << message;
+
+    /// The comma belongs to the marker: `"stack size: "` alone also matches inside `"maximum stack size: "`.
+    const std::string used_marker = ", stack size: ";
+    const size_t used_at = message.find(used_marker);
+    ASSERT_NE(used_at, std::string::npos) << message;
+    const size_t used = std::stoull(message.substr(used_at + used_marker.size()));
+
+    /// Mirrors `COROUTINE_STACK_RESERVE` in `checkStackSize.cpp`; pinned from the reported maximum
+    /// rather than shared with it, so widening either side alone fails here.
+    constexpr size_t contracted_reserve = 64 * 1024;
+    ASSERT_GT(reported, contracted_reserve) << message;
+    const size_t contracted_trip = reported - contracted_reserve;
+    EXPECT_GE(used, contracted_trip) << message;
+    EXPECT_LT(used, contracted_trip + static_cast<size_t>(getPageSize())) << message;
 }
 
 }
@@ -176,7 +191,7 @@ TEST(CoroutineStackGuard, ThrowsOnDeepRecursionInsideCoroutine)
         ASSERT_EQ(e.code(), DB::ErrorCodes::TOO_DEEP_RECURSION) << e.message();
         /// Not the bare error code: the parse-depth cap throws TOO_DEEP_RECURSION as well.
         ASSERT_NE(e.message().find("Stack size too large."), std::string::npos) << e.message();
-        expectCoroutineStackSizeReported(e.message());
+        expectCoroutineStackBounds(e.message());
     }
 
     EXPECT_FALSE(observations.budget_reached) << "recursion ran out of budget before the guard fired";
