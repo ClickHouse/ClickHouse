@@ -1940,8 +1940,13 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingThrottlingAndFairn
 struct TestAllocation : public ResourceAllocation
 {
 public:
-    TestAllocation(ResourceLink link, const String & name_, ResourceCost initial_size, std::function<void()> approved_callback_ = {})
-        : ResourceAllocation(*link.allocation_queue, name_)
+    TestAllocation(
+        ResourceLink link,
+        const String & name_,
+        ResourceCost initial_size,
+        std::function<void()> approved_callback_ = {},
+        MemoryPressurePolicy memory_pressure_policy_ = {})
+        : ResourceAllocation(*link.allocation_queue, name_, memory_pressure_policy_)
     {
         chassert(link.allocation_queue);
         DBG_PRINT("{}: New allocation, initial size = {}", id, initial_size);
@@ -2140,6 +2145,62 @@ private: // interaction with the scheduler thread
     bool removed = false;
     ResourceCost allocated_size = 0; // equals ResourceAllocation::allocated, which is private and controlled by the scheduler
     ResourceCost real_size = 0; // real size of the resource used by the allocation
+};
+
+/// Protected allocation with an active recovery controller. It lets tests wait until the
+/// scheduler has actually handed pressure to the running query before releasing memory.
+struct RecoverableTestAllocation : public TestAllocation
+{
+    RecoverableTestAllocation(ResourceLink link, const String & name_, ResourceCost initial_size)
+        : TestAllocation(link, name_, initial_size, {}, memoryPressurePolicy())
+    {}
+
+    bool waitPressureFor(std::chrono::milliseconds timeout)
+    {
+        std::unique_lock lock(recovery_mutex);
+        return recovery_cv.wait_for(lock, timeout, [this] { return recovery_active; });
+    }
+
+    bool recoveryActive()
+    {
+        std::unique_lock lock(recovery_mutex);
+        return recovery_active;
+    }
+
+private:
+    static MemoryPressurePolicy memoryPressurePolicy()
+    {
+        MemoryPressurePolicy policy;
+        policy.protect_from_eviction = true;
+        /// Keep suction behind the recovery hand-off while this allocation remains above one byte.
+        policy.max_allocation_before_suction_bytes = 1;
+        return policy;
+    }
+
+    GrowthPressureAction onGrowthPressure() override
+    {
+        std::unique_lock lock(recovery_mutex);
+        recovery_active = true;
+        recovery_cv.notify_all();
+        return GrowthPressureAction::Yield;
+    }
+
+    void onGrowthPressureResolved() override
+    {
+        std::unique_lock lock(recovery_mutex);
+        recovery_active = false;
+        recovery_cv.notify_all();
+    }
+
+    bool isGrowthRecoveryActive() override
+    {
+        std::unique_lock lock(recovery_mutex);
+        return recovery_active;
+    }
+
+    std::mutex recovery_mutex;
+    std::condition_variable recovery_cv;
+    bool recovery_active = false;
 };
 
 static constexpr ResourceCost SKIP = -1;
@@ -2576,20 +2637,26 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationBlockedGrowthResumesAfte
         ResourceLink link = c->get("memory");
         std::optional<TestAllocation> a1;
         a1.emplace(link, "Running1", 80);
-        TestAllocation a2(link, "Running2", 10);
+        RecoverableTestAllocation a2(link, "Running2", 10);
         a1->waitSync();
         a2.waitSync();
 
         // Queue an alternative that cannot fit in the remaining capacity.
         TestAllocation a3(link, "Pending3", 40);
 
-        // The running increase is suspended first and the pending alternative is evaluated. It cannot
-        // fit, but a1 is still productive running work, so it gets a chance to release memory before any
-        // victim is selected.
+        // Wait until the scheduler has actually parked this protected growth and handed pressure
+        // to its recovery controller. This removes the race where eviction could run before the
+        // following decrease had even been submitted.
         a2.setSize(70);
+        ASSERT_TRUE(a2.waitPressureFor(std::chrono::seconds(5)))
+            << "The blocked growth did not enter protected recovery";
+
+        // The running allocation remains alive during recovery and can release enough memory for
+        // the parked growth to resume without selecting a victim.
         a1->setSize(20);
         a1->waitSync();
         a2.waitSync();
+        EXPECT_FALSE(a2.recoveryActive());
         a1->throwReason(); // No kill was needed: the release made a2's growth fit.
 
         // The +40 pending request still cannot fit at 20 + 70 and remains queued.
