@@ -688,6 +688,90 @@ def test_kafka_consumer_leaves_group_on_restart(kafka_cluster, leave_response):
         k.kafka_delete_topic(admin_client, topic_name)
 
 
+def test_kafka_consumer_waiters_abort_on_detach(kafka_cluster):
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_detach_waiters_{suffix}"
+    topic_name = f"detach_waiters_{suffix}"
+    admin_client = k.get_admin_client(kafka_cluster)
+    k.kafka_create_topic(admin_client, topic_name)
+    detach = None
+
+    try:
+        instance.query(f"""
+            CREATE TABLE test.{kafka_table} (key UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{topic_name}',
+                         kafka_group_name = '{kafka_table}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_poll_timeout_ms = 30000;
+            """)
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            holder_query_id = f"{kafka_table}_holder"
+            holder = executor.submit(
+                instance.query,
+                f"SELECT * FROM test.{kafka_table}",
+                query_id=holder_query_id,
+                timeout=40,
+            )
+            # Observe the holder's long poll before shutdown can cancel it.
+            assert (
+                instance.query_with_retry(
+                    f"SELECT uniqExact(query_id) FROM system.stack_trace WHERE query_id = '{holder_query_id}' "
+                    "AND arrayExists(address -> position(demangle(addressToSymbol(address)), "
+                    "'DB::KafkaConsumer::doPoll') > 0, trace) "
+                    "SETTINGS allow_introspection_functions = 1",
+                    check_callback=lambda result: result == "1\n",
+                )
+                == "1\n"
+            )
+
+            query_ids = [f"{kafka_table}_waiter_{i}" for i in range(3)]
+            waiters = [
+                executor.submit(
+                    instance.query,
+                    f"SELECT * FROM test.{kafka_table} SETTINGS kafka_max_wait_ms = 20000",
+                    query_id=query_id,
+                    timeout=35,
+                )
+                for query_id in query_ids
+            ]
+            # Observe the blocked calls before detaching; an already-detached table only tests
+            # the initial shutdown check in `popConsumer`.
+            ids = ", ".join(f"'{query_id}'" for query_id in query_ids)
+            assert (
+                instance.query_with_retry(
+                    f"SELECT uniqExact(query_id) FROM system.stack_trace WHERE query_id IN ({ids}) "
+                    "AND arrayExists(address -> position(demangle(addressToSymbol(address)), "
+                    "'DB::StorageKafka::popConsumer') > 0, trace) "
+                    "SETTINGS allow_introspection_functions = 1",
+                    check_callback=lambda result: result == "3\n",
+                )
+                == "3\n"
+            )
+
+            detach = executor.submit(
+                instance.query, f"DETACH TABLE test.{kafka_table}", timeout=40
+            )
+            deadline = time.monotonic() + 5
+            for waiter in waiters:
+                with pytest.raises(
+                    QueryRuntimeException, match="Table is detached"
+                ) as error:
+                    waiter.result(timeout=max(0, deadline - time.monotonic()))
+                assert error.value.returncode == 236  # `ABORTED`
+
+            assert not holder.done()
+            assert holder.result(timeout=35) == ""
+    finally:
+        if detach is not None:
+            detach.result(timeout=10)
+            instance.query(f"ATTACH TABLE test.{kafka_table}")
+        instance.query(f"DROP TABLE IF EXISTS test.{kafka_table}")
+        k.kafka_delete_topic(admin_client, topic_name)
+
+
 def test_kafka_consumer_ttl_close_releases_pool_mutex(kafka_cluster):
     suffix = k.random_string(6)
     kafka_table = f"kafka_ttl_close_{suffix}"

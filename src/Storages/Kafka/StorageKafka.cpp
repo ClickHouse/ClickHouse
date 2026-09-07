@@ -322,7 +322,12 @@ void StorageKafka::shutdown(bool)
     for (auto & task : tasks)
         task->stream_cancelled = true;
 
-    shutdown_called = true;
+    {
+        /// Synchronize with the wait predicates so neither condition variable can miss shutdown.
+        std::lock_guard lock(mutex);
+        shutdown_called = true;
+    }
+    cv.notify_all();
     cleanup_cv.notify_one();
 
     {
@@ -463,6 +468,9 @@ KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
     {
         cv.wait_for(lock, timeout, [&]()
         {
+            if (shutdown_called)
+                return true;
+
             /// Note we are waiting only opened, free, consumers, since consumer cannot be closed right now
             auto it = std::find_if(consumers.begin(), consumers.end(), [](const auto & ptr)
             {
@@ -475,6 +483,9 @@ KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
             }
             return false;
         });
+
+        if (shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Table is detached");
     }
 
     if (ret_consumer_ptr)
