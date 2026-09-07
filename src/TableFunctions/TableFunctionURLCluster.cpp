@@ -203,7 +203,7 @@ FROM urlCluster(
 );
 ```
 
-The archive is distributed using the same `StorageObjectStorageCluster` implementation as `s3Cluster`. The [cluster_function_process_archive_on_multiple_nodes](/operations/settings/settings#cluster_function_process_archive_on_multiple_nodes) setting controls whether files from one archive can be processed on multiple cluster nodes.
+The archive is distributed using the same `StorageObjectStorageCluster` implementation as `s3Cluster`. The [cluster_function_process_archive_on_multiple_nodes](/operations/settings/settings#cluster_function_process_archive_on_multiple_nodes) setting controls whether files from one archive can be processed on multiple cluster nodes. Both modes process each matching archive member once when every participating server supports `urlCluster` archive reads; do not use this feature during a mixed-version upgrade with older servers.
 
 The [`allow_archive_path_syntax`](/operations/settings/settings#allow_archive_path_syntax) setting is enabled by default. To use `::` literally in a URL instead of interpreting it as archive syntax, disable this setting for the query.
 
