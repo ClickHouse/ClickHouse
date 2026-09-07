@@ -48,7 +48,7 @@ struct StackBounds
 constinit thread_local StackBounds stack_bounds;
 
 /// `STACK_SIZE_FREE_RATIO` below is calibrated against ~8 MiB thread stacks: its TSan value would
-/// leave a 320 KiB coroutine stack 16 KiB, less than an ordinary secure handshake already uses.
+/// allow a 320 KiB coroutine stack only 16384 B, which an ordinary secure handshake nearly exhausts.
 constexpr size_t COROUTINE_STACK_RESERVE = 64 * 1024;
 }
 

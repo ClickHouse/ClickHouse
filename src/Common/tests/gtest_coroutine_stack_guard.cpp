@@ -121,7 +121,7 @@ struct CoroutineTask : public AsyncTask
     Observations & observations;
 };
 
-/// Creates its coroutine the way production does, through AsyncTaskExecutor's move-assignment.
+/// Creates its coroutine the way production does, through `AsyncTaskExecutor`'s move-assignment.
 class CoroutineTaskExecutor : public AsyncTaskExecutor
 {
 public:
@@ -162,7 +162,12 @@ void expectCoroutineStackBounds(const std::string & message)
     ASSERT_GT(reported, contracted_reserve) << message;
     const size_t contracted_trip = reported - contracted_reserve;
     EXPECT_GE(used, contracted_trip) << message;
-    EXPECT_LT(used, contracted_trip + static_cast<size_t>(getPageSize())) << message;
+
+    /// Slack for the single recursion frame between the last check that passed and the throw.
+    /// Deliberately not one OS page: where pages are 64 KiB that interval is wide enough to accept
+    /// a materially smaller reserve than the one being pinned.
+    constexpr size_t frame_slack = 4096;
+    EXPECT_LT(used, contracted_trip + frame_slack) << message;
 }
 
 }
@@ -189,7 +194,7 @@ TEST(CoroutineStackGuard, ThrowsOnDeepRecursionInsideCoroutine)
     catch (const DB::Exception & e)
     {
         ASSERT_EQ(e.code(), DB::ErrorCodes::TOO_DEEP_RECURSION) << e.message();
-        /// Not the bare error code: the parse-depth cap throws TOO_DEEP_RECURSION as well.
+        /// Not the bare error code: the parse-depth cap throws `TOO_DEEP_RECURSION` as well.
         ASSERT_NE(e.message().find("Stack size too large."), std::string::npos) << e.message();
         expectCoroutineStackBounds(e.message());
     }
