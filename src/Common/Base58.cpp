@@ -3,6 +3,7 @@
 #include <base/unaligned.h>
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 #include <limits>
 #include <optional>
@@ -104,16 +105,21 @@ constexpr uint32_t dec_table_64[18][16] = {
 };
 // clang-format on
 
-inline uint32_t b58_bswap32(uint32_t x)
-{
-    return __builtin_bswap32(x);
-}
-
+/// The codec treats each 4-byte group of the value as a big-endian word, independently of the
+/// host's own byte order.
 inline uint32_t b58_load_u32_be(const uint8_t * p)
 {
-    uint32_t v = 0;
-    memcpy(&v, p, 4);
-    return b58_bswap32(v);
+    uint32_t v = unalignedLoad<uint32_t>(p);
+    if constexpr (std::endian::native == std::endian::little)
+        v = std::byteswap(v);
+    return v;
+}
+
+inline void b58_store_u32_be(uint8_t * p, uint32_t v)
+{
+    if constexpr (std::endian::native == std::endian::little)
+        v = std::byteswap(v);
+    unalignedStore<uint32_t>(p, v);
 }
 
 #if !defined(__AVX2__)
@@ -276,8 +282,7 @@ std::optional<size_t> decodeBase58_32_fd(const uint8_t * src, size_t src_length,
 
     for (size_t i = 0; i < BINARY_SZ; i++)
     {
-        uint32_t word_be = b58_bswap32(static_cast<uint32_t>(binary[i]));
-        memcpy(dst + 4 * i, &word_be, sizeof(word_be));
+        b58_store_u32_be(dst + 4 * i, static_cast<uint32_t>(binary[i]));
     }
 
     size_t leading_zero_cnt = 0;
@@ -343,8 +348,7 @@ std::optional<size_t> decodeBase58_64_fd(const uint8_t * src, size_t src_length,
 
     for (size_t i = 0; i < BINARY_SZ; i++)
     {
-        uint32_t word_be = b58_bswap32(static_cast<uint32_t>(binary[i]));
-        memcpy(dst + 4 * i, &word_be, sizeof(word_be));
+        b58_store_u32_be(dst + 4 * i, static_cast<uint32_t>(binary[i]));
     }
 
     size_t leading_zero_cnt = 0;
