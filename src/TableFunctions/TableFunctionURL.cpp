@@ -42,6 +42,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -353,6 +354,9 @@ StoragePtr TableFunctionURL::getStorage(
     const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(url);
     const bool use_web_object_storage = use_web_wildcard
         || (!is_insert_query && configuration.http_method.empty() && archive_pattern.has_value());
+
+    if (is_insert_query && archive_pattern)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Path '{}' contains archive. Write into archive is not supported", source);
 
     const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
         && settings[Setting::parallel_replicas_for_cluster_engines]

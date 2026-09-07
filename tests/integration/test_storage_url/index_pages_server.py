@@ -93,6 +93,7 @@ SEVEN_ZIP_ARCHIVE = base64.b64decode(
 SHARD_0_ARCHIVE = make_zip_file([("value.tsv", "101\n")])
 SHARD_1_ARCHIVE = make_zip_file([("value.tsv", "202\n"), ("padding.txt", "x" * 1024)])
 UNKNOWN_SIZE_ARCHIVE = make_zip_file([("value.tsv", "47\n")])
+WRITTEN_DATA = {}
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -213,6 +214,12 @@ class RequestHandler(BaseHTTPRequestHandler):
         path = parsed.path
         self._record_request("HEAD", path)
         if self._reject_archive_request_without_header(parsed):
+            return
+        if path in WRITTEN_DATA:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(WRITTEN_DATA[path])))
+            self.end_headers()
             return
         page_cache_identity_tsv = self._page_cache_identity_tsv_for_request(parsed)
         if page_cache_identity_tsv is not None:
@@ -340,6 +347,14 @@ class RequestHandler(BaseHTTPRequestHandler):
         path = parsed.path
         self._record_request("GET", path)
         if self._reject_archive_request_without_header(parsed):
+            return
+        if path in WRITTEN_DATA:
+            data = WRITTEN_DATA[path]
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
             return
         page_cache_identity_tsv = self._page_cache_identity_tsv_for_request(parsed)
         if page_cache_identity_tsv is not None:
@@ -666,6 +681,27 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         self.send_response(404)
+        self.end_headers()
+
+    def _read_request_body(self):
+        if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+            body = b""
+            while True:
+                size = int(self.rfile.readline().strip(), 16)
+                if size == 0:
+                    self.rfile.readline()
+                    return body
+                body += self.rfile.read(size)
+                self.rfile.readline()
+
+        length = int(self.headers.get("Content-Length", "0"))
+        return self.rfile.read(length)
+
+    def do_POST(self):
+        path = urlparse(self.path).path
+        WRITTEN_DATA[path] = self._read_request_body()
+        self.send_response(200)
+        self.send_header("Content-Length", "0")
         self.end_headers()
 
     def _send_html(self, body):

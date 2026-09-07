@@ -640,6 +640,34 @@ def test_url_wildcard_failover_resets_credentials():
     assert result.strip() == "23"
 
 
+def test_url_writes_to_archive_paths():
+    archive_url = "http://resolver:8087/data/simple_archive.zip :: eod.csv"
+    for archive_path_syntax, expected_error in [
+        (1, "Write into archive is not supported"),
+        (0, "Bad URI syntax: URI contains invalid characters"),
+    ]:
+        error = node1.query_and_get_error(
+            f"INSERT INTO FUNCTION url('{archive_url}', 'CSV', 'x UInt64') VALUES (1)",
+            settings={"allow_archive_path_syntax": archive_path_syntax},
+        )
+        assert expected_error in error
+
+    targets = [
+        ("http://resolver:8087/data/simple_archive.zip::eod.csv", 1, {"allow_archive_path_syntax": 0}),
+        ("http://resolver:8087/data/file.tar", 2, {}),
+        ("http://resolver:8087/data/file.csv", 3, {}),
+    ]
+    for target_url, value, settings in targets:
+        node1.query(
+            f"INSERT INTO FUNCTION url('{target_url}', 'CSV', 'x UInt64') VALUES ({value})",
+            settings=settings,
+        )
+        assert node1.query(
+            f"SELECT sum(x) FROM url('{target_url}', 'CSV', 'x UInt64')",
+            settings=settings,
+        ).strip() == str(value)
+
+
 def test_url_archive_path_braces_are_expanded_without_index_listing():
     settings = {"allow_experimental_url_wildcard_from_index_pages": 0}
     source = "http://resolver:8087/data/archive_braces/{a,b}.zip :: value.tsv"
