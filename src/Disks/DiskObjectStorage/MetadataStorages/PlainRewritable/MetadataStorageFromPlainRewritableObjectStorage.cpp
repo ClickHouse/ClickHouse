@@ -297,11 +297,12 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     previous_refresh.restart();
 }
 
-MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_)
+MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_, bool hard_links_enabled_)
     : object_storage(std::move(object_storage_))
     , metrics(createPlainRewritableMetrics(object_storage->getType()))
     , storage_path_prefix(std::move(storage_path_prefix_))
     , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
+    , hard_links_enabled(hard_links_enabled_)
     , fs(metrics->directory_map_size, metrics->file_count)
     , layout(std::make_shared<PlainRewritableLayout>(object_storage->getCommonKeyPrefix()))
 {
@@ -495,6 +496,10 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createMetadataF
     if (const auto it = generated_blob_keys.find(normalizePath(path).string()); it != generated_blob_keys.end())
         blob_key = it->second;
 
+    /// The following operations of this transaction have to see the file: a hard link to it makes its blob shared,
+    /// and then rewriting it has to pick a new blob instead of clobbering the shared one.
+    uncommitted_state.recordCreatedFile(path, blob_key);
+
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(
         path,
         objects.front(),
@@ -612,6 +617,19 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
     const auto normalized_path_to = normalizePath(path_to);
     uncommitted_state.useDirectory(normalized_path_from.parent_path());
     uncommitted_state.useDirectory(normalized_path_to.parent_path());
+
+    /// A real hard link would make the metadata of the target directory unreadable by older servers, so it is opt-in.
+    if (!metadata_storage.hard_links_enabled)
+    {
+        operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
+            path_from,
+            path_to,
+            commit_snapshot,
+            metadata_storage.object_storage,
+            metadata_storage.layout,
+            metadata_storage.metrics));
+        return;
+    }
 
     /// The target directory switches to the explicit file list and the blob becomes shared.
     if (const auto blob_key = getBlobKeyIfExists(uncommitted_state.getSnapshot(), normalized_path_from))

@@ -193,6 +193,38 @@ public:
     void finalize() override;
 };
 
+/// Duplicates the blob of the source file. Used when hard links are disabled for the disk, so that the metadata
+/// stays in the form that older servers can read (see `MetadataStorageFromPlainRewritableObjectStorage`).
+/// Throws an exception if path_to_ already exists.
+class MetadataStorageFromPlainObjectStorageCopyFileOperation final : public IMetadataOperation
+{
+private:
+    const std::filesystem::path path_from;
+    const std::filesystem::path path_to;
+    const std::shared_ptr<FsSnapshot> fs_tree;
+    const std::shared_ptr<IObjectStorage> object_storage;
+    const std::shared_ptr<PlainRewritableLayout> layout;
+    const std::shared_ptr<PlainRewritableMetrics> metrics;
+
+    std::filesystem::path remote_path_from;
+    std::filesystem::path remote_path_to;
+    bool copy_attempted = false;
+    std::optional<DirectoryRemoteInfo> previous_directory_info;
+    bool prefix_path_written = false;
+
+public:
+    MetadataStorageFromPlainObjectStorageCopyFileOperation(
+        std::filesystem::path path_from_,
+        std::filesystem::path path_to_,
+        std::shared_ptr<FsSnapshot> fs_tree_,
+        std::shared_ptr<IObjectStorage> object_storage_,
+        std::shared_ptr<PlainRewritableLayout> layout_,
+        std::shared_ptr<PlainRewritableMetrics> metrics_);
+
+    void execute() override;
+    void undo() override;
+};
+
 /// Creates a hard link: a file in the target directory that shares the blob of the source file.
 /// The target directory is switched to the explicit file list form, and the number of links to the blob is incremented.
 /// Throws an exception if path_to_ already exists.

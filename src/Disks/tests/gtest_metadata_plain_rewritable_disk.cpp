@@ -28,6 +28,9 @@ using namespace DB;
 class MetadataPlainRewritableDiskTest : public testing::Test
 {
 public:
+    /// The `enable_hard_links` setting of the disk. Set it before the first `getMetadataStorage` call of a test.
+    bool hard_links_enabled = true;
+
     void SetUp() override
     {
         if (!initialized)
@@ -52,7 +55,7 @@ public:
     {
         std::unique_lock<std::mutex> lock(active_metadatas_mutex);
         auto object_storage = active_object_storages.at(key_prefix);
-        active_metadatas[key_prefix] = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
+        active_metadatas[key_prefix] = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", hard_links_enabled);
         return active_metadatas.at(key_prefix);
     }
 
@@ -80,7 +83,7 @@ private:
         fs::remove_all("./" + key_prefix);
         LocalObjectStorageSettings settings("test", "./" + key_prefix, /*read_only_=*/false);
         auto object_storage = std::make_shared<LocalObjectStorage>(std::move(settings));
-        auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
+        auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", hard_links_enabled);
 
         active_metadatas.emplace(key_prefix, metadata_storage);
         active_object_storages.emplace(key_prefix, object_storage);
@@ -2640,6 +2643,49 @@ TEST_F(MetadataPlainRewritableDiskTest, HardLinkThenWriteInSameTransaction)
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "shared");
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/new").front().remote_path), "new");
     EXPECT_EQ(listAllBlobs("HardLinkThenWriteInSameTransaction").size(), 4u);  /// two prefix.path, f1 and new
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, HardLinksDisabled)
+{
+    thread_local_rng.seed(42);
+
+    /// Without `enable_hard_links` the blob is copied, as before the hard links were implemented,
+    /// and the layout stays in the implicit form, which older servers can read.
+    hard_links_enabled = false;
+
+    const std::string test = "HardLinksDisabled";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    EXPECT_FALSE(metadata->supportsHardLinks());
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        const auto key = tx->generateObjectKeyForPath("A/f1").serialize();
+        EXPECT_TRUE(key.ends_with("/f1"));
+        size_t size = writeObject(object_storage, key, "data");
+        tx->createMetadataFile("A/f1", {StoredObject(key, "A/f1", size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("A/f1", "A/f2");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// A separate blob for every file.
+    EXPECT_NE(metadata->getStorageObjects("A/f1").front().remote_path, metadata->getStorageObjects("A/f2").front().remote_path);
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/f2").front().remote_path), "data");
+    EXPECT_EQ(metadata->getHardlinkCount("A/f1"), 0);
+
+    const auto prefix_path_object = createMetadataObjectPath(metadata, "A");
+    EXPECT_FALSE(parsePrefixPath(readObject(object_storage, prefix_path_object)).has_explicit_file_list);
+
+    metadata = restartMetadataStorage(test);
+    EXPECT_EQ(sorted(metadata->listDirectory("A")), std::vector<std::string>({"f1", "f2"}));
+    EXPECT_EQ(metadata->getFileSize("A/f2"), 4u);
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, UnlinkSharedFileUndo)

@@ -582,6 +582,82 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize(
     }
 }
 
+MetadataStorageFromPlainObjectStorageCopyFileOperation::MetadataStorageFromPlainObjectStorageCopyFileOperation(
+    std::filesystem::path path_from_,
+    std::filesystem::path path_to_,
+    std::shared_ptr<FsSnapshot> fs_tree_,
+    std::shared_ptr<IObjectStorage> object_storage_,
+    std::shared_ptr<PlainRewritableLayout> layout_,
+    std::shared_ptr<PlainRewritableMetrics> metrics_)
+    : path_from(std::move(path_from_))
+    , path_to(std::move(path_to_))
+    , fs_tree(std::move(fs_tree_))
+    , object_storage(std::move(object_storage_))
+    , layout(std::move(layout_))
+    , metrics(std::move(metrics_))
+{
+    chassert(metrics);
+}
+
+void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
+{
+    LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"), "Copying file from '{}' to '{}'", path_from, path_to);
+
+    if (!fs_tree->existsFile(path_from))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the source path '{}' does not exist", path_from);
+
+    if (!fs_tree->existsDirectory(normalizePath(path_to).parent_path()))
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Target directory '{}' does not exist", normalizePath(path_to).parent_path().string());
+
+    if (fs_tree->existsFile(path_to))
+        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Target file '{}' already exists", path_to);
+
+    const auto normalized_path_from = normalizePath(path_from);
+    const auto directory_info_from = getDirectoryInfoOrThrow(*fs_tree, normalized_path_from.parent_path());
+    const auto & file_info_from = directory_info_from.files.at(normalized_path_from.filename());
+    /// The source may belong to a directory in the explicit form, written while hard links were enabled.
+    remote_path_from = layout->constructBlobObjectKey(getBlobKey(directory_info_from, normalized_path_from.filename(), file_info_from));
+
+    const auto normalized_path_to = normalizePath(path_to);
+    const auto directory_to = normalized_path_to.parent_path();
+    const auto directory_info_to = getDirectoryInfoOrThrow(*fs_tree, directory_to);
+    /// The copy is a new blob at the default location, so it needs no explicit file list of its own.
+    remote_path_to = layout->constructFileObjectKey(directory_info_to.remote_path, normalized_path_to.filename());
+
+    copy_attempted = true;
+    object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
+    fs_tree->recordFile(path_to, FileRemoteInfo{.bytes_size = file_info_from.bytes_size, .last_modified = file_info_from.last_modified, .blob_key = {}});
+
+    /// A directory in the explicit form does not list its blobs, so the copy has to be added to `prefix.path`.
+    /// This happens only on a disk that had hard links enabled before.
+    if (!directory_info_to.has_explicit_file_list)
+        return;
+
+    previous_directory_info = directory_info_to;
+    prefix_path_written = true;
+    writeDirectoryMetadata(*object_storage, *layout, directory_to, getDirectoryInfoOrThrow(*fs_tree, directory_to));
+}
+
+void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
+{
+    if (prefix_path_written)
+    {
+        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"), "Reversing the metadata rewrite for the directory of '{}'", path_to);
+        writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info.value());
+    }
+
+    if (!copy_attempted)
+        return;
+
+    LOG_WARNING(
+        getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"),
+        "Removing file '{}' that was copied from '{}",
+        path_to,
+        path_from);
+
+    object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+}
+
 MetadataStorageFromPlainObjectStorageHardLinkOperation::MetadataStorageFromPlainObjectStorageHardLinkOperation(
     std::filesystem::path path_from_,
     std::filesystem::path path_to_,

@@ -8,11 +8,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Mutations and ALTERs on a plain_rewritable disk hard-link the untouched files of a part into the mutated
-# part, so the two parts share the blobs. A readonly reader on the same endpoint sees the mutated data.
+# Mutations and ALTERs on a plain_rewritable disk with `enable_hard_links` hard-link the untouched files of a part
+# into the mutated part, so the two parts share the blobs. A readonly reader on the same endpoint sees the mutated data.
 
 endpoint="http://localhost:11111/test/${CLICKHOUSE_TEST_UNIQUE_NAME}/"
-disk_args="type = s3_plain_rewritable, endpoint = '${endpoint}', access_key_id = clickhouse, secret_access_key = clickhouse"
+disk_args="type = s3_plain_rewritable, endpoint = '${endpoint}', access_key_id = clickhouse, secret_access_key = clickhouse, enable_hard_links = 1"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE IF EXISTS writer SYNC;

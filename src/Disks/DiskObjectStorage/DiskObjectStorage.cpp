@@ -784,8 +784,7 @@ bool DiskObjectStorage::isSharedCompatible() const
 
 bool DiskObjectStorage::supportsHardLinks() const
 {
-    /// Only the write-once (plain) metadata cannot represent hard links; plain-rewritable stores them in `prefix.path`.
-    return !metadata_storage->isWriteOnce();
+    return metadata_storage->supportsHardLinks();
 }
 
 String DiskObjectStorage::getReadResourceNameNoLock() const
