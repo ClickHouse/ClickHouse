@@ -1618,6 +1618,7 @@ see ["Understanding ClickHouse data skipping indexes"](/concepts/features/perfor
 - [`MinMax`](#minmax) index
 - [`Set`](#set) index
 - [`bloom_filter`](#bloom-filter) index
+- [`jsonbf_v1`](#json-bloom-filter) index
 - [`ngrambf_v1`](#n-gram-bloom-filter) index *(Deprecated)*
 - [`tokenbf_v1`](#token-bloom-filter) index *(Deprecated)*
 - [`text`](#text) index
@@ -1672,6 +1673,26 @@ For the `Map` data type, the client can specify if the index should be created f
 :::note JSON data type: indexing JSON paths
 For the [`JSON`](/reference/data-types/newjson) data type, a bloom filter index can be created on the set of paths using the [`JSONAllPaths`](/reference/functions/regular-functions/json-functions#JSONAllPaths) function. This allows skipping granules where a queried JSON path is absent. See [Data skipping indexes for JSON](/reference/data-types/newjson#data-skipping-indexes-for-json) for details.
 :::
+
+#### JSON Bloom filter {#json-bloom-filter}
+
+The `jsonbf_v1` index covers scalar leaves of one direct `JSON` column. It separates values by logical path and container role, indexes array elements and named `Tuple` fields, and indexes declared typed `Map` values by key.
+
+```sql title="Syntax"
+INDEX json_values json_column TYPE jsonbf_v1(
+    false_positive_rate = 0.025,
+    include_paths = ['tenant', 'items'],
+    include_paths_regexp = ['_id$'],
+    skip_paths = ['items.payload'],
+    skip_paths_regexp = ['_debug$']
+) GRANULARITY 1
+```
+
+All parameters are optional and named. `false_positive_rate` must be a `Float64` between 0 and 1; its default is `0.025`. The path parameters are arrays of strings. Exact paths include their descendants; regular expressions use partial matches. Include rules are combined with OR, and skip rules take precedence. Without include rules, all paths are included. Array elements do not add a path segment: a field below `items Array(JSON)` has a logical path such as `items.item_id`.
+
+Supported predicates include equality, typed `IN`, `has`, `hasAny`, and `hasAll`. Direct `Dynamic` scalar paths also support `isNotNull`. Unsupported runtime types and conversions are handled conservatively. Runtime `Map` values accessed through a `Dynamic` type hint do not support keyed pruning. The index does not support range, substring, or full-text predicates, and cannot be declared on a subcolumn or an expression.
+
+See [type-aware JSON indexing](/reference/data-types/newjson#json-indexes-jsonbf-v1) for an example.
 
 #### N-gram bloom filter *(Deprecated)* {#n-gram-bloom-filter}
 

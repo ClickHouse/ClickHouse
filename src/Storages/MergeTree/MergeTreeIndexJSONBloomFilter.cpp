@@ -1214,44 +1214,9 @@ bool isStructuralJSONSubcolumn(
     return false;
 }
 
-std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & node, const Block & header)
+std::optional<JSONPathMatch> tryMatchJSONSubcolumn(std::string_view column_path, const Block & header)
 {
-    const auto * dag_node = node.getDAGNode();
-    if (!dag_node)
-        return std::nullopt;
-
-    if (auto parsed_map_subcolumn = tryParseMapSubcolumnName(node.getColumnName()))
-    {
-        const auto & [map_column_name, serialized_key] = *parsed_map_subcolumn;
-        for (const auto & [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(map_column_name))
-        {
-            const String column_name_string(column_name);
-            if (!header.has(column_name_string) || subcolumn_name.empty())
-                continue;
-
-            const auto * object_type = typeid_cast<const DataTypeObject *>(header.getByName(column_name_string).type.get());
-            if (!object_type)
-                continue;
-
-            const auto subcolumn_type = object_type->tryGetSubcolumnType(String(subcolumn_name));
-            const auto unwrapped_subcolumn_type = subcolumn_type ? removeJSONBloomWrappers(subcolumn_type) : nullptr;
-            const auto * map_type = typeid_cast<const DataTypeMap *>(unwrapped_subcolumn_type.get());
-            if (!map_type)
-                continue;
-            const auto key_type = removeJSONBloomWrappers(map_type->getKeyType());
-            auto key_column = key_type->createColumn();
-            ReadBufferFromString buffer(serialized_key);
-            key_type->getDefaultSerialization()->deserializeWholeText(*key_column, buffer, {});
-            return JSONPathMatch{
-                appendMapKey(subcolumn_name, key_type, *key_column, 0),
-                String(subcolumn_name),
-                map_type->getValueType(),
-                nullptr,
-                JSONBloomRole::MapValue};
-        }
-    }
-
-    for (const auto & [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(node.getColumnName()))
+    for (const auto & [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column_path))
     {
         const String column_name_string(column_name);
         if (!header.has(column_name_string) || !isObject(header.getByName(column_name_string).type))
@@ -1315,12 +1280,43 @@ std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & n
                 });
         }
 
+        /// Runtime `Map` values have only a scalar unsupported-type marker, not keyed tokens.
+        const auto * map_type = typeid_cast<const DataTypeMap *>(removeJSONBloomWrappers(subcolumn_type).get());
+        if (typed_dynamic && map_type)
+            return std::nullopt;
+
         String logical_path = path;
         return JSONPathMatch{
             std::move(path), std::move(logical_path), subcolumn_type, nullptr, JSONBloomRole::Scalar, indexes_missing_values, typed_dynamic};
     }
 
     return std::nullopt;
+}
+
+std::optional<JSONPathMatch> tryMatchDirectJSONPath(const RPNBuilderTreeNode & node, const Block & header)
+{
+    if (!node.getDAGNode())
+        return std::nullopt;
+
+    if (const auto parsed_map_subcolumn = tryParseMapSubcolumnName(node.getColumnName()))
+    {
+        auto match = tryMatchJSONSubcolumn(parsed_map_subcolumn->first, header);
+        const auto * map_type = match ? typeid_cast<const DataTypeMap *>(removeJSONBloomWrappers(match->type).get()) : nullptr;
+        if (map_type)
+        {
+            const auto key_type = removeJSONBloomWrappers(map_type->getKeyType());
+            auto key_column = key_type->createColumn();
+            ReadBufferFromString buffer(parsed_map_subcolumn->second);
+            key_type->getDefaultSerialization()->deserializeWholeText(*key_column, buffer, {});
+            match->path = appendMapKey(match->path, key_type, *key_column, 0);
+            match->type = map_type->getValueType();
+            match->role = JSONBloomRole::MapValue;
+            match->indexes_missing_values = false;
+            return match;
+        }
+    }
+
+    return tryMatchJSONSubcolumn(node.getColumnName(), header);
 }
 
 std::optional<JSONPathMatch> tryMatchJSONPath(const RPNBuilderTreeNode & node, const Block & header)
@@ -1746,7 +1742,7 @@ size_t MergeTreeIndexGranuleJSONBloomFilter::memoryUsageBytes() const
     }
     for (const auto & [probe, compiled] : compiled_dynamic_probes)
         for (const auto & [type, prepared] : compiled)
-            bytes += sizeof(type) + sizeof(prepared) + type.capacity() + prepared.capacity() * sizeof(JSONBloomFilterProbe);
+            bytes += sizeof(std::remove_cvref_t<decltype(compiled)>::value_type) + type.capacity() + prepared.capacity() * sizeof(JSONBloomFilterProbe);
     return bytes;
 }
 
@@ -1919,7 +1915,7 @@ void MergeTreeIndexGranuleJSONBloomFilter::deserializeBinaryWithMultipleStreams(
         readVarUInt(size, directory);
         if (size > MAX_INLINE_JSON_BLOOM_FILTER_BYTES)
         {
-            MarkInCompressedFile mark;
+            MarkInCompressedFile mark{};
             readVarUInt(mark.offset_in_compressed_file, directory);
             readVarUInt(mark.offset_in_decompressed_block, directory);
             if (filter)

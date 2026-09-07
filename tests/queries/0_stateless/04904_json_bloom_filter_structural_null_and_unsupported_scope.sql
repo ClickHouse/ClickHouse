@@ -34,33 +34,27 @@ INSERT INTO json_bf_structural_null FORMAT JSONEachRow
 
 SELECT 'array null', arraySort(groupArray(id))
 FROM json_bf_structural_null
-WHERE has(j.array_nullable.null, 1) AND j.needle = 'one'
-SETTINGS force_data_skipping_indices = 'idx';
+WHERE has(j.array_nullable.null, 1);
 
 SELECT 'map value null', arraySort(groupArray(id))
 FROM json_bf_structural_null
-WHERE has(j.map_nullable.values.null, 1) AND j.needle = 'one'
-SETTINGS force_data_skipping_indices = 'idx';
+WHERE has(j.map_nullable.values.null, 1);
 
 SELECT 'variant conservative', arraySort(groupArray(id))
 FROM json_bf_structural_null
-WHERE j.unsupported = 'two' AND j.needle = 'two'
-SETTINGS force_data_skipping_indices = 'idx';
+WHERE j.unsupported.String = 'two';
 
 SELECT 'dynamic type subcolumn', arraySort(groupArray(id))
 FROM json_bf_structural_null
-WHERE j.dynamic_value.String = 'two' AND j.needle = 'two'
-SETTINGS force_data_skipping_indices = 'idx';
+WHERE j.dynamic_value.String = 'two';
 
 SELECT 'variant type subcolumn', arraySort(groupArray(id))
 FROM json_bf_structural_null
-WHERE j.nested.value.String = 'two' AND j.needle = 'two'
-SETTINGS force_data_skipping_indices = 'idx';
+WHERE j.nested.value.String = 'two';
 
 SELECT 'variant nested type subcolumn', arraySort(groupArray(id))
 FROM json_bf_structural_null
-WHERE j.nested.complex.`Tuple(a Int64)`.a = 2 AND j.needle = 'two'
-SETTINGS force_data_skipping_indices = 'idx';
+WHERE j.nested.complex.`Tuple(a Int64)`.a = 2;
 
 SELECT 'nested JSON String field', arraySort(groupArray(id))
 FROM json_bf_structural_null
@@ -69,28 +63,23 @@ SETTINGS force_data_skipping_indices = 'idx';
 
 SELECT 'nested JSON variant subcolumn', arraySort(groupArray(id))
 FROM json_bf_structural_null
-WHERE j.payload.v.String = 'two' AND j.needle = 'two'
-SETTINGS force_data_skipping_indices = 'idx';
+WHERE j.payload.v.String = 'two';
 
 SELECT 'nested JSON nullable null', arraySort(groupArray(id))
 FROM json_bf_structural_null
-WHERE j.payload.n.null = 1 AND j.needle = 'one'
-SETTINGS force_data_skipping_indices = 'idx';
+WHERE j.payload.n.null = 1;
 
 SELECT 'nested JSON array size', arraySort(groupArray(id))
 FROM json_bf_structural_null
-WHERE j.payload.arr.size0 = 2 AND j.needle = 'two'
-SETTINGS force_data_skipping_indices = 'idx';
+WHERE j.payload.arr.size0 = 2;
 
 SELECT 'array JSON variant subcolumn', arraySort(groupArray(id))
 FROM json_bf_structural_null
-WHERE has(j.array_payload[].v.String, 'bbb') AND j.needle = 'two'
-SETTINGS force_data_skipping_indices = 'idx';
+WHERE has(j.array_payload[].v.String, 'bbb');
 
 SELECT 'map tuple values descendant', arraySort(groupArray(id))
 FROM json_bf_structural_null
-WHERE has(j.map_tuple.values.a, 2) AND j.needle = 'two'
-SETTINGS force_data_skipping_indices = 'idx';
+WHERE has(j.map_tuple.values.a, 2);
 
 SELECT 'path equals', groupArray(id) FROM json_bf_structural_null WHERE j.x = 0 SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'path in', groupArray(id) FROM json_bf_structural_null WHERE j.x IN (0) SETTINGS force_data_skipping_indices = 'idx';

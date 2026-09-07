@@ -2109,7 +2109,8 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 ### Indexes on specific subcolumns {#json-indexes-on-subcolumns}
 
 You can create a skip index on any JSON subcolumn using the same syntax as for regular columns.
-Any [supported index type](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) works (`minmax`, `set`, `bloom_filter`, `tokenbf_v1`, `ngrambf_v1`, etc.).
+Choose a [skip index type](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) that supports the subcolumn type, such as `minmax`, `set`, or `bloom_filter`.
+The specialized `jsonbf_v1` index instead requires a direct `JSON` column.
 
 There are two ways to reference a JSON subcolumn in an index expression:
 
