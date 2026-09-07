@@ -91,14 +91,13 @@ enum class TargetArch : UInt32
     x86_64_icelake = (1 << 3),
     x86_64_sapphirerapids = (1 << 4),
     GenuineIntel = (1 << 5),          /// Not an instruction set, but a CPU vendor. Used for optimizations that are only applicable for Intel CPUs, like prefetching
-    x86_64_vaes = (1 << 6),           /// v3 + VAES. Not a microarchitecture level: VAES appears on Zen 3, which has no AVX-512 at all, and on Intel only from Ice Lake, so neither v4 nor icelake describes the set of CPUs that have it.
 };
 
 /// Runtime detection.
 UInt32 getSupportedArchs();
 inline ALWAYS_INLINE bool isArchSupported(TargetArch arch)
 {
-    static const UInt32 arches = getSupportedArchs();
+    static UInt32 arches = getSupportedArchs();
     return arch == TargetArch::Default || (arches & static_cast<UInt32>(arch));
 }
 
@@ -125,24 +124,17 @@ String toString(TargetArch arch);
 /// - Newer CPUs (Ice Lake, Sapphire Rapids, AMD Zen 4/5) have minimal throttling
 ///
 /// We explicitly override with `no-prefer-256-bit` to enable 512-bit vectorization for AVX-512 targets.
-///
-/// `X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE` is needed for TUs explicitly pinned to `-march=x86-64-v2`
-/// (e.g. `FunctionsHashingMisc.cpp`, `arrayDistance.cpp`, `arrayNorm.cpp`, see their CMakeLists.txt
-/// overrides). At v2 the `Default` namespace inherits v2 codegen (SSE2/XMM), so without a per-function
-/// v3 specialization the runtime dispatcher has no AVX2/YMM body to pick on hosts that support it.
-/// Same rationale applies to `MULTITARGET_FUNCTION_X86_V4_V3` below.
+#define X86_64_V2_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v2")))
 #define X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v3")))
 #define X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v4,no-prefer-256-bit")))
 #define X86_64_ICELAKE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=icelake-server,no-prefer-256-bit")))
 #define X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=sapphirerapids,no-prefer-256-bit")))
-/// A single feature on top of the baseline rather than a level, for the reason given on TargetArch::x86_64_vaes.
-#define X86_64_VAES_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v3,vaes")))
-/// VAES on 512-bit registers. arch=x86-64-v4 supplies the avx512f that the _mm512_aes* intrinsics require.
-#define X86_64_VAES512_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v4,vaes")))
 
 #define DEFAULT_FUNCTION_SPECIFIC_ATTRIBUTE
 
 /// Begin target-specific code blocks using arch= for cleaner specification
+#define BEGIN_X86_64_V2_SPECIFIC_CODE \
+    _Pragma("clang attribute push(__attribute__((target(\"arch=x86-64-v2\"))),apply_to=function)")
 #define BEGIN_X86_64_V3_SPECIFIC_CODE \
     _Pragma("clang attribute push(__attribute__((target(\"arch=x86-64-v3\"))),apply_to=function)")
 #define BEGIN_X86_64_V4_SPECIFIC_CODE \
@@ -160,10 +152,16 @@ String toString(TargetArch arch);
  */
 #   define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void _dummy_function_definition();
 
-/// Goes hand in hand with the `-march=x86-64-v2` override on `FunctionsHashingMisc.cpp` (and other v2-overridden TUs):
-/// when the file is compiled at v2, the `Default` namespace inherits v2 codegen. The `x86_64_v3` per-function attribute
-/// here is what gives those template instantiations an AVX2/YMM specialization the runtime dispatcher can pick. Removing
-/// it caused +12-18% regressions on `general_purpose_hashes_on_UUID #30/#32` (hiveHash/javaHash on UUID columns).
+
+#define DECLARE_X86_64_V2_SPECIFIC_CODE(...) \
+BEGIN_X86_64_V2_SPECIFIC_CODE \
+namespace TargetSpecific::x86_64_v2 { \
+    DUMMY_FUNCTION_DEFINITION \
+    using namespace DB::TargetSpecific::x86_64_v2; \
+    __VA_ARGS__ \
+} \
+END_TARGET_SPECIFIC_CODE
+
 #define DECLARE_X86_64_V3_SPECIFIC_CODE(...) \
 BEGIN_X86_64_V3_SPECIFIC_CODE \
 namespace TargetSpecific::x86_64_v3 { \
@@ -206,6 +204,7 @@ END_TARGET_SPECIFIC_CODE
 
 /* Multitarget code is disabled, just delete target-specific code.
  */
+#define DECLARE_X86_64_V2_SPECIFIC_CODE(...)
 #define DECLARE_X86_64_V3_SPECIFIC_CODE(...)
 #define DECLARE_X86_64_V4_SPECIFIC_CODE(...)
 #define DECLARE_X86_ICELAKE_SPECIFIC_CODE(...)
@@ -228,6 +227,10 @@ DECLARE_X86_64_V4_SPECIFIC_CODE   (__VA_ARGS__) \
 
 DECLARE_DEFAULT_CODE(
     constexpr auto BuildArch = TargetArch::Default;
+)
+
+DECLARE_X86_64_V2_SPECIFIC_CODE(
+    constexpr auto BuildArch = TargetArch::x86_64_v2;
 )
 
 DECLARE_X86_64_V3_SPECIFIC_CODE(
@@ -254,7 +257,7 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
   * class TestClass
   * {
   * public:
-  *     MULTITARGET_FUNCTION_X86_V4(
+  *     MULTITARGET_FUNCTION_X86_V4_V3(
   *     MULTITARGET_FUNCTION_HEADER(int), testFunctionImpl, MULTITARGET_FUNCTION_BODY((int value)
   *     {
   *          return value;
@@ -266,9 +269,13 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
   *         {
   *             testFunctionImpl_x86_64_v4(value);
   *         }
+  *         else if (isArchSupported(TargetArch::x86_64_v3))
+  *         {
+  *             testFunctionImpl_x86_64_v3(value);
+  *         }
   *         else
   *         {
-  *             testFunctionImpl(value);
+  *             testFunction(value);
   *         }
   *     }
   *};
@@ -283,24 +290,6 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
 
 #if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
 
-#define MULTITARGET_FUNCTION_X86_V4(FUNCTION_HEADER, name, FUNCTION_BODY) \
-    FUNCTION_HEADER \
-    \
-    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE \
-    name##_x86_64_v4 \
-    FUNCTION_BODY \
-    \
-    FUNCTION_HEADER \
-    \
-    name \
-    FUNCTION_BODY \
-
-/// Generates `_x86_64_v4`, `_x86_64_v3`, and `Default` versions of `name`. Used by callers that need a
-/// per-function v3 specialization in addition to v4 — required for TUs explicitly pinned to
-/// `-march=x86-64-v2` via `set_source_files_properties` (see `arrayDistance.cpp`, `arrayNorm.cpp`),
-/// where the `Default` namespace inherits v2 codegen and the runtime dispatcher would otherwise have
-/// no AVX2/YMM body to pick. Callers must call `name##_x86_64_v4` / `name##_x86_64_v3` from a
-/// dispatcher guarded by `isArchSupported(TargetArch::x86_64_v4)` / `isArchSupported(TargetArch::x86_64_v3)`.
 #define MULTITARGET_FUNCTION_X86_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
@@ -319,16 +308,28 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
     name \
     FUNCTION_BODY \
 
-
-#else
-
-#define MULTITARGET_FUNCTION_X86_V4(FUNCTION_HEADER, name, FUNCTION_BODY) \
+#define MULTITARGET_FUNCTION_X86_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_x86_64_v3 \
+    FUNCTION_BODY \
+    \
     FUNCTION_HEADER \
     \
     name \
     FUNCTION_BODY \
 
+
+#else
+
 #define MULTITARGET_FUNCTION_X86_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_X86_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
     name \

@@ -17,7 +17,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -27,7 +26,7 @@ namespace
   * notIn(x, set) - and NOT IN.
   */
 
-class FunctionIn final : public IFunction
+class FunctionIn : public IFunction
 {
 public:
     FunctionIn(String name_, bool negative_, bool null_is_skipped_, bool ignore_set_)
@@ -46,36 +45,24 @@ public:
         return function_name;
     }
 
-    /// The `IgnoreSet` variants are called with the left operand alone during type analysis, but
-    /// `inIgnoreSet(x, set)` written explicitly stays valid, hence the variadic arity.
-    bool isVariadic() const override { return ignore_set; }
-
     size_t getNumberOfArguments() const override
     {
-        return ignore_set ? 0 : 2;
+        return 2;
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (ignore_set && (arguments.empty() || arguments.size() > 2))
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
-                getName(),
-                arguments.size());
-
         if (arguments[0]->hasDynamicStructure())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeUInt8>();
     }
 
-    /// We can't use the default constant-folding wrapper because it would wrap a
-    /// dry-run result as a ColumnConst, and `FilterTransform`'s header evaluation
-    /// would then see a subquery-IN with an unbuilt set as "always false" (the
-    /// dry-run path returns 0) and skip the filter entirely. Handle the size-0
-    /// ColumnConst arguments produced by `ActionsDAG::addColumn` directly below.
-    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForConstants() const override
+    {
+        /// Never return constant for -IgnoreSet functions to avoid constant folding.
+        return !ignore_set;
+    }
 
     bool useDefaultImplementationForDynamic() const override
     {
@@ -100,8 +87,10 @@ public:
     {
         if (ignore_set)
             return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+        if (input_rows_count == 0)
+            return ColumnUInt8::create();
 
-        /// Second argument must be ColumnSet (possibly wrapped in ColumnConst).
+        /// Second argument must be ColumnSet.
         ColumnPtr column_set_ptr = arguments[1].column;
         const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(column_set_ptr.get());
         if (!column_set)
@@ -109,6 +98,21 @@ public:
         if (!column_set)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function '{}' must be Set; found {}",
                 getName(), column_set_ptr->getName());
+
+        ColumnsWithTypeAndName columns_of_key_columns;
+
+        /// First argument may be a tuple or a single column.
+        const ColumnWithTypeAndName & left_arg = arguments[0];
+        const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(left_arg.column.get());
+        const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(left_arg.column.get());
+        const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(left_arg.type.get());
+
+        ColumnPtr materialized_tuple;
+        if (const_tuple)
+        {
+            materialized_tuple = const_tuple->convertToFullColumn();
+            tuple = typeid_cast<const ColumnTuple *>(materialized_tuple.get());
+        }
 
         auto future_set = column_set->getData();
         if (!future_set)
@@ -128,24 +132,6 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
         }
 
-        /// Empty set: return a constant result. Must be checked before input_rows_count == 0
-        /// so that header evaluation produces a ColumnConst detectable by ConstantFilterDescription.
-        if (set->getTotalRowCount() == 0)
-            return ColumnConst::create(ColumnUInt8::create(1, negative), input_rows_count);
-
-        /// Unwrap ColumnConst for the first argument if needed.
-        ColumnWithTypeAndName left_arg = arguments[0];
-        bool left_is_const = isColumnConst(*left_arg.column);
-
-        if (left_is_const)
-            left_arg.column = assert_cast<const ColumnConst &>(*left_arg.column).getDataColumnPtr();
-        else if (input_rows_count == 0)
-            return ColumnUInt8::create();
-
-        const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(left_arg.column.get());
-        const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(left_arg.type.get());
-
-        ColumnsWithTypeAndName columns_of_key_columns;
         auto set_types = set->getDataTypes();
 
         if (tuple && set_types.size() != 1 && set_types.size() == tuple->tupleSize())
@@ -159,10 +145,18 @@ public:
         else
             columns_of_key_columns.emplace_back(left_arg);
 
+        bool is_const = false;
+        if (columns_of_key_columns.size() == 1)
+        {
+            auto & arg = columns_of_key_columns.at(0);
+            if (typeid_cast<const ColumnConst *>(arg.column.get()))
+                is_const = true;
+        }
+
         auto res = set->execute(columns_of_key_columns, negative);
 
-        if (left_is_const)
-            return ColumnConst::create(std::move(res), input_rows_count);
+        if (is_const)
+            res = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(res->getUInt(0)));
 
         if (res->size() != input_rows_count)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Output size is different from input size, expect {}, get {}", input_rows_count, res->size());
@@ -269,7 +263,7 @@ Checks if the left operand is a member of the right operand set. Unlike `in`, NU
     FunctionDocumentation::Syntax syntax_nullIn = "nullIn(x, set)";
     FunctionDocumentation::Arguments arguments_nullIn = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
     FunctionDocumentation::ReturnedValue returned_value_nullIn = {"Returns 1 if x is in the set, 0 otherwise.", {"UInt8"}};
-    FunctionDocumentation::Examples examples_nullIn = {{"Basic usage", "SELECT nullIn(NULL, tuple(1, NULL))", "0"}};
+    FunctionDocumentation::Examples examples_nullIn = {{"Basic usage", "SELECT nullIn(NULL, tuple(1, NULL))", "1"}};
     FunctionDocumentation::IntroducedIn introduced_in_nullIn = {1, 1};
     FunctionDocumentation::Category category_nullIn = FunctionDocumentation::Category::Comparison;
     FunctionDocumentation documentation_nullIn = {description_nullIn, syntax_nullIn, arguments_nullIn, {}, returned_value_nullIn, examples_nullIn, introduced_in_nullIn, category_nullIn};
@@ -289,7 +283,7 @@ Same as `nullIn`, but uses global set distribution in distributed queries. The s
     FunctionDocumentation::Syntax syntax_globalNullIn = "globalNullIn(x, set)";
     FunctionDocumentation::Arguments arguments_globalNullIn = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
     FunctionDocumentation::ReturnedValue returned_value_globalNullIn = {"Returns 1 if x is in the set, 0 otherwise.", {"UInt8"}};
-    FunctionDocumentation::Examples examples_globalNullIn = {{"Basic usage", "SELECT nullIn(NULL, tuple(1, NULL))", "0"}};
+    FunctionDocumentation::Examples examples_globalNullIn = {{"Basic usage", "SELECT nullIn(NULL, tuple(1, NULL))", "1"}};
     FunctionDocumentation::IntroducedIn introduced_in_globalNulllIn = {1, 1};
     FunctionDocumentation::Category category_globalNullIn = FunctionDocumentation::Category::Comparison;
     FunctionDocumentation documentation_globalNullIn = {description_globalNullIn, syntax_globalNullIn, arguments_globalNullIn, {}, returned_value_globalNullIn, examples_globalNullIn, introduced_in_globalNulllIn, category_globalNullIn};
@@ -309,7 +303,7 @@ Checks if the left operand is NOT a member of the right operand set. Unlike `not
     FunctionDocumentation::Syntax syntax_notNullIn = "notNullIn(x, set)";
     FunctionDocumentation::Arguments arguments_notNullIn = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
     FunctionDocumentation::ReturnedValue returned_value_notNullIn = {"Returns 1 if x is not in the set, 0 otherwise.", {"UInt8"}};
-    FunctionDocumentation::Examples examples_notNullIn = {{"Basic usage", "SELECT notNullIn(NULL, tuple(1, NULL))", "1"}};
+    FunctionDocumentation::Examples examples_notNullIn = {{"Basic usage", "SELECT notNullIn(NULL, tuple(1, NULL))", "0"}};
     FunctionDocumentation::IntroducedIn introduced_in_notNulllIn = {1, 1};
     FunctionDocumentation::Category category_notNullIn = FunctionDocumentation::Category::Comparison;
     FunctionDocumentation documentation_notNullIn = {description_notNullIn, syntax_notNullIn, arguments_notNullIn, {}, returned_value_notNullIn, examples_notNullIn, introduced_in_notNulllIn, category_notNullIn};
@@ -329,7 +323,7 @@ Same as `notNullIn`, but uses global set distribution in distributed queries. Th
     FunctionDocumentation::Syntax syntax_globalNotNullIn = "globalNotNullIn(x, set)";
     FunctionDocumentation::Arguments arguments_globalNotNullIn = {{"x", "The value to check.", {}}, {"set", "The set of values.", {}}};
     FunctionDocumentation::ReturnedValue returned_value_globalNotNullIn = {"Returns 1 if x is not in the set, 0 otherwise.", {"UInt8"}};
-    FunctionDocumentation::Examples examples_globalNotNullIn = {{"Basic usage", "SELECT notNullIn(NULL, tuple(1, NULL))", "1"}};
+    FunctionDocumentation::Examples examples_globalNotNullIn = {{"Basic usage", "SELECT notNullIn(NULL, tuple(1, NULL))", "0"}};
     FunctionDocumentation::IntroducedIn introduced_in_globalNotNulllIn = {1, 1};
     FunctionDocumentation::Category category_globalNotNullIn = FunctionDocumentation::Category::Comparison;
     FunctionDocumentation documentation_globalNotNullIn = {description_globalNotNullIn, syntax_globalNotNullIn, arguments_globalNotNullIn, {}, returned_value_globalNotNullIn, examples_globalNotNullIn, introduced_in_globalNotNulllIn, category_globalNotNullIn};

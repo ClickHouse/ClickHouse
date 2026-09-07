@@ -19,7 +19,7 @@ permissions: write-all
 jobs:
 
   config_workflow:
-    runs-on: [self-hosted, arm-tiny]
+    runs-on: [self-hosted, style-checker-aarch64]
     needs: []
     name: "Config Workflow"
     outputs:
@@ -30,12 +30,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -49,10 +50,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   dockers_build_amd:
-    runs-on: [self-hosted, amd-tiny]
+    runs-on: [self-hosted, style-checker]
     needs: [config_workflow]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKQ==') }}
     name: "Dockers Build (amd)"
@@ -64,12 +68,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -83,10 +88,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   dockers_build_arm:
-    runs-on: [self-hosted, arm-tiny]
+    runs-on: [self-hosted, style-checker-aarch64]
     needs: [config_workflow]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
     name: "Dockers Build (arm)"
@@ -98,12 +106,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -117,7 +126,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_amd_debug:
     runs-on: [self-hosted, arm-large]
@@ -132,12 +144,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -151,13 +164,16 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_debug)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_debug)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  build_amd_asan_ubsan:
+  build_amd_asan:
     runs-on: [self-hosted, arm-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9hc2FuX3Vic2FuKQ==') }}
-    name: "Build (amd_asan_ubsan)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9hc2FuKQ==') }}
+    name: "Build (amd_asan)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -166,12 +182,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -185,7 +202,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_asan_ubsan)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_asan)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_amd_tsan:
     runs-on: [self-hosted, arm-large]
@@ -200,12 +220,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -219,7 +240,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_tsan)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_tsan)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_amd_release:
     runs-on: [self-hosted, arm-large]
@@ -234,12 +258,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -253,7 +278,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_release)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_release)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_arm_release:
     runs-on: [self-hosted, arm-large]
@@ -268,12 +296,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -287,7 +316,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_release)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_release)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_amd_darwin:
     runs-on: [self-hosted, amd-large]
@@ -302,12 +334,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -321,7 +354,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_darwin)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_darwin)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_arm_darwin:
     runs-on: [self-hosted, arm-large]
@@ -336,12 +372,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -355,10 +392,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_darwin)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_darwin)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   docker_server_image:
-    runs-on: [self-hosted, amd-tiny]
+    runs-on: [self-hosted, style-checker]
     needs: [build_amd_release, build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VyIHNlcnZlciBpbWFnZQ==') }}
     name: "Docker server image"
@@ -370,12 +410,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -389,10 +430,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Docker server image' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Docker server image' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   docker_keeper_image:
-    runs-on: [self-hosted, amd-tiny]
+    runs-on: [self-hosted, style-checker]
     needs: [build_amd_release, build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VyIGtlZXBlciBpbWFnZQ==') }}
     name: "Docker keeper image"
@@ -404,12 +448,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -423,10 +468,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Docker keeper image' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Docker keeper image' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   install_packages_amd_release:
-    runs-on: [self-hosted, amd-tiny]
+    runs-on: [self-hosted, style-checker]
     needs: [build_amd_release, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYW1kX3JlbGVhc2Up') }}
     name: "Install packages (amd_release)"
@@ -438,12 +486,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -457,10 +506,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (amd_release)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (amd_release)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   install_packages_arm_release:
-    runs-on: [self-hosted, arm-tiny]
+    runs-on: [self-hosted, style-checker-aarch64]
     needs: [build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW5zdGFsbCBwYWNrYWdlcyAoYXJtX3JlbGVhc2Up') }}
     name: "Install packages (arm_release)"
@@ -472,12 +524,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -491,10 +544,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (arm_release)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Install packages (arm_release)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   compatibility_check_amd_release:
-    runs-on: [self-hosted, amd-tiny]
+    runs-on: [self-hosted, style-checker]
     needs: [build_amd_release, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAoYW1kX3JlbGVhc2Up') }}
     name: "Compatibility check (amd_release)"
@@ -506,12 +562,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -525,10 +582,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Compatibility check (amd_release)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Compatibility check (amd_release)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   compatibility_check_arm_release:
-    runs-on: [self-hosted, arm-tiny]
+    runs-on: [self-hosted, style-checker-aarch64]
     needs: [build_arm_release, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'Q29tcGF0aWJpbGl0eSBjaGVjayAoYXJtX3JlbGVhc2Up') }}
     name: "Compatibility check (arm_release)"
@@ -540,12 +600,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -559,13 +620,16 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Compatibility check (arm_release)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Compatibility check (arm_release)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  stateless_tests_amd_asan_ubsan_distributed_plan_parallel:
-    runs-on: [self-hosted, amd-large]
-    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwp') }}
-    name: "Stateless tests (amd_asan_ubsan, distributed plan, parallel)"
+  stateless_tests_amd_asan_distributed_plan_parallel_1_2:
+    runs-on: [self-hosted, amd-medium-cpu]
+    needs: [build_amd_asan, config_workflow, dockers_build_amd, dockers_build_arm]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwsIDEvMik=') }}
+    name: "Stateless tests (amd_asan, distributed plan, parallel, 1/2)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -574,12 +638,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -593,13 +658,54 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, distributed plan, parallel)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 1/2)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3:
+  stateless_tests_amd_asan_distributed_plan_parallel_2_2:
+    runs-on: [self-hosted, amd-medium-cpu]
+    needs: [build_amd_asan, config_workflow, dockers_build_amd, dockers_build_arm]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwsIDIvMik=') }}
+    name: "Stateless tests (amd_asan, distributed plan, parallel, 2/2)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan, distributed plan, parallel, 2/2)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
+
+  stateless_tests_amd_asan_db_disk_distributed_plan_sequential:
     runs-on: [self-hosted, amd-small-mem]
-    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGIgZGlzaywgZGlzdHJpYnV0ZWQgcGxhbiwgc2VxdWVudGlhbCwgMS8zKQ==') }}
-    name: "Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 1/3)"
+    needs: [build_amd_asan, config_workflow, dockers_build_amd, dockers_build_arm]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbiwgZGIgZGlzaywgZGlzdHJpYnV0ZWQgcGxhbiwgc2VxdWVudGlhbCk=') }}
+    name: "Stateless tests (amd_asan, db disk, distributed plan, sequential)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -608,12 +714,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -627,211 +734,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 1/3)' --workflow "BackportPR" --ci --timestamp
-
-  stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3:
-    runs-on: [self-hosted, amd-small-mem]
-    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGIgZGlzaywgZGlzdHJpYnV0ZWQgcGxhbiwgc2VxdWVudGlhbCwgMi8zKQ==') }}
-    name: "Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 2/3)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 2/3)' --workflow "BackportPR" --ci --timestamp
-
-  stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3:
-    runs-on: [self-hosted, amd-small-mem]
-    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGIgZGlzaywgZGlzdHJpYnV0ZWQgcGxhbiwgc2VxdWVudGlhbCwgMy8zKQ==') }}
-    name: "Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 3/3)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 3/3)' --workflow "BackportPR" --ci --timestamp
-
-  unit_tests_asan_ubsan:
-    runs-on: [self-hosted, amd-large]
-    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbl91YnNhbik=') }}
-    name: "Unit tests (asan_ubsan)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan)' --workflow "BackportPR" --ci --timestamp
-
-  unit_tests_tsan:
-    runs-on: [self-hosted, amd-large]
-    needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbik=') }}
-    name: "Unit tests (tsan)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan)' --workflow "BackportPR" --ci --timestamp
-
-  unit_tests_asan_ubsan_function_prop_fuzzer:
-    runs-on: [self-hosted, amd-large]
-    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbl91YnNhbiwgZnVuY3Rpb25fcHJvcF9mdXp6ZXIp') }}
-    name: "Unit tests (asan_ubsan, function_prop_fuzzer)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan, function_prop_fuzzer)' --workflow "BackportPR" --ci --timestamp
-
-  unit_tests_tsan_function_prop_fuzzer:
-    runs-on: [self-hosted, amd-large]
-    needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbiwgZnVuY3Rpb25fcHJvcF9mdXp6ZXIp') }}
-    name: "Unit tests (tsan, function_prop_fuzzer)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan, function_prop_fuzzer)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan, db disk, distributed plan, sequential)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   stress_test_amd_tsan:
     runs-on: [self-hosted, amd-medium]
@@ -846,12 +752,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -865,13 +772,16 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stress test (amd_tsan)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stress test (amd_tsan)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6:
+  integration_tests_amd_asan_db_disk_old_analyzer_1_6:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDEvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 1/6)"
+    needs: [build_amd_asan, config_workflow, dockers_build_amd, dockers_build_arm]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDEvNik=') }}
+    name: "Integration tests (amd_asan, db disk, old analyzer, 1/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -880,12 +790,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -899,13 +810,16 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 1/6)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 1/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6:
+  integration_tests_amd_asan_db_disk_old_analyzer_2_6:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDIvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 2/6)"
+    needs: [build_amd_asan, config_workflow, dockers_build_amd, dockers_build_arm]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDIvNik=') }}
+    name: "Integration tests (amd_asan, db disk, old analyzer, 2/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -914,12 +828,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -933,13 +848,16 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 2/6)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 2/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6:
+  integration_tests_amd_asan_db_disk_old_analyzer_3_6:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDMvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 3/6)"
+    needs: [build_amd_asan, config_workflow, dockers_build_amd, dockers_build_arm]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDMvNik=') }}
+    name: "Integration tests (amd_asan, db disk, old analyzer, 3/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -948,12 +866,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -967,13 +886,16 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 3/6)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 3/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6:
+  integration_tests_amd_asan_db_disk_old_analyzer_4_6:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDQvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 4/6)"
+    needs: [build_amd_asan, config_workflow, dockers_build_amd, dockers_build_arm]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDQvNik=') }}
+    name: "Integration tests (amd_asan, db disk, old analyzer, 4/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -982,12 +904,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1001,13 +924,16 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 4/6)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 4/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6:
+  integration_tests_amd_asan_db_disk_old_analyzer_5_6:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDUvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 5/6)"
+    needs: [build_amd_asan, config_workflow, dockers_build_amd, dockers_build_arm]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDUvNik=') }}
+    name: "Integration tests (amd_asan, db disk, old analyzer, 5/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1016,12 +942,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1035,13 +962,16 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 5/6)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 5/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
-  integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6:
+  integration_tests_amd_asan_db_disk_old_analyzer_6_6:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDYvNik=') }}
-    name: "Integration tests (amd_asan_ubsan, db disk, old analyzer, 6/6)"
+    needs: [build_amd_asan, config_workflow, dockers_build_amd, dockers_build_arm]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuLCBkYiBkaXNrLCBvbGQgYW5hbHl6ZXIsIDYvNik=') }}
+    name: "Integration tests (amd_asan, db disk, old analyzer, 6/6)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1050,12 +980,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1069,7 +1000,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, old analyzer, 6/6)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan, db disk, old analyzer, 6/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_tsan_1_6:
     runs-on: [self-hosted, amd-medium]
@@ -1084,12 +1018,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1103,7 +1038,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_tsan_2_6:
     runs-on: [self-hosted, amd-medium]
@@ -1118,12 +1056,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1137,7 +1076,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_tsan_3_6:
     runs-on: [self-hosted, amd-medium]
@@ -1152,12 +1094,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1171,7 +1114,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_tsan_4_6:
     runs-on: [self-hosted, amd-medium]
@@ -1186,12 +1132,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1205,7 +1152,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_tsan_5_6:
     runs-on: [self-hosted, amd-medium]
@@ -1220,12 +1170,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1239,7 +1190,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   integration_tests_amd_tsan_6_6:
     runs-on: [self-hosted, amd-medium]
@@ -1254,12 +1208,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1273,11 +1228,14 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   finish_workflow:
-    runs-on: [self-hosted, arm-tiny]
-    needs: [build_amd_asan_ubsan, build_amd_darwin, build_amd_debug, build_amd_release, build_amd_tsan, build_arm_darwin, build_arm_release, compatibility_check_amd_release, compatibility_check_arm_release, config_workflow, docker_keeper_image, docker_server_image, dockers_build_amd, dockers_build_arm, install_packages_amd_release, install_packages_arm_release, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3, stateless_tests_amd_asan_ubsan_distributed_plan_parallel, stress_test_amd_tsan, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
+    runs-on: [self-hosted, style-checker-aarch64]
+    needs: [build_amd_asan, build_amd_darwin, build_amd_debug, build_amd_release, build_amd_tsan, build_arm_darwin, build_arm_release, compatibility_check_amd_release, compatibility_check_arm_release, config_workflow, docker_keeper_image, docker_server_image, dockers_build_amd, dockers_build_arm, install_packages_amd_release, install_packages_arm_release, integration_tests_amd_asan_db_disk_old_analyzer_1_6, integration_tests_amd_asan_db_disk_old_analyzer_2_6, integration_tests_amd_asan_db_disk_old_analyzer_3_6, integration_tests_amd_asan_db_disk_old_analyzer_4_6, integration_tests_amd_asan_db_disk_old_analyzer_5_6, integration_tests_amd_asan_db_disk_old_analyzer_6_6, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, stateless_tests_amd_asan_db_disk_distributed_plan_sequential, stateless_tests_amd_asan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_distributed_plan_parallel_2_2, stress_test_amd_tsan]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
@@ -1288,12 +1246,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
+
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=.:./ci
+          export PYTHONPATH=./ci:.:
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
@@ -1307,4 +1266,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Finish Workflow' --workflow "BackportPR" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Finish Workflow' --workflow "BackportPR" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
