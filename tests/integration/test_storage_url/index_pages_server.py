@@ -82,6 +82,8 @@ SIMPLE_ARCHIVES = {
     "/data/header_archive.zip": make_zip_file(SIMPLE_ENTRIES),
     "/data/simple_archive.tar": make_tar_file(SIMPLE_ENTRIES),
     "/data/simple_archive.tar.gz": make_tar_file(SIMPLE_ENTRIES, "w:gz"),
+    "/data/archive_braces/a.zip": make_zip_file([("value.tsv", "11\n")]),
+    "/data/archive_braces/b.zip": make_zip_file([("value.tsv", "22\n")]),
 }
 SEVEN_ZIP_ARCHIVE = base64.b64decode(
     "N3q8ryccAAR6+uLAhgAAAAAAAAAhAAAAAAAAALNtaxHgABsAGF0AGIsG6KncZB+qxtE07L6V51NQRUvIscAAAAAAgTMHrg/QD"

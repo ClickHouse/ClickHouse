@@ -640,6 +640,28 @@ def test_url_wildcard_failover_resets_credentials():
     assert result.strip() == "23"
 
 
+def test_url_archive_path_braces_are_expanded_without_index_listing():
+    settings = {"allow_experimental_url_wildcard_from_index_pages": 0}
+    source = "http://resolver:8087/data/archive_braces/{a,b}.zip :: value.tsv"
+
+    assert node1.query(
+        f"SELECT sum(x) FROM url('{source}', 'TSV', 'x UInt64')",
+        settings=settings,
+    ).strip() == "33"
+    assert node1.query(
+        f"SELECT sum(x) FROM urlCluster('test_cluster_two_shards', '{source}', 'TSV', 'x UInt64')",
+        settings=settings,
+    ).strip() == "33"
+
+    error = node1.query_and_get_error(
+        "SELECT sum(x) FROM url("
+        "'http://resolver:8087/data/archive_braces/{a,missing}.zip :: value.tsv', "
+        "'TSV', 'x UInt64')",
+        settings=settings,
+    )
+    assert "No such file: data/archive_braces/missing.zip" in error
+
+
 def test_url_archive_without_url_wildcards():
     for archive_name in ("simple_archive.zip", "simple_archive.tar", "simple_archive.tar.gz"):
         archive_url = f"http://resolver:8087/data/{archive_name} :: eod.csv"
@@ -703,6 +725,13 @@ def test_url_archive_without_url_wildcards():
 
 
 def test_url_wildcard_archive_metadata_uses_shard_identity():
+    result = node1.query(
+        "SELECT sum(x) FROM url('"
+        "http://resolver:8087/data/archive_identity/archive.zip?shard={0,1} :: value.tsv', "
+        "'TSV', 'x UInt64')"
+    )
+    assert result.strip() == "303"
+
     result = node1.query(
         with_url_wildcard_setting(
             "SELECT sum(x) FROM url('"

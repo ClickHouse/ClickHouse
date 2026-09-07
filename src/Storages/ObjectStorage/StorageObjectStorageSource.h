@@ -272,6 +272,16 @@ public:
         bool with_tags_,
         std::function<void(FileProgress)> file_progress_callback = {});
 
+    KeysIterator(
+        const RelativePathsWithMetadata & keys_,
+        ObjectStoragePtr object_storage_,
+        const NamesAndTypesList & virtual_columns_,
+        ObjectInfos * read_keys_,
+        bool ignore_non_existent_files_,
+        bool skip_object_metadata_,
+        bool with_tags_,
+        std::function<void(FileProgress)> file_progress_callback = {});
+
     ~KeysIterator() override = default;
 
     ObjectInfoPtr next(size_t processor) override;
@@ -282,7 +292,7 @@ private:
     const ObjectStoragePtr object_storage;
     const NamesAndTypesList virtual_columns;
     const std::function<void(FileProgress)> file_progress_callback;
-    const std::vector<String> keys;
+    const RelativePathsWithMetadata keys;
     std::atomic<size_t> index = 0;
     const bool ignore_non_existent_files;
     const bool skip_object_metadata;

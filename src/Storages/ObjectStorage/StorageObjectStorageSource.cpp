@@ -447,12 +447,31 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     std::unique_ptr<IObjectIterator> iterator;
     const auto & reading_path = configuration->getPathForRead();
-    /// `KeysIterator` carries only path strings and drops `read_source_index`. For web URL shards the
-    /// same relative path can come from different expanded URL options (e.g. `http://{h1,h2}/data/**`),
-    /// so losing the source index would make `WebObjectStorage::readObject` treat all shards as failover
-    /// for that path and silently miss rows. Always use `GlobIterator` for web listings, which preserves
-    /// the source index.
-    if (!match_web_paths_only && reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
+    /// Web URL shards use `read_source_index` to distinguish union shards from failover options.
+    /// For fixed paths and locally-expandable `{...}` paths, build indexed keys directly instead
+    /// of listing an HTTP index page or dropping the source identity in `KeysIterator`.
+    if (match_web_paths_only && reading_path.path.find_first_of("*?") == String::npos)
+    {
+        const auto & web_object_storage = assert_cast<const WebObjectStorage &>(*object_storage);
+        const auto expanded_paths = reading_path.hasGlobs() ? expandSelectionGlob(reading_path.path) : Strings{reading_path.path};
+
+        RelativePathsWithMetadata indexed_paths;
+        indexed_paths.reserve(web_object_storage.getURLShards().size() * expanded_paths.size());
+        for (size_t source_index = 0; source_index < web_object_storage.getURLShards().size(); ++source_index)
+        {
+            for (const auto & expanded_path : expanded_paths)
+                indexed_paths.emplace_back(std::make_shared<RelativePathWithMetadata>(expanded_path, source_index));
+        }
+
+        /// Hard-code `skip_object_metadata` to false here because archive reading needs correct object
+        /// metadata: fixed archive paths must not keep skipping metadata fetch, otherwise whole-archive
+        /// distribution may end up with a wrong archive size.
+        iterator = std::make_unique<KeysIterator>(
+            indexed_paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
+            query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, with_tags,
+            file_progress_callback);
+    }
+    else if (!match_web_paths_only && reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
     {
         auto paths = expandSelectionGlob(reading_path.path);
         iterator = std::make_unique<KeysIterator>(
@@ -2034,8 +2053,41 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
     return object_infos[index++];
 }
 
+namespace
+{
+RelativePathsWithMetadata makeRelativePathsWithMetadata(const Strings & keys)
+{
+    RelativePathsWithMetadata result;
+    result.reserve(keys.size());
+    for (const auto & key : keys)
+        result.emplace_back(std::make_shared<RelativePathWithMetadata>(key));
+    return result;
+}
+}
+
 StorageObjectStorageSource::KeysIterator::KeysIterator(
     const Strings & keys_,
+    ObjectStoragePtr object_storage_,
+    const NamesAndTypesList & virtual_columns_,
+    ObjectInfos * read_keys_,
+    bool ignore_non_existent_files_,
+    bool skip_object_metadata_,
+    bool with_tags_,
+    std::function<void(FileProgress)> file_progress_callback_)
+    : KeysIterator(
+        makeRelativePathsWithMetadata(keys_),
+        std::move(object_storage_),
+        virtual_columns_,
+        read_keys_,
+        ignore_non_existent_files_,
+        skip_object_metadata_,
+        with_tags_,
+        std::move(file_progress_callback_))
+{
+}
+
+StorageObjectStorageSource::KeysIterator::KeysIterator(
+    const RelativePathsWithMetadata & keys_,
     ObjectStoragePtr object_storage_,
     const NamesAndTypesList & virtual_columns_,
     ObjectInfos * read_keys_,
@@ -2054,11 +2106,8 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     if (read_keys_)
     {
         /// TODO: should we add metadata if we anyway fetch it if file_progress_callback is passed?
-        for (auto && key : keys)
-        {
-            auto object_info = std::make_shared<ObjectInfo>(key);
-            read_keys_->emplace_back(object_info);
-        }
+        for (const auto & key : keys)
+            read_keys_->emplace_back(std::make_shared<ObjectInfo>(*key));
     }
 }
 
@@ -2070,20 +2119,20 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
         if (current_index >= keys.size())
             return nullptr;
 
-        auto key = keys[current_index];
+        const auto & key = keys[current_index];
 
         ObjectMetadata object_metadata{};
         if (!skip_object_metadata)
         {
             if (ignore_non_existent_files)
             {
-                auto metadata = object_storage->tryGetObjectMetadata(key, with_tags);
+                auto metadata = object_storage->tryGetObjectMetadata(*key, with_tags);
                 if (!metadata)
                     continue;
                 object_metadata = *metadata;
             }
             else
-                object_metadata = object_storage->getObjectMetadata(key, with_tags);
+                object_metadata = object_storage->getObjectMetadata(*key, with_tags);
         }
         else
         {
@@ -2096,7 +2145,9 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
         if (emit_profile_events)
             ProfileEvents::increment(ProfileEvents::ObjectStorageListedObjects);
 
-        return std::make_shared<ObjectInfo>(RelativePathWithMetadata(key, object_metadata));
+        auto relative_path = *key;
+        relative_path.metadata = std::move(object_metadata);
+        return std::make_shared<ObjectInfo>(std::move(relative_path));
     }
 }
 
