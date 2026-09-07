@@ -6,10 +6,11 @@
 -- join of the recursive member must still be counted for the shape of the query, so its count must not
 -- grow with either the iterations or the blocks.
 --
--- The count is asserted as a bound and not as an exact number, because how many times the scalar
--- subquery of the view is evaluated is not part of the contract this test pins: what matters is that the
--- number stays small instead of following the number of rebuilds. Without the deduplication this query
--- reports one join per iteration per block, which is far above the bound.
+-- The join is reported twice, and not once, because the scalar subquery of the view is also evaluated
+-- once outside the per-block builds of the view: that evaluation is a pipeline of its own and is counted
+-- apart from the one the view rebuilds. What the case pins is that neither of the two follows the
+-- rebuilds - the same query over four and over sixteen blocks reports two either way, while without the
+-- deduplication it reports one join per iteration per block.
 --
 -- `max_block_size` and the two `min_insert_block_size_*` settings split the `INSERT` into one block per
 -- row so that the view really is built more than once, which `system.part_log` asserts: every build
@@ -50,9 +51,7 @@ FROM system.part_log
 WHERE database = currentDatabase() AND table = 'dst' AND event_type = 'NewPart';
 
 SYSTEM FLUSH LOGS query_log;
-SELECT log_comment,
-       used_number_of_joins <= 2 AS the_count_does_not_follow_the_rebuilds,
-       used_join_algorithms
+SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'
