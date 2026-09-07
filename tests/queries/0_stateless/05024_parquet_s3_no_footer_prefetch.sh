@@ -31,7 +31,11 @@ url="http://localhost:11111/test/${CLICKHOUSE_DATABASE}"
 #     2 * max_download_buffer_size = 20 MiB, so the ~11 MiB object sits in the band where the old
 #     code WOULD have prefetched - making RemoteFSPrefetches = 0 a proof of the gate, not just of
 #     the object being too large for any prefetch.
-read_settings="remote_filesystem_read_method='threadpool', remote_filesystem_read_prefetch=1, max_read_buffer_size=1048576, max_download_buffer_size=10485760, input_format_parquet_filter_push_down=1, optimize_count_from_files=0"
+#   - enable_parallel_replicas = 0: with parallel replicas enabled server-side (the ParallelReplicas
+#     job installs it into the default profile) `parallel_replicas_for_cluster_engines` rewrites
+#     `s3` to `s3Cluster`, the object is read on the replicas, and none of their ProfileEvents reach
+#     the initiator's query_log row - every assertion below would read 0 prefetches.
+read_settings="remote_filesystem_read_method='threadpool', remote_filesystem_read_prefetch=1, max_read_buffer_size=1048576, max_download_buffer_size=10485760, input_format_parquet_filter_push_down=1, optimize_count_from_files=0, enable_parallel_replicas=0"
 
 # big object: > 1 read buffer. The incompressible string column inflates it well past 1 MiB.
 ${CLICKHOUSE_CLIENT} --query "
