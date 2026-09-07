@@ -15,6 +15,11 @@ SET enable_parallel_replicas = 0;
 SET max_block_size = 512;
 SET max_threads = 4;
 
+-- A final `DISTINCT` that hash-partitions its input, or keeps disjoint partition streams, drops the
+-- preliminary step altogether (see `allow_parallel_final_distinct`), so the parallel final `DISTINCT`
+-- is disabled to keep the preliminary step under test.
+SET allow_parallel_final_distinct = 0;
+
 -- { echo }
 
 DROP TABLE IF EXISTS t_uniq;

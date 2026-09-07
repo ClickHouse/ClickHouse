@@ -21,6 +21,10 @@ size limits keep the merge
     Resize 4 → 1
       (Distinct)
       DistinctTransform × 4
+disjoint partition streams drop the preliminary DISTINCT too
+  (Distinct)
+  DistinctTransform × 8
+1000
 sorted input is not scattered
 (Distinct)
 DistinctSortedStreamTransform
