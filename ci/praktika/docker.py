@@ -225,8 +225,8 @@ def is_apt_index_failure(info: str) -> bool:
 
 
 # Read from buildx's terminal error, which embeds the failing `RUN` recipe verbatim, so a
-# recipe naming a mirror error would match on its own text. The apt class is decided inside
-# the failing step's fenced block at `E:` severity instead.
+# recipe naming a mirror error would match on its own text. The apt classes are decided from
+# the failing step instead: its fenced `E:` error, plus that step's own index warning.
 _IMAGE_BUILD_REGISTRY_ERRORS = _BUILDX_REGISTRY_TRANSIENT_ERRORS + (
     # The one signature `Docker.build` retried before this ladder existed.
     "Error response from daemon: manifest unknown: manifest unknown",
@@ -276,14 +276,14 @@ def _terminal_error_tail(log_text: str) -> str:
 def _is_transient(log_text: str) -> bool:
     """Is this failure worth another attempt?
 
-    Fails closed: an unrecognised shape is permanent. The apt class is read only from the
-    step the build stopped on and only at `E:` severity, so a `W: Failed to fetch` that an
-    earlier successful step recovered from cannot make a later permanent failure look
-    retryable.
+    Fails closed: an unrecognised shape is permanent. Both apt classes are decided from the
+    step the build stopped on - its fenced `E:` error, and for a partial index the index
+    warning carrying that same step's prefix - so a fetch failure an earlier successful step
+    recovered from cannot make a later permanent failure look retryable.
     """
     if SHELL_IDLE_TIMEOUT_MESSAGE in log_text:
         return True
-    if is_apt_mirror_failure(log_text):
+    if is_apt_mirror_failure(log_text) or is_apt_index_failure(log_text):
         return True
     tail = _terminal_error_tail(log_text)
     return any(error in tail for error in _IMAGE_BUILD_REGISTRY_ERRORS)
