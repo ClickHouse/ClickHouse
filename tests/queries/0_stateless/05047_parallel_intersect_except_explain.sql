@@ -3,6 +3,9 @@
 
 SET explain_query_plan_default = 'legacy';
 
+-- The DISTINCT modes are executed as joins by default; this test covers the set-operation step.
+SET optimize_rewrite_intersect_except_to_join = 0;
+
 -- The CI test config (users.d/limits.yaml) sets global DISTINCT size limits, which keep the
 -- stream merge before the final DISTINCT; reset them so the disjointness applies.
 SET max_rows_in_distinct = 0;

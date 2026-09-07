@@ -50,15 +50,21 @@ SELECT 'ALL modes keep the set-operation step';
 SELECT * FROM (SELECT number % 3 AS x FROM numbers(6) INTERSECT ALL SELECT number % 3 FROM numbers(3)) ORDER BY x;
 SELECT * FROM (SELECT number % 3 AS x FROM numbers(6) EXCEPT ALL SELECT number % 3 FROM numbers(3)) ORDER BY x;
 
--- The join algorithm depends on the settings and the optimizer may swap the join sides, so only the strictness is kept.
+-- The join algorithm depends on the settings, and the optimizer may swap the join sides, which also moves the tree
+-- drawing, so only the strictness and the conditions are kept.
+-- Parallel replicas execute the whole join remotely, which changes the plan shape.
+SET enable_parallel_replicas = 0;
 SELECT 'plan';
-SELECT replaceRegexpOne(trimLeft(explain), '^.*Type: \\w+ \\| (Strictness: \\w+).*$', '\\1') FROM (EXPLAIN SELECT a, b FROM t_set_left INTERSECT DISTINCT SELECT a, b FROM t_set_right)
+SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[ │├└─]+', ''), '^Type: \\w+ \\| (Strictness: \\w+).*$', '\\1') FROM (EXPLAIN SELECT a, b FROM t_set_left INTERSECT DISTINCT SELECT a, b FROM t_set_right)
 WHERE explain LIKE '%Join%' OR explain LIKE '%Distinct%' OR explain LIKE '%IntersectOrExcept%';
-SELECT replaceRegexpOne(trimLeft(explain), '^.*Type: \\w+ \\| (Strictness: \\w+).*$', '\\1') FROM (EXPLAIN SELECT a, b FROM t_set_left EXCEPT DISTINCT SELECT a, b FROM t_set_right)
+SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[ │├└─]+', ''), '^Type: \\w+ \\| (Strictness: \\w+).*$', '\\1') FROM (EXPLAIN SELECT a, b FROM t_set_left EXCEPT DISTINCT SELECT a, b FROM t_set_right)
 WHERE explain LIKE '%Join%' OR explain LIKE '%Distinct%' OR explain LIKE '%IntersectOrExcept%';
-SELECT replaceRegexpOne(trimLeft(explain), '^.*Type: \\w+ \\| (Strictness: \\w+).*$', '\\1') FROM (EXPLAIN SELECT * FROM (SELECT a, b FROM t_set_left INTERSECT DISTINCT SELECT a, b FROM t_set_right) SETTINGS optimize_rewrite_intersect_except_to_join = 0)
+SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[ │├└─]+', ''), '^Type: \\w+ \\| (Strictness: \\w+).*$', '\\1') FROM (EXPLAIN SELECT * FROM (SELECT a, b FROM t_set_left INTERSECT DISTINCT SELECT a, b FROM t_set_right) SETTINGS optimize_rewrite_intersect_except_to_join = 0)
 WHERE explain LIKE '%Join%' OR explain LIKE '%Distinct%' OR explain LIKE '%IntersectOrExcept%';
-SELECT replaceRegexpOne(trimLeft(explain), '^.*Type: \\w+ \\| (Strictness: \\w+).*$', '\\1') FROM (EXPLAIN SELECT a, b FROM t_set_left INTERSECT ALL SELECT a, b FROM t_set_right)
+SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[ │├└─]+', ''), '^Type: \\w+ \\| (Strictness: \\w+).*$', '\\1') FROM (EXPLAIN SELECT a, b FROM t_set_left INTERSECT ALL SELECT a, b FROM t_set_right)
+WHERE explain LIKE '%Join%' OR explain LIKE '%Distinct%' OR explain LIKE '%IntersectOrExcept%';
+-- A rewritten arm of a rewritten set operation drops its own DISTINCT.
+SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[ │├└─]+', ''), '^Type: \\w+ \\| (Strictness: \\w+).*$', '\\1') FROM (EXPLAIN SELECT a FROM t_set_left INTERSECT DISTINCT SELECT a FROM t_set_right INTERSECT DISTINCT SELECT a FROM t_set_third)
 WHERE explain LIKE '%Join%' OR explain LIKE '%Distinct%' OR explain LIKE '%IntersectOrExcept%';
 
 DROP TABLE t_set_left;

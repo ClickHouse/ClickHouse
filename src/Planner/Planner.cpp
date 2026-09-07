@@ -87,7 +87,6 @@
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/findQueryForParallelReplicas.h>
-#include <Planner/rewriteIntersectOrExceptToJoin.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
@@ -187,7 +186,6 @@ namespace Setting
     extern const SettingsBool make_distributed_plan;
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
-    extern const SettingsBool optimize_rewrite_intersect_except_to_join;
 }
 
 namespace ServerSetting
@@ -2346,27 +2344,6 @@ void Planner::buildPlanForUnionNode()
         return;
     }
 
-    const auto & query_context = planner_context->getQueryContext();
-    const auto & settings = query_context->getSettingsRef();
-
-    /// The `DISTINCT` set operations are semi/anti joins on all columns, and the join gets the join algorithms,
-    /// their optimizations, and the parallel final `DISTINCT` for the same price as the dedicated set-operation step.
-    if (settings[Setting::optimize_rewrite_intersect_except_to_join]
-        && (union_mode == SelectUnionMode::INTERSECT_DISTINCT || union_mode == SelectUnionMode::EXCEPT_DISTINCT))
-    {
-        if (auto join_query = rewriteIntersectOrExceptToJoin(query_tree, query_context))
-        {
-            Planner join_planner(join_query, select_query_options, planner_context->getGlobalPlannerContext());
-            join_planner.buildQueryPlanIfNeeded();
-            for (const auto & row_policy : join_planner.getUsedRowPolicies())
-                used_row_policies.insert(row_policy);
-            const auto & mapping = join_planner.getQueryNodeToPlanStepMapping();
-            query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
-            query_plan = std::move(join_planner).extractQueryPlan();
-            return;
-        }
-    }
-
     const auto & union_queries_nodes = union_node.getQueries().getNodes();
     size_t queries_size = union_queries_nodes.size();
 
@@ -2392,7 +2369,9 @@ void Planner::buildPlanForUnionNode()
 
     Block union_common_header = buildCommonHeaderForUnion(
         query_plans_headers, union_mode, union_node.getContext()->getSettingsRef()[Setting::use_variant_as_common_type]);
+    const auto & query_context = planner_context->getQueryContext();
     addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers, query_context);
+    const auto & settings = query_context->getSettingsRef();
     auto max_threads = getMaxThreadsForAvailableMemory(
         settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
 
