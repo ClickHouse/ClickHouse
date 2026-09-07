@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/QueryCancellationBlockerInThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/TransactionID.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -320,6 +321,7 @@ bool MergeTreeTransaction::rollback() noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    QueryCancellationBlockerInThread cancellation_blocker;
     CSN expected = Tx::UnknownCSN;
     bool need_rollback = csn.compare_exchange_strong(expected, Tx::RolledBackCSN);
 
