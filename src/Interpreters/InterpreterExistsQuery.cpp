@@ -11,7 +11,6 @@
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
-#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -52,11 +51,10 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         }
         catch (...)
         {
-            /// Ok to swallow: fail closed. The error resurfaces for a caller who is allowed to
-            /// see the object as a table and really accesses it.
-            tryLogCurrentException(
-                __PRETTY_FUNCTION__,
-                fmt::format("Hidden from the caller: failed to resolve {} as a dictionary", id.getNameForLogs()));
+            /// Ok to swallow: fail closed. The error is deliberately not logged either, because
+            /// the client can ask for the server-side log of its own query (`send_logs_level`) and
+            /// would read the hidden object's error there. It is not lost: it resurfaces for a
+            /// caller who is allowed to see the object as a table and really accesses it.
             return nullptr;
         }
     };

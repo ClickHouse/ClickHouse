@@ -699,8 +699,11 @@ void DatabaseOverlay::collectFromSourceDatabases(ContextPtr context_, const std:
             catch (...)
             {
                 /// Ok to swallow: the caller has not proven the source-side `SHOW TABLES` grant,
-                /// so the source's error must not surface through the facade (see above).
-                tryLogCurrentException(log, fmt::format("Hidden from the caller: failed to list tables of the source database {}", backQuote(db->getDatabaseName())));
+                /// so the source's error must not surface through the facade (see above). It is
+                /// deliberately not logged either: the client can ask for the server-side log of
+                /// its own query (`send_logs_level`) and would read the hidden source's name and
+                /// error there. The error is not lost — it resurfaces for a caller who is allowed
+                /// to list that source and really lists it.
                 /// Stop the walk. The failed source contributed an unknown set of names, and any of
                 /// them could have shadowed a same-named table of a later source. Continuing would
                 /// list the later source's table while the read path — which stops at the first
