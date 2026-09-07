@@ -1099,3 +1099,55 @@ def test_concurrent_create_drop_race_condition(cluster):
                         node.query(f"DROP NAMED COLLECTION IF EXISTS {coll}")
             except Exception:
                 pass
+
+
+def test_missing_collection_in_config_does_not_block_startup(cluster):
+    """A collection removed from the configuration leaves no DROP to intercept, so a table that
+    names it survives into the next start and must not break the loading of its database."""
+    node = cluster.instances["node"]
+
+    config = """<clickhouse>
+  <named_collections>
+    <collection1>
+      <key1>value1</key1>
+    </collection1>
+    <nc_startup>
+      <url>http://127.0.0.1:1/none</url>
+      <format>TSV</format>
+    </nc_startup>
+  </named_collections>
+  <display_secrets_in_show_and_select>1</display_secrets_in_show_and_select>
+</clickhouse>
+"""
+
+    with node.with_replace_config(
+        "/etc/clickhouse-server/config.d/named_collections.xml",
+        config,
+        reload_before=True,
+        reload_after=True,
+    ):
+        node.query("CREATE TABLE t_startup (n UInt32) ENGINE = URL(nc_startup)")
+
+    assert "nc_startup" not in node.query("SELECT name FROM system.named_collections")
+
+    node.restart_clickhouse()
+
+    assert "t_startup" in node.query(
+        "SELECT name FROM system.tables WHERE database = currentDatabase()"
+    )
+    assert "NAMED_COLLECTION_DOESNT_EXIST" in node.query_and_get_error(
+        "SELECT * FROM t_startup"
+    )
+
+    # Putting the collection back makes the table work again without another restart. The read
+    # still fails, because the endpoint is unreachable, but no longer on the collection.
+    with node.with_replace_config(
+        "/etc/clickhouse-server/config.d/named_collections.xml",
+        config,
+        reload_before=True,
+        reload_after=True,
+    ):
+        assert "NAMED_COLLECTION_DOESNT_EXIST" not in node.query_and_get_error(
+            "SELECT * FROM t_startup"
+        )
+        node.query("DROP TABLE t_startup")
