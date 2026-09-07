@@ -83,30 +83,6 @@ Span * batch_row_count(Span * input, uint32_t num_rows) {
    Array return types can't live inside Nullable, so calling this disables ClickHouse's
    default null-handling and lets a genuinely-Nullable argument column reach the guest —
    the path needed to exercise the declared-Nullable-argument size estimator. */
-/* Same batch-row-count probe, but emitting a scalar rather than a one-element array, so a
-   function declared RETURNS Nullable(UInt32) can use it. A Nullable return type is what makes
-   ClickHouse hand the guest genuinely-Nullable argument columns instead of denulling them. */
-Span * batch_row_count_json_scalar(Span * input, uint32_t num_rows) {
-    (void)input;
-    uint8_t digits[10];
-    uint32_t len = write_u32(num_rows, digits);
-    /* {"result":}\n = 12 chars + up to 10 digits */
-    Span * out = clickhouse_create_buffer(num_rows * (12 + len));
-    if (out == NULL) return NULL;
-    static const char prefix[] = "{\"result\":";
-    uint8_t * pos = out->data;
-    for (uint32_t row = 0; row < num_rows; row++) {
-        for (uint32_t i = 0; prefix[i]; i++)
-            *pos++ = prefix[i];
-        for (uint32_t i = 0; i < len; i++)
-            *pos++ = digits[i];
-        *pos++ = '}';
-        *pos++ = '\n';
-    }
-    out->size = (uint32_t)(pos - out->data);
-    return out;
-}
-
 Span * batch_row_count_json(Span * input, uint32_t num_rows) {
     (void)input;
     uint8_t digits[10];
@@ -126,5 +102,44 @@ Span * batch_row_count_json(Span * input, uint32_t num_rows) {
         *pos++ = '\n';
     }
     out->size = (uint32_t)(pos - out->data);
+    return out;
+}
+
+/* Same as batch_row_count_json, but emits the `RETURNS Array(UInt32)` result in
+   RowBinary: a varint element count (always 1, so a single byte) followed by the
+   batch's row count as a little-endian uint32. Needed to exercise the binary wires,
+   where `SerializationDynamic::serializeBinary` prepends each row's runtime type. */
+Span * batch_row_count_row_binary(Span * input, uint32_t num_rows) {
+    (void)input;
+    Span * out = clickhouse_create_buffer(num_rows * 5);
+    if (out == NULL) return NULL;
+    uint8_t * pos = out->data;
+    for (uint32_t row = 0; row < num_rows; row++) {
+        *pos++ = 1;
+        *pos++ = (uint8_t)(num_rows & 0xFF);
+        *pos++ = (uint8_t)((num_rows >> 8) & 0xFF);
+        *pos++ = (uint8_t)((num_rows >> 16) & 0xFF);
+        *pos++ = (uint8_t)((num_rows >> 24) & 0xFF);
+    }
+    return out;
+}
+
+/* Same as batch_row_count_json, but emits the `RETURNS Array(UInt32)` result in
+   MsgPack: `fixarray` of one element followed by a `uint32` (0xce and four
+   big-endian bytes). Needed to exercise the MsgPack wire, whose per-value
+   headers no in-memory byte count can see. */
+Span * batch_row_count_msgpack(Span * input, uint32_t num_rows) {
+    (void)input;
+    Span * out = clickhouse_create_buffer(num_rows * 6);
+    if (out == NULL) return NULL;
+    uint8_t * pos = out->data;
+    for (uint32_t row = 0; row < num_rows; row++) {
+        *pos++ = 0x91;
+        *pos++ = 0xce;
+        *pos++ = (uint8_t)((num_rows >> 24) & 0xFF);
+        *pos++ = (uint8_t)((num_rows >> 16) & 0xFF);
+        *pos++ = (uint8_t)((num_rows >> 8) & 0xFF);
+        *pos++ = (uint8_t)(num_rows & 0xFF);
+    }
     return out;
 }

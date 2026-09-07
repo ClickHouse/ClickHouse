@@ -5,13 +5,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Regression test for the BUFFERED_V1 dynamic splitter's size estimate with text
-# serialization formats. The splitter prices values by their in-memory column width;
-# text renderings are larger (an Int8 of -100 is 1 byte in memory but 5 bytes as CSV),
-# so without a worst-case wire-expansion factor the splitter skips a needed split, the
-# whole block is serialized at ~5x the estimated size, and the guest's allocator
-# (deliberately given a small 1 MiB heap in text_split_abi.c) rejects the buffer,
-# failing the query with `WASM_ERROR` even though splitting would have made it succeed.
+# Regression test for the BUFFERED_V1 dynamic splitter with text serialization formats.
+# A text rendering is wider than the value in memory - an `Int8` of -100 occupies one byte
+# there but five as CSV - so a splitter pricing rows by their in-memory column width skips a
+# needed split, the whole block is serialized at several times the assumed size, and the
+# guest's allocator (deliberately given a small 1 MiB heap in text_split_abi.c) rejects the
+# buffer, failing the query with `WASM_ERROR` even though splitting would have made it
+# succeed. Rows are measured through the real output format instead, so what the splitter
+# sees is the wire itself.
 #
 # The guest returns, for every input row, the number of rows in the batch it arrived
 # in, so SQL can assert both that every row was processed and that the 256 KiB block
@@ -45,7 +46,11 @@ FROM
     SELECT wasm_csv_batch_rows(toInt8((number % 2) - 100)) AS batch_rows
     FROM numbers(262144)
 )
-SETTINGS max_block_size = 262144, max_threads = 1, webassembly_udf_max_input_block_size = 0;
+-- `text_split_abi.c` allocates its result from the same 1 MiB heap as the input buffer, and the
+-- result is wider than the input, so a batch filling the default half of the linear memory leaves
+-- the guest no room for its own output. Budget a quarter of the memory instead.
+SETTINGS max_block_size = 262144, max_threads = 1, webassembly_udf_max_input_block_size = 0,
+         webassembly_udf_input_split_memory_ratio = 0.25;
 
 DROP FUNCTION IF EXISTS wasm_csv_batch_rows;
 DELETE FROM system.webassembly_modules WHERE name = 'text_split_abi';
