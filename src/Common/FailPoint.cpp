@@ -168,11 +168,14 @@ static struct InitFiu
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_zk_partition_list) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(nats_pause_before_building_insert_pipeline) \
     PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
     PAUSEABLE(paimon_incremental_read_pause_after_watermark_commit) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(framing_finalize_throw) \
+    REGULAR(profile_traces_flush_write_timeout) \
+    REGULAR(profile_traces_flush_ack_timeout) \
     ONCE(framing_throw_after_writing_packet) \
     ONCE(framing_throw_during_payload_reset) \
     ONCE(framing_throw_before_totals_boundary) \

@@ -9431,7 +9431,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
 
     /// Re-parse partition key fields using the information about expected field types.
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
-    const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
+    /// Existing parts hold partition values produced with the adjusted partition key (`modulo` becomes
+    /// `moduloLegacy`, which can differ in signedness), so a value parsed here must use the same types.
+    const auto adjusted_partition_key = MergeTreePartition::adjustPartitionKey(metadata_snapshot, local_context);
+    const Block & key_sample_block = adjusted_partition_key.sample_block;
     size_t fields_count = key_sample_block.columns();
     if (partition_ast_fields_count != fields_count)
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
@@ -9526,10 +9529,12 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             existing_part_in_partition = getAnyPartInPartition(partition_id, readLockParts());
         if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
         {
-            auto partition_str = partition.serializeToString(existing_part_in_partition->getMetadataSnapshot());
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value: {} "
-                            "doesn't match partition value for an existing part with the same partition ID: {}",
-                            partition_str, existing_part_in_partition->name);
+            auto part_metadata_snapshot = existing_part_in_partition->getMetadataSnapshot();
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value {} does not match partition value {} "
+                            "of the existing part {} with the same partition ID",
+                            partition.serializeToString(part_metadata_snapshot),
+                            existing_part_in_partition->partition.serializeToString(part_metadata_snapshot),
+                            existing_part_in_partition->name);
         }
     }
 

@@ -1966,7 +1966,7 @@ void TCPHandler::sendInsertProfileEvents(QueryState & state)
     sendProfileEvents(state);
 }
 
-void TCPHandler::updateProfileTracesQueue(QueryState & state)
+void TCPHandler::updateProfileTracesQueue(QueryState & state) const
 {
     const bool enabled = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_PROFILE_TRACES
         && state.query_context->getSettingsRef()[Setting::send_profile_traces];
@@ -1977,7 +1977,7 @@ void TCPHandler::updateProfileTracesQueue(QueryState & state)
     }
     else if (!enabled && state.profile_traces_queue)
     {
-        state.profile_traces_queue->finish();
+        state.profile_traces_queue->cancel();
         CurrentThread::attachInternalProfileTracesQueue(nullptr);
         state.profile_traces_queue.reset();
     }
@@ -1988,6 +1988,12 @@ void TCPHandler::sendProfileTraces(QueryState & state, bool finish)
     if (!state.profile_traces_queue)
         return;
 
+    if (!state.query_context->getSettingsRef()[Setting::send_profile_traces])
+    {
+        state.profile_traces_queue->cancel();
+        return;
+    }
+
     if (!finish && state.after_send_profile_traces.elapsedMicroseconds()
         < state.query_context->getSettingsRef()[Setting::interactive_delay])
         return;
@@ -1997,9 +2003,6 @@ void TCPHandler::sendProfileTraces(QueryState & state, bool finish)
 
     if (finish)
         state.profile_traces_queue->finish();
-
-    if (!state.query_context->getSettingsRef()[Setting::send_profile_traces])
-        return;
 
     do
     {
