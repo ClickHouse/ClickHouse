@@ -24,8 +24,8 @@ namespace DB
   *
   *     /hello/world/
   *     files: 2
-  *     hello.json	gfkoqxvyhaasroiodbeurnftnwieiihy/hello.json	1234
-  *     upyachka.bin	aaealinyzgdzycgcnpgaapdssrjirnnr/upyachka.bin	567
+  *     hello.json    gfkoqxvyhaasroiodbeurnftnwieiihy/hello.json    1234
+  *     upyachka.bin  aaealinyzgdzycgcnpgaapdssrjirnnr/upyachka.bin  567
   *
   * The file names and the blob keys are escaped as in the `TSV` format. The blobs may live under a different prefix
   * (a hard link to a file of another directory), and the blobs stored under the prefix but absent from the list

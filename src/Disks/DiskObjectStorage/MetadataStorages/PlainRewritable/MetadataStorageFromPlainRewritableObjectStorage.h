@@ -44,8 +44,8 @@ namespace DB
   * /__meta/gfkoqxvyhaasroiodbeurnftnwieiihy/prefix.path, contents:
   *     /hello/world/
   *     files: 2
-  *     link.txt	aaealinyzgdzycgcnpgaapdssrjirnnr/test2.txt	42
-  *     test1.txt	gfkoqxvyhaasroiodbeurnftnwieiihy/test1.txt	7
+  *     link.txt    aaealinyzgdzycgcnpgaapdssrjirnnr/test2.txt    42
+  *     test1.txt   gfkoqxvyhaasroiodbeurnftnwieiihy/test1.txt    7
   *
   * The number of links to every blob is maintained in memory (and recalculated on load): a blob is removed together with its last link.
   * New blobs of a directory in the explicit form get random names, so that a new file cannot clobber the blob of a deleted file
