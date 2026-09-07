@@ -11585,7 +11585,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
         }
         else if (auto parsed_partition = MergeTreePartition::tryParseValueFromID(
                      new_part_info.getPartitionId(),
-                     table_metadata->getPartitionKey().sample_block))
+                     MergeTreePartition::adjustPartitionKey(table_metadata, getContext()).sample_block))
         {
             partition = MergeTreePartition(*parsed_partition);
         }
