@@ -1,22 +1,21 @@
+add_subdirectory(divide)
+
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions .)
-add_headers_and_sources(clickhouse_functions AI)
-add_headers_and_sources(clickhouse_functions Kusto)
 
 # These files are moved from clickhouse_functions into dbms to make dbms self-contained (not depend on clickhouse_functions)
 # This allows less dependency and linker work (specially important when building many example executables)
 set(DBMS_FUNCTIONS
-    ComparisonOrderDomain.cpp # ComparisonOrderDomain::operator== (Used by LogicalExpressionOptimizerPass.cpp)
     IFunction.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
     IFunctionAdaptors.cpp # FunctionToFunctionBaseAdaptor (Used by FunctionFactory.cpp)
     FunctionDynamicAdaptor.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
     FunctionVariantAdaptor.cpp # IFunctionOverloadResolver::build, IExecutableFunction::execute... (For Variant type support)
-    TypeMismatchStrictness.cpp # shouldThrowOnVariantTypeMismatch, shouldThrowOnDynamicTypeMismatch (Used by the Variant/Dynamic adaptors above)
     FunctionFactory.cpp # FunctionFactory::instance() (Many AST visitors, analyzer passes, some storages...)
     FunctionHelpers.cpp # convertConstTupleToConstantElements, checkAndGetColumnConstStringOrFixedString, checkAndGetNestedArrayOffset ...)
     FunctionsLogical.cpp # createInternalFunctionAndOverloadResolve / createInternalFunctionOrOverloadResolver ... (Multiple)
     if.cpp # createInternalFunctionIfOverloadResolver (Used by MultiIfToIfPass.cpp)
     multiIf.cpp # createInternalMultiIfOverloadResolver (Used by IfChainToMultiIfPass.cpp)
+    multiMatchAny.cpp # createInternalMultiMatchAnyOverloadResolver (Used by ConvertOrLikeChainPass.cpp)
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
@@ -53,15 +52,11 @@ set(DBMS_FUNCTIONS
     FunctionsConversion_impl2.cpp
     FunctionsConversion_impl3.cpp
     FunctionTopKFilter.cpp # createInternalFunctionTopKFilterResolver used from optimizeTopK.cpp
-    productQuantization.cpp # createInternalFunctionPQDistanceResolver used from useVectorSearchWithQuantizedCodes.cpp
-    vectorQuantization.cpp # createInternalFunctionQuantizeDistanceResolver used from useVectorSearchWithQuantizedCodes.cpp
     extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
     generateSnowflakeID.cpp
-    FunctionGenerateRandomStructure.cpp # FunctionGenerateRandomStructure::generateRandomDataType (Used by StorageGenerateRandom.cpp)
 )
 extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
-    ComparisonOrderDomain.h
     IFunction.h
     FunctionFactory.h
     FunctionHelpers.h
@@ -95,7 +90,7 @@ list (APPEND PUBLIC_LIBS
 list (APPEND PRIVATE_LIBS
         ch_contrib::zlib
         boost::filesystem
-        ch_contrib::libdivide
+        divide_impl
         ch_contrib::xxHash
         ch_contrib::stringzilla
 )
@@ -120,8 +115,8 @@ if (TARGET ch_contrib::bech32)
     list (APPEND PRIVATE_LIBS ch_contrib::bech32)
 endif()
 
-if (TARGET ch_contrib::simdutf)
-    list (APPEND PRIVATE_LIBS ch_contrib::simdutf)
+if (TARGET ch_contrib::base64)
+    list (APPEND PRIVATE_LIBS ch_contrib::base64)
 endif()
 
 if (ENABLE_NLP)
@@ -138,10 +133,6 @@ endif()
 
 if (TARGET ch_contrib::h3)
     list (APPEND PRIVATE_LIBS ch_contrib::h3)
-endif()
-
-if (TARGET ch_contrib::wagyu)
-    list (APPEND PRIVATE_LIBS ch_contrib::wagyu)
 endif()
 
 if (TARGET ch_contrib::vectorscan)
@@ -173,6 +164,9 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_url>)
 add_subdirectory(array)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_array>)
 
+add_subdirectory(Kusto)
+list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_kusto>)
+
 add_subdirectory(TimeSeries)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_time_series>)
 
@@ -188,17 +182,6 @@ add_subdirectory(keyvaluepair)
 
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)
-
-# TODO: at v3 these wrapper TUs regress because the SLP vectorizer / SIMD-aware codegen
-# fires inside the per-row dispatch (YMM scratch zero-init in `stringJaccardIndex`,
-# YMM `ColumnString` prologue forcing `vzeroupper` around `randomString`'s `getUInt`,
-# longer BMI2 encodings in `XXH3`'s short-input fast path crossing a 16-byte fetch boundary).
-# Compiling at v2 restores master codegen; the actual AVX2 kernels they call live in other TUs.
-if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
-    set_source_files_properties(FunctionsStringDistance.cpp PROPERTIES COMPILE_FLAGS "-march=x86-64-v2")
-    set_source_files_properties(randomString.cpp PROPERTIES COMPILE_FLAGS "-march=x86-64-v2")
-    set_source_files_properties(FunctionsHashingMisc.cpp PROPERTIES COMPILE_FLAGS "-march=x86-64-v2")
-endif()
 
 if (USE_GPERF)
     # Only for regenerating

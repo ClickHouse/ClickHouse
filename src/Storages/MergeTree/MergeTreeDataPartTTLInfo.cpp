@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
-#include <Compression/CompressionFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/quoteString.h>
@@ -315,7 +314,7 @@ std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescripti
                 continue;
         }
 
-        time_t ttl_time = 0;
+        time_t ttl_time;
 
         if (use_max)
             ttl_time = ttl_info_it->second.max;
@@ -334,12 +333,5 @@ std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescripti
     return best_ttl_time ? *best_entry_it : std::optional<TTLDescription>();
 }
 
-bool isExplicitRecompression(
-    const TTLDescriptions & recompression_ttl_entries, const TTLInfoMap & recompression_ttl_info, time_t current_time)
-{
-    auto best_ttl_entry
-        = selectTTLDescriptionForTTLInfos(recompression_ttl_entries, recompression_ttl_info, current_time, /*use_max=*/true);
-    return best_ttl_entry && !CompressionCodecFactory::isDefaultCodec(best_ttl_entry->recompression_codec);
-}
 
 }
