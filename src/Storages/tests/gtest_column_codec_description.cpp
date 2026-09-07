@@ -1,14 +1,21 @@
 #include <gtest/gtest.h>
 
 #include <Core/Defines.h>
+#include <Compression/CompressionFactory.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/dataTypeToAST.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTTupleDataType.h>
+#include <Parsers/ASTTupleElementCodecOperation.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnCodecDescription.h>
+#include <Storages/ColumnCodecAST.h>
+#include <Storages/ColumnCodecValidation.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -32,7 +39,7 @@ ASTPtr parseAlterColumnDeclaration(const String & declaration)
         /* require_type_ = */ true,
         /* allow_null_modifiers_ = */ false,
         /* check_keywords_after_name_ = */ false,
-        /* allow_tuple_element_codec_removals_ = */ true);
+        /* tuple_element_codec_syntax_ = */ TupleElementCodecSyntax::AllowSetAndRemove);
     return parseQuery(
         parser,
         declaration,
@@ -47,21 +54,18 @@ TEST(ColumnCodecDescription, ExtractAndApply)
         "payload Tuple(id UInt64 CODEC(ZSTD(3)), nested Tuple(value String CODEC(LZ4HC(4)), flag UInt8)) CODEC(LZ4)");
     const auto & declaration = parsed->as<ASTColumnDeclaration &>();
     const auto & tuple_ast = declaration.getType()->as<ASTTupleDataType &>();
-    const auto tuple_arguments = tuple_ast.getArguments();
-    ASSERT_TRUE(tuple_arguments);
-    const auto & id_type_ast = tuple_arguments->children[0]->as<ASTDataType &>();
-    ASSERT_TRUE(id_type_ast.hasCodec());
-    ASSERT_EQ(id_type_ast.children.size(), 1);
-    EXPECT_EQ(id_type_ast.children.back().get(), id_type_ast.getCodec().get());
+    const auto * id_operation = tuple_ast.getCodecOperation(0);
+    ASSERT_TRUE(id_operation);
+    ASSERT_EQ(id_operation->kind, TupleElementCodecOperationKind::Set);
+    ASSERT_TRUE(id_operation->getCodec());
 
     const auto cloned = parsed->clone();
     EXPECT_EQ(cloned->getTreeHash(false), parsed->getTreeHash(false));
     const auto & cloned_declaration = cloned->as<ASTColumnDeclaration &>();
-    const auto cloned_tuple_arguments = cloned_declaration.getType()->as<ASTTupleDataType &>().getArguments();
-    ASSERT_TRUE(cloned_tuple_arguments);
-    const auto & cloned_id_type_ast = cloned_tuple_arguments->children[0]->as<ASTDataType &>();
-    ASSERT_TRUE(cloned_id_type_ast.hasCodec());
-    EXPECT_NE(cloned_id_type_ast.getCodec().get(), id_type_ast.getCodec().get());
+    const auto & cloned_tuple_ast = cloned_declaration.getType()->as<ASTTupleDataType &>();
+    const auto * cloned_id_operation = cloned_tuple_ast.getCodecOperation(0);
+    ASSERT_TRUE(cloned_id_operation);
+    EXPECT_NE(cloned_id_operation->getCodec().get(), id_operation->getCodec().get());
 
     DataTypePtr logical_type = DataTypeFactory::instance().get(declaration.getType());
 
@@ -75,17 +79,15 @@ TEST(ColumnCodecDescription, ExtractAndApply)
     EXPECT_EQ(codec.getCodecs().at(CodecPath{"id"})->formatWithSecretsOneLine(), "CODEC(ZSTD(3))");
     EXPECT_EQ(codec.getCodecs().at(CodecPath{"nested", "value"})->formatWithSecretsOneLine(), "CODEC(LZ4HC(4))");
 
-    const auto element_codec = codec.resolve(CodecPath{"id"}, nullptr);
+    const auto element_codec = codec.find(CodecPath{"id"});
     ASSERT_TRUE(element_codec.codec);
     EXPECT_EQ(element_codec.codec->formatWithSecretsOneLine(), "CODEC(ZSTD(3))");
     EXPECT_EQ(element_codec.declaration_path, CodecPath{"id"});
-    EXPECT_FALSE(element_codec.codec_is_part_default);
 
-    const auto inherited_root_codec = codec.resolve(CodecPath{"nested", "flag"}, nullptr);
+    const auto inherited_root_codec = codec.find(CodecPath{"nested", "flag"});
     ASSERT_TRUE(inherited_root_codec.codec);
     EXPECT_EQ(inherited_root_codec.codec->formatWithSecretsOneLine(), "CODEC(LZ4)");
     EXPECT_TRUE(inherited_root_codec.declaration_path.empty());
-    EXPECT_FALSE(inherited_root_codec.codec_is_part_default);
 
     auto without_root = codec.clone();
     without_root.resetRoot();
@@ -104,21 +106,23 @@ TEST(ColumnCodecDescription, ExtractAndApply)
     EXPECT_EQ(restored.formatWithSecretsOneLine(), declaration.formatWithSecretsOneLine());
 }
 
-TEST(ColumnCodecDescription, CodecOperationBelongsToElementDataType)
+TEST(ColumnCodecDescription, CodecOperationBelongsToOwningTuple)
 {
     const String declaration_text =
         "payload Tuple(items Array(Tuple(id UInt64 CODEC(ZSTD(3)), text String)), state Enum8('ok' = 1) CODEC(LZ4))";
     const auto parsed = parseColumnDeclaration(declaration_text);
     const auto & declaration = parsed->as<ASTColumnDeclaration &>();
 
-    const auto outer_arguments = declaration.getType()->as<ASTTupleDataType &>().getArguments();
+    const auto & outer_tuple = declaration.getType()->as<ASTTupleDataType &>();
+    const auto outer_arguments = outer_tuple.getArguments();
     ASSERT_TRUE(outer_arguments);
     const auto array_arguments = outer_arguments->children[0]->as<ASTDataType &>().getArguments();
     ASSERT_TRUE(array_arguments);
-    const auto inner_arguments = array_arguments->children[0]->as<ASTTupleDataType &>().getArguments();
+    const auto & inner_tuple = array_arguments->children[0]->as<ASTTupleDataType &>();
+    const auto inner_arguments = inner_tuple.getArguments();
     ASSERT_TRUE(inner_arguments);
-    EXPECT_TRUE(inner_arguments->children[0]->as<ASTDataType &>().hasCodec());
-    EXPECT_TRUE(outer_arguments->children[1]->as<ASTDataType &>().hasCodec());
+    EXPECT_TRUE(inner_tuple.getCodecOperation(0));
+    EXPECT_TRUE(outer_tuple.getCodecOperation(1));
 
     EXPECT_EQ(declaration.formatWithSecretsOneLine(), declaration_text);
     EXPECT_EQ(
@@ -139,13 +143,101 @@ TEST(ColumnCodecDescription, CodecOperationBelongsToElementDataType)
     EXPECT_EQ(restored.formatWithSecretsOneLine(), declaration_text);
 
     const auto removal = parseAlterColumnDeclaration("payload Tuple(id UInt64 REMOVE CODEC, text String)");
-    const auto removal_arguments = removal->as<ASTColumnDeclaration &>().getType()->as<ASTTupleDataType &>().getArguments();
-    ASSERT_TRUE(removal_arguments);
-    const auto & removed_type = removal_arguments->children[0]->as<ASTDataType &>();
-    EXPECT_FALSE(removed_type.hasCodec());
-    EXPECT_TRUE(removed_type.hasCodecRemoval());
+    const auto & removal_tuple = removal->as<ASTColumnDeclaration &>().getType()->as<ASTTupleDataType &>();
+    const auto * removal_operation = removal_tuple.getCodecOperation(0);
+    ASSERT_TRUE(removal_operation);
+    EXPECT_EQ(removal_operation->kind, TupleElementCodecOperationKind::Remove);
+    EXPECT_FALSE(removal_operation->getCodec());
     EXPECT_EQ(removal->formatWithSecretsOneLine(), "payload Tuple(id UInt64 REMOVE CODEC, text String)");
     EXPECT_EQ(removal->clone()->getTreeHash(false), removal->getTreeHash(false));
+}
+
+TEST(ColumnCodecDescription, OrdinaryTupleHasNoCodecOperations)
+{
+    const auto parsed = parseColumnDeclaration(
+        "value Tuple(a UInt8, nested Tuple(e Enum8('x' = 1), s String))");
+    const auto & declaration = parsed->as<ASTColumnDeclaration &>();
+    const auto & outer_tuple = declaration.getType()->as<ASTTupleDataType &>();
+    EXPECT_FALSE(outer_tuple.getCodecOperations());
+
+    const auto arguments = outer_tuple.getArguments();
+    ASSERT_TRUE(arguments);
+    const auto & inner_tuple = arguments->children[1]->as<ASTTupleDataType &>();
+    EXPECT_FALSE(inner_tuple.getCodecOperations());
+    EXPECT_EQ(DataTypeFactory::instance().get(declaration.getType())->getName(),
+        "Tuple(a UInt8, nested Tuple(e Enum8('x' = 1), s String))");
+    EXPECT_EQ(parsed->clone()->getTreeHash(false), parsed->getTreeHash(false));
+}
+
+TEST(ColumnCodecDescription, EphemeralDefaultUsesLogicalType)
+{
+    const auto parsed = parseColumnDeclaration(
+        "value Tuple(a UInt8 CODEC(LZ4), b String) EPHEMERAL");
+    const auto & declaration = parsed->as<ASTColumnDeclaration &>();
+    const auto & default_function = declaration.getDefaultExpression()->as<ASTFunction &>();
+    ASSERT_TRUE(default_function.arguments);
+    ASSERT_EQ(default_function.arguments->children.size(), 1);
+    EXPECT_EQ(
+        default_function.arguments->children.front()->as<ASTLiteral &>().value.safeGet<String>(),
+        "Tuple(a UInt8, b String)");
+}
+
+TEST(ColumnCodecDescription, DormantDeclarationKeepsImplicitParameters)
+{
+    const auto parsed = parseColumnDeclaration(
+        "value Tuple(a UInt64 CODEC(LZ4), b UInt64 CODEC(LZ4)) CODEC(Delta)");
+    const auto & declaration = parsed->as<ASTColumnDeclaration &>();
+    const auto logical_type = DataTypeFactory::instance().get(declaration.getType());
+    auto codec = codecDescriptionFromAST(declaration, logical_type, CodecValidationSettings::trusted());
+
+    ASSERT_TRUE(codec.hasRoot());
+    EXPECT_EQ(codec.getRoot()->formatWithSecretsOneLine(), "CODEC(Delta)");
+
+    codec.erase(CodecPath{"a"});
+    codec.erase(CodecPath{"b"});
+    codec = validateColumnCodecDescription(codec, logical_type, CodecValidationSettings::trusted());
+    EXPECT_EQ(codec.getRoot()->formatWithSecretsOneLine(), "CODEC(Delta(8))");
+}
+
+TEST(ColumnCodecDescription, VersionedColumnsMetadata)
+{
+    const auto parsed = parseColumnDeclaration(
+        "payload Tuple(id UInt64 CODEC(ZSTD(3)), `literal.dot` String CODEC(LZ4)) CODEC(ZSTD(1))");
+    const auto & declaration = parsed->as<ASTColumnDeclaration &>();
+    const auto logical_type = DataTypeFactory::instance().get(declaration.getType());
+
+    ColumnDescription column(declaration.name, logical_type);
+    column.codec = codecDescriptionFromAST(declaration, logical_type, CodecValidationSettings::trusted());
+
+    ColumnDescription root_only("root_only", logical_type);
+    root_only.codec.setRoot(column.codec.getRoot());
+    ColumnsDescription root_only_columns;
+    root_only_columns.add(root_only);
+    const String root_only_serialized = root_only_columns.toString(/* include_comments = */ true);
+    EXPECT_TRUE(root_only_serialized.starts_with("columns format version: 1\n"));
+    EXPECT_EQ(root_only_serialized.find("TUPLE_ELEMENT_CODECS"), String::npos);
+
+    ColumnsDescription columns;
+    columns.add(column);
+
+    const String serialized = columns.toString(/* include_comments = */ true);
+    EXPECT_TRUE(serialized.starts_with("columns format version: 2\n"));
+    EXPECT_NE(serialized.find("TUPLE_ELEMENT_CODECS"), String::npos);
+    EXPECT_EQ(serialized.find("Tuple(id UInt64 CODEC"), String::npos);
+
+    const auto restored = ColumnsDescription::parse(serialized);
+    EXPECT_EQ(restored.get("payload").codec, column.codec);
+    EXPECT_EQ(restored.toString(/* include_comments = */ true), serialized);
+
+    const String legacy =
+        "columns format version: 1\n"
+        "1 columns:\n"
+        "`payload` Tuple(id UInt64 CODEC(ZSTD(3)), text String)\n";
+    const auto migrated = ColumnsDescription::parse(legacy);
+    EXPECT_EQ(
+        migrated.get("payload").codec.getCodecs().at(CodecPath{"id"})->formatWithSecretsOneLine(),
+        "CODEC(ZSTD(3))");
+    EXPECT_TRUE(migrated.toString(/* include_comments = */ true).starts_with("columns format version: 2\n"));
 }
 
 }

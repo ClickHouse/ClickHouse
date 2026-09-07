@@ -33,13 +33,11 @@ SELECT
 FROM system.tables
 WHERE database = currentDatabase() AND name = 't_tuple_codec_metadata';
 
--- Logical types remain undecorated while `compression_codec` contains the complete policy.
+-- Logical types remain undecorated and `compression_codec` keeps its root-only contract.
 SELECT
     name,
     position(type, 'CODEC') = 0 AS undecorated_type,
-    countSubstrings(compression_codec, 'CODEC(') AS declarations,
-    position(compression_codec, '`literal.dot` String CODEC(LZ4HC(4))') > 0 AS has_literal_dot,
-    position(compression_codec, 'score Float64 CODEC(Gorilla(8), ZSTD(1))') > 0 AS has_nested
+    if(compression_codec = '', '<default>', compression_codec) AS compression_codec
 FROM system.columns
 WHERE database = currentDatabase() AND table = 't_tuple_codec_metadata'
 ORDER BY position;
@@ -67,7 +65,7 @@ RENAME TABLE t_tuple_codec_metadata_renamed TO t_tuple_codec_metadata;
 
 SELECT
     name,
-    countSubstrings(compression_codec, 'CODEC(') AS declarations
+    if(compression_codec = '', '<default>', compression_codec) AS compression_codec
 FROM system.columns
 WHERE database = currentDatabase() AND table = 't_tuple_codec_metadata'
 ORDER BY position;

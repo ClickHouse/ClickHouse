@@ -22,6 +22,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
+#include <Storages/ColumnCodecResolver.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
@@ -325,6 +326,11 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
 
 void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns)
 {
+    ColumnCodecResolver codec_resolver(
+        column.codec,
+        column.type,
+        NameAndTypePair(column.name, column.type),
+        nullptr);
     IDataType::forEachSubcolumn([&](const auto & path, const auto & name, const auto & data)
     {
         size_t i = 0;
@@ -343,8 +349,8 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
             res_columns[i++]->insertDefault();
             res_columns[i++]->insert(column.comment);
 
-            const auto resolved_codec = column.codec.resolve(getCodecPath(path), nullptr);
-            if (resolved_codec.codec && ISerialization::isSpecialCompressionAllowed(path))
+            const auto resolved_codec = codec_resolver.resolve(path);
+            if (resolved_codec.codec)
                 res_columns[i++]->insert(resolved_codec.codec->template as<ASTFunction>()->arguments->formatForLogging());
             else
                 res_columns[i++]->insertDefault();

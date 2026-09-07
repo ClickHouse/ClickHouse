@@ -2,10 +2,13 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTTupleElementCodecOperation.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -23,16 +26,156 @@ String ASTTupleDataType::getID(char delim) const
 ASTPtr ASTTupleDataType::clone() const
 {
     auto res = make_intrusive<ASTTupleDataType>(*this);
-    cloneDataTypeChildrenTo(*res);
+    res->children.clear();
+    for (const auto & child : children)
+        res->children.push_back(child->clone());
     return res;
+}
+
+ASTPtr ASTTupleDataType::getCodecOperations() const
+{
+    if (children.size() < 2)
+        return nullptr;
+    return children[1];
+}
+
+const ASTTupleElementCodecOperation * ASTTupleDataType::getCodecOperation(size_t element_index) const
+{
+    validateCodecOperations();
+    const auto operations = getCodecOperations();
+    if (!operations)
+        return nullptr;
+    for (const auto & child : operations->children)
+    {
+        const auto & operation = child->as<ASTTupleElementCodecOperation &>();
+        if (operation.element_index == element_index)
+            return &operation;
+    }
+    return nullptr;
+}
+
+void ASTTupleDataType::setCodecOperation(size_t element_index, ASTPtr codec)
+{
+    if (!codec)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tuple element CODEC operation requires a codec expression");
+
+    auto operation = make_intrusive<ASTTupleElementCodecOperation>();
+    operation->element_index = element_index;
+    operation->kind = TupleElementCodecOperationKind::Set;
+    operation->children.push_back(std::move(codec));
+    operation->validate();
+
+    validateCodecOperations();
+    auto operations = getCodecOperations();
+    if (!operations)
+    {
+        operations = make_intrusive<ASTExpressionList>();
+        children.insert(children.begin() + 1, operations);
+    }
+    for (auto & child : operations->children)
+    {
+        if (child->as<ASTTupleElementCodecOperation &>().element_index == element_index)
+        {
+            child = std::move(operation);
+            validateCodecOperations();
+            return;
+        }
+    }
+    operations->children.push_back(std::move(operation));
+    validateCodecOperations();
+}
+
+void ASTTupleDataType::setCodecRemoval(size_t element_index)
+{
+    auto operation = make_intrusive<ASTTupleElementCodecOperation>();
+    operation->element_index = element_index;
+    operation->kind = TupleElementCodecOperationKind::Remove;
+
+    validateCodecOperations();
+    auto operations = getCodecOperations();
+    if (!operations)
+    {
+        operations = make_intrusive<ASTExpressionList>();
+        children.insert(children.begin() + 1, operations);
+    }
+    for (auto & child : operations->children)
+    {
+        if (child->as<ASTTupleElementCodecOperation &>().element_index == element_index)
+        {
+            child = std::move(operation);
+            validateCodecOperations();
+            return;
+        }
+    }
+    operations->children.push_back(std::move(operation));
+    validateCodecOperations();
+}
+
+void ASTTupleDataType::resetCodecOperation(size_t element_index)
+{
+    validateCodecOperations();
+    auto operations = getCodecOperations();
+    if (!operations)
+        return;
+
+    operations->children.erase(
+        std::remove_if(
+            operations->children.begin(),
+            operations->children.end(),
+            [element_index](const ASTPtr & child)
+            {
+                return child->as<ASTTupleElementCodecOperation &>().element_index == element_index;
+            }),
+        operations->children.end());
+    if (operations->children.empty())
+        children.erase(children.begin() + 1);
+}
+
+void ASTTupleDataType::resetCodecOperations()
+{
+    validateCodecOperations();
+    if (getCodecOperations())
+        children.erase(children.begin() + 1);
+}
+
+void ASTTupleDataType::validateCodecOperations() const
+{
+    if (children.size() > 2)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tuple data type AST contains unexpected children");
+    if (!children.empty() && !children.front()->as<ASTExpressionList>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tuple data type arguments must be an expression list");
+    if (children.size() == 2 && !children[1]->as<ASTExpressionList>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tuple CODEC operations must be an expression list");
+
+    const auto arguments = getArguments();
+    const size_t argument_count = arguments ? arguments->children.size() : 0;
+    const auto operations = getCodecOperations();
+    if (!operations)
+        return;
+
+    std::vector<bool> seen(argument_count);
+    for (const auto & child : operations->children)
+    {
+        const auto * operation = child->as<ASTTupleElementCodecOperation>();
+        if (!operation)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tuple CODEC operation list contains an unexpected AST node");
+        operation->validate();
+        if (operation->element_index >= argument_count)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Tuple CODEC operation index {} is out of range for {} elements",
+                operation->element_index,
+                argument_count);
+        if (seen[operation->element_index])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate CODEC operation for Tuple element {}", operation->element_index);
+        seen[operation->element_index] = true;
+    }
 }
 
 void ASTTupleDataType::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(name.size());
     hash_state.update(name);
-    updateCodecHash(hash_state);
-
     /// Hash element names
     hash_state.update(element_names.size());
     for (const auto & elem_name : element_names)
@@ -41,14 +184,14 @@ void ASTTupleDataType::updateTreeHashImpl(SipHash & hash_state, bool ignore_alia
         hash_state.update(elem_name);
     }
 
-    /// Hash child types via arguments
-    if (const auto arguments = getArguments())
-        arguments->updateTreeHashImpl(hash_state, ignore_aliases);
+    (void)ignore_aliases;
+    /// Arguments and sparse codec operations are ordinary children and are hashed automatically.
 }
 
 void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     const auto arguments = getArguments();
+    validateCodecOperations();
     ostr << name;
 
     if (arguments && !arguments->children.empty())
@@ -69,6 +212,11 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
                     ostr << ',';
                 ostr << indent_str;
                 arguments->children[i]->format(ostr, settings, state, frame);
+                if (const auto * operation = getCodecOperation(i))
+                {
+                    ostr << ' ';
+                    operation->format(ostr, settings, state, frame);
+                }
             }
         }
         else if (use_multiline && !element_names.empty())
@@ -89,6 +237,11 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 
                 /// Print the type
                 arguments->children[i]->format(ostr, settings, state, frame);
+                if (const auto * operation = getCodecOperation(i))
+                {
+                    ostr << ' ';
+                    operation->format(ostr, settings, state, frame);
+                }
             }
         }
         else
@@ -105,22 +258,28 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 
                 /// Print the type
                 arguments->children[i]->format(ostr, settings, state, frame);
+                if (const auto * operation = getCodecOperation(i))
+                {
+                    ostr << ' ';
+                    operation->format(ostr, settings, state, frame);
+                }
             }
         }
 
         ostr << ')';
     }
 
-    formatCodecOperation(ostr, settings, state, frame);
 }
 
 void ASTTupleDataType::writeJSON(WriteBuffer & out) const
 {
+    validateCodecOperations();
     JSONObjectWriter w(out, "TupleDataType");
     w.writeString("name", name);
     if (auto args = getArguments())
         w.writeChild("arguments", args);
-    writeCodecJSON(w);
+    if (auto operations = getCodecOperations())
+        w.writeChild("codec_operations", operations);
 
     /// Named-tuple field names live in `element_names`, not as AST children, so write them explicitly;
     /// the generic `ASTDataType::writeJSON` would drop them (turning `Tuple(a UInt8)` into `Tuple(UInt8)`).
@@ -147,20 +306,23 @@ void ASTTupleDataType::readJSON(const Poco::JSON::Object & json)
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'name' for ASTTupleDataType during AST JSON deserialization");
 
-    resetCodecOperation();
     children.clear();
     auto args = r.readChildOfType<ASTExpressionList>("arguments");
     if (args)
     {
         for (const auto & argument : args->children)
-            if (!argument || !argument->as<ASTDataType>())
+            if (!argument || !dynamic_cast<const ASTDataType *>(argument.get()))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "ASTTupleDataType element type must be an ASTDataType during AST JSON deserialization");
         children.push_back(args);
     }
-    readCodecJSON(r);
-
+    if (auto operations = r.readChildOfType<ASTExpressionList>("codec_operations"))
+    {
+        if (!args)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tuple CODEC operations require Tuple element types");
+        children.push_back(std::move(operations));
+    }
     element_names = r.readStringArray("element_names");
     const size_t argument_count = args ? args->children.size() : 0;
 
@@ -177,6 +339,8 @@ void ASTTupleDataType::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ASTTupleDataType element name must not be empty during AST JSON deserialization");
     }
+
+    validateCodecOperations();
 }
 
 }

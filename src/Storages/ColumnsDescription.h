@@ -28,6 +28,8 @@
 namespace DB
 {
 
+class PeekableReadBuffer;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -120,8 +122,8 @@ struct ColumnDescription
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
-    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const;
-    void readText(ReadBuffer & buf);
+    void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment, UInt64 format_version) const;
+    void readText(PeekableReadBuffer & buf, UInt64 format_version);
 };
 
 

@@ -6,6 +6,7 @@
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTEnumDataType.h>
 #include <Parsers/ASTTupleDataType.h>
+#include <Parsers/ASTTupleElementCodecOperation.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -162,11 +163,8 @@ private:
 class ObjectArgumentParser : public IParserBase
 {
 public:
-    explicit ObjectArgumentParser(bool allow_tuple_element_codecs_, bool allow_tuple_element_codec_removals_)
-        : allow_tuple_element_codecs(allow_tuple_element_codecs_)
-        , allow_tuple_element_codec_removals(allow_tuple_element_codec_removals_)
-    {
-    }
+    explicit ObjectArgumentParser(TupleElementCodecSyntax tuple_element_codec_syntax_)
+        : tuple_element_codec_syntax(tuple_element_codec_syntax_) {}
 
 private:
     const char * getName() const override { return "JSON data type optional argument"; }
@@ -223,7 +221,7 @@ private:
             return true;
         }
 
-        ParserDataType type_parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
+        ParserDataType type_parser(tuple_element_codec_syntax);
         ASTPtr type;
         if (!type_parser.parse(pos, type, expected))
             return false;
@@ -238,8 +236,7 @@ private:
         return true;
     }
 
-    bool allow_tuple_element_codecs;
-    bool allow_tuple_element_codec_removals;
+    TupleElementCodecSyntax tuple_element_codec_syntax;
 };
 
 }
@@ -277,7 +274,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         toUpperASCII(n);
         if (n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO" || n == "PRIMARY" || n == "TTL" || n == "COMMENT" || n == "CODEC"
             || n == "SETTINGS" || n == "STATISTICS"
-            || (allow_tuple_element_codec_removals && n == "REMOVE"))
+            || (tuple_element_codec_syntax == TupleElementCodecSyntax::AllowSetAndRemove && n == "REMOVE"))
         {
             expected.add(pos, "type name");
             return false;
@@ -422,7 +419,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             /// Try to parse: identifier Type (named element)
             /// or just: Type (unnamed element)
             ParserIdentifier identifier_parser;
-            ParserDataType type_parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
+            ParserDataType type_parser(tuple_element_codec_syntax);
             ASTPtr identifier_node;
             ASTPtr type_node;
             ASTPtr codec_node;
@@ -456,25 +453,22 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 }
             }
 
-            if (allow_tuple_element_codecs && ParserKeyword(Keyword::CODEC).ignore(pos, expected))
+            if (tuple_element_codec_syntax != TupleElementCodecSyntax::Disallow && ParserKeyword(Keyword::CODEC).ignore(pos, expected))
             {
                 ParserCodec codec_parser;
                 if (!codec_parser.parse(pos, codec_node, expected))
                     return false;
             }
-            else if (allow_tuple_element_codec_removals && ParserKeyword(Keyword::REMOVE).ignore(pos, expected))
+            else if (tuple_element_codec_syntax == TupleElementCodecSyntax::AllowSetAndRemove && ParserKeyword(Keyword::REMOVE).ignore(pos, expected))
             {
                 if (!ParserKeyword(Keyword::CODEC).ignore(pos, expected))
                     return false;
                 remove_codec = true;
             }
-            auto * element_type = type_node->as<ASTDataType>();
-            if (!element_type)
-                return false;
             if (codec_node)
-                element_type->setCodec(std::move(codec_node));
+                tuple_node->setCodecOperation(arguments->children.size() - 1, std::move(codec_node));
             else if (remove_codec)
-                element_type->setCodecRemoval();
+                tuple_node->setCodecRemoval(arguments->children.size() - 1);
         }
 
         if (pos->type == TokenType::ClosingRoundBracket && !arguments->children.empty())
@@ -537,18 +531,18 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (equalsCaseInsensitive(type_name, "json"))
         {
-            ObjectArgumentParser parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
+            ObjectArgumentParser parser(tuple_element_codec_syntax);
             parser.parse(pos, arg, expected);
         }
         else if (type_name == "Nested")
         {
-            ParserNameTypePair name_and_type_parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
+            ParserNameTypePair name_and_type_parser(tuple_element_codec_syntax);
             name_and_type_parser.parse(pos, arg, expected);
         }
         else if (type_name == "Tuple")
         {
-            ParserNameTypePair name_and_type_parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
-            ParserDataType only_type_parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
+            ParserNameTypePair name_and_type_parser(tuple_element_codec_syntax);
+            ParserDataType only_type_parser(tuple_element_codec_syntax);
             name_and_type_parser.parse(pos, arg, expected) || only_type_parser.parse(pos, arg, expected);
         }
         else if (type_name == "AggregateFunction" || type_name == "SimpleAggregateFunction")
@@ -579,13 +573,13 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
             else
             {
-                ParserDataType data_type_parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
+                ParserDataType data_type_parser(tuple_element_codec_syntax);
                 data_type_parser.parse(pos, arg, expected);
             }
         }
         else
         {
-            ParserDataType data_type_parser(allow_tuple_element_codecs, allow_tuple_element_codec_removals);
+            ParserDataType data_type_parser(tuple_element_codec_syntax);
             /// Only accept simple literals (numbers, strings, NULL, ...) as
             /// data-type arguments. We deliberately do NOT accept collection
             /// literals like `(1)`, `[1, 2]` or `{a: 1}` here: no real data

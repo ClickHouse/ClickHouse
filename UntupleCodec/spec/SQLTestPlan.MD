@@ -19,8 +19,9 @@ The initial suite consists of these files:
 | `05028_tuple_element_codec_experimental_gate.sql` | Default-off compatibility gate for CREATE/ADD/MODIFY, plus retained/removal/root-only controls and retained suspicious-codec admission coverage |
 | `05028_tuple_element_codecs_shared_nested_offsets.sql` | Legacy flattened-`Nested` sibling codecs and canonical shared offsets in Wide and Compact parts |
 | `05028_tuple_element_codecs_wrapped_ast_nodes.sql` | Explicit rejection below `Nested` name/type and typed-`JSON` object-argument AST wrappers |
+| `05028_tuple_element_codecs_transparent_wrappers.sql` | CREATE, storage, ALTER, and metadata reload through `Array` and `SimpleAggregateFunction` |
 | `05028_tuple_element_codecs_lossy_key.sql` | Sorting/partition-key rejection for lossy element codecs and an unrelated-sibling control |
-| `05028_tuple_element_codecs_ast_json_counts.sh` | AST JSON round trip and rejection of conflicting set/remove state |
+| `05028_tuple_element_codecs_ast_json_counts.sh` | AST JSON round trip and rejection of malformed sparse operations |
 | `05028_tuple_element_codecs_ast_children.sh` | Generic AST traversal of a query parameter inside an element codec |
 
 All tests use unique table names, begin with `DROP TABLE IF EXISTS` cleanup, and drop successfully created tables at the end. Output queries select only stable fields and use an explicit `ORDER BY` wherever row order is relevant.
@@ -80,7 +81,8 @@ This single schema covers root inheritance, direct overrides, a nested direct-`T
 1. Inspect `system.tables.create_table_query` and assert the canonical declaration has the expected annotation count and contains representative literal-dot and positional annotations locally in the tuple declaration. The logical type text must not gain a second metadata-only wrapper or dotted target syntax.
 2. Query stable properties of `system.columns.type` and `system.columns.compression_codec`, ordered by `position`.
    - `type` must be the undecorated logical type.
-   - `compression_codec` for `payload` and `pair` must contain the complete normalized policy.
+   - `compression_codec` for `payload` contains only the root `CODEC(LZ4)` declaration.
+   - `compression_codec` for `pair` is empty because it has element declarations but no root declaration.
    - `key` remains unchanged.
 3. Run `DESCRIBE TABLE t_tuple_codec_metadata` in `JSONEachRow` format.
    - The top-level `payload` row reports only root `LZ4`.
@@ -91,8 +93,8 @@ This single schema covers root inheritance, direct overrides, a nested direct-`T
    - `payload.defaulted` reports `Default`, not the current server codec substituted for it.
    - Literal-dot and nested paths remain distinct.
 5. Query `toTypeName(payload)` and `toTypeName(pair)` after inserting one row. The result must contain ordinary `Tuple` types without `CODEC` text.
-6. Execute `DETACH TABLE ...` followed by `ATTACH TABLE ...`, then repeat the stable `create_table_query` assertions. This exercises `ColumnDescription::writeText`, `ColumnDescription::readText`, and metadata reconstruction.
-7. Rename the table, then rename it back, and repeat the `system.columns` declaration-count query. This catches policy loss through metadata cloning.
+6. Execute `DETACH TABLE ...` followed by `ATTACH TABLE ...`, then repeat the stable `create_table_query` assertions. This exercises columns metadata version 2, `ColumnDescription::writeText`, `ColumnDescription::readText`, and metadata reconstruction.
+7. Rename the table, then rename it back, and repeat the root-only `system.columns` query. This catches policy loss through metadata cloning while preserving the public introspection contract.
 
 Do not use physical codec counts in this file; its responsibility is deterministic metadata and AST round-tripping.
 
@@ -179,7 +181,7 @@ ALTER TABLE t_tuple_codec_alter
     ) CODEC(LZ4HC(4));
 ```
 
-Assert through `system.columns.compression_codec` that:
+Assert through `system.tables.create_table_query` that:
 
 - `kept` still has `CODEC(ZSTD(1))` although its operation was omitted;
 - `changed` now has `CODEC(ZSTD(3))`;
@@ -223,18 +225,11 @@ SELECT toTypeName(tuple(toUInt64(1), 'x'));
 
 There is no expression-level syntax which attaches a storage codec to this value. A `CREATE TABLE ... AS SELECT tuple(...)` control case creates an ordinary tuple column, and `system.tables.create_table_query` must contain no element codec until the owning column is explicitly declared or modified with the selected column-declaration syntax.
 
-### A `Tuple` below a non-`Tuple` wrapper
+### A `Tuple` below a wrapper
 
-The first implementation supports only a chain of tuple elements rooted at the owning `Tuple` column. Reject these declarations with `BAD_ARGUMENTS` rather than silently dropping the annotation:
+`Array` and `SimpleAggregateFunction` are supported transparent wrappers. Their positive CREATE, write, ALTER, and reload coverage is in `05028_tuple_element_codecs_transparent_wrappers.sql`. Continue to reject unsupported wrappers with `BAD_ARGUMENTS` rather than silently dropping the annotation:
 
 ```sql
-CREATE TABLE t_tuple_codec_wrapped_array
-(
-    value Array(Tuple(id UInt64 CODEC(Delta, ZSTD), text String))
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-
 CREATE TABLE t_tuple_codec_wrapped_map
 (
     value Map(String, Tuple(id UInt64 CODEC(Delta, ZSTD), text String))
@@ -243,7 +238,7 @@ ENGINE = MergeTree
 ORDER BY tuple();
 ```
 
-Add controls showing that a root codec on each wrapper column remains legal, for example `Array(Tuple(id UInt64, text String)) CODEC(ZSTD)`.
+Keep controls showing that a root codec on wrapper columns remains legal, for example `Array(Tuple(id UInt64, text String)) CODEC(ZSTD)`.
 
 `05028_tuple_element_codecs_wrapped_ast_nodes.sql` covers two parser-specific forms of the same boundary. `Nested(...)` stores its child types below `ASTNameTypePair`, while typed paths in `JSON(...)` store them below `ASTObjectTypeArgument`. Tuple-element annotations in either context must be counted and rejected for `CREATE TABLE`, `ADD COLUMN`, and typed `MODIFY COLUMN`; these wrapper nodes must not hide annotations from validation. A direct nested-`Tuple` chain remains the positive control.
 
@@ -257,7 +252,9 @@ Cover:
 - tuple-element `CODEC(Quantized(...))`, currently rejected with `NOT_IMPLEMENTED` until codec-driven serialization is path-aware;
 - element annotations below `Array` and `Map` wrappers in typed `MODIFY COLUMN`;
 - a codec on an `ALIAS` tuple column;
-- inserting into a `Log` table with a per-element policy, which currently rejects per-subcolumn codecs explicitly rather than applying only the root.
+- a `Log` table with a per-element policy, rejected during DDL rather than on its first insert;
+- outer `NULL` and `data_type_default_nullable` wrappers, rejected with `BAD_ARGUMENTS`;
+- an invalid parent codec that is shadowed on every Array value leaf but still controls its offsets stream.
 
 Use one successful direct nested-`Tuple` declaration as a control, proving that the wrapper rejection does not accidentally reject `Tuple(... nested Tuple(... CODEC(...)))`.
 
@@ -338,11 +335,20 @@ This verifies the established writer rule for duplicate physical streams: the fi
 
 ## AST representation tests
 
-`05028_tuple_element_codecs_ast_json_counts.sh` generates AST JSON for a declaration with an element codec and executes that JSON successfully. It then adds `remove_codec = true` to the same data-type node and checks that deserialization rejects the conflicting state. The historical filename remains unchanged, although there are no parallel vector counts in the current representation.
+`05028_tuple_element_codecs_ast_json_counts.sh` generates AST JSON for a declaration with an element codec and executes that JSON successfully. It then corrupts the sparse `TupleElementCodecOperation` node with an out-of-range element index and checks that deserialization rejects it. The historical filename remains unchanged, although there are no parallel vector counts in the current representation.
 
-`05028_tuple_element_codecs_ast_children.sh` creates a Tuple element codec containing a client query parameter. Successful substitution and normalized metadata containing `CODEC(ZSTD(3))` show that the codec is an ordinary child of its `ASTDataType` and is reached by generic AST traversal.
+`05028_tuple_element_codecs_ast_children.sh` creates a Tuple element codec containing a client query parameter. Successful substitution and `system.tables.create_table_query` containing `CODEC(ZSTD(3))` show that the codec expression is an ordinary child of the sparse operation node and is reached by generic AST traversal.
 
-The `ColumnCodecDescription` unit tests also check that the codec is the final child of the element type, that cloning deep-clones it while preserving the tree hash, and that extraction followed by installation preserves the complete policy. A parser-only wrapper case checks that `Array(Tuple(... CODEC ...))` retains the operation on the inner element node while `DataTypeFactory` still builds an undecorated logical type. It does not enable that schema semantically; wrapper-aware policy traversal remains follow-up work.
+The `ColumnCodecDescription` unit tests check that the owning Tuple contains the sparse operation, cloning deep-clones its codec while preserving the tree hash, and extraction followed by installation preserves the complete policy. A wrapper case checks that `Array(Tuple(... CODEC ...))` retains the operation on the inner Tuple node, extracts its canonical path, round-trips through metadata installation, and still produces an undecorated logical type in `DataTypeFactory`. The metadata case verifies version-2 round-trip and migration of the earlier version-1 decorated-type representation.
+
+## `05028_tuple_element_codecs_transparent_wrappers.sql`
+
+Create one Wide `MergeTree` table with two columns:
+
+- `Array(Tuple(a UInt64 CODEC(Delta, ZSTD), b UInt64 CODEC(LZ4HC), c UInt64))` with a root codec;
+- `SimpleAggregateFunction(any, Array(Tuple(a UInt64 CODEC(T64, LZ4), b UInt64 CODEC(ZSTD), c UInt64)))` with another root codec.
+
+Insert enough rows to create codec blocks. Check normalized `system.tables.create_table_query`, verify that each element codec and each root codec occurs in the expected column's physical streams, and read deterministic aggregates through the named tuple elements. Then use typed `MODIFY COLUMN` on both wrappers: preserve `a` by omission, remove `b`, and set a new codec on `c`. Check the resulting metadata, insert another part and verify its new codecs, then detach and attach the table with the experimental setting disabled. Verify row and Array-length totals after reload. The outer Array sizes streams have no Tuple path and therefore provide physical coverage of root-codec inheritance.
 
 ## Follow-up Coverage Outside the Initial Stateless Set
 
@@ -350,7 +356,7 @@ The following remain required by the broader low-level design but should be adde
 
 - `RECOMPRESS` TTL with explicit siblings and `CODEC(Default)` siblings;
 - adaptive default selection per tuple element;
-- replicated database metadata synchronization and mixed-version feature gating;
+- replicated database metadata synchronization between capable servers and explicit documentation of the version-2 downgrade restriction;
 - backup and restore;
 - path-aware `Quantized` serialization after the current `NOT_IMPLEMENTED` restriction is removed;
 - shared streams across `Dynamic` and `JSON` layouts after tuple-element codec paths are supported there;
@@ -367,5 +373,5 @@ The initial SQL suite is complete when:
 - physical wide-part assertions prove different tuple elements receive different codecs;
 - compact, merge, and mutation paths read correctly;
 - existing flattened `Nested` siblings with different codecs remain writable in Wide and Compact parts;
-- ordinary expression-level tuples and wrapped tuples reject element annotations explicitly;
+- ordinary expression-level tuples and tuples below unsupported wrappers reject element annotations explicitly;
 - existing root-only codec tests pass without reference changes.

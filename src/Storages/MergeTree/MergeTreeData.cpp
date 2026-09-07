@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/ColumnCodecResolver.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -1060,12 +1061,16 @@ void MergeTreeData::checkProperties(
             /// For a key subcolumn, check only its streams and resolve codecs from the owning column.
             /// A lossy codec on another tuple element does not affect this key.
             bool is_lossy = false;
+            ColumnCodecResolver codec_resolver(
+                owning_column->codec,
+                owning_column->type,
+                *key_column,
+                nullptr);
             ISerialization::StreamCallback callback = [&](const auto & substream_path)
             {
                 if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
                     return;
-                const auto codec_path = getCodecPathForStream(*key_column, owning_column->type, substream_path);
-                const auto resolved = owning_column->codec.resolve(codec_path, nullptr);
+                const auto resolved = codec_resolver.resolve(substream_path);
                 if (resolved.codec)
                     is_lossy = CompressionCodecFactory::instance()
                                    .get(resolved.codec, substream_path.back().data.type.get())->isLossyCompression();
@@ -5304,19 +5309,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// parts stay compact) while the metadata claims `Quantize`. Set the codec at CREATE TABLE; to change the codec or
     /// the type on existing data, create a new table with the codec and `INSERT ... SELECT` into it, then swap.
     {
-        auto quantize_signature = [](const ColumnCodecDescription & codec) -> String
+        auto quantize_signature = [](const ASTPtr & codec) -> String
         {
-            String result;
-            const auto append = [&](const CodecPath & path, const ASTPtr & ast)
-            {
-                const auto params = tryExtractQuantizedCodecParams(ast);
-                if (!params)
-                    return;
-                result += fmt::format("{}={}:{}:{}:{};", fmt::join(path, "."), params->method, params->dimensions, params->bits, params->m);
-            };
-            for (const auto & [path, ast] : codec.getCodecs())
-                append(path, ast);
-            return result;
+            const auto params = tryExtractQuantizedCodecParams(codec);
+            if (!params)
+                return {};
+            return fmt::format("{}:{}:{}:{}", params->method, params->dimensions, params->bits, params->m);
         };
         for (const auto & command : commands)
         {
@@ -5324,8 +5322,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 continue;
             const bool old_has = old_metadata.getColumns().has(command.column_name);
             const bool new_has = new_metadata.getColumns().has(command.column_name);
-            const String old_sig = old_has ? quantize_signature(old_metadata.getColumns().get(command.column_name).codec) : String{};
-            const String new_sig = new_has ? quantize_signature(new_metadata.getColumns().get(command.column_name).codec) : String{};
+            const String old_sig = old_has ? quantize_signature(old_metadata.getColumns().get(command.column_name).codec.getRoot()) : String{};
+            const String new_sig = new_has ? quantize_signature(new_metadata.getColumns().get(command.column_name).codec.getRoot()) : String{};
 
             /// The codec was added, removed, or changed.
             bool forbidden = old_sig != new_sig;

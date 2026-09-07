@@ -574,6 +574,7 @@ public:
     bool supportsFinal() const override;
 
     bool supportsSubcolumns() const override { return true; }
+    bool supportsPerSubcolumnCodecs() const override { return true; }
 
     bool supportsTTL() const override { return true; }
 

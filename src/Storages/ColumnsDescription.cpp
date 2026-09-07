@@ -1,5 +1,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ColumnCodecDescription.h>
+#include <Storages/ColumnCodecAST.h>
+#include <Storages/ColumnCodecValidation.h>
 
 #include <memory>
 #include <mutex>
@@ -16,13 +18,13 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/dataTypeToAST.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Compression/CompressionCodecQuantized.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -164,22 +166,86 @@ static String formatASTStateAware(IAST & ast, IAST::FormatState & state)
     return buf.str();
 }
 
-void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const
+static String serializeTupleElementCodecs(const ColumnCodecDescription & codec, IAST::FormatState & state)
+{
+    WriteBufferFromOwnString out;
+    const size_t count = codec.getCodecs().size() - static_cast<size_t>(codec.hasRoot());
+    DB::writeText(count, out);
+    writeChar('\n', out);
+    for (const auto & [path, codec_ast] : codec.getCodecs())
+    {
+        if (path.empty())
+            continue;
+        DB::writeText(path.size(), out);
+        for (const auto & segment : path)
+        {
+            writeChar('\t', out);
+            writeEscapedString(segment, out);
+        }
+        writeChar('\t', out);
+        writeEscapedString(formatASTStateAware(*codec_ast, state), out);
+        writeChar('\n', out);
+    }
+    return out.str();
+}
+
+static ColumnCodecDescription::CodecsByPath deserializeTupleElementCodecs(const String & text)
+{
+    ReadBufferFromString in(text);
+    size_t count = 0;
+    readText(count, in);
+    assertChar('\n', in);
+
+    ColumnCodecDescription::CodecsByPath result;
+    ParserColumnDeclaration column_parser(/* require type */ true);
+    for (size_t i = 0; i < count; ++i)
+    {
+        size_t path_size = 0;
+        readText(path_size, in);
+        CodecPath path;
+        path.reserve(path_size);
+        for (size_t j = 0; j < path_size; ++j)
+        {
+            assertChar('\t', in);
+            String segment;
+            readEscapedString(segment, in);
+            path.push_back(std::move(segment));
+        }
+        if (path.empty())
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Tuple-element codec metadata cannot contain the root path");
+
+        assertChar('\t', in);
+        String codec_text;
+        readEscapedString(codec_text, in);
+        assertChar('\n', in);
+        ASTPtr declaration = parseQuery(
+            column_parser,
+            "x UInt8 " + codec_text,
+            "tuple-element codec metadata parser",
+            0,
+            DBMS_DEFAULT_MAX_PARSER_DEPTH,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        auto codec_ast = declaration->as<ASTColumnDeclaration &>().getCodec();
+        if (!codec_ast || !result.emplace(std::move(path), codec_ast->clone()).second)
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Invalid or duplicate Tuple-element codec metadata entry");
+    }
+    assertEOF(in);
+    return result;
+}
+
+void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment, UInt64 format_version) const
 {
     /// NOTE: Serialization format is insane.
 
     writeBackQuotedString(name, buf);
     writeChar(' ', buf);
-    if (codec.hasSubcolumns())
+    writeEscapedString(type->getName(), buf);
+
+    if (format_version >= 2 && codec.hasSubcolumns())
     {
-        auto declaration = make_intrusive<ASTColumnDeclaration>();
-        declaration->name = name;
-        declaration->setType(dataTypeToAST(type));
-        applyCodecDescriptionToAST(*declaration, type, codec);
-        writeEscapedString(formatASTStateAware(*declaration->getType(), state), buf);
+        writeCString("\tTUPLE_ELEMENT_CODECS ", buf);
+        writeEscapedString(serializeTupleElementCodecs(codec, state), buf);
     }
-    else
-        writeEscapedString(type->getName(), buf);
 
     if (default_desc.expression)
     {
@@ -231,20 +297,39 @@ void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, 
     writeChar('\n', buf);
 }
 
-void ColumnDescription::readText(ReadBuffer & buf)
+void ColumnDescription::readText(PeekableReadBuffer & buf, UInt64 format_version)
 {
     readBackQuotedString(name, buf);
     assertChar(' ', buf);
 
     String type_string;
     readEscapedString(type_string, buf);
-    ParserDataType type_parser(/* allow_tuple_element_codecs */ true);
+    ParserDataType type_parser(
+        format_version == 1 ? TupleElementCodecSyntax::AllowSet : TupleElementCodecSyntax::Disallow);
     ASTPtr type_ast = parseQuery(type_parser, type_string, "column type parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     type = DataTypeFactory::instance().get(type_ast);
 
     ASTColumnDeclaration codec_declaration;
     codec_declaration.name = name;
     codec_declaration.setType(type_ast->clone());
+
+    ColumnCodecDescription::CodecsByPath tuple_element_codecs;
+    bool has_tuple_element_codecs = false;
+    if (format_version >= 2)
+    {
+        buf.setCheckpoint();
+        has_tuple_element_codecs = checkString("\tTUPLE_ELEMENT_CODECS ", buf);
+        if (has_tuple_element_codecs)
+            buf.dropCheckpoint();
+        else
+            buf.rollbackToCheckpoint(/* drop = */ true);
+    }
+    if (has_tuple_element_codecs)
+    {
+        String policy_text;
+        readEscapedString(policy_text, buf);
+        tuple_element_codecs = deserializeTupleElementCodecs(policy_text);
+    }
 
     if (checkChar('\t', buf))
     {
@@ -283,6 +368,9 @@ void ColumnDescription::readText(ReadBuffer & buf)
     }
 
     codec = codecDescriptionFromAST(codec_declaration, type, CodecValidationSettings::trusted());
+    for (const auto & [path, codec_ast] : tuple_element_codecs)
+        codec.set(path, codec_ast);
+    codec = validateColumnCodecDescription(codec, type, CodecValidationSettings::trusted());
 }
 
 ColumnsDescription & ColumnsDescription::operator=(const ColumnsDescription & other)
@@ -1072,21 +1160,33 @@ String ColumnsDescription::toString(bool include_comments) const
     WriteBufferFromOwnString buf;
     IAST::FormatState ast_format_state;
 
-    writeCString("columns format version: 1\n", buf);
+    const UInt64 format_version = std::any_of(columns.begin(), columns.end(), [](const auto & column)
+    {
+        return column.codec.hasSubcolumns();
+    }) ? 2 : 1;
+    writeCString("columns format version: ", buf);
+    DB::writeText(format_version, buf);
+    writeChar('\n', buf);
     DB::writeText(columns.size(), buf);
     writeCString(" columns:\n", buf);
 
     for (const ColumnDescription & column : columns)
-        column.writeText(buf, ast_format_state, include_comments);
+        column.writeText(buf, ast_format_state, include_comments, format_version);
 
     return buf.str();
 }
 
 ColumnsDescription ColumnsDescription::parse(const String & str)
 {
-    ReadBufferFromString buf{str};
+    ReadBufferFromString source{str};
+    PeekableReadBuffer buf{source};
 
-    assertString("columns format version: 1\n", buf);
+    assertString("columns format version: ", buf);
+    UInt64 format_version = 0;
+    readText(format_version, buf);
+    assertChar('\n', buf);
+    if (format_version != 1 && format_version != 2)
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Unsupported columns format version {}", format_version);
     size_t count{};
     readText(count, buf);
     assertString(" columns:\n", buf);
@@ -1095,7 +1195,7 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
     for (size_t i = 0; i < count; ++i)
     {
         ColumnDescription column;
-        column.readText(buf);
+        column.readText(buf, format_version);
         buf.ignore(1); /// ignore new line
         result.add(column);
     }

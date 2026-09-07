@@ -70,7 +70,9 @@ ENGINE = MergeTree
 ORDER BY tuple();
 
 SELECT
-    position(compression_codec, 'id UInt64 CODEC(Delta(8), LZ4)') > 0,
+    position(
+        (SELECT create_table_query FROM system.tables WHERE database = currentDatabase() AND name = 't_tuple_codec_direct_tuple'),
+        'id UInt64 CODEC(Delta(8), LZ4)') > 0,
     position(type, 'CODEC') = 0
 FROM system.columns
 WHERE database = currentDatabase() AND table = 't_tuple_codec_direct_tuple' AND name = 'value';

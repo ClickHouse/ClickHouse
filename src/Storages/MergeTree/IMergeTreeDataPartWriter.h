@@ -83,10 +83,6 @@ public:
 protected:
     SerializationPtr getSerialization(const String & column_name) const;
 
-    /// Codec for a default-coded substream: adaptive when enabled and the type has a non-default codec, else `resolved_codec`.
-    CompressionCodecPtr
-    maybeAdaptiveDefaultCodec(bool column_uses_default_codec, const DataTypePtr & substream_type, CompressionCodecPtr resolved_codec) const;
-
     IDataPartStorage & getDataPartStorage() { return *data_part_storage; }
 
     const String data_part_name;

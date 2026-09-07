@@ -2832,17 +2832,20 @@ The declaration must exist directly on that element. After it is removed, the el
 
 Changing codec metadata does not recompress existing data immediately. New parts use the new policy, and existing parts use it after a merge or mutation rewrites them. The codec stored in each compressed block is used when that block is read.
 
-`SHOW CREATE TABLE` and the `compression_codec` column of [`system.columns`](/reference/system-tables/columns) show the complete stored policy. Codec annotations are storage metadata and are not included in the value returned by `toTypeName`.
+`SHOW CREATE TABLE` shows the complete stored policy. The `compression_codec` column of [`system.columns`](/reference/system-tables/columns) keeps its existing meaning and shows only the codec declared for the whole column. Codec annotations are storage metadata and are not included in the value returned by `toTypeName`.
 
 The following limitations apply:
 
 - Tuple element codecs are currently supported by the `MergeTree` engine family.
 - Element declarations are accepted only in stored column definitions, not in general type expressions such as `CAST`.
 - `Array` and `SimpleAggregateFunction` are the supported transparent wrappers. Declarations below other wrappers, including `Map`, `Nullable`, `LowCardinality`, `Nested`, and typed `JSON`, are rejected.
+- A column-level `NULL` modifier and `data_type_default_nullable` cannot wrap a column that has Tuple element codec declarations.
 - The `Quantized` codec cannot be assigned to a Tuple element.
 - There is no dotted codec target or `MODIFY SUBCOLUMN` syntax. Alter the owning top-level column instead.
 
-The `enable_tuple_element_codecs` setting controls adding or changing element codec declarations. Existing metadata can still be attached, read, preserved, or have declarations removed while the setting is disabled. This allows a server to load tables that already use the feature without enabling new declarations globally.
+The `enable_tuple_element_codecs` setting controls adding or changing element codec declarations. Existing metadata can still be attached, restored, read, preserved, or have declarations removed while the setting is disabled. This allows a server to load tables that already use the feature without enabling new declarations globally.
+
+Because the feature uses a new columns metadata version, upgrade every replica and metadata consumer before enabling it. Remove all Tuple element codec declarations before downgrading to a version that does not support the feature.
 
 <Tip>
 You can't decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.

@@ -55,6 +55,8 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/ColumnCodecDescription.h>
+#include <Storages/ColumnCodecAST.h>
+#include <Storages/ColumnCodecValidation.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
 #include <Interpreters/Context.h>
@@ -745,9 +747,18 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         if (auto comment = col_decl.getComment())
             column.comment = comment->as<ASTLiteral &>().value.safeGet<String>();
 
-        column.codec = codecDescriptionFromAST(col_decl, column.type, codec_validation_settings);
+        /// Tuple codec paths belong to the declared type. Column-level NULL handling happens later
+        /// and must not make AST-to-type traversal pair a Tuple AST with Nullable(Tuple(...)).
+        const auto declared_type = col_decl.getType()
+            ? DataTypeFactory::instance().get(col_decl.getType())
+            : column.type;
+        column.codec = codecDescriptionFromAST(col_decl, declared_type, codec_validation_settings);
+        if (column.codec.hasSubcolumns() && !declared_type->isNullable() && column.type->isNullable())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Tuple-element CODEC declarations are not supported when NULL or data_type_default_nullable wraps the column type in Nullable");
         /// The setting controls new metadata only. Existing metadata must load without the setting.
-        if (mode == LoadingStrictnessLevel::CREATE && column.codec.hasSubcolumns()
+        if (mode == LoadingStrictnessLevel::CREATE && !is_restore_from_backup && column.codec.hasSubcolumns()
             && !context_->getSettingsRef()[Setting::enable_tuple_element_codecs])
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -2268,6 +2279,18 @@ try
 {
     validateVirtualColumns(storage, context);
     checkForUnsupportedColumns(storage, mode, context, is_temporary);
+    if (!storage.supportsPerSubcolumnCodecs())
+    {
+        const auto metadata = storage.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
+        for (const auto & column : metadata->getColumns())
+        {
+            if (column.codec.hasSubcolumns())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Storage {} does not support Tuple-element CODEC declarations",
+                    storage.getName());
+        }
+    }
 }
 catch (...)
 {

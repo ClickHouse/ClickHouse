@@ -40,7 +40,7 @@ The annotations remain codec metadata owned by `payload`. They are not part of t
 
 ## Where Element Annotations Are Allowed
 
-An element `CODEC` is storage metadata, so it is accepted only while parsing a stored column declaration. The owning column must itself be a `Tuple`, and every annotated element must be reachable through a chain of `Tuple` elements. Nested tuples such as `payload.metadata.source` in the example above are supported because `metadata` is itself a direct element of `payload`.
+An element `CODEC` is storage metadata, so it is accepted only while parsing a stored column declaration. Annotated elements may be reached through Tuple elements and through the transparent `Array` and `SimpleAggregateFunction` wrappers. Only Tuple element names contribute to the codec path.
 
 A `Tuple` appearing only as a general data type has no owning `ColumnDescription` in which to store the policy. Element annotations are therefore rejected in casts and other expression-level type syntax, for example:
 
@@ -48,7 +48,7 @@ A `Tuple` appearing only as a general data type has no owning `ColumnDescription
 SELECT CAST((1, 'x') AS Tuple(id UInt64 CODEC(Delta, ZSTD), value String));
 ```
 
-The first implementation also rejects annotations reached through a non-`Tuple` wrapper:
+For example, an Array around a Tuple is supported:
 
 ```sql
 CREATE TABLE wrapped
@@ -59,7 +59,9 @@ ENGINE = MergeTree
 ORDER BY tuple();
 ```
 
-Although `values` is a stored column, the annotated `Tuple` is below `Array`, not on a direct tuple-element path rooted at the owning column. Supporting such declarations later would require defining wrapper-aware logical paths and inheritance; the syntax must not be accepted and silently ignored in the meantime.
+The `id` declaration has path `{"id"}`. The Array sizes stream has the empty path and uses the column root or part default. `SimpleAggregateFunction(f, Array(Tuple(...)))` follows the same rule and uses its first data-type argument as the logical storage type.
+
+Annotations below other wrappers, including `Map`, `Nullable`, `LowCardinality`, `Nested`, and typed `JSON`, are rejected rather than silently ignored.
 
 A codec can still be placed on the owning wrapper column using the existing root syntax:
 
@@ -240,7 +242,7 @@ The parser mode is contextual:
 - `CREATE TABLE` accepts an optional element `CODEC(...)`.
 - Typed `ALTER TABLE ... MODIFY COLUMN` accepts an optional element `CODEC(...)` or `REMOVE CODEC`.
 - Generic `ParserDataType` users accept neither storage annotation.
-- Persisted metadata accepts concrete `CODEC(...)` annotations but never `REMOVE CODEC`.
+- Version-2 persisted metadata stores concrete element `CODEC(...)` declarations in a separate policy field and never stores `REMOVE CODEC`. The codec-enabled type parser is used only to migrate the earlier experimental version-1 decorated-type form.
 
 ## Name Resolution
 

@@ -40,14 +40,14 @@ ALTER TABLE t_tuple_codec_alter
     ) CODEC(LZ4HC(4));
 
 SELECT
-    countSubstrings(compression_codec, 'CODEC(') = 4,
-    position(compression_codec, 'kept UInt64 CODEC(ZSTD(1))') > 0,
-    position(compression_codec, 'changed String CODEC(ZSTD(3))') > 0,
-    position(compression_codec, 'removed UInt64 CODEC') = 0,
-    position(compression_codec, 'defaulted UInt64 CODEC(Default)') > 0,
-    endsWith(compression_codec, 'CODEC(LZ4HC(4))')
-FROM system.columns
-WHERE database = currentDatabase() AND table = 't_tuple_codec_alter' AND name = 'payload';
+    countSubstrings(create_table_query, 'CODEC(') = 4,
+    position(create_table_query, 'kept UInt64 CODEC(ZSTD(1))') > 0,
+    position(create_table_query, 'changed String CODEC(ZSTD(3))') > 0,
+    position(create_table_query, 'removed UInt64 CODEC') = 0,
+    position(create_table_query, 'defaulted UInt64 CODEC(Default)') > 0,
+    position(create_table_query, 'CODEC(LZ4HC(4))') > 0
+FROM system.tables
+WHERE database = currentDatabase() AND name = 't_tuple_codec_alter';
 
 INSERT INTO t_tuple_codec_alter
 SELECT number + 100000, (number + 100000, toString(number + 100000), ((number + 100000) * 2, number + 100001))
@@ -71,11 +71,11 @@ ALTER TABLE t_tuple_codec_alter
     );
 
 SELECT
-    position(type, 'kept UInt64') > 0,
-    position(compression_codec, 'kept UInt64 CODEC(ZSTD(1))') > 0,
-    countSubstrings(compression_codec, 'CODEC(') = 4
-FROM system.columns
-WHERE database = currentDatabase() AND table = 't_tuple_codec_alter' AND name = 'payload';
+    position(create_table_query, 'kept UInt64') > 0,
+    position(create_table_query, 'kept UInt64 CODEC(ZSTD(1))') > 0,
+    countSubstrings(create_table_query, 'CODEC(') = 4
+FROM system.tables
+WHERE database = currentDatabase() AND name = 't_tuple_codec_alter';
 
 -- Removing a literal declaration exposes inheritance. Removing it twice is an error.
 ALTER TABLE t_tuple_codec_alter
@@ -93,21 +93,21 @@ ALTER TABLE t_tuple_codec_alter
     ); -- { serverError BAD_ARGUMENTS }
 
 SELECT
-    countSubstrings(compression_codec, 'CODEC(') = 3,
-    position(compression_codec, 'changed String CODEC') = 0
-FROM system.columns
-WHERE database = currentDatabase() AND table = 't_tuple_codec_alter' AND name = 'payload';
+    countSubstrings(create_table_query, 'CODEC(') = 3,
+    position(create_table_query, 'changed String CODEC') = 0
+FROM system.tables
+WHERE database = currentDatabase() AND name = 't_tuple_codec_alter';
 
 -- Existing root-only forms do not remove element declarations.
 ALTER TABLE t_tuple_codec_alter MODIFY COLUMN payload CODEC(ZSTD(4));
 ALTER TABLE t_tuple_codec_alter MODIFY COLUMN payload REMOVE CODEC;
 
 SELECT
-    countSubstrings(compression_codec, 'CODEC(') = 2,
-    position(compression_codec, 'kept UInt64 CODEC(ZSTD(1))') > 0,
-    position(compression_codec, 'defaulted UInt64 CODEC(Default)') > 0
-FROM system.columns
-WHERE database = currentDatabase() AND table = 't_tuple_codec_alter' AND name = 'payload';
+    countSubstrings(create_table_query, 'CODEC(') = 2,
+    position(create_table_query, 'kept UInt64 CODEC(ZSTD(1))') > 0,
+    position(create_table_query, 'defaulted UInt64 CODEC(Default)') > 0
+FROM system.tables
+WHERE database = currentDatabase() AND name = 't_tuple_codec_alter';
 
 SYSTEM START MERGES t_tuple_codec_alter;
 OPTIMIZE TABLE t_tuple_codec_alter FINAL;

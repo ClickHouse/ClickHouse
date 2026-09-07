@@ -8,19 +8,19 @@ Codec policy remains table metadata. It must not become part of `IColumn`, the i
 
 The selected SQL model is specified in `SQLNoModifySubcolumnNoDots.MD`. Element declarations are local modifiers inside a stored column's `Tuple` declaration. An `ALTER TABLE ... MODIFY COLUMN` restates the owning top-level column type and carries set, remove, or preserve operations for its tuple elements. There is no `MODIFY SUBCOLUMN` command and no dotted codec target.
 
-The initial syntax is limited to an owning `Tuple` column and elements reached through a direct chain of nested `Tuple` declarations. A `Tuple` used only in an expression has no storage codec policy. An annotation reached through `Array`, `Map`, or another non-`Tuple` wrapper is rejected rather than ignored.
+An owning column may be a `Tuple`, `Array(Tuple(...))`, or `SimpleAggregateFunction(f, Array(Tuple(...)))`. `Array` and `SimpleAggregateFunction` are transparent when deriving codec paths: only Tuple element names add path segments. A `Tuple` used only in an expression has no storage codec policy. An annotation reached through `Map`, `Nullable`, `LowCardinality`, `Nested`, `JSON`, or another unsupported wrapper is rejected rather than ignored.
 
-In the parser AST, the codec operation belongs to the tuple element's `ASTDataType`. Its existing argument-list child remains unchanged, and an optional codec is an additional AST child. `REMOVE CODEC` uses one bit in the existing AST flag storage. `ASTTupleDataType` therefore needs no parallel codec/removal vectors, and ordinary AST visitors can reach codec expressions. This representation is also suitable for later support of transparent wrappers such as `Array(Tuple(...))` without changing the AST again.
+In the parser AST, the codec operation belongs to the owning `ASTTupleDataType`. An annotated Tuple has a sparse list of operations keyed by zero-based element position. Each operation is tagged as `Set` or `Remove`; a `Set` owns its `CODEC` AST as an ordinary child. This keeps `ASTDataType` and specialized element types such as `ASTEnumDataType` free of storage policy while allowing ordinary AST visitors to reach codec expressions. Operations inside transparent wrappers remain owned by the nearest Tuple node.
 
 ## Codec Metadata Model
 
-Generalize the single `ColumnDescription::codec` value into a codec-policy abstraction, tentatively called `ColumnCodecDescription`.
+Generalize the single `ColumnDescription::codec` value into a codec-policy abstraction called `ColumnCodecDescription`.
 
 The policy contains:
 
 - An optional codec for the top-level column.
 - Optional codecs keyed by canonical logical subcolumn paths.
-- Operations for cloning, equality, formatting, serialization, and effective-codec resolution.
+- Operations for cloning, equality, mutation while constructing metadata, and pure longest-prefix lookup.
 
 Paths must be logical paths made of tuple-element names or positions. They must not use physical filenames because filenames and stream layouts are storage-format details.
 
@@ -50,6 +50,8 @@ Update all `ColumnDescription` operations to preserve the complete policy:
 
 `ALTER` must support adding, replacing, and removing individual tuple-element declarations from the restated owner declaration. A codec-only change remains metadata-only and does not immediately rewrite existing parts.
 
+The feature is disabled by default. `enable_tuple_element_codecs` gates statements that add or change element declarations. Existing metadata can still be attached, restored, read, preserved, and have declarations removed while the setting is disabled.
+
 Validation must reject:
 
 - Paths that do not resolve to a tuple element.
@@ -58,21 +60,21 @@ Validation must reject:
 
 ## Codec Validation
 
-Generalize codec validation to accept a codec policy and a column type.
+Generalize codec validation to accept a codec policy and a column type. Validation enumerates the real serialization streams and uses the same value-versus-structural classification as runtime resolution.
 
-- Validate a root codec against all applicable descendant leaf streams, preserving current behavior.
-- Validate a subcolumn codec only against that subcolumn's type and descendant streams.
+- Validate a root codec against all applicable descendant value and structural streams, preserving current behavior.
+- Validate a subcolumn codec only against the streams selected by that subcolumn's path and inheritance.
 - Instantiate type-dependent codecs with the leaf type of every applicable stream.
 - Preserve generic-only handling for structural streams such as array offsets and null maps.
 - Preserve current checks for experimental, suspicious, encrypting, and lossy codecs.
 
 The policy should be validated and normalized before it is stored in `ColumnDescription`, so writers consume trusted metadata.
 
-Codec-driven serialization customization must also become path-aware. In particular, the logic that attaches `Quantized` serialization currently inspects only the root `ColumnDescription::codec`. It must locate a `Quantized` declaration on a tuple element and attach the customization to that exact type subtree without modifying unrelated elements or shared type instances.
+Codec-driven serialization customization is not path-aware yet. `Quantized` is therefore rejected on Tuple elements; supporting it is a separate feature that must rebuild the affected type subtree without mutating shared type instances.
 
 ## Writer Integration
 
-Change the MergeTree writer interface from passing one codec AST to passing a codec resolver or the full `ColumnCodecDescription`.
+Change the MergeTree writer interface from passing one codec AST to passing the full `ColumnCodecDescription`. Each writer constructs one `ColumnCodecResolver` per written column.
 
 Current interface:
 
@@ -80,10 +82,10 @@ Current interface:
 addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc);
 ```
 
-Conceptual new interface:
+New interface:
 
 ```cpp
-addStreams(const NameAndTypePair & column, const ColumnCodecResolver & codec_resolver);
+addStreams(const NameAndTypePair & column, const ColumnCodecDescription & codec_policy);
 ```
 
 For every callback from `ISerialization::enumerateStreams`, the writer should:
@@ -122,7 +124,7 @@ A codec-only metadata change does not rewrite existing parts. New parts and part
 
 Audit every writer that consumes `ColumnDescription::codec`.
 
-`StorageLog` currently resolves one codec for a top-level column before creating its streams. It should use the same logical-path resolver if its physical layout can support different stream codecs. An engine that cannot represent the policy must reject it explicitly rather than silently applying the root codec.
+Storage support is explicit through `IStorage::supportsPerSubcolumnCodecs()`, which is false by default. The MergeTree family opts in. Other engines, including `Log`, reject element policies during `CREATE` and `ALTER` until their writers use the shared resolver.
 
 ## Introspection
 
@@ -131,8 +133,10 @@ Update user-visible metadata consistently:
 - `SHOW CREATE TABLE` round-trips the complete policy.
 - `DESCRIBE TABLE` shows the root declaration for the top-level column.
 - `DESCRIBE TABLE` with subcolumns enabled shows each subcolumn's effective codec.
-- `system.columns.compression_codec` returns the normalized complete policy.
+- `system.columns.compression_codec` keeps its existing root-only meaning.
 - Physical codec introspection continues reporting codecs found in data blocks.
+
+`SHOW CREATE TABLE` is the initial full-policy representation. A structured system-table surface can be added later after its public schema is agreed.
 
 ## Compatibility
 
@@ -142,9 +146,11 @@ The change must preserve:
 - Existing top-level `CODEC` semantics.
 - Reading old parts after metadata changes.
 - Writing existing flattened `Nested` schemas whose sibling Arrays have different codecs but share an offsets stream.
-- Replication between servers that understand the new syntax and metadata representation.
+- Deterministic replication metadata between servers that understand metadata format version 2.
 
-Compatibility with older server versions requires a feature/version gate if the persisted metadata syntax cannot be parsed by them. A table using only a root codec should continue to be serialized in the existing form.
+The logical type field remains undecorated. Root-only policies continue to use columns metadata version 1 with the existing byte representation. A policy with element entries uses version 2 and stores counted path segments plus codec AST text in a separate field. Version-1 metadata from an earlier implementation that embedded Tuple annotations in the type is accepted and rewritten as version 2.
+
+There is no replica capability negotiation in this experimental version. Enabling `enable_tuple_element_codecs` is the administrator's opt-in to the rolling-upgrade and downgrade restriction: old servers cannot consume version-2 metadata. ATTACH on a capable server does not require the setting because the setting controls admission of new declarations, not loading existing metadata.
 
 ## Test Plan
 

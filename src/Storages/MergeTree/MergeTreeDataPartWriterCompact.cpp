@@ -1,5 +1,6 @@
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
+#include <Storages/ColumnCodecResolver.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
@@ -79,6 +80,12 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ColumnCodecDescription & codec_policy)
 {
     const ASTPtr default_codec_desc = default_codec->getFullCodecDesc();
+    ColumnCodecResolver codec_resolver(
+        codec_policy,
+        name_and_type.getTypeInStorage(),
+        name_and_type,
+        default_codec_desc,
+        settings.apply_adaptive_codec);
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -88,19 +95,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         if (compressed_streams.contains(stream_name))
             return;
 
-        const auto resolved = codec_policy.resolve(getCodecPathForStream(name_and_type, name_and_type.getTypeInStorage(), substream_path), default_codec_desc);
-
-        const auto & subtype = substream_path.back().data.type;
-        CompressionCodecPtr compression_codec;
-
-        /// Value streams may use type-dependent codecs. Structural streams use generic codecs only.
-        if (ISerialization::isSpecialCompressionAllowed(substream_path))
-        {
-            compression_codec = CompressionCodecFactory::instance().get(resolved.codec, subtype.get(), default_codec);
-            compression_codec = maybeAdaptiveDefaultCodec(resolved.codec_is_part_default, subtype, compression_codec);
-        }
-        else
-            compression_codec = CompressionCodecFactory::instance().get(resolved.codec, nullptr, default_codec, true);
+        CompressionCodecPtr compression_codec = codec_resolver.getCodec(substream_path, default_codec);
 
         UInt64 codec_id = compression_codec->getHash();
         /// A codec that needs the vector size keeps state for one stream.

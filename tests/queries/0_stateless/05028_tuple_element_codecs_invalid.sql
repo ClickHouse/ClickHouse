@@ -8,6 +8,9 @@ DROP TABLE IF EXISTS t_tuple_codec_quantized;
 DROP TABLE IF EXISTS t_tuple_codec_alias;
 DROP TABLE IF EXISTS t_tuple_codec_log;
 DROP TABLE IF EXISTS t_tuple_codec_nested_control;
+DROP TABLE IF EXISTS t_tuple_codec_nullable;
+DROP TABLE IF EXISTS t_tuple_codec_default_nullable;
+DROP TABLE IF EXISTS t_tuple_codec_shadowed_structural;
 
 SET enable_tuple_element_codecs = 1;
 
@@ -93,13 +96,62 @@ CREATE TABLE t_tuple_codec_alias
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
--- `Log` rejects a per-element policy when its sink is constructed.
+-- Tuple-element policies cannot cross an outer Nullable wrapper yet.
+CREATE TABLE t_tuple_codec_nullable
+(
+    value Tuple(id UInt64 CODEC(LZ4), text String) NULL
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE t_tuple_codec_nullable
+(
+    value Tuple(id UInt64, text String)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+ALTER TABLE t_tuple_codec_nullable
+    MODIFY COLUMN value Tuple(id UInt64 CODEC(LZ4), text String) NULL; -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_tuple_codec_nullable;
+
+SET data_type_default_nullable = 1;
+CREATE TABLE t_tuple_codec_default_nullable
+(
+    value Tuple(id UInt64 CODEC(LZ4), text String)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+SET data_type_default_nullable = 0;
+
+-- A declaration shadowed on all value streams still controls Array offsets.
+CREATE TABLE t_tuple_codec_shadowed_structural
+(
+    value Tuple(
+        items Array(Tuple(
+            a UInt64 CODEC(LZ4),
+            b UInt64 CODEC(LZ4)
+        )) CODEC(ZSTD('bad'))
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+-- Unsupported engines reject a per-element policy during DDL.
 CREATE TABLE t_tuple_codec_log
 (
     value Tuple(id UInt64 CODEC(LZ4), text String CODEC(ZSTD(1)))
 )
+ENGINE = Log; -- { serverError NOT_IMPLEMENTED }
+
+CREATE TABLE t_tuple_codec_log
+(
+    value Tuple(id UInt64, text String)
+)
 ENGINE = Log;
-INSERT INTO t_tuple_codec_log VALUES ((1, 'x')); -- { serverError NOT_IMPLEMENTED }
+
+ALTER TABLE t_tuple_codec_log
+    MODIFY COLUMN value Tuple(id UInt64 CODEC(LZ4), text String); -- { serverError NOT_IMPLEMENTED }
+
 DROP TABLE t_tuple_codec_log;
 
 -- A direct nested-`Tuple` chain is the positive boundary control.
@@ -111,7 +163,9 @@ ENGINE = MergeTree
 ORDER BY tuple();
 
 SELECT
-    position(compression_codec, 'id UInt64 CODEC(Delta(8), LZ4)') > 0,
+    position(
+        (SELECT create_table_query FROM system.tables WHERE database = currentDatabase() AND name = 't_tuple_codec_nested_control'),
+        'id UInt64 CODEC(Delta(8), LZ4)') > 0,
     position(type, 'CODEC') = 0
 FROM system.columns
 WHERE database = currentDatabase() AND table = 't_tuple_codec_nested_control' AND name = 'value';

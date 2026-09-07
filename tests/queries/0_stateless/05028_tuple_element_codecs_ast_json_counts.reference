@@ -1,2 +1,3 @@
 codec_json_ok
-ASTDataType cannot set and remove CODEC at the same time
+Tuple element REMOVE CODEC operation cannot contain a codec expression
+Tuple CODEC operation index 2 is out of range for 2 elements

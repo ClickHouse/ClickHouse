@@ -1,5 +1,4 @@
 #include <Columns/ColumnSparse.h>
-#include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
@@ -154,17 +153,6 @@ SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & colum
 
     return it->second;
 }
-
-/// TODO: structural integer substreams (offsets, null maps) could go adaptive but `isSpecialCompressionAllowed` gates them out. Optimise.
-CompressionCodecPtr IMergeTreeDataPartWriter::maybeAdaptiveDefaultCodec(
-    bool column_uses_default_codec, const DataTypePtr & substream_type, CompressionCodecPtr resolved_codec) const
-{
-    /// Adaptive could pick an unencrypted codec for some blocks and drop the encryption. Thus skip adaptivity for an encrypting default.
-    if (settings.apply_adaptive_codec && column_uses_default_codec && substream_type && !resolved_codec->isEncryption())
-        return std::make_shared<CompressionCodecAdaptive>(*substream_type, resolved_codec);
-    return resolved_codec;
-}
-
 
 IMergeTreeDataPartWriter::~IMergeTreeDataPartWriter() = default;
 

@@ -151,7 +151,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         /* require_type = */ false,
         /* allow_null_modifiers = */ true,
         /* check_keywords_after_name = */ true,
-        /* allow_tuple_element_codec_removals = */ true);
+        /* tuple_element_codec_syntax = */ TupleElementCodecSyntax::AllowSetAndRemove);
     ParserPartition parser_partition;
     ParserExpressionWithOptionalAlias parser_exp_elem(false);
     ParserList parser_assignment_list(

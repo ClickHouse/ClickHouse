@@ -7,6 +7,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
+#include <Storages/ColumnCodecResolver.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -192,6 +193,12 @@ void MergeTreeDataPartWriterWide::addStreams(
     const ColumnCodecDescription & codec_policy)
 {
     const ASTPtr default_codec_desc = default_codec->getFullCodecDesc();
+    ColumnCodecResolver codec_resolver(
+        codec_policy,
+        name_and_type.getTypeInStorage(),
+        name_and_type,
+        default_codec_desc,
+        settings.apply_adaptive_codec);
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -225,17 +232,7 @@ void MergeTreeDataPartWriterWide::addStreams(
                 " It is a collision between a filename for one column and a hash of filename for another column or a bug",
                 stream_name, it->second, full_stream_name);
 
-        const auto resolved = codec_policy.resolve(getCodecPathForStream(name_and_type, name_and_type.getTypeInStorage(), substream_path), default_codec_desc);
-        const auto & subtype = substream_path.back().data.type;
-        CompressionCodecPtr compression_codec;
-        /// Value streams may use type-dependent codecs. Structural streams use generic codecs only.
-        if (ISerialization::isSpecialCompressionAllowed(substream_path))
-        {
-            compression_codec = CompressionCodecFactory::instance().get(resolved.codec, subtype.get(), default_codec);
-            compression_codec = maybeAdaptiveDefaultCodec(resolved.codec_is_part_default, subtype, compression_codec);
-        }
-        else
-            compression_codec = CompressionCodecFactory::instance().get(resolved.codec, nullptr, default_codec, true);
+        CompressionCodecPtr compression_codec = codec_resolver.getCodec(substream_path, default_codec);
 
         ParserCodec codec_parser;
         auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);

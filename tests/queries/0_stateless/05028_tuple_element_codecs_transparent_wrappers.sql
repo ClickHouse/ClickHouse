@@ -31,18 +31,18 @@ SELECT
 FROM numbers(100000);
 
 SELECT
-    position(compression_codec, 'Array(Tuple(a UInt64 CODEC(Delta(8), ZSTD(1))') > 0,
-    position(compression_codec, 'b UInt64 CODEC(LZ4HC(4))') > 0,
-    endsWith(compression_codec, 'CODEC(ZSTD(3))')
-FROM system.columns
-WHERE database = currentDatabase() AND table = 't_tuple_codec_transparent_wrappers' AND name = 'array_value';
+    position(create_table_query, 'Array(Tuple(a UInt64 CODEC(Delta(8), ZSTD(1))') > 0,
+    position(create_table_query, 'b UInt64 CODEC(LZ4HC(4))') > 0,
+    position(create_table_query, 'CODEC(ZSTD(3))') > 0
+FROM system.tables
+WHERE database = currentDatabase() AND name = 't_tuple_codec_transparent_wrappers';
 
 SELECT
-    position(compression_codec, 'SimpleAggregateFunction(any, Array(Tuple(a UInt64 CODEC(T64, LZ4)') > 0,
-    position(compression_codec, 'b UInt64 CODEC(ZSTD(2))') > 0,
-    endsWith(compression_codec, 'CODEC(LZ4HC(2))')
-FROM system.columns
-WHERE database = currentDatabase() AND table = 't_tuple_codec_transparent_wrappers' AND name = 'aggregate_value';
+    position(create_table_query, 'SimpleAggregateFunction(any, Array(Tuple(a UInt64 CODEC(T64, LZ4)') > 0,
+    position(create_table_query, 'b UInt64 CODEC(ZSTD(2))') > 0,
+    position(create_table_query, 'CODEC(LZ4HC(2))') > 0
+FROM system.tables
+WHERE database = currentDatabase() AND name = 't_tuple_codec_transparent_wrappers';
 
 SELECT
     countIf(column = 'array_value' AND arrayExists(x -> startsWith(x, 'Delta('), mapKeys(codec_block_counts))) > 0,
@@ -74,20 +74,20 @@ ALTER TABLE t_tuple_codec_transparent_wrappers
     )));
 
 SELECT
-    position(compression_codec, 'a UInt64 CODEC(Delta(8), ZSTD(1))') > 0,
-    position(compression_codec, 'b UInt64 CODEC') = 0,
-    position(compression_codec, 'c UInt64 CODEC(T64, LZ4)') > 0,
-    endsWith(compression_codec, 'CODEC(ZSTD(3))')
-FROM system.columns
-WHERE database = currentDatabase() AND table = 't_tuple_codec_transparent_wrappers' AND name = 'array_value';
+    position(create_table_query, 'a UInt64 CODEC(Delta(8), ZSTD(1))') > 0,
+    position(create_table_query, 'b UInt64 CODEC') = 0,
+    position(create_table_query, 'c UInt64 CODEC(T64, LZ4)') > 0,
+    position(create_table_query, 'CODEC(ZSTD(3))') > 0
+FROM system.tables
+WHERE database = currentDatabase() AND name = 't_tuple_codec_transparent_wrappers';
 
 SELECT
-    position(compression_codec, 'a UInt64 CODEC(T64, LZ4)') > 0,
-    position(compression_codec, 'b UInt64 CODEC') = 0,
-    position(compression_codec, 'c UInt64 CODEC(ZSTD(4))') > 0,
-    endsWith(compression_codec, 'CODEC(LZ4HC(2))')
-FROM system.columns
-WHERE database = currentDatabase() AND table = 't_tuple_codec_transparent_wrappers' AND name = 'aggregate_value';
+    position(create_table_query, 'a UInt64 CODEC(T64, LZ4)') > 0,
+    position(create_table_query, 'b UInt64 CODEC') = 0,
+    position(create_table_query, 'c UInt64 CODEC(ZSTD(4))') > 0,
+    position(create_table_query, 'CODEC(LZ4HC(2))') > 0
+FROM system.tables
+WHERE database = currentDatabase() AND name = 't_tuple_codec_transparent_wrappers';
 
 INSERT INTO t_tuple_codec_transparent_wrappers
 SELECT

@@ -6,6 +6,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ColumnCodecAST.h>
 #include <Common/SettingsChanges.h>
 
 
@@ -153,11 +154,9 @@ struct AlterCommand
     /// Clear columns or index (don't drop from metadata)
     bool clear = false;
 
-    /// CODEC(...) operations from an ADD or MODIFY column declaration.
-    /// The empty path denotes the column-level clause; non-empty paths denote tuple elements.
-    std::map<CodecPath, ASTPtr> codec_sets;
-    /// REMOVE CODEC operations from MODIFY COLUMN, with the empty path denoting the column-level clause.
-    std::vector<CodecPath> codec_removals;
+    /// CODEC operations from an ADD or MODIFY column declaration.
+    /// The empty path denotes the column-level clause; non-empty paths denote Tuple elements.
+    ColumnCodecPatch codec_patch;
 
     /// For MODIFY SETTING or MODIFY COLUMN MODIFY SETTING
     SettingsChanges settings_changes;

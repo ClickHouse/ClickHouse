@@ -14,7 +14,7 @@ cleanup()
 trap cleanup EXIT
 
 # Query-parameter substitution is a generic AST traversal. The parameter inside the element
-# codec must be visited now that the codec is an ordinary child of ASTDataType.
+# codec must be visited because the sparse operation list is an ordinary Tuple AST child.
 ${CLICKHOUSE_CLIENT} --enable_tuple_element_codecs=1 --param_level=3 -q "
     CREATE TABLE ${TABLE}
     (
@@ -24,9 +24,9 @@ ${CLICKHOUSE_CLIENT} --enable_tuple_element_codecs=1 --param_level=3 -q "
     ORDER BY tuple()"
 
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT position(compression_codec, 'value UInt64 CODEC(ZSTD(3))') > 0
-    FROM system.columns
-    WHERE database = currentDatabase() AND table = '${TABLE}' AND name = 'payload'"
+    SELECT position(create_table_query, 'value UInt64 CODEC(ZSTD(3))') > 0
+    FROM system.tables
+    WHERE database = currentDatabase() AND name = '${TABLE}'"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${TABLE}"
 trap - EXIT

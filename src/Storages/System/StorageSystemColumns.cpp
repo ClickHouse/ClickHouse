@@ -13,8 +13,6 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/dataTypeToAST.h>
-#include <Parsers/ASTColumnDeclaration.h>
 #include <Storages/ColumnCodecDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
@@ -290,22 +288,8 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!column.codec.empty())
-                    {
-                        auto declaration = make_intrusive<ASTColumnDeclaration>();
-                        declaration->name = column.name;
-                        declaration->setType(dataTypeToAST(column.type));
-                        applyCodecDescriptionToAST(*declaration, column.type, column.codec);
-                        if (column.codec.hasSubcolumns())
-                        {
-                            String policy = declaration->getType()->formatWithSecretsOneLine();
-                            if (column.codec.hasRoot())
-                                policy += " " + column.codec.getRoot()->formatWithSecretsOneLine();
-                            res_columns[res_index++]->insert(policy);
-                        }
-                        else
-                            res_columns[res_index++]->insert(column.codec.getRoot()->formatForLogging());
-                    }
+                    if (column.codec.hasRoot())
+                        res_columns[res_index++]->insert(column.codec.getRoot()->formatForLogging());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
