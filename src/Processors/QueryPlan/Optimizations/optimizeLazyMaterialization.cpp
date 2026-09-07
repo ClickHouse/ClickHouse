@@ -493,7 +493,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     }
 
     const auto limit = limit_step->getLimit();
-    if (limit_step->withTies() && max_limit_for_lazy_materialization != 0 && !settings.optimize_lazy_materialization_with_ties)
+    if (limit_step->withTies() && !settings.optimize_lazy_materialization_with_ties)
         return false;
 
     if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))

@@ -67,7 +67,7 @@ FROM
     FROM test_lazy_materialization_with_ties_setting
     ORDER BY tie
     LIMIT 11 WITH TIES
-    SETTINGS query_plan_max_limit_for_lazy_materialization = 0
+    SETTINGS query_plan_max_limit_for_lazy_materialization = 0, query_plan_optimize_lazy_materialization_with_ties = 1
 );
 
 SELECT 'result check';
