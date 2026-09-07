@@ -6373,40 +6373,12 @@ For how many elements it is allowed to preallocate space in all hash tables in t
 )", 0) \
     DECLARE(Bool, query_plan_hash_join_subset_keys_auto, false, R"(
 Use column statistics to automatically demote high-cardinality JOIN equality keys out of the hash table key set. The hash table is built on the subset of equality keys that reaches a target bucket size; the remaining equalities are evaluated per row during the probe.
-
-For `t1 JOIN t2 ON t1.user_id = t2.user_id AND t1.request_id = t2.request_id` with many users and few `request_id` values per user, only `user_id` becomes a hash key and `t1.request_id = t2.request_id` is checked during the probe. The hash table is then built over the `user_id` space rather than the `user_id` x `request_id` space.
-
-Selects the kept-key subset by enumerating candidate subsets of the equality keys and picking
-the one with the smallest NDV that is still at least
-`build_side_rows * query_plan_hash_join_subset_keys_min_kept_selectivity`. Ties prefer fewer kept
-keys (cheaper per-row hashing). Candidate NDVs come from two sources:
-
-1. Storage `STATISTICS(uniq)` on the build-side columns — yields a per-column NDV; contributes
-   size-1 candidates.
-2. The in-process `HashTablesStatistics` cache built up during prior joins — contributes a
-   joint NDV for any subset a previous query on the same build-side subtree happened to build a
-   hash table on. The cache value is a joint observation, so it captures correlation between
-   keys directly (a pair of correlated keys reports the small actual joint NDV, not the
-   product of per-column NDVs).
-
-When the same subset has a value from both sources, the smaller NDV wins (conservative against
-either source over-stating distinctness).
-
-The decision is made by the join-order optimizer, which already knows the build side's row count
-and per-column NDV, so it requires join reordering to be enabled
-(`query_plan_optimize_join_order_limit`). No demotion happens when no candidate reaches the target,
-when the build side is below `query_plan_hash_join_subset_keys_min_rows`, when the build-side row
-count was not derived from real column statistics, or when `join_algorithm` enables anything other
-than `hash`, `parallel_hash`, `grace_hash` or `default` (the demoted equality is realized as a
-mixed-condition predicate, which only those algorithms evaluate).
 )", 0) \
     DECLARE(UInt64, query_plan_hash_join_subset_keys_min_rows, 1000000, R"(
-Minimum estimated build-side row count for `query_plan_hash_join_subset_keys_auto` to kick in. Joins on a small build side do not benefit from key demotion (the hash table is already small) and the probe-time equality check would only add overhead.
+Minimum estimated build-side row count for `query_plan_hash_join_subset_keys_auto` to apply. A small hash table does not benefit from key demotion.
 )", 0) \
     DECLARE(Double, query_plan_hash_join_subset_keys_min_kept_selectivity, 0.01, R"(
-Target selectivity of the kept hash keys for `query_plan_hash_join_subset_keys_auto`. Selectivity is approximated as `NDV(kept_keys) / build_side_rows`. The optimization keeps as few keys as possible (smallest hash table) such that this selectivity is still met, so that the probe-time equality check runs over a bounded bucket.
-
-Default `0.01` targets an average bucket of about 100 build-side rows. Lower values are more permissive (allow larger buckets, smaller hash table); higher values demand tighter buckets and so keep more keys.
+Target selectivity of the kept hash keys for `query_plan_hash_join_subset_keys_auto`, approximated as `NDV(kept_keys) / build_side_rows`. The smallest key subset that still reaches it is kept, bounding the bucket the probe-time equalities run over. The default `0.01` targets buckets of about 100 rows.
 )", 0) \
     \
     DECLARE(Bool, kafka_disable_num_consumers_limit, false, R"(

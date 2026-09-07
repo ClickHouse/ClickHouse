@@ -5,7 +5,6 @@
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <DataTypes/IDataType.h>
@@ -393,21 +392,19 @@ static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const 
     }
 }
 
-void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag, UInt64 version) const
+void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) const
 {
     auto node_to_id = actions_dag->getNodeToIdMap();
-    const bool version_has_probe_conditions = version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_PROBE_CONDITIONS;
 
-    if (version_has_probe_conditions || probe_conditions.empty())
+    if (probe_conditions.empty())
     {
         serializeNodeList(out, node_to_id, expression);
     }
     else
     {
-        /// An older reader has nowhere to put a probe-time equality, and dropping one would add rows
-        /// to the join result. They are ordinary ON equalities, so write them back into the ON
-        /// expression: the remote side then keys the hash table on all of them, losing the
-        /// optimization but never a row.
+        /// A probe-time equality is part of the join condition, so dropping it would add rows to the
+        /// join result. Rather than extend the format, write them back into the ON expression: the
+        /// reader keys the hash table on every equality, losing the optimization but never a row.
         std::vector<JoinActionRef> undemoted_expression = expression;
         undemoted_expression.insert(undemoted_expression.end(), probe_conditions.begin(), probe_conditions.end());
         serializeNodeList(out, node_to_id, undemoted_expression);
@@ -418,9 +415,6 @@ void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag, 
     serializeJoinKind(kind, out);
     serializeJoinStrictness(strictness, out);
     serializeJoinLocality(locality, out);
-
-    if (version_has_probe_conditions)
-        serializeNodeList(out, node_to_id, probe_conditions);
 }
 
 static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node, JoinExpressionActions & expression_actions)
@@ -445,7 +439,7 @@ static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const Act
     return result;
 }
 
-JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions, UInt64 version)
+JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions)
 {
     auto id_to_node = expression_actions.getActionsDAG()->getIdToNode();
     auto actions = deserializeNodeList(in, id_to_node, expression_actions);
@@ -458,8 +452,6 @@ JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & 
     JoinOperator result(kind, strictness, locality);
     result.expression = std::move(actions);
     result.residual_filter = std::move(residual_filter);
-    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_PROBE_CONDITIONS)
-        result.probe_conditions = deserializeNodeList(in, id_to_node, expression_actions);
 
     return result;
 }

@@ -108,10 +108,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// the version, so a mixed-version cluster fails at plan time instead of at runtime.
 /// Version 14 registers the `IntersectOrExcept` step, so a plan with `INTERSECT` or `EXCEPT`
 /// can be shipped under `make_distributed_plan`.
-/// Version 15 carries `JoinOperator::probe_conditions`, the JOIN ON equalities that
-/// `query_plan_hash_join_subset_keys_auto` moved out of the hash table key set. They are part of the
-/// join condition, so a reader that dropped them would produce extra rows.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 15;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 14;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -137,10 +134,6 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORD
 /// set on the merge step synthesized by the Cascades aggregation pushdown. Gated on both sides so a
 /// mixed-version cluster fails at plan time.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION = 13;
-/// First query-plan serialization version that carries `JoinOperator::probe_conditions`. Below it the
-/// join must keep every equality as a hash key, so `demoteHighNdvKeysToProbe` is skipped rather than
-/// shipping a plan whose join condition would be silently truncated.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_PROBE_CONDITIONS = 15;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;

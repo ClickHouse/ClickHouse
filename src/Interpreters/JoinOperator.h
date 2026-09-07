@@ -40,8 +40,9 @@ struct JoinOperator
     /// holds genuine post-join predicates with different semantics, and apart from `expression`, so
     /// that the hash-table statistics cache key (`calculateJoinStepCacheKeyContribution`, which
     /// hashes only the equalities left in `expression`) reflects the keys actually inserted into
-    /// the hash table. Set by an optimizer pass, so - like `shared_runtime_filter_descriptors` -
-    /// it is not serialized: each node re-runs the pass on the deserialized plan.
+    /// the hash table. `serialize` writes them back into the ON expression, so a deserialized plan
+    /// keys the hash table on every equality: the optimization does not cross a serialization
+    /// boundary, but no condition is ever lost.
     std::vector<JoinActionRef> probe_conditions = {};
 
     explicit JoinOperator(
@@ -55,8 +56,8 @@ struct JoinOperator
         , expression(std::move(expression_))
     {}
 
-    void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_, UInt64 version) const;
-    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions, UInt64 version);
+    void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_) const;
+    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions);
 
     String dump() const;
 };
