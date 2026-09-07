@@ -54,7 +54,6 @@ std::span<const UInt32> TextIndexPositionsRankCursor::seek(UInt64 rank)
             block_offsets, block_positions, scratch);
 
         current_block = block_idx;
-        ++blocks_decoded;
     }
 
     if (local_rank + 1 >= block_offsets.size())

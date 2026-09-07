@@ -25,9 +25,6 @@ public:
     /// Positions the cursor on the first document >= target, or invalidates it.
     void advance(UInt32 target);
 
-    size_t segmentHeadersRead() const { return segment_headers_read; }
-    size_t blocksDecoded() const { return blocks_decoded; }
-
 private:
     struct Segment
     {
@@ -69,9 +66,6 @@ private:
 
     std::unique_ptr<IPostingListBlockCodec> block_codec;
     std::vector<UInt32> decoded_doc_ids;
-
-    size_t segment_headers_read = 0;
-    size_t blocks_decoded = 0;
 };
 
 }
