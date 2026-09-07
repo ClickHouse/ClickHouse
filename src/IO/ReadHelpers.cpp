@@ -1505,10 +1505,14 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char *
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
+    /// This one lambda reports every way the parse below can fail - a non-digit where a digit belongs, a
+    /// delimiter that is not allowed, or the value ending early - so it must not claim a particular one.
+    /// `toDate('yesterday')` used to be reported as "value is too short".
     auto error = []
     {
         if constexpr (throw_exception)
-            throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date: value is too short");
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATE,
+                "Cannot parse date: expected a date in the YYYY-MM-DD or YYYYMMDD format");
         return ReturnType(false);
     };
 

@@ -59,6 +59,7 @@ Lista de funcionalidades compatibles:
 * [x] Materialización efímera
 * [x] Materialización de tabla distribuida (experimental)
 * [x] Materialización incremental distribuida (experimental)
+* [x] Materialización de diccionario (experimental)
 * [x] Contratos
 * [x] Configuraciones de columna específicas de ClickHouse (Codec, TTL...)
 * [x] Configuración de tablas específica de ClickHouse (índices, proyecciones...)
@@ -82,8 +83,6 @@ dbt proporciona 5 tipos de materialización. Todos ellos son compatibles con `db
 * **materialized view**: El modelo se construye como una vista materializada en la base de datos. En ClickHouse, esto se construye como una [vista materializada](/es/reference/statements/create/view#materialized-view).
 
 La sintaxis y las cláusulas adicionales definen cómo deben actualizarse estos modelos si cambian sus datos subyacentes. Por lo general, dbt recomienda comenzar con la materialización view hasta que el rendimiento se convierta en una preocupación. La materialización table ofrece una mejora del rendimiento en tiempo de consulta al capturar los resultados de la consulta del modelo como una tabla, a costa de un mayor almacenamiento. El enfoque incremental desarrolla aún más esta idea para permitir que las actualizaciones posteriores de los datos subyacentes se capturen en la tabla de destino.
-
-El [adaptador actual](https://github.com/silentsokolov/dbt-clickhouse) para ClickHouse también admite las materializaciones **dictionary**, **distributed table** y **distributed incremental**. El adaptador también admite [snapshots](https://docs.getdbt.com/docs/building-a-dbt-project/snapshots#check-strategy) y [seeds](https://docs.getdbt.com/docs/building-a-dbt-project/seeds) de dbt.
 
 Las siguientes son [características experimentales](/es/reference/settings/beta-and-experimental-features) en `dbt-clickhouse`:
 
@@ -176,7 +175,7 @@ Tu step de CD puede ser tan simple como ejecutar `dbt build` contra tu clúster 
 
 Una estrategia habitual consiste en usar trabajos de [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci), en los que solo se vuelven a desplegar los modelos modificados (y sus dependencias ascendentes y descendentes). Este enfoque utiliza artefactos de tus ejecuciones de producción (es decir, el [manifiesto de dbt](https://docs.getdbt.com/reference/artifacts/manifest-json)) para reducir el tiempo de ejecución de tu proyecto y garantizar que no haya divergencias de esquema entre entornos.
 
-Para mantener tus entornos de desarrollo sincronizados y evitar ejecutar tus modelos sobre despliegues obsoletos, puedes usar [clone](https://docs.getdbt.com/reference/commands/clone) o incluso [defer](https://docs.getdbt.com/reference/node-selection/defer).
+Para mantener tus entornos de desarrollo sincronizados y evitar ejecutar tus modelos sobre despliegues obsoletos, puedes usar [clone](https://docs.getdbt.com/reference/commands/clone) o incluso [defer](https://docs.getdbt.com/reference/node-selection/defer). En ClickHouse, `dbt clone` copia tablas MergeTree mediante una instrucción `CLONE` de copia cero; consulta [Clonar modelos con dbt clone](#dbt-clone) a continuación para obtener más detalles.
 
 Recomendamos usar un clúster o servicio de ClickHouse dedicado para el entorno de pruebas (es decir, un entorno de staging) para evitar afectar al funcionamiento de tu entorno de producción. Para garantizar que el entorno de pruebas sea representativo, es importante que uses un subconjunto de tus datos de producción y que ejecutes dbt de una forma que evite divergencias de esquema entre entornos.
 
@@ -186,6 +185,19 @@ Recomendamos usar un clúster o servicio de ClickHouse dedicado para el entorno 
 Usar un entorno dedicado para las pruebas de CI también te permite realizar pruebas manuales sin afectar a tu entorno de producción. Por ejemplo, puede que quieras apuntar una herramienta de BI a este entorno para hacer pruebas.
 
 Para el despliegue (es decir, el paso de CD), recomendamos usar los artefactos de tus despliegues de producción para actualizar solo los modelos que hayan cambiado. Esto requiere configurar almacenamiento de objetos (por ejemplo, S3) como almacenamiento intermedio para tus artefactos de dbt. Una vez configurado, puedes ejecutar un comando como `dbt build --select state:modified+ --state path/to/last/deploy/state.json` para reconstruir selectivamente la cantidad mínima de modelos necesaria en función de lo que haya cambiado desde la última ejecución en producción.
+
+<div id="dbt-clone">
+  #### Clonación de modelos con `dbt clone`
+</div>
+
+A partir de dbt-clickhouse 1.10.1, el comando [`dbt clone`](https://docs.getdbt.com/reference/commands/clone) utiliza la sentencia de copia cero `CREATE OR REPLACE TABLE ... CLONE AS ...` de ClickHouse para clonar modelos materializados como tablas que usan un motor de la familia MergeTree. Esto crea una copia de la tabla sin duplicar las partes de datos subyacentes, lo que permite sincronizar entornos de forma rápida y económica; por ejemplo, al configurar un entorno de desarrollo o [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) a partir del estado de producción.
+
+Los modelos que no se pueden clonar de esta forma recurren al comportamiento predeterminado de dbt, que consiste en crear una vista que apunta a la relación de origen:
+
+* Tablas que usan motores distintos de MergeTree
+* Materializaciones Distributed
+
+En los modelos de vista materializada, solo se clona la tabla de destino; la vista materializada se crea sobre la tabla clonada.
 
 <div id="troubleshooting-common-issues">
   ## Solución de problemas frecuentes
@@ -206,6 +218,23 @@ Si tienes problemas para conectarte a ClickHouse desde dbt, asegúrate de que se
 </div>
 
 Algunas operaciones pueden tardar más de lo esperado debido a consultas específicas de ClickHouse. Para obtener más información sobre qué consultas tardan más, aumente el [nivel de registro](https://docs.getdbt.com/reference/global-configs/logs#log-level) a `debug`; esto mostrará el tiempo empleado por cada consulta. Por ejemplo, puede lograrse añadiendo `--log-level debug` a los comandos de dbt.
+
+<div id="query-id-tracking">
+  ### Correlación de ejecuciones de dbt con consultas de ClickHouse
+</div>
+
+Para obtener información detallada del lado del servidor, a partir de dbt-clickhouse 1.10.1, a cada sentencia ejecutada por el adaptador se le asigna su propio ID de consulta (un UUID4), que se reenvía a ClickHouse. El ID de la sentencia principal de un modelo se devuelve en la `adapter_response` de su resultado de dbt, por lo que está disponible en artefactos de dbt como [`run_results.json`](https://docs.getdbt.com/reference/artifacts/run-results-json). Puede buscarlo en la tabla [`system.query_log`](/es/reference/system-tables/query_log) para inspeccionar los tiempos de ejecución y el uso de recursos de esa sentencia:
+
+```sql
+SELECT query_id, query, query_duration_ms, read_rows, memory_usage
+FROM system.query_log
+WHERE query_id = '<query_id from run_results.json>'
+  AND type = 'QueryFinish'
+```
+
+Ten en cuenta que una materialización suele ejecutar varias sentencias por modelo (DDL, inserts, etc.), cada una con su propio ID de consulta; el de `run_results.json` identifica únicamente la sentencia principal del modelo. Para encontrar todas las sentencias de una ejecución, filtra `system.query_log` por el [comentario de consulta de dbt](https://docs.getdbt.com/reference/project-configs/query-comment) incluido en el texto de cada consulta.
+
+El ID de consulta también permite que las herramientas de observabilidad que consumen artefactos de dbt (por ejemplo, Elementary) vinculen automáticamente las ejecuciones de modelos de dbt con las entradas de `system.query_log`.
 
 <div id="limitations">
   ## Limitaciones
