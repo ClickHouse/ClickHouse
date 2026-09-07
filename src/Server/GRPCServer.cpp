@@ -36,12 +36,12 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
 #include <Poco/FileStream.h>
@@ -1308,8 +1308,12 @@ namespace
                         return std::make_shared<EmptySink>(header);
                     });
 
-                    auto executor = cur_pipeline.execute();
-                    executor->execute(1, false);
+                    auto external_table_pipeline = QueryPipelineBuilder::getPipeline(std::move(cur_pipeline));
+                    external_table_pipeline.setNumThreads(1);
+                    external_table_pipeline.setConcurrencyControl(false);
+                    external_table_pipeline.disableReadProgress();
+                    CompletedPipelineExecutor executor(external_table_pipeline);
+                    executor.execute();
                 }
             }
 
