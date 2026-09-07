@@ -114,13 +114,14 @@ Chunk ExternalDistinctTransform::sortSpillChunk(Chunk chunk, RunKind kind) const
 
 void ExternalDistinctTransform::startFirstSpill()
 {
-    LOG_TRACE(log, "Switching DISTINCT to the external mode (query memory: {}, limit: {})",
+    LOG_TRACE(log, "Switching DISTINCT to the external mode (query memory: {}, spill threshold: {})",
         formatReadableSizeWithBinarySuffix(getCurrentQueryMemoryUsage()),
         formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct));
 
-    suppression_keys = std::move(*distinct_set).extractKeys();
+    if (distinct_set->getTotalRowCount())
+        suppression_keys = std::move(*distinct_set).extractKeys();
     distinct_set.reset();
-    stage = Stage::ExtractSuppression;
+    stage = suppression_keys ? Stage::ExtractSuppression : Stage::Consume;
 }
 
 void ExternalDistinctTransform::extractSuppressionRun()
@@ -389,6 +390,9 @@ IProcessor::Status ExternalDistinctTransform::prepareConsume()
         return Status::Finished;
     }
 
+    if (pending_input)
+        current_chunk = std::move(pending_input);
+
     if (!current_chunk)
     {
         if (input.isFinished())
@@ -507,6 +511,25 @@ void ExternalDistinctTransform::consume(Chunk chunk)
     if (unlikely(!chunk.hasRows()))
         return;
 
+    if (distinct_set)
+    {
+        /// Filtering can copy the input before spilling, so allow another input-sized allocation.
+        /// A suppression run needs its columns, a sorted copy, and a permutation. Writing needs the
+        /// uncompressed, compressed, and file buffers. Oversized values and codec overhead can exceed
+        /// this estimate.
+        const size_t suppression_columns_bytes = 2 * DEFAULT_BYTES_IN_RUN;
+        const size_t sort_permutation_bytes = max_block_size_rows * sizeof(IColumn::Permutation::value_type);
+        const size_t write_buffers_bytes = 3 * tmp_data->getSettings().buffer_size;
+        const size_t spill_headroom_bytes
+            = chunk.allocatedBytes() + suppression_columns_bytes + sort_permutation_bytes + write_buffers_bytes;
+        if (!distinct_set->prepareForInsert(chunk, spill_headroom_bytes))
+        {
+            pending_input = std::move(chunk);
+            startFirstSpill();
+            return;
+        }
+    }
+
     const UInt64 first_arrival_number = consumed_rows;
     consumed_rows += chunk.getNumRows();
 
@@ -543,10 +566,11 @@ void ExternalDistinctTransform::consume(Chunk chunk)
         sum_bytes_in_chunks += prepared.allocatedBytes();
         chunks.push_back(std::move(prepared));
 
-        /// The floor on the run size prevents dumping every chunk as its own file when it is another
-        /// operator that keeps the memory usage of the query above the threshold.
-        if (sum_bytes_in_chunks >= minBytesInRun()
-            && getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_external_distinct))
+        /// The first input run initializes the merger when the set had no suppression keys. Later runs
+        /// have a size floor to avoid one file per chunk when another operator keeps query memory above
+        /// the spill threshold.
+        if (!external_merging_sorted || (sum_bytes_in_chunks >= minBytesInRun()
+            && getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_external_distinct)))
         {
             auto run_chunks = std::move(chunks);
             chunks.clear();

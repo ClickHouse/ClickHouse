@@ -17,7 +17,8 @@ class MergeSorter;
 class MergingSortedTransform;
 
 /// The final hash-based `DISTINCT` streams first occurrences until tracked query memory exceeds its
-/// external-memory threshold. Its set retains extractable keys, including serialized keys when needed.
+/// spill threshold or projected table growth leaves insufficient user/server memory for spilling.
+/// Its set retains extractable keys, including serialized keys when needed.
 ///
 /// At the first spill, the set's keys become sorted suppression runs carrying already-emitted flags.
 /// Extraction prepares one run at a time with a soft byte target and waits for its file to finish.
@@ -151,6 +152,8 @@ private:
     /// Counts distinct rows sent downstream in both phases for limit hints and the row limit.
     size_t emitted_rows = 0;
 
+    /// Retains unprocessed input while the existing set is extracted into suppression runs.
+    Chunk pending_input;
     Chunk current_chunk;
     Chunk generated_chunk;
 

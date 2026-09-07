@@ -3431,6 +3431,12 @@ The threshold is a trigger, not a hard memory bound. Memory used elsewhere in th
 to it, and processing blocks, preparing runs, and merging files require additional memory.
 The sorted-prefix `DISTINCT` optimization does not spill and can retain a large equal-prefix range.
 
+With external `DISTINCT` enabled, each chunk is also checked for possible hash-table growth before
+insertion. If the projected buffer allocations would leave insufficient server/user memory for
+spilling, the set is spilled or released first. The estimate treats all input rows as new keys, so
+it can trigger on duplicate-heavy input. This check excludes `max_memory_usage` and does not bound
+other allocations or concurrent memory usage.
+
 Key shapes that require serialized storage retain their key values even before spilling.
 The first spill also needs memory to materialize keys from the hash set.
 )", 0) \

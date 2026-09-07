@@ -77,6 +77,14 @@ void DistinctTransform::transform(Chunk & chunk)
         return;
     }
 
+    if (max_bytes_before_pass_through
+        && !distinct_set->prepareForInsert(chunk, /*spill_headroom_bytes=*/ 0))
+    {
+        distinct_set.reset();
+        ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
+        return;
+    }
+
     const size_t num_rows = chunk.getNumRows();
     chunk = distinct_set->filter(std::move(chunk));
 

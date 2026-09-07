@@ -55,8 +55,9 @@ public:
     /// deduplicates the output anyway. `skip_null_keys_` drops rows with a `NULL` in any key column instead
     /// of emitting them (see `DistinctSetFilter`); it must only be enabled when the consumer drops them
     /// anyway. `max_bytes_before_pass_through_` is a query-memory threshold for preliminary `DISTINCT`
-    /// followed by an exact deduplicating consumer. When exceeded, the transform frees its set and passes
-    /// through subsequent rows, giving up any remaining local limit hint. Zero disables this memory policy.
+    /// followed by an exact deduplicating consumer. The transform frees its set when this threshold is
+    /// exceeded or projected growth would exhaust available user/server memory. Subsequent rows pass
+    /// through, giving up any remaining local limit hint. Zero disables this memory policy.
     DistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
