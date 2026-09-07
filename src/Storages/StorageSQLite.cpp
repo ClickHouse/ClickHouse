@@ -624,12 +624,17 @@ void registerStorageSQLite(StorageFactory & factory)
             ? TableNameOrQuery(TableNameOrQuery::Type::QUERY, *maybe_query)
             : TableNameOrQuery(TableNameOrQuery::Type::TABLE, checkAndGetLiteralArgument<String>(engine_args[1], "table_name"));
 
-        /// Only a genuine `CREATE` may materialize a missing database file. An `ATTACH` (or a server restart
-        /// replaying the stored definition) must not create it as a side effect: the table has to come up with
-        /// the connection left unopened, so that a later read fails closed while the file is unavailable
-        /// (see `openConnectionIfNeeded`) instead of silently querying a fabricated empty database.
+        /// Only a genuine `CREATE` with an explicitly declared column list may materialize a missing database
+        /// file. An `ATTACH` (or a server restart replaying the stored definition) must not create it as a side
+        /// effect: the table has to come up with the connection left unopened, so that a later read fails closed
+        /// while the file is unavailable (see `openConnectionIfNeeded`) instead of silently querying a fabricated
+        /// empty database. A schema-inference `CREATE` (`args.columns.empty()`) must not create it either: the
+        /// storage constructor immediately reads the shape of the remote table or query, so a missing file can
+        /// never make the statement succeed, and creating the file first would leave an empty database behind in
+        /// `user_files` after the rejected DDL.
         const bool is_create = args.mode <= LoadingStrictnessLevel::CREATE;
-        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ is_create, /* allow_create */ is_create);
+        const bool allow_create = is_create && !args.columns.empty();
+        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ is_create, allow_create);
 
         ColumnsDescription columns = args.columns;
         /// An `ATTACH TABLE ... ENGINE = SQLite(...)` without a column list has to infer the schema immediately.
