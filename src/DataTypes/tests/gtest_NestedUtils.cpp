@@ -128,10 +128,11 @@ GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTupleWithNullRowKeepsPlanned
     col_a->column->get(0, row0);
     col_a->column->get(1, row1);
     ASSERT_EQ(applyVisitor(FieldVisitorToString(), row0), "(10, 'aa')");
-    /// A `Tuple` cannot represent NULL itself, so the parent-NULL row keeps the payload the parent
-    /// holds under it. What that row contains is `NullableSubcolumnCreator`'s contract, identical to
-    /// the one a direct `SELECT t.a` gets, and not something this class decides.
-    ASSERT_EQ(applyVisitor(FieldVisitorToString(), row1), "(99, 'zz')");
+    /// A `Tuple` cannot represent NULL itself, so what the parent-NULL row carries is decided by the
+    /// subcolumn path, not by this class: compare it with that path instead of pinning a value.
+    Field direct_row1;
+    nullable_tuple->getSubcolumn("a", block.getByName("t").column)->get(1, direct_row1);
+    ASSERT_EQ(applyVisitor(FieldVisitorToString(), row1), applyVisitor(FieldVisitorToString(), direct_row1));
 
     /// The parent NULL reaches a scalar leaf as a real NULL.
     auto col_ax = extractor.extractColumn("t.a.x");
