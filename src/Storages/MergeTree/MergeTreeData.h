@@ -1073,6 +1073,10 @@ public:
     /// If something is wrong, throws an exception.
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
+    /// the half of checkAlterIsPossible that depends only on metadata and settings, without the
+    /// transient guards. lets a caller ask whether a command is eligible at all
+    void checkAlterEligibility(const AlterCommands & commands, ContextPtr context) const;
+
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
     void checkDropOrRenameCommandDoesntAffectInProgressMutations(
