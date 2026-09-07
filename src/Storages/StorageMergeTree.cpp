@@ -119,6 +119,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
+    extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
@@ -250,9 +251,9 @@ void StorageMergeTree::startup()
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
-    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+    clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
 
-    /// NOTE background task will also do the above cleanups periodically.
+    /// NOTE background task will also clean runtime temporary directories periodically.
 
     try
     {
@@ -1157,8 +1158,25 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
 
     delayMutationOrThrowIfNeeded(nullptr, query_context);
 
-    /// Validate partition IDs (if any) before starting mutation
-    getPartitionIdsAffectedByCommands(commands, query_context);
+    /// Validate explicit IN PARTITION ids (if any) before starting mutation.
+    /// Unlike the replicated case there is no need to analyze the predicate here:
+    /// parts of unaffected partitions are skipped by `canSkipMutationCommandForPart`.
+    for (const auto & command : commands)
+    {
+        auto alter = command.ast();
+        if (!alter)
+            continue;
+
+        if (alter->partitions)
+        {
+            for (const auto & partition_ast : alter->partitions->children)
+                getPartitionIDFromQuery(partition_ast, query_context);
+        }
+        else if (alter->partition)
+        {
+            getPartitionIDFromQuery(ASTPtr(alter->partition), query_context);
+        }
+    }
 
     Int64 version = 0;
     {
@@ -1194,9 +1212,8 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
 
         update_lock->sync_lock = std::unique_lock(lightweight_updates_sync.sync_mutex, std::defer_lock);
-        bool res = update_lock->sync_lock.try_lock_for(std::chrono::milliseconds(timeout_ms));
 
-        if (!res)
+        if (!lightweight_updates_sync.lockSyncMutex(local_context, update_lock->sync_lock, timeout_ms))
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock in {} ms for lightweight update with sync mode", timeout_ms);
 
         LOG_TRACE(log, "Got lock for lightweight update in sync mode");
@@ -1207,7 +1224,7 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
 
         auto affected_columns = getUpdateAffectedColumns(commands, local_context);
-        lightweight_updates_sync.lockColumns(affected_columns, timeout_ms);
+        lightweight_updates_sync.lockColumns(local_context, affected_columns, timeout_ms);
 
         update_lock->affected_columns = std::move(affected_columns);
         update_lock->lightweight_updates_sync = &lightweight_updates_sync;
@@ -1244,13 +1261,17 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     /// Updates currently don't work with parallel replicas.
     context_copy->setSetting("max_parallel_replicas", Field(1));
 
-    auto pipeline = updateLightweightImpl(commands, context_copy);
-    auto patch_metadata = DB::getPatchPartMetadata(pipeline.getHeader(), context_copy);
-    auto sink = std::make_shared<MergeTreeSinkPatch>(*this, std::move(patch_metadata), std::move(update_holder), context_copy);
+    auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
+
+    auto sink = std::make_shared<MergeTreeSinkPatch>(
+        *this,
+        std::move(patch_metadata),
+        std::move(update_holder),
+        context_copy);
 
     chassert(!pipeline.completed());
     pipeline.complete(std::move(sink));
-    return pipeline;
+    return std::move(pipeline);
 }
 
 namespace
@@ -1660,6 +1681,29 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
                 .explanation = PreformattedMessage::create("Can't construct future part from source parts. Probably there was a drop part/partition user query."),
             });
+        }
+
+        /// The mutation version of a patch part is the maximum data version its index covers, not a
+        /// position in the mutation queue, so it cannot carry this. Patch parts store the updated
+        /// values of a single `UPDATE` and are never rewritten by a metadata mutation anyway.
+        if (!future_part->isResultPatch())
+        {
+            /// `lock` is `currently_processing_in_background_mutex`, the same one `alter` publishes
+            /// the new metadata and registers the rename mutation under, so the mutations read here
+            /// match the `metadata_snapshot` this merge writes its result with.
+            auto mutation_version = getMutationVersionForMergedPart(
+                future_part->part_info.getDataVersion(), future_part->part_info.getPartitionId(), lock);
+
+            if (!mutation_version)
+                return std::unexpected(SelectMergeFailure{
+                    .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                    .explanation = PreformattedMessage::create(
+                        "Merging {} would materialize a pending RENAME COLUMN that the result part cannot record, "
+                        "because an earlier pending mutation is not materialized by the merge", future_part->name),
+                });
+
+            if (*mutation_version > future_part->part_info.getDataVersion())
+                future_part->raiseMutationVersion(*mutation_version);
         }
 
         if ((*getSettings())[MergeTreeSetting::assign_part_uuids])
@@ -2074,7 +2118,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     return {};
 }
 
-UInt32 StorageMergeTree::getMaxLevelInBetween(const PartProperties & left, const PartProperties & right) const
+std::pair<UInt32, Int64> StorageMergeTree::getMaxLevelMutationInBetween(const PartProperties & left, const PartProperties & right) const
 {
     auto parts_lock = readLockParts();
 
@@ -2087,16 +2131,21 @@ UInt32 StorageMergeTree::getMaxLevelInBetween(const PartProperties & left, const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "unable to find right part, right part {}. It's a bug", right.name);
 
     UInt32 level = 0;
+    Int64 mutation = 0;
 
     for (auto it = begin++; it != end; ++it)
     {
         if (it == data_parts_by_info.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "left and right parts in the wrong order, left part {}, right part {}. It's a bug", left.name, right.name);
 
+        if ((*it)->version->getInfo().creation_csn == Tx::RolledBackCSN)
+            continue;
+
         level = std::max(level, (*it)->info.level);
+        mutation = std::max(mutation, (*it)->info.mutation);
     }
 
-    return level;
+    return {level, mutation};
 }
 
 bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee)
@@ -2234,6 +2283,152 @@ UInt64 StorageMergeTree::getCurrentMutationVersion(UInt64 data_version, std::uni
         return 0;
     --it;
     return it->first;
+}
+
+/// True if nothing is left for a mutation to do with the entry on a merged part of `partition_id`:
+/// every command is either a metadata mutation that the merge materializes on its own, or scoped to
+/// another partition, and then it is never applied to that part at all. Anything else (`UPDATE`,
+/// `DELETE`, `MATERIALIZE INDEX`, ...) needs a mutation to run, so a merge leaves it pending.
+/// Where a mutation command applies relative to one partition. `IN PARTITION p` is stored in
+/// `ASTAlterCommand::partition`, and `IN PARTITION p1, p2, ...` in `ASTAlterCommand::partitions`;
+/// both shapes are honoured per part by `canSkipMutationCommandForPart`.
+enum class PartitionScope
+{
+    Unscoped,
+    ThisPartition,
+    OtherPartitions,
+};
+
+static PartitionScope getPartitionScope(
+    const MergeTreeData & storage, const ASTAlterCommand * alter, const String & partition_id, const ContextPtr & context)
+{
+    if (!alter)
+        return PartitionScope::Unscoped;
+
+    if (alter->partition)
+    {
+        return storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context) == partition_id
+            ? PartitionScope::ThisPartition
+            : PartitionScope::OtherPartitions;
+    }
+
+    if (alter->partitions)
+    {
+        for (const auto & partition_ast : alter->partitions->children)
+        {
+            if (storage.getPartitionIDFromQuery(partition_ast, context) == partition_id)
+                return PartitionScope::ThisPartition;
+        }
+        return PartitionScope::OtherPartitions;
+    }
+
+    return PartitionScope::Unscoped;
+}
+
+static bool isMaterializedByMerge(
+    const MergeTreeData & storage, const MutationCommands & commands, const String & partition_id, const ContextPtr & context)
+{
+    if (commands.empty())
+        return false;
+
+    return std::all_of(commands.begin(), commands.end(), [&](const auto & command)
+    {
+        auto alter = command.ast();
+        auto scope = getPartitionScope(storage, alter.get(), partition_id, context);
+
+        /// A command scoped to other partitions is not applied to this part: `MutateTask` skips it
+        /// through `canSkipMutationCommandForPart` and clones the untouched part forward to the
+        /// mutation version. So it leaves nothing pending for the merged part, whatever the command
+        /// is. Checked before the type of the command on purpose: an `UPDATE ... IN PARTITION p1`
+        /// treated as a blocker would refuse every merge in the other partitions - including
+        /// `OPTIMIZE FINAL PARTITION p2` - as soon as a `RENAME COLUMN` is pending behind it.
+        if (scope == PartitionScope::OtherPartitions)
+            return true;
+
+        if (!AlterConversions::isSupportedMetadataMutation(command.type))
+            return false;
+
+        /// `CLEAR COLUMN` is a `DROP_COLUMN` with `clear`. A merge does replace its values with
+        /// defaults, because `AlterConversions` reports the column as dropped while the mutation is
+        /// pending, but the command keeps the column in the metadata, so re-running it later is a
+        /// no-op rather than a loss. There is nothing to gain from recording it in the merged part,
+        /// and the equivalence is subtle enough that it is not worth relying on: leave it pending.
+        if (command.clear)
+            return false;
+
+        /// A metadata mutation scoped to this very partition stays pending too. `AlterConversions`
+        /// does not honour the scope, so whether the merge materializes such a command for the
+        /// merged part alone is not something to rely on. No command reaches this today: `RENAME
+        /// COLUMN` has no `IN PARTITION` form, and the only partition-scoped `DROP_COLUMN` is
+        /// `CLEAR COLUMN`, excluded above.
+        if (scope == PartitionScope::ThisPartition)
+            return false;
+
+        return true;
+    });
+}
+
+std::optional<Int64> StorageMergeTree::getMutationVersionForMergedPart(
+    Int64 sources_data_version,
+    const String & partition_id,
+    std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
+{
+    auto first_pending = current_mutations_by_version.upper_bound(sources_data_version);
+    auto pending = std::ranges::subrange(first_pending, current_mutations_by_version.end());
+
+    /// A metadata mutation is the only kind a merge materializes by itself, so with none pending
+    /// there is nothing to record and nothing to refuse. Checked up front, because the analysis
+    /// below reparses the AST of every command and evaluates partition expressions, and this is the
+    /// case that every merge of every table hits.
+    auto has_metadata_mutation = [](const auto & entry)
+    {
+        return std::ranges::any_of(*entry.second.commands, [](const auto & command)
+        {
+            return AlterConversions::isSupportedMetadataMutation(command.type);
+        });
+    };
+
+    if (!std::ranges::any_of(pending, has_metadata_mutation))
+        return sources_data_version;
+
+    Int64 version = sources_data_version;
+
+    auto it = first_pending;
+    for (; it != current_mutations_by_version.end(); ++it)
+    {
+        if (!isMaterializedByMerge(*this, *it->second.commands, partition_id, getContext()))
+            break;
+
+        version = it->first;
+    }
+
+    /// A part carries a single data version, so it can only express a contiguous prefix of the
+    /// pending mutations as applied. Past the first mutation the merge leaves pending for this part,
+    /// a pending `RENAME COLUMN` would be materialized without being recorded: the mutation would
+    /// resolve the new name back to the physical name the merge already replaced, read the column as
+    /// missing and fill defaults, losing the values of a column with no default expression. Refuse
+    /// the merge instead; it becomes possible again as soon as the mutation ahead of the rename has
+    /// run. Two `ALTER` queries cannot reach this state, because `RENAME COLUMN` is a barrier command
+    /// and `alter` waits out every earlier mutation before registering it, but a single `ALTER` that
+    /// combines a rename with an `UPDATE` puts both into one entry, and a merge does not materialize
+    /// that entry.
+    ///
+    /// Only `RENAME COLUMN` needs this barrier. The other metadata mutation a merge materializes is
+    /// `DROP COLUMN` - including its `CLEAR COLUMN` form - and applying it a second time to the
+    /// merged part is a no-op rather than a loss, so the merged part not recording it costs nothing.
+    /// A `CLEAR COLUMN` pending in front of a mutation that still has to run does spoil the values
+    /// that mutation reads, but through `AlterConversions` alone: it happens with no merge involved
+    /// at all, and refusing the merge does not prevent it.
+    for (; it != current_mutations_by_version.end(); ++it)
+    {
+        for (const auto & command : *it->second.commands)
+        {
+            if (command.type == MutationCommand::RENAME_COLUMN)
+                return {};
+        }
+    }
+
+    return version;
 }
 
 UInt64 StorageMergeTree::getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
@@ -2607,6 +2802,7 @@ struct FutureNewEmptyPart
     std::string part_name;
     /// Metadata of the source part being covered; see `MergeTreeData::createEmptyPart`.
     StorageMetadataPtr metadata_snapshot;
+    std::optional<PatchPartIndex> patch_part_index;
 
     StorageMergeTree::MutableDataPartPtr data_part;
 };
@@ -2635,6 +2831,9 @@ static FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector &
         new_part.partition = old_part->partition;
         new_part.part_name = old_part->getNewName(new_part.part_info);
         new_part.metadata_snapshot = old_part->getMetadataSnapshot();
+
+        if (old_part->info.isPatch())
+            new_part.patch_part_index = old_part->getPatchPartIndex().cloneEmpty();
     }
 
     return future_parts;
@@ -2646,7 +2845,7 @@ static std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_gua
     std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> data_parts;
     for (auto & part: future_parts)
     {
-        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(part.part_info, part.partition, part.part_name, part.metadata_snapshot, txn);
+        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(part.part_info, part.partition, part.part_name, part.metadata_snapshot, txn, std::move(part.patch_part_index));
         data_parts.first.emplace_back(std::move(new_data_part));
         data_parts.second.emplace_back(std::move(tmp_dir_holder));
     }
@@ -3170,7 +3369,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         IDataPartStorage::ClonePartParams clone_params
         {
             .txn = local_context->getCurrentTransaction(),
-            .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
+            .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
         };
         if (replace)
         {
@@ -3231,13 +3430,21 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             auto data_parts_lock = lockParts();
             std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
 
+            /// The new parts are committed first and the destination partition is removed only afterwards,
+            /// through `removePartsInRangeFromWorkingSet`, so the parts being replaced are not covered by any
+            /// of the new parts and the per-part check of the 'max_table_size_*' limits cannot see them.
+            /// Check the limits for the operation as a whole instead.
+            throwIfTableSizeLimitsExceededForReplacement(
+                data_parts_lock, dst_parts, replace ? std::optional<MergeTreePartInfo>(drop_range) : std::nullopt);
+
             /** It is important that obtaining new block number and adding that block to parts set is done atomically.
               * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
               */
             for (auto part : dst_parts)
             {
                 block_holders.emplace_back(fillNewPartName(part, data_parts_lock));
-                renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ false);
+                renameTempPartAndReplaceUnlocked(
+                    part, transaction, data_parts_lock, /*rename_in_transaction=*/ false, /*check_table_size_limits=*/ false);
             }
             /// Populate transaction
             transaction.commit(data_parts_lock);
@@ -3366,7 +3573,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         {
             .txn = local_context->getCurrentTransaction(),
             .copy_instead_of_hardlink = (*getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
-            .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
+            .invalidated_columns_to_write = IMergeTreeDataPart::getSystemColumnsToInvalidate(src_part->info),
         };
 
         auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(

@@ -6,7 +6,6 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -84,143 +83,39 @@ namespace QueryPlanOptimizations
 
 static String dumpStatsForLogs(const RelationStats & stats);
 
-/// Functions whose output value is taken directly from their first argument, so the output's
-/// distinct values are bounded by that argument's. These are all deterministic.
-static bool isValuePassThroughFunction(std::string_view function_name)
-{
-    return function_name == "materialize" || function_name == "_CAST"
-        || function_name == "CAST" || function_name == "toNullable";
-}
-
-/// How a node relates its output NDV to the NDV of its first child's source column.
-struct ValueHop
-{
-    bool propagates = false;  /// output inherits the source NDV of children[0]
-    UInt64 ndv_delta = 0;     /// extra distinct values the hop can introduce over the source
-    bool preserves_width = false;  /// output value bytes equal the source's (relabel or same-type hop)
-};
-
-/// A node propagates a source column's NDV when it just relabels (ALIAS) or applies a value-
-/// preserving transform to its first argument. `ndv_delta` is how much the output NDV can exceed it.
-static ValueHop describeValueHop(const ActionsDAG::Node & node)
-{
-    if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-        return {.propagates = true, .preserves_width = true};
-
-    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
-        return {};
-
-    /// A deterministic single-argument function has at most as many distinct values as its argument
-    /// (e.g. `toYear(date)`); the whitelisted functions pass their first argument's value through.
-    const bool propagates = isValuePassThroughFunction(node.function_base->getName())
-        || (node.children.size() == 1 && node.function_base->isDeterministic());
-    if (!propagates)
-        return {};
-
-    /// NDV counts only non-null values. A hop turning a Nullable first argument into a non-Nullable
-    /// result (e.g. `isNull`, or `CAST` dropping nullability) maps NULL to one extra counted value.
-    const bool collapses_null = isNullableOrLowCardinalityNullable(node.children[0]->result_type)
-        && !isNullableOrLowCardinalityNullable(node.result_type);
-    /// NDV can survive a value-changing hop (`toString(k)` has k's NDV), but the value bytes cannot;
-    /// only a hop that keeps the underlying type keeps the width. `Nullable`/`LowCardinality`
-    /// wrapping (the analyzer's `toNullable`/`CAST` around join keys) leaves the value bytes intact.
-    const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
-        ->equals(*removeLowCardinalityAndNullable(node.children[0]->result_type));
-    return {.propagates = true, .ndv_delta = collapses_null ? 1u : 0u, .preserves_width = preserves_width};
-}
-
-/// How an output column relates to the source input column it traces back to.
-struct BackTrackedColumn
-{
-    UInt64 ndv_offset = 0;   /// add to the source NDV to bound the output NDV
-    bool preserves_width = true; /// value bytes unchanged along the whole path
-};
-
-/// For each output column that traces back to `input_name`, describe the path to it.
-static std::unordered_map<String, BackTrackedColumn> backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
-{
-    std::unordered_set<const ActionsDAG::Node *> input_nodes;
-    for (const auto * node : actions.getInputs())
-    {
-        if (input_name == node->result_name)
-            input_nodes.insert(node);
-    }
-
-    /// Path from a node down to a source input, or nullopt if it does not trace back to one.
-    /// Memoized so every node, including shared intermediates, is resolved once regardless of order.
-    std::unordered_map<const ActionsDAG::Node *, std::optional<BackTrackedColumn>> path_to_input;
-
-    /// Iterative post-order DFS (explicit stack to avoid deep recursion on long expression chains).
-    /// Each entry is a node paired with whether its source child has already been pushed.
-    for (const auto * out_node : actions.getOutputs())
-    {
-        std::stack<std::pair<const ActionsDAG::Node *, bool>> nodes_to_process;
-        nodes_to_process.push({out_node, false});
-        while (!nodes_to_process.empty())
-        {
-            auto [node, child_pushed] = nodes_to_process.top();
-
-            if (path_to_input.contains(node))
-            {
-                nodes_to_process.pop();
-                continue;
-            }
-            if (input_nodes.contains(node))
-            {
-                path_to_input[node] = BackTrackedColumn{};
-                nodes_to_process.pop();
-                continue;
-            }
-
-            ValueHop hop = describeValueHop(*node);
-            if (hop.propagates && !child_pushed)
-            {
-                nodes_to_process.top().second = true;
-                nodes_to_process.push({node->children[0], false});
-                continue;
-            }
-
-            std::optional<BackTrackedColumn> result;
-            if (hop.propagates)
-            {
-                if (auto source_path = path_to_input[node->children[0]])
-                    result = BackTrackedColumn{
-                        .ndv_offset = source_path->ndv_offset + hop.ndv_delta,
-                        .preserves_width = source_path->preserves_width && hop.preserves_width};
-            }
-            path_to_input[node] = result;
-            nodes_to_process.pop();
-        }
-    }
-
-    std::unordered_map<String, BackTrackedColumn> output_paths;
-    for (const auto * out_node : actions.getOutputs())
-    {
-        if (auto path = path_to_input[out_node])
-            output_paths[out_node->result_name] = *path;
-    }
-    return output_paths;
-}
-
-/// If we have stats for column names for storage we need to find corresponding internal column names
+/// If we have stats for storage column names, find the corresponding `ActionsDAG` outputs.
+/// Both identity and weaker NDV-bound lineage are valid for this existing statistics use.
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
-    std::unordered_map<String, ColumnStats> original = std::move(mapped);
-    mapped = {};
-    for (const auto & [name, source_stats] : original)
+    /// Column statistics are usually absent; do not pay for a full lineage walk of the
+    /// `ActionsDAG` when there is nothing to remap.
+    if (mapped.empty())
+        return;
+
+    std::unordered_map<String, ColumnStats> original;
+    original.swap(mapped);
+
+    const auto lineage = traceActionsDAGLineage(actions);
+    const auto & inputs = actions.getInputs();
+    const auto & outputs = actions.getOutputs();
+    for (const auto & output_lineage : lineage)
     {
-        for (const auto & [remapped, back_tracked] : backTrackColumnsInDag(name, actions))
-        {
-            ColumnStats stats = source_stats;
-            /// Add the offset, guarding against overflow when the source NDV is near the maximum.
-            if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - back_tracked.ndv_offset)
-                stats.num_distinct_values += back_tracked.ndv_offset;
-            /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
-            /// width to unknown.
-            if (!back_tracked.preserves_width)
-                stats.avg_bytes = 0;
-            mapped[remapped] = stats;
-        }
+        if (!output_lineage.input)
+            continue;
+
+        const auto stats_it = original.find(inputs[output_lineage.input->input_position]->result_name);
+        if (stats_it == original.end())
+            continue;
+
+        ColumnStats stats = stats_it->second;
+        /// Add the offset, guarding against overflow when the source NDV is near the maximum.
+        if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - output_lineage.input->ndv_delta)
+            stats.num_distinct_values += output_lineage.input->ndv_delta;
+        /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
+        /// width to unknown.
+        if (!output_lineage.input->preserves_width)
+            stats.avg_bytes = 0;
+        mapped[outputs[output_lineage.output_position]->result_name] = stats;
     }
 }
 
@@ -292,14 +187,20 @@ struct RuntimeHashStatisticsContext
     /// needed). We start from `raw_hashes[child]` rather than the previously-xored value in
     /// `cache_keys[child]`, because under reorder the new parent's contribution can differ
     /// from the original tree's parent contribution that was stamped into `cache_keys`.
-    UInt64 deriveCacheKeysForNewJoin(
+    struct DerivedJoinCacheKeys
+    {
+        UInt64 right_key = 0;
+        UInt64 output_key = 0;
+    };
+
+    DerivedJoinCacheKeys deriveCacheKeysForNewJoin(
         const QueryPlan::Node * left_child_node,
         const QueryPlan::Node * right_child_node,
         const QueryPlan::Node & new_node,
         const JoinStepLogical & join_step)
     {
         if (cache_keys.empty())
-            return 0;
+            return {};
 
         UInt64 raw_left = getRawHash(left_child_node);
         UInt64 raw_right = getRawHash(right_child_node);
@@ -321,7 +222,22 @@ struct RuntimeHashStatisticsContext
         raw_hashes[&new_node] = raw_new;
         cache_keys[&new_node] = raw_new;
 
-        return right_key;
+        /// Derive a key for the join output stats that takes the kind, strictness
+        /// and non-equi conditions into account, in addition to the equi conditions
+        /// covered by `calculateJoinStepCacheKeyContribution`.
+        SipHash output_hash;
+        output_hash.update(raw_new);
+        const auto & join_operator = join_step.getJoinOperator();
+        output_hash.update(join_operator.kind);
+        output_hash.update(join_operator.strictness);
+        for (const auto & condition : join_operator.expression)
+        {
+            if (condition.isFunction(JoinConditionOperator::Equals) || condition.isFunction(JoinConditionOperator::NullSafeEquals))
+                continue;
+            condition.getNode()->updateHash(output_hash);
+        }
+
+        return {right_key, output_hash.get64()};
     }
 };
 
@@ -676,6 +592,11 @@ struct QueryGraphBuilder
     /// ON-clause predicates of outer joins, see QueryGraph::outer_join_conditions
     std::unordered_map<JoinActionRef, size_t> outer_join_conditions;
 
+    /// One record per binary join operator of the original tree, captured for the optional conflict
+    /// detector (CD-A/CD-C). Relation ids are local to this (sub)graph and shifted in `uniteGraphs`.
+    /// See QueryGraph::conflict_ops / ConflictJoinOp.
+    std::vector<ConflictJoinOp> conflict_ops;
+
     struct BuilderContext
     {
         const QueryPlanOptimizationSettings & optimization_settings;
@@ -740,6 +661,16 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
         lhs.join_kinds[id + shift] = std::move(restriction);
     }
 
+    /// Shift each captured CD-A operator's relation sets into the parent's numbering and append.
+    for (auto & op : rhs.conflict_ops)
+    {
+        op.left.shift(shift);
+        op.right.shift(shift);
+        op.nel.shift(shift);
+        op.nr_rels.shift(shift);
+        lhs.conflict_ops.push_back(std::move(op));
+    }
+
     for (auto & [sources, nodes] : rhs.type_changes)
         lhs.type_changes[sources + shift] = std::move(nodes);
 
@@ -769,6 +700,45 @@ constexpr bool isInnerOrCross(JoinKind kind)
     return kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
 }
 
+/// Semi/anti joins may be fully reordered (not just swapped) only when a conflict detector (CD-A or
+/// CD-C) is on AND DPsub is the sole join-order algorithm. A conflict detector is the only validity
+/// model that can express their non-commutativity, and only the DPsub solver consumes it, so
+/// exposing semi/anti to any other solver (greedy/dpsize/dphyp) would let it build an invalid order.
+static bool conflictDetectorReordersSemiAnti(const QueryPlanOptimizationSettings & optimization_settings)
+{
+    const auto & algorithms = optimization_settings.query_plan_optimize_join_order_algorithm;
+    return (optimization_settings.query_plan_optimize_join_order_use_cd_a_conflict_detector
+            || optimization_settings.query_plan_optimize_join_order_use_cd_c_conflict_detector)
+        && algorithms.size() == 1
+        && algorithms.front() == JoinOrderAlgorithm::DPSUB;
+}
+
+/// `mergeInplace` binds a merged expression's inputs to the graph's outputs by `result_name`, and it
+/// installs only the expression's outputs. An output named like one of its own inputs therefore
+/// leaves a computed node over an input of that name, and resolving the name again applies the
+/// expression a second time, so such an expression must not be merged into a join graph.
+static bool hasOutputShadowingInputName(const ActionsDAG & dag)
+{
+    std::unordered_set<std::string_view> input_names;
+    for (const auto * input : dag.getInputs())
+        input_names.insert(input->result_name);
+
+    for (const auto * output : dag.getOutputs())
+    {
+        if (output->type != ActionsDAG::ActionType::INPUT && input_names.contains(output->result_name))
+            return true;
+    }
+
+    return false;
+}
+
+/// An `ExpressionStep` above a join may be merged into the flattened join graph when the setting
+/// allows it and the expression cannot be applied twice by the name-based merge.
+static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_expression_into_join)
+{
+    return merge_expression_into_join && !hasOutputShadowingInputName(dag);
+}
+
 static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
 {
     auto * join_node = node;
@@ -782,7 +752,8 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
             join_node = node->children[0];
             node = node->children[0];
         }
-        else if (graph.context->optimization_settings.merge_expression_into_join)
+        else if (canMergeExpressionIntoJoinGraph(
+                     expression_step->getExpression(), graph.context->optimization_settings.merge_expression_into_join))
         {
             join_node = node->children[0];
         }
@@ -794,7 +765,14 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
         {
             auto child_join_kind = child_join_step->getJoinOperator().kind;
             bool allow_child_join_kind = isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
-            allow_child_join_kind = allow_child_join_kind && child_join_step->getJoinOperator().strictness == JoinStrictness::All;
+            const auto child_strictness = child_join_step->getJoinOperator().strictness;
+            /// Normally only plain (All) joins are flattened into the reorderable graph. With CD-A
+            /// semi/anti reordering enabled, Semi/Anti children are flattened too so DPsub can
+            /// reorder them under the CD-A conflict detector.
+            const bool allow_child_strictness = child_strictness == JoinStrictness::All
+                || (conflictDetectorReordersSemiAnti(graph.context->optimization_settings)
+                    && (child_strictness == JoinStrictness::Semi || child_strictness == JoinStrictness::Anti));
+            allow_child_join_kind = allow_child_join_kind && allow_child_strictness;
             /// Do not flatten joins that have type-changing sides (e.g., LEFT JOIN
             /// with `join_use_nulls` making right-side columns Nullable). Flattening
             /// such joins allows the optimizer to reorder them, which can separate
@@ -864,6 +842,86 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
     return 1;
 }
 
+/// Names of scalar functions that propagate NULL: if any argument is NULL, the result is NULL.
+/// Only these let us conclude a wrapped column reference is null when the relation's columns are.
+/// The set is intentionally small and conservative -- an unknown function is treated as opaque
+/// (contributes nothing), which can only make CD-A miss a valid reordering, never admit an invalid
+/// one. It excludes NULL-blocking functions on purpose (`coalesce`, `ifNull`, `assumeNotNull`, ...).
+static bool isNullPropagatingFunction(const String & name)
+{
+    static const std::unordered_set<std::string_view> names = {
+        /// comparisons (the atoms of equi/theta-join predicates)
+        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
+        /// arithmetic that may wrap a column inside a comparison, e.g. `a.x + 1 = b.y`
+        "plus", "minus", "multiply", "divide", "modulo", "negate",
+        /// a CAST of NULL is NULL
+        "CAST", "_CAST",
+    };
+    return names.contains(name);
+}
+
+/// Relations R such that `node` evaluates to NULL when all of R's columns are NULL ("strict" on R).
+/// Recurses only through null-propagating functions; any other node is opaque and contributes {}.
+static BitSet strictOnRelations(const ActionsDAG::Node * node, const JoinExpressionActions & actions)
+{
+    switch (node->type)
+    {
+        case ActionsDAG::ActionType::INPUT:
+        case ActionsDAG::ActionType::PLACEHOLDER:
+            /// A leaf column reference is null exactly on its own relation.
+            return JoinActionRef(node, actions).getSourceRelations();
+        case ActionsDAG::ActionType::ALIAS:
+            return node->children.empty() ? BitSet{} : strictOnRelations(node->children.front(), actions);
+        case ActionsDAG::ActionType::FUNCTION:
+        {
+            if (!node->function_base || !isNullPropagatingFunction(node->function_base->getName()))
+                return {};
+            BitSet result;
+            for (const auto * child : node->children)
+                result |= strictOnRelations(child, actions);
+            return result;
+        }
+        case ActionsDAG::ActionType::COLUMN:
+        case ActionsDAG::ActionType::ARRAY_JOIN:
+            return {};
+    }
+    return {};
+}
+
+/// Relations R such that the boolean `node` is false or unknown when all of R's columns are NULL
+/// (null-rejecting, Definition 1 of the paper). Conservative: when unsure it returns a subset of
+/// the true answer, which only widens a TES downstream and so keeps CD-A correct.
+static BitSet predicateNullRejectingRelations(const ActionsDAG::Node * node, const JoinExpressionActions & actions)
+{
+    if (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        return predicateNullRejectingRelations(node->children.front(), actions);
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
+    {
+        const auto & name = node->function_base->getName();
+        /// AND is rejecting on R if either conjunct is (a false/unknown conjunct makes AND false/unknown).
+        if (name == "and")
+        {
+            BitSet result;
+            for (const auto * child : node->children)
+                result |= predicateNullRejectingRelations(child, actions);
+            return result;
+        }
+        /// OR is rejecting on R only if both disjuncts are.
+        if (name == "or" && !node->children.empty())
+        {
+            BitSet result = predicateNullRejectingRelations(node->children.front(), actions);
+            for (size_t i = 1; i < node->children.size(); ++i)
+                result = result & predicateNullRejectingRelations(node->children[i], actions);
+            return result;
+        }
+    }
+
+    /// Otherwise the predicate is rejecting wherever it becomes NULL (its false path is ignored,
+    /// which is the safe under-approximation). Covers comparisons and bare nullable-bool columns.
+    return strictOnRelations(node, actions);
+}
+
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
@@ -893,7 +951,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
                 bool merge_expression_into_join = query_graph.context->optimization_settings.merge_expression_into_join;
                 auto * expr = typeid_cast<ExpressionStep *>(check->step.get());
                 if (expr && !expr->getExpression().hasArrayJoin()
-                    && (isPassthroughActions(expr->getExpression()) || merge_expression_into_join))
+                    && (isPassthroughActions(expr->getExpression())
+                        || canMergeExpressionIntoJoinGraph(expr->getExpression(), merge_expression_into_join)))
                 {
                     check = check->children[0];
                 }
@@ -988,6 +1047,10 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         query_graph.type_changes[total_inputs - 1] = std::move(right_changes_types);
 
     BitSet join_expression_sources;
+    /// Relations on which the whole ON clause rejects nulls, for the CD-A conflict detector. The ON
+    /// clause is the conjunction of the `join_expression` conjuncts, so a relation is rejecting for
+    /// the operator as soon as any conjunct rejects on it -- hence the union.
+    BitSet cda_nr_rels;
     for (const auto * old_node : join_expression)
     {
         const auto & new_node_entry = node_mapping.try_emplace(old_node, old_node);
@@ -996,6 +1059,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
 
         /// Collect all sources from join expressions
         join_expression_sources |= edge.getSourceRelations();
+        cda_nr_rels |= predicateNullRejectingRelations(new_node, query_graph.expression_actions);
 
         /// ON-clause predicates of an outer join must be applied exactly at the step
         /// that joins the null-supplying relation, in its ON clause.
@@ -1011,6 +1075,13 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
             query_graph.outer_join_conditions[edge] = total_inputs - 1;
         }
     }
+
+    /// Capture this operator for the CD-A conflict detector before `join_expression_sources` is
+    /// stripped of the null-supplying singleton below. `left_mask`/`right_mask` are this
+    /// operator's two input subtrees in the current (sub)graph's local numbering; `nel` is the
+    /// full set of relations the ON clause references. Records are shifted into global numbering
+    /// by `uniteGraphs`.
+    query_graph.conflict_ops.push_back(ConflictJoinOp{left_mask, right_mask, join_expression_sources, cda_nr_rels, join_kind, join_operator.strictness});
 
     if (isRightOrFull(join_kind))
     {
@@ -1111,6 +1182,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     query_graph.edges = std::move(query_graph_builder.join_edges);
     query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
+    query_graph.conflict_ops = std::move(query_graph_builder.conflict_ops);
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
 
@@ -1242,7 +1314,14 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             nodeStack.pop();
 
             auto join_operator = std::move(entry->join_operator);
-            join_operator.strictness = join_strictness;
+            /// Normally the whole reordered graph carries a single strictness (non-All graphs are
+            /// capped to one join), so we re-stamp it uniformly. With a conflict detector (CD-A/CD-C)
+            /// the graph may mix strictnesses (e.g. inner joins around a reordered semi/anti join),
+            /// and each entry already carries its own strictness from `buildPhysicalPlan` -- do not
+            /// overwrite it.
+            if (!optimization_settings.query_plan_optimize_join_order_use_cd_a_conflict_detector
+                && !optimization_settings.query_plan_optimize_join_order_use_cd_c_conflict_detector)
+                join_operator.strictness = join_strictness;
 
             /// The optimizer reconstructs an unconnected Inner pair (e.g. `INNER JOIN ... ON 1`,
             /// which produces no join edges) as Cross. That is equivalent only for ALL strictness:
@@ -1463,10 +1542,12 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
             auto & new_node = nodes.emplace_back();
 
-            UInt64 right_table_key = query_graph_builder.context->statistics_context
+            auto join_cache_keys = query_graph_builder.context->statistics_context
                 .deriveCacheKeysForNewJoin(left_child_node, right_child_node, new_node, *join_step);
-            if (right_table_key)
-                join_step->setRightHashTableCacheKey(right_table_key);
+            if (join_cache_keys.right_key)
+                join_step->setRightHashTableCacheKey(join_cache_keys.right_key);
+            if (join_cache_keys.output_key)
+                join_step->setJoinOutputCacheKey(join_cache_keys.output_key);
 
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};
@@ -1490,16 +1571,20 @@ static void collectJoinGraphRelationHeaders(
     int join_steps_limit,
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
-    std::vector<SharedHeader> & relation_headers);
+    std::vector<SharedHeader> & relation_headers,
+    bool allow_semi_anti_children);
 
 /// Mirrors `buildQueryGraph` for a single join node: collects the output headers of the relations
 /// that the join order optimizer would produce for it (descending into flattenable child joins).
+/// `allow_semi_anti_children` must match `addChildQueryGraph`'s flatten gate so this header shadow
+/// stays in sync when CD-A semi/anti reordering is enabled.
 static void collectJoinGraphRelationHeadersForJoin(
     const QueryPlan::Node & join_node,
     int join_steps_limit,
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
-    std::vector<SharedHeader> & relation_headers)
+    std::vector<SharedHeader> & relation_headers,
+    bool allow_semi_anti_children)
 {
     const auto * join_step = typeid_cast<const JoinStepLogical *>(join_node.step.get());
     if (!join_step || join_node.children.size() != 2)
@@ -1514,13 +1599,13 @@ static void collectJoinGraphRelationHeadersForJoin(
     const bool allow_left_subgraph
         = !type_changing_sides.contains(JoinTableSide::Left) && (isInnerOrCross(join_kind) || isLeft(join_kind));
     const size_t lhs_before = relation_headers.size();
-    collectJoinGraphRelationHeaders(join_node.children[0], allow_left_subgraph ? join_steps_limit - 1 : 0, join_settings, merge_expression_into_join, relation_headers);
+    collectJoinGraphRelationHeaders(join_node.children[0], allow_left_subgraph ? join_steps_limit - 1 : 0, join_settings, merge_expression_into_join, relation_headers, allow_semi_anti_children);
     const size_t lhs_count = relation_headers.size() - lhs_before;
 
     const bool allow_right_subgraph
         = !type_changing_sides.contains(JoinTableSide::Right) && (isInnerOrCross(join_kind) || isRight(join_kind));
     collectJoinGraphRelationHeaders(
-        join_node.children[1], allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0, join_settings, merge_expression_into_join, relation_headers);
+        join_node.children[1], allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0, join_settings, merge_expression_into_join, relation_headers, allow_semi_anti_children);
 }
 
 /// Mirrors `addChildQueryGraph`: either flattens a child join into multiple relations, or treats
@@ -1530,7 +1615,8 @@ static void collectJoinGraphRelationHeaders(
     int join_steps_limit,
     const JoinSettings & join_settings,
     bool merge_expression_into_join,
-    std::vector<SharedHeader> & relation_headers)
+    std::vector<SharedHeader> & relation_headers,
+    bool allow_semi_anti_children)
 {
     /// Peeling must match `addChildQueryGraph`: a passthrough expression is always peeled, a
     /// non-passthrough one only under `merge_expression_into_join`, which merges it into the join
@@ -1538,7 +1624,8 @@ static void collectJoinGraphRelationHeaders(
     const auto * effective = node;
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(effective->step.get());
         expression_step && effective->children.size() == 1 && !expression_step->getExpression().hasArrayJoin()
-        && (isPassthroughActions(expression_step->getExpression()) || merge_expression_into_join))
+        && (isPassthroughActions(expression_step->getExpression())
+            || canMergeExpressionIntoJoinGraph(expression_step->getExpression(), merge_expression_into_join)))
     {
         effective = effective->children[0];
     }
@@ -1547,14 +1634,20 @@ static void collectJoinGraphRelationHeaders(
         child_join_step && !child_join_step->isOptimized())
     {
         const auto child_join_kind = child_join_step->getJoinOperator().kind;
+        const auto child_strictness = child_join_step->getJoinOperator().strictness;
+        /// Keep in sync with `addChildQueryGraph`: normally only All strictness flattens; with CD-A
+        /// semi/anti reordering, Semi/Anti children flatten too.
+        const bool allow_child_strictness = child_strictness == JoinStrictness::All
+            || (allow_semi_anti_children
+                && (child_strictness == JoinStrictness::Semi || child_strictness == JoinStrictness::Anti));
         const bool allow_child_join_kind
             = (isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind))
-            && child_join_step->getJoinOperator().strictness == JoinStrictness::All
+            && allow_child_strictness
             && child_join_step->typeChangingSides().empty();
 
         if (child_join_step->getJoinSettings() == join_settings && join_steps_limit > 1 && allow_child_join_kind)
         {
-            collectJoinGraphRelationHeadersForJoin(*effective, join_steps_limit, join_settings, merge_expression_into_join, relation_headers);
+            collectJoinGraphRelationHeadersForJoin(*effective, join_steps_limit, join_settings, merge_expression_into_join, relation_headers, allow_semi_anti_children);
             return;
         }
     }
@@ -1573,10 +1666,11 @@ static bool joinGraphHasOverlappingColumnNames(
     const QueryPlan::Node & join_node,
     int join_steps_limit,
     const JoinSettings & join_settings,
-    bool merge_expression_into_join)
+    bool merge_expression_into_join,
+    bool allow_semi_anti_children)
 {
     std::vector<SharedHeader> relation_headers;
-    collectJoinGraphRelationHeadersForJoin(join_node, join_steps_limit, join_settings, merge_expression_into_join, relation_headers);
+    collectJoinGraphRelationHeadersForJoin(join_node, join_steps_limit, join_settings, merge_expression_into_join, relation_headers, allow_semi_anti_children);
 
     std::unordered_set<std::string_view> seen_names;
     for (const auto & header : relation_headers)
@@ -1628,8 +1722,14 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         return;
     }
 
+    /// When CD-A semi/anti reordering is enabled, Semi/Anti joins are fully reorderable rather than
+    /// swap-only, so we keep the full graph size limit for them. Full joins (swap-only *kind*) and
+    /// the Any strictness stay capped -- CD-A does not model those for reordering.
+    const bool cda_reorder_semi_anti = conflictDetectorReordersSemiAnti(optimization_settings)
+        && (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti);
+
     int query_graph_size_limit = safe_cast<int>(optimization_settings.query_plan_optimize_join_order_limit);
-    if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind)) && query_graph_size_limit > 2)
+    if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind)) && query_graph_size_limit > 2 && !cda_reorder_semi_anti)
         /// Do not reorder joins, only allow swap
         query_graph_size_limit = 2;
 
@@ -1638,7 +1738,8 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     /// on `joinGraphHasOverlappingColumnNames`. This generalizes a check over the immediate children to
     /// the whole flattened relation set, so it also covers overlaps that only appear after flattening.
     if (joinGraphHasOverlappingColumnNames(
-            node, query_graph_size_limit, join_step->getJoinSettings(), optimization_settings.merge_expression_into_join))
+            node, query_graph_size_limit, join_step->getJoinSettings(),
+            optimization_settings.merge_expression_into_join, conflictDetectorReordersSemiAnti(optimization_settings)))
     {
         join_step->setOptimized();
         return;
