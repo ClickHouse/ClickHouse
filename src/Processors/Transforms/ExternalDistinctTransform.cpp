@@ -614,8 +614,8 @@ void ExternalDistinctTransform::generate()
 
     /// The rows limit applies to the emitted result. The hash set has been released, so there is no
     /// set memory left to check against the byte limit.
-    if ((limit_hint && emitted_rows >= limit_hint)
-        || !set_size_limits.check(emitted_rows, /*bytes=*/ 0, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    if (!set_size_limits.check(emitted_rows, /*bytes=*/ 0, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED)
+        || (limit_hint && emitted_rows >= limit_hint))
         read_stopped = true;
 }
 
