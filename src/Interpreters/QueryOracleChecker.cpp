@@ -1025,20 +1025,14 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
         }
     }
 
-    /// `IN t` names a table and means `IN (SELECT * FROM t)`, as do argument 0 of `joinGet`
-    /// and of `dictGet`. Those operands are still plain `ASTIdentifier`s here, because the
-    /// rewrite to `ASTTableIdentifier` happens during analysis, after this check runs.
+    /// `IN t` names a table and means `IN (SELECT * FROM t)`. That operand is still a plain
+    /// `ASTIdentifier` here, because the rewrite to `ASTTableIdentifier` happens during
+    /// analysis, after this check runs.
     if (const auto * func = ast->as<ASTFunction>())
     {
-        std::optional<size_t> table_argument_pos;
-        if (functionIsInOrGlobalInOperator(func->name))
-            table_argument_pos = 1;
-        else if (functionIsJoinGet(func->name) || functionIsDictGet(func->name))
-            table_argument_pos = 0;
-
-        if (table_argument_pos && func->arguments && func->arguments->children.size() > *table_argument_pos)
+        if (functionIsInOrGlobalInOperator(func->name) && func->arguments && func->arguments->children.size() > 1)
         {
-            if (const auto * identifier = func->arguments->children[*table_argument_pos]->as<ASTIdentifier>())
+            if (const auto * identifier = func->arguments->children[1]->as<ASTIdentifier>())
             {
                 /// A name that cannot be read as a table name, such as a `{name:Identifier}`
                 /// placeholder before substitution, cannot be proven safe either.
