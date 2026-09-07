@@ -37,6 +37,12 @@ namespace details
 template <UInt8 K>
 struct LogLUT
 {
+    static const LogLUT & instance()
+    {
+        static const LogLUT log_lut;
+        return log_lut;
+    }
+
     LogLUT() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in the body
     {
         log_table[0] = 0.0;
@@ -534,7 +540,10 @@ private:
         double fixed_estimate = 0;
 
         if (zeros != 0)
+        {
+            const auto & log_lut = details::LogLUT<(precision <= 12 ? precision : 12)>::instance();
             fixed_estimate = bucket_count * (log_lut.getLog(bucket_count) - log_lut.getLog(zeros));
+        }
         else
             fixed_estimate = raw_estimate;
 
@@ -553,36 +562,9 @@ private:
     using ZerosCounterType = typename details::MinCounterType<bucket_count>::Type;
     ZerosCounterType zeros = bucket_count;
 
-    static details::LogLUT<precision> log_lut;
-
     /// Checks.
     static_assert(precision < (sizeof(HashValueType) * 8), "Invalid parameter value");
 };
-
-
-/// Declaration of static variables for linker.
-template
-<
-    UInt8 precision,
-    typename Key,
-    typename Hash,
-    typename HashValueType,
-    typename DenominatorType,
-    typename BiasEstimator,
-    HyperLogLogMode mode,
-    DenominatorMode denominator_mode
->
-details::LogLUT<precision> HyperLogLogCounter
-<
-    precision,
-    Key,
-    Hash,
-    HashValueType,
-    DenominatorType,
-    BiasEstimator,
-    mode,
-    denominator_mode
->::log_lut;
 
 
 /// Lightweight implementation of expression's denominator is used in Metrage.
