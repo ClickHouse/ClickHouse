@@ -1,0 +1,49 @@
+same result as the set-operation step
+467	92390	13
+1
+2404	337018	287
+1
+three arms
+239	47440
+239	47440
+2318	319939
+2318	319939
+2632	381968
+2632	381968
+NULL matches NULL
+\N
+(NULL,1)
+duplicates and constants
+1
+0
+2
+1
+0
+1	1
+1
+1
+1
+inside IN and a CTE
+2000
+200	100	299
+ALL modes keep the set-operation step
+0
+1
+2
+0
+1
+2
+plan
+Distinct (DISTINCT)
+└──Distinct (Preliminary DISTINCT)
+└──Join (JOIN FillRightFirst)
+Strictness: semi
+│  Join conditions: a <=> a AND tuple(b) <=> tuple(b)
+Distinct (DISTINCT)
+└──Distinct (Preliminary DISTINCT)
+└──Join (JOIN FillRightFirst)
+Strictness: anti
+│  Join conditions: a <=> a AND tuple(b) <=> tuple(b)
+Distinct
+└──IntersectOrExcept
+IntersectOrExcept

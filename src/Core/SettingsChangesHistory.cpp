@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"optimize_rewrite_intersect_except_to_join", false, true, "New setting to execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a semi or anti join on all columns followed by `DISTINCT`."},
             {"allow_parallel_final_distinct", false, true, "New setting to run the final `DISTINCT` on all threads by hash-partitioning its input by the `DISTINCT` columns instead of merging the streams into one."},
             {"cascades_aggregation_pushdown", false, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."},
             {"optimize_read_in_reverse_order_final", false, true, "New setting to enable the read-in-order optimization when reading in reverse order of the sorting key with the `FINAL` modifier from `ReplacingMergeTree` tables."},
