@@ -24,9 +24,10 @@ private:
     using CoroutinePtr = StackfulCoroutine *;
 
 public:
-    template <typename StackAlloc, typename Fn>
-    StackfulCoroutine(StackAlloc && salloc, Fn && fn)
-        : impl(std::allocator_arg_t(), std::forward<StackAlloc>(salloc), RoutineImpl<Fn>(std::forward<Fn>(fn)))
+    /// An lvalue reference, not a forwarding reference: the bounds below are read back out of the caller's allocator.
+    template <typename Fn>
+    StackfulCoroutine(CoroutineStack & salloc, Fn && fn)
+        : impl(std::allocator_arg_t(), salloc, RoutineImpl<Fn>(std::forward<Fn>(fn)))
         , coroutine_locals(FiberLocalStorage::create())
     {
         if (Silk::isInsideFiber())
