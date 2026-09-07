@@ -1784,6 +1784,21 @@ static DataTypePtr descendJSONPolicySourceIntoMember(DataTypePtr type, std::stri
         return nullptr;
     }
 
+    /// A JSON path step ("j.arr", "j.^arr", "j.@arr"): the subcolumn itself reports a policy-free
+    /// Dynamic, so descend into the type the value at that path is stored under, which carries it.
+    if (const auto * object = typeid_cast<const DataTypeObject *>(type.get()))
+    {
+        std::string_view path = member;
+        const char accessor = path.empty() ? '\0' : path.front();
+        if (accessor == DataTypeObject::SUB_OBJECT_SUBCOLUMN_PREFIX || accessor == DataTypeObject::COMBINED_SUBCOLUMN_PREFIX)
+            path.remove_prefix(1);
+        if (path.empty())
+            return nullptr;
+        if (auto it = object->getTypedPaths().find(String(path)); it != object->getTypedPaths().end())
+            return it->second;
+        return object->getTypeOfNestedObjects(String(path) + ".");
+    }
+
     return nullptr;
 }
 
