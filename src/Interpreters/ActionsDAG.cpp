@@ -2189,10 +2189,19 @@ bool ActionsDAG::hasArrayJoin() const noexcept
     return false;
 }
 
+/// Whether the node is not deterministic within the query (`rand`) or is stateful (`rowNumberInAllBlocks`),
+/// so that evaluating it a different number of times changes the result. A lambda counts as such when its
+/// body has such a function.
+static bool isNonDeterministicOrStateful(const ActionsDAG::Node & node)
+{
+    return !allNodeFunctions(
+        node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery() && !function.isStateful(); });
+}
+
 bool ActionsDAG::hasStatefulFunctions() const
 {
     for (const auto & node : nodes)
-        if (node.type == ActionType::FUNCTION && node.function_base->isStateful())
+        if (!allNodeFunctions(node, [](const IFunctionBase & function) { return !function.isStateful(); }))
             return true;
 
     return false;
@@ -3009,6 +3018,12 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
                 if (cur.node->type == ActionType::INPUT && array_joined_columns_set.contains(cur.node->result_name))
                     depend_on_array_join = true;
 
+                /// `ARRAY JOIN` multiplies the rows, so an expression that is not deterministic within the
+                /// query is drawn once per source row when it is evaluated below it, instead of once per
+                /// expanded row. Keep such an expression on the side of the `ARRAY JOIN` where it was written.
+                if (isNonDeterministicOrStateful(*cur.node))
+                    depend_on_array_join = true;
+
                 for (const auto * child : cur.node->children)
                 {
                     if (!split_nodes.contains(child))
@@ -3245,8 +3260,8 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
             if (cur.num_allowed_children == cur.node->children.size())
             {
                 bool is_deprecated_function = !allow_non_deterministic_functions
-                    && cur.node->type == ActionsDAG::ActionType::FUNCTION
-                    && !cur.node->function_base->isDeterministicInScopeOfQuery();
+                    && !allNodeFunctions(
+                        *cur.node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
 
                 if (cur.node->type != ActionsDAG::ActionType::ARRAY_JOIN
                     && cur.node->type != ActionsDAG::ActionType::INPUT
