@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/Engine/Removal/RemovalCoordinator.h>
+#include <Processors/Executors/Runtime/Pipeline/RemovalCoordinator.h>
 #include <Processors/IProcessor.h>
 #include <Common/Exception.h>
 

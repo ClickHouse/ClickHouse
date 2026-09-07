@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Engine/State/UpdateInboxEntry.h>
+#include <Processors/Executors/Runtime/Pipeline/UpdateInboxEntry.h>
 #include <Processors/IProcessor.h>
 
 #include <atomic>

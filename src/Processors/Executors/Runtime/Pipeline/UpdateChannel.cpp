@@ -1,5 +1,5 @@
-#include <Processors/Executors/Runtime/Engine/State/UpdateChannel.h>
-#include <Processors/Executors/Runtime/Engine/State/ProcessorState.h>
+#include <Processors/Executors/Runtime/Pipeline/UpdateChannel.h>
+#include <Processors/Executors/Runtime/Pipeline/ProcessorState.h>
 #include <Processors/Port.h>
 #include <Common/Exception.h>
 

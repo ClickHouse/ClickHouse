@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/Topology/ExecutionGraph.h>
+#include <Processors/Executors/Runtime/Pipeline/ExecutionGraph.h>
 #include <Processors/IProcessor.h>
 #include <Common/Exception.h>
 

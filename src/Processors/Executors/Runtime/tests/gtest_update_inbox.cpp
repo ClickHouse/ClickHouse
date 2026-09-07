@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/Engine/State/UpdateInbox.h>
+#include <Processors/Executors/Runtime/Pipeline/UpdateInbox.h>
 #include <Processors/Port.h>
 
 #include <gtest/gtest.h>

@@ -9,8 +9,8 @@
 #include <Core/Block_fwd.h>
 #include <Core/Defines.h>
 #include <Processors/Chunk.h>
-#include <Processors/Executors/Runtime/Engine/State/UpdateChannel.h>
-#include <Processors/Executors/Runtime/Engine/State/UpdateInboxEntry.h>
+#include <Processors/Executors/Runtime/Pipeline/UpdateChannel.h>
+#include <Processors/Executors/Runtime/Pipeline/UpdateInboxEntry.h>
 #include <Common/Exception.h>
 
 namespace DB

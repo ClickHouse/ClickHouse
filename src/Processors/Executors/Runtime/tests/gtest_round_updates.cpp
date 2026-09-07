@@ -1,5 +1,5 @@
-#include <Processors/Executors/Runtime/Engine/State/ProcessorState.h>
-#include <Processors/Executors/Runtime/Engine/State/RoundUpdates.h>
+#include <Processors/Executors/Runtime/Pipeline/ProcessorState.h>
+#include <Processors/Executors/Runtime/Pipeline/RoundUpdates.h>
 #include <Processors/Port.h>
 
 #include <gtest/gtest.h>

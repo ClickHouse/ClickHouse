@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Engine/State/RoundUpdates.h>
-#include <Processors/Executors/Runtime/Engine/State/UpdateInbox.h>
+#include <Processors/Executors/Runtime/Pipeline/RoundUpdates.h>
+#include <Processors/Executors/Runtime/Pipeline/UpdateInbox.h>
 #include <Processors/IProcessor.h>
 
 #include <atomic>
