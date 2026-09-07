@@ -3,7 +3,6 @@
 #include <Interpreters/InterpreterExplainQuery.h>
 
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Executors/ExecutingGraph.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -868,7 +867,7 @@ struct InterpreterExplainQuery::AnalyzedInnerQuery
 {
     QueryPlan plan;
     ContextPtr context;
-    std::function<std::unique_ptr<QueryPlan>()> parallel_replicas_builder;
+    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> parallel_replicas_builder;
     bool ignore_quota = false;
     bool ignore_limits = false;
     UInt64 planning_ns = 0;

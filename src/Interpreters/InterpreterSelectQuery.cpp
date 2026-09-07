@@ -23,6 +23,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRowPolicies.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -808,6 +809,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
     {
         row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+        if (const auto * alias = storage->as<StorageAlias>())
+        {
+            const auto target_storage_id = alias->getTargetTable()->getStorageID();
+            auto target_row_policy_filter = context->getRowPolicyFilter(
+                target_storage_id.getDatabaseName(), target_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+            row_policy_filter = combineRowPolicyFilters(std::move(row_policy_filter), std::move(target_row_policy_filter));
+        }
+
         if (row_policy_filter && context->hasQueryContext())
         {
             for (const auto & row_policy : row_policy_filter->policies)
@@ -3422,7 +3432,7 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
         query_plan.getCurrentHeader(),
         input_sorting_info->sort_description_for_merging,
         output_order_descr,
-        settings[Setting::max_block_size],
+        SortingStep::Settings(settings),
         limit);
 
     query_plan.addStep(std::move(finish_sorting_step));
