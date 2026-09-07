@@ -367,10 +367,21 @@ void ColumnDescription::readText(PeekableReadBuffer & buf, UInt64 format_version
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");
     }
 
-    codec = codecDescriptionFromAST(codec_declaration, type, CodecValidationSettings::trusted());
+    ColumnCodecDescription parsed_codec;
+    if (const auto root_codec = codec_declaration.getCodec())
+        parsed_codec.setRoot(root_codec);
+
+    /// Version 1 stored Tuple-element codecs inside the type text. Combine them with the
+    /// separately stored version 2 entries before validating and normalizing the complete policy.
+    for (const auto & [path, operation] : tupleElementCodecPatchFromAST(codec_declaration, type))
+    {
+        if (operation.kind != ColumnCodecPatchKind::Set)
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Column metadata cannot remove a Tuple-element codec");
+        parsed_codec.set(path, operation.codec);
+    }
     for (const auto & [path, codec_ast] : tuple_element_codecs)
-        codec.set(path, codec_ast);
-    codec = validateColumnCodecDescription(codec, type, CodecValidationSettings::trusted());
+        parsed_codec.set(path, codec_ast);
+    codec = validateColumnCodecDescription(parsed_codec, type, CodecValidationSettings::trusted());
 }
 
 ColumnsDescription & ColumnsDescription::operator=(const ColumnsDescription & other)

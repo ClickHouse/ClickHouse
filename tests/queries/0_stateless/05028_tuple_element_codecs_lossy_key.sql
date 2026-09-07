@@ -5,7 +5,7 @@ DROP TABLE IF EXISTS t_tuple_codec_lossy_sorting_key;
 DROP TABLE IF EXISTS t_tuple_codec_lossy_partition_key;
 DROP TABLE IF EXISTS t_tuple_codec_lossy_non_key_sibling;
 
-SET allow_experimental_codecs = 1;
+SET enable_sz3_codec = 1;
 SET enable_tuple_element_codecs = 1;
 
 -- A lossy codec on the selected Tuple element would make the stored key value

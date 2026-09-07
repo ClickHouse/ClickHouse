@@ -44,13 +44,15 @@ SELECT
 FROM system.tables
 WHERE database = currentDatabase() AND name = 't_tuple_codec_transparent_wrappers';
 
+-- Block headers identify decoders, not encoder parameters. ZSTD levels are read as the
+-- default ZSTD(1), and LZ4HC uses the same on-disk method byte as LZ4.
 SELECT
-    countIf(column = 'array_value' AND arrayExists(x -> startsWith(x, 'Delta('), mapKeys(codec_block_counts))) > 0,
-    countIf(column = 'array_value' AND mapContains(codec_block_counts, 'LZ4HC(4)')) > 0,
-    countIf(column = 'array_value' AND endsWith(substream, '.size0') AND mapContains(codec_block_counts, 'ZSTD(3)')) > 0,
-    countIf(column = 'aggregate_value' AND mapContains(codec_block_counts, 'T64, LZ4')) > 0,
-    countIf(column = 'aggregate_value' AND mapContains(codec_block_counts, 'ZSTD(2)')) > 0,
-    countIf(column = 'aggregate_value' AND endsWith(substream, '.size0') AND mapContains(codec_block_counts, 'LZ4HC(2)')) > 0
+    countIf(column = 'array_value' AND endsWith(substream, '%2Ea') AND arrayExists(x -> startsWith(x, 'Delta('), mapKeys(codec_block_counts))) > 0,
+    countIf(column = 'array_value' AND endsWith(substream, '%2Eb') AND mapContains(codec_block_counts, 'LZ4')) > 0,
+    countIf(column = 'array_value' AND endsWith(substream, '.size0') AND mapContains(codec_block_counts, 'ZSTD(1)')) > 0,
+    countIf(column = 'aggregate_value' AND endsWith(substream, '%2Ea') AND mapContains(codec_block_counts, 'T64, LZ4')) > 0,
+    countIf(column = 'aggregate_value' AND endsWith(substream, '%2Eb') AND mapContains(codec_block_counts, 'ZSTD(1)')) > 0,
+    countIf(column = 'aggregate_value' AND endsWith(substream, '.size0') AND mapContains(codec_block_counts, 'LZ4')) > 0
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_tuple_codec_transparent_wrappers);
 
 SELECT
@@ -97,8 +99,8 @@ SELECT
 FROM numbers(1000);
 
 SELECT
-    countIf(column = 'array_value' AND mapContains(codec_block_counts, 'T64, LZ4')) > 0,
-    countIf(column = 'aggregate_value' AND mapContains(codec_block_counts, 'ZSTD(4)')) > 0
+    countIf(column = 'array_value' AND endsWith(substream, '%2Ec') AND mapContains(codec_block_counts, 'T64, LZ4')) > 0,
+    countIf(column = 'aggregate_value' AND endsWith(substream, '%2Ec') AND mapContains(codec_block_counts, 'ZSTD(1)')) > 0
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_tuple_codec_transparent_wrappers);
 
 DETACH TABLE t_tuple_codec_transparent_wrappers;

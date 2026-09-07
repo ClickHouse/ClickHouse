@@ -18,6 +18,7 @@
 
 #include <functional>
 #include <string_view>
+#include <unordered_map>
 
 namespace DB
 {
@@ -32,7 +33,12 @@ namespace ErrorCodes
 namespace
 {
 
-using TupleElementVisitor = std::function<void(ASTTupleDataType &, size_t, const DataTypePtr &, const CodecPath &)>;
+using TupleElementVisitor = std::function<void(
+    ASTTupleDataType &,
+    size_t,
+    const ASTTupleElementCodecOperation *,
+    const DataTypePtr &,
+    const CodecPath &)>;
 
 /// Return a datatype AST, including specialized Tuple and Enum nodes.
 ASTDataType & getDataTypeAST(const ASTPtr & ast, std::string_view context)
@@ -80,7 +86,7 @@ void forEachTupleElement(
 {
     if (auto * tuple_ast = type_ast->as<ASTTupleDataType>())
     {
-        tuple_ast->validateCodecOperations();
+        const auto codec_operations = tuple_ast->getCodecOperationsByElement();
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(logical_type.get());
         if (!tuple_type)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tuple AST corresponds to non-Tuple type {}", logical_type->getName());
@@ -99,7 +105,8 @@ void forEachTupleElement(
         {
             const auto & element_type = tuple_type->getElements()[i];
             path.push_back(tuple_type->getNameByPosition(i + 1));
-            visitor(*tuple_ast, i, element_type, path);
+            const auto * operation = codec_operations.empty() ? nullptr : codec_operations[i];
+            visitor(*tuple_ast, i, operation, element_type, path);
             forEachTupleElement(arguments->children[i], element_type, path, visitor);
             path.pop_back();
         }
@@ -143,16 +150,31 @@ void installTupleCodecs(
     CodecPath & path,
     const ColumnCodecDescription & codec)
 {
+    std::unordered_map<ASTTupleDataType *, ASTs> operations_by_tuple;
     forEachTupleElement(
         type_ast,
         logical_type,
         path,
-        [&](ASTTupleDataType & tuple_ast, size_t element_index, const DataTypePtr &, const CodecPath & element_path)
+        [&](
+            ASTTupleDataType & tuple_ast,
+            size_t element_index,
+            const ASTTupleElementCodecOperation *,
+            const DataTypePtr &,
+            const CodecPath & element_path)
         {
-            tuple_ast.resetCodecOperation(element_index);
+            auto & operations = operations_by_tuple[&tuple_ast];
             if (auto it = codec.getCodecs().find(element_path); it != codec.getCodecs().end())
-                tuple_ast.setCodecOperation(element_index, it->second->clone());
+            {
+                auto operation = make_intrusive<ASTTupleElementCodecOperation>();
+                operation->element_index = element_index;
+                operation->kind = TupleElementCodecOperationKind::Set;
+                operation->children.push_back(it->second->clone());
+                operations.push_back(std::move(operation));
+            }
         });
+
+    for (auto & [tuple_ast, operations] : operations_by_tuple)
+        tuple_ast->setCodecOperations(std::move(operations));
 }
 
 }
@@ -190,9 +212,13 @@ ColumnCodecPatch tupleElementCodecPatchFromAST(
         declaration.getType(),
         logical_type,
         path,
-        [&](ASTTupleDataType & tuple_ast, size_t element_index, const DataTypePtr &, const CodecPath & element_path)
+        [&](
+            ASTTupleDataType &,
+            size_t,
+            const ASTTupleElementCodecOperation * operation,
+            const DataTypePtr &,
+            const CodecPath & element_path)
         {
-            const auto * operation = tuple_ast.getCodecOperation(element_index);
             if (!operation)
                 return;
 

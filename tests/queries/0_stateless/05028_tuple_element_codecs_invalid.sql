@@ -130,11 +130,11 @@ CREATE TABLE t_tuple_codec_shadowed_structural
         items Array(Tuple(
             a UInt64 CODEC(LZ4),
             b UInt64 CODEC(LZ4)
-        )) CODEC(ZSTD('bad'))
+        )) CODEC(ZSTD(1000))
     )
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ORDER BY tuple(); -- { serverError ILLEGAL_CODEC_PARAMETER }
 
 -- Unsupported engines reject a per-element policy during DDL.
 CREATE TABLE t_tuple_codec_log

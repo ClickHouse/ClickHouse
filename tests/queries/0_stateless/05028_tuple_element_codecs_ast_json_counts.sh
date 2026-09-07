@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Tuple-element codecs are sparse children of the owning Tuple node. Verify the
 # JSON round trip and reject a REMOVE operation that contains a codec child.
 CODEC_JSON=$(${CLICKHOUSE_LOCAL} --enable_tuple_element_codecs 1 -q \
-    "SELECT parseQueryToJSON('CREATE TABLE t (x Tuple(a UInt8 CODEC(LZ4), b String)) ENGINE = Memory') FORMAT TSVRaw")
+    "SELECT parseQueryToJSON('CREATE TABLE t (x Tuple(a UInt8 CODEC(LZ4), b String)) ENGINE = MergeTree ORDER BY tuple()') FORMAT TSVRaw")
 ${CLICKHOUSE_LOCAL} --enable_json_ast_dialect 1 --enable_tuple_element_codecs 1 --dialect clickhouse_json -q "$CODEC_JSON" >/dev/null \
     && echo 'codec_json_ok'
 

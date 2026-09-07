@@ -1,7 +1,6 @@
 #include <Storages/ColumnCodecValidation.h>
 
 #include <Compression/CompressionFactory.h>
-#include <Compression/ICompressionCodec.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnCodecAST.h>
@@ -9,6 +8,7 @@
 #include <Common/Exception.h>
 
 #include <map>
+#include <vector>
 
 namespace DB
 {
@@ -45,28 +45,16 @@ namespace
 
 using StreamsByDeclaration = std::map<CodecPath, std::vector<ApplicableCodecStream>>;
 
-/// Enumerate the physical streams that can receive a column codec.
-std::vector<ApplicableCodecStream> enumerateApplicableStreams(const DataTypePtr & logical_type)
-{
-    std::vector<ApplicableCodecStream> result;
-    auto serialization = logical_type->getDefaultSerialization();
-    serialization->enumerateStreams(
-        [&](const ISerialization::SubstreamPath & path)
-        {
-            if (!path.empty() && !ISerialization::isEphemeralSubcolumn(path, path.size()))
-                result.push_back(classifyCodecStream(path));
-        },
-        logical_type);
-    return result;
-}
-
 /// Canonicalize, normalize, and instantiate every effective declaration.
-ColumnCodecValidationResult validatePolicy(
+ColumnCodecDescription validatePolicy(
     const ColumnCodecDescription & policy,
     const DataTypePtr & logical_type,
     const CodecValidationSettings & settings,
     const ColumnCodecDescription::CodecsByPath * declarations_to_admit)
 {
+    if (policy.empty())
+        return {};
+
     ColumnCodecDescription canonical_policy;
     for (const auto & [declaration_path, codec] : policy.getCodecs())
     {
@@ -76,21 +64,21 @@ ColumnCodecValidationResult validatePolicy(
         canonical_policy.set(std::move(canonical_path), codec);
     }
 
-    const auto streams = enumerateApplicableStreams(logical_type);
     StreamsByDeclaration streams_by_declaration;
-    std::vector<ApplicableCodecStream> part_default_streams;
-    for (const auto & stream : streams)
-    {
-        auto declaration = canonical_policy.find(stream.logical_path);
-        if (declaration.codec)
-            streams_by_declaration[declaration.declaration_path].push_back(stream);
-        else
-            part_default_streams.push_back(stream);
-    }
+    auto serialization = logical_type->getDefaultSerialization();
+    serialization->enumerateStreams(
+        [&](const ISerialization::SubstreamPath & path)
+        {
+            if (path.empty() || ISerialization::isEphemeralSubcolumn(path, path.size()))
+                return;
+            auto stream = classifyCodecStream(path);
+            auto declaration = canonical_policy.find(stream.logical_path);
+            if (declaration.codec)
+                streams_by_declaration[declaration.declaration_path].push_back(std::move(stream));
+        },
+        logical_type);
 
-    ColumnCodecValidationResult result;
-    for (auto & stream : part_default_streams)
-        result.effective_streams.push_back({std::move(stream), {}, nullptr, true});
+    ColumnCodecDescription result;
     const auto trusted_settings = CodecValidationSettings::trusted();
     auto & factory = CompressionCodecFactory::instance();
 
@@ -124,7 +112,7 @@ ColumnCodecValidationResult validatePolicy(
         /// With no value type, keep implicit type parameters unresolved. A dormant parent such as
         /// CODEC(Delta) must not turn into CODEC(Delta(1)) before a child override is removed.
         const ASTPtr stored = has_value_stream && all_normalized_equal ? common_normalized : ast;
-        result.codec.set(declaration_path, stored);
+        result.set(declaration_path, stored);
         const bool declaration_is_part_default = CompressionCodecFactory::isDefaultCodec(ast);
 
         if (stream_group_it == streams_by_declaration.end())
@@ -136,30 +124,20 @@ ColumnCodecValidationResult validatePolicy(
 
         for (const auto & stream : stream_group_it->second)
         {
-            ASTPtr effective_codec;
             if (declaration_is_part_default)
             {
                 /// The part default is selected later and can change for a recompression TTL.
-                effective_codec = stored;
+                continue;
             }
             else if (stream.structural)
             {
-                auto instantiated = factory.get(stored, static_cast<const IDataType *>(nullptr), nullptr, /* only_generic = */ true);
-                effective_codec = instantiated->getFullCodecDesc();
+                factory.get(stored, static_cast<const IDataType *>(nullptr), nullptr, /* only_generic = */ true);
             }
             else
             {
                 auto normalized = factory.validateCodecAndGetPreprocessedAST(ast, stream.leaf_type, declaration_settings);
                 factory.get(normalized, stream.leaf_type);
-                effective_codec = std::move(normalized);
             }
-
-            result.effective_streams.push_back({
-                .stream = stream,
-                .declaration_path = declaration_path,
-                .normalized_codec = std::move(effective_codec),
-                .codec_is_part_default = declaration_is_part_default,
-            });
         }
     }
 
@@ -168,29 +146,12 @@ ColumnCodecValidationResult validatePolicy(
 
 }
 
-ColumnCodecValidationResult validateColumnCodecDescriptionAndGetStreams(
-    const ColumnCodecDescription & policy,
-    const DataTypePtr & logical_type,
-    const CodecValidationSettings & settings)
-{
-    return validatePolicy(policy, logical_type, settings, nullptr);
-}
-
-ColumnCodecValidationResult validateColumnCodecDescriptionForAlterAndGetStreams(
-    const ColumnCodecDescription & policy,
-    const DataTypePtr & logical_type,
-    const ColumnCodecDescription::CodecsByPath & declarations_to_admit,
-    const CodecValidationSettings & settings)
-{
-    return validatePolicy(policy, logical_type, settings, &declarations_to_admit);
-}
-
 ColumnCodecDescription validateColumnCodecDescription(
     const ColumnCodecDescription & policy,
     const DataTypePtr & logical_type,
     const CodecValidationSettings & settings)
 {
-    return validateColumnCodecDescriptionAndGetStreams(policy, logical_type, settings).codec;
+    return validatePolicy(policy, logical_type, settings, nullptr);
 }
 
 ColumnCodecDescription validateColumnCodecDescriptionForAlter(
@@ -199,8 +160,7 @@ ColumnCodecDescription validateColumnCodecDescriptionForAlter(
     const ColumnCodecDescription::CodecsByPath & declarations_to_admit,
     const CodecValidationSettings & settings)
 {
-    return validateColumnCodecDescriptionForAlterAndGetStreams(
-        policy, logical_type, declarations_to_admit, settings).codec;
+    return validatePolicy(policy, logical_type, settings, &declarations_to_admit);
 }
 
 }

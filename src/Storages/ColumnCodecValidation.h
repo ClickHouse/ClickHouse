@@ -5,8 +5,6 @@
 #include <DataTypes/IDataType_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
-#include <vector>
-
 namespace DB
 {
 
@@ -20,36 +18,11 @@ struct ApplicableCodecStream
     bool structural = false;
 };
 
-struct EffectiveCodecStream
-{
-    ApplicableCodecStream stream;
-    CodecPath declaration_path;
-    ASTPtr normalized_codec;
-    bool codec_is_part_default = false;
-};
-
-struct ColumnCodecValidationResult
-{
-    ColumnCodecDescription codec;
-    std::vector<EffectiveCodecStream> effective_streams;
-};
-
 /// Return the logical Tuple-element path recorded in a serialization stream path.
 CodecPath getCodecPath(const ISerialization::SubstreamPath & path);
 
 /// Classify one physical serialization stream. Runtime resolution uses the same function.
 ApplicableCodecStream classifyCodecStream(const ISerialization::SubstreamPath & path);
-
-ColumnCodecValidationResult validateColumnCodecDescriptionAndGetStreams(
-    const ColumnCodecDescription & policy,
-    const DataTypePtr & logical_type,
-    const CodecValidationSettings & settings);
-
-ColumnCodecValidationResult validateColumnCodecDescriptionForAlterAndGetStreams(
-    const ColumnCodecDescription & policy,
-    const DataTypePtr & logical_type,
-    const ColumnCodecDescription::CodecsByPath & declarations_to_admit,
-    const CodecValidationSettings & settings);
 
 ColumnCodecDescription validateColumnCodecDescription(
     const ColumnCodecDescription & policy,

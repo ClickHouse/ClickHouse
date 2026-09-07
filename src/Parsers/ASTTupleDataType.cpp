@@ -8,8 +8,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 
-#include <algorithm>
-
 namespace DB
 {
 
@@ -39,96 +37,40 @@ ASTPtr ASTTupleDataType::getCodecOperations() const
     return children[1];
 }
 
-const ASTTupleElementCodecOperation * ASTTupleDataType::getCodecOperation(size_t element_index) const
+ASTTupleDataType::CodecOperationsByElement ASTTupleDataType::getCodecOperationsByElement() const
 {
     validateCodecOperations();
     const auto operations = getCodecOperations();
     if (!operations)
-        return nullptr;
+        return {};
+
+    const auto arguments = getArguments();
+    CodecOperationsByElement result(arguments ? arguments->children.size() : 0, nullptr);
     for (const auto & child : operations->children)
     {
         const auto & operation = child->as<ASTTupleElementCodecOperation &>();
-        if (operation.element_index == element_index)
-            return &operation;
+        result[operation.element_index] = &operation;
     }
-    return nullptr;
+    return result;
 }
 
-void ASTTupleDataType::setCodecOperation(size_t element_index, ASTPtr codec)
-{
-    if (!codec)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tuple element CODEC operation requires a codec expression");
-
-    auto operation = make_intrusive<ASTTupleElementCodecOperation>();
-    operation->element_index = element_index;
-    operation->kind = TupleElementCodecOperationKind::Set;
-    operation->children.push_back(std::move(codec));
-    operation->validate();
-
-    validateCodecOperations();
-    auto operations = getCodecOperations();
-    if (!operations)
-    {
-        operations = make_intrusive<ASTExpressionList>();
-        children.insert(children.begin() + 1, operations);
-    }
-    for (auto & child : operations->children)
-    {
-        if (child->as<ASTTupleElementCodecOperation &>().element_index == element_index)
-        {
-            child = std::move(operation);
-            validateCodecOperations();
-            return;
-        }
-    }
-    operations->children.push_back(std::move(operation));
-    validateCodecOperations();
-}
-
-void ASTTupleDataType::setCodecRemoval(size_t element_index)
-{
-    auto operation = make_intrusive<ASTTupleElementCodecOperation>();
-    operation->element_index = element_index;
-    operation->kind = TupleElementCodecOperationKind::Remove;
-
-    validateCodecOperations();
-    auto operations = getCodecOperations();
-    if (!operations)
-    {
-        operations = make_intrusive<ASTExpressionList>();
-        children.insert(children.begin() + 1, operations);
-    }
-    for (auto & child : operations->children)
-    {
-        if (child->as<ASTTupleElementCodecOperation &>().element_index == element_index)
-        {
-            child = std::move(operation);
-            validateCodecOperations();
-            return;
-        }
-    }
-    operations->children.push_back(std::move(operation));
-    validateCodecOperations();
-}
-
-void ASTTupleDataType::resetCodecOperation(size_t element_index)
+void ASTTupleDataType::setCodecOperations(ASTs codec_operations)
 {
     validateCodecOperations();
-    auto operations = getCodecOperations();
-    if (!operations)
+    if (codec_operations.empty())
+    {
+        if (getCodecOperations())
+            children.erase(children.begin() + 1);
         return;
+    }
 
-    operations->children.erase(
-        std::remove_if(
-            operations->children.begin(),
-            operations->children.end(),
-            [element_index](const ASTPtr & child)
-            {
-                return child->as<ASTTupleElementCodecOperation &>().element_index == element_index;
-            }),
-        operations->children.end());
-    if (operations->children.empty())
-        children.erase(children.begin() + 1);
+    auto operations = make_intrusive<ASTExpressionList>();
+    operations->children = std::move(codec_operations);
+    if (getCodecOperations())
+        children[1] = std::move(operations);
+    else
+        children.push_back(std::move(operations));
+    validateCodecOperations();
 }
 
 void ASTTupleDataType::resetCodecOperations()
@@ -191,7 +133,11 @@ void ASTTupleDataType::updateTreeHashImpl(SipHash & hash_state, bool ignore_alia
 void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     const auto arguments = getArguments();
-    validateCodecOperations();
+    const auto codec_operations = getCodecOperationsByElement();
+    const auto get_codec_operation = [&](size_t index)
+    {
+        return codec_operations.empty() ? nullptr : codec_operations[index];
+    };
     ostr << name;
 
     if (arguments && !arguments->children.empty())
@@ -212,7 +158,7 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
                     ostr << ',';
                 ostr << indent_str;
                 arguments->children[i]->format(ostr, settings, state, frame);
-                if (const auto * operation = getCodecOperation(i))
+                if (const auto * operation = get_codec_operation(i))
                 {
                     ostr << ' ';
                     operation->format(ostr, settings, state, frame);
@@ -237,7 +183,7 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 
                 /// Print the type
                 arguments->children[i]->format(ostr, settings, state, frame);
-                if (const auto * operation = getCodecOperation(i))
+                if (const auto * operation = get_codec_operation(i))
                 {
                     ostr << ' ';
                     operation->format(ostr, settings, state, frame);
@@ -258,7 +204,7 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 
                 /// Print the type
                 arguments->children[i]->format(ostr, settings, state, frame);
-                if (const auto * operation = getCodecOperation(i))
+                if (const auto * operation = get_codec_operation(i))
                 {
                     ostr << ' ';
                     operation->format(ostr, settings, state, frame);

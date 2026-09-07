@@ -54,7 +54,9 @@ TEST(ColumnCodecDescription, ExtractAndApply)
         "payload Tuple(id UInt64 CODEC(ZSTD(3)), nested Tuple(value String CODEC(LZ4HC(4)), flag UInt8)) CODEC(LZ4)");
     const auto & declaration = parsed->as<ASTColumnDeclaration &>();
     const auto & tuple_ast = declaration.getType()->as<ASTTupleDataType &>();
-    const auto * id_operation = tuple_ast.getCodecOperation(0);
+    const auto operations = tuple_ast.getCodecOperationsByElement();
+    ASSERT_EQ(operations.size(), 2);
+    const auto * id_operation = operations[0];
     ASSERT_TRUE(id_operation);
     ASSERT_EQ(id_operation->kind, TupleElementCodecOperationKind::Set);
     ASSERT_TRUE(id_operation->getCodec());
@@ -63,7 +65,9 @@ TEST(ColumnCodecDescription, ExtractAndApply)
     EXPECT_EQ(cloned->getTreeHash(false), parsed->getTreeHash(false));
     const auto & cloned_declaration = cloned->as<ASTColumnDeclaration &>();
     const auto & cloned_tuple_ast = cloned_declaration.getType()->as<ASTTupleDataType &>();
-    const auto * cloned_id_operation = cloned_tuple_ast.getCodecOperation(0);
+    const auto cloned_operations = cloned_tuple_ast.getCodecOperationsByElement();
+    ASSERT_EQ(cloned_operations.size(), 2);
+    const auto * cloned_id_operation = cloned_operations[0];
     ASSERT_TRUE(cloned_id_operation);
     EXPECT_NE(cloned_id_operation->getCodec().get(), id_operation->getCodec().get());
 
@@ -109,7 +113,7 @@ TEST(ColumnCodecDescription, ExtractAndApply)
 TEST(ColumnCodecDescription, CodecOperationBelongsToOwningTuple)
 {
     const String declaration_text =
-        "payload Tuple(items Array(Tuple(id UInt64 CODEC(ZSTD(3)), text String)), state Enum8('ok' = 1) CODEC(LZ4))";
+        "c Tuple(items Array(Tuple(id UInt64 CODEC(ZSTD(3)), text String)), state Enum8('ok' = 1) CODEC(LZ4))";
     const auto parsed = parseColumnDeclaration(declaration_text);
     const auto & declaration = parsed->as<ASTColumnDeclaration &>();
 
@@ -121,8 +125,12 @@ TEST(ColumnCodecDescription, CodecOperationBelongsToOwningTuple)
     const auto & inner_tuple = array_arguments->children[0]->as<ASTTupleDataType &>();
     const auto inner_arguments = inner_tuple.getArguments();
     ASSERT_TRUE(inner_arguments);
-    EXPECT_TRUE(inner_tuple.getCodecOperation(0));
-    EXPECT_TRUE(outer_tuple.getCodecOperation(1));
+    const auto inner_codec_operations = inner_tuple.getCodecOperationsByElement();
+    const auto outer_codec_operations = outer_tuple.getCodecOperationsByElement();
+    ASSERT_EQ(inner_codec_operations.size(), 2);
+    ASSERT_EQ(outer_codec_operations.size(), 2);
+    EXPECT_TRUE(inner_codec_operations[0]);
+    EXPECT_TRUE(outer_codec_operations[1]);
 
     EXPECT_EQ(declaration.formatWithSecretsOneLine(), declaration_text);
     EXPECT_EQ(
@@ -142,13 +150,15 @@ TEST(ColumnCodecDescription, CodecOperationBelongsToOwningTuple)
     applyCodecDescriptionToAST(restored, logical_type, codec);
     EXPECT_EQ(restored.formatWithSecretsOneLine(), declaration_text);
 
-    const auto removal = parseAlterColumnDeclaration("payload Tuple(id UInt64 REMOVE CODEC, text String)");
+    const auto removal = parseAlterColumnDeclaration("c Tuple(id UInt64 REMOVE CODEC, text String)");
     const auto & removal_tuple = removal->as<ASTColumnDeclaration &>().getType()->as<ASTTupleDataType &>();
-    const auto * removal_operation = removal_tuple.getCodecOperation(0);
+    const auto removal_operations = removal_tuple.getCodecOperationsByElement();
+    ASSERT_EQ(removal_operations.size(), 2);
+    const auto * removal_operation = removal_operations[0];
     ASSERT_TRUE(removal_operation);
     EXPECT_EQ(removal_operation->kind, TupleElementCodecOperationKind::Remove);
     EXPECT_FALSE(removal_operation->getCodec());
-    EXPECT_EQ(removal->formatWithSecretsOneLine(), "payload Tuple(id UInt64 REMOVE CODEC, text String)");
+    EXPECT_EQ(removal->formatWithSecretsOneLine(), "c Tuple(id UInt64 REMOVE CODEC, text String)");
     EXPECT_EQ(removal->clone()->getTreeHash(false), removal->getTreeHash(false));
 }
 
