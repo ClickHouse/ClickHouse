@@ -1186,7 +1186,18 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
         case ActionsDAG::ActionType::FUNCTION:
         {
             auto name = node.function_base->getName();
-            if (name == "not")
+            /// A `not` that receives an inversion cancels against it and substitutes its argument for
+            /// the result. That is only truthiness-preserving: `not(not(x))` is `x != 0` (a `UInt8`),
+            /// not `x`. Where the value is merely truth-tested (`boolean_context`) that is exactly what
+            /// index analysis wants, but in a value position - say the first argument of
+            /// `greater(not(not(x)), -0.5)` - it changes what the enclosing function is applied to, and
+            /// the resulting condition can prune granules that do match. Keep such a `not` as an
+            /// ordinary function there; the atom then stays opaque to index analysis, which is sound.
+            /// A `not` that merely *sends* an inversion into its child (`need_inversion == false`) is
+            /// value-preserving in any position: the child either absorbs it into an equivalent
+            /// two-valued complement (`notHas` becomes `has`, De Morgan on `and`/`or`) or gets an
+            /// explicit `not()` wrapper, so the result is the same `UInt8` the original `not` produced.
+            if (name == "not" && (boolean_context || !need_inversion))
             {
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion, boolean_context);
                 handled_inversion = true;
