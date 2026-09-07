@@ -1,0 +1,33 @@
+-- the default join is innerunique: one left row per key --
+1	a	1	p
+1	a	1	q
+2	c	2	r
+-- kind=inner keeps the duplicated left rows --
+1	a	1	p
+1	a	1	q
+1	b	1	p
+1	b	1	q
+2	c	2	r
+-- $left/$right keys stay side-qualified when both sides expose both names --
+2
+-- let rebinds a tabular result --
+2
+3
+-- let binds the result of a tabular function call --
+3
+4
+-- while a scalar function call bound by let stays scalar --
+42
+-- an oversized string-form timespan fails cleanly --
+-- bin_at --
+4.5
+16
+2017-05-16 12:00:00.0000000
+\N
+true
+-- bin propagates null --
+\N
+308762132851165517643290892
+9
+\N
+4.5

@@ -24,7 +24,6 @@
 #include <Parsers/ParserShowSettingQuery.h>
 #include <Parsers/ParserSnapshotQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
-#include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserDescribeCacheQuery.h>
 #include <Parsers/Access/ParserShowAccessEntitiesQuery.h>
 #include <Parsers/Access/ParserShowAccessQuery.h>
@@ -94,7 +93,6 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserCheckQuery check_p;
     ParserOptimizeQuery optimize_p;
     ParserKillQueryQuery kill_query_p;
-    ParserWatchQuery watch_p;
     ParserExplainQuery explain_p(end, allow_settings_after_format_in_insert);
     ParserBackupQuery backup_p;
     ParserSnapshotQuery snapshot_p;
@@ -123,7 +121,6 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || check_p.parse(pos, query, expected)
         || kill_query_p.parse(pos, query, expected)
         || optimize_p.parse(pos, query, expected)
-        || watch_p.parse(pos, query, expected)
         || parseShowAccessQuery(pos, query, expected)
         || backup_p.parse(pos, query, expected)
         || snapshot_p.parse(pos, query, expected);
@@ -304,7 +301,7 @@ Compressed files are supported. Compression type is detected by the extension of
 SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
 ```
 
-`file_name` and `type` are string literals. Supported compression types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+`file_name` and `type` are string literals. Supported compression types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`, `'snappy'`. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
 
 `level` is a numeric literal. Positive integers in following ranges are supported: `1-12` for `gzip`, `deflate` and `lz4` types, `1-22` for `zstd` type and `1-9` for other compression types. For `gzip` and `deflate`, levels above `9` require the default build with `libdeflate`; a build without `libdeflate` supports levels `1-9`.
 
