@@ -2,12 +2,12 @@
 # Tags: no-fasttest
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 #
-# Kept apart from `04846_iceberg_null_current_snapshot_id` because only this command is
-# build-dependent. `IcebergMetadata::optimize` reaches `getHistory` - the reader this fix
-# normalizes - only when `CLICKHOUSE_CLOUD` is off. A cloud build instead waits on
-# `IcebergCompactionMetadataGenerator`, which the background scheduler creates lazily, so the
-# same query there either waits or reports that compaction is not initialized. The sibling test
-# covers the readers that behave the same in both builds and stays enabled everywhere.
+# Kept apart from `04846_iceberg_null_current_snapshot_id` because the `OPTIMIZE` commands are the
+# build-dependent ones: `IcebergMetadata::optimize` reaches `getHistory` - one of the readers this
+# fix normalizes - only when `CLICKHOUSE_CLOUD` is off, and a cloud build gates the command on
+# `IcebergCompactionMetadataGenerator` instead. The sibling test covers the readers that behave the
+# same in both builds. Rather than skip a build, the assertions below are stated as the invariant
+# this fix actually establishes, so they hold on both (see `check_no_conversion_error`).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -49,24 +49,45 @@ PY
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "DETACH TABLE ${TABLE}"
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --send_logs_level=fatal --query "ATTACH TABLE ${TABLE}"
 
-# Print the client exit status next to the exception count: grepping alone would report 0 for a
-# client that failed with a message not containing the word "Exception".
-# `OPTIMIZE TABLE` walks the snapshot ancestry through `IcebergMetadata::getHistory`, so a
-# JSON-null current snapshot must leave it a quiet no-op rather than a conversion error.
-output=$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 \
+# What this pull request guarantees is that a JSON-null `current-snapshot-id` never reaches
+# `getValue<Int64>`, i.e. never produces `Invalid access: Can not convert empty value`. The exit code
+# alone cannot express that, because the two builds legitimately differ in how far `OPTIMIZE` gets:
+# the open-source build runs the synchronous path and must end in a quiet no-op, while a cloud build
+# gates `OPTIMIZE` on `IcebergCompactionMetadataGenerator`, which the background scheduler creates
+# lazily, and reports a user-facing exception instead. Classify the outcome the way
+# `04513_iceberg_optimize_orc_position_delete_88123` does, so the conversion error fails everywhere
+# and only the OSS build is held to the no-op.
+IS_CLOUD=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
+
+check_no_conversion_error()
+{
+    local label=$1 && shift
+    local err=$1 && shift
+
+    if printf '%s' "${err}" | grep -qF 'Can not convert empty value'; then
+        # The regression: `has` was true for the JSON null and `getValue<Int64>` threw.
+        echo "FAIL: ${label} hit the JSON-null conversion error"
+    elif [[ "${IS_CLOUD}" = "1" ]]; then
+        # Cloud gates this command elsewhere; any other exception is not this fix's business.
+        echo "${label}: no conversion error"
+    elif [[ -n "${err}" ]]; then
+        echo "FAIL: ${label} failed on the open-source build: ${err}"
+    else
+        echo "${label}: no conversion error"
+    fi
+}
+
+# `OPTIMIZE TABLE` walks the snapshot ancestry through `IcebergMetadata::getHistory`.
+check_no_conversion_error "OPTIMIZE" "$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 \
     --allow_experimental_iceberg_compaction=1 \
-    --query "OPTIMIZE TABLE ${TABLE}" 2>&1)
-status=$?
-echo "${status} $(printf '%s' "${output}" | grep -cF 'Exception')"
+    --query "OPTIMIZE TABLE ${TABLE}" 2>&1)"
 
 # `OPTIMIZE TABLE ... MANIFEST` takes a different route - `IcebergMetadata::optimizeManifestFiles` ->
 # `compactIcebergManifests` -> `isCurrentManifestListAboveThreshold` - which reads
-# `current-snapshot-id` with its own `has` check. It has to reach the same no-snapshot path.
-output=$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 \
+# `current-snapshot-id` with its own `has` check.
+check_no_conversion_error "OPTIMIZE MANIFEST" "$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 \
     --allow_experimental_iceberg_compaction=1 \
-    --query "OPTIMIZE TABLE ${TABLE} MANIFEST" 2>&1)
-status=$?
-echo "${status} $(printf '%s' "${output}" | grep -cF 'Exception')"
+    --query "OPTIMIZE TABLE ${TABLE} MANIFEST" 2>&1)"
 
-# The no-op left the table readable, still as empty.
+# The table is still readable, still empty.
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "SELECT count() FROM ${TABLE}"
