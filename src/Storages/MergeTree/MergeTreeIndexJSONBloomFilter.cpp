@@ -40,6 +40,7 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
@@ -494,6 +495,13 @@ public:
     }
 
 private:
+    struct ScalarPlan
+    {
+        JSONBloomFilterTokens * tokens = nullptr;
+        UInt64 seed = 0;
+        bool has_dynamic_presence = false;
+    };
+
     struct TypeInfo
     {
         DataTypePtr type;
@@ -505,6 +513,7 @@ private:
         bool has_dynamic_structure = false;
         bool is_dynamic_complex = false;
         bool raw_value = false;
+        mutable MapWithMemoryTracking<std::pair<String, JSONBloomRole>, ScalarPlan> scalar_plans;
     };
 
     struct PathInfo
@@ -956,15 +965,23 @@ private:
         bool is_dynamic,
         const TypeInfo & type_info)
     {
-        auto & tokens = path_filters[String(logical_path)];
-        if (is_dynamic)
+        /// Reuse preparation for shared paths. Keyed map scopes can differ on every row.
+        ScalarPlan keyed_plan;
+        auto & plan = path == logical_path ? type_info.scalar_plans[{String(path), role}] : keyed_plan;
+        if (!plan.tokens)
         {
-            tokens.presence.insert(dynamicTypePresenceHash(path, role, type_info.name));
-            tokens.dynamic_types[unsupportedDynamicTypeHash(path, role)].insert(type_info.encoded_type);
+            plan.tokens = &path_filters[String(logical_path)];
+            plan.seed = hashToken(path, role, JSONBloomDomain::Typed, type_info.name, {});
+        }
+        if (is_dynamic && !plan.has_dynamic_presence)
+        {
+            plan.tokens->presence.insert(dynamicTypePresenceHash(path, role, type_info.name));
+            plan.tokens->dynamic_types[unsupportedDynamicTypeHash(path, role)].insert(type_info.encoded_type);
+            plan.has_dynamic_presence = true;
         }
 
-        tokens.values.insert(hashTypedValue(
-            hashToken(path, role, JSONBloomDomain::Typed, type_info.name, {}),
+        plan.tokens->values.insert(hashTypedValue(
+            plan.seed,
             *type_info.serialization, type_info.which, type_info.raw_value, column, row, value_buffer, format_settings));
     }
 
@@ -2034,7 +2051,8 @@ MergeTreeIndexConditionJSONBloomFilter::MergeTreeIndexConditionJSONBloomFilter(
 
 bool MergeTreeIndexConditionJSONBloomFilter::alwaysUnknownOrTrue() const
 {
-    return rpnEvaluatesAlwaysUnknownOrTrue(rpn, {RPNElement::FUNCTION_ANY, RPNElement::FUNCTION_ALL, RPNElement::ALWAYS_FALSE});
+    return rpnEvaluatesAlwaysUnknownOrTrue(
+        rpn, {RPNElement::FUNCTION_ANY, RPNElement::FUNCTION_ALL, RPNElement::FUNCTION_EXISTS, RPNElement::ALWAYS_FALSE});
 }
 
 bool MergeTreeIndexConditionJSONBloomFilter::mayBeTrueOnGranule(
@@ -2067,6 +2085,10 @@ bool MergeTreeIndexConditionJSONBloomFilter::evaluateGranule(
         switch (element.function)
         {
             case RPNElement::FUNCTION_UNKNOWN: stack.emplace_back(true, true); break;
+            case RPNElement::FUNCTION_EXISTS:
+                element_is_unknown = !part_path_matcher.shouldIndex(element.path);
+                stack.emplace_back(element_is_unknown || granule.hasPath(element.path), true);
+                break;
             case RPNElement::FUNCTION_ANY: {
                 if (!part_path_matcher.shouldIndex(element.path))
                 {
@@ -2160,6 +2182,18 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
 
     const auto function = node.toFunctionNode();
     const String function_name = function.getFunctionName();
+    if (function_name == "isNotNull" && function.getArgumentsSize() == 1)
+    {
+        auto path = tryMatchJSONPath(function.getArgumentAt(0), header);
+        if (!path || path->cast_type || path->typed_dynamic || path->indexes_missing_values
+            || path->role != JSONBloomRole::Scalar || !isDynamic(path->type) || !path_matcher->shouldIndex(path->logical_path))
+            return false;
+
+        /// A non-null `Dynamic` leaf emits a value or presence token, including complex values.
+        out.path = path->logical_path;
+        out.function = RPNElement::FUNCTION_EXISTS;
+        return true;
+    }
     if (function.getArgumentsSize() != 2)
         return false;
 

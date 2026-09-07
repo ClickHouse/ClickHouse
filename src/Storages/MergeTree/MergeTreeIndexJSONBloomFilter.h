@@ -65,6 +65,7 @@ public:
     void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state) override;
     bool empty() const override { return !has_rows; }
     size_t memoryUsageBytes() const override;
+    bool hasPath(const String & path) const { return paths.contains(path); }
     bool matches(const String & path, const JSONBloomFilterProbe & probe, bool pending_matches) const;
     void prepareDynamicProbe(const String & path, const JSONBloomFilterProbe & probe, const FormatSettings & format_settings);
     const JSONBloomPathMatcher & getPathMatcher() const { return *path_matcher; }
@@ -140,6 +141,7 @@ private:
             FUNCTION_UNKNOWN,
             FUNCTION_ANY,
             FUNCTION_ALL,
+            FUNCTION_EXISTS,
             FUNCTION_NOT,
             FUNCTION_AND,
             FUNCTION_OR,
