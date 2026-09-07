@@ -5,7 +5,7 @@
 SELECT '-- DateTime64: UInt64 max must not match -1';
 SELECT toDateTime64(-1, 0, 'UTC') IN (toUInt64(18446744073709551615));
 SELECT toDateTime64(-1, 0, 'UTC') NOT IN (toUInt64(18446744073709551615));
-SELECT toDateTime64(-1, 0, 'UTC') = toUInt64(18446744073709551615);
+SELECT toDateTime64(-1, 0, 'UTC') = toUInt64(18446744073709551615); -- { serverError DECIMAL_OVERFLOW }
 
 SELECT '-- DateTime64: representable UInt64 values still match';
 SELECT toDateTime64('1970-01-01 00:00:01', 0, 'UTC') IN (toUInt64(1));
