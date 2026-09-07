@@ -70,8 +70,10 @@ using TableSettings = std::vector<TableSetting>;
 /// `enumerateEngineSettings` is defined here because it is the same for every engine that has no
 /// server-level settings instance: the compiled defaults are what such an engine uses. The two
 /// that do have one, `MergeTree` and `Distributed`, declare and define their own.
+/// NOLINTBEGIN(bugprone-macro-parentheses): the argument is a type name, which cannot be parenthesized.
 #define DECLARE_SETTINGS_ENUMERATION(TYPE) \
     static TableSettings enumerateEngineSettings(ContextPtr) { return TYPE{}.enumerateSettings(); } \
     TableSettings enumerateSettings() const;
+/// NOLINTEND(bugprone-macro-parentheses)
 
 }
