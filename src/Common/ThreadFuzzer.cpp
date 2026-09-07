@@ -37,20 +37,10 @@
         M(int, pthread_mutex_unlock, pthread_mutex_t * arg)
 #endif
 
-#pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
-
-ThreadFuzzer & ThreadFuzzer::instance()
-{
-    static ThreadFuzzer res;
-    return res;
-}
-
-std::atomic<bool> ThreadFuzzer::started{false};
 
 namespace ErrorCodes
 {
@@ -308,7 +298,7 @@ void ThreadFuzzer::setup() const
 
     static constexpr UInt32 timer_precision = 1000000;
 
-    struct timeval interval{};
+    struct timeval interval;
     interval.tv_sec = cpu_time_period_us / timer_precision;
     interval.tv_usec = cpu_time_period_us % timer_precision;
 
@@ -458,7 +448,5 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_INTERNAL_SYMBOLS)
 
 #endif
 }
-
-#pragma clang diagnostic pop
 
 // NOLINTEND(readability-inconsistent-declaration-parameter-name,readability-else-after-return)

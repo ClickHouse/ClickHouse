@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
-class FunctionGenerateULID final : public IFunction
+class FunctionGenerateULID : public IFunction
 {
 public:
     static constexpr size_t ULID_LENGTH = 26;
@@ -61,7 +61,7 @@ public:
 
         vec_res.resize(input_rows_count * ULID_LENGTH);
 
-        ulid_generator generator{};
+        ulid_generator generator;
         ulid_generator_init(&generator, 0);
 
         for (size_t offset = 0, size = vec_res.size(); offset < size; offset += ULID_LENGTH)
@@ -80,7 +80,7 @@ Generates a [Universally Unique Lexicographically Sortable Identifier (ULID)](ht
     )";
     FunctionDocumentation::Syntax syntax = "generateULID([x])";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "Optional. An expression resulting in any of the supported data types. The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) if the function is called multiple times in one query.", {"Any"}}
+        {"x", "Optional. An expression resulting in any of the supported data types. The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in one query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a ULID.", {"FixedString(26)"}};
     FunctionDocumentation::Examples examples = {
