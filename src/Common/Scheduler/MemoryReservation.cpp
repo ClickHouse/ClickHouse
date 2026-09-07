@@ -208,6 +208,12 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
     }
 }
 
+ResourceCost MemoryReservation::getTotalReclaimable()
+{
+    std::lock_guard lock(mutex);
+    return reclaimable_total;
+}
+
 void MemoryReservation::updateReclaimable(const ISpillable * spillable, ResourceCost total_bytes)
 {
     {

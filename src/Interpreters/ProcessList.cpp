@@ -19,9 +19,9 @@
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
-#include <array>
 #include <chrono>
 #include <memory>
+#include <mutex>
 
 
 namespace CurrentMetrics
@@ -174,7 +174,8 @@ ProcessList::EntryPtr ProcessList::insert(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
                         memory_reservation_resource_name);
-                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory], admission_deadline);
+                memory_reservation = std::make_unique<MemoryReservation>(
+                    link, client_info.current_query_id, settings[Setting::reserve_memory], admission_deadline);
             }
         }
     }
@@ -575,7 +576,11 @@ void QueryStatus::releaseQuerySlot()
 
 void QueryStatus::releaseMemoryReservation()
 {
-    memory_reservation.reset();
+    MemoryReservationPtr delete_memory_reservation;
+    {
+        std::lock_guard lock(memory_reservation_mutex);
+        delete_memory_reservation = std::move(memory_reservation);
+    }
 }
 
 QueryStatus::~QueryStatus()
@@ -1013,6 +1018,11 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         }
         if (get_profile_events)
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+    }
+    {
+        std::lock_guard lock(memory_reservation_mutex);
+        if (auto * reservation = memory_reservation.get())
+            res.spillable_memory_bytes = reservation->getTotalReclaimable();
     }
 
     if (get_settings)
