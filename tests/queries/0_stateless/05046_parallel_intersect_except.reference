@@ -36,7 +36,7 @@ EXCEPT DISTINCT
 2		0
 3		1
 4		0
-same result for 1, 4 and 16 threads
+same result for 1 and 16 threads
 1	1	1	1
 multiset semantics on a large input
 50000	17415000

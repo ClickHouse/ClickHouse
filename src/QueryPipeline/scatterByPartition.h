@@ -14,9 +14,8 @@ class QueryPipelineBuilder;
 void scatterByPartition(QueryPipelineBuilder & pipeline, size_t num_partitions, const ColumnNumbers & key_columns, const DataTypes & hash_cast_types = {});
 
 /// A hash scatter into `num_partitions` followed by per-partition merges of the `num_streams` inputs wires up
-/// (num_partitions * num_streams) connections in the pipeline. Bound this by a sane value so that a large
-/// `max_threads` cannot explode the port/processor count.
-inline constexpr size_t scatter_connection_count_limit = 1000000;
+/// (num_partitions * num_streams) connections in the pipeline. Both functions bound this by a sane value so that
+/// a large `max_threads` cannot explode the port/processor count.
 void checkScatterConnectionLimit(size_t num_partitions, size_t num_streams);
 
 /// The partition count reduced (down to one) so that a scatter of `num_streams` streams stays within the limit,

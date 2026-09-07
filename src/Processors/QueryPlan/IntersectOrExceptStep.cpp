@@ -149,6 +149,8 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
 
     for (auto & cur_pipeline : pipelines)
     {
+        QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
+
         /// The check must be strict about constness (blocksHaveEqualStructure, not
         /// isCompatibleHeader): when a branch constant-folds, the common header
         /// materializes the column, and the converting expression must be applied to
@@ -158,7 +160,6 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         /// main streams and fails the per-stream structure check downstream.
         if (!blocksHaveEqualStructure(cur_pipeline->getHeader(), *getOutputHeader()))
         {
-            QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
             auto converting_dag = ActionsDAG::makeConvertingActions(
                 cur_pipeline->getHeader().getColumnsWithTypeAndName(),
                 getOutputHeader()->getColumnsWithTypeAndName(),
@@ -170,12 +171,8 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
             {
                 return std::make_shared<ExpressionTransform>(cur_header, converting_actions);
             });
-
-            auto added_processors = collector.detachProcessors();
-            processors.insert(processors.end(), added_processors.begin(), added_processors.end());
         }
 
-        QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
         if (num_partitions == 1)
         {
             cur_pipeline->addTransform(std::make_shared<ResizeProcessor>(getOutputHeader(), cur_pipeline->getNumStreams(), 1));

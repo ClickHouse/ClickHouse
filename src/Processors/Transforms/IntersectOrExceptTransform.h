@@ -22,7 +22,7 @@ public:
     /// while it drains the right one blocks the left scatter for every other partition, and those
     /// partitions in turn never drain the right scatter, which deadlocks the pipeline. They sample
     /// the left port from `ReadRightInput` instead, which short-circuits without ever waiting.
-    IntersectOrExceptTransform(SharedHeader header_, Operator operator_, bool read_left_input_first_ = true);
+    IntersectOrExceptTransform(SharedHeader header_, Operator operator_, bool read_left_input_first_);
 
     String getName() const override { return "IntersectOrExcept"; }
 

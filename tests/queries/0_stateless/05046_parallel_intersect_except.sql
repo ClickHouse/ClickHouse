@@ -25,7 +25,7 @@ SELECT * FROM (SELECT * FROM t_left EXCEPT ALL SELECT * FROM t_right) ORDER BY A
 SELECT 'EXCEPT DISTINCT';
 SELECT * FROM (SELECT * FROM t_left EXCEPT DISTINCT SELECT * FROM t_right) ORDER BY ALL SETTINGS max_threads = 4;
 
-SELECT 'same result for 1, 4 and 16 threads';
+SELECT 'same result for 1 and 16 threads';
 SELECT
     (SELECT groupArray(tuple(*)) FROM (SELECT * FROM (SELECT * FROM t_left INTERSECT ALL SELECT * FROM t_right) ORDER BY ALL) SETTINGS max_threads = 1)
     = (SELECT groupArray(tuple(*)) FROM (SELECT * FROM (SELECT * FROM t_left INTERSECT ALL SELECT * FROM t_right) ORDER BY ALL) SETTINGS max_threads = 16),

@@ -1,8 +1,6 @@
-SET enable_analyzer = 1;
-
 -- The output order of INTERSECT/EXCEPT depends on the number of threads and on the join settings,
 -- so the queries with several result rows are ordered.
-SET max_threads = 1;
+SET enable_analyzer = 1;
 
 -- { echo }
 

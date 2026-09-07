@@ -11,7 +11,6 @@
 #include <Common/JSONBuilder.h>
 #include <Core/SortDescription.h>
 
-#include <numeric>
 
 namespace DB
 {
@@ -88,24 +87,16 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         /// in the same stream, so every stream is still deduplicated completely and all threads stay busy.
         /// A sorted input relies on its stream order (`DistinctSortedStreamTransform`), and the size limits
         /// are global, so both keep the merge.
-        const bool has_size_limits = set_size_limits.max_rows != 0 || set_size_limits.max_bytes != 0;
         const size_t num_streams = pipeline.getNumStreams();
         const size_t num_partitions = clampScatterPartitions(pipeline.getNumThreads(), num_streams);
         if (settings.allow_parallel_final_distinct && num_streams > 1 && num_partitions > 1
-            && distinct_sort_desc.empty() && !has_size_limits)
+            && distinct_sort_desc.empty() && !set_size_limits.hasLimits())
         {
             const auto & header = pipeline.getHeader();
-            ColumnNumbers key_columns;
-            if (columns.empty())
-            {
-                key_columns.resize(header.columns());
-                std::iota(key_columns.begin(), key_columns.end(), 0);
-            }
-            else
-            {
-                for (const auto & column : columns)
-                    key_columns.push_back(header.getPositionByName(column));
-            }
+            const size_t num_keys = columns.empty() ? header.columns() : columns.size();
+            ColumnNumbers key_columns(num_keys);
+            for (size_t i = 0; i < num_keys; ++i)
+                key_columns[i] = columns.empty() ? i : header.getPositionByName(columns[i]);
             scatterByPartition(pipeline, num_partitions, key_columns);
         }
         else

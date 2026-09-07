@@ -15,6 +15,8 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
 }
 
+constexpr size_t scatter_connection_count_limit = 1000000;
+
 void checkScatterConnectionLimit(size_t num_partitions, size_t num_streams)
 {
     if (num_partitions * num_streams > scatter_connection_count_limit)

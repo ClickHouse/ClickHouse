@@ -10,6 +10,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/TableJoin.h>
 
 #include <unordered_map>
 #include <unordered_set>
@@ -107,9 +108,8 @@ JoinSide makeJoinSide(
     return {makeSubquery(arm, std::move(projection), result_columns, aliases, context), result_columns};
 }
 
-QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, SubqueryAliases & aliases, const ContextPtr & context)
+QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, JoinStrictness strictness, SubqueryAliases & aliases, const ContextPtr & context)
 {
-    const auto strictness = union_node.getUnionMode() == SelectUnionMode::INTERSECT_DISTINCT ? JoinStrictness::Semi : JoinStrictness::Anti;
     const auto & arms = union_node.getQueries().getNodes();
     const auto result_columns = union_node.computeProjectionColumns();
 
@@ -128,7 +128,6 @@ QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, SubqueryAliases & 
 
     /// Fold from the left: the result of the previous join is the left side of the next one.
     auto left = makeJoinSide(arms.front(), std::move(arm_columns.front()), result_columns, aliases, context);
-    QueryTreeNodePtr result;
     for (size_t arm_index = 1; arm_index < arms.size(); ++arm_index)
     {
         auto right = makeJoinSide(arms[arm_index], std::move(arm_columns[arm_index]), result_columns, aliases, context);
@@ -148,28 +147,28 @@ QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, SubqueryAliases & 
         for (size_t i = 0; i < result_columns.size(); ++i)
             projection.push_back(makeColumn(left.columns[i], left.node));
 
-        result = makeSubquery(std::move(join_node), std::move(projection), result_columns, aliases, context);
-        left = {result, result_columns};
+        left = {makeSubquery(std::move(join_node), std::move(projection), result_columns, aliases, context), result_columns};
     }
 
     /// A semi or anti join never multiplies the left rows, so one DISTINCT over the last join deduplicates everything.
-    auto & result_query = result->as<QueryNode &>();
+    auto & result_query = left.node->as<QueryNode &>();
     result_query.setIsDistinct(true);
     result_query.setIsSubquery(union_node.isSubquery());
     if (union_node.hasAlias())
         result_query.setAlias(union_node.getAlias());
     result_query.setOriginalAST(union_node.getOriginalAST());
-    return result;
+    return left.node;
 }
 
-/// Whether one of the enabled join algorithms can execute a semi or anti join of two subqueries.
-bool joinAlgorithmSupportsSemiJoin(const Settings & settings)
+/// Whether one of the enabled join algorithms can execute a left join of two subqueries with this strictness.
+bool joinAlgorithmSupports(const Settings & settings, JoinStrictness strictness)
 {
-    for (const auto algorithm : settings[Setting::join_algorithm].value)
-        if (algorithm == JoinAlgorithm::DEFAULT || algorithm == JoinAlgorithm::AUTO || algorithm == JoinAlgorithm::HASH
-            || algorithm == JoinAlgorithm::PARALLEL_HASH || algorithm == JoinAlgorithm::GRACE_HASH || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE)
+    const auto & algorithms = settings[Setting::join_algorithm].value;
+    for (const auto algorithm : {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH, JoinAlgorithm::GRACE_HASH, JoinAlgorithm::AUTO, JoinAlgorithm::PREFER_PARTIAL_MERGE})
+        if (TableJoin::isEnabledAlgorithm(algorithms, algorithm))
             return true;
-    return false;
+    /// The partial merge join executes semi joins but not anti joins.
+    return strictness == JoinStrictness::Semi && TableJoin::isEnabledAlgorithm(algorithms, JoinAlgorithm::PARTIAL_MERGE);
 }
 
 struct Replacement
@@ -192,9 +191,6 @@ public:
     /// Bottom-up, so that the arms of a set operation are already rewritten when it is.
     void leaveImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_rewrite_intersect_except_to_join] || !joinAlgorithmSupportsSemiJoin(getSettings()))
-            return;
-
         const auto * union_node = node->as<UnionNode>();
         if (!union_node || union_node->hasRecursiveCTETable() || union_node->isCorrelated())
             return;
@@ -203,7 +199,11 @@ public:
         if (union_mode != SelectUnionMode::INTERSECT_DISTINCT && union_mode != SelectUnionMode::EXCEPT_DISTINCT)
             return;
 
-        auto join_query = buildJoinQuery(*union_node, aliases, getContext());
+        const auto strictness = union_mode == SelectUnionMode::INTERSECT_DISTINCT ? JoinStrictness::Semi : JoinStrictness::Anti;
+        if (!getSettings()[Setting::optimize_rewrite_intersect_except_to_join] || !joinAlgorithmSupports(getSettings(), strictness))
+            return;
+
+        auto join_query = buildJoinQuery(*union_node, strictness, aliases, getContext());
         if (!join_query)
             return;
 
@@ -222,6 +222,7 @@ private:
     std::unordered_set<const IQueryTreeNode *> rewritten;
 };
 
+/// The in-place counterpart of what `IQueryTreeNode::cloneAndReplace` does for the column sources of a replaced node.
 class ReplaceColumnSourcesVisitor : public InDepthQueryTreeVisitor<ReplaceColumnSourcesVisitor>
 {
 public:
@@ -250,10 +251,12 @@ private:
 
 void RewriteIntersectExceptToJoinPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
+    const auto * root = query_tree_node.get();
     RewriteIntersectExceptToJoinVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 
-    if (visitor.replacements.empty())
+    /// No column can be sourced by the root.
+    if (visitor.replacements.empty() || (visitor.replacements.size() == 1 && visitor.replacements.contains(root)))
         return;
 
     ReplaceColumnSourcesVisitor replace_sources_visitor(visitor.replacements);

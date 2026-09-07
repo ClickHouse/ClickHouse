@@ -3,6 +3,9 @@
 -- partitioned transforms must not wait for a left chunk before draining their right input: doing so
 -- deadlocks the pipeline once one partition holds its left port while another still needs right data.
 
+-- The DISTINCT modes are executed as joins by default; this test covers the set-operation step.
+SET optimize_rewrite_intersect_except_to_join = 0;
+
 SELECT count() FROM
 (
     SELECT number % 2 AS x FROM numbers_mt(10000000)
