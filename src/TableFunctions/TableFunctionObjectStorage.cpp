@@ -353,7 +353,7 @@ For GCS, substitute your HMAC key and HMAC secret where you see `access_key_id` 
 | `session_token`                         | Session token to use with the given keys. Optional when passing keys.                                                                                                                                                                                                                                                                                                            |
 | `format`                                | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                                                |
 | `structure`                             | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                    |
-| `compression_method`                    | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `deflate`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression method by file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).  |
+| `compression_method`                    | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension.                                                                                                                                                                                         |
 | `headers`                               | Parameter is optional. Allows headers to be passed in the S3 request. Pass in the format `headers(key=value)` e.g. `headers('x-amz-request-payer' = 'requester')`.                                                                                                                                                                                                               |
 | `partition_strategy`                    | Parameter is optional. Supported values: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy. |
 | `partition_columns_in_data_file`        | Parameter is optional. Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.                                                                                                                                                                                                          |
@@ -796,7 +796,7 @@ See the [Google interoperability docs](https://cloud.google.com/storage/docs/int
 | `hmac_key` and `hmac_secret` | Keys that specify credentials to use with given endpoint. Optional.                                                                                                                      |
 | `format`                     | The [format](/reference/formats/index) of the file.                                                                                                                                        |
 | `structure`                  | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                            |
-| `compression_method`         | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `deflate`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression method by file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default). |
+| `compression_method`         | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension. |
 | `partition_strategy`         | Optional. Supported values: `wildcard` or `hive`. `wildcard` requires `{_partition_id}` in the path. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy. |
 
 <Info>
@@ -986,7 +986,7 @@ As a result, the data is written into three files in different buckets: `my_buck
     factory.registerFunction<TableFunctionObjectStorage<COSNDefinition, StorageS3Configuration>>(
         {
             .description=R"(The table function can be used to read the data stored on COSN.)",
-            .syntax = "cosn(url, access_key_id, secret_access_key)",
+            .examples{{COSNDefinition::name, "SELECT * FROM cosn(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -995,7 +995,7 @@ As a result, the data is written into three files in different buckets: `my_buck
     factory.registerFunction<TableFunctionObjectStorage<OSSDefinition, StorageS3Configuration>>(
         {
             .description=R"(The table function can be used to read the data stored on OSS.)",
-            .syntax = "oss(url, access_key_id, secret_access_key)",
+            .examples{{OSSDefinition::name, "SELECT * FROM oss(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = false}
@@ -1053,7 +1053,7 @@ azureBlobStorage(named_collection[, option=value [,..]])
 | `account_name`                   | Storage account name. **Required** when using `storage_account_url` without SAS; must **not** be passed when using `connection_string`.                                                                                                                                                                                                                               |
 | `account_key`                    | Storage account key. **Required** when using `storage_account_url` without SAS; must **not** be passed when using `connection_string`.                                                                                                                                                                                                                                |
 | `format`                         | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                         |
-| `compression`                    | Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression by file extension (same as setting to `auto`). For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default). |
+| `compression`                    | Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension (same as setting to `auto`).                                                                                                                                                                                       |
 | `structure`                      | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                             |
 | `partition_strategy`             | Optional. Supported values: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `WILDCARD`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `HIVE` when `file_like_engine_default_partition_strategy` is `HIVE`; otherwise it uses no partition strategy. |
 | `partition_columns_in_data_file` | Optional. Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.                                                                                                                                                                                                 |
@@ -2192,7 +2192,7 @@ The command returns a table with `metric_name` and `metric_value` columns showin
         {.allow_readonly = false});
     factory.registerFunction<TableFunctionIcebergS3>(
          {.description = R"(The table function can be used to read from and insert into an existing Iceberg table stored on S3 object storage.)",
-            .syntax = "icebergS3(url, access_key_id, secret_access_key)",
+            .examples{{IcebergS3Definition::name, "SELECT * FROM icebergS3(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = false});
 
@@ -2200,20 +2200,20 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionIcebergAzure>(
          {.description = R"(The table function can be used to read from and insert into an existing Iceberg table stored on Azure object storage.)",
-            .syntax = "icebergAzure(url, access_key_id, secret_access_key)",
+            .examples{{IcebergAzureDefinition::name, "SELECT * FROM icebergAzure(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 #endif
 #if USE_HDFS
     factory.registerFunction<TableFunctionIcebergHDFS>(
          {.description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem.)",
-            .syntax = "icebergHDFS(url)",
+            .examples{{IcebergHDFSDefinition::name, "SELECT * FROM icebergHDFS(url)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 #endif
     factory.registerFunction<TableFunctionIcebergLocal>(
          {.description = R"(The table function can be used to read from and insert into an existing Iceberg table stored locally.)",
-            .syntax = "icebergLocal(filename)",
+            .examples{{IcebergLocalDefinition::name, "SELECT * FROM icebergLocal(filename)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 }
@@ -2339,7 +2339,7 @@ Data types supported in Paimon partition keys:
          {.allow_readonly = false});
     factory.registerFunction<TableFunctionPaimonS3>(
          {.description = R"(The table function can be used to read the Paimon table stored on S3 object store.)",
-            .syntax = "paimonS3(url, access_key_id, secret_access_key)",
+            .examples{{"paimonS3", "SELECT * FROM paimonS3(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 
@@ -2347,20 +2347,20 @@ Data types supported in Paimon partition keys:
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionPaimonAzure>(
          {.description = R"(The table function can be used to read the Paimon table stored on Azure object store.)",
-            .syntax = "paimonAzure(url, access_key_id, secret_access_key)",
+            .examples{{"paimonAzure", "SELECT * FROM paimonAzure(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 #endif
 #if USE_HDFS
     factory.registerFunction<TableFunctionPaimonHDFS>(
          {.description = R"(The table function can be used to read the Paimon table stored on HDFS virtual filesystem.)",
-            .syntax = "paimonHDFS(url)",
+            .examples{{"paimonHDFS", "SELECT * FROM paimonHDFS(url)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 #endif
     factory.registerFunction<TableFunctionPaimonLocal>(
          {.description = R"(The table function can be used to read the Paimon table stored locally.)",
-            .syntax = "paimonLocal(filename)",
+            .examples{{"paimonLocal", "SELECT * FROM paimonLocal(filename)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 }
@@ -2479,7 +2479,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 
     factory.registerFunction<TableFunctionDeltaLakeS3>(
          {.description = R"(The table function can be used to read the DeltaLake table stored on S3.)",
-            .syntax = "deltaLakeS3(url, access_key_id, secret_access_key)",
+            .examples{{DeltaLakeS3Definition::name, "SELECT * FROM deltaLakeS3(url, access_key_id, secret_access_key)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 #endif
@@ -2487,14 +2487,15 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionDeltaLakeAzure>(
          {.description = R"(The table function can be used to read the DeltaLake table stored on Azure object store.)",
-            .syntax = "deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])",
+            .examples{{DeltaLakeAzureDefinition::name, "SELECT * FROM deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, \"\n"
+ "                \"[account_name, account_key, format, compression, structure])", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 #endif
     // Register the new local Delta Lake table function
     factory.registerFunction<TableFunctionDeltaLakeLocal>(
          {.description = R"(The table function can be used to read the DeltaLake table stored locally.)",
-            .syntax = "deltaLakeLocal(path)",
+            .examples{{DeltaLakeLocalDefinition::name, "SELECT * FROM deltaLakeLocal(path)", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 }
@@ -2522,7 +2523,7 @@ hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,co
 | `aws_access_key_id`, `aws_secret_access_key` | Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. These parameters are optional. If credentials are not specified, they are used from the ClickHouse configuration. For more information see [Using S3 for Data Storage](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).  |
 | `format`                                     | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                                                         |
 | `structure`                                  | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                          |
-| `compression`                                | Parameter is optional. Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, compression will be autodetected by the file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).                           |
+| `compression`                                | Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, compression will be autodetected by the file extension.                                                                                                                                                                                                                    |
 | `extra_credentials`                          | Parameter is optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.                                                                                                                                                                                                                    |
 
 ## Returned value {#returned-value}

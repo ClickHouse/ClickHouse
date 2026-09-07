@@ -315,8 +315,6 @@ public:
         }
     }
 
-    bool hasOnlyTypeDefaults() const override;
-
     bool structureEquals(const IColumn & rhs) const override
     {
         return typeid(rhs) == typeid(ColumnVector<T>);

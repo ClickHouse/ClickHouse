@@ -96,8 +96,6 @@ public:
 
     bool isDefaultAt(size_t index) const override;
 
-    bool hasOnlyTypeDefaults() const override;
-
     void insert(const Field & x) override;
 
     bool tryInsert(const Field & x) override;

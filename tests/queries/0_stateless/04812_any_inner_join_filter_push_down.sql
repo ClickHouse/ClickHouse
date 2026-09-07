@@ -18,6 +18,7 @@ SELECT explain FROM (
     EXPLAIN actions = 1
     SELECT * FROM t1 ANY INNER JOIN t2 ON t1.k = t2.k WHERE t2.v = 1
 ) WHERE explain ilike '%Filter column%' OR explain ilike '%Strictness%' OR explain ilike '%Type:%';
+
 SELECT '-- non-key filter must not be pushed to the left side';
 SELECT explain FROM (
     EXPLAIN actions = 1
@@ -45,3 +46,4 @@ SELECT explain FROM (
     EXPLAIN actions = 1
     SELECT * FROM t1 ANY INNER JOIN t2 ON t1.k = t2.k WHERE t1.k = 1
 ) WHERE explain ilike '%Filter column%' OR explain ilike '%Strictness%' OR explain ilike '%Type:%';
+

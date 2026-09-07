@@ -1,6 +1,5 @@
 import argparse
 import ast
-import json
 import os
 import re
 import sys
@@ -11,8 +10,8 @@ sys.path.append("./")
 from ci.praktika.cidb import CIDB
 from ci.praktika.info import Info
 from ci.praktika.result import Result
+from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell
-from ci.settings.settings import SECRET_CI_DB_CONNECTION
 
 # Query to fetch failed tests from CIDB for a given PR.
 # Pre-filters out commit/check_name combinations with >= 20 failures — these indicate
@@ -84,7 +83,6 @@ class Targeting:
         "ci/jobs/scripts/clickhouse_proc.py",
         "ci/jobs/scripts/find_tests.py",
         "ci/jobs/scripts/functional_tests_results.py",
-        "ci/jobs/scripts/log_export.py",
         "ci/jobs/scripts/workflow_hooks/filter_job.py",
         "ci/jobs/scripts/workflow_hooks/store_data.py",
         "ci/jobs/scripts/server_cleanup.py",
@@ -115,14 +113,13 @@ class Targeting:
         # rate/row/time-limited and must be used only for links handed to humans
         # (see CIDB.get_link_to_test_case_statistics).
         if self._cidb is None:
-            conn = json.loads(
-                self.info.get_secret(SECRET_CI_DB_CONNECTION).get_value()
+            url, user, passwd = (
+                self.info.get_secret(Settings.SECRET_CI_DB_URL)
+                .join_with(self.info.get_secret(Settings.SECRET_CI_DB_USER))
+                .join_with(self.info.get_secret(Settings.SECRET_CI_DB_PASSWORD))
+                .get_value()
             )
-            self._cidb = CIDB(
-                url=conn.get("url"),
-                user=conn.get("user"),
-                passwd=conn.get("password"),
-            )
+            self._cidb = CIDB(url=url, user=user, passwd=passwd)
         return self._cidb
 
     # Keep in sync with TEST_FILE_EXTENSIONS in tests/clickhouse-test.

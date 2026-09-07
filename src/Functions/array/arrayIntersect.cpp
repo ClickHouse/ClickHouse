@@ -81,11 +81,6 @@ private:
     {
         size_t base_rows = 0;
 
-        /// Follows the declared return type, not the arguments: some cast paths make every
-        /// argument `Nullable` even when the declaration is not, and an intersection that has a
-        /// not `Nullable` argument cannot contain `NULL`.
-        bool nullable_result = false;
-
         struct UnpackedArray
         {
             bool is_const = false;
@@ -472,7 +467,6 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
     auto cast_columns = castColumns(arguments, result_type, return_type_with_nulls);
 
     UnpackedArrays arrays = prepareArrays(cast_columns.cast, cast_columns.initial);
-    arrays.nullable_result = nested_return_type->isNullable();
 
     ColumnPtr result_column;
     auto not_nullable_nested_return_type = removeNullable(nested_return_type);
@@ -585,6 +579,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     auto args = arrays.args.size();
     auto rows = arrays.base_rows;
 
+    bool all_nullable = true;
     bool has_nullable = false;
 
     VectorWithMemoryTracking<const ColumnType *> columns;
@@ -599,7 +594,9 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         if (!columns.back())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected array type for function arrayIntersect");
 
-        if (arg.null_map)
+        if (!arg.null_map)
+            all_nullable = false;
+        else
             has_nullable = true;
     }
 
@@ -672,7 +669,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 arena.emplace();
         }
 
-        bool all_has_nullable = arrays.nullable_result;
+        bool all_has_nullable = all_nullable;
         bool current_has_nullable = false;
         size_t null_count = 0;
 
@@ -808,11 +805,11 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         }
         else if (mode == ArraySetMode::Intersect)
         {
-            use_null_map = arrays.nullable_result;
+            use_null_map = all_nullable;
 
             for (auto i : collections::range(prev_off[0], off))
             {
-                all_has_nullable = arrays.nullable_result;
+                all_has_nullable = all_nullable;
                 typename Map::LookupResult pair = nullptr;
 
                 if (arg.null_map && (*arg.null_map)[i])
@@ -858,7 +855,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         result_offsets.getElement(row) = result_offset;
     }
     ColumnPtr result_column = std::move(result_data_ptr);
-    if (arrays.nullable_result)
+    if (all_nullable)
         result_column = ColumnNullable::create(result_column, std::move(null_map_column));
     return ColumnArray::create(result_column, std::move(result_offsets_ptr));
 

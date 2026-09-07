@@ -53,7 +53,7 @@ public:
     ProfileInfo & getProfileInfo();
 
     /// Returns the final state of the internal `PipelineExecutor`. Use this after `pull` returned `false`
-    /// to distinguish normal end-of-stream (the status stays `Executing`)
+    /// to distinguish normal end-of-stream (`Executing` — the status is not switched to `Finished`)
     /// from cancellation (`CancelledByTimeout` / `CancelledByUser`).
     PipelineExecutionStatus getExecutionStatus() const;
 

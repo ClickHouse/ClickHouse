@@ -7,7 +7,6 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesLinearRegression.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesChanges.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -192,13 +191,15 @@ AggregateFunctionPtr createWithTypes(const std::string & name, const Array & par
     }
 }
 
-/// Resolves the timestamp and interval types from the timestamp type, then delegates to createWithTypes.
+/// Resolves the timestamp and interval types from the first (timestamp) argument, then delegates to createWithTypes.
 template <
     typename ValueType,
     typename MakeFunction
 >
-AggregateFunctionPtr createWithValueType(const std::string & name, const Array & parameters, const DataTypePtr & timestamp_type, MakeFunction && make_function)
+AggregateFunctionPtr createWithValueType(const std::string & name, const DataTypes & argument_types, const Array & parameters, bool array_arguments, MakeFunction && make_function)
 {
+    const auto & timestamp_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types[0].get())->getNestedType() : argument_types[0];
+
     if (isDateTime64(timestamp_type))
     {
         auto timestamp_decimal = std::dynamic_pointer_cast<const DataTypeDateTime64>(timestamp_type);
@@ -209,22 +210,8 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const Array &
         return createWithTypes<UInt32, Int32, ValueType>(name, parameters, 0, make_function);
     }
 
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the timestamps for aggregate function {}",
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 1st argument (timestamp) for aggregate function {}",
                     timestamp_type->getName(), name);
-}
-
-/// Resolves the value type, then delegates to createWithValueType.
-template <typename MakeFunction>
-AggregateFunctionPtr createWithTimestampAndValueTypes(const std::string & name, const Array & parameters,
-    const DataTypePtr & timestamp_type, const DataTypePtr & value_type, MakeFunction && make_function)
-{
-    if (value_type->getTypeId() == TypeIndex::Float64)
-        return createWithValueType<Float64>(name, parameters, timestamp_type, make_function);
-    if (value_type->getTypeId() == TypeIndex::Float32)
-        return createWithValueType<Float32>(name, parameters, timestamp_type, make_function);
-
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-        "Illegal type {} of the values for aggregate function {}", value_type->getName(), name);
 }
 
 /// Entry point shared by every timeSeries*ToGrid function: validates the arguments, resolves the value type, and
@@ -238,20 +225,6 @@ AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name,
             "Aggregate function {} is experimental and disabled by default. Enable it with setting allow_experimental_time_series_aggregate_functions",
             name);
 
-    if (argument_types.size() == 1)
-    {
-        /// The single argument form: samples are passed as Array(Tuple(timestamp, value)).
-        const auto * array_type = typeid_cast<const DataTypeArray *>(argument_types[0].get());
-        const auto * tuple_type = array_type ? typeid_cast<const DataTypeTuple *>(array_type->getNestedType().get()) : nullptr;
-        if (!tuple_type || tuple_type->getElements().size() != 2)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument for aggregate function {}, expected Array(Tuple(timestamp, value))",
-                argument_types[0]->getName(), name);
-
-        return createWithTimestampAndValueTypes(
-            name, parameters, tuple_type->getElements()[0], tuple_type->getElements()[1], make_function);
-    }
-
     assertBinary(name, argument_types);
 
     if ((argument_types[0]->getTypeId() == TypeIndex::Array) != (argument_types[1]->getTypeId() == TypeIndex::Array))
@@ -259,14 +232,16 @@ AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name,
             "Illegal combination of argument type {} and {} for aggregate function {}, expected both arguments to be arrays or not arrays",
             argument_types[0]->getName(), argument_types[1]->getName(), name);
 
-    if (argument_types[1]->getTypeId() == TypeIndex::Array)
-    {
-        const auto & timestamp_type = typeid_cast<const DataTypeArray *>(argument_types[0].get())->getNestedType();
-        const auto & value_type = typeid_cast<const DataTypeArray *>(argument_types[1].get())->getNestedType();
-        return createWithTimestampAndValueTypes(name, parameters, timestamp_type, value_type, make_function);
-    }
+    const bool array_arguments = argument_types[1]->getTypeId() == TypeIndex::Array;
+    const auto & value_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types[1].get())->getNestedType() : argument_types[1];
 
-    return createWithTimestampAndValueTypes(name, parameters, argument_types[0], argument_types[1], make_function);
+    if (value_type->getTypeId() == TypeIndex::Float64)
+        return createWithValueType<Float64>(name, argument_types, parameters, array_arguments, make_function);
+    else if (value_type->getTypeId() == TypeIndex::Float32)
+        return createWithValueType<Float32>(name, argument_types, parameters, array_arguments, make_function);
+
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        "Illegal type {} of 2nd argument (value) for aggregate function {}", value_type->getName(), name);
 }
 
 }
@@ -278,11 +253,6 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
     FunctionDocumentation::Description description_timeSeriesRateToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like rate](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `rate` are considered within the specified time window.
 
-The samples can be passed in one of three forms:
-- as two arguments `timestamp` and `value`, where each row holds a single sample;
-- as two arrays of timestamps and values, where each row holds a whole time series;
-- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
-
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::warning
@@ -291,7 +261,6 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesRateToGrid = R"(
 timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
-timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesRateToGrid = {
         {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
@@ -300,9 +269,8 @@ timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(sampl
         {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesRateToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesRateToGrid = {"Returns rate values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the rate value for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesRateToGrid = {
@@ -330,7 +298,7 @@ FROM
         )",
         R"(
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                         │
+│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                         │
 └────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
@@ -349,7 +317,7 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
         )",
         R"(
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                           │
+│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                           │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
@@ -376,11 +344,6 @@ Aggregate function that takes time series data as pairs of timestamps and values
 
 The value is the total extrapolated increase of a counter over the window. A decrease between consecutive samples is treated as a counter reset and counted towards the increase, so the result reflects the cumulative growth of the counter even when it restarts from zero.
 
-The samples can be passed in one of three forms:
-- as two arguments `timestamp` and `value`, where each row holds a single sample;
-- as two arrays of timestamps and values, where each row holds a whole time series;
-- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
-
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::warning
@@ -389,7 +352,6 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesIncreaseToGrid = R"(
 timeSeriesIncreaseToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
-timeSeriesIncreaseToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesIncreaseToGrid = {
         {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
@@ -398,9 +360,8 @@ timeSeriesIncreaseToGrid(start_timestamp, end_timestamp, grid_step, staleness)(s
         {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesIncreaseToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesIncreaseToGrid = {"Returns increase values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the increase value for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesIncreaseToGrid = {
@@ -429,7 +390,7 @@ FROM
         R"(
 ┌─timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
 │ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                     │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -448,7 +409,7 @@ SELECT timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(
         R"(
 ┌─timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
 │ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                       │
-└──────────────────────────────────────────────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -473,11 +434,6 @@ SELECT timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like delta](https://prometheus.io/docs/prometheus/latest/querying/functions/#delta) from this data on a regular time grid described by start timestamp, end timestamp and step.
 For each point on the grid the samples for calculating `delta` are considered within the specified time window.
 
-The samples can be passed in one of three forms:
-- as two arguments `timestamp` and `value`, where each row holds a single sample;
-- as two arrays of timestamps and values, where each row holds a whole time series;
-- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
-
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::warning
@@ -486,7 +442,6 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesDeltaToGrid = R"(
 timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
-timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesDeltaToGrid = {
         {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
@@ -495,9 +450,8 @@ timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samp
         {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesDeltaToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesDeltaToGrid = {"Returns delta values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the delta value for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesDeltaToGrid = {
@@ -525,7 +479,7 @@ FROM
         )",
         R"(
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                  │
+│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                 │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
@@ -545,7 +499,7 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
         )",
         R"(
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                    │
+│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                   │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
@@ -570,11 +524,6 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
     FunctionDocumentation::Description description_timeSeriesInstantRateToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like irate](https://prometheus.io/docs/prometheus/latest/querying/functions/#irate) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `irate` are considered within the specified time window.
 
-The samples can be passed in one of three forms:
-- as two arguments `timestamp` and `value`, where each row holds a single sample;
-- as two arrays of timestamps and values, where each row holds a whole time series;
-- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
-
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::warning
@@ -583,7 +532,6 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesInstantRateToGrid = R"(
 timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
-timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesInstantRateToGrid = {
         {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
@@ -592,9 +540,8 @@ timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness
         {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesInstantRateToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesInstantRateToGrid = {"Returns irate values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the instant rate value for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesInstantRateToGrid = {
@@ -668,11 +615,6 @@ SELECT timeSeriesInstantRateToGrid(start_ts, end_ts, step_seconds, window_second
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like idelta](https://prometheus.io/docs/prometheus/latest/querying/functions/#idelta) from this data on a regular time grid described by start timestamp, end timestamp and step.
 For each point on the grid the samples for calculating `idelta` are considered within the specified time window.
 
-The samples can be passed in one of three forms:
-- as two arguments `timestamp` and `value`, where each row holds a single sample;
-- as two arrays of timestamps and values, where each row holds a whole time series;
-- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
-
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::warning
@@ -681,7 +623,6 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesInstantDeltaToGrid = R"(
 timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
-timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesInstantDeltaToGrid = {
         {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
@@ -690,9 +631,8 @@ timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, stalenes
         {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesInstantDeltaToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesInstantDeltaToGrid = {"Returns idelta values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the instant delta value for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesInstantDeltaToGrid = {
@@ -765,11 +705,6 @@ SELECT timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_seconds, window_secon
     FunctionDocumentation::Description description_timeSeriesDerivToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like derivative](https://prometheus.io/docs/prometheus/latest/querying/functions/#deriv) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `deriv` are considered within the specified time window.
 
-The samples can be passed in one of three forms:
-- as two arguments `timestamp` and `value`, where each row holds a single sample;
-- as two arrays of timestamps and values, where each row holds a whole time series;
-- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
-
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::note
@@ -778,7 +713,6 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesDerivToGrid = R"(
 timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
-timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesDerivToGrid = {
         {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
@@ -787,9 +721,8 @@ timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samp
         {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesDerivToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesDerivToGrid = {"`deriv` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the derivative value for a particular grid point.", {}};
     FunctionDocumentation::Examples examples_timeSeriesDerivToGrid = {
@@ -817,7 +750,7 @@ FROM
         )",
         R"(
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                               │
+│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
@@ -836,7 +769,7 @@ SELECT timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
         )",
         R"(
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                                 │
+│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                                │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
@@ -860,11 +793,6 @@ SELECT timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
     FunctionDocumentation::Description description_timeSeriesPredictLinearToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates a [PromQL-like linear prediction](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear) with a specified prediction timestamp offset from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `predict_linear` are considered within the specified time window.
 
-The samples can be passed in one of three forms:
-- as two arguments `timestamp` and `value`, where each row holds a single sample;
-- as two arrays of timestamps and values, where each row holds a whole time series;
-- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
-
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::note
@@ -873,7 +801,6 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesPredictLinearToGrid = R"(
 timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, staleness, predict_offset)(timestamp, value)
-timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, staleness, predict_offset)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesPredictLinearToGrid = {
         {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
@@ -883,9 +810,8 @@ timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, stalene
         {"predict_offset", "Specifies number of seconds of offset to add to prediction time.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesPredictLinearToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesPredictLinearToGrid = {"`predict_linear` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the rate value for a particular grid point.", {}};
     FunctionDocumentation::Examples examples_timeSeriesPredictLinearToGrid = {
@@ -914,7 +840,7 @@ FROM
         )",
         R"(
 ┌─timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seconds, predict_offset)(timestamp, value)─┐
-│ [NULL,NULL,1,9.166667,11.6,12.5,NULL,NULL,16.5]                                                                 │
+│ [NULL,NULL,1,9.166667,11.6,16.916666,NULL,NULL,16.5]                                                            │
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
@@ -933,9 +859,9 @@ WITH
 SELECT timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seconds, predict_offset)(timestamps, values);
         )",
         R"(
-┌─timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seconds, predict_offset)(timestamps, values)─┐
-│ [NULL,NULL,1,9.166667,11.6,12.5,NULL,NULL,16.5]                                                                   │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seconds, predict_offset)(timestamp, value)─┐
+│ [NULL,NULL,1,9.166667,11.6,16.916666,NULL,NULL,16.5]                                                            │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -960,11 +886,6 @@ SELECT timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seco
     FunctionDocumentation::Description description_timeSeriesChangesToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like changes](https://prometheus.io/docs/prometheus/latest/querying/functions/#changes) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `changes` are considered within the specified time window.
 
-The samples can be passed in one of three forms:
-- as two arguments `timestamp` and `value`, where each row holds a single sample;
-- as two arrays of timestamps and values, where each row holds a whole time series;
-- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
-
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::note
@@ -973,7 +894,6 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesChangesToGrid = R"(
 timeSeriesChangesToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
-timeSeriesChangesToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesChangesToGrid = {
         {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
@@ -982,9 +902,8 @@ timeSeriesChangesToGrid(start_timestamp, end_timestamp, grid_step, staleness)(sa
         {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesChangesToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesChangesToGrid = {"`changes` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window to calculate the changes value for a particular grid point.", {}};
     FunctionDocumentation::Examples examples_timeSeriesChangesToGrid = {
@@ -1012,7 +931,7 @@ FROM
         )",
         R"(
 ┌─timeSeriesChangesToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,1,1,0,NULL,0,1,2]                                                            │
+│ [NULL,NULL,0,1,1,1,NULL,0,1,2]                                                            │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
@@ -1030,9 +949,9 @@ WITH
 SELECT timeSeriesChangesToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values);
         )",
         R"(
-┌─timeSeriesChangesToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,1,1,0,NULL,0,1,2]                                                              │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesChangesToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
+│ [NULL,NULL,0,1,1,1,NULL,0,1,2]                                                            │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -1055,11 +974,6 @@ SELECT timeSeriesChangesToGrid(start_ts, end_ts, step_seconds, window_seconds)(t
     FunctionDocumentation::Description description_timeSeriesResetsToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like resets](https://prometheus.io/docs/prometheus/latest/querying/functions/#resets) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `resets` are considered within the specified time window.
 
-The samples can be passed in one of three forms:
-- as two arguments `timestamp` and `value`, where each row holds a single sample;
-- as two arrays of timestamps and values, where each row holds a whole time series;
-- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
-
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::note
@@ -1068,7 +982,6 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesResetsToGrid = R"(
 timeSeriesResetsToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
-timeSeriesResetsToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesResetsToGrid = {
         {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
@@ -1077,9 +990,8 @@ timeSeriesResetsToGrid(start_timestamp, end_timestamp, grid_step, staleness)(sam
         {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesResetsToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesResetsToGrid = {"`resets` values on the specified grid as an `Array(Nullable(Float64))`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window to calculate the resets value for a particular grid point.", {}};
     FunctionDocumentation::Examples examples_timeSeriesResetsToGrid = {
@@ -1107,7 +1019,7 @@ FROM
         )",
         R"(
 ┌─timeSeriesResetsToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,1,1,0,NULL,0,1,2]                                                           │
+│ [NULL,NULL,0,1,1,1,NULL,0,1,2]                                                           │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
@@ -1125,9 +1037,9 @@ WITH
 SELECT timeSeriesResetsToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values);
         )",
         R"(
-┌─timeSeriesResetsToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,1,1,0,NULL,0,1,2]                                                             │
-└────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesResetsToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
+│ [NULL,NULL,0,1,1,0,NULL,0,1,2]                                                           │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -1153,11 +1065,6 @@ Aggregate function that takes time series data as pairs of timestamps and values
 
 Alias: `timeSeriesLastToGrid`.
 
-The samples can be passed in one of three forms:
-- as two arguments `timestamp` and `value`, where each row holds a single sample;
-- as two arrays of timestamps and values, where each row holds a whole time series;
-- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
-
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 :::warning
@@ -1166,7 +1073,6 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesResampleToGridWithStaleness = R"(
 timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step, staleness_window)(timestamp, value)
-timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step, staleness_window)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesResampleToGridWithStaleness = {
         {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
@@ -1175,9 +1081,8 @@ timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step,
         {"staleness_window", "Specifies the maximum staleness of the most recent sample in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesResampleToGridWithStaleness = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
-        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesResampleToGridWithStaleness = {"Returns time series values re-sampled to the specified grid. The returned array contains one value for each time grid point. The value is NULL if there is no sample for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesResampleToGridWithStaleness = {

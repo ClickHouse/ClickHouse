@@ -7,6 +7,7 @@ enum class PipelineExecutionStatus
 {
     NotStarted,
     Executing,
+    Finished,
     Exception,
     CancelledByUser,
     CancelledByTimeout,

@@ -1,5 +1,6 @@
--- Tags: no-fasttest
--- ^^ PromQL grammar needs ANTLR4 (disabled in fast-test).
+-- Tags: no-fasttest, no-replicated-database
+-- ^^ PromQL grammar needs ANTLR4 (disabled in fast-test); the experimental TimeSeries engine does
+-- not round-trip through DatabaseReplicated.
 --
 -- The `prometheusQuery` / `timeSeriesSelector` table functions read their String arguments via
 -- `evaluateConstantExpressionAsColumn` (no `Field`). This pins the compatibility contract the
