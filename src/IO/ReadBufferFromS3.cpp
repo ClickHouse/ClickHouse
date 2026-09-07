@@ -231,7 +231,7 @@ bool ReadBufferFromS3::nextImpl()
                 throw;
 
             /// Pause before next attempt.
-            waitBeforeRetry(sleep_time_with_backoff_milliseconds);
+            sleepForMilliseconds(sleep_time_with_backoff_milliseconds, cancellation_hook);
             sleep_time_with_backoff_milliseconds *= 2;
 
             /// Try to reinitialize `impl`.
@@ -345,7 +345,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             if (!processException(range_begin, attempt) || last_attempt)
                 throw;
 
-            waitBeforeRetry(sleep_time_with_backoff_milliseconds);
+            sleepForMilliseconds(sleep_time_with_backoff_milliseconds, cancellation_hook);
             sleep_time_with_backoff_milliseconds *= 2;
         }
 
@@ -410,24 +410,6 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
     return true;
 }
 
-
-void ReadBufferFromS3::waitBeforeRetry(size_t milliseconds) const
-{
-    if (!cancellation_hook)
-    {
-        sleepForMilliseconds(milliseconds);
-        return;
-    }
-
-    constexpr size_t cancellation_check_interval_ms = 100;
-    while (milliseconds)
-    {
-        cancellation_hook();
-        const auto sleep_ms = std::min(milliseconds, cancellation_check_interval_ms);
-        sleepForMilliseconds(sleep_ms);
-        milliseconds -= sleep_ms;
-    }
-}
 
 off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 {

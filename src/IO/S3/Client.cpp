@@ -952,16 +952,7 @@ void Client::slowDownAfterRetryableError(const std::function<void()> & cancellat
 
         LOG_TRACE(log, "Request failed from a retryable error, now waiting {} ms before retrying", sleep_ms);
 
-        constexpr UInt64 cancellation_check_interval_ms = 100;
-        while (sleep_ms != 0)
-        {
-            if (cancellation_hook)
-                cancellation_hook();
-
-            const auto current_sleep_ms = std::min(sleep_ms, cancellation_check_interval_ms);
-            sleepForMilliseconds(current_sleep_ms);
-            sleep_ms -= current_sleep_ms;
-        }
+        sleepForMilliseconds(sleep_ms, cancellation_hook);
     }
 }
 

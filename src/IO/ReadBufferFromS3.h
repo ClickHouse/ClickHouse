@@ -116,8 +116,6 @@ private:
     /// Returns true if the error looks retriable.
     bool processException(size_t read_offset, size_t attempt) const;
 
-    void waitBeforeRetry(size_t milliseconds) const;
-
     size_t getObjectSizeFromS3() const;
 
     Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
