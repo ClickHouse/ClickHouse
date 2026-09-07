@@ -2399,6 +2399,19 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 "Database {} is an Overlay facade (read-only). Run ATTACH TABLE in an underlying database",
                 backQuoteIfNeed(create.getDatabase()));
 
+    /// A read-only `Overlay` facade with no writable source database cannot receive a table at all,
+    /// so reject that up front too, before any probe of the facade or its sources: the facade-wide
+    /// existence check below walks the sources, so its answer (`TABLE_ALREADY_EXISTS`, a silent
+    /// `IF NOT EXISTS`, or a broken source's own error) would otherwise tell the caller which names
+    /// the hidden sources hold, and the source-side grant check below has nothing to check against.
+    if (const auto * overlay = typeid_cast<const DatabaseOverlay *>(database.get());
+        overlay && overlay->isReadOnly() && !overlay->tryGetTableCreationDatabase())
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only) without a writable source database. "
+            "Run CREATE TABLE in an underlying database",
+            backQuoteIfNeed(create.getDatabase()));
+
     /// `CREATE TABLE` through a read-only `Overlay` facade is delegated to its first writable source
     /// database (see below), and the facade's dual-grant contract applies: the grants for the query
     /// as written (on the facade) were checked already, and the same grants are required on the
