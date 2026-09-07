@@ -66,7 +66,7 @@ bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const 
     return isStorageEligibleForParallelReplicas(storage, has_final, context);
 }
 
-/// A table function returning a table (like `timeSeriesTags` or `timeSeriesSamples`) is read with parallel replicas in the same way as the table itself.
+/// A table function returning a table (like `timeSeriesSamples`) is read with parallel replicas in the same way as the table itself.
 static bool canUseTableFunctionForParallelReplicas(const TableFunctionNode & table_function_node, const ContextPtr & context)
 {
     bool has_final = table_function_node.hasTableExpressionModifiers() && table_function_node.getTableExpressionModifiers()->hasFinal();

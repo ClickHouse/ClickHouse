@@ -80,7 +80,7 @@ public:
     const QueryNode * const parallel_replicas_node = nullptr;
     /// Table which is used with parallel replicas reading.
     /// It is the left-most table of the query (in JOINs, UNIONs and subqueries).
-    /// It's either a table or a table function which returns a table (like `timeSeriesTags` or `timeSeriesSamples`).
+    /// It's either a table or a table function which returns a table (like `timeSeriesSamples`).
     const ITableExpressionNode * const parallel_replicas_table = nullptr;
     /// UNION node whose every child query reads from a table eligible for parallel replicas.
     /// When set, each branch retains parallel replicas reading instead of having it disabled.
