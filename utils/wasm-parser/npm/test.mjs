@@ -3,6 +3,7 @@
 /// file can run from a checkout that has no module. With `--wasm-dir` pointing at the two
 /// artifacts `Build (wasm_parser)` publishes, the C ABI is driven through the wrapper.
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -102,6 +103,54 @@ check('slim parse before init throws', throwsInitHint(() => SlimParser.parse('SE
         'pack writes clickhouse-wasm-parser.tgz',
         stable.status === 0 && stable.stdout.includes('package/parser.wasm'));
 
+    const publishedPkgJson = spawnSync('tar', ['-xOf', tarball, 'package/package.json'], {
+        encoding: 'utf8',
+    });
+    const publishedPkg = publishedPkgJson.status === 0 ? JSON.parse(publishedPkgJson.stdout) : null;
+    check(
+        'checkout pack strips scripts',
+        publishedPkg !== null && publishedPkg.scripts === undefined);
+
+    const fixtureSource = join(packDir, 'with-scripts');
+    await mkdir(join(fixtureSource, 'src'), { recursive: true });
+    const fixturePkg = JSON.parse(await readFile(join(here, 'package.json'), 'utf8'));
+    fixturePkg.scripts = {
+        setup: 'node scripts/setup.mjs',
+        build: 'node scripts/build.mjs',
+        test: 'node test.mjs --wasm-dir .',
+    };
+    await writeFile(join(fixtureSource, 'package.json'), JSON.stringify(fixturePkg, null, 2) + '\n');
+    await writeFile(join(fixtureSource, 'README.md'), '# fixture\n');
+    await writeFile(join(fixtureSource, 'src/parser.mjs'), '');
+    const stripOut = join(packDir, 'strip-out');
+    await mkdir(stripOut);
+    const stripped = spawnSync(
+        process.execPath,
+        [
+            join(here, 'scripts/pack.mjs'),
+            '--wasm-dir', wasmStubDir,
+            '--out-dir', stripOut,
+            '--source-dir', fixtureSource,
+            '--version', '26.9.1-dev.noscripts',
+        ],
+        { encoding: 'utf8' },
+    );
+    check('pack with scripts in source exits 0', stripped.status === 0);
+    if (stripped.status !== 0)
+        console.log(stripped.stdout + stripped.stderr);
+    const packedJson = spawnSync(
+        'tar',
+        ['-xOf', join(stripOut, 'clickhouse-wasm-parser-26.9.1-dev.noscripts.tgz'), 'package/package.json'],
+        { encoding: 'utf8' },
+    );
+    const parsedPkg = packedJson.status === 0 ? JSON.parse(packedJson.stdout) : null;
+    check(
+        'packed package.json has no scripts',
+        packedJson.status === 0 && parsedPkg !== null && parsedPkg.scripts === undefined);
+    check(
+        'tarball does not contain setup.mjs',
+        !listed.includes('package/scripts/setup.mjs'));
+
     await rm(packDir, { recursive: true, force: true });
 }
 
@@ -109,6 +158,13 @@ if (!wasmDir)
 {
     console.log(`\n${pass}/${total} passed (no --wasm-dir; C ABI tests skipped)`);
     process.exit(pass === total ? 0 : 1);
+}
+
+if (!existsSync(join(wasmDir, 'parser.wasm'))
+    || !existsSync(join(wasmDir, 'parser-no-formatting-no-dcl.wasm')))
+{
+    console.error('missing parser.wasm / parser-no-formatting-no-dcl.wasm; run `npm run build` first');
+    process.exit(1);
 }
 
 const fullWasm = pathToFileURL(join(wasmDir, 'parser.wasm'));

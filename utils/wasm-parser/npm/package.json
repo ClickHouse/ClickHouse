@@ -28,5 +28,10 @@
     "parser-no-formatting-no-dcl.wasm",
     "src"
   ],
-  "sideEffects": false
+  "sideEffects": false,
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node test.mjs --wasm-dir ."
+  }
 }

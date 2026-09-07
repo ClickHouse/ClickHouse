@@ -4,7 +4,8 @@ Experimental JavaScript wrapper around the standalone ClickHouse SQL parser
 WebAssembly module. The JS API is unstable. This package is **not published to
 the npm registry**; CI uploads an `npm pack` tarball next to `parser.wasm`.
 
-The C ABI is unchanged. This directory is packaging only.
+The C ABI is unchanged. `scripts/` is local DX for the CMake build; the published
+tarball is still packaging only.
 
 ## Install from CI
 
@@ -51,10 +52,27 @@ return `{ error: { message: 'format is not in this build' } }`.
 `init` is idempotent. The default wasm URL is the file packed next to `src/`
 (`import.meta.url`). In a bundler or worker, pass `{ url }` or `{ bytes }`.
 
-## Pack locally
+## Build locally
 
-From a tree that already has the two wasm artifacts (see the parent
-`utils/wasm-parser/README.md` for the CMake build):
+The `.wasm` modules and the npm tarball are generated; they are not committed.
+
+You need Node.js 22+, `cmake` (>= 3.24), `ninja`, `git`, and `curl`. `setup`
+does not install those — only wasi-sdk 33 for this OS/arch (Linux or macOS,
+x64 or arm64).
+
+```bash
+cd utils/wasm-parser/npm
+npm run setup
+npm run build
+npm test
+```
+
+`setup` downloads wasi-sdk into `<repo>/tmp/wasi-sdk` (or uses `WASI_SDK` if
+that already points at a usable prefix). `build` compiles both wasm
+configurations, copies `parser.wasm` and `parser-no-formatting-no-dcl.wasm`
+next to this package, and writes `tmp/wasm-parser/clickhouse-wasm-parser.tgz`.
+
+If you already have the two wasm artifacts, pack without rebuilding:
 
 ```bash
 node utils/wasm-parser/npm/scripts/pack.mjs \

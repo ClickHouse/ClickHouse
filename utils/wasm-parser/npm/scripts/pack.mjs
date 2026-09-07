@@ -60,6 +60,8 @@ await mkdir(outDir, { recursive: true });
 
 const pkg = JSON.parse(await readFile(join(sourceDir, 'package.json'), 'utf8'));
 pkg.version = version;
+// Local DX scripts (`setup` / `build`) are not part of the published package.
+delete pkg.scripts;
 await writeFile(join(stageDir, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
 await cp(join(sourceDir, 'README.md'), join(stageDir, 'README.md'));
 await cp(join(sourceDir, 'src'), join(stageDir, 'src'), { recursive: true });
