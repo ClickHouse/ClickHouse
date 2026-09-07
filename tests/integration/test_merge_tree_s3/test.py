@@ -8,6 +8,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers, start_s3_mock
+from helpers.network import PartitionManager
 from helpers.utility import generate_values, replace_config
 from helpers.blobs import wait_blobs_count_synchronization
 from helpers.test_tools import assert_eq_with_retry, wait_condition
@@ -37,6 +38,7 @@ def cluster():
             ],
             stay_alive=True,
             with_minio=True,
+            with_zookeeper=True,
         )
 
         cluster.add_instance(
@@ -1020,6 +1022,70 @@ def test_cancelling_mutation_copy_source_stops_s3_retries(
         assert broken_s3.get_request_counts()["object_copy"] > 0
 
     assert_s3_cancelled(node, table, request, broken_s3, request_kind)
+
+
+@pytest.mark.parametrize("operation", ["merge", "mutation"])
+def test_keeper_expiry_cancels_s3_retries(s3_cancellation, broken_s3, operation):
+    node, table = s3_cancellation
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, value UInt32) "
+        f"ENGINE=ReplicatedMergeTree('/test/{table}', 'r1') ORDER BY key "
+        "SETTINGS storage_policy='broken_s3_long_retries'"
+    )
+    if operation == "merge":
+        # Only the explicit `OPTIMIZE` should assign this merge.
+        node.query(f"ALTER TABLE {table} MODIFY SETTING max_replicated_merges_in_queue=0")
+    node.query(f"SYSTEM STOP MERGES {table}")
+    for part in range(1 if operation == "mutation" else 2):
+        node.query(f"INSERT INTO {table} SELECT number + {part * 1000}, number FROM numbers(1000)")
+
+    broken_s3.reset()
+    broken_s3.setup_at_object_upload(action="internal_error", count=10000)
+    if operation == "mutation":
+        node.query(f"ALTER TABLE {table} UPDATE value = value + 1 WHERE 1")
+    node.query(f"SYSTEM START MERGES {table}")
+    if operation == "merge":
+        node.query(f"OPTIMIZE TABLE {table} FINAL SETTINGS alter_sync=0")
+    wait_for_s3_request(broken_s3, "object_upload", count=2)
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.merges WHERE table='{table}' AND is_mutation={int(operation == 'mutation')}",
+        "1",
+    )
+
+    with PartitionManager() as partition:
+        partition.drop_instance_zk_connections(node)
+        assert_eq_with_retry(
+            node,
+            f"SELECT is_session_expired AND is_readonly FROM system.replicas WHERE table='{table}'",
+            "1",
+            retry_count=60,
+            sleep_time=0.5,
+        )
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM system.merges WHERE table='{table}'",
+            "0",
+            retry_count=20,
+            sleep_time=0.1,
+        )
+
+    # Keeper recovery must not wait for S3 recovery. New work may retry again.
+    assert_eq_with_retry(
+        node,
+        f"SELECT is_readonly OR is_session_expired FROM system.replicas WHERE table='{table}'",
+        "0",
+    )
+    broken_s3.reset()
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.mutations WHERE table='{table}' AND NOT is_done",
+        "0",
+    )
+    node.query(f"OPTIMIZE TABLE {table} FINAL", timeout=30)
+    expected = "1000\t500500\n" if operation == "mutation" else "2000\t999000\n"
+    assert node.query(f"SELECT count(), sum(value) FROM {table}") == expected
+    node.query(f"INSERT INTO {table} VALUES (1000, 1000)")
 
 
 @pytest.mark.parametrize("node_name", ["node"])

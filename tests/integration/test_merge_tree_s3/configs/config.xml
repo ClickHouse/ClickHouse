@@ -1,4 +1,7 @@
 <clickhouse>
+    <zookeeper>
+        <session_timeout_ms>5000</session_timeout_ms>
+    </zookeeper>
     <s3>
         <broken_s3>
             <endpoint>http://resolver:8085/root/data/</endpoint>
