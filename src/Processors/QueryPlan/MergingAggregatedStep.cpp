@@ -110,6 +110,9 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
     if (memory_efficient_merge_threads == 0)
         memory_efficient_merge_threads = max_threads;
 
+    /// Forget about current totals and extremes. They will be calculated again after the merge if needed.
+    pipeline.dropTotalsAndExtremes();
+
     if (memoryBoundMergingWillBeUsed())
     {
         if (input_headers.front()->has("__grouping_set") || !grouping_sets_params.empty())

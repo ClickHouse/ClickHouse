@@ -29,10 +29,10 @@ option (ENABLE_DCL "Accept access management - `CREATE USER`, `GRANT` and the re
 # Asserted by the `parser-size` test. A build that legitimately grows past its ceiling should have
 # the number here raised in the same change, deliberately and visibly - these are what a browser
 # downloads. Each is about 8% over the corresponding measurement in README.md.
-set (MAX_SIZE_FULL              1290000 CACHE STRING "Byte ceiling for the default build")
-set (MAX_SIZE_NO_DCL            1070000 CACHE STRING "Byte ceiling for -DENABLE_DCL=OFF")
-set (MAX_SIZE_NO_FORMATTING     1030000 CACHE STRING "Byte ceiling for -DENABLE_FORMATTING=OFF")
-set (MAX_SIZE_NO_FORMATTING_DCL  840000 CACHE STRING "Byte ceiling for both off")
+set (MAX_SIZE_FULL              2220000 CACHE STRING "Byte ceiling for the default build")
+set (MAX_SIZE_NO_DCL            2000000 CACHE STRING "Byte ceiling for -DENABLE_DCL=OFF")
+set (MAX_SIZE_NO_FORMATTING     1065000 CACHE STRING "Byte ceiling for -DENABLE_FORMATTING=OFF")
+set (MAX_SIZE_NO_FORMATTING_DCL  875000 CACHE STRING "Byte ceiling for both off")
 
 if (ENABLE_FORMATTING AND ENABLE_DCL)
     set (MAX_SIZE ${MAX_SIZE_FULL})
@@ -66,7 +66,7 @@ set (SUPPORT_SOURCES
     "${CH}/src/Common/AllocatorWithMemoryTracking.cpp"
     "${CH}/src/Common/CalendarTimeInterval.cpp"
     "${CH}/src/Common/ErrorCodes.cpp"
-    "${CH}/src/Common/Fiber.cpp"
+    "${CH}/src/Common/FiberLocal.cpp"
     "${CH}/src/Common/FieldVisitorConvertToNumber.cpp"
     "${CH}/src/Common/FieldVisitorDump.cpp"
     "${CH}/src/Common/FieldVisitorHash.cpp"
@@ -75,6 +75,7 @@ set (SUPPORT_SOURCES
     "${CH}/src/Common/IntervalKind.cpp"
     "${CH}/src/Common/KnownObjectNames.cpp"
     "${CH}/src/Common/PODArray.cpp"
+    "${CH}/src/Common/StackfulCoroutine.cpp"
     "${CH}/src/Common/StringUtils.cpp"
     "${CH}/src/Common/UTF8Helpers.cpp"
     "${CH}/src/Common/ZooKeeper/ZooKeeperPathUtils.cpp"
@@ -148,10 +149,44 @@ set (SUPPORT_SOURCES
 file (GLOB DOUBLE_CONVERSION_SOURCES CONFIGURE_DEPENDS
     "${CH}/contrib/double-conversion/double-conversion/*.cc")
 
+# `ch_format_json` deserializes AST JSON through `IAST::createFromJSON`, which reads the document
+# with `Poco::JSON::Parser` into `Poco::Dynamic::Var`s - the one place in the module that needs
+# them. Only formatting builds export it, so only they carry these. `pdjson.c` is C and therefore
+# outside the LTO unit, like `wasm_sjlj.c`; unlike it, nothing in pdjson interacts with setjmp or
+# vtables, so that placement is harmless.
+if (ENABLE_FORMATTING)
+    set (AST_JSON_SOURCES
+        "${CH}/base/poco/JSON/src/Array.cpp"
+        "${CH}/base/poco/JSON/src/Handler.cpp"
+        "${CH}/base/poco/JSON/src/JSONException.cpp"
+        "${CH}/base/poco/JSON/src/Object.cpp"
+        "${CH}/base/poco/JSON/src/ParseHandler.cpp"
+        "${CH}/base/poco/JSON/src/Parser.cpp"
+        "${CH}/base/poco/JSON/src/ParserImpl.cpp"
+        "${CH}/base/poco/JSON/src/Stringifier.cpp"
+        "${CH}/base/poco/JSON/src/pdjson.c"
+        "${CH}/base/poco/Foundation/src/JSONString.cpp"
+        "${CH}/base/poco/Foundation/src/Var.cpp"
+        "${CH}/base/poco/Foundation/src/VarHolder.cpp"
+        "${CH}/base/poco/Foundation/src/VarIterator.cpp"
+        # What `Poco::Dynamic::Var` reaches for conversions: number-to-string formatting, and the
+        # date-time types its holders can convert through. `Timezone` is deliberately absent:
+        # its UNIX implementation reads `tzset`/`tzname`, which wasi-libc does not have, so
+        # `wasm_runtime.cpp` answers UTC instead.
+        "${CH}/base/poco/Foundation/src/DateTimeFormat.cpp"
+        "${CH}/base/poco/Foundation/src/NumericString.cpp"
+        "${CH}/base/poco/Foundation/src/LocalDateTime.cpp"
+        "${CH}/base/poco/Foundation/src/Timespan.cpp"
+    )
+else ()
+    set (AST_JSON_SOURCES)
+endif ()
+
 add_executable (parser
     ${PARSER_SOURCES}
     ${SUPPORT_SOURCES}
     ${DOUBLE_CONVERSION_SOURCES}
+    ${AST_JSON_SOURCES}
     wasm_parser.cpp
     wasm_runtime.cpp
     wasm_sjlj.c
@@ -205,6 +240,9 @@ target_compile_definitions (parser PRIVATE
     _WASI_EMULATED_GETPID
     CLICKHOUSE_PARSER_MINIMAL_BUILD
     FMT_USE_LOCALE=0
+    # `NumericString.cpp` spells `std::auto_ptr` without it; the server build gets it from
+    # `base/poco/Foundation/CMakeLists.txt`.
+    POCO_ENABLE_CPP11
     $<$<NOT:$<BOOL:${ENABLE_FORMATTING}>>:CLICKHOUSE_PARSER_NO_FORMATTING>
     $<$<NOT:$<BOOL:${ENABLE_DCL}>>:CLICKHOUSE_PARSER_NO_DCL>
 )
@@ -232,9 +270,9 @@ target_compile_options (parser PRIVATE
 # The one file outside the LTO unit, and the only one that may call `setjmp`; see wasm_sjlj.c.
 set_source_files_properties (wasm_sjlj.c PROPERTIES COMPILE_OPTIONS "-mllvm;-wasm-enable-sjlj")
 
-set (EXPORTS ch_features ch_check ch_alloc ch_free ch_result_data ch_result_size)
+set (EXPORTS ch_features ch_parse ch_alloc ch_free ch_result_data ch_result_size)
 if (ENABLE_FORMATTING)
-    list (APPEND EXPORTS ch_format)
+    list (APPEND EXPORTS ch_format ch_format_json)
 endif ()
 list (TRANSFORM EXPORTS PREPEND "-Wl,--export=")
 
