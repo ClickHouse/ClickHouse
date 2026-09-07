@@ -34,7 +34,11 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -2686,6 +2690,189 @@ static bool tryPrepareSetColumnsForIndex(
     return true;
 }
 
+/// `has` compares array elements with the key values as raw `Field`s, whereas `MergeTreeSetIndex`
+/// converts the elements to the key type with an accurate cast. The two agree only when the raw
+/// representation of the set element type carries the same semantics as the key type. Counter-examples
+/// (see `03916_has_to_in`): `DateTime` stores seconds while `Date` stores days, so
+/// `has([toDateTime(...)], date_key)` is false at runtime while the cast maps the element onto the
+/// matching `Date`; a `String` element never equals an `Enum` value even when it names one of its
+/// labels; the cast pads a `FixedString` with zero bytes. An exact set atom built from such a pair
+/// prunes rows that satisfy the predicate under `notHas`. Allow only pairs where the raw comparison
+/// provably matches the cast:
+///   - identical types (after stripping `Nullable` and `LowCardinality`);
+///   - two native integers: both the `Field` comparison and the cast are numeric across widths and
+///     signs (floats never get here - `tryPrepareSetIndexForHas` rejects them earlier, because the
+///     set index considers two NaNs equal while `has` does not);
+///   - an `Enum` next to a native integer: `has` compares enums numerically (see
+///     `00674_has_array_enum`) and the cast accepts the codes of declared values;
+///   - `Nothing` on the element side: an all-NULL element never equals a non-NULL key value under
+///     `has`, and the accurate-or-null cast likewise keeps it NULL, dropping it from the set;
+///   - `Tuple` / `Array` / `Map` pairs are compared element-wise (`Tuple`s additionally have to
+///     agree on arity and, when both are named, on the names and their order, because the cast
+///     between two named tuples matches elements by name while `has` compares them positionally)
+///     by a stricter rule: inside a
+///     container the runtime comparison is no longer accurate. `accurateEquals` takes the same-type
+///     fast path for two container `Field`s and compares their children with the plain
+///     `Field::operator==`, which requires the same carrier type (an `UInt64` child never equals an
+///     `Int64` child even for the same value). So a nested pair is admissible only when both raw
+///     `Field`s use the same integer carrier: two native integers of the same signedness, or an
+///     `Enum` next to a *signed* native integer (both are carried as `Int64`);
+///   - a `Variant` element is admissible when every contained alternative is, because the raw
+///     `Field` of a `Variant` is its underlying value. Neither a `Variant` nor a `Dynamic` element
+///     describes at the type level what the constant actually holds, so the caller narrows both to
+///     the alternatives the constant column occupies before calling here; a bare `Dynamic` reaching
+///     this check is declined.
+static bool areTypesCompatibleForHasSetIndex(
+    const DataTypePtr & set_element_type, const DataTypePtr & key_column_type, bool within_container = false)
+{
+    const auto set_type = removeNullable(recursiveRemoveLowCardinality(set_element_type));
+    const auto key_type = removeNullable(recursiveRemoveLowCardinality(key_column_type));
+
+    if (isNothing(set_type))
+        return true;
+
+    if (set_type->equals(*key_type))
+        return true;
+
+    const bool set_is_native_integer = isNativeInteger(set_type);
+    const bool key_is_native_integer = isNativeInteger(key_type);
+
+    if (within_container)
+    {
+        /// Children of a container are compared with the plain `Field::operator==`, so the raw
+        /// `Field` carriers must match: native integers of the same signedness, or an `Enum`
+        /// (carried as `Int64`) next to a signed native integer.
+        const bool set_is_signed_carrier = isNativeInt(set_type) || isEnum(set_type);
+        const bool key_is_signed_carrier = isNativeInt(key_type) || isEnum(key_type);
+
+        if (isNativeUInt(set_type) && isNativeUInt(key_type))
+            return true;
+
+        /// Two different `Enum` types never agree: the cast between them maps by name, while the
+        /// raw comparison compares the codes.
+        if (set_is_signed_carrier && key_is_signed_carrier && !(isEnum(set_type) && isEnum(key_type)))
+            return true;
+    }
+    else
+    {
+        if (set_is_native_integer && key_is_native_integer)
+            return true;
+
+        if ((isEnum(set_type) && key_is_native_integer) || (set_is_native_integer && isEnum(key_type)))
+            return true;
+    }
+
+    if (const auto * set_variant_type = typeid_cast<const DataTypeVariant *>(set_type.get()))
+    {
+        for (const auto & alternative : set_variant_type->getVariants())
+        {
+            if (!areTypesCompatibleForHasSetIndex(alternative, key_type, within_container))
+                return false;
+        }
+        return true;
+    }
+
+    const auto * set_tuple_type = typeid_cast<const DataTypeTuple *>(set_type.get());
+    const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get());
+    if (set_tuple_type && key_tuple_type)
+    {
+        const auto & set_elements = set_tuple_type->getElements();
+        const auto & key_elements = key_tuple_type->getElements();
+
+        /// `has` compares two `Tuple` `Field`s positionally and by arity, while the cast follows
+        /// named-tuple semantics: for two *named* tuples it matches elements by name, fills the
+        /// elements missing on the source side with defaults and ignores the extra ones (see
+        /// `04056_tuple_inside_nullable_casting`). Any layout drift therefore makes the set element
+        /// stand for a different value than the one the runtime predicate compares, so a set atom
+        /// built from it could prune rows that satisfy `notHas`. Require the same arity, and, when
+        /// both sides are named, the same names in the same order - only then is the cast
+        /// positional and equivalent to the runtime comparison. A tuple without explicit names is
+        /// always cast positionally, so pairing it with a named one is fine.
+        if (set_elements.size() != key_elements.size())
+            return false;
+
+        if (set_tuple_type->hasExplicitNames() && key_tuple_type->hasExplicitNames()
+            && set_tuple_type->getElementNames() != key_tuple_type->getElementNames())
+            return false;
+
+        for (size_t i = 0; i < set_elements.size(); ++i)
+        {
+            if (!areTypesCompatibleForHasSetIndex(set_elements[i], key_elements[i], /*within_container=*/ true))
+                return false;
+        }
+        return true;
+    }
+
+    const auto * set_array_type = typeid_cast<const DataTypeArray *>(set_type.get());
+    const auto * key_array_type = typeid_cast<const DataTypeArray *>(key_type.get());
+    if (set_array_type && key_array_type)
+        return areTypesCompatibleForHasSetIndex(
+            set_array_type->getNestedType(), key_array_type->getNestedType(), /*within_container=*/ true);
+
+    const auto * set_map_type = typeid_cast<const DataTypeMap *>(set_type.get());
+    const auto * key_map_type = typeid_cast<const DataTypeMap *>(key_type.get());
+    if (set_map_type && key_map_type)
+        return areTypesCompatibleForHasSetIndex(set_map_type->getKeyType(), key_map_type->getKeyType(), /*within_container=*/ true)
+            && areTypesCompatibleForHasSetIndex(set_map_type->getValueType(), key_map_type->getValueType(), /*within_container=*/ true);
+
+    return false;
+}
+
+static bool areSetAndKeyTypesCompatibleForHas(
+    DataTypes set_types,
+    size_t key_args_count,
+    const DataTypes & key_types,
+    const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
+    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping)
+{
+    while (set_types.size() < key_args_count)
+    {
+        DataTypes unpacked_set_types;
+        bool has_tuple = false;
+
+        for (const auto & set_type : set_types)
+        {
+            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(set_type.get()))
+            {
+                has_tuple = true;
+                const auto & tuple_elements = tuple_type->getElements();
+                unpacked_set_types.insert(unpacked_set_types.end(), tuple_elements.begin(), tuple_elements.end());
+            }
+            else
+            {
+                unpacked_set_types.push_back(set_type);
+            }
+        }
+
+        if (!has_tuple)
+            return true;
+
+        set_types = std::move(unpacked_set_types);
+    }
+
+    for (size_t index = 0; index < indexes_mapping.size(); ++index)
+    {
+        const auto set_element_index = indexes_mapping[index].tuple_index;
+        if (set_element_index >= set_types.size())
+            return true;
+
+        /// When the key is a chain of deterministic functions, the set element is pushed through the
+        /// same chain before the comparison, so it is the chain's input - the column `has` compares
+        /// against - whose equality semantics must match, not the key expression result.
+        const auto & compared_type
+            = set_transforming_dags[index].has_value() ? set_transforming_dags[index]->input_type : key_types[index];
+
+        /// With multiple key arguments the right-hand side of `has` is a tuple of key columns, so the
+        /// per-index comparison happens between the children of two `Tuple` `Field`s - with the plain
+        /// `Field::operator==`, not the accurate one.
+        if (!areTypesCompatibleForHasSetIndex(
+                set_types[set_element_index], compared_type, /*within_container=*/ key_args_count > 1))
+            return false;
+    }
+
+    return true;
+}
+
 bool KeyCondition::tryPrepareSetIndexForIn(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
@@ -2789,6 +2976,35 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     return true;
 }
 
+/// A `Variant` column describes at the type level every alternative it *may* hold, but a constant
+/// array usually occupies only some of them. Judging such a constant by its declared alternatives
+/// would decline exact pruning because of branches that carry no value at all, so narrow the type
+/// down to the alternatives that are actually occupied. `ignored_discriminator` skips the shared
+/// variant of a `Dynamic` column, which is handled by the caller.
+static DataTypePtr narrowVariantToOccupiedAlternatives(
+    const ColumnVariant & variant_column, const DataTypes & alternatives, std::optional<size_t> ignored_discriminator = {})
+{
+    DataTypes occupied_types;
+    for (size_t i = 0; i < alternatives.size(); ++i)
+    {
+        if (ignored_discriminator && i == *ignored_discriminator)
+            continue;
+        if (!variant_column.getVariantByGlobalDiscriminator(i).empty())
+            occupied_types.push_back(alternatives[i]);
+    }
+
+    /// A column with no occupied alternative holds nothing but NULLs, which never poison the set:
+    /// they are either dropped by the accurate-or-null conversion or match the NULL of a `Nullable`
+    /// key.
+    if (occupied_types.empty())
+        return std::make_shared<DataTypeNothing>();
+
+    if (occupied_types.size() == 1)
+        return occupied_types.front();
+
+    return std::make_shared<DataTypeVariant>(occupied_types);
+}
+
 bool KeyCondition::tryPrepareSetIndexForHas(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
@@ -2834,17 +3050,27 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     /// considers the two NaNs equal. Do not build a set atom for arrays with floating-point elements,
     /// including nested tuple elements: using it under `notHas` could otherwise prune rows that satisfy
     /// the predicate.
-    bool array_contains_float = WhichDataType(*array_nested_type).isFloat();
-    if (!array_contains_float)
+    auto contains_float = [](const DataTypePtr & type)
     {
-        array_nested_type->forEachChild([&array_contains_float](const IDataType & child)
+        bool found = WhichDataType(*type).isFloat();
+        if (!found)
         {
-            if (!array_contains_float && WhichDataType(child).isFloat())
-                array_contains_float = true;
-        });
-    }
+            type->forEachChild([&found](const IDataType & child)
+            {
+                if (!found && WhichDataType(child).isFloat())
+                    found = true;
+            });
+        }
+        return found;
+    };
 
-    if (array_contains_float)
+    /// `Variant` and `Dynamic` elements are judged by the alternatives the constant column actually
+    /// holds rather than by the declared ones, which is only known below, once the column data is at
+    /// hand.
+    const bool element_type_is_from_column
+        = WhichDataType(*array_nested_type).isDynamic() || WhichDataType(*array_nested_type).isVariant();
+
+    if (!element_type_is_from_column && contains_float(array_nested_type))
         return false;
 
     const auto array_elements = array_col->getDataPtr();
@@ -2854,6 +3080,41 @@ bool KeyCondition::tryPrepareSetIndexForHas(
         /// to a constant.
         out.function = func.getFunctionName() == "has" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE;
         return true;
+    }
+
+    /// Neither a `Dynamic` element nor an unoccupied `Variant` alternative describes what the
+    /// constant actually holds, so derive the checked type from the column instead of the declared
+    /// one. The narrowed type is what both the floating-point guard and the compatibility rule
+    /// below are applied to.
+    DataTypePtr checked_element_type = array_nested_type;
+    if (WhichDataType(*array_nested_type).isDynamic())
+    {
+        const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*array_elements);
+
+        /// Values that overflowed into the shared variant are stored serialized and carry no
+        /// type-level description, so their compatibility cannot be established.
+        if (!dynamic_column.getSharedVariant().empty())
+            return false;
+
+        checked_element_type = narrowVariantToOccupiedAlternatives(
+            dynamic_column.getVariantColumn(),
+            assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariants(),
+            dynamic_column.getSharedVariantDiscriminator());
+    }
+    else if (const auto * variant_element_type = typeid_cast<const DataTypeVariant *>(array_nested_type.get()))
+    {
+        checked_element_type = narrowVariantToOccupiedAlternatives(
+            assert_cast<const ColumnVariant &>(*array_elements), variant_element_type->getVariants());
+    }
+
+    if (element_type_is_from_column && contains_float(checked_element_type))
+        return false;
+
+    if (!out.relaxed)
+    {
+        if (!areSetAndKeyTypesCompatibleForHas(
+                {checked_element_type}, key_args_count, data_types, set_transforming_dags, indexes_mapping))
+            return false;
     }
 
     /// We do not need to unpack tuples inside, because `tryPrepareSetColumnsForIndex` will do it
