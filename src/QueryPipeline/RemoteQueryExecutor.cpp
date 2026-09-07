@@ -1,4 +1,3 @@
-#include <Core/ProtocolDefines.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
@@ -23,7 +22,6 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/ProcessList.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Client/ConnectionEstablisher.h>
 #include <Client/MultiplexedConnections.h>
@@ -43,7 +41,6 @@ namespace ProfileEvents
     extern const Event ReadTaskRequestsReceived;
     extern const Event MergeTreeReadTaskRequestsReceived;
     extern const Event ParallelReplicasAvailableCount;
-    extern const Event DistributedShardsSkipped;
 }
 
 namespace DB
@@ -53,13 +50,10 @@ namespace Setting
     extern const SettingsSeconds max_execution_time;
     extern const SettingsSeconds max_estimated_execution_time;
     extern const SettingsBool skip_unavailable_shards;
-    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool use_hedged_requests;
     extern const SettingsBool push_external_roles_in_interserver_queries;
     extern const SettingsMilliseconds parallel_replicas_connect_timeout_ms;
-    extern const SettingsUInt64 max_network_bandwidth;
-    extern const SettingsUInt64 max_network_bytes;
 }
 
 namespace ErrorCodes
@@ -67,42 +61,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SYSTEM_ERROR;
-    extern const int UNKNOWN_TABLE;
-    extern const int UNKNOWN_DATABASE;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace FailPoints
 {
     extern const char remote_query_executor_cancel_before_send[];
-    extern const char remote_query_executor_receive_packet_pause[];
-    extern const char remote_query_executor_finish_drain_pause[];
 }
-
-ThrottlerPtr getThrottler(const ContextPtr & context)
-{
-    const Settings & settings = context->getSettingsRef();
-
-    ThrottlerPtr user_level_throttler;
-    if (auto process_list_element = context->getProcessListElement())
-        user_level_throttler = process_list_element->getUserNetworkThrottler();
-
-    /// Network bandwidth limit, if needed.
-    ThrottlerPtr throttler;
-    if (settings[Setting::max_network_bandwidth] || settings[Setting::max_network_bytes])
-    {
-        throttler = std::make_shared<Throttler>(
-            settings[Setting::max_network_bandwidth],
-            settings[Setting::max_network_bytes],
-            "Limit for bytes to send or receive over network exceeded.",
-            user_level_throttler);
-    }
-    else
-        throttler = user_level_throttler;
-
-    return throttler;
-}
-
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     const String & query_,
@@ -122,8 +86,6 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , external_tables(external_tables_)
     , stage(stage_)
     , extension(extension_)
-    , skip_unavailable_shards(context->getSettingsRef()[Setting::skip_unavailable_shards])
-    , skip_unavailable_shards_mode(context->getSettingsRef()[Setting::skip_unavailable_shards_mode])
     , priority_func(priority_func_)
     , read_packet_type_separately(context->canUseParallelReplicasOnInitiator() && !context->getSettingsRef()[Setting::use_hedged_requests])
 {
@@ -159,12 +121,12 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             auto table_name = main_table.getQualifiedName();
 
             ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, &table_name);
-            connection_establisher.run(result, fail_message);
+            connection_establisher.run(result, fail_message, /*force_connected=*/true);
         }
         else
         {
             ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, nullptr);
-            connection_establisher.run(result, fail_message);
+            connection_establisher.run(result, fail_message, /*force_connected=*/true);
         }
 
         ConnectionPoolEntries connection_entries;
@@ -174,15 +136,13 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
             const auto protocol_version = result.entry->getServerRevision(ConnectionTimeouts{});
             const auto parallel_replicas_version = result.entry->getParallelReplicasProtocolVersion();
-            const auto query_plan_serialization_version = result.entry->getQueryPlanSerializationVersion();
 
             if (extension_ && extension_->parallel_reading_coordinator)
             {
                 // consider only replicas with support of stream id, otherwise we can get incorrect result
                 // replicas with older version considered as unavailable
                 if (protocol_version >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS
-                    && parallel_replicas_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID
-                    && (!query_plan || query_plan_serialization_version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS))
+                    && parallel_replicas_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
                 {
                     ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount);
 
@@ -191,17 +151,13 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                 else
                 {
                     LOG_DEBUG(
-                        log,
-                        "Disconnecting replica {} (protocol_version={}, parallel_replicas_version={}, "
-                        "query_plan_serialization_version={}): "
-                        "remote replica doesn't support stream id (requires parallel_replicas_version >= {}) or query plan serialization "
-                        "for parallel replicas (requires query_plan_serialization_version >= {})",
+                        log ? log : getLogger("RemoteQueryExecutor"),
+                        "Disconnecting replica {} (protocol_version={}, parallel_replicas_version={}): "
+                        "no stream_id support (requires parallel_replicas_version >= {})",
                         result.entry->getDescription(),
                         protocol_version,
                         parallel_replicas_version,
-                        query_plan_serialization_version,
-                        DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID,
-                        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS);
+                        DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID);
                     result.entry->disconnect();
                 }
             }
@@ -352,10 +308,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
     if (read_context && !established)
     {
         /// Set was_cancelled, so the query won't be sent after creating connections.
-        {
-            LockAndBlocker lock(was_cancelled_mutex);
-            was_cancelled = true;
-        }
+        was_cancelled = true;
 
         /// Cancellation may throw (i.e. some timeout), and in case of pipeline
         /// had not been properly created properly (EXCEPTION_BEFORE_START)
@@ -367,7 +320,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
         }
         catch (...)
         {
-            tryLogCurrentException(log);
+            tryLogCurrentException(log ? log : getLogger("RemoteQueryExecutor"));
         }
     }
 
@@ -375,7 +328,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
       * all connections, then read and skip the remaining packets to make sure
       * these connections did not remain hanging in the out-of-sync state.
       */
-    if (established || ((isQueryPending() || drain_was_skipped) && connections))
+    if (established || (isQueryPending() && connections))
     {
         /// May also throw (so as cancel() above)
         try
@@ -384,7 +337,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
         }
         catch (...)
         {
-            tryLogCurrentException(log);
+            tryLogCurrentException(log ? log : getLogger("RemoteQueryExecutor"));
         }
     }
 }
@@ -499,36 +452,6 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
 
-    /// A distributed query must carry a known initiator version: the receiving server uses it for
-    /// version-gated compatibility decisions (e.g. whether to enable the analyzer, see `TCPHandler`).
-    /// A zero version means the initiating query context was not populated as an initial query
-    /// (a real client always reports its version, and a server that (re-)initiates a query fills it
-    /// with its own version). Sending zero silently triggers wrong compatibility downgrades on the
-    /// remote, so fail loudly instead.
-    if (modified_client_info.client_version_major == 0
-        && modified_client_info.client_version_minor == 0
-        && modified_client_info.client_version_patch == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Sending a distributed query with unknown (zero) client version. "
-            "The query context was not initialized as an initial query");
-
-    /// Forward this node's current roles so the remote scopes row policies the same way (gated by the setting).
-    /// Reset first against stale/injected values, and skip when initial_user was rewritten (remote(user=>...)).
-    modified_client_info.current_roles.reset();
-    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries]
-        && modified_client_info.initial_user == modified_client_info.current_user)
-    {
-        const auto & access_control = context->getAccessControl();
-        Strings current_role_names;
-        for (const auto & role_id : context->getCurrentRoles())
-        {
-            /// tryReadName: skip a concurrently-dropped role (its policies already target nobody).
-            if (auto name = access_control.tryReadName(role_id))
-                current_role_names.push_back(*name);
-        }
-        modified_client_info.current_roles = std::move(current_role_names);
-    }
-
     if (extension)
         modified_client_info.collaborate_with_initiator = true;
 
@@ -569,7 +492,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
 int RemoteQueryExecutor::sendQueryAsync()
 {
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
     LockAndBlocker lock(was_cancelled_mutex);
     if (was_cancelled)
         return -1;
@@ -630,27 +553,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
     while (true)
     {
-        {
-            LockAndBlocker lock(was_cancelled_mutex);
-            if (was_cancelled)
-                return ReadResult(Block());
-        }
-
-        /// Parks the reader in the window this fix is about: `was_cancelled` has just been checked
-        /// and the mutex released, so a parallel `onUpdatePorts` can cancel and drain these
-        /// connections before `receivePacket` below runs.
-        fiu_do_on(FailPoints::remote_query_executor_receive_packet_pause, {
-            in_receive_packet_window = true;
-            FailPointInjection::notifyPauseAndWaitForResume(FailPoints::remote_query_executor_receive_packet_pause);
-            in_receive_packet_window = false;
-        });
-
-        auto packet = connections->receivePacket();
-
         LockAndBlocker lock(was_cancelled_mutex);
         if (was_cancelled)
             return ReadResult(Block());
 
+        auto packet = connections->receivePacket();
         auto anything = processPacket(std::move(packet));
 
         if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::ParallelReplicasToken)
@@ -660,7 +567,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 {
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
     if (!read_context)
     {
         LockAndBlocker lock(was_cancelled_mutex);
@@ -756,31 +663,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             /// We can actually return it, and the first call to RemoteQueryExecutor::read
             /// will return earlier. We should consider doing it.
             if (!packet.block.empty() && (packet.block.rows() > 0))
-            {
-                got_data_from_replica = true;
                 return ReadResult(adaptBlockStructure(packet.block, *header));
-            }
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
         case Protocol::Server::Exception:
             got_exception_from_replica = true;
-
-            if (shouldIgnoreShardException(packet.exception->code()))
-            {
-                if (log)
-                    LOG_ERROR(log,
-                        "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
-                        connections->dumpAddresses(),
-                        packet.exception->displayText());
-
-                reportShardSkipped();
-
-                /// The server terminated the query with this exception and will not send `EndOfStream`,
-                /// so mark the executor finished to signal end of data.
-                finished = true;
-                return ReadResult(Block{});
-            }
-
             packet.exception->rethrow();
             break;
 
@@ -852,28 +739,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
 
 void RemoteQueryExecutor::processReadTaskRequest()
 {
-    /// A ReadTaskRequest arrives only from a worker running a cluster table function or object storage
-    /// source with distributed reads. Serving it needs a task iterator, which only the legitimate
-    /// dispatch paths install; its absence means the source was reached through an outer distribution.
-    if (!extension)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "A cluster table function (s3Cluster, urlCluster, fileCluster, ...) cannot be nested inside "
-            "another distributed query");
-
-    if (!extension->task_iterator)
-    {
-        if (extension->parallel_reading_coordinator)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "A cluster table function or object storage cluster source cannot use distributed "
-                "processing inside a query that runs with parallel replicas");
-
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Received a cluster function read task request, but the query executor has neither a task "
-            "iterator nor a parallel replicas coordinator");
-    }
+    if (!extension || !extension->task_iterator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed task iterator is not initialized");
 
     if (!extension->replica_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica info is not initialized");
@@ -899,16 +766,7 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
     if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
-    /// Followers only block on the response when they actually need it (in-order modes pin
-    /// per-split parts via the response). In `Default` mode the caller discards the response,
-    /// so the round-trip would be pure overhead — skip it on both sides.
-    const bool send_response = announcement.mode != CoordinationMode::Default;
-
-    announcement_received = true;
-
-    auto response = extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
-    if (send_response)
-        connections->sendMergeTreeAllRangesAnnouncementResponse(response);
+    extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
 }
 
 void RemoteQueryExecutor::finish()
@@ -923,45 +781,7 @@ void RemoteQueryExecutor::finish()
       * then you do not need to read anything.
       */
     if (!isQueryPending() || hasThrownException() || was_cancelled)
-    {
-        /// If the query was never sent there is nothing to drain, but we must still mark the
-        /// executor as finished. Otherwise a RemoteSource whose output is closed before it sends
-        /// its query (e.g. an empty-build ANY INNER JOIN that short-circuits the probe side) keeps
-        /// re-entering its drain path via prepare()/work() and spins forever, because isFinished()
-        /// never becomes true.
-        if (!sent_query)
-        {
-            /// Also mark the executor cancelled, not just finished. `RemoteSource::work()` may
-            /// already be queued for execution (its `prepare()` ran before the output port was
-            /// closed), and both `sendQuery` and `sendQueryAsync` gate only on `was_cancelled` -
-            /// never on `finished`. Without this the query is still sent after we declared the
-            /// executor finished, and nothing releases it afterwards: `finish()` returns early
-            /// from here on, and the destructor's `isQueryPending()` is false because `finished`
-            /// is set, so the connection is returned to the pool without a `Cancel` packet and
-            /// without a disconnect. A parallel-replicas follower is then left blocked in
-            /// `receivePartitionMergeTreeReadTaskResponse` for the whole `receive_timeout`,
-            /// holding the table's shared lock and stalling a subsequent `DROP TABLE` (#109265).
-            was_cancelled = true;
-            finished = true;
-        }
-        else if (was_cancelled && !finished && connections)
-        {
-            /// The query was already cancelled (e.g. concurrently from the pipeline) but its
-            /// connections may still hold undelivered packets - the server keeps sending the data,
-            /// `ProfileInfo` and `EndOfStream` that were produced before it observed the cancel.
-            /// We do not drain them here after cancellation, because the read side may already be
-            /// torn down and reading from it could throw or crash (see #95466). But such connections
-            /// must not be returned to the connection pool in this out-of-sync state - otherwise the
-            /// next user of the connection would read a stale packet during establishment, failing
-            /// with "Unexpected packet from server (expected TablesStatusResponse, got ProfileInfo)"
-            /// (see #93018). So disconnect them, forcing a clean reconnect on reuse. This mirrors the
-            /// cleanup done in the destructor, but performs it eagerly so it cannot be skipped if
-            /// `finished` later becomes true through another path.
-            connections->disconnect();
-            finished = true;
-        }
         return;
-    }
 
     /// To make sure finish is only called once
     SCOPE_EXIT({ finished = true; });
@@ -976,18 +796,6 @@ void RemoteQueryExecutor::finish()
     /// If connections weren't created yet, query wasn't sent or was already finished, nothing to do.
     if (!connections || !sent_query || finished)
         return;
-
-    /// `tryCancel` above may have torn the read side down without draining the packet that was in
-    /// flight. The loop below reads from those same connections, and reading from a canceled buffer
-    /// aborts ("ReadBuffer is canceled. Can't read from it."). Disconnect instead of draining, exactly
-    /// as the already-cancelled branch above does and for the same reasons: the read side may be gone
-    /// (#95466), and an out-of-sync connection must not go back to the pool (#93018). `SCOPE_EXIT`
-    /// marks the executor finished on the way out.
-    if (drain_was_skipped)
-    {
-        connections->disconnect();
-        return;
-    }
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
@@ -1005,22 +813,6 @@ void RemoteQueryExecutor::finish()
 
             case Protocol::Server::Exception:
                 got_exception_from_replica = true;
-
-                if (shouldIgnoreShardException(packet.exception->code()))
-                {
-                    if (log)
-                        LOG_ERROR(log,
-                            "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
-                            connections->dumpAddresses(),
-                            packet.exception->displayText());
-
-                    reportShardSkipped();
-
-                    /// Stop draining: the server terminated the query with this exception.
-                    finished = true;
-                    break;
-                }
-
                 packet.exception->rethrow();
                 break;
 
@@ -1052,11 +844,6 @@ void RemoteQueryExecutor::finish()
                 break;
         }
     }
-
-    /// Reached only with this executor's own reader parked above, i.e. with its connections
-    /// cancelled and fully drained - the state that reader will observe when it wakes.
-    if (in_receive_packet_window)
-        FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_pause);
 }
 
 void RemoteQueryExecutor::cancel()
@@ -1076,7 +863,7 @@ void RemoteQueryExecutor::cancelUnlocked()
                 elem->is_cancelled = true;
     }
 
-    if (finished || hasThrownException())
+    if (!isQueryPending() || hasThrownException())
         return;
 
     tryCancel("Cancelling query");
@@ -1167,25 +954,8 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
 
     was_cancelled = true;
 
-    /// A parallel-replicas follower that has not announced yet is still planning, and the only packet
-    /// it owes us is the announcement itself - which is worthless once we are cancelling, because it
-    /// exists to let the coordinator assign ranges we are no longer going to assign. Waiting for it
-    /// means waiting out that replica's whole planning phase (measured at ~290 ms on TPC-H q22 at
-    /// sf=100). Replicas that already announced are drained as before: they may be mid-block.
-    ///
-    /// Only for a query that reads with parallel replicas. `announcement_received` can only ever be set
-    /// by `processMergeTreeInitialReadAnnouncement`, so without this guard every ordinary distributed
-    /// query - which never announces - would skip the drain too, including on the normal completion path
-    /// through `finish()`, and hand a connection back to the pool part-way through a packet.
-    const bool skip_drain = extension && extension->parallel_reading_coordinator && !announcement_received;
-
     if (read_context)
-    {
-        if (skip_drain)
-            read_context->skipDrainOnCancel();
-
         read_context->cancel();
-    }
 
     /// Query could be cancelled during connection creation, query sending or data receiving.
     /// We should send cancel request if connections were already created, query were sent
@@ -1193,14 +963,9 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
     if (connections && sent_query && !finished)
     {
         connections->sendCancel();
-        LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
+        if (log)
+            LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
     }
-
-    /// Skipping the drain leaves the socket part-way through a packet, so it must never go back to the
-    /// pool. The destructor only disconnects while the query is still pending, and `finish()` marks it
-    /// finished right after calling this - so record it and disconnect there unconditionally.
-    if (skip_drain)
-        drain_was_skipped = true;
 }
 
 bool RemoteQueryExecutor::isQueryPending() const
@@ -1211,31 +976,6 @@ bool RemoteQueryExecutor::isQueryPending() const
 bool RemoteQueryExecutor::hasThrownException() const
 {
     return got_exception_from_replica || got_unknown_packet_from_replica;
-}
-
-bool RemoteQueryExecutor::shouldIgnoreShardException(int exception_code) const
-{
-    if (!skip_unavailable_shards)
-        return false;
-
-    /// Never silence `LOGICAL_ERROR` as a shard skip, in any mode: it denotes a programming error
-    /// rather than an expected shard failure, so hiding it would mask real bugs (same as for INSERTs).
-    if (exception_code == ErrorCodes::LOGICAL_ERROR)
-        return false;
-
-    switch (skip_unavailable_shards_mode)
-    {
-        case SkipUnavailableShardsMode::UNAVAILABLE:
-            /// Connection-related failures are skipped while establishing the connection, not here,
-            /// so at this point (a server `Exception` packet) this mode ignores nothing.
-            return false;
-        case SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING:
-            return exception_code == ErrorCodes::UNKNOWN_TABLE || exception_code == ErrorCodes::UNKNOWN_DATABASE;
-        case SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING:
-            /// Ignore only an exception that arrived before the shard returned any data; once some data
-            /// was returned, an exception means partial results and must not be silently accepted.
-            return !got_data_from_replica;
-    }
 }
 
 void RemoteQueryExecutor::setProgressCallback(ProgressCallback callback)
@@ -1257,30 +997,19 @@ bool RemoteQueryExecutor::needToSkipUnavailableShard()
 {
     if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
     {
-        reportShardSkipped();
+        if (!shard_skip_reported && unavailable_shard_tracker)
+        {
+            shard_skip_reported = true;
+            unavailable_shard_tracker->onShardSkipped();
+        }
         return true;
     }
     return false;
 }
 
-void RemoteQueryExecutor::reportShardSkipped()
-{
-    if (shard_skip_reported)
-        return;
-    shard_skip_reported = true;
-
-    ProfileEvents::increment(ProfileEvents::DistributedShardsSkipped);
-
-    /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` if the configured `max_skip_unavailable_shards_num` /
-    /// `max_skip_unavailable_shards_ratio` limits are exceeded, so the safety bounds apply to every
-    /// silently skipped shard regardless of why it was skipped (no connections or an ignored exception).
-    if (unavailable_shard_tracker)
-        unavailable_shard_tracker->onShardSkipped();
-}
-
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 {
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
 
     if (!read_context->readPacketTypeSeparately())
         return false;

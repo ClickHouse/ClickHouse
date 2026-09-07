@@ -10,8 +10,6 @@
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Interpreters/StorageID.h>
 
-namespace Poco::JSON { class Object; }
-
 namespace DB
 {
 
@@ -36,8 +34,6 @@ public:
     String getID(char) const override { return "Storage definition"; }
 
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     bool isExtendedStorageDefinition() const;
 
@@ -77,8 +73,6 @@ public:
     String getID(char) const override { return "Columns definition"; }
 
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     bool empty() const
     {
@@ -141,15 +135,7 @@ public:
     bool is_clone_as : 1 = false;          /// CREATE TABLE ... CLONE AS ...
     bool replace_view : 1 = false;         /// CREATE OR REPLACE VIEW
     bool has_uuid : 1 = false;             /// CREATE TABLE x UUID '...' with a non-`Nil` value (see `has_uuid_clause` for clause-presence tracking)
-    /// Parser saw an explicit `UUID '...'` clause, true even when the value is `Nil`.
-    /// Deliberately outside the tree hash: formatting prints the clause only when `uuid` is not `Nil`
-    /// (and many places - `SHOW CREATE`, `system.tables`, backups - zero `uuid` for display), so a hash
-    /// that depended on this flag would differ from the hash of the reparsed formatted query and
-    /// `ATTACH TABLE t UUID '00000000-0000-0000-0000-000000000000'` would raise `Inconsistent AST
-    /// formatting` in a debug build. The only pair of queries that collide because of that -
-    /// an explicit `Nil` clause and no clause at all - never both execute: `ATTACH` rejects the
-    /// former, and for `CREATE` the clause carries no meaning.
-    bool has_uuid_clause : 1 = false;
+    bool has_uuid_clause : 1 = false;      /// Parser saw an explicit `UUID '...'` clause, true even when the value is `Nil`
     bool has_inner_uuid_clause : 1 = false; /// Parser saw an explicit `TO INNER UUID '...'` clause
     bool is_dictionary : 1 = false;        /// CREATE DICTIONARY
     bool is_watermark_strictly_ascending : 1 = false; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
@@ -165,8 +151,6 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
@@ -209,8 +193,6 @@ public:
     bool isCreateQueryWithImmediateInsertSelect() const;
 
 protected:
-    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
-
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
@@ -218,14 +200,10 @@ protected:
         f(reinterpret_cast<IAST **>(&columns_list), nullptr);
         f(reinterpret_cast<IAST **>(&aliases_list), nullptr);
         f(reinterpret_cast<IAST **>(&storage), nullptr);
-        f(&watermark_function, nullptr);
-        f(&lateness_function, nullptr);
         f(reinterpret_cast<IAST **>(&targets), nullptr);
         f(&as_table_function, nullptr);
         f(reinterpret_cast<IAST **>(&select), nullptr);
         f(&comment, nullptr);
-        f(&sql_security, nullptr);
-        f(reinterpret_cast<IAST **>(&refresh_strategy), nullptr);
         f(reinterpret_cast<IAST **>(&table_overrides), nullptr);
         f(reinterpret_cast<IAST **>(&dictionary_attributes_list), nullptr);
         f(reinterpret_cast<IAST **>(&dictionary), nullptr);

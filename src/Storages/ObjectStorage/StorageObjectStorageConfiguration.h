@@ -2,6 +2,7 @@
 
 #include <Storages/IPartitionStrategy.h>
 #include <Formats/FormatSettings.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -283,32 +284,12 @@ public:
 
     virtual bool optimize(ObjectStoragePtr /*object_storage*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support optimize", getTypeName());
+        return false;
     }
 
     virtual bool supportsPrewhere() const
     {
         return true;
-    }
-
-    /// Whether LIMIT lazy materialization can be used (see optimizeLazyMaterialization2).
-    /// It requires that the physical row numbers of the main read match a later positional
-    /// re-read of the same files, which for data lakes depends on how deletes and schema
-    /// evolution are applied.
-    virtual bool supportsLazyMaterialization(StorageMetadataPtr /*storage_metadata_snapshot*/, ContextPtr /*context*/) const
-    {
-        return true;
-    }
-
-    /// Whether the data files that back this configuration are immutable, i.e. an existing data
-    /// file is never overwritten in place (a change writes a new file). This holds for data lakes
-    /// (a new snapshot references new files) but not for plain object storage, where the object at
-    /// a given path can be overwritten. Lazy materialization rereads the surviving files in a
-    /// second pass; with immutable files that reread is race-free even on backends that cannot pin
-    /// a read to a captured object generation (see ReadFromObjectStorageStep::canUseLazyMaterialization).
-    virtual bool dataFilesAreImmutable() const
-    {
-        return false;
     }
 
     virtual void drop(ContextPtr) {}
@@ -334,8 +315,6 @@ public:
     String compression_method = "auto";
     String structure = "auto";
     PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
-    /// Tracks whether `partition_strategy` was explicitly provided in the engine arguments or a named collection.
-    bool partition_strategy_was_set = false;
     /// Whether partition column values are contained in the actual data.
     /// And alternative is with hive partitioning, when they are contained in file path.
     bool partition_columns_in_data_file = true;
@@ -343,14 +322,7 @@ public:
     /// When false, `initPartitionStrategy` recomputes the default once the effective strategy is known
     /// (which may have been chosen implicitly via `file_like_engine_default_partition_strategy`).
     bool partition_columns_in_data_file_was_set = false;
-    /// Set when `initPartitionStrategy` evaluates an omitted partition strategy.
-    bool partition_strategy_was_inferred = false;
     std::shared_ptr<IPartitionStrategy> partition_strategy;
-
-    /// Set by the storage when it is being loaded from existing metadata (server startup or RESTORE), so the
-    /// S3 client build can downgrade restricted server-managed credentials to anonymous instead of aborting
-    /// startup (see `getClient` and the `s3_load_table_anonymously_if_credentials_restricted` server setting).
-    bool is_loading_from_existing_metadata = false;
 
     /// False when the storage is instantiated from anything other than a user-issued `CREATE`
     /// (ATTACH, server startup, RESTORE, replicated-DDL replay). `initPartitionStrategy` must not
@@ -359,18 +331,6 @@ public:
     /// re-deriving `hive` from the current default on ATTACH would refuse to load it and abort
     /// server startup/upgrade. Defaults to true so table functions keep strict validation.
     bool is_create_query = true;
-
-    /// Set for server-internal tables (e.g. the system log-pipeline S3Queue tables) so their S3 client build
-    /// always downgrades restricted server-managed credentials to anonymous instead of aborting, even when the
-    /// operator disabled `s3_load_table_anonymously_if_credentials_restricted`. Not user-controllable: user
-    /// tables never set it, so it does not weaken the operator's hard-fail choice for user queries. The internal
-    /// table's bootstrap re-credentials the client afterwards.
-    bool force_anonymous_load_fallback = false;
-
-    /// Set when a base-URL setting (e.g. `s3_base`) rewrote a relative URL coming from a named
-    /// collection. `initialize` materializes it back into the engine args so that the persisted
-    /// DDL does not depend on the setting at attach time.
-    String url_overridden_by_base_setting;
 
 protected:
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);

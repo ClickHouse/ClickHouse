@@ -6,10 +6,9 @@ Two backends are supported, selected by flag:
   --codex    OpenAI Codex CLI       (auth: OPENAI_API_KEY from `/ci/llm/openai_api_key`)
   --copilot  GitHub Copilot CLI     (auth: gh robot token from `/ci/robot-ch-test-poll-copilot`)
 
-The backends reach GitHub as different identities. Copilot authenticates with a
-robot token, in a temporary `GH_CONFIG_DIR`. Codex shells out to `gh` with
-`GH_CONFIG_DIR` unset (`GH_PREFIX`), so it runs as the app the job requires to be
-authenticated up front (`enable_gh_auth=True`).
+Both agents shell out to `gh` to post inline review comments, so the gh CLI is
+always authenticated against a temporary `GH_CONFIG_DIR` with the robot token
+regardless of which backend runs the review itself.
 
 The agent writes a free-form Markdown summary to `REVIEW_FILE`. The job script
 then posts that summary via `python3 -m ci.praktika.gh post-or-update --tag review`
@@ -17,9 +16,9 @@ so the top-level comment is always authored by the pre-authenticated app, not
 the agent's robot account.
 
 Each agent occasionally hits transient GitHub authorization errors mid-run
-("Authorization error, you may need to run /login"). The whole attempt is
-wrapped in a retry loop with exponential backoff so a single transient API
-failure does not fail the Code Review job. Authorization-style
+("Authorization error, you may need to run /login"). The whole `gh auth` +
+agent sequence is wrapped in a retry loop with exponential backoff so a single
+transient API failure does not fail the Code Review job. Authorization-style
 failures do not always surface as a Python exception — they show up as a
 non-zero exit code and a missing/empty review file — so both are checked here.
 """
@@ -41,15 +40,18 @@ from ci.praktika.result import Result
 REVIEW_FILE = "./ci/tmp/copilot_review.md"
 GH_PREFIX = "env -u GH_CONFIG_DIR"
 
-# Number of attempts at a full agent run. The agents fetch auth state and make
-# GitHub / model-provider API calls during execution; either layer can hit a
-# transient 5xx / authorization error that no single inner subprocess controls.
-# Retrying the whole sequence is the only reliable way to recover.
+# Number of attempts at the full gh-auth + agent run. The agents fetch
+# auth state and make GitHub / model-provider API calls during execution;
+# either layer can hit a transient 5xx / authorization error that no
+# single inner subprocess controls. Re-authing and retrying the whole
+# sequence is the only reliable way to recover.
 MAX_ATTEMPTS = 3
 
-# Robot gh tokens the Copilot CLI authenticates against GitHub with. Each
-# attempt picks one in a randomised rotation so a single robot's rate limit
-# or token issue does not fail every attempt.
+# Robot gh tokens. Used by both backends — Copilot authenticates against
+# GitHub with one of these directly; Codex needs gh authed so the agent's
+# shelled-out `gh` calls (for posting inline comments) succeed. Each
+# attempt picks one in a randomised rotation so a single robot's rate
+# limit or token issue does not fail every attempt.
 ROBOT_NAMES = [
     "/ci/robot-ch-test-poll-copilot",
     "/ci/robot-ch-test-poll-1-copilot",
@@ -105,18 +107,12 @@ Tools:
   `resolve-pr-review-thread` / `unresolve-pr-review-thread`: they take only `--thread-id` (a globally
   unique GraphQL node id that already identifies the repo) and reject `--repo` with
   `error: unrecognized arguments`.
-- Post ALL new inline findings as ONE batched review, not as separate comments. Write each finding's
-  body to its own Markdown file, then list the findings in a single JSON file: an array of objects
-  `{{"path": "<file>", "line": <N>, "side": "RIGHT", "body_file": "<body.md>"}}` (for a multi-line
-  range add `"start_line": <N>` and `"start_side": "RIGHT"`; use `"side": "LEFT"` for a deleted line).
-  Submit the whole batch with a single call:
-  `{GH_PREFIX} python3 -m ci.praktika.gh post-pr-review --comments-file <comments.json> --commit <sha> --repo {repo_name}`.
-  The wrapper reads each `body_file` and assembles the review payload, so multi-line Markdown is
-  uploaded correctly. Call it exactly once per run, and only if there is at least one new inline finding.
-- Do NOT post new findings as individual comments (`post-pr-line-comment` without `--reply-to`); that
-  is reserved for thread replies (see below). Do NOT call `gh api .../pulls/.../comments`,
-  `gh api .../pulls/.../reviews`, or `gh pr review` directly: the wrappers exist to avoid the
-  `-f`/`-F` and JSON-escaping footguns that have posted literal `@<file>` / `\\n` bodies before.
+- Post a new inline review comment by writing the body to a file and running:
+  `{GH_PREFIX} python3 -m ci.praktika.gh post-pr-line-comment --file <body.md> --commit <sha> --path <file> --line <N> --repo {repo_name} [--side RIGHT|LEFT]`.
+  This wrapper handles `-F body=@<file>` correctly so the file content is uploaded as the body.
+- Do NOT call `gh api .../pulls/.../comments` directly: past runs have posted the literal `@<file>`
+  string as the body when the wrong `gh` flag was used.
+- Do NOT use `gh pr review`; that posts a single batched review, not individual line comments.
 - Fetch inline review threads with:
   `{GH_PREFIX} python3 -m ci.praktika.gh list-pr-review-threads --pr {pr_number} --repo {repo_name}`.
   The command returns JSON; each thread carries its node `id`, `isResolved`, `resolvedBy.login`
@@ -168,11 +164,9 @@ Procedure:
        prematurely or a later commit reintroduced the issue). Re-open silently, no reply needed.
    (b) case 6(b) fires -- re-open AND post the 6(b) reply in the same run.
    Never resolve or unresolve threads whose first comment was authored by anyone else.
-8. For genuinely new issues that do not already have a thread, collect them all into the single
-   batched review described under Tools (one inline comment per issue, on the relevant changed line).
-   For architectural issues that do not map cleanly to one line, attach the comment to the most
-   relevant change in the diff. Submit the whole batch with one `post-pr-review` call; never post new
-   findings one at a time.
+8. For genuinely new issues that do not already have a thread, post individual inline comments on the
+   relevant changed lines. For architectural issues that do not map cleanly to one line, post around
+   the most relevant change in the diff.
 9. Do NOT post inline comments for issues that dedicated CI jobs already catch and report: build /
    compilation failures (missing headers, undeclared symbols, type errors, link errors) and style
    check failures (formatting, linters, `check_cpp.sh` / `check_style.sh` output). These are not
@@ -202,6 +196,17 @@ def _pre_review_prompt(info):
         _pre_review_procedure(info.pr_url),
         _pre_review_output(),
     )
+
+
+def _reauth_gh():
+    """Force re-auth of the main gh context (outside any GH_CONFIG_DIR override).
+
+    Called at job start regardless of current auth status, so the token is
+    always fresh when the agent invokes `env -u GH_CONFIG_DIR`.
+    """
+    from ci.praktika.gh_auth import GHAuth
+
+    GHAuth.auth_from_settings()
 
 
 def _post_review():
@@ -254,13 +259,13 @@ def _run_copilot_once(prompt, robot_name):
             # </dev/null: ensure stdin is definitively non-interactive
             command=f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
                     f"copilot -p {shlex.quote(prompt)} --allow-all --no-ask-user "
-                    f"--add-dir . --model gpt-5.4 --effort xhigh < /dev/null",
+                    f"--add-dir . --model gpt-5.5 --effort xhigh < /dev/null",
             with_info=True,
         )
 
 
-def _run_codex_once(prompt, _robot_name):
-    """Run a single attempt of `codex login` + `codex exec`.
+def _run_codex_once(prompt, robot_name):
+    """Run a single attempt of `gh auth login` + `codex login` + `codex exec`.
 
     Codex stores credentials in `$CODEX_HOME/auth.json` and does NOT consult
     `OPENAI_API_KEY` directly when invoked — you have to run
@@ -269,12 +274,12 @@ def _run_codex_once(prompt, _robot_name):
     temporary directory under `./ci/tmp` (not `/tmp`, which codex refuses
     to use for helper binaries) so the API key never lands on global runner
     state.
-
-    The agent's own `gh` calls run as the app authenticated before the job, so
-    no robot token takes part in this attempt.
     """
     _drop_stale_review_file()
-    with tempfile.TemporaryDirectory(dir="./ci/tmp") as codex_home:
+    with tempfile.TemporaryDirectory() as gh_config_dir, \
+         tempfile.TemporaryDirectory(dir="./ci/tmp") as codex_home:
+        _gh_auth_with_robot_token(gh_config_dir, robot_name)
+
         openai_key = Secret.Config(
             name=OPENAI_KEY_SECRET, type=Secret.Type.AWS_SSM_PARAMETER
         ).get_value()
@@ -286,10 +291,11 @@ def _run_codex_once(prompt, _robot_name):
 
         return Result.from_commands_run(
             name="codex review",
-            # -m gpt-5.4: same model the Copilot CLI uses, so
+            # -m gpt-5.5: same model the Copilot CLI uses, so
             #   review quality stays comparable across backends.
             # -s workspace-write: writable workspace + /tmp + CODEX_HOME,
-            #   read-only elsewhere; sufficient for the review output.
+            #   read-only elsewhere; sufficient for review output and
+            #   the gh CLI's /tmp config dir.
             # sandbox_workspace_write.network_access=true: the agent
             #   shells out to `gh` to post inline comments, which needs
             #   network.
@@ -298,8 +304,9 @@ def _run_codex_once(prompt, _robot_name):
             #   agent execute without blocking on an approval request.
             # --color never: no ANSI codes in the job log.
             command=f"CODEX_HOME={shlex.quote(codex_home)} "
+                    f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
                     f"codex exec "
-                    f"-m gpt-5.4 -c 'model_reasoning_effort=xhigh' "
+                    f"-m gpt-5.5 -c 'model_reasoning_effort=xhigh' "
                     f"-s workspace-write "
                     f"-c sandbox_workspace_write.network_access=true "
                     f"-c approval_policy=never "
@@ -312,9 +319,9 @@ def _run_codex_once(prompt, _robot_name):
 def _run(prompt, run_once, agent_name):
     """Run the chosen agent with retries, then post the review comment.
 
-    Each attempt re-fetches secrets and re-runs the agent. The attempt counts
-    as success only if the subprocess exits 0 AND `REVIEW_FILE` was written
-    with non-empty content.
+    Each attempt re-fetches secrets, re-auths the temporary `GH_CONFIG_DIR`,
+    and re-runs the agent. The attempt counts as success only if the
+    subprocess exits 0 AND `REVIEW_FILE` was written with non-empty content.
     """
     last_error = None
     robots = ROBOT_NAMES.copy()
@@ -362,6 +369,7 @@ def review(run_once, agent_name):
         print("Not a PR, skipping")
         return
 
+    _reauth_gh()
     os.makedirs("./ci/tmp", exist_ok=True)
     prompt = _pre_review_prompt(info)
     _run(prompt, run_once, agent_name)

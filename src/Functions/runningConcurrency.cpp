@@ -220,7 +220,7 @@ If events from different data blocks overlap then they can not be processed corr
 :::
 
 :::warning Deprecated
-It is advised to use [window functions](/reference/functions/window-functions) instead.
+It is advised to use [window functions](/sql-reference/window-functions) instead.
 :::
 )";
         FunctionDocumentation::Syntax syntax = "runningConcurrency(start, end)";
@@ -233,9 +233,6 @@ It is advised to use [window functions](/reference/functions/window-functions) i
         {
             "Usage example",
             R"(
-CREATE TABLE example_table (start Date, end Date) ENGINE = Memory;
-INSERT INTO example_table VALUES ('2025-03-03', '2025-03-11'), ('2025-03-06', '2025-03-08'), ('2025-03-07', '2025-03-09'), ('2025-03-11', '2025-03-12');
-
 SELECT start, runningConcurrency(start, end) FROM example_table;
             )",
             R"(
@@ -243,7 +240,7 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
 │ 2025-03-03 │                              1 │
 │ 2025-03-06 │                              2 │
 │ 2025-03-07 │                              3 │
-│ 2025-03-11 │                              1 │
+│ 2025-03-11 │                              2 │
 └────────────┴────────────────────────────────┘
             )"
         }
