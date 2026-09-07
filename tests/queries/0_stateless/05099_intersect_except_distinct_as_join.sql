@@ -1,5 +1,9 @@
 -- INTERSECT DISTINCT and EXCEPT DISTINCT are executed as a SEMI or ANTI LEFT JOIN on all columns followed by DISTINCT.
 
+-- The CI test config sets the global DISTINCT size limits, and a single thread keeps the preliminary DISTINCT in the plans below.
+SET max_rows_in_distinct = 0, max_bytes_in_distinct = 0;
+SET max_threads = 4;
+
 DROP TABLE IF EXISTS t_set_left;
 DROP TABLE IF EXISTS t_set_right;
 DROP TABLE IF EXISTS t_set_third;
