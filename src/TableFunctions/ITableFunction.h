@@ -60,6 +60,12 @@ public:
 
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 
+    /// Rewrites the arguments so that they don't depend on the current database, for example qualifies
+    /// table names with a database name. It's used to serialize a query which is sent to other servers
+    /// (for example, to parallel replicas), where the current database can be different.
+    /// By default the arguments are left unchanged.
+    virtual void qualifyArgumentsWithDatabase(ASTs & /* arguments */) const {}
+
     /// Returns actual table structure probably requested from remote server, may fail
     virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/, bool is_insert_query) const = 0;
 

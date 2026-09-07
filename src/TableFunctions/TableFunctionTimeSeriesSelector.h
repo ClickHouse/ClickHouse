@@ -20,6 +20,7 @@ public:
 
 private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    void qualifyArgumentsWithDatabase(ASTs & arguments) const override;
 
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
