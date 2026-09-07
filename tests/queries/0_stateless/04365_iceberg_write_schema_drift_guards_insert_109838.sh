@@ -22,17 +22,24 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # ============================================================================================
 # INSERT sink
 # ============================================================================================
-# These two scenarios run in clickhouse-local, not against the shared test server: on unpatched
-# master the column-count-mismatch INSERT aborts the process (getColumnSizes indexes field_ids[]
-# out of bounds). Against clickhouse-client that abort lands in the long-running server, the
-# hung-check terminates the runner before a FAIL is recorded, and Bugfix validation cannot invert
-# it to OK (amd64 tolerates it, aarch64 reports "server died"). clickhouse-local contains the
-# abort to a short-lived subprocess: the runner sees a non-zero exit + empty stdout, diffs it
-# against .reference, and reports a normal FAIL. The sibling table on the same path is a second
+# These scenarios run in clickhouse-local, not against the shared test server: the write they
+# exercise aborted the process on unpatched master (getColumnSizes indexed field_ids[] out of
+# bounds). Against clickhouse-client that abort lands in the long-running server, the hung-check
+# terminates the runner before a FAIL is recorded, and Bugfix validation cannot invert it to OK
+# (amd64 tolerates it, aarch64 reports "server died"). clickhouse-local contains the abort to a
+# short-lived subprocess: the runner sees a non-zero exit + empty stdout, diffs it against
+# .reference, and reports a normal FAIL. The sibling table on the same path is a second
 # IcebergLocal attachment (a different table name), matching the server scenario; clickhouse-local
 # only rejects a second attachment under the SAME name, so distinct names work here.
+#
+# What the three sibling-ALTER scenarios pin is the absence of that abort, not a rejection: the
+# materialized view's target has its Iceberg metadata refreshed before the sink is built, so the
+# write is mapped onto the CURRENT schema and the rows read back below are what lands. A MergeTree
+# target under the same ALTER stores the same rows, so the values are materialized-view semantics
+# rather than an Iceberg-specific narrowing. A sink that still sees a stale input header rejects
+# it; that path is exercised in part 5.
 
-# --- INSERT column-count mismatch (sibling DROP COLUMN): rejected, no abort ------------------
+# --- INSERT after a sibling DROP COLUMN: mapped onto the narrowed schema, no abort ------------
 INSERT_DIR="${CLICKHOUSE_TMP}/04365_insert_dropcol_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 rm -rf "${INSERT_DIR}"; mkdir -p "${INSERT_DIR}/t"
 ${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 --async_insert=0 --multiquery -q "
@@ -43,10 +50,13 @@ CREATE MATERIALIZED VIEW mv TO t AS SELECT c0, c1, c2 FROM src;
 CREATE TABLE IF NOT EXISTS tsib (c0 Int64, c1 Int64, c2 Int64) ENGINE = IcebergLocal('${INSERT_DIR}/t/', 'Avro');
 ALTER TABLE tsib DROP COLUMN c2;
 INSERT INTO src VALUES (1, 2, 3);
-" -- --user_files_path="${INSERT_DIR}" 2>&1 | grep -oF "BAD_ARGUMENTS" | head -1
+SELECT 'drop_col', c0, c1 FROM t ORDER BY c0;
+" -- --user_files_path="${INSERT_DIR}" < /dev/null 2>&1 | grep -oE "^drop_col\s\S.*$"
 rm -rf "${INSERT_DIR}"
 
-# --- INSERT same-width RENAME drift: rejected by the full (names+types) check -----------------
+# --- INSERT after a sibling RENAME COLUMN: the renamed field takes its default ----------------
+# The view supplies c1, the refreshed schema wants c1_renamed, so the field is written from its
+# default (0) and c1's value is not carried over. Read back, so a corrupted write cannot pass.
 RENAME_DIR="${CLICKHOUSE_TMP}/04365_insert_rename_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 rm -rf "${RENAME_DIR}"; mkdir -p "${RENAME_DIR}/t"
 ${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 --async_insert=0 --multiquery -q "
@@ -57,7 +67,8 @@ CREATE MATERIALIZED VIEW mv TO t AS SELECT c0, c1 FROM src;
 CREATE TABLE IF NOT EXISTS tsib (c0 Int64, c1 Int64) ENGINE = IcebergLocal('${RENAME_DIR}/t/', 'Avro');
 ALTER TABLE tsib RENAME COLUMN c1 TO c1_renamed;
 INSERT INTO src VALUES (1, 2);
-" -- --user_files_path="${RENAME_DIR}" 2>&1 | grep -oF "BAD_ARGUMENTS" | head -1
+SELECT 'rename', c0, c1_renamed FROM t ORDER BY c0;
+" -- --user_files_path="${RENAME_DIR}" < /dev/null 2>&1 | grep -oE "^rename\s\S.*$"
 rm -rf "${RENAME_DIR}"
 
 # --- No drift, but the write mapping collapses the type: accepted -----------------------------
@@ -97,9 +108,9 @@ SELECT 'ok_dt64', toString(c0) FROM t_dt64;
 " -- --user_files_path="${LOSSY_DIR}" < /dev/null 2>&1 | grep -oE "^ok_(u32|u64|date|dt64)\s\S.*$"
 rm -rf "${LOSSY_DIR}"
 
-# --- Same-name column whose current Iceberg type really changed (int -> long): rejected -------
-# Pins that the equivalence check is not a blanket "same name is enough": the guard must still
-# reject a genuine Iceberg-primitive change under an unchanged column name.
+# --- INSERT after a sibling MODIFY COLUMN (int -> long): the value is widened, not truncated --
+# Same column name, genuinely different Iceberg primitive: the view's Int32 value must arrive
+# under the schema's current long type, so read it back rather than counting rows.
 MODIFY_DIR="${CLICKHOUSE_TMP}/04365_insert_modify_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 rm -rf "${MODIFY_DIR}"; mkdir -p "${MODIFY_DIR}/t"
 ${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 --async_insert=0 --multiquery -q "
@@ -110,5 +121,6 @@ CREATE MATERIALIZED VIEW mv TO t AS SELECT c0 FROM src;
 CREATE TABLE IF NOT EXISTS tsib (c0 Int32) ENGINE = IcebergLocal('${MODIFY_DIR}/t/', 'Avro');
 ALTER TABLE tsib MODIFY COLUMN c0 Int64;
 INSERT INTO src VALUES (1);
-" -- --user_files_path="${MODIFY_DIR}" < /dev/null 2>&1 | grep -oF "BAD_ARGUMENTS" | head -1
+SELECT 'modify', toString(c0) FROM t ORDER BY c0;
+" -- --user_files_path="${MODIFY_DIR}" < /dev/null 2>&1 | grep -oE "^modify\s\S.*$"
 rm -rf "${MODIFY_DIR}"
