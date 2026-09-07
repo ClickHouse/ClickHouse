@@ -53,6 +53,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageTimeSeries.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
 #include <Interpreters/Context.h>
@@ -203,6 +206,37 @@ namespace fs = std::filesystem;
 
 namespace
 {
+
+/// How many tables a single `CREATE` adds to the database. Usually one, but the engines with
+/// hidden inner tables (`MaterializedView`, `TimeSeries`) issue nested internal `CREATE`s from
+/// their constructors, before the outer object itself is attached. The whole group must be
+/// accounted for in the `max_tables` check at once: otherwise the inner tables are created first
+/// and the outer attach is then rejected by the quota, leaving them behind.
+size_t getNumberOfTablesToCreate(const ASTCreateQuery & create, LoadingStrictnessLevel mode)
+{
+    /// On `ATTACH` the inner tables already exist and are attached by their own queries.
+    if (mode >= LoadingStrictnessLevel::ATTACH)
+        return 1;
+
+    size_t result = 1;
+
+    if (create.is_materialized_view_with_inner_table())
+        ++result;
+
+    if (create.is_time_series_table)
+    {
+        for (auto target_kind : StorageTimeSeries::getTargetKinds())
+        {
+            /// The recent samples target exists only if the create query has a `RECENT SAMPLES` clause.
+            if ((target_kind == ViewTarget::RecentSamples) && (!create.targets || !create.targets->tryGetTarget(target_kind)))
+                continue;
+            if (!create.hasTargetTableID(target_kind))
+                ++result;
+        }
+    }
+
+    return result;
+}
 
 /// Substitutes SQL UDFs the way `createTable` does, but never into an engine: an engine is an
 /// `ASTFunction` too, and a UDF may carry an engine's name, so substituting there would replace the
@@ -868,6 +902,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
+        if (mode < LoadingStrictnessLevel::ATTACH)
+            properties.constraints.assertPreserveRowCount();
     }
     else if (!create.as_table.empty())
     {
@@ -2467,6 +2503,12 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (!internal && is_initial_query && !is_predefined_database)
         throwIfTooManyEntities(create);
 
+    /// Check the per-database `max_tables` limit before constructing the storage: the storage
+    /// constructor can already create data on disk, as well as the hidden inner tables of a view,
+    /// and all of that would be left behind if the table were rejected later.
+    if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
+        database_on_disk->checkTablesLimit(getNumberOfTablesToCreate(create, mode));
+
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
@@ -2650,8 +2692,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     /// with a full-access context derived from the global context -- mirroring how inner tables of a
     /// materialized view are dropped (see `InterpreterDropQuery::executeDropQuery`). Settings and any
     /// Replicated-database ZooKeeper transaction are propagated so the operations behave and replicate
-    /// correctly. This is used only for the plain-create case; REPLACE keeps running as the user (its
-    /// required access already includes DROP).
+    /// correctly. This is used only for the plain-create case; REPLACE keeps running as the user, whose
+    /// query context its publishing rename has to reach (see the rename below).
     ///
     /// `bypass_size_guard` additionally zeroes `max_table_size_to_drop` / `max_partition_size_to_drop`. The
     /// size guard is meaningful only for user-visible tables; a populated-then-abandoned temporary table can
@@ -2797,6 +2839,12 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         ast_drop->is_dictionary = create.is_dictionary;
         ast_drop->setDatabase(create.getDatabase());
         ast_drop->kind = ASTDropQuery::Drop;
+        /// Every DROP issued through this AST addresses the internal temporary name, which no grant can
+        /// cover: on the failure path it is the temporary table this call created, and after a successful
+        /// EXCHANGE it is the replaced table, whose drop `pre_swap_check` below already authorized against
+        /// its own user-visible name and kind. Authorizing the random name could only produce a spurious
+        /// `ACCESS_DENIED`, so skip the check.
+        ast_drop->no_access_check = true;
     }
 
     /// The populating INSERT SELECT runs against the internal temporary table, so its (random) name is
@@ -2828,16 +2876,17 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// If table has dependencies - add them to the graph
         addTableDependencies(create, query_ptr, getContext());
 
-        /// For a plain `CREATE TABLE ... AS SELECT` the populate below runs against the internal temporary
-        /// table, so `InterpreterInsertQuery` would authorize `INSERT` on the random `_tmp_replace_*` name
-        /// rather than the final name. That would regress table-scoped grants: before this PR the plain-create
-        /// path checked `INSERT` on the final name directly, so `CREATE TABLE` + `INSERT ON db.dst` (not a
-        /// wildcard grant) was sufficient. To preserve that contract, authorize `INSERT` on the final name up
-        /// front -- as the user, over the columns that will be inserted -- and then skip the redundant
-        /// target-`INSERT` check on the temporary name inside the populate. The source `SELECT` access is
-        /// still checked by the populate as the user. REPLACE keeps its prior behavior: it never required
-        /// `INSERT` on the final name (only DROP/CREATE), so it does not get the up-front check or the skip.
-        if (is_plain_create && create.isCreateQueryWithImmediateInsertSelect())
+        /// The populate below runs against the internal temporary table, so `InterpreterInsertQuery` would
+        /// authorize `INSERT` on the random `_tmp_replace_*` name rather than the final name -- a privilege
+        /// no grant can express (issue #90919) and one the user does not need. Authorize `INSERT` on the
+        /// final name up front instead -- as the user, over the columns that will be inserted -- and then
+        /// skip the redundant target-`INSERT` check on the temporary name inside the populate. The source
+        /// `SELECT` access is still checked by the populate as the user. This is the same contract as
+        /// populating the final table directly: both a plain `CREATE TABLE ... AS SELECT` (which on a
+        /// non-Atomic database still inserts into the final name) and a plain
+        /// `CREATE MATERIALIZED VIEW ... POPULATE` require `INSERT` on the final name, so a table-scoped
+        /// `CREATE TABLE` + `INSERT ON db.dst` grant is sufficient here too.
+        if (create.isCreateQueryWithImmediateInsertSelect())
         {
             auto temp_table = DatabaseCatalog::instance().getTable(
                 StorageID{create.getDatabase(), create.getTable(), create.uuid}, current_context);
@@ -2850,7 +2899,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// Try fill temporary table. Note: POPULATE here uses the legacy, non-atomic population - the
         /// atomic path is only wired into the plain CREATE flow, not the create-or-replace flow (which
         /// populates a temporary table and then atomically swaps it in via EXCHANGE/RENAME).
-        BlockIO fill_io = fillTableIfNeeded(create, /*skip_target_insert_access_check=*/is_plain_create);
+        BlockIO fill_io = fillTableIfNeeded(create, /*published_table_name=*/table_to_replace_name);
         /// For queries like 'CREATE OR REPLACE TABLE ... AS SELECT * INSERT' might take a long time,
         /// passing this callback allows tcp sessions to send progress, stats and logs.
         /// It prevents getting socket timeout as well.
@@ -2902,9 +2951,20 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// If it throws, no rename happens and the catch block below drops the temp. For a plain create the
         /// rename publishes an internal temporary table under the final name, so it runs with a full-access
         /// context (the user is not required to hold RENAME/DROP on the temporary table); REPLACE keeps
-        /// running as the user.
+        /// running as the user, because the rename has to invalidate this query's storage cache for the
+        /// swapped names, and that cache lives on the user's query context (see the `dropStorageCacheEntry`
+        /// calls in `InterpreterRenameQuery::executeToTables` and issue #108726).
+        ///
+        /// The access check of the rename itself is skipped either way: it authorizes `SELECT` and
+        /// `DROP TABLE` on the name it renames from -- the random `_tmp_replace_*` name here, which no grant
+        /// can cover (issue #90919) -- and `CREATE TABLE` and `INSERT` on the name it renames to, which for a
+        /// replaced view or dictionary are not even the grants of its kind. The privileges that matter are
+        /// checked against user-visible names instead: `CREATE`/`DROP` on the final name up front (see
+        /// `getRequiredAccess`) and `DROP` of the replaced table's own kind in `pre_swap_check` below, which
+        /// still runs as the user.
         ContextPtr rename_context = is_plain_create ? ContextPtr{make_internal_context(/*bypass_size_guard=*/false)} : current_context;
         InterpreterRenameQuery interpreter_rename{ast_rename, rename_context};
+        interpreter_rename.setSkipAccessCheck(true);
         interpreter_rename.setPreSwapCheck(
             [&current_context](const StorageID & to_drop_id)
             {
@@ -2947,9 +3007,6 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             /// kind than the new one (e.g. a dictionary replaced by a view), so the drop must match its kind.
             if (auto replaced = DatabaseCatalog::instance().tryGetTable(StorageID{create.getDatabase(), create.getTable()}, current_context))
                 ast_drop->is_dictionary = replaced->isDictionary();
-            /// `pre_swap_check` already authorized this drop against the replaced table's real name.
-            /// The temporary name cannot be covered by grants, so skip the access check on it.
-            ast_drop->no_access_check = true;
             /// `pre_swap_check` also gated the size; bypass to avoid double-consuming
             /// the `force_drop_table` flag inside `Context::checkCanBeDropped`.
             auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
@@ -2972,11 +3029,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     catch (...)
     {
         /// Drop the temp table we just created if it was not renamed to the target name.
-        /// Bypassing the size guard is safe here: the temp name is unique to this call. For a plain create
-        /// use a full-access context (also size-guard-bypassed): the user is not required to hold DROP on the
-        /// internal temporary table (its cleanup must not turn a denied source SELECT into an ACCESS_DENIED on
-        /// the temporary table), and the cleanup must succeed even after the temporary table has grown past
-        /// `max_table_size_to_drop`, or a late failure would strand it.
+        /// Bypassing the size guard is safe here: the temp name is unique to this call, and the cleanup must
+        /// succeed even after the temporary table has grown past `max_table_size_to_drop`, or a late failure
+        /// would strand it. The user is not required to hold DROP on the internal temporary table either --
+        /// its cleanup must not turn a denied source SELECT into an ACCESS_DENIED on the temporary name --
+        /// which is what `ast_drop->no_access_check` above is for.
         if (created && !renamed)
         {
             auto drop_context = is_plain_create ? make_internal_context(/*bypass_size_guard=*/true) : make_drop_context(/*bypass_size_guard=*/true);
@@ -3029,8 +3086,14 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
     return fillTableIfNeeded(create);
 }
 
-BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create, bool skip_target_insert_access_check)
+BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create, const String & published_table_name)
 {
+    /// A non-empty `published_table_name` means `create.getTable()` is the internal temporary name of
+    /// `doCreateOrReplaceTable` and the table will be published under `published_table_name`. The fills
+    /// below then write into a name no grant can cover (issue #90919), so their target-side access is
+    /// authorized against the user-visible name the table will be published under instead.
+    const bool target_is_temporary = !published_table_name.empty();
+
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.isCreateQueryWithImmediateInsertSelect())
     {
@@ -3045,7 +3108,8 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             /* no_squash */ false,
             /* no_destination */ false,
             /* async_isnert */ false);
-        interpreter.setSkipTargetInsertAccessCheck(skip_target_insert_access_check);
+        /// The caller authorized `INSERT` on `published_table_name` before the populate.
+        interpreter.setSkipTargetInsertAccessCheck(target_is_temporary);
         return interpreter.execute();
     }
 
@@ -3084,7 +3148,20 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
         /// that executeTrivialBlockIO cannot handle.
         auto alter_context = Context::createCopy(getContext());
         alter_context->setSetting("alter_partition_verbose_result", Field(false));
-        return InterpreterAlterQuery(query, alter_context).execute();
+        InterpreterAlterQuery interpreter_alter{query, alter_context};
+        if (target_is_temporary)
+        {
+            /// The attach addresses the internal temporary table, so `InterpreterAlterQuery` would authorize
+            /// `ALTER DELETE` and `INSERT` on its random `_tmp_replace_*` name -- a privilege no grant can
+            /// express (issue #90919) and one the user does not need. Authorize the very same access against
+            /// the name the table will be published under instead, as the user, and skip the interpreter's
+            /// own check on the temporary name. A `CREATE TABLE ... CLONE AS` that populates the final table
+            /// directly requires exactly these grants, so the contract is the same either way.
+            getContext()->checkAccess(InterpreterAlterQuery::getRequiredAccessForCommand(
+                *command, create.getDatabase(), published_table_name, /*row_exists_is_lightweight_marker=*/false));
+            interpreter_alter.setSkipAccessCheck(true);
+        }
+        return interpreter_alter.execute();
     }
 
     return {};
@@ -3440,6 +3517,12 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
     /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
     /// It will be ignored if database does not support UUIDs.
     create.generateRandomUUIDs();
+
+    /// With an old DDL entry format the query is shipped un-normalized, so hosts running different releases
+    /// of ClickHouse would pin different latest versions. Pin the initiator's one here, like the UUIDs above.
+    /// A query with an AS clause is left alone: the hosts take the settings, including the version, from the other table.
+    if (create.is_time_series_table && create.as_table.empty() && !hasExplicitTimeSeriesSettingVersion(create))
+        setTimeSeriesSettingVersion(create, TimeSeriesVersion::LATEST);
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = local_context->getMacros()->expand(cluster_name);

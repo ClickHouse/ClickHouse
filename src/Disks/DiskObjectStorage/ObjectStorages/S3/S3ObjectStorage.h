@@ -174,6 +174,9 @@ private:
         bool restrict_seek,
         const std::function<void()> & cancellation_hook) const;
 
+    std::pair<std::string, std::string> splitBucketAndKey(const std::string & remote_path) const;
+    std::map<std::string, StoredObjects> groupByBucket(const StoredObjects & objects) const;
+
     const S3::URI uri;
 
     std::string disk_name;
