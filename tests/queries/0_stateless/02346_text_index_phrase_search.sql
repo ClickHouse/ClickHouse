@@ -148,3 +148,51 @@ LIMIT 1;
 
 DROP TABLE tab_m_ref;
 DROP TABLE tab_m_idx;
+
+CREATE TABLE tab_sel_ref (
+    id UInt32,
+    message String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+-- The posting list codec writes the per-segment block index the rank cursors seek in.
+CREATE TABLE tab_sel_idx (
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1, posting_list_block_size = 256)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'bitpacking';
+
+-- Rare tokens planted every 256th row: 32 occurrences stay above MAX_CARDINALITY_FOR_RAW_POSTINGS,
+-- so their postings keep the block index, while staying rare enough to pick the cursors.
+INSERT INTO tab_sel_ref
+SELECT number, concat('hello clickhouse world', if(number % 256 = 0, ' needle clickhouse rare', ''))
+FROM numbers(8192);
+
+INSERT INTO tab_sel_idx SELECT id, message FROM tab_sel_ref;
+
+SELECT 'Candidates from cursors';
+SELECT arraySort(groupArray(id)) FROM tab_sel_ref WHERE hasPhrase(message, 'needle clickhouse');
+SELECT arraySort(groupArray(id)) FROM tab_sel_idx WHERE hasPhrase(message, 'needle clickhouse');
+SELECT arraySort(groupArray(id)) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse rare');
+SELECT arraySort(groupArray(id)) FROM tab_sel_idx WHERE hasPhrase(message, 'clickhouse rare');
+SELECT arraySort(groupArray(id)) FROM tab_sel_ref WHERE hasPhrase(message, 'needle clickhouse rare');
+SELECT arraySort(groupArray(id)) FROM tab_sel_idx WHERE hasPhrase(message, 'needle clickhouse rare');
+SELECT arraySort(groupArray(id)) FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse needle');
+SELECT arraySort(groupArray(id)) FROM tab_sel_idx WHERE hasPhrase(message, 'clickhouse needle');
+
+SELECT 'Candidates from bitmaps';
+SELECT count() FROM tab_sel_ref WHERE hasPhrase(message, 'hello clickhouse');
+SELECT count() FROM tab_sel_idx WHERE hasPhrase(message, 'hello clickhouse');
+SELECT count() FROM tab_sel_ref WHERE hasPhrase(message, 'clickhouse world');
+SELECT count() FROM tab_sel_idx WHERE hasPhrase(message, 'clickhouse world');
+SELECT count() FROM tab_sel_ref WHERE hasPhrase(message, 'world hello');
+SELECT count() FROM tab_sel_idx WHERE hasPhrase(message, 'world hello');
+SELECT count() FROM tab_sel_ref WHERE hasPhrase(message, 'hello clickhouse world');
+SELECT count() FROM tab_sel_idx WHERE hasPhrase(message, 'hello clickhouse world');
+
+DROP TABLE tab_sel_ref;
+DROP TABLE tab_sel_idx;

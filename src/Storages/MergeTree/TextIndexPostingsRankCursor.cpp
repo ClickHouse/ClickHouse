@@ -50,7 +50,6 @@ TextIndexPostingsRankCursor::TextIndexPostingsRankCursor(MergeTreeReaderStream &
 UInt64 TextIndexPostingsRankCursor::readSegmentDocCount(size_t segment_idx)
 {
     stream->seekToMark({info->offsets[segment_idx], 0});
-    ++segment_headers_read;
     auto * data_buffer = stream->getDataBuffer();
 
     UInt64 codec_type = 0;
@@ -83,7 +82,6 @@ void TextIndexPostingsRankCursor::loadSegment(size_t segment_idx)
     ensureSegmentRank(segment_idx);
 
     stream->seekToMark({info->offsets[segment_idx], 0});
-    ++segment_headers_read;
     auto * data_buffer = stream->getDataBuffer();
 
     UInt64 codec_type = 0;
@@ -142,11 +140,13 @@ void TextIndexPostingsRankCursor::loadSegment(size_t segment_idx)
     current_segment_idx = segment_idx;
     segment_first_rank = segment_ranks[segment_idx];
     has_segment = true;
+    /// Block indices restart per segment, so drop the decoded block instead of matching it by index.
+    current_block = std::numeric_limits<size_t>::max();
+    decoded_count = 0;
 }
 
 void TextIndexPostingsRankCursor::decodeBlock(size_t block_idx)
 {
-    ++blocks_decoded;
     const size_t block_count = segment.blockCount();
 
     /// A block's delta base is the previous block's last row id, so any block decodes on its own.
