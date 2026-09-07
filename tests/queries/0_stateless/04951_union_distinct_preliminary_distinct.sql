@@ -1,7 +1,6 @@
 -- UNION DISTINCT gets a preliminary per-stream DISTINCT, so it plans like its
--- SELECT DISTINCT over UNION ALL rewrite. The INTERSECT/EXCEPT DISTINCT set-operation step
--- already emits a single stream, so it keeps the single final DISTINCT (the join rewrite of
--- INTERSECT/EXCEPT DISTINCT is a SELECT DISTINCT over a join and plans like one).
+-- SELECT DISTINCT over UNION ALL rewrite. INTERSECT/EXCEPT DISTINCT already emit a
+-- single stream, so they keep the single final DISTINCT.
 
 -- The counts below are exact: one preliminary step per branch, and one DistinctTransform per
 -- branch plus the final one. A presence-only assertion would also pass on a step that is
@@ -33,6 +32,7 @@ SELECT count() FROM (
 ) WHERE explain ILIKE '%DistinctTransform%';
 
 SELECT '-- analyzer: INTERSECT/EXCEPT DISTINCT keep a single DISTINCT';
+-- The set-operation step is under test, not its join rewrite.
 SET optimize_rewrite_intersect_except_to_join = 0;
 SELECT count() FROM (
     EXPLAIN PLAN SELECT 1 AS x INTERSECT DISTINCT SELECT 1 AS x
@@ -40,7 +40,6 @@ SELECT count() FROM (
 SELECT count() FROM (
     EXPLAIN PLAN SELECT 1 AS x EXCEPT DISTINCT SELECT 2 AS x
 ) WHERE explain ILIKE '%Preliminary%';
-SET optimize_rewrite_intersect_except_to_join = 1;
 
 SET enable_analyzer = 0;
 
