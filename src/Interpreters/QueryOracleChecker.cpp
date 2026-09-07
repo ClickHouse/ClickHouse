@@ -936,19 +936,10 @@ bool referencesDistributedTableAnywhere(const ASTPtr & ast, const ContextPtr & c
 constexpr size_t MAX_DEFINITION_SCREEN_DEPTH = 8;
 
 /// A query names relations and columns; reading them evaluates the definitions
-/// stored behind those names. A view's body and an `ALIAS` column's expression
-/// are re-evaluated on every read, so each of the oracle's reads of one name can
-/// observe a different value: `now()` inside a view body drifts exactly as a
-/// written-out `now()` would, yet the query's own AST holds only an
-/// `ASTTableIdentifier` and the checks above never see it.
-///
-/// Screen those definitions with the same predicates that screen the query
-/// text, so that the verdict does not depend on whether a construct is spelled
-/// inline or hidden behind a name: a view over `numbers(10)` is then skipped
-/// exactly as an inline `FROM numbers(10)` is, and no separate policy exists
-/// for the hidden spelling. A view reading another view recurses; the depth cap
-/// bounds a chain closed into a cycle by `CREATE OR REPLACE`. Unresolvable
-/// metadata fails closed, as in `referencesDistributedTableAnywhere`.
+/// stored behind those names, and each read re-evaluates them, so the oracle's
+/// two reads of one name can observe different values while the query's own AST
+/// holds only an `ASTTableIdentifier`. A view reading another view recurses, and
+/// the depth cap bounds a chain closed into a cycle by `CREATE OR REPLACE`.
 bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr & context, size_t depth = 0)
 {
     if (!ast)
@@ -975,12 +966,16 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
                 if (storage->readsFromOtherTables())
                     return true;
 
+                /// A `MaterializedView` read is forwarded to whatever its target name resolves to
+                /// at read time, and a refresh replaces that table, so this metadata does not
+                /// describe what a read of this name evaluates.
+                if (storage->getName() == "MaterializedView")
+                    return true;
+
                 auto metadata = storage->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
                 ASTs definitions;
 
-                /// `isView()` is also true for `MaterializedView`, whose read goes
-                /// to the target table rather than to its stored `SELECT`, so its
-                /// body is not a read-time carrier. Match the engine name instead.
+                /// Match the engine name: `isView()` is also true for `MaterializedView`.
                 if (storage->getName() == "View")
                 {
                     /// `hasSelectQuery()` tests `select_query`, which `StorageView`
@@ -991,8 +986,11 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
                     definitions.push_back(inner_query);
                 }
 
+                /// A read evaluates an `ALIAS` expression always, and any other kind for a column
+                /// the part does not store, which this metadata does not say. Supplying one also
+                /// pulls in the defaults its own expression needs, reaching an `EPHEMERAL` one.
                 for (const auto & column : metadata->getColumns())
-                    if (column.default_desc.kind == ColumnDefaultKind::Alias && column.default_desc.expression)
+                    if (column.default_desc.expression)
                         definitions.push_back(column.default_desc.expression);
 
                 for (const auto & definition : definitions)

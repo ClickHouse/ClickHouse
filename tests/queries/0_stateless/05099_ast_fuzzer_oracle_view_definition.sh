@@ -9,11 +9,11 @@
 #              cost: a `--no-long` job skips this test.
 #
 # A query names relations and columns; reading them evaluates the definitions stored
-# behind those names. A view body and an `ALIAS` column expression are re-evaluated on
-# every read, so a non-deterministic function hidden behind either one makes each of the
-# oracle's reads observe a different value and the oracle reports a mismatch that is not
-# a wrong result. `QueryOracleChecker::check` must therefore screen those definitions,
-# not only the query text.
+# behind those names, and a read re-evaluates them, so a non-deterministic function
+# hidden behind any one of them makes each of the oracle's reads observe a different
+# value and the oracle reports a mismatch that is not a wrong result.
+# `QueryOracleChecker::check` must therefore screen those definitions, not only the
+# query text.
 #
 # The assertion is on `ASTFuzzerOracleChecks`, not on "the query succeeded": with
 # `ast_fuzzer_runs = 1` a random mutation can make a query oracle-ineligible for
@@ -29,7 +29,12 @@ $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS oracle_definition_src;
     DROP TABLE IF EXISTS oracle_definition_alias;
     DROP TABLE IF EXISTS oracle_definition_det_alias;
+    DROP TABLE IF EXISTS oracle_definition_default;
+    DROP TABLE IF EXISTS oracle_definition_det_default;
+    DROP TABLE IF EXISTS oracle_definition_materialized;
+    DROP TABLE IF EXISTS oracle_definition_ephemeral;
     DROP TABLE IF EXISTS oracle_definition_alias_engine;
+    DROP VIEW IF EXISTS oracle_definition_mv;
     DROP VIEW IF EXISTS oracle_definition_nondet_view;
     DROP VIEW IF EXISTS oracle_definition_det_view;
     DROP VIEW IF EXISTS oracle_definition_inner_view;
@@ -68,10 +73,43 @@ $CLICKHOUSE_CLIENT --query "
     CREATE TABLE oracle_definition_det_alias (k UInt32, r UInt32 ALIAS k * 2) ENGINE = MergeTree ORDER BY k;
     INSERT INTO oracle_definition_det_alias SELECT number FROM numbers(50);
 
+    -- A column added after a part was written is not stored in it, so a read of that column
+    -- evaluates its \`DEFAULT\` expression, which is therefore a read-time definition too.
+    -- Two reads of this unchanged part return different values for \`r\`.
+    CREATE TABLE oracle_definition_default (k UInt32) ENGINE = MergeTree ORDER BY k;
+    INSERT INTO oracle_definition_default SELECT number FROM numbers(50);
+    ALTER TABLE oracle_definition_default ADD COLUMN r UInt32 DEFAULT rand();
+
+    -- Same shape, deterministic expression: separates \"screen a non-deterministic default\"
+    -- from \"screen every column that has a default\".
+    CREATE TABLE oracle_definition_det_default (k UInt32) ENGINE = MergeTree ORDER BY k;
+    INSERT INTO oracle_definition_det_default SELECT number FROM numbers(50);
+    ALTER TABLE oracle_definition_det_default ADD COLUMN r UInt32 DEFAULT k * 2;
+
+    -- \`MATERIALIZED\` is stored, so it reaches the same read-time path only for a part
+    -- written before the column existed.
+    CREATE TABLE oracle_definition_materialized (k UInt32) ENGINE = MergeTree ORDER BY k;
+    INSERT INTO oracle_definition_materialized SELECT number FROM numbers(50);
+    ALTER TABLE oracle_definition_materialized ADD COLUMN r UInt32 MATERIALIZED rand();
+
+    -- An \`EPHEMERAL\` column cannot be read directly, but supplying a missing column pulls in
+    -- the defaults of the columns its own expression needs, so \`rand()\` here is evaluated by
+    -- a read of \`r\` and the ephemeral expression is reachable after all.
+    CREATE TABLE oracle_definition_ephemeral (k UInt32) ENGINE = MergeTree ORDER BY k;
+    INSERT INTO oracle_definition_ephemeral SELECT number FROM numbers(50);
+    ALTER TABLE oracle_definition_ephemeral ADD COLUMN e UInt32 EPHEMERAL rand();
+    ALTER TABLE oracle_definition_ephemeral ADD COLUMN r UInt32 DEFAULT e;
+
     -- \`Alias\` reports its own engine name while reading, and reporting the metadata of,
     -- its target, so the target view's body is reachable but not named here.
     SET allow_experimental_alias_table_engine = 1;
     CREATE TABLE oracle_definition_alias_engine ENGINE = Alias(currentDatabase(), 'oracle_definition_nondet_view');
+
+    -- A materialized view read is forwarded to its target table, whose engine and column
+    -- defaults are in the target's metadata rather than in the view's, so no screen of this
+    -- name can describe what the read evaluates. Its own body is not read, hence not screened.
+    CREATE MATERIALIZED VIEW oracle_definition_mv ENGINE = MergeTree ORDER BY k
+        POPULATE AS SELECT k FROM oracle_definition_src;
 "
 
 get_checks()
@@ -249,11 +287,26 @@ assert_screened "temporary view over a non-deterministic definition" oracle_defi
 assert_screened "Alias engine over a non-deterministic definition" oracle_definition_alias_engine \
     "SELECT k, r FROM oracle_definition_alias_engine WHERE k > 5;"
 
+assert_screened "materialized view" oracle_definition_mv \
+    "SELECT k FROM oracle_definition_mv WHERE k > 5;"
+
 assert_screened "ALIAS column with a non-deterministic expression" oracle_definition_alias \
     "SELECT k, r FROM oracle_definition_alias WHERE k > 5;"
 
 assert_reaches_oracle "ALIAS column with a deterministic expression" oracle_definition_det_alias \
     "SELECT k, r FROM oracle_definition_det_alias WHERE k > 5;"
+
+assert_screened "DEFAULT column with a non-deterministic expression" oracle_definition_default \
+    "SELECT k, r FROM oracle_definition_default WHERE k > 5;"
+
+assert_reaches_oracle "DEFAULT column with a deterministic expression" oracle_definition_det_default \
+    "SELECT k, r FROM oracle_definition_det_default WHERE k > 5;"
+
+assert_screened "MATERIALIZED column with a non-deterministic expression" oracle_definition_materialized \
+    "SELECT k, r FROM oracle_definition_materialized WHERE k > 5;"
+
+assert_screened "EPHEMERAL expression reached through a DEFAULT" oracle_definition_ephemeral \
+    "SELECT k, r FROM oracle_definition_ephemeral WHERE k > 5;"
 
 assert_screened "IN over a non-deterministic definition" oracle_definition_in_view \
     "SELECT k FROM oracle_definition_src WHERE k IN oracle_definition_in_view;"
@@ -262,7 +315,12 @@ assert_reaches_oracle "IN over a deterministic definition" oracle_definition_in_
     "SELECT k FROM oracle_definition_src WHERE k IN oracle_definition_in_det_view;"
 
 $CLICKHOUSE_CLIENT --query "
+    DROP VIEW oracle_definition_mv;
     DROP TABLE oracle_definition_alias_engine;
+    DROP TABLE oracle_definition_ephemeral;
+    DROP TABLE oracle_definition_materialized;
+    DROP TABLE oracle_definition_det_default;
+    DROP TABLE oracle_definition_default;
     DROP VIEW oracle_definition_in_det_view;
     DROP VIEW oracle_definition_in_view;
     DROP VIEW oracle_definition_system_view;
