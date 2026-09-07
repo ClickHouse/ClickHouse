@@ -188,3 +188,33 @@ two-column key, equals
 2
 two-column key, equals, opt off
 2
+two-column key, String for UUID column - plan
+SELECT count() AS `count()`
+FROM default.data_mc AS __table1
+WHERE and(equals(accurateCast(toString(__table1.k1), \'UUID\'), \'11111111-1111-1111-1111-111111111111\'), equals(__table1.k2_u8, _CAST(1, \'UInt16\')))
+two-column key, String for UUID column
+1
+two-column key, String for UUID column, opt off
+1
+two-column key, no conversion needed - plan
+SELECT count() AS `count()`
+FROM default.data_mc AS __table1
+WHERE and(equals(__table1.k1, \'11111111-1111-1111-1111-111111111111\'), equals(__table1.k2_u8, _CAST(1, \'UInt16\')))
+two-column key, no conversion needed
+1
+two-column key, no conversion needed, opt off
+1
+two-column key, String for UUID column, like - plan
+SELECT count() AS `count()`
+FROM default.data_mc AS __table1
+WHERE in(tuple(accurateCast(toString(__table1.k1), \'UUID\'), __table1.k2_u8), (
+    SELECT
+        k1 AS k1,
+        k2 AS k2
+    FROM dictionary(\'dict_mc\')
+    WHERE like(attr, \'pay%\')
+))
+two-column key, String for UUID column, like
+1
+two-column key, String for UUID column, like, opt off
+1

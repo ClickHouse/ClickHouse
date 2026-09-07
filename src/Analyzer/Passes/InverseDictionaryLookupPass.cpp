@@ -234,16 +234,73 @@ bool keyConversionIsTotalWidening(const DataTypePtr & expr_type, const DataTypeP
 /// Returns false when the rewrite must be skipped entirely.
 bool mirrorImplicitKeyConversion(QueryTreeNodePtr & key_expr_node, const NamesAndTypes & key_cols, const ContextPtr & context)
 {
-    if (key_cols.size() != 1)
+    if (key_cols.size() == 1)
+    {
+        if (keyConversionIsTotalWidening(key_expr_node->getResultType(), key_cols.front().type))
+            return true;
+
+        if (isNullableOrLowCardinalityNullable(key_expr_node->getResultType()))
+            return false;
+
+        key_expr_node = makeAccurateCast(key_expr_node, key_cols.front().type, context);
+        return true;
+    }
+
+    /// A composite key with several columns is passed to `dictGet` as a tuple and converted
+    /// per key column, so the rewrite has to cast per element as well.
+    const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
+    const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
+
+    /// `dictGet` validates the key shape only when it executes (`IDictionary::convertKeyColumns`),
+    /// so a key expression that does not match the key columns can reach this pass. Leave it
+    /// untouched and let the query keep the behavior it has without the optimization.
+    if (!key_expr_tuple_type || key_expr_tuple_type->getElements().size() != key_cols.size())
         return true;
 
-    if (keyConversionIsTotalWidening(key_expr_node->getResultType(), key_cols.front().type))
+    const DataTypes & key_expr_elements = key_expr_tuple_type->getElements();
+
+    std::vector<bool> element_needs_cast(key_cols.size());
+    bool any_element_needs_cast = false;
+    for (size_t i = 0; i < key_cols.size(); ++i)
+    {
+        element_needs_cast[i] = !keyConversionIsTotalWidening(key_expr_elements[i], key_cols[i].type);
+        any_element_needs_cast |= element_needs_cast[i];
+    }
+
+    /// Nothing to convert: keep the original expression, tuple shape included.
+    if (!any_element_needs_cast)
         return true;
 
+    /// An outer `Nullable` carrier (e.g. `if(cond, (k1, k2), NULL)`) makes every extracted
+    /// element `Nullable`, which is the case the single-column branch above skips as well.
     if (isNullableOrLowCardinalityNullable(key_expr_node->getResultType()))
         return false;
 
-    key_expr_node = makeAccurateCast(key_expr_node, key_cols.front().type, context);
+    /// Rebuild the tuple, casting only the elements that need it. A syntactic `tuple(...)`
+    /// call supplies its arguments directly; any other tuple-typed expression is taken apart
+    /// with `tupleElement`.
+    const auto * key_expr_function = key_expr_node->as<FunctionNode>();
+    const bool is_syntactic_tuple = key_expr_function && key_expr_function->getFunctionName() == "tuple";
+    if (is_syntactic_tuple)
+        chassert(key_expr_function->getArguments().getNodes().size() == key_cols.size());
+
+    QueryTreeNodes key_element_nodes;
+    key_element_nodes.reserve(key_cols.size());
+    for (size_t i = 0; i < key_cols.size(); ++i)
+    {
+        QueryTreeNodePtr key_element_node
+            = is_syntactic_tuple ? key_expr_function->getArguments().getNodes()[i] : makeTupleElement(key_expr_node, i + 1, context);
+
+        if (element_needs_cast[i])
+            key_element_node = makeAccurateCast(key_element_node, key_cols[i].type, context);
+
+        key_element_nodes.push_back(std::move(key_element_node));
+    }
+
+    auto tuple_function_node = std::make_shared<FunctionNode>("tuple");
+    tuple_function_node->getArguments().getNodes() = std::move(key_element_nodes);
+    resolveOrdinaryFunctionNodeByName(*tuple_function_node, "tuple", context);
+    key_expr_node = std::move(tuple_function_node);
     return true;
 }
 

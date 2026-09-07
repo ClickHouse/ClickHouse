@@ -428,3 +428,85 @@ SELECT count() FROM data WHERE dictGet('dict_two_keys', 'attr', (k, k2)) = 'payw
 SELECT 'two-column key, equals, opt off';
 SELECT count() FROM data WHERE dictGet('dict_two_keys', 'attr', (k, k2)) = 'paywall'
 SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+-- Multi-column composite keys are converted per key column by `dictGet` exactly as
+-- single-column ones are, so the rewrite mirrors the conversion element-wise.
+DROP DICTIONARY IF EXISTS dict_mc;
+DROP TABLE IF EXISTS ref_source_mc;
+DROP TABLE IF EXISTS data_mc;
+
+CREATE TABLE ref_source_mc
+(
+    k1 UUID,
+    k2 UInt16,
+    attr String
+)
+ENGINE = MergeTree
+ORDER BY k1;
+
+INSERT INTO ref_source_mc VALUES
+    ('11111111-1111-1111-1111-111111111111', 1, 'paywall'),
+    ('22222222-2222-2222-2222-222222222222', 2, 'onboarding');
+
+CREATE DICTIONARY dict_mc
+(
+    k1 UUID,
+    k2 UInt16,
+    attr String DEFAULT ''
+)
+PRIMARY KEY k1, k2
+SOURCE(CLICKHOUSE(TABLE 'ref_source_mc'))
+LAYOUT(COMPLEX_KEY_HASHED())
+LIFETIME(0);
+
+CREATE TABLE data_mc
+(
+    k1 UUID,
+    k2_i16 Int16,
+    k2_u8 UInt8
+)
+ENGINE = MergeTree
+ORDER BY k1;
+
+INSERT INTO data_mc VALUES
+    ('11111111-1111-1111-1111-111111111111', 1, 1),
+    ('33333333-3333-3333-3333-333333333333', -1, 7);
+
+-- A `String` expression for the `UUID` key column is a valid `dictGet` key, but the
+-- comparison has no common type for `String` and `UUID`. Only that element is cast;
+-- `UInt8` against the `UInt16` key column is a total widening and stays untouched.
+SELECT 'two-column key, String for UUID column - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u8)) = 'paywall';
+SELECT 'two-column key, String for UUID column';
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u8)) = 'paywall';
+SELECT 'two-column key, String for UUID column, opt off';
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u8)) = 'paywall'
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+-- A lossy `Int16` expression over the `UInt16` key column: `dictGet` throws on the row
+-- holding `-1`, and so must the rewrite instead of silently comparing in `Int32`.
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_i16)) = 'paywall'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_i16)) = 'paywall'
+SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
+
+-- Control: a key expression that needs no conversion must stay untouched, so that the
+-- rewrite remains usable for index analysis.
+SELECT 'two-column key, no conversion needed - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_u8)) = 'paywall';
+SELECT 'two-column key, no conversion needed';
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_u8)) = 'paywall';
+SELECT 'two-column key, no conversion needed, opt off';
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (k1, k2_u8)) = 'paywall'
+SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+-- The subquery rewrite reuses the same normalized key expression.
+SELECT 'two-column key, String for UUID column, like - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u8)) LIKE 'pay%';
+SELECT 'two-column key, String for UUID column, like';
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u8)) LIKE 'pay%';
+SELECT 'two-column key, String for UUID column, like, opt off';
+SELECT count() FROM data_mc WHERE dictGet('dict_mc', 'attr', (toString(k1), k2_u8)) LIKE 'pay%'
+SETTINGS optimize_inverse_dictionary_lookup = 0;
