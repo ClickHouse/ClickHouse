@@ -100,24 +100,30 @@ namespace
         return std::min(sleep_time, max_sleep);
     }
 
+    /// An inner table is never named by the BACKUP query: it is backed up through its outer table (a
+    /// materialized view, a TimeSeries table, a standalone `MaterializedPostgreSQL` table), which is also
+    /// where `EXCEPT DATA FROM TABLE/TABLES` has to be written.
+    [[noreturn]] void throwInnerTableNamedByExceptDataClause(const String & database_name, const String & table_name)
+    {
+        throw Exception(
+            ErrorCodes::INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION,
+            "Inner table names cannot be specified directly in EXCEPT DATA FROM TABLE clause. "
+            "Table: {}.{}. Use the outer table name instead.",
+            backQuoteIfNeed(database_name),
+            backQuoteIfNeed(table_name));
+    }
+
     /// Checks that a table named by EXCEPT DATA FROM TABLE/TABLES is a table whose data can be excluded at all.
     void checkTableCanHaveDataExcluded(const String & database_name, const String & table_name)
     {
-        /// Inner tables are never named by the BACKUP query: they are backed up through their outer table
-        /// (a materialized view, a TimeSeries table), which is also where the exclusion has to be written.
-        ///
-        /// Only the reserved `.inner*` families are rejected here, from the name alone. An inner table whose
-        /// name is not reserved - a `MaterializedPostgreSQL` nested table - cannot be recognised before the
-        /// database has been enumerated, so `findTablesInDatabase` rejects those against that enumeration.
-        if (BackupUtils::isInnerTable(database_name, table_name))
-        {
-            throw Exception(
-                ErrorCodes::INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION,
-                "Inner table names cannot be specified directly in EXCEPT DATA FROM TABLE clause. "
-                "Table: {}.{}. Use the outer table name instead.",
-                backQuoteIfNeed(database_name),
-                backQuoteIfNeed(table_name));
-        }
+        /// Asked of the live catalog, so that the answer is about the table the user named and nothing else.
+        /// Deriving it from the enumeration instead would make it depend on which *other* tables the query
+        /// happens to select. A `MaterializedPostgreSQL` nested table is recognised through the outer table
+        /// which named it, and an element naming only the nested table enumerates no outer table, so the very
+        /// same clause would be rejected when a second element happened to name the outer table as well and
+        /// accepted when it did not.
+        if (BackupUtils::isInnerTableInCatalog(database_name, table_name))
+            throwInnerTableNamedByExceptDataClause(database_name, table_name);
     }
 }
 
@@ -709,19 +715,16 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
     for (const auto & inner_table_name : inner_table_names)
     {
-        /// An inner table cannot be named by EXCEPT DATA FROM TABLE/TABLES either - its data is excluded
-        /// through the outer table, which is also where the clause has to be written. The reserved `.inner*`
-        /// families are already rejected by name in `checkTableCanHaveDataExcluded`; the ones recognised only
-        /// here have to be rejected here, so that both answers come from the same enumeration.
+        /// A clause naming an inner table has already been rejected by `checkTableCanHaveDataExcluded`,
+        /// which asks the same question of the live catalog. This is the enumeration's own answer, for the
+        /// table the catalog cannot classify: on a `Replicated` replica which has applied the inner table's
+        /// DDL entry but not its outer table's, the catalog lookup finds no outer table while the Keeper
+        /// listing enumerated here holds both. Without this the clause would quietly apply to a table which
+        /// is then dropped from the backup as an inner table, and the user would be told nothing.
         if (!database_info.isTableNamedByExceptDataClause(inner_table_name))
             continue;
 
-        throw Exception(
-            ErrorCodes::INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION,
-            "Inner table names cannot be specified directly in EXCEPT DATA FROM TABLE clause. "
-            "Table: {}.{}. Use the outer table name instead.",
-            backQuoteIfNeed(database_name),
-            backQuoteIfNeed(inner_table_name));
+        throwInnerTableNamedByExceptDataClause(database_name, inner_table_name);
     }
 
     if (!inner_table_names.empty())
