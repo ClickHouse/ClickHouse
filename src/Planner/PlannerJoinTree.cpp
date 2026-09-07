@@ -126,6 +126,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
     extern const SettingsUInt64 distributed_group_by_no_merge;
+    extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsBool extremes;
@@ -139,6 +140,7 @@ namespace Setting
     extern const SettingsBool make_distributed_plan;
     extern const SettingsDouble offset;
     extern const SettingsBool prefer_column_name_to_alias;
+    extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
@@ -3288,6 +3290,51 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     };
 }
 
+const StorageDistributed * getDistributedStorageFromTableExpression(const QueryTreeNodePtr & table_expression)
+{
+    const auto * table_node = table_expression->as<TableNode>();
+    if (table_node)
+        return typeid_cast<const StorageDistributed *>(table_node->getStorage().get());
+
+    const auto * table_function_node = table_expression->as<TableFunctionNode>();
+    if (table_function_node)
+        return typeid_cast<const StorageDistributed *>(table_function_node->getStorage().get());
+
+    return nullptr;
+}
+
+void tryRewriteGlobalRightJoinAsLeftJoin(QueryNode & query_node, const ContextPtr & context)
+{
+    auto * join_node = query_node.getJoinTreeNode()->as<JoinNode>();
+    if (!join_node
+        || join_node->getKind() != JoinKind::Right
+        || join_node->getStrictness() != JoinStrictness::All
+        || !join_node->isOnJoinExpression())
+        return;
+
+    const auto & settings = context->getSettingsRef();
+    const auto distributed_product_mode = settings[Setting::distributed_product_mode];
+    const bool is_global = join_node->getLocality() == JoinLocality::Global
+        || distributed_product_mode == DistributedProductMode::GLOBAL
+        || (distributed_product_mode != DistributedProductMode::LOCAL && settings[Setting::prefer_global_in_and_join]);
+    if (!is_global)
+        return;
+
+    const auto * left_storage = getDistributedStorageFromTableExpression(join_node->getLeftTableExpressionNode());
+    const auto * right_storage = getDistributedStorageFromTableExpression(join_node->getRightTableExpressionNode());
+    if (!left_storage || !right_storage || left_storage->getShardCount() < 2 || right_storage->getShardCount() < 2)
+        return;
+
+    /** A `GLOBAL RIGHT JOIN` cannot run with the left table sharded and the right table broadcast.
+      * Every shard would independently emit unmatched rows from the complete right table.
+      * Swap the inputs before choosing the `Distributed` table that will execute the query, so the
+      * preserved side stays sharded and the original left table is broadcast instead.
+      * Projection nodes are already resolved and keep the user-visible column order unchanged.
+      */
+    std::swap(join_node->getLeftTableExpressionNode(), join_node->getRightTableExpressionNode());
+    join_node->setKind(JoinKind::Left);
+}
+
 }
 
 JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
@@ -3296,7 +3343,10 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
-    const QueryTreeNodePtr & join_tree_node = query_node->as<QueryNode &>().getJoinTreeNode();
+    auto & query_node_typed = query_node->as<QueryNode &>();
+    tryRewriteGlobalRightJoinAsLeftJoin(query_node_typed, planner_context->getQueryContext());
+
+    const QueryTreeNodePtr & join_tree_node = query_node_typed.getJoinTreeNode();
     auto table_expressions_stack = buildTableExpressionsStack(join_tree_node);
     size_t table_expressions_stack_size = table_expressions_stack.size();
     bool is_single_table_expression = table_expressions_stack_size == 1;
