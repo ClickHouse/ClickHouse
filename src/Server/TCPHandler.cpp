@@ -1998,8 +1998,8 @@ void TCPHandler::sendProfileTraces(QueryState & state, bool finish)
         < state.query_context->getSettingsRef()[Setting::interactive_delay])
         return;
 
-    /// Serializing memory samples must not generate new samples of the transport itself.
-    ProfileTracesBlocker block_memory_tracking;
+    /// Serializing samples must not generate new samples of the transport itself.
+    ProfileTracesBlocker blocker;
 
     if (finish)
         state.profile_traces_queue->finish();

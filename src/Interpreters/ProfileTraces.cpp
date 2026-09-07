@@ -212,7 +212,7 @@ Block InternalProfileTracesQueue::getSampleBlock()
 
 Block InternalProfileTracesQueue::getBlock()
 {
-    /// Formatting a memory sample must not produce more memory samples for this subscription.
+    /// Formatting samples must not add the delivery path to this subscription.
     ProfileTracesBlocker blocker;
     std::vector<Sample> batch;
     {

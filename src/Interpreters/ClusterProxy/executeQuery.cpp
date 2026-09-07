@@ -5,6 +5,7 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <base/scope_guard.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
@@ -316,6 +317,10 @@ bool isInitiatorOnlySettingName(std::string_view name)
 
 void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query)
 {
+    /// Trace opt-in is negotiated by the settings packet once the transport queue is known.
+    /// Preserve SQL opt-outs, and let the common strip below prune any emptied clauses.
+    stripProfileTraceOptInsFromQuery(query);
+
     /// `removeSettingsFromQuery` clears the names from every query-level `SETTINGS` carrier, covering both
     /// the `name = value` (`changes`) and `name = DEFAULT` (`default_settings`) forms.
     removeSettingsFromQuery(query, initiator_only_setting_names);

@@ -2629,9 +2629,11 @@ Send sampled query stack traces to clients that support profile trace packets in
 
 Samples are delivered directly from the server's trace collector; clients do not need access to `system.trace_log` or to flush that table. The trace collector must be enabled in the server configuration. Sampling uses the existing `query_profiler_cpu_time_period_ns`, `query_profiler_real_time_period_ns`, `memory_profiler_step`, and `memory_profiler_sample_probability` settings. Enabling this setting does not change their values.
 
-The stream carries `CPU`, `Real`, `Memory`, `MemorySample`, and `MemoryPeak` samples. Other trace types, including `ProfileEvent` and `JemallocSample`, are excluded. Their collection in `system.trace_log` is unaffected.
+The stream carries `CPU`, `Real`, `Memory`, `MemorySample`, and `MemoryPeak` samples. Other trace types, including `ProfileEvent` and `JemallocSample`, are excluded. Their collection in `system.trace_log` is unaffected. Samples collected while draining or serializing profile trace packets are also excluded from the stream; `CPU` and `Real` samples from that work can still be collected in `system.trace_log`.
 
 Delivery is best effort: queues and batches are bounded, and samples can be dropped when sampling or the client cannot keep up. Stack symbols are resolved on the server, with an empty string for an unresolved frame. Profile trace packets are sent at most once in `interactive_delay` microseconds during execution, independently of `send_profile_events`, with a final drain before the terminal packet. The final drain waits at most ten seconds for the collector; a timeout discards remaining samples and logs a server warning without changing the query result. Disabling delivery discards queued samples without waiting for the collector. Plain HTTP responses do not include profile trace packets.
+
+Remote queries request profile trace packets only when delivery is active for the coordinator's client. Remote SQL opt-ins cannot enable delivery when it is disabled at the coordinator; explicit remote SQL opt-outs remain effective.
 
 Possible values:
 
@@ -7596,6 +7598,8 @@ Maximum time to read from a pipe for receiving information from the threads when
 
 This setting allows to specify renaming pattern for files processed by `file` table function. When option is set, all files read by `file` table function will be renamed according to specified pattern with placeholders, only if files processing was successful.
 
+Renaming is a write to the source, so a query that reads the files with this option set requires the `WRITE ON FILE` grant in addition to `READ ON FILE`. `DESCRIBE` does not build the data-reading pipeline that renames, and so requires only `READ ON FILE`.
+
 ### Placeholders
 
 - `%a` — Full original filename (e.g., "sample.csv").
@@ -9128,7 +9132,7 @@ Enabling it automatically adjusts settings that control features not supported b
 - `use_skip_indexes_on_data_read = 0`;
 - `compile_expressions = 0`;
 - `query_plan_direct_read_from_text_index = 0`.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
 )", EXPERIMENTAL) \
@@ -9145,10 +9149,10 @@ Removes unnecessary exchanges in distributed query plan. Disable it for debuggin
 )", 0) \
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
 How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(UInt64, distributed_plan_workers_provisioning_timeout_ms, 10000, R"(
 Total wall-clock time, in milliseconds, a query may spend provisioning stateless workers before execution: leasing them from the discovery service and verifying they are reachable. The query blocks up to this budget for the leased workers to become ready; when it elapses the query proceeds with the workers verified so far, or fails if none became available. Zero waits only for the initial lease-and-verify pass (no retries).
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
 Force specified kind of Exchange operators between distributed query stages.
 
@@ -9172,7 +9176,7 @@ order. Only shapes where no exchange survives between the read and the sort are 
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
 Serialize the distributed query plan for execution at replicas.
-)", EXPERIMENTAL) \
+)", PRIVATE_PREVIEW) \
     DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL) \
@@ -9289,7 +9293,20 @@ Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction 
 Memory limit in bytes per WebAssembly UDF instance.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_input_block_size, 0, R"(
-Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 to process all rows at once.
+Maximum number of rows passed to a WebAssembly UDF in a single call. A non-zero value caps the rows per call and applies to every ABI.
+
+Set to 0 to size the calls by their serialized input instead. That applies to `ABI BUFFERED_V1` alone, the only ABI that serializes a whole input block into guest memory: its blocks are split so that a call's input stays within `webassembly_udf_input_split_memory_ratio` of the module's linear memory. `ROW_DIRECT` passes its arguments as WebAssembly values and `ASSEMBLYSCRIPT` builds one object per row, so neither has a serialized input to size a call by, and 0 leaves their pipeline block whole.
+)", EXPERIMENTAL) \
+    DECLARE(Float, webassembly_udf_input_split_memory_ratio, 0.5, R"(
+Fraction of a WebAssembly UDF instance's linear memory that one call's serialized input may occupy. Must be at least 0 and at most 1; the default leaves the other half to the guest for its own working set beside the input buffer.
+
+The margin below 1 is what makes the batching safe: the guest's own data, stack and allocator share that memory and are invisible to the host. A ratio close to 1 leaves nothing for them, so a call sized against it can still fail inside the guest's allocator.
+
+Read only for `ABI BUFFERED_V1`, and it sizes the calls only while `webassembly_udf_max_input_block_size` is 0 - a non-zero block size caps the rows per call instead.
+
+A batch is never taken below a single row, so a row whose own serialized size is past the budget is passed on its own, and one too large for the module's linear memory fails inside the guest's allocator.
+
+Set to 0 to leave the input unsplit: the whole pipeline block is passed in one call.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_instances, 32, R"(
 Maximum number of WebAssembly UDF instances that can run in parallel per function.

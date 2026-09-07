@@ -777,7 +777,11 @@ The envelope is a packet-type `VarUInt` of `19`, an empty `table_name` binary st
 
 Packets may be interleaved with query results and INSERT metadata. The server drains accepted samples before `EndOfStream`, and before a query exception when the connection is still usable. The final drain waits at most ten seconds for the collector. If that deadline expires, remaining samples are discarded and a server warning is logged; the original query result or exception is preserved. Clients must continue receiving until the terminal packet; a `ProfileTraces` block is never a result block or a completion marker. Delivery uses bounded queues, so samples may be dropped when a consumer cannot keep up. Disabling delivery discards queued samples without waiting for the collector. Excluded trace types, including `ProfileEvent` and `JemallocSample`, can still be collected in `system.trace_log` under their own settings.
 
+Samples collected while draining or serializing profile trace packets are excluded from the stream. `CPU` and `Real` samples from that work can still be collected in `system.trace_log`.
+
 Wire settings enable collection before query analysis. A `send_profile_traces` value supplied only in SQL `SETTINGS` takes effect when execution starts after analysis. Distributed SELECT queries forward remote trace blocks with their original host and query identifiers. Remote INSERT uploads disable delivery to avoid blocking while both peers are sending data. When connecting to a server below revision `54493`, the native client omits the `send_profile_traces` wire setting, and an older client never receives this packet from a newer server.
+
+Secondary queries request profile trace blocks only when delivery is active for the coordinator's client. Remote SQL opt-ins cannot enable delivery when it is disabled at the coordinator; explicit remote SQL opt-outs remain effective.
 
 ### TableColumns (packet type 11) {#tablecolumns}
 

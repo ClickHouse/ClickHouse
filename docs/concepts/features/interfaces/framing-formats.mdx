@@ -118,6 +118,8 @@ Processing of multiple queries at once is not implemented yet, but the design al
 
 Set `send_profile_traces=1` to receive samples from the query while it runs, without reading, flushing, or granting access to `system.trace_log`. The server's trace collector must be enabled in the server configuration. The setting uses the existing sampling controls: `query_profiler_cpu_time_period_ns`, `query_profiler_real_time_period_ns`, `memory_profiler_step`, and `memory_profiler_sample_probability`. Enabling delivery does not change the sampling configuration. Delivery is best effort: queues and packet batches are bounded, so samples can be dropped when the sampler or client cannot keep up. A batch contains at most 1024 samples. The final drain waits at most ten seconds for the collector; on timeout, remaining samples are discarded and a server warning is logged, while the original query result or exception is preserved. Disabling delivery discards queued samples without waiting for the collector. Only `CPU`, `Real`, `Memory`, `MemorySample`, and `MemoryPeak` samples are streamed. Other trace types, including `ProfileEvent` and `JemallocSample`, remain available through `system.trace_log` under their own collection settings.
 
+Samples collected while draining or serializing profile trace packets are excluded from the stream. `CPU` and `Real` samples from that work can still be collected in `system.trace_log`.
+
 In `JSONEachPacketBase64` and `JSONEachPacketString`, each batch has the following envelope:
 
 ```json
@@ -140,3 +142,5 @@ In `EventStream`, the event name is `profile_traces` and its single `data:` fiel
 All 64-bit integers use strings to preserve precision in JavaScript. All string fields, including symbol names and query identifiers, are sanitized to valid UTF-8 using the replacement character (`U+FFFD`) for invalid sequences.
 
 When `send_profile_traces` or framing is enabled only in the query's `SETTINGS` clause, capture starts after analysis, when the framing queues are reconciled with those settings. Set both on the session or URL to capture earlier samples as well. A query-level `send_profile_traces=0` disables delivery even when the session or URL enables it. With `framing_output_format=None`, HTTP responses contain no profile trace packets.
+
+Remote queries request profile trace packets only when delivery is active for the coordinator's client. Plain HTTP responses and disabled delivery therefore also disable requests for remote trace packets. Remote SQL opt-ins cannot override this, while explicit remote SQL opt-outs remain effective.
