@@ -1,4 +1,8 @@
--- Tags: no-ordinary-database
+-- Tags: no-ordinary-database, no-shared-merge-tree
+-- no-shared-merge-tree: the assertions below need the rolled back part to stay in `system.parts`, and
+-- `StorageSharedMergeTree` does not implement `ActionLocks::Cleanup`. It removes parts from
+-- `PartsKillerThread` on the server-wide `parts_kill_delay_period` instead, which a stateless test
+-- cannot pin, so neither the `SYSTEM STOP CLEANUP` below nor the pinned interval holds the part there.
 
 drop table if exists txn_counters;
 
