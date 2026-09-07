@@ -1006,6 +1006,116 @@ def test_materialized_postgresql_nested_table_named_by_its_own_element_is_backed
     pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
 
 
+def test_except_data_on_a_nested_table_named_by_its_own_element_is_rejected():
+    """Naming an inner table in the clause is rejected whatever else the query names.
+
+    The trace from the review:
+
+        BACKUP TABLE default.`<uuid>_nested` EXCEPT DATA FROM TABLE default.`<uuid>_nested` TO ...
+
+    Before the fix the rejection was derived from the enumeration of the database, which holds only the
+    tables the query selects. That enumeration contains the outer table only when some element asks for
+    it, so the very same clause on the very same table was rejected in
+
+        BACKUP TABLE default.pg_table, TABLE default.`<uuid>_nested` EXCEPT DATA FROM TABLE ...
+
+    and accepted without the first element - the hidden table went into the backup with its definition
+    and no rows instead. The clause names one table, so the answer must be about that table alone: it
+    now comes from the live catalog, which knows the outer table whether or not the query mentions it.
+
+    `test_materialized_postgresql_nested_table_named_by_its_own_element_is_backed_up` is the neighbour
+    of this: an element naming the nested table *without* the clause still backs it up, as on `master`.
+    Only the clause is rejected, and only because its data is excluded through the outer table.
+    """
+    # Short on purpose: the replication slot name PostgreSQL is asked for is derived from this and
+    # from the database name, and PostgreSQL caps a slot name at 63 characters.
+    pg_table = "mpg_except_named"
+
+    pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
+    pg_manager.create_postgres_table(pg_table)
+    instance.query(
+        f"INSERT INTO postgres_database.{pg_table} SELECT number, number FROM numbers(30)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS default.{pg_table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE default.{pg_table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', '{pg_table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        pg_table,
+        postgres_database=pg_manager.get_default_database(),
+        materialized_database="default",
+    )
+
+    nested_table = instance.query(
+        "SELECT toString(uuid) || '_nested' FROM system.tables "
+        f"WHERE database = 'default' AND name = '{pg_table}'"
+    ).strip()
+    assert nested_table.endswith("_nested"), nested_table
+
+    # 1. The reported trace: the nested table is the only table the query names.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"BACKUP TABLE default.`{nested_table}` "
+            f"EXCEPT DATA FROM TABLE default.`{nested_table}` TO {new_backup_name()}"
+        )
+    assert "INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION" in str(exc_info.value), str(
+        exc_info.value
+    )
+
+    # 2. The same clause with the outer table named too. This arm was already rejected before the fix,
+    #    and it is here to pin down that the two now answer alike: whether another element happens to
+    #    name the outer table is not what decides.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"BACKUP TABLE default.{pg_table}, TABLE default.`{nested_table}` "
+            f"EXCEPT DATA FROM TABLE default.`{nested_table}` TO {new_backup_name()}"
+        )
+    assert "INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION" in str(exc_info.value), str(
+        exc_info.value
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS default.{pg_table} SYNC")
+    pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
+
+    # 3. Negative control. The rejection has to come from the outer table the name points at, not from
+    #    the shape of the name: an ordinary table called `<uuid>_nested` that owns nothing takes the
+    #    clause in the very same single-table form, and comes back empty.
+    #
+    #    The UUID is one no table carries, so the lookup that rejected the arms above finds nothing.
+    nested_like = "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0_nested"
+
+    instance.query("DROP DATABASE IF EXISTS nested_name_single_db")
+    instance.query("CREATE DATABASE nested_name_single_db")
+    instance.query(
+        f"CREATE TABLE nested_name_single_db.`{nested_like}` (id UInt64) "
+        "ENGINE = MergeTree ORDER BY id"
+    )
+    instance.query(f"INSERT INTO nested_name_single_db.`{nested_like}` VALUES (1), (2), (3)")
+
+    control_backup = new_backup_name()
+    instance.query(
+        f"BACKUP TABLE nested_name_single_db.`{nested_like}` "
+        f"EXCEPT DATA FROM TABLE nested_name_single_db.`{nested_like}` TO {control_backup}"
+    )
+    instance.query(f"DROP TABLE nested_name_single_db.`{nested_like}`")
+    instance.query(
+        f"RESTORE TABLE nested_name_single_db.`{nested_like}` FROM {control_backup}"
+    )
+    assert (
+        instance.query(f"SELECT count() FROM nested_name_single_db.`{nested_like}`")
+        == "0\n"
+    )
+
+    instance.query("DROP DATABASE nested_name_single_db")
+
+
 def test_except_data_overlapping_table_and_database_elements_keep_data():
     """A table's data survives when another element of the same query asks for the table itself.
 
