@@ -705,12 +705,12 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
         throw;
     }
 
-    /// Drop the tables which this enumeration itself shows to be inner tables of other tables in it: they
-    /// are backed up through their outer table, never as tables of their own. Deciding it here, against the
-    /// enumeration, is what keeps the answer consistent with the tables actually being backed up. Asking the
-    /// live `DatabaseCatalog` instead would make it depend on how far this replica has caught up, and on a
-    /// `Replicated` replica which has not created the outer table yet a hidden table would be backed up as a
-    /// table of its own.
+    /// The tables which this enumeration itself shows to be inner tables of other tables in it. Unless an
+    /// element names one directly, they are backed up through their outer table and never as tables of their
+    /// own, so they are dropped below. Deciding it here, against the enumeration, is what keeps the answer
+    /// consistent with the tables actually being backed up. Asking the live `DatabaseCatalog` instead would
+    /// make it depend on how far this replica has caught up, and on a `Replicated` replica which has not
+    /// created the outer table yet a hidden table would be backed up as a table of its own.
     auto inner_table_names = BackupUtils::findInnerTables(db_tables);
 
     for (const auto & inner_table_name : inner_table_names)
@@ -734,7 +734,28 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
             [&](const std::pair<ASTPtr, StoragePtr> & db_table)
             {
                 const auto * create = db_table.first->as<ASTCreateQuery>();
-                return create && inner_table_names.contains(create->getTable());
+                if (!create || !inner_table_names.contains(create->getTable()))
+                    return false;
+
+                /// A table named by an element of its own is kept: that element asks for it, and its request
+                /// wins over a wider one - the same rule `isTableSelectedByAnyElement` applies against
+                /// `EXCEPT TABLES`, asked here the same way it asks it, through `tables`, which holds exactly
+                /// the names the single-table elements wrote. Only the inner tables which reached this
+                /// enumeration through a `DATABASE` or `ALL` element are hidden, which is what keeps them out
+                /// of a backup that merely covers their database.
+                ///
+                /// Without this a wider element decided the answer for the single-table one beside it. In
+                ///
+                ///     BACKUP DATABASE db, TABLE db.`<uuid>_nested`
+                ///
+                /// the `DATABASE` element is what brings the outer table into the enumeration, and so what
+                /// makes the nested table recognisable at all; the table the user had named by hand was then
+                /// dropped here and reported as `UNKNOWN_TABLE`.
+                ///
+                /// This can only ever keep a `MaterializedPostgreSQL` nested table. The reserved `.inner*`
+                /// families never reach this point: `filter_by_table_name` rejects them by name, so the
+                /// database engine does not enumerate them and no element can name one, as on `master`.
+                return !database_info.tables.contains(create->getTable());
             });
     }
 
