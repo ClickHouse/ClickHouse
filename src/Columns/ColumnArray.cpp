@@ -453,10 +453,7 @@ void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t
     const size_t new_rows = old_rows + length;
     const size_t old_offset = offsets_data.back();
 
-    /// The nested bulk path is not guaranteed to be safe when source and destination share
-    /// the same nested column. In particular, ColumnString::insertManyFrom caches a pointer
-    /// before resizing its chars buffer, so an append that reallocates would read a stale pointer.
-    /// Keep the old scalar path for this aliasing case.
+    /// Keep the scalar path for an aliased singleton array.
     if (source_size == 1 && getDataPtr().get() == src.getDataPtr().get())
     {
         for (size_t i = 0; i < length; ++i)
