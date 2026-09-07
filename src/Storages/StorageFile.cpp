@@ -67,6 +67,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 #include <Common/ErrnoException.h>
+#include <Common/saturatedDuration.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
 
@@ -1487,7 +1488,7 @@ static std::chrono::seconds getLockTimeout(const ContextPtr & context)
     Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
     if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
         lock_timeout = settings[Setting::max_execution_time].totalSeconds();
-    return std::chrono::seconds{lock_timeout};
+    return saturatedSeconds(lock_timeout);
 }
 
 using StorageFilePtr = std::shared_ptr<StorageFile>;
@@ -2452,7 +2453,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{});
 }
 
-void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     createIterator(nullptr);
 
@@ -2509,8 +2510,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     auto pipe = Pipe::unitePipes(std::move(pipes));
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = ctx->getSettingsRef()[Setting::parallelize_output_from_storages];
-    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < max_num_streams)
-        pipe.resize(max_num_streams);
+    /// `max_num_streams` is a read-parallelism request, not a thread budget.
+    const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
+    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < resize_to)
+        pipe.resize(resize_to);
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
