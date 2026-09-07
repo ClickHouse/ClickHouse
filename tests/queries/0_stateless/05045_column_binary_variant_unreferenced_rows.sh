@@ -5,9 +5,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `ColumnBinary` is experimental while its wire layout is still evolving.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
-
 # `COL_VARIANT` checks that every discriminator/offset pair points at an existing sub-column
 # row, but the converse must hold too: every decoded sub-column row has to be referenced by
 # some row. A frame whose only row is null while the header still declares a one-row

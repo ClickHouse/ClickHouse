@@ -5,8 +5,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `ColumnBinary` is experimental while its wire layout is still evolving.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
 # `LowCardinality(Nullable(UInt64))` is a suspicious type; the fixed-width dictionary case
 # below needs it both to create the table and to cast in the `SELECT` that writes the frame.
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_suspicious_low_cardinality_types 1"

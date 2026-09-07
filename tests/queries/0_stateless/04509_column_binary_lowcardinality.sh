@@ -5,9 +5,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `ColumnBinary` is experimental while its wire layout is still evolving.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
-
 # Top-level LowCardinality(T) has a direct dictionary + index wire encoding (COL_LOWCARD);
 # nested LowCardinality (inside Array/Tuple) still materializes to T's full column (see the
 # TODO on validateColumnBinaryWireSupportedType's LowCardinality branch).

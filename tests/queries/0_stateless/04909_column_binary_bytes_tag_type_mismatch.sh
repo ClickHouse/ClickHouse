@@ -5,9 +5,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `ColumnBinary` is experimental while its wire layout is still evolving.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
-
 # The `COL_BYTES` branch of `readColumnFromDesc` always builds a `ColumnString`, unlike the
 # `COL_FIXED*` branches which build the declared type. The tag comes from an untrusted frame,
 # so a frame declaring `COL_BYTES` for a `UInt64` column would otherwise hand a `ColumnString`

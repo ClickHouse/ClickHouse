@@ -5,9 +5,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `ColumnBinary` is experimental while its wire layout is still evolving.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
-
 # `data_binary/column_binary_const.bin` is a checked-in frame whose second and third column
 # descriptors carry the `COL_IS_CONST` flag, each storing a single value for all 5 rows. No
 # `SELECT` of a literal produces such a frame - constants are materialized before they reach
@@ -17,7 +14,6 @@ FRAME="$CUR_DIR/data_binary/column_binary_const.bin"
 STRUCTURE="n UInt64, c UInt64, s String"
 
 # `file()` is confined to `user_files`, so read the fixture through `clickhouse-local`.
-CLICKHOUSE_LOCAL="${CLICKHOUSE_LOCAL} --allow_experimental_column_binary_format 1"
 
 # The const value must be replicated across every row.
 ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${FRAME}', ColumnBinary, '${STRUCTURE}') ORDER BY n"

@@ -127,7 +127,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace ColumnBinaryWire
@@ -147,23 +146,6 @@ constexpr uint32_t COL_LOWCARD      = 8;  // LowCardinality(T), top-level only: 
 // Modifier flags (OR'd onto base type; base types 0–6, so bits 5-7 are free for flags).
 constexpr uint32_t COL_IS_NULLABLE  = 0x20u; // Nullable(T); null_offset carries u8[row_count] null map
 constexpr uint32_t COL_IS_CONST     = 0x80u;
-
-/// The user-facing `ColumnBinary` format is gated behind
-/// `allow_experimental_column_binary_format`: the frame header carries no wire version,
-/// so an incompatible layout change would misparse previously written data rather than
-/// reject it. The gate keeps `ColumnBinary` out of persisted data until the layout is
-/// frozen and the header is versioned. The `ColumnBinary` WASM UDF ABI shares this wire
-/// format but is not gated by this setting — WASM UDFs are experimental in their own
-/// right, and their frames never outlive a single call.
-inline void checkColumnBinaryFormatIsAllowed(bool allow_experimental)
-{
-    if (!allow_experimental)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "The 'ColumnBinary' format is experimental: its wire layout is still evolving, and "
-            "while the frame header carries a format version, no compatibility with earlier or "
-            "later versions is promised yet, so data written today may not be readable by a "
-            "future version. Set allow_experimental_column_binary_format = 1 to use it.");
-}
 
 /// Frame magic, the ASCII bytes 'C', 'B', 'I', 'N' in wire order. A frame is a bare byte
 /// range with no container around it - a WASM guest buffer, a file, a socket - so it carries

@@ -271,27 +271,6 @@ private:
     StopToken stop_token;
 };
 
-/// The user-facing `ColumnBinary` format is gated behind
-/// `allow_experimental_column_binary_format` because its `ColumnBinary` frame header carries no
-/// wire version yet. The `ColumnBinary` WASM UDF ABI shares that wire format but not the gate:
-/// WASM UDFs are experimental in their own right, and their frames never outlive a single call,
-/// so no persisted data can be misparsed by a future layout change. Start from the query's own
-/// format settings so per-query knobs (e.g. `column_binary_disable_preallocation`) still apply.
-static FormatSettings wasmFormatSettings(const ContextPtr & context)
-{
-    auto format_settings = getFormatSettings(context);
-    format_settings.column_binary.allow_experimental = true;
-    return format_settings;
-}
-
-/// Same, for the construction-time probe format, which has no Context to read settings from.
-static FormatSettings columnBinaryEnabledFormatSettings()
-{
-    FormatSettings format_settings;
-    format_settings.column_binary.allow_experimental = true;
-    return format_settings;
-}
-
 class UserDefinedWebAssemblyFunctionBufferedV1 : public UserDefinedWebAssemblyFunction
 {
 public:
@@ -313,7 +292,7 @@ public:
         // real precompute/serialize work, since this one's default settings would silently
         // diverge from whatever the query actually configured.
         probe_format = FormatFactory::instance().getOutputFormatWithDefaultSettings(
-            serialization_format, probe_null_wb, input_header, columnBinaryEnabledFormatSettings());
+            serialization_format, probe_null_wb, input_header, FormatSettings{});
         // The result type is only read back lazily on the first call, so validate it eagerly
         // here too.
         if (serialization_format == "ColumnBinary")
@@ -410,7 +389,7 @@ public:
         // run three times per invocation (probe, real output format, input format), with
         // `block.cloneEmpty()` running twice on top of that. They are query-invariant, so hoisting
         // them changes nothing about which settings apply while removing the repeated work.
-        const FormatSettings format_settings = wasmFormatSettings(context);
+        const FormatSettings format_settings = getFormatSettings(context);
         const Block empty_header = block.cloneEmpty();
 
         WasmMemoryGuard wasm_data = nullptr;
@@ -619,7 +598,7 @@ static bool computePreserveConstColumns(const ContextPtr & context, const std::s
     size_t arg_idx = 0;
     for (const auto & arg : udf->getArguments())
         sample_block.insert(ColumnWithTypeAndName(arg->createColumn(), arg, "arg" + std::to_string(arg_idx++)));
-    auto format = context->getOutputFormat(fmt, dummy_writer, sample_block, wasmFormatSettings(context));
+    auto format = context->getOutputFormat(fmt, dummy_writer, sample_block);
     return !format->expectMaterializedColumns() || format->supportsColumnSchema();
 }
 
@@ -833,7 +812,7 @@ private:
         /// on the host, which is the very input the splitting below exists to rescue.
         auto header = getArgumentsBlock(arguments, 0, 0);
         NullWriteBuffer measure_buf;
-        auto measure_out = context->getOutputFormat(serialization_format, measure_buf, header.cloneEmpty(), wasmFormatSettings(context));
+        auto measure_out = context->getOutputFormat(serialization_format, measure_buf, header.cloneEmpty());
         const size_t framing_per_write = blockFramingBytes(header.columns());
 
         size_t written_before = 0;
@@ -865,7 +844,7 @@ private:
 
         NullWriteBuffer overhead_buf;
         auto overhead_out
-            = context->getOutputFormat(serialization_format, overhead_buf, getArgumentsBlock(arguments, 0, 0), wasmFormatSettings(context));
+            = context->getOutputFormat(serialization_format, overhead_buf, getArgumentsBlock(arguments, 0, 0));
         overhead_out->finalize();
         return framing + overhead_buf.count();
     }

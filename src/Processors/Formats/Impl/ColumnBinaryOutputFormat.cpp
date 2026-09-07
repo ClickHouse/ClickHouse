@@ -266,7 +266,6 @@ void registerOutputFormatColumnBinary(FormatFactory & factory)
         const FormatSettings & format_settings,
         FormatFilterInfoPtr /*format_filter_info*/)
     {
-        ColumnBinaryWire::checkColumnBinaryFormatIsAllowed(format_settings.column_binary.allow_experimental);
         return std::make_shared<ColumnBinaryOutputFormat>(
             buf,
             std::make_shared<const Block>(sample),

@@ -43,7 +43,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
-            {"allow_experimental_column_binary_format", false, false, "New setting: gate the experimental `ColumnBinary` input and output format, whose wire layout is still evolving."},
             {"column_binary_disable_preallocation", false, false, "New setting: disable output buffer preallocation in ColumnBinary format. Useful for benchmarking and diagnostics."},
             {"column_binary_max_frame_size", 0, 1024ull * 1024 * 1024, "New setting: caps the total column data size of a single ColumnBinary frame, rejecting malformed frames before they can force an unreasonably large allocation."},
             {"webassembly_udf_input_split_memory_ratio", 0.0, 0.5, "New setting controlling the fraction of a WebAssembly UDF instance's linear memory that one call's serialized input may occupy, which also enables the dynamic splitting of that input by its serialized size; `compatibility` below 26.9 sets it to 0 and restores the previous behavior, where `webassembly_udf_max_input_block_size = 0` meant one call per pipeline block."},
