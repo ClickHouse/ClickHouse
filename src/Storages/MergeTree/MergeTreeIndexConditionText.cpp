@@ -1295,7 +1295,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// would collapse tokens, causing false negatives) and its tokens may contain characters such as `#` or
         /// `+` (which the validation would reject). Rather than bypassing the index - which would silently fall
         /// back to the default `splitByNonAlpha` and produce false positives - reject this combination
-        /// explicitly. `splitByRegexp` + `hasPhrase` without a postprocessor is fully supported.
+        /// explicitly. `splitByRegexp` + `hasPhrase` without a postprocessor is fully supported. This also
+        /// covers `match_tokens` mode, where adjacency is even less reliable.
         if (tokenizer->getType() == ITokenizer::Type::SplitByRegexp && has_postprocessor)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
