@@ -98,6 +98,11 @@ SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_math', 'nh_
 SELECT '-- f1 / e1: float / histogram is NOT allowed -> dropped';
 SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_math', 'nh_f1 / nh_e1', 105);
 
+SELECT '-- a float-only operand (ceil() drops the histogram arm of its argument) joined with a histogram one:';
+SELECT '-- ceil(f1) * e1 = e1 * 5, while ceil(f1) + e1 is float + histogram -> dropped';
+SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_math', 'ceil(nh_f1) * nh_e1', 105);
+SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_math', 'ceil(nh_f1) + nh_e1', 105);
+
 SELECT '-- mixed-kind series, per-step resolution: mx1 (float@100, histogram e1@110) + mx2 (histogram e2@100):';
 SELECT '-- at 105 mx1 resolves to a float -> dropped; at 115 to the histogram -> e1 + e2';
 SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_math', 'mx1 + mx2', 105);

@@ -29,6 +29,9 @@
 -- e1 / f1: histogram / float is allowed: (count 0.8, sum 2, buckets x0.2, x0.6)
 [('job','x')]	1970-01-01 00:01:45.000	\N	(0,0,0,0.8,2,0,[(0,2)],[0.2,0.6],[],[],[])
 -- f1 / e1: float / histogram is NOT allowed -> dropped
+-- a float-only operand (ceil() drops the histogram arm of its argument) joined with a histogram one:
+-- ceil(f1) * e1 = e1 * 5, while ceil(f1) + e1 is float + histogram -> dropped
+[('job','x')]	1970-01-01 00:01:45.000	\N	(0,0,0,20,50,0,[(0,2)],[5,15],[],[],[])
 -- mixed-kind series, per-step resolution: mx1 (float@100, histogram e1@110) + mx2 (histogram e2@100):
 -- at 105 mx1 resolves to a float -> dropped; at 115 to the histogram -> e1 + e2
 [('job','mx')]	1970-01-01 00:01:55.000	\N	(0,0,0,12,31,0,[(0,2)],[3,9],[],[],[])

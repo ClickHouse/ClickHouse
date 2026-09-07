@@ -378,8 +378,12 @@ namespace
                 if (check_side_one)
                 {
                     histogram_values = makeASTFunction("any", std::move(histogram_values));
-                    histogram_values->setAlias(ColumnNames::HistogramValues);
                     sample_kinds = makeASTFunction("any", std::move(sample_kinds));
+                }
+                /// Both arms of a plain float side are expressions, so they need the alias even without `any()`.
+                if (check_side_one || !side_has_histograms)
+                {
+                    histogram_values->setAlias(ColumnNames::HistogramValues);
                     sample_kinds->setAlias(ColumnNames::SampleKinds);
                 }
                 builder.select_list.push_back(std::move(histogram_values));
