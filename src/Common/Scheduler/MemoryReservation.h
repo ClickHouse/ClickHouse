@@ -59,6 +59,7 @@ public:
     // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.
     void syncWithMemoryTracker(const MemoryTracker * memory_tracker);
 
+    ResourceCost getTotalReclaimable();
     /// Reclaimable memory of the query's spillable processors, keyed by the object that owns the
     /// state so that processors sharing it are counted once.
     void updateReclaimable(const ISpillable * spillable, ResourceCost bytes);

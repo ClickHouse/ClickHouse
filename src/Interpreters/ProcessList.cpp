@@ -945,6 +945,8 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         if (get_profile_events)
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
     }
+    if (auto * reservation = memory_reservation.get())
+        res.spillable_memory_bytes = reservation->getTotalReclaimable();
 
     if (get_settings)
     {
