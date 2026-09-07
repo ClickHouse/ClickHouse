@@ -15,6 +15,8 @@ namespace DB::ErrorCodes
 {
     extern const int CANNOT_EXECUTE_PROMQL_QUERY;
 }
+
+
 namespace DB::PrometheusQueryToSQL
 {
 

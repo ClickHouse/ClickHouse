@@ -1,7 +1,7 @@
 #pragma once
 
 /// Shared machinery for `timeSeriesHistogramSumOverGroup`/`timeSeriesHistogramAvgOverGroup`: the PromQL
-/// `sum`/`avg` histogram branches of `aggregation` in Prometheus promql/engine.go (see tmp/prom_engine.go).
+/// `sum`/`avg` histogram branches of `aggregation` in Prometheus promql/engine.go.
 
 #include <cmath>
 #include <cstddef>

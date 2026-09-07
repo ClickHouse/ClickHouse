@@ -18,13 +18,8 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-}
-
-
-namespace DB::ErrorCodes
-{
     extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 

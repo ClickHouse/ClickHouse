@@ -97,7 +97,7 @@ namespace
     }
 
     /// The histogram arm of an arithmetic binary operator, mirroring the `hlhs`/`hrhs` cases of
-    /// `vectorElemBinop` in Prometheus promql/engine.go (see tmp/prom_engine.go).
+    /// `vectorElemBinop` in Prometheus promql/engine.go.
     ASTPtr buildHistogramArm(std::string_view operator_name, const SimpleBinaryOperatorHistogramArm::Input & input)
     {
         /// A scalar side has no histogram samples, so `isNotNull` guards on its arm are unnecessary.

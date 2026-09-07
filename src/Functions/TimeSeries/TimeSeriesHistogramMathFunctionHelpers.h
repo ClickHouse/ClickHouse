@@ -1,7 +1,7 @@
 #pragma once
 
 /// Shared machinery for the native-histogram arithmetic scalar functions, mirroring the
-/// histogram arms of `vectorElemBinop` in Prometheus promql/engine.go (see tmp/prom_engine.go).
+/// histogram arms of `vectorElemBinop` in Prometheus promql/engine.go.
 
 #include <cstddef>
 
