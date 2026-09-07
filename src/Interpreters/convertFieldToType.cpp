@@ -1,5 +1,7 @@
 #include <Interpreters/convertFieldToType.h>
 
+#include <limits>
+
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
@@ -499,6 +501,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isDate() && src.getType() == Field::Types::Int64)
         {
             return convertNumericType<UInt16>(src, type, strict, convert_inexact_floats);
+        }
+
+        if ((which_type.isDateTime64() || which_type.isTime64())
+            && src.getType() == Field::Types::UInt64
+            && src.safeGet<UInt64>() > std::numeric_limits<Int64>::max())
+        {
+            /// DateTime64 and Time64 store a scaled Int64. Do not narrow an out-of-range UInt64
+            /// before converting it, or an exact IN set can match an unrelated negative value.
+            return {};
         }
 
         if (which_type.isDateTime64()
