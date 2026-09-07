@@ -9,7 +9,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// Move a filter's element-only conjuncts into the ArrayJoinStep below it, so they run in element
+/// Move a filter on the ARRAY JOINed elements into the ArrayJoinStep below it, so it runs in element
 /// space before expansion. Runs after filterPushDown, which already pushed the non-element conjuncts down
 size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
@@ -36,13 +36,27 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     const auto & joined_columns = array_join->getColumns();
     NameSet joined_set(joined_columns.begin(), joined_columns.end());
 
-    /// The element filter runs on just the joined columns, so its inputs must be exactly those
-    ColumnsWithTypeAndName all_inputs;
-    for (const auto & column : filter->getInputHeaders().front()->getColumnsWithTypeAndName())
-        if (joined_set.contains(column.name))
-            all_inputs.push_back(column);
-    if (all_inputs.empty())
+    /// The step evaluates the filter over the elements: the joined columns plus the other columns the filter
+    /// reads, which are broadcast to each row's elements. A filter that reads no element stays where it is.
+    const auto * condition = expression.tryFindInOutputs(filter->getFilterColumnName());
+    if (!condition)
         return 0;
+    const auto required = ActionsDAG::cloneSubDAG({condition}, /*remove_aliases=*/false).getRequiredColumnsNames();
+    NameSet required_set(required.begin(), required.end());
+    bool reads_element = false;
+    for (const auto & name : required)
+        reads_element |= joined_set.contains(name);
+    if (!reads_element)
+        return 0;
+    ColumnsWithTypeAndName all_inputs;
+    Names available_inputs;
+    for (const auto & column : filter->getInputHeaders().front()->getColumnsWithTypeAndName())
+    {
+        if (!joined_set.contains(column.name) && !required_set.contains(column.name))
+            continue;
+        all_inputs.push_back(column);
+        available_inputs.push_back(column.name);
+    }
 
     /// Only fuse when the WHOLE filter moves into the ARRAY JOIN. If any conjunct must stay above, lifting
     /// an element conjunct out of the AND changes short-circuit evaluation - a throwing element predicate
@@ -52,7 +66,7 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     auto split = residual.splitActionsForFilterPushDown(
         filter->getFilterColumnName(),
         filter->removesFilterColumn(),
-        joined_columns,
+        available_inputs,
         all_inputs,
         /*allow_non_deterministic_functions=*/false);
     if (!split)

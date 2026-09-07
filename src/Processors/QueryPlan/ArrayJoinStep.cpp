@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsUInt64 max_block_size;
@@ -46,6 +51,12 @@ ArrayJoinStep::ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array
 
 void ArrayJoinStep::updateOutputHeader()
 {
+    /// A pass that reshapes the input must keep every column the fused filter reads.
+    if (element_filter)
+        for (const auto & name : element_filter->getRequiredColumnsNames())
+            if (!input_headers.front()->has(name))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "ARRAY JOIN element filter reads column {} which is not in the step input", name);
     output_header = std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_headers.front(), array_join.columns));
 }
 

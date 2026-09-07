@@ -66,7 +66,8 @@ public:
 
 private:
     /// Element-space filtered variant of next(): applies array_join->element_filter to the nested
-    /// element columns of one window and expands only the surviving elements.
+    /// element columns of one window (other columns it reads are broadcast to the elements) and
+    /// expands only the surviving elements.
     Block nextWithElementFilter();
 
     const ArrayJoinAction * array_join;
