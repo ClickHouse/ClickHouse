@@ -199,19 +199,16 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
             SizeAdaptivePacking packing;
             if (packs_this_index)
             {
-                /// Claim the archive key here and the on-disk name at the spill: reads resolve
-                /// `skp_idx_*` archive keys before the real disk, so an archive member shadows a
-                /// same-named column even while it owns no directory entry.
-                if (manifest)
-                    manifest->registerStreamBase(
-                        logical_stream_name, {StreamBaseManifest::Kind::SkipIndex, skip_index->index.name});
-
+                /// Size decides at write time which of the two names this substream takes, so the
+                /// stream claims each one in the branch that creates it: the archive key at the
+                /// packed commit, the on-disk name at the spill.
                 packing = {
                     packed_writer_for_streams,
                     logical_stream_name + index_substream.extension,
                     logical_stream_name + marks_file_extension,
                     packed_spill_threshold,
                     manifest,
+                    logical_stream_name,
                     on_disk_stream_name,
                     skip_index->index.name};
             }

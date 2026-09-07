@@ -29,3 +29,5 @@ statistics-drop-legal	10	45
 1
 nested-multi-rename-legal	10	10	30
 t_carry_col	1
+carry-col-spill-legal	10	45
+carry-col-spill-index	1

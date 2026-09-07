@@ -432,3 +432,21 @@ SELECT 't_carry_col', countIf(latest_fail_reason LIKE '%INCORRECT_FILE_NAME%'
     AND latest_fail_reason LIKE '%column `skp_idx_a`%')
 FROM system.mutations WHERE database = currentDatabase() AND table = 't_carry_col';
 DROP TABLE t_carry_col;
+
+-- The same shape with packing on, where the index spills: a spilled substream never enters the
+-- archive, so the only name it takes is the hashed on-disk one, while the carried column keeps the
+-- logical name its part was written with. The two are disjoint and the mutation must be accepted.
+-- max_file_name_length is lowered between the two writes because that is what makes the carried
+-- column's name logical and the index's name hashed at the same time.
+CREATE TABLE t_carry_col_spill (k UInt64, `skp_idx_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` UInt64, s String)
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, packed_skip_index_max_bytes = 1,
+         replace_long_file_name_to_hash = 1, max_file_name_length = 1024;
+INSERT INTO t_carry_col_spill SELECT number, number, toString(number) FROM numbers(10);
+ALTER TABLE t_carry_col_spill MODIFY SETTING max_file_name_length = 20;
+ALTER TABLE t_carry_col_spill ADD INDEX `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`(s) TYPE set(100) GRANULARITY 1;
+ALTER TABLE t_carry_col_spill MATERIALIZE INDEX `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`;
+SELECT 'carry-col-spill-legal', count(), sum(`skp_idx_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`) FROM t_carry_col_spill;
+SELECT 'carry-col-spill-index', data_compressed_bytes > 0 FROM system.data_skipping_indices
+WHERE database = currentDatabase() AND table = 't_carry_col_spill';
+DROP TABLE t_carry_col_spill;
