@@ -827,11 +827,10 @@ void ReadFromRemote::addPipe(
                 priority_func);
             remote_query_executor->setLogger(log);
             remote_query_executor->setShardScope({.cluster = cluster_name, .shard_num = shard.shard_info.shard_num});
-            remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
+            remote_query_executor->setQueryPlanFallbackStage(stage);
 
             if (!table_func_ptr)
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
-
             pipes.emplace_back(
                 createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
             addConvertingActions(pipes.back(), *output_header, context);

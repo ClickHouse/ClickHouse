@@ -4,6 +4,8 @@ exactly one fragment span per shard: OK	fragment span attributes: OK
 exactly one fragment span per shard: OK	fragment span attributes: OK
 === async_socket_for_remote=0 async_query_sending_for_remote=0 ===
 exactly one fragment span per shard: OK	fragment span attributes: OK
+=== urlCluster (IStorageCluster path) ===
+exactly one fragment span per shard: OK	fragment span attributes: OK
 === synchronous span covers the remote read ===
 sync span covers the remote sleep: OK
 === cancellation ===
