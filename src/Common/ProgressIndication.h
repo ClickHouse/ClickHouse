@@ -10,6 +10,7 @@
 #include <mutex>
 #include <unistd.h>
 #include <unordered_map>
+#include <vector>
 
 namespace DB
 {
@@ -115,6 +116,9 @@ private:
     /// Width of how much has been printed currently into stderr. Used to define size of progress bar and
     /// to check whether progress output needs to be cleared.
     size_t written_progress_chars = 0;
+
+    /// Progress counts at which the stalled state flipped; colors the bar by history.
+    std::vector<std::pair<UInt64, bool>> bar_segments;
 
     /// The server periodically sends information about how much data was read since last time.
     /// This information is stored here.

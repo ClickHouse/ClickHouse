@@ -38,6 +38,7 @@ void ProgressIndication::resetProgress()
         progress.reset();
         show_progress_bar = false;
         written_progress_chars = 0;
+        bar_segments.clear();
         write_progress_on_update = false;
     }
     {
@@ -189,9 +190,8 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
     auto [memory_usage, max_host_usage, peak_usage] = getMemoryUsage();
     auto [temp_data_on_disk_usage, max_host_temp_data_on_disk_usage] = getTempDataOnDiskUsage();
 
-    /// Mostly waiting instead of working: yellow bar instead of green.
+    /// Mostly waiting instead of working: yellow instead of green.
     bool stalled = waited > cpu_usage;
-    const char * bar_color = stalled ? "\033[0;33m" : "\033[0;32m";
     const char * bar_overlay_color = stalled ? "\033[30;43m" : "\033[30;42m";
 
     if (cpu_usage > 0 || waited > 0 || memory_usage > 0 || temp_data_on_disk_usage > 0)
@@ -236,6 +236,9 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
             max_count = std::max(progress.read_bytes, progress.total_bytes_to_read);
         }
 
+        if (bar_segments.empty() || bar_segments.back().second != stalled)
+            bar_segments.emplace_back(current_count, stalled);
+
         /// To avoid flicker, display progress bar only if .5 seconds have passed since query execution start
         ///  and the query is less than halfway done.
 
@@ -261,9 +264,29 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
                     std::string bar = UnicodeBar::render(bar_width);
                     size_t bar_width_in_terminal = bar.size() / UNICODE_BAR_CHAR_SIZE;
 
+                    /// Each cell is colored by the state at the time that progress was made.
+                    auto cell_of = [&](UInt64 count)
+                    {
+                        double width = UnicodeBar::getWidth(static_cast<double>(count), 0, static_cast<double>(max_count), static_cast<double>(width_of_progress_bar));
+                        return std::min(bar_width_in_terminal, static_cast<size_t>(width));
+                    };
+                    auto colored_bar = [&](size_t from_cell)
+                    {
+                        WriteBufferFromOwnString out;
+                        for (size_t i = 0; i < bar_segments.size(); ++i)
+                        {
+                            size_t begin = std::max(from_cell, cell_of(bar_segments[i].first));
+                            size_t end = i + 1 < bar_segments.size() ? cell_of(bar_segments[i + 1].first) : bar_width_in_terminal;
+                            if (begin < end)
+                                out << (bar_segments[i].second ? "\033[0;33m" : "\033[0;32m")
+                                    << bar.substr(begin * UNICODE_BAR_CHAR_SIZE, (end - begin) * UNICODE_BAR_CHAR_SIZE) << "\033[0m";
+                        }
+                        return out.str();
+                    };
+
                     if (profiling_msg.empty())
                     {
-                        message << bar_color << bar << "\033[0m"
+                        message << colored_bar(0)
                             << std::string(width_of_progress_bar - bar_width_in_terminal, ' ');
                     }
                     else
@@ -275,14 +298,14 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
                             /// Render profiling_msg at left on top of the progress bar.
 
                             message << bar_overlay_color << profiling_msg << "\033[0m"
-                                << bar_color << bar.substr(profiling_msg.size() * UNICODE_BAR_CHAR_SIZE) << "\033[0m"
+                                << colored_bar(profiling_msg.size())
                                 << std::string(width_of_progress_bar - bar_width_in_terminal, ' ');
                         }
                         else
                         {
                             /// Render profiling_msg at right after the progress bar.
 
-                            message << bar_color << bar << "\033[0m"
+                            message << colored_bar(0)
                                 << std::string(width_of_progress_bar - bar_width_in_terminal - profiling_msg.size(), ' ')
                                 << "\033[2m" << profiling_msg << "\033[0m";
                         }
