@@ -34,10 +34,13 @@ for i in 1 2 3 4; do
 done
 
 echo "cluster, path filter:"
+# Pinned: the old analyzer prepares no set for this shape, so the coordinator filters every
+# object out, the shards receive no files, and this arm exercises no concurrency at all.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), arraySort(groupArray(v))
     FROM icebergLocalCluster('test_shard_localhost', '${TABLE_PATH}', 'Parquet')
     WHERE _path IN (SELECT _path FROM ${CLICKHOUSE_DATABASE}.${TABLE} WHERE part IN (2, 3))
+    SETTINGS enable_analyzer = 1
 "
 
 echo "global in, path filter:"
