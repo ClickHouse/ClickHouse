@@ -19,12 +19,12 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 * **ClickHouse Cloud organization:** ClickHouse Cloud における最上位のエンティティで、ユーザー、課金、および BYOC 以外の ClickHouse サービスを管理します。1 つの組織内のユーザーは、標準の Cloud サービスと BYOC サービスの両方にアクセスできます。
 * **ClickHouse BYOC organization:** BYOC デプロイメントの管理に特化した独立した組織です。Cloud organization とユーザーを共有しますが、BYOC インフラストラクチャがデプロイされる 1 つ以上の クラウドアカウントに関連付けられています。
-* **Cloud account/project/subscription:** BYOC インフラストラクチャがプロビジョニングされる、お客様所有の AWS アカウント、GCP プロジェクト、または Azure サブスクリプションです。各アカウント/プロジェクト/サブスクリプションでは、1 つ以上のリージョンで BYOC デプロイメントをホストできます。分離のため、BYOC デプロイメントごとに専用のアカウント/プロジェクト/サブスクリプションを使用することを推奨します。
-* **BYOC infrastructure:** クラウドアカウント内の特定リージョンにデプロイされるクラウドリソース一式で、VPC/VNet、Kubernetes クラスター (EKS/GKE/AKS)、オブジェクトストレージバケット、IAM ロール/サービスアカウント/サービスプリンシパル、および関連サービスが含まれます。1 つの クラウドアカウントに、異なるリージョンにまたがる複数の BYOC インフラストラクチャを含めることができます。
+* **Cloud account / project:** BYOC インフラストラクチャがプロビジョニングされる、お客様所有の AWS アカウントまたは GCP プロジェクトです。各アカウントまたはプロジェクトでは、1 つ以上のリージョンで BYOC デプロイメントをホストできます。分離のため、BYOC デプロイメントごとに専用のアカウントまたはプロジェクトを使用することを推奨します。
+* **BYOC infrastructure:** クラウドアカウント内の特定リージョンにデプロイされる Cloud リソース一式で、VPC、Kubernetes クラスター (EKS/GKE) 、ストレージバケット、IAM ロール、および関連サービスが含まれます。1 つの クラウドアカウントに、異なるリージョンにまたがる複数の BYOC インフラストラクチャを含めることができます。
 * **ClickHouse Service:** BYOC インフラストラクチャ内で稼働する個別の ClickHouse クラスターです。同じ BYOC インフラストラクチャ内で複数のサービスを実行できます。
 
 <Note>
-  同じ組織内で AWS アカウント、GCP プロジェクト、および Azure サブスクリプションを混在させられるのは、[cloud service provider marketplace](/ja/products/cloud/reference/billing/marketplace/overview) 経由で設定されていないお客様に限られます。
+  同じ組織内で AWS アカウントと GCP プロジェクトを混在させられるのは、[cloud service provider marketplace](/ja/products/cloud/reference/billing/marketplace/overview) 経由で設定されていないお客様に限られます。
 </Note>
 
 <div id="glossary">
@@ -52,9 +52,9 @@ BYOC では、ClickHouse VPC 上で稼働する **ClickHouse コントロール�
 ClickHouse Cloud がお客様のアカウントにデプロイする主なクラウドリソースは次のとおりです。
 
 * **VPC:** ClickHouse デプロイメント専用の Virtual Private Cloud です。これは ClickHouse が管理することも、お客様自身が管理することもでき、通常はお客様のアプリケーション VPC とピアリングされます。
-* **IAM ロール and ポリシー:** Kubernetes、ClickHouse サービス、監視スタックに必要な IAM ロールと権限です。これらは ClickHouse がプロビジョニングすることも、お客様が用意することもできます。
+* **IAM roles and policies:** Kubernetes、ClickHouse サービス、監視スタックに必要な IAM ロールと権限です。これらは ClickHouse がプロビジョニングすることも、お客様が用意することもできます。
 * **Storage buckets:** データパーツ、バックアップ、さらに (必要に応じて) 長期保存用のメトリクスやログアーカイブの保存に使用されます。
-* **Kubernetes cluster:** クラウドプロバイダーに応じて Amazon EKS、Google GKE、または Azure AKS となります。アーキテクチャ図に示されている ClickHouse サーバーと補助サービスをホストします。
+* **Kubernetes cluster:** クラウドプロバイダーに応じて Amazon EKS、Google GKE、または Azure AKS となり、アーキテクチャ図に示されている ClickHouse サーバーと補助サービスをホストします。
 
 デフォルトでは、ClickHouse Cloud は新しい専用 VPC をプロビジョニングし、Kubernetes サービスを安全に運用するために必要な IAM ロールを設定します。より高度なネットワーク要件やセキュリティ要件を持つ組織向けに、VPC と IAM ロールを個別に管理するオプションも用意されています。このアプローチにより、ネットワーク構成をより柔軟にカスタマイズでき、権限もより細かく制御できます。ただし、これらのリソースを自己管理する場合は、運用上の責任が増します。
 
@@ -83,12 +83,12 @@ BYOC のデプロイモデルでは、信頼性の高い運用、保守の容易
 ClickHouse Cloud が、お客様のクラウドアカウント内のリソースをプロビジョニングおよび管理するには、クロスアカウント IAM 権限が必要です。これにより、ClickHouse は次のことを実行できます。
 
 * **インフラストラクチャをプロビジョニングする**: VPC、サブネット、セキュリティグループ、そのほかのネットワーク関連コンポーネントを作成および設定する
-* **Kubernetes クラスターを管理する**: EKS/GKE/AKS クラスター、ノードグループ、クラスターコンポーネントをデプロイおよび維持する
+* **Kubernetes クラスターを管理する**: EKS/GKE クラスター、ノードグループ、クラスターコンポーネントをデプロイおよび維持する
 * **ストレージリソースを作成する**: データとバックアップ用に S3 バケットまたは同等のオブジェクトストレージをプロビジョニングする
-* **IAM ロールを管理する**: Kubernetes のサービスアカウントや補助サービス向けの IAM ロールを作成および設定する
+* **IAM ロールを管理する**: Kubernetes の service account や補助サービス向けの IAM ロールを作成および設定する
 * **補助サービスを運用する**: 監視スタック、イングレスコントローラー、そのほかのインフラストラクチャコンポーネントをデプロイおよび管理する
 
-これらの権限は、初回のオンボーディング プロセス中に作成するクロスアカウント IAM ロール (AWS)、サービスアカウント (GCP)、またはマルチテナント サービスプリンシパル (Azure) を通じて付与されます。このロールは最小権限の原則に従っており、権限の範囲は BYOC の運用に必要なもののみに限定されます。
+これらの権限は、初回のオンボーディング プロセス中に作成するクロスアカウント IAM ロール (AWS) または service account (GCP) を通じて付与されます。このロールは最小権限の原則に従っており、権限の範囲は BYOC の運用に必要なもののみに限定されます。
 
 必要な具体的権限の詳細については、[BYOC Privilege Reference](/ja/products/bring-your-own-cloud/reference/privilege) を参照してください。
 

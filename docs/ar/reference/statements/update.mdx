@@ -1,5 +1,5 @@
 ---
-description: 'يُبسِّط التحديث خفيف الوزن عملية تحديث البيانات في قاعدة البيانات باستخدام أجزاء التصحيح.'
+description: 'تُبسِّط التحديثات خفيفة الوزن عملية تحديث البيانات في قاعدة البيانات باستخدام أجزاء التصحيح.'
 keywords: ['update']
 sidebarTitle: 'UPDATE'
 slug: /sql-reference/statements/update
@@ -7,12 +7,12 @@ title: 'تعليمة UPDATE خفيفة الوزن'
 doc_type: 'مرجع'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
 <Note>
-  التحديث خفيف الوزن لا يزال حاليًا في المرحلة التجريبية.
+  التحديثات الخفيفة لا تزال حاليًا في المرحلة التجريبية.
   إذا واجهت أي مشكلات، يُرجى فتح issue في [مستودع ClickHouse](https://github.com/clickhouse/clickhouse/issues).
 </Note>
 
@@ -52,18 +52,18 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 * **تُنظَّف تلقائيًا** بمجرد أن تُطبَّق التصحيحات فعليًا على جميع الأجزاء النشطة
 
 <div id="lightweight-update-requirements">
-  ## متطلبات التحديثات خفيفة الوزن
+  ## متطلبات التحديثات الخفيفة
 </div>
 
-تدعم التحديثات خفيفة الوزن محركات [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) و[`ReplacingMergeTree`](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree) و[`CollapsingMergeTree`](/ar/reference/engines/table-engines/mergetree-family/collapsingmergetree) و[`VersionedCollapsingMergeTree`](/ar/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree)، بالإضافة إلى إصداراتها [`Replicated`](/ar/reference/engines/table-engines/mergetree-family/replication) و[`Shared`](/ar/products/cloud/features/infrastructure/shared-merge-tree).
+تدعم التحديثات الخفيفة محركات [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) و[`ReplacingMergeTree`](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree) و[`CollapsingMergeTree`](/ar/reference/engines/table-engines/mergetree-family/collapsingmergetree) و[`VersionedCollapsingMergeTree`](/ar/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree)، بالإضافة إلى إصداراتها [`Replicated`](/ar/reference/engines/table-engines/mergetree-family/replication) و[`Shared`](/ar/products/cloud/features/infrastructure/shared-merge-tree).
 
-لاستخدام التحديثات خفيفة الوزن، يجب تمكين التجسيد المادي على العمودين `_block_number` و`_block_offset` باستخدام إعدادات الجدول [`enable_block_number_column`](/ar/reference/settings/merge-tree-settings/enable-block#enable_block_number_column) و[`enable_block_offset_column`](/ar/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column).
+لاستخدام التحديثات الخفيفة، يجب تمكين إضفاء الطابع المادي على العمودين `_block_number` و`_block_offset` باستخدام إعدادات الجدول [`enable_block_number_column`](/ar/reference/settings/merge-tree-settings#enable_block_number_column) و[`enable_block_offset_column`](/ar/reference/settings/merge-tree-settings#enable_block_offset_column).
 
 <div id="lightweight-delete">
-  ## عمليات الحذف الخفيفة
+  ## عمليات `DELETE` الخفيفة
 </div>
 
-يمكن تنفيذ استعلام [`DELETE` خفيف الوزن](/ar/reference/statements/delete) باعتباره `UPDATE` خفيفًا بدلًا من عملية mutation من نوع `ALTER UPDATE`. ويُتحكَّم في آلية تنفيذ `DELETE` خفيف الوزن من خلال الإعداد [`lightweight_delete_mode`](/ar/reference/settings/session-settings/lightweight#lightweight_delete_mode).
+يمكن تنفيذ استعلام [lightweight `DELETE`](/ar/reference/statements/delete) على شكل `UPDATE` خفيف الوزن بدلًا من mutation `ALTER UPDATE`. ويُتحكَّم في تنفيذ lightweight `DELETE` من خلال الإعداد [`lightweight_delete_mode`](/ar/reference/settings/session-settings#lightweight_delete_mode).
 
 <div id="performance-considerations">
   ## اعتبارات الأداء
@@ -87,8 +87,8 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
   ## العمليات المتزامنة
 </div>
 
-لا تنتظر التحديثات خفيفة الوزن اكتمال عمليات الدمج/التعديلات الجارية حاليًا، بخلاف التعديلات الثقيلة.
-ويُتحكَّم في اتساق التحديثات خفيفة الوزن المتزامنة من خلال الإعدادات [`update_sequential_consistency`](/ar/reference/settings/session-settings/update#update_sequential_consistency) و[`update_parallel_mode`](/ar/reference/settings/session-settings/update#update_parallel_mode).
+لا تنتظر التحديثات خفيفة الوزن اكتمال عمليات الدمج أو التعديلات الجارية حاليًا، بخلاف التعديلات الثقيلة.
+ويُتحكَّم في اتساق التحديثات خفيفة الوزن المتزامنة من خلال الإعدادات [`update_sequential_consistency`](/ar/reference/settings/session-settings#update_sequential_consistency) و[`update_parallel_mode`](/ar/reference/settings/session-settings#update_parallel_mode).
 
 <div id="update-permissions">
   ## أذونات `UPDATE`
@@ -104,44 +104,46 @@ GRANT ALTER UPDATE ON db.table TO username;
   ## تفاصيل التنفيذ
 </div>
 
-أجزاء التصحيح هي نفسها الأجزاء العادية، لكنها لا تحتوي إلا على الأعمدة المحدَّثة وأعمدة مفتاح الفرز الخاصة بالجدول وأعمدة النظام التالية:
+أجزاء التصحيح هي نفسها الأجزاء العادية، لكنها لا تحتوي إلا على الأعمدة المحدَّثة وعدة أعمدة خاصة بالنظام:
 
 * `_part` - اسم الجزء الأصلي
+* `_part_offset` - رقم الصف في الجزء الأصلي
 * `_block_number` - رقم block الخاص بالصف في الجزء الأصلي
 * `_block_offset` - إزاحة block الخاصة بالصف في الجزء الأصلي
-* `_data_version` - إصدار البيانات المحدَّثة (رقم block المخصَّص لاستعلام `UPDATE`)
+* `_data_version` - إصدار بيانات البيانات المحدَّثة (رقم block المخصَّص لاستعلام `UPDATE`)
 
+في المتوسط، يضيف ذلك نحو 40 بايتًا (بيانات غير مضغوطة) من العبء الإضافي لكل صف محدَّث في أجزاء التصحيح.
 وتساعد أعمدة النظام في العثور على الصفوف في الجزء الأصلي التي يجب تحديثها.
-وترتبط بـ [الأعمدة الافتراضية](/ar/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns) في الجزء الأصلي، والتي تُضاف عند القراءة إذا كان يلزم تطبيق أجزاء التصحيح.
-وتُرتَّب أجزاء التصحيح حسب مفتاح الفرز الخاص بالجدول، مع إلحاق العمودين `_block_number` و `_block_offset` به.
-ويعتمد العبء الإضافي للتخزين لكل صف محدَّث على حجم قيم أعمدة مفتاح الفرز.
+وترتبط أعمدة النظام بـ [الأعمدة الافتراضية](/ar/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns) في الجزء الأصلي، والتي تُضاف عند القراءة إذا كان يلزم تطبيق أجزاء التصحيح.
+وتُرتَّب أجزاء التصحيح حسب `_part` و `_part_offset`.
 
 تنتمي أجزاء التصحيح إلى تقسيمات مختلفة عن الجزء الأصلي.
-ويكون معرّف التقسيم لجزء التصحيح هو `patch-<hash of the patch part structure>-<original_partition_id>`.
+ويكون معرّف التقسيم لجزء التصحيح هو `patch-<hash of column names in patch part>-<original_partition_id>`.
 لذلك تُخزَّن أجزاء التصحيح ذات الأعمدة المختلفة في تقسيمات مختلفة.
 فعلى سبيل المثال، ستنشئ ثلاثة تحديثات `SET x = 1 WHERE <cond>` و `SET y = 1 WHERE <cond>` و `SET x = 1, y = 1 WHERE <cond>` ثلاثة أجزاء تصحيح في ثلاثة تقسيمات مختلفة.
 
 يمكن دمج أجزاء التصحيح فيما بينها لتقليل عدد التصحيحات المطبَّقة على استعلامات `SELECT` وتقليل العبء الإضافي. ويستخدم دمج أجزاء التصحيح خوارزمية الدمج [الاستبدالية](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree) مع `_data_version` بوصفه version column.
 لذلك تحتفظ أجزاء التصحيح دائمًا بأحدث إصدار لكل صف محدَّث في الجزء.
 
-يُطبَّق جزء التصحيح بدمجه مع جزء البيانات وفقًا لمفتاح الفرز الخاص بالجدول: يُحدَّث الصف إذا كانت قيم أعمدة مفتاح الفرز والعمودين `_block_number` و `_block_offset` متساوية في جزء البيانات وجزء التصحيح.
-يتطلب تطبيق أجزاء التصحيح قراءة أعمدة مفتاح الفرز في جزء البيانات حتى إذا لم يحددها الاستعلام.
-يقتصر memory usage لتطبيق جزء تصحيح على أكبر نطاق من الصفوف ذات قيم مفتاح الفرز المتساوية.
+لا تنتظر تحديثات خفيفة الوزن انتهاء عمليات الدمج وعمليات التعديل الجارية حاليًا، بل تستخدم دائمًا snapshot الحالية من data parts لتنفيذ تحديث وإنتاج جزء تصحيح.
+وبسبب ذلك، يمكن أن توجد حالتان عند تطبيق أجزاء التصحيح.
 
-<div id="patch-parts-format-in-mixed-version-clusters">
-  ### تنسيق أجزاء التصحيح في العناقيد ذات الإصدارات المختلطة
-</div>
+فعلى سبيل المثال، إذا قرأنا الجزء `A`، فسنحتاج إلى تطبيق جزء التصحيح `X`:
 
-يتحكم إعداد مستوى الجدول [`patch_parts_version`](/ar/reference/settings/merge-tree-settings) في تنسيق أجزاء التصحيح التي تُكتب حديثًا.
-لا تدعم إصدارات ClickHouse الأقدم من 26.8 إلا التنسيق القديم `v1`، ولا تستطيع قراءة أجزاء التصحيح بالتنسيق الحالي `v2` الموضح أعلاه.
-أثناء ترقية متدرجة من إصدار كهذا، استمر في كتابة التنسيق `v1` إلى أن تُرقّى جميع النسخ المتماثلة: عيّن `patch_parts_version = 'v1'` للجداول التي تستخدم التحديثات خفيفة الوزن، أو عيّن إعداد [`compatibility`](/ar/reference/settings/session-settings/compatibility#compatibility) إلى الإصدار الذي تُجري الترقية منه.
-بعد اكتمال الترقية، أزل التجاوز لبدء كتابة أجزاء التصحيح بالتنسيق `v2`.
-تظل أجزاء التصحيح بكلا التنسيقين قابلة للقراءة والتطبيق، بغض النظر عن قيمة الإعداد.
+* إذا كان `X` يحتوي على الجزء `A` نفسه. ويحدث هذا إذا لم يكن `A` مشاركًا في عملية دمج عند تنفيذ `UPDATE`.
+* إذا كان `X` يحتوي على الجزأين `B` و `C`، اللذين يغطيهما الجزء `A`. ويحدث هذا إذا كانت هناك عملية دمج (`B`, `C`) -&gt; `A` قيد التشغيل عند تنفيذ `UPDATE`.
+
+ولهاتين الحالتين، توجد طريقتان لتطبيق أجزاء التصحيح، على الترتيب:
+
+* استخدام merge على الأعمدة المرتَّبة `_part` و `_part_offset`.
+* استخدام join على العمودين `_block_number` و `_block_offset`.
+
+ويكون وضع join أبطأ ويتطلب ذاكرة أكبر من وضع merge، لكنه يُستخدم بوتيرة أقل.
 
 <div id="related-content">
-  ## محتوى ذي صلة
+  ## محتوى ذو صلة
 </div>
 
 * [`ALTER UPDATE`](/ar/reference/statements/alter/update) - عمليات `UPDATE` الثقيلة
-* [`DELETE` خفيف الوزن](/ar/reference/statements/delete) - عمليات `DELETE` خفيفة الوزن
-* [`APPLY PATCHES`](/ar/reference/statements/alter/apply-patches) - فرض التجسيد المادي للتصحيحات في أجزاء البيانات (عملية mutation)
+* [Lightweight `DELETE`](/ar/reference/statements/delete) - عمليات `DELETE` خفيفة الوزن
+* [`APPLY PATCHES`](/ar/reference/statements/alter/apply-patches) - فرض التخزين المادي للتصحيحات في أجزاء البيانات (عملية mutation)

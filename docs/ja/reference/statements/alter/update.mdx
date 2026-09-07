@@ -20,54 +20,15 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 
 1 つのクエリに、カンマ区切りで複数のコマンドを含めることができます。
 
-クエリ処理の同期性は、[mutations&#95;sync](/ja/reference/settings/session-settings/mutations#mutations_sync) 設定で定義されます。デフォルトでは非同期です。
+クエリ処理の同期性は、[mutations&#95;sync](/ja/reference/settings/session-settings#mutations_sync) 設定で定義されます。デフォルトでは非同期です。
 
 **関連項目**
 
 * [ミューテーション](/ja/reference/statements/alter/index#mutations)
 * [ALTER クエリの同期性](/ja/reference/statements/alter/index#synchronicity-of-alter-queries)
-* [mutations&#95;sync](/ja/reference/settings/session-settings/mutations#mutations_sync) 設定
+* [mutations&#95;sync](/ja/reference/settings/session-settings#mutations_sync) 設定
 * [論理更新 `UPDATE`](/ja/reference/statements/update) - パッチパートを使用する代替の論理更新
 * [`APPLY PATCHES`](/ja/reference/statements/alter/apply-patches) - 論理更新のパッチを手動で適用する
-
-<div id="materialized-columns">
-  ## マテリアライズドカラム
-</div>
-
-更新されたカラムを参照する式を持つ [`MATERIALIZED`](/ja/reference/statements/create/table#materialized) カラムは、ミューテーション によって再計算されるため、保存された値は新しいデータとの整合性が保たれます。
-
-<div id="columns-calculated-from-ephemeral-columns">
-  ### EPHEMERAL カラムから計算されたカラム
-</div>
-
-[`EPHEMERAL`](/ja/reference/statements/create/table#ephemeral) カラムは `INSERT` の実行時にのみ存在し、保存されません。そのため、これを基に計算された `MATERIALIZED` カラムは、ミューテーションによって再計算できません。このようなカラムには `INSERT` 時に計算された値が保持され、その後、その値は式と一致しなくなります。
-
-```sql
-CREATE TABLE test
-(
-    x Int32,
-    e Int32 EPHEMERAL 0,
-    m Int32 MATERIALIZED x + e
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-
-INSERT INTO test (x, e) VALUES (1, 7);
-
-ALTER TABLE test UPDATE x = 2 WHERE 1;
-
-SELECT x, m FROM test;
-```
-
-```text
-┌─x─┬─m─┐
-│ 2 │ 8 │
-└───┴───┘
-```
-
-`m` は `8`、つまり `INSERT` 時に計算された値であり、`2 + 7` ではありません。`e` の値は、それを
-指定した `INSERT` の外部では利用できません。この理由でカラムをスキップすると、mutation は server log に警告を記録します。
-このようなカラムを最新の状態にするには、影響を受ける行を再度 `INSERT` してください。
 
 <div id="related-content">
   ## 関連コンテンツ

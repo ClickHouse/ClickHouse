@@ -6,11 +6,11 @@ title: 'CREATE VIEW'
 doc_type: 'reference'
 ---
 
-import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { DeprecatedBadge } from "/snippets/pt-BR/components/DeprecatedBadge/DeprecatedBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import DeprecatedBadge from "/snippets/pt-BR/components/DeprecatedBadge/DeprecatedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-Cria uma nova VIEW. As VIEWs podem ser [normais](#normal-view), [materializadas](#materialized-view), [VIEWs materializadas atualizáveis](#refreshable-materialized-view) e [Window View](/pt-BR/reference/statements/create/view#window-view).
+Cria uma nova view. As views podem ser [normais](#normal-view), [materializadas](#materialized-view), [materializadas atualizáveis](#refreshable-materialized-view) e [de janela](/pt-BR/reference/statements/create/view#window-view).
 
 <div id="normal-view">
   ## View normal
@@ -49,8 +49,7 @@ SELECT a, b, c FROM (SELECT ...)
   ## View parametrizada
 </div>
 
-Views parametrizadas são semelhantes a views normais, mas podem ser criadas com parâmetros que não são resolvidos de imediato.
-Essas views podem ser usadas com funções de tabela, que especificam o nome da view como nome da função e os valores dos parâmetros como argumentos.
+Views parametrizadas são semelhantes a views normais, mas podem ser criadas com parâmetros que não são resolvidos de imediato. Essas views podem ser usadas com funções de tabela, que especificam o nome da view como nome da função e os valores dos parâmetros como argumentos.
 
 ```sql
 CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Column2={column2:datatype2} ...
@@ -60,14 +59,6 @@ O comando acima cria uma view para a tabela, que pode ser usada como função de
 
 ```sql
 SELECT * FROM view(column1=value1, column2=value2 ...)
-```
-
-Como a view parametrizada depende dos valores dos parâmetros, ela não tem um esquema quando os parâmetros não são fornecidos.
-Isso significa que não há informações sobre views parametrizadas na tabela `system.columns`.
-Além disso, as consultas `DESCRIBE` só funcionariam se os parâmetros fossem fornecidos.
-
-```sql
-DESCRIBE view(column1=value1, column2=value2 ...)
 ```
 
 <div id="materialized-view">
@@ -96,7 +87,7 @@ AS SELECT ...
   ### CREATE OR REPLACE MATERIALIZED VIEW
 </div>
 
-`CREATE OR REPLACE MATERIALIZED VIEW` substitui atomicamente uma visão materializada existente e sua tabela de armazenamento interna (se houver). A operação requer um motor de banco de dados `Atomic` ou `Replicated`.
+`CREATE OR REPLACE MATERIALIZED VIEW` substitui atomicamente uma VIEW materializada existente e sua tabela de armazenamento interna (se houver). A operação requer um motor de banco de dados `Atomic` ou `Replicated`.
 
 ```sql
 CREATE OR REPLACE MATERIALIZED VIEW [db.]name [ON CLUSTER cluster]
@@ -143,16 +134,16 @@ CREATE OR REPLACE MATERIALIZED VIEW mv TO target
 ```
 
 <Tip>
-  Aqui está um guia passo a passo sobre como usar [visões materializadas](/pt-BR/concepts/features/materialized-views/cascading-materialized-views).
+  Aqui está um guia passo a passo sobre como usar [VIEWs materializadas](/pt-BR/concepts/features/materialized-views/cascading-materialized-views).
 </Tip>
 
-visões materializadas armazenam dados transformados pela consulta [SELECT](/pt-BR/reference/statements/select/index) correspondente.
+VIEWs materializadas armazenam dados transformados pela consulta [SELECT](/pt-BR/reference/statements/select/index) correspondente.
 
-Ao criar uma visão materializada sem `TO [db].[table]`, você deve especificar `ENGINE` — o motor de tabela usado para armazenar os dados.
+Ao criar uma VIEW materializada sem `TO [db].[table]`, você deve especificar `ENGINE` — o motor de tabela usado para armazenar os dados.
 
-Ao criar uma visão materializada com `TO [db].[table]`, você também pode usar `POPULATE` para preencher retroativamente a tabela de destino com os dados de origem existentes (a tabela de destino já pode conter dados; nesse caso, as linhas preenchidas retroativamente são acrescentadas). `POPULATE` não pode ser combinado com `REFRESH`: uma [visão materializada atualizável](#refreshable-materialized-view) é preenchida por sua primeira atualização, portanto, `POPULATE` carregaria os dados iniciais duas vezes (use `EMPTY` para ignorar a primeira atualização).
+Ao criar uma VIEW materializada com `TO [db].[table]`, você também não pode usar `POPULATE`.
 
-Uma visão materializada é implementada da seguinte forma: ao inserir dados na tabela especificada em `SELECT`, parte dos dados inseridos é transformada por essa consulta `SELECT`, e o resultado é inserido na VIEW.
+Uma VIEW materializada é implementada da seguinte forma: ao inserir dados na tabela especificada em `SELECT`, parte dos dados inseridos é transformada por essa consulta `SELECT`, e o resultado é inserido na VIEW.
 
 <Note>
   VIEWs materializadas no ClickHouse usam **nomes de colunas** em vez da ordem das colunas durante a inserção na tabela de destino. Se alguns nomes de colunas não estiverem presentes no resultado da consulta `SELECT`, o ClickHouse usará um valor padrão, mesmo que a coluna não seja [Nullable](/pt-BR/reference/data-types/nullable). Uma prática segura é adicionar aliases para todas as colunas ao usar VIEWs materializadas.
@@ -168,25 +159,22 @@ Uma visão materializada é implementada da seguinte forma: ao inserir dados na 
   `materialized_views_ignore_errors` é `true` por padrão para tabelas `system.*_log`.
 </Note>
 
-Se você especificar `POPULATE`, os dados existentes da tabela de origem serão inseridos na VIEW durante sua criação. Caso contrário, a VIEW conterá apenas os dados inseridos na tabela de origem após a criação da VIEW.
-
-Para uma `CREATE MATERIALIZED VIEW` simples, `POPULATE` é **atômico** por padrão (configuração `materialized_views_populate_atomically = 1`): a VIEW passa a receber novas inserções na tabela de origem e um snapshot dos dados existentes é obtido simultaneamente, sob um breve bloqueio exclusivo na tabela de origem, para que cada linha inserida concorrentemente com o preenchimento seja entregue à VIEW **exatamente uma vez** — sem omissões nem duplicações. O preenchimento, possivelmente de longa duração, lê então o snapshot fixado sem manter nenhum bloqueio.
-
-Essa é uma atomicidade local do caminho de inserção: o bloqueio exclusivo só serializa com inserções que adquirem o bloqueio de armazenamento dessa tabela de origem **no mesmo servidor**; portanto, a garantia de exatamente uma vez abrange inserções que chegam por este servidor. Não é uma garantia para todo o cluster — linhas inseridas em outra réplica de uma origem `ReplicatedMergeTree` ou por um caminho de gravação distribuído (por exemplo, em uma tabela `Distributed` ou via `ON CLUSTER`) concorrentemente com o preenchimento estão fora desse recorte e ainda podem ser omitidas ou duplicadas.
-
-Se o preenchimento falhar — por exemplo, se o bloqueio exclusivo em uma tabela de origem ocupada não puder ser adquirido dentro de `lock_acquire_timeout`, ou se o `SELECT` da VIEW gerar uma exceção durante a execução — a VIEW recém-criada será excluída e a consulta `CREATE` falhará, sem deixar nada do que foi criado, portanto, ela poderá simplesmente ser tentada novamente. Para a forma `TO [db].[table]`, essa reversão exclui apenas a VIEW, nunca a tabela de destino preexistente — mas as linhas que o preenchimento com falha já inseriu no destino permanecem lá, exatamente como após um `INSERT ... SELECT` com falha nessa tabela, portanto, tentar o `CREATE` novamente as insere outra vez. Se o preenchimento precisar ser exato, tente novamente em uma tabela de destino truncada ou nova, ou use um mecanismo de desduplicação como `ReplacingMergeTree`.
+Se você especificar `POPULATE`, os dados existentes da tabela serão inseridos na VIEW no momento da criação, como se fosse executado um `CREATE TABLE ... AS SELECT ...`. Caso contrário, a consulta conterá apenas os dados inseridos na tabela após a criação da VIEW. **Não recomendamos** usar `POPULATE`, pois os dados inseridos na tabela durante a criação da VIEW não serão inseridos nela.
 
 <Note>
-  A atomicidade exige que a tabela de origem seja compatível com a leitura de um snapshot fixado em um ponto no tempo — a família `MergeTree` e `Memory`. Para qualquer outra origem (uma VIEW, `Distributed`, `Merge`, `Buffer`, a família `Log` ou uma tabela que não esteja em um banco de dados `Atomic`), o preenchimento recorre ao comportamento legado, não atômico (registrado no log do servidor): os dados existentes são lidos com um snapshot separado e não coordenado, portanto, linhas inseridas durante o preenchimento podem ser perdidas ou duplicadas. Nesse caso, crie a VIEW e execute um `INSERT ... SELECT` separado se precisar de dados exatos. Definir `materialized_views_populate_atomically = 0` força esse comportamento legado para todas as origens.
+  Como `POPULATE` funciona como `CREATE TABLE ... AS SELECT ...`, ele tem algumas limitações:
 
-  O preenchimento atômico aplica-se apenas a `CREATE MATERIALIZED VIEW` simples. `CREATE OR REPLACE` / `REPLACE MATERIALIZED VIEW ... POPULATE` sempre usam o preenchimento legado, não atômico.
+  * Não é compatível com banco de dados Replicated
+  * Não é compatível com ClickHouse Cloud
 
-  `POPULATE` não é compatível com bancos de dados `Replicated` (use `database_replicated_allow_heavy_create` para contornar essa restrição) e não é compatível com ClickHouse Cloud. Quando é habilitado por meio dessa substituição, o preenchimento é sempre o legado, não atômico — um preenchimento com falha não poderia ser revertido de forma consistente em todas as réplicas.
+  Em vez disso, pode-se usar um `INSERT ... SELECT` separado.
 </Note>
 
 Uma consulta `SELECT` pode conter `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Observe que as transformações correspondentes são realizadas de forma independente em cada bloco de dados inseridos. Por exemplo, se `GROUP BY` estiver definido, os dados serão agregados durante a inserção, mas apenas dentro de um único pacote de dados inseridos. Os dados não serão agregados posteriormente. A exceção é ao usar um `ENGINE` que realiza agregação de dados por conta própria, como `SummingMergeTree`.
 
 Se a VIEW materializada usar a construção `TO [db.]name`, você pode fazer `DETACH` da VIEW, executar `ALTER` na tabela de destino e, em seguida, fazer `ATTACH` da VIEW previamente desanexada (`DETACH`).
+
+Observe que a VIEW materializada é influenciada pela configuração [optimize&#95;on&#95;insert](/pt-BR/reference/settings/session-settings#optimize_on_insert). Os dados são mesclados antes de serem inseridos na VIEW.
 
 As VIEWs têm a mesma aparência das tabelas normais. Por exemplo, elas são listadas no resultado da consulta `SHOW TABLES`.
 
@@ -213,18 +201,12 @@ Observe que, independentemente da opção de segurança SQL, em todos os casos a
   Portanto, é necessário ter `GRANT ALLOW SQL SECURITY NONE TO <user>` para criar uma visão com essa opção.
 </Note>
 
-Se `DEFINER`/`SQL SECURITY` não forem especificados, o resultado dependerá da configuração do servidor [`ignore_empty_sql_security_in_create_view_query`](/pt-BR/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query).
+Se `DEFINER`/`SQL SECURITY` não forem especificados, os valores padrão serão usados:
 
-Com seu valor padrão de `true`, a consulta é armazenada conforme escrita e a visão recebe um tipo de segurança SQL vazio. Uma view normal é então executada com as permissões do invocador e, para uma visão materializada com uma tabela de destino especificada explicitamente, as verificações de acesso nessa tabela de destino são ignoradas: inserir na tabela de origem não exige o privilégio `INSERT` na tabela de destino, e ler a visão não exige o privilégio `SELECT` nela.
+* `SQL SECURITY`: `INVOKER` para views normais e `DEFINER` para visões materializadas ([configurável por configurações](/pt-BR/reference/settings/session-settings#default_normal_view_sql_security))
+* `DEFINER`: `CURRENT_USER` ([configurável por configurações](/pt-BR/reference/settings/session-settings#default_view_definer))
 
-Com `false`, os seguintes valores padrão são gravados na definição da visão no momento da criação:
-
-* `SQL SECURITY`: `INVOKER` para views normais (configurável por [`default_normal_view_sql_security`](/pt-BR/reference/settings/session-settings/default#default_normal_view_sql_security)) e `DEFINER` para visões materializadas (configurável por [`default_materialized_view_sql_security`](/pt-BR/reference/settings/session-settings/default#default_materialized_view_sql_security))
-* `DEFINER`: `CURRENT_USER` (configurável por [`default_view_definer`](/pt-BR/reference/settings/session-settings/default#default_view_definer))
-
-Views materializadas atualizáveis sempre recebem esses valores padrão, independentemente da configuração.
-
-Uma visão mantém o tipo de segurança SQL de sua definição armazenada quando é anexada ou recarregada na inicialização do servidor, portanto, uma visão armazenada sem `DEFINER`/`SQL SECURITY` mantém o tipo de segurança SQL vazio.
+Se uma visão for anexada sem `DEFINER`/`SQL SECURITY` especificados, o valor padrão será `SQL SECURITY NONE` para a visão materializada e `SQL SECURITY INVOKER` para a view normal.
 
 Para alterar a segurança SQL de uma visão existente, use
 
@@ -332,13 +314,13 @@ Normalmente, a primeira atualização é iniciada imediatamente após a criaçã
   ### Em banco de dados Replicated
 </div>
 
-Se a view materializada atualizável estiver em um [banco de dados Replicated](/pt-BR/reference/engines/database-engines/replicated), as réplicas se coordenam entre si para que apenas uma delas execute a atualização em cada horário agendado. O motor de tabela [ReplicatedMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replication) é necessário para que todas as réplicas vejam os dados produzidos pela atualização.
+Se a visão materializada atualizável estiver em um [banco de dados Replicated](/pt-BR/reference/engines/database-engines/replicated), as réplicas se coordenam entre si para que apenas uma delas execute a atualização em cada horário agendado. O motor de tabela [ReplicatedMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replication) é necessário para que todas as réplicas vejam os dados produzidos pela atualização.
 
 No modo `APPEND`, a coordenação pode ser desativada com `SETTINGS all_replicas = 1`. Isso faz com que as réplicas executem as atualizações de forma independente. Nesse caso, o ReplicatedMergeTree não é necessário.
 
-No modo sem `APPEND`, apenas a atualização coordenada é compatível. Para atualização não coordenada, use o banco de dados `Atomic` e a consulta `CREATE ... ON CLUSTER` para criar views materializadas atualizáveis em todas as réplicas.
+No modo sem `APPEND`, apenas a atualização coordenada é compatível. Para atualização não coordenada, use o banco de dados `Atomic` e a consulta `CREATE ... ON CLUSTER` para criar visões materializadas atualizáveis em todas as réplicas.
 
-A coordenação é feita por meio do Keeper. O caminho do znode é determinado pela configuração do servidor [default&#95;replica&#95;path](/pt-BR/reference/settings/server-settings/settings/default-replica#default_replica_path).
+A coordenação é feita por meio do Keeper. O caminho do znode é determinado pela configuração do servidor [default&#95;replica&#95;path](/pt-BR/reference/settings/server-settings/settings#default_replica_path).
 
 <div id="refresh-dependencies">
   ### Dependências de atualização
@@ -516,15 +498,13 @@ Para aguardar a conclusão de uma atualização, use [`SYSTEM WAIT VIEW`](/pt-BR
   ## Window View
 </div>
 
-<DeprecatedBadge />
+<ExperimentalBadge />
 
 <CloudNotSupportedBadge />
 
-<Warning>
-  **Obsoleto**
-
-  As window views estão obsoletas e poderão ser removidas em uma versão futura. Elas permanecem condicionadas à configuração [allow&#95;experimental&#95;window&#95;view](/pt-BR/reference/settings/session-settings/allow-experimental#allow_experimental_window_view) (`SET allow_experimental_window_view = 1`) e não são recomendadas para novos usos.
-</Warning>
+<Info>
+  Este é um recurso experimental que pode mudar de forma incompatível com versões anteriores em versões futuras. Ative o uso de window views e da consulta `WATCH` com a configuração [allow&#95;experimental&#95;window&#95;view](/pt-BR/reference/settings/session-settings#allow_experimental_window_view). Digite o comando `set allow_experimental_window_view = 1`.
+</Info>
 
 ```sql
 CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE]

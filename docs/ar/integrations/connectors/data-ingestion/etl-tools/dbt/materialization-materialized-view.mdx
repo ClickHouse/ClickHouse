@@ -7,11 +7,11 @@ title: 'العروض المادية'
 doc_type: 'guide'
 ---
 
-import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
-يجب أن يكون تجسيد `materialized_view` عبارة عن استعلام `SELECT` من table (source) موجودة. وعلى خلاف PostgreSQL، فإن عرض مادي في ClickHouse ليس &quot;ثابتًا&quot; (ولا توجد له عملية REFRESH مقابلة). وبدلًا من ذلك، فهو يعمل بوصفه **مشغّل إدراج**، إذ يُدرِج rows جديدة في الجدول الهدف عبر تطبيق تحويل `SELECT` المحدد على rows المُدرجة في الجدول المصدر. راجع [توثيق عرض مادي في ClickHouse](/ar/concepts/features/materialized-views/index) لمزيد من التفاصيل حول كيفية عمل العروض المادية في ClickHouse.
+يجب أن يكون تجسيد `materialized_view` عبارة عن استعلام `SELECT` من table (source) موجودة. وعلى خلاف PostgreSQL، فإن عرض مادي في ClickHouse ليس &quot;ثابتًا&quot; (ولا توجد له عملية REFRESH مقابلة). وبدلًا من ذلك، فهو يعمل بوصفه **مشغّل إدراج**، إذ يُدرِج rows جديدة في target table عبر تطبيق تحويل `SELECT` المحدد على rows المُدرجة في source table. راجع [توثيق عرض مادي في ClickHouse](/ar/concepts/features/materialized-views/index) لمزيد من التفاصيل حول كيفية عمل العروض المادية في ClickHouse.
 
 <Note>
   للاطلاع على مفاهيم التجسيد العامة وconfig المشتركة (مثل engine وorder&#95;by وpartition&#95;by وما إلى ذلك)، راجع صفحة [التجسيدات](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).

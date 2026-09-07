@@ -10,7 +10,7 @@ integration:
   - website: 'https://github.com/ClickHouse/dbt-clickhouse'
 ---
 
-import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -217,8 +217,8 @@ profile: 'clickhouse-service'
 * 该插件使用的语法要求 ClickHouse 版本为 25.3 或更高。我们不测试较旧版本的 ClickHouse，目前也不测试 Replicated 表。
 * 如果同时运行，不同的 `dbt-adapter` 运行之间可能会发生冲突，因为它们在内部可能会为相同操作使用相同的表名。更多信息，请参见问题 [#420](https://github.com/ClickHouse/dbt-clickhouse/issues/420)。
 * 该 适配器 当前使用 [INSERT INTO SELECT](/zh/reference/statements/insert-into#inserting-the-results-of-select) 将模型 materialize 为表。这实际上意味着如果再次执行运行，会产生重复数据。超大数据集 (PB 级) 可能会导致运行时间极长，从而使某些模型不具备可行性。要提升性能，请通过将视图实现为 `materialized: materialization_view` 来使用 ClickHouse Materialized Views。此外，应尽可能使用 `GROUP BY`，以减少任何查询返回的行数。相比只做转换但保持 source 行数不变的模型，应优先选择对数据进行汇总的模型。
-* 要使用 分布式表 来表示模型，必须先在每个节点上手动创建底层 replicated 表，然后再在这些表之上创建 分布式表。该 适配器 不管理 集群 的创建。
-* 当 dbt 在 数据库 中创建 关系 (表/视图) 时，通常会按以下形式创建：`{{ database }}.{{ schema }}.{{ table/view id }}`。ClickHouse 没有 schema 的概念，因此该 适配器 使用 `{{schema}}.{{ table/view id }}`，其中 `schema` 就是 ClickHouse 数据库。
+* 要使用 分布式表 来表示模型，必须先在每个节点上手动创建底层 replicated 表，然后再在这些表之上创建 Distributed 表。该 适配器 不管理 cluster 的创建。
+* 当 dbt 在 database 中创建 relation (表/视图) 时，通常会按以下形式创建：`{{ database }}.{{ schema }}.{{ table/view id }}`。ClickHouse 没有 schema 的概念，因此该 适配器 使用 `{{schema}}.{{ table/view id }}`，其中 `schema` 就是 ClickHouse database。
 * 如果将 ephemeral 模型/CTE 放在 ClickHouse insert 语句的 `INSERT INTO` 之前，它们将无法工作，参见 https://github.com/ClickHouse/ClickHouse/issues/30323。这一般不会影响大多数模型，但在模型定义和其他 SQL 语句中放置 ephemeral 模型时仍需谨慎。 {/* TODO review this limitation, looks like the issue was already closed and the fix was introduced in 24.10 */}
 
 <div id="fivetran">

@@ -394,7 +394,7 @@ El orden de ejecución de la consulta se optimiza al ejecutar `ARRAY JOIN`. Aunq
   ### Incompatibilidad con la evaluación de funciones con cortocircuito
 </div>
 
-La [evaluación de funciones con cortocircuito](/es/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) es una característica que optimiza la ejecución de expresiones complejas en funciones específicas como `if`, `multiIf`, `and` y `or`. Evita que se produzcan posibles excepciones, como la división entre cero, durante la ejecución de estas funciones.
+La [evaluación de funciones con cortocircuito](/es/reference/settings/session-settings#short_circuit_function_evaluation) es una característica que optimiza la ejecución de expresiones complejas en funciones específicas como `if`, `multiIf`, `and` y `or`. Evita que se produzcan posibles excepciones, como la división entre cero, durante la ejecución de estas funciones.
 
 `arrayJoin` siempre se ejecuta y no es compatible con la evaluación de funciones con cortocircuito. Esto se debe a que es una función especial que se procesa por separado de todas las demás funciones durante el análisis y la ejecución de la consulta, y requiere una lógica adicional que no funciona con la ejecución con cortocircuito. La razón es que el número de filas del resultado depende del resultado de `arrayJoin`, e implementar la ejecución diferida de `arrayJoin` es demasiado complejo y costoso.
 

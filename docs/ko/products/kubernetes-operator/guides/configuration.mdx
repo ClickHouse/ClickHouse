@@ -97,11 +97,11 @@ spec:
 ```
 
 <Note>
-  연산자는 사용 중인 StorageClass가 볼륨 확장을 지원하는 경우에만 기존 PVC를 수정할 수 있습니다.
+  연산자는 사용 중인 스토리지 클래스가 볼륨 확장을 지원하는 경우에만 기존 PVC를 수정할 수 있습니다.
 </Note>
 
 멀티 디스크(JBOD) 레이아웃에서 추가 디스크를 연결하는 방법, 영구 볼륨 없이 실행하는 방법,
-용량 확장, 사용자 지정 저장소 정책, 저장 시 암호화, 그리고 생성 후 변경할 수 없는 항목에 대한 규칙은
+용량 확장, 사용자 지정 저장소 정책, 그리고 생성 후 변경할 수 없는 항목에 대한 규칙은
 전용
 [Storage and volumes guide](/ko/products/kubernetes-operator/guides/storage)에서 다룹니다.
 
@@ -185,10 +185,9 @@ spec:
   ## 클러스터 도메인
 </div>
 
-`spec.clusterDomain`은 operator가 ClickHouse 서버
-구성에 기록하는 정규화된 파드 호스트 이름을 생성할 때 사용하는
-Kubernetes DNS 접미사를 설정합니다. 기본값은 `cluster.local`이며,
-`ClickHouseCluster`와 `KeeperCluster` 둘 다에 있습니다.
+`spec.clusterDomain`은 연산자가 ClickHouse 서버
+구성에 기록하는 정규화된 파드 호스트 이름을 생성할 때 사용하는 Kubernetes DNS 접미사를 설정합니다. 기본값은 `cluster.local`이며,
+`ClickHouseCluster`와 `KeeperCluster` 둘 다에서 사용할 수 있습니다.
 
 ```yaml
 spec:
@@ -197,18 +196,17 @@ spec:
 
 연산자는 헤드리스 Service를 통해 모든 파드에
 `<pod>.<headless-service>.<namespace>.svc.<clusterDomain>` 형식으로 접근합니다. 이 접미사는
-생성된 구성의 두 부분에 반영됩니다:
+생성된 구성의 두 부분에 사용됩니다.
 
 * `ClickHouseCluster`에서는 이 값이 `remote_servers`의 레플리카 호스트 이름에 사용됩니다
-  (`Distributed` 쿼리와 레플리카 간 쿼리용).
-* `KeeperCluster`에서는 이 값으로 ClickHouse가 조정에 사용하는 Keeper 노드 호스트 이름을
-  구성합니다.
+  (`Distributed` 쿼리 및 레플리카 간 통신).
+* `KeeperCluster`에서는 이 값을 바탕으로 ClickHouse가 조정에 사용하는
+  Keeper 노드 호스트 이름을 구성합니다.
 
 <Note>
-  클러스터의 `큐블릿`이 `cluster.local`이 아닌 `--cluster-domain`으로 실행되는 경우에만
-  이 값을 재정의하십시오. 값이 실제 클러스터 도메인과 일치하지 않으면
-  ClickHouse가 Keeper 및 레플리카 호스트 이름을 해석할 수 없어 조정과
-  `Distributed` 쿼리가 DNS 해석 오류로 실패합니다. 참조 대상인
+  클러스터의 `큐블릿`이 `cluster.local`이 아닌 `--cluster-domain`으로 실행되는 경우에만 이를 재정의하십시오. 값이 실제 클러스터 도메인과 일치하지 않으면
+  ClickHouse는 Keeper 및 레플리카 호스트 이름을 확인할 수 없으므로, 조정과
+  `Distributed` 쿼리가 DNS 해석 오류로 실패합니다. 참조되는
   `ClickHouseCluster`와 `KeeperCluster`에 **동일한** 값을 설정하십시오.
 </Note>
 
@@ -518,14 +516,13 @@ spec:
 
 시크릿에는 다음 키가 포함되어야 합니다:
 
-| Key                     | Format                                 | When required                   |
-| ----------------------- | -------------------------------------- | ------------------------------- |
-| `interserver-password`  | 평문 비밀번호                                | 항상                              |
-| `management-password`   | 평문 비밀번호                                | 항상                              |
-| `keeper-identity`       | `clickhouse:<password>`                | 항상                              |
-| `cluster-secret`        | 평문 비밀번호                                | 항상                              |
-| `named-collections-key` | 16바이트 AES 키를 16진수로 인코딩한 값(16진수 문자 32개) | ClickHouse `>= 25.12`에서만        |
-| `disk-encryption-key`   | 16바이트 AES 키를 16진수로 인코딩한 값(16진수 문자 32개) | `settings.encryption`이 설정된 경우에만 |
+| Key                     | Format                                 | When required            |
+| ----------------------- | -------------------------------------- | ------------------------ |
+| `interserver-password`  | 평문 비밀번호                                | 항상                       |
+| `management-password`   | 평문 비밀번호                                | 항상                       |
+| `keeper-identity`       | `clickhouse:<password>`                | 항상                       |
+| `cluster-secret`        | 평문 비밀번호                                | 항상                       |
+| `named-collections-key` | 16바이트 AES 키를 16진수로 인코딩한 값(16진수 문자 32개) | ClickHouse `>= 25.12`에서만 |
 
 전체 시크릿은 다음과 같습니다:
 
@@ -542,7 +539,6 @@ stringData:
   keeper-identity: "clickhouse:keeper-auth-password"
   cluster-secret: "cluster-internal-secret"
   named-collections-key: "0123456789abcdef0123456789abcdef"   # 32 hex chars = 16 bytes
-  disk-encryption-key: "00112233445566778899aabbccddeeff"     # only when settings.encryption is set
 ```
 
 <div id="external-secret-policy">
@@ -590,14 +586,14 @@ kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
 시크릿이 유효하지 않은 동안 연산자는 리컨실리에이션을 다시 큐에 넣습니다. 따라서 누락된 키를 추가하면 다음 reconcile 시 자동으로 반영되므로 파드를 재시작할 필요가 없습니다.
 
 <Note>
-  필요한 키 집합은 실행 중인 ClickHouse 버전에 따라 달라집니다. `named-collections-key`는 연산자의 버전 프로브가 ClickHouse `25.12` 이상을 감지한 경우에만 검증됩니다. 이전 버전에서는 해당 키가 시크릿에 없을 수 있습니다. `disk-encryption-key`는 `spec.settings.encryption`이 설정된 경우에만 필요합니다.
+  필요한 키 집합은 실행 중인 ClickHouse 버전에 따라 달라집니다. `named-collections-key`는 연산자의 version probe가 ClickHouse `25.12` 이상을 감지한 경우에만 검증됩니다. 이전 버전에서는 해당 키가 시크릿에 없을 수 있습니다.
 </Note>
 
 <div id="additional-ports">
   ## 추가 포트
 </div>
 
-연산자는 모든 ClickHouse 파드와 해당 공개 헤드리스 Service에 고정된 포트 집합을 노출합니다: `8123` HTTP, `9000` 네이티브, `9009` interserver, `9001`/`9002` management, `9363` Prometheus 메트릭, 그리고 TLS가 활성화된 경우 `8443`/`9440`의 TLS 포트도 함께 노출됩니다. `interserver` 및 management 포트는 레플리카가 준비 상태가 되기 전에 레플리카와 연산자가 통신할 수 있도록 레플리카별 내부 Service를 통해 추가로 노출됩니다. ClickHouse가 MySQL, PostgreSQL, gRPC 또는 사용자 지정 포트 같은 추가 프로토콜을 수신하도록 하려면 `spec.additionalPorts`에 선언하십시오:
+오퍼레이터는 모든 ClickHouse 파드와 해당 헤드리스 Service에 고정된 포트 집합을 노출합니다: `8123` HTTP, `9000` 네이티브, `9009` interserver, `9001` management, `9363` Prometheus 메트릭, 그리고 TLS가 활성화된 경우 `8443`/`9440`의 TLS 포트도 함께 노출됩니다. ClickHouse가 MySQL, PostgreSQL, gRPC 또는 사용자 지정 포트 같은 추가 프로토콜을 수신하도록 하려면 `spec.additionalPorts`에 선언하십시오:
 
 ```yaml
 spec:
@@ -610,8 +606,7 @@ spec:
       port: 9100
 ```
 
-연산자는 해당 포트를 파드의 `containerPorts`와 공개 헤드리스 Service에 추가합니다.
-전체 예시는 [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml)에 있습니다.
+연산자는 해당 포트를 파드의 `containerPorts`와 헤드리스 Service에 추가합니다. 전체 예시는 [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml)에 있습니다.
 
 <Warning>
   `additionalPorts`는 Kubernetes 측에서만 포트를 엽니다. ClickHouse 서버가 해당 포트에서 수신 대기하도록 구성하지는 **않습니다**. `spec.settings.extraConfig.protocols`에서 해당 protocol도 활성화해야 합니다. 그렇지 않으면 Service에서는 포트가 열려 있어도 파드 내부에서는 아무것도 응답하지 않습니다.
@@ -637,7 +632,7 @@ spec:
       requests:
         storage: 2Gi
 
-  # 1) Open the port on the Pod and the public headless Service.
+  # 1) Open the port on the Pod and the headless Service.
   additionalPorts:
     - name: mysql
       port: 9004
@@ -932,8 +927,7 @@ data:
           - '@from_env': READER_PASSWORD
         profile: default
         grants:
-          query:
-            - "GRANT SELECT ON *.*"
+          - query: "GRANT SELECT ON *.*"
 ---
 apiVersion: v1
 kind: Secret
@@ -975,16 +969,10 @@ spec:
 ```yaml
 spec:
   settings:
-    enableDatabaseSync: true  # Default: true
+    enableDatabaseSync: true  # 기본값: true
 ```
 
-활성화하면 연산자가 Replicated 및 통합 테이블을 새 레플리카에 동기화합니다.
-
-각 레플리카 파드에는 `clickhouse.com/ReplicaInitialized` readiness 게이트가 적용되므로, 연산자가 초기화를 완료한 후에만 새 레플리카가 공개 헤드리스 Service를 통해 게시됩니다. 초기화 과정에서는 `default` 데이터베이스가 Replicated 엔진으로 변환되고 스키마가 동기화됩니다. 그때까지 연산자와 다른 레플리카는 내부 Service를 통해 해당 레플리카에 연결합니다. `enableDatabaseSync: false`를 사용하면 연산자가 레플리카를 즉시 초기화된 것으로 표시하므로 readiness는 컨테이너 probe만 따릅니다.
-
-연산자는 데이터가 채워진 non-Replicated `default` 데이터베이스를 절대 삭제하지 않습니다. 이러한 레플리카도 스키마 준비 후 클라이언트 트래픽 처리를 시작하지만, 해당 데이터베이스 문제를 직접 해결할 때까지 클러스터는 이유가 `DefaultDatabaseNotReplicated`인 `SchemaInSync=False`를 보고합니다.
-
-축소 시 레플리카를 제거하기 전에 연산자는 먼저 해당 레플리카에서 클라이언트 트래픽을 로드 해제하고, 더 이상 게시되지 않을 때까지 기다린 후 남은 데이터를 유지되는 레플리카에 복제한 다음에만 삭제합니다.
+활성화하면 operator가 Replicated 및 통합 테이블을 새 레플리카에 동기화합니다.
 
 <div id="server-logging">
   ### 서버 로깅
