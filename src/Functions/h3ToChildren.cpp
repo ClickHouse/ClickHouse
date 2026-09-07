@@ -6,6 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
@@ -99,6 +100,12 @@ public:
         auto & dst_offsets = dst_offsets_column->getData();
         auto current_offset = 0;
 
+        /// The whole block is expanded inside this one call and the size of each row's result is driven by the
+        /// arguments rather than by the input size, so the executor's between-blocks cancellation check cannot
+        /// bound it: a cancelled query would keep a thread busy until the last row was done.
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
+
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 parent_hindex = data_hindex[row];
@@ -124,6 +131,8 @@ public:
                     ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                     "The result of function {} (array of {} elements) will be too large with resolution argument = {}",
                     getName(), vec_size, toString(child_resolution));
+
+            budget.charge(vec_size * sizeof(H3Index));
 
             VectorWithMemoryTracking<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);

@@ -51,7 +51,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `format` — 文件的[格式](/zh/reference/formats/index#formats-overview)。
 * `aws_access_key_id`, `aws_secret_access_key` - [AWS](https://aws.amazon.com/) 账户用户的长期凭证。你可以使用它们对请求进行身份验证。该参数是可选的。如果未指定凭证，则会使用配置文件中的凭证。更多信息请参见 [Using S3 for Data Storage](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)。
 * `compression` — 压缩类型。支持的值：`none`、`gzip/gz`、`brotli/br`、`xz/LZMA`、`zstd/zst`。该参数是可选的。默认情况下，会根据文件扩展名自动检测压缩类型。
-* `partition_strategy` – 可选值：`wildcard` 或 `hive`。`wildcard` 要求路径中包含 `{_partition_id}`，它会被替换为分区键。`hive` 不允许使用通配符，假定该路径是表根路径，并生成 Hive 风格的分区目录，以 Snowflake IDs 作为文件名、文件格式作为扩展名。如果路径包含 `{_partition_id}` 占位符，则默认使用 `wildcard`——这是唯一与此类路径兼容的策略。否则，默认值为 `file_like_engine_default_partition_strategy` 设置 (在早于 `26.6` 的 `compatibility` 设置下为 `wildcard`，否则为 `hive`) 。
+* `partition_strategy` – 可选值：`wildcard` 或 `hive`。`wildcard` 要求路径中包含 `{_partition_id}`，它会被替换为分区键。`hive` 不允许使用通配符，假定该路径是表根路径，并生成 Hive 风格的分区目录，以 Snowflake IDs 作为文件名、文件格式作为扩展名。未显式指定策略时，包含 `{_partition_id}` 的路径使用 `wildcard`。包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不包含 glob 的路径在 `file_like_engine_default_partition_strategy` 为 `hive` 时使用 `hive`；否则不使用分区策略。
 * `partition_columns_in_data_file` - 仅与 `hive` 分区策略一起使用。用于告知 ClickHouse 是否应在数据文件中包含分区列。默认为 `false`。
 * `storage_class_name` - 可选值：`STANDARD`、`REDUCED_REDUNDANCY`、`STANDARD_IA`、`ONEZONE_IA`、`INTELLIGENT_TIERING`、`GLACIER_IR`、`EXPRESS_ONEZONE`。仅支持可立即检索的 S3 storage classes (不支持 `GLACIER` 和 `DEEP_ARCHIVE` 等归档类) 。可用于指定 [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/)。
 * `extra_credentials` - 可选。用于在 ClickHouse Cloud 中传递用于基于角色的访问控制的 `role_arn`。配置步骤请参见 [Secure S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
@@ -101,7 +101,9 @@ SETTINGS filesystem_cache_name = 'cache_for_s3', enable_filesystem_cache = 1;
   #### 分区策略
 </div>
 
-`wildcard`：将文件路径中的 `{_partition_id}` 通配符替换为实际的分区键。不支持读取。当路径包含 `{_partition_id}` 占位符时 (这是与此类路径兼容的唯一策略) ，默认选择此策略；否则，在 `compatibility` 设置早于 `26.6` 时默认选择此策略；其余情况下默认值为 `hive` (请参见 `file_like_engine_default_partition_strategy` 设置) 。
+`wildcard`：将文件路径中的 `{_partition_id}` 通配符替换为实际的分区键。不支持读取。当路径包含 `{_partition_id}` 时，默认选择此策略。
+
+未设置 `partition_strategy` 时，包含其他 glob 的路径不使用分区策略，并忽略 `PARTITION BY`。不含 glob 的路径会在 `file_like_engine_default_partition_strategy` 为 `hive` 时使用 `hive`；否则不使用分区策略。
 
 `hive` 实现了适用于读写的 Hive 风格分区。读取通过递归 glob 模式实现，等价于 `SELECT * FROM s3('table_root/**.parquet')`。
 写入时会按以下格式生成文件：`<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`。
@@ -456,7 +458,8 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 
