@@ -1503,6 +1503,12 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     if (query_node->hasLimitByOffset())
         query_node->getLimitByOffset() = {};
     query_node->getLimitBy().getNodes().clear();
+    /// LIMIT selects rows relative to the ORDER BY cleared just above, so it is stale here.
+    query_node->setIsLimitWithTies(false);
+    if (query_node->hasLimit())
+        query_node->getLimit() = {};
+    if (query_node->hasOffset())
+        query_node->getOffset() = {};
 
     auto & projection = modified_query_node->getProjection().getNodes();
     projection.clear();
@@ -1709,7 +1715,14 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         /// Original query could contain JOIN but we need only the first joined table and its columns.
         auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
         TreeRewriterResult new_analyzer_res = *modified_query_info.syntax_analyzer_result;
-        removeJoin(modified_select, new_analyzer_res, modified_context);
+        if (removeJoin(modified_select, new_analyzer_res, modified_context))
+        {
+            /// removeJoin cleared the ORDER BY, so the LIMIT it selected rows for is stale.
+            /// Only when a JOIN was actually removed: a child without one may own its LIMIT.
+            modified_select.limit_with_ties = false;
+            modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, {});
+            modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, {});
+        }
         modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
     }
 
