@@ -16,6 +16,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 NC="nc_${CLICKHOUSE_DATABASE}"
 
+# Re-runnable: the flaky check runs a test many times against the same database.
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS knc_tbl"
 $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS ${NC}"
 $CLICKHOUSE_CLIENT -q "
 CREATE NAMED COLLECTION ${NC} AS
