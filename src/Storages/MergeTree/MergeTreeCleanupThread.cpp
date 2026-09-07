@@ -47,6 +47,7 @@ Float32 MergeTreeCleanupThread::iterate()
             (*storage.getSettings())[MergeTreeSetting::temporary_directories_lifetime].totalSeconds());
     }
 
+    /// Consumed unconditionally: the periodic branch below cleans empty parts too.
     const bool empty_parts_requested = clear_empty_parts_requested.exchange(false, std::memory_order_relaxed);
 
     if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(

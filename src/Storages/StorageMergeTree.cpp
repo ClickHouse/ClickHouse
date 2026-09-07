@@ -1956,6 +1956,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         /// An empty part is disposed of by `clearEmptyParts`, not by mutation: mutating it would
         /// only produce another empty part, while the mutation tag holds off the removal. Skipping
         /// it is correct only while something still runs that removal, hence the cleanup check.
+        /// `clearEmptyParts`'s `outdated_data_parts_loading_finished` gate is deliberately not mirrored: that window is the race.
         if (part->rows_count == 0 && (*storage_settings.get())[MergeTreeSetting::remove_empty_parts]
             && !cleanup_thread.isCleanupBlocked()
             && (part->version->getInfo().creation_tid.isNonTransactional()
