@@ -1596,12 +1596,11 @@ static bool typeCanHideNaNInsideTuple(const DataTypePtr & type)
 }
 
 /// A NaN inside a `Tuple` orders above only the values that share its prefix, so it can sit strictly
-/// between two granule bounds that hold none, while every row comparison against it is false. The
-/// bounds therefore cannot answer `can_be_false` for a range atom over such a key column, and the
-/// exact-count optimization would count rows the `WHERE` throws away. Only a range that reaches the top
-/// of the order can hold such a value: one bounded above by an ordinary value excludes it, because a row
-/// whose first differing position holds a NaN compares greater than the constant. `can_be_true` is left
-/// alone, so every pruning decision is unchanged.
+/// between two granule bounds that hold none, while every row comparison against it is false, and the
+/// bounds therefore cannot answer `can_be_false` for a range atom over such a key column. Only a range
+/// that reaches the top of the order can hold such a value: one bounded above by an ordinary value
+/// excludes it, because a row whose first differing position holds a NaN compares greater than the
+/// constant. `can_be_true` is left alone, so every pruning decision is unchanged.
 void KeyCondition::relaxRangeAtomsOverNaNHidingTupleColumns(const DataTypes & key_types)
 {
     for (auto & element : rpn)
