@@ -41,7 +41,7 @@ ENGINE = Distributed('test_cluster', default, distributed_table);
 INSERT_SQL_TEMPLATE = "INSERT INTO base_table VALUES ('{node_id}', {key}, {value})"
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
