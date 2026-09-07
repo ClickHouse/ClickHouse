@@ -10,13 +10,25 @@
 # `ExecutingGraph::cancel` calls `cancel` on every processor in turn under `processors_mutex`, so one
 # draining remote source used to stall cancellation of the whole pipeline.
 #
-# Two failpoints replace timing: fp1 parks one shard's reader before it consumes a packet, so that
-# shard's query is still pending when `LIMIT 1` closes the output ports; fp2 then parks `finish` at
-# the start of its drain, holding `was_cancelled_mutex`. `KILL QUERY` has to return while fp2 is
-# still held. That is an ordering assertion, not a duration one: while the park is held the unfixed
-# latency is unbounded, so the bound below only has to exceed a normal `KILL QUERY` round-trip.
-# `async_socket_for_remote=0` picks the synchronous read path, which is where fp1 lives; the drain
-# `fp2` parks is synchronous either way.
+# Both scenarios build the same fixture: fp `receive_packet_pause` parks one shard's reader before it
+# consumes a packet, so that shard's query is still pending when `LIMIT 1` closes the output ports and
+# `onUpdatePorts` drives `finish` on its executor. That shard is called the parked shard below; which
+# of the two it is, is decided by whichever reader reaches the one-shot failpoint first, and every
+# other failpoint here is guarded by the same executor-local `in_receive_packet_window` predicate, so
+# the sibling shard can never consume a park this test is waiting for.
+# `async_socket_for_remote=0` picks the synchronous read path, which is where `receive_packet_pause`
+# lives; the drain is synchronous either way.
+#
+# Scenario A: `finish` parks at the start of its drain, holding `was_cancelled_mutex`, and
+# `KILL QUERY` has to return anyway. That is an ordering assertion, not a duration one: while the park
+# is held the unfixed latency is unbounded, so the bound below only has to exceed a normal
+# `KILL QUERY` round-trip.
+#
+# Scenario B: the reverse order, which is the interleaving the first version of this fix left open.
+# `cancel` arrives *before* `finish` has announced itself, so a check-then-lock `cancel` would fall
+# through and then wait out the whole drain. It asserts both directions of that: `finish` must not
+# reach its drain while `cancel` holds the gate, and the `KILL` must complete once the gate is free
+# even though the drain park is still armed.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,11 +36,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 FP_RECV="remote_query_executor_receive_packet_pause"
 FP_HOLD="remote_query_executor_finish_drain_hold"
+FP_ENTRY="remote_query_executor_finish_entry_hold"
+FP_GATE="remote_query_executor_cancel_gate_hold"
 
 function cleanup()
 {
-    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_HOLD" 2>/dev/null ||:
-    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_RECV" 2>/dev/null ||:
+    for fp in "$FP_HOLD" "$FP_ENTRY" "$FP_GATE" "$FP_RECV"; do
+        $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $fp" 2>/dev/null ||:
+    done
     wait 2>/dev/null ||:
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.src" 2>/dev/null ||:
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.dist" 2>/dev/null ||:
@@ -60,18 +75,38 @@ function arm()
     fi
 }
 
-arm "$FP_RECV" && arm "$FP_HOLD"
-
-if [ "$failed" -eq 0 ]; then
-    # `LIMIT 1` without `ORDER BY`: the shard that is not parked delivers a row and closes the output
-    # ports, so `onUpdatePorts` calls `finish` on the parked shard's executor and reaches the drain.
-    # `enable_parallel_replicas=0` keeps `drain_was_skipped` false, which is what leads into the drain.
+# `LIMIT 1` without `ORDER BY`: the shard that is not parked delivers a row and closes the output
+# ports, so `onUpdatePorts` calls `finish` on the parked shard's executor and reaches the drain.
+# `enable_parallel_replicas=0` keeps `drain_was_skipped` false, which is what leads into the drain.
+function start_query()
+{
     $CLICKHOUSE_CLIENT \
-        --query_id "$query_id" \
+        --query_id "$1" \
         --enable_parallel_replicas=0 --async_socket_for_remote=0 \
         --max_block_size=1 --prefer_localhost_replica=0 \
         --query "SELECT x FROM ${CLICKHOUSE_DATABASE}.dist LIMIT 1 FORMAT Null" 2>"$err" &
-    QPID=$!
+}
+
+# The killed query must actually be gone once the parks are released.
+function assert_query_gone()
+{
+    for _ in {1..100}; do
+        if [ "$($CLICKHOUSE_CLIENT --query "
+                SELECT count() FROM system.processes WHERE query_id = '$1'")" = "0" ]; then
+            return 0
+        fi
+        sleep 0.3
+    done
+    echo "query $1 is still running after the failpoints were released"
+    failed=1
+}
+
+########## Scenario A: cancel arrives while finish is already parked in its drain ##########
+
+arm "$FP_RECV" && arm "$FP_HOLD"
+
+if [ "$failed" -eq 0 ]; then
+    start_query "$query_id"
 
     # Without both parks the interleaving never happened and the assertion below would be vacuous.
     sync_ok=1
@@ -119,24 +154,98 @@ if [ "$sync_ok" -eq 1 ]; then
         failed=1
     fi
 
-    # The killed query must actually be gone once the parks are released.
-    gone=0
+    assert_query_gone "$query_id"
+fi
+
+# Separate liveness check: the server survived.
+$CLICKHOUSE_CLIENT --query "SELECT 'ok'"
+
+########## Scenario B: cancel arrives before finish announces itself ##########
+
+sync_ok=0
+query_id_b="${CLICKHOUSE_TEST_UNIQUE_NAME}_gate_order"
+kill_done="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.kill_done"
+rm -f "$kill_done"
+
+arm "$FP_RECV" && arm "$FP_ENTRY" && arm "$FP_GATE" && arm "$FP_HOLD"
+
+if [ "$failed" -eq 0 ]; then
+    start_query "$query_id_b"
+
+    # The parked shard's `finish` must be held at the very top of the function, before it publishes
+    # itself. Both waits must succeed or the interleaving below was never established.
+    sync_ok=1
+    for fp in "$FP_RECV" "$FP_ENTRY"; do
+        if ! $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $fp PAUSE" 2>"$err"; then
+            echo "wait for failpoint $fp failed:"
+            cat "$err"
+            failed=1
+            sync_ok=0
+        fi
+    done
+fi
+
+if [ "$sync_ok" -eq 1 ]; then
+    # The `KILL` thread runs `cancel`, which finds no `finish` announced yet and parks holding only
+    # the gate. It cannot return until the gate is released, so it is polled in step 3 rather than
+    # bounded here.
+    ( $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$query_id_b' FORMAT Null" \
+        >/dev/null 2>&1; echo done > "$kill_done" ) &
+
+    if ! $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_GATE PAUSE" 2>"$err"; then
+        echo "wait for failpoint $FP_GATE failed, so cancel never reached the gate:"
+        cat "$err"
+        failed=1
+        sync_ok=0
+    fi
+fi
+
+if [ "$sync_ok" -eq 1 ]; then
+    # `cancel` has now observed "no finish in progress" and has not yet taken `was_cancelled_mutex`;
+    # the parked shard's `finish` is one step from announcing itself and taking the same mutex.
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_ENTRY"
+
+    # Assertion 1: `finish` must not reach its drain, because the gate `cancel` holds admits it only
+    # after `cancel` owns `was_cancelled_mutex`. The drain park is executor-local, so only the parked
+    # shard can satisfy this wait.
+    if timeout 10 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_HOLD PAUSE" 2>/dev/null; then
+        echo "finish reached its drain while cancel held the gate"
+        failed=1
+    fi
+
+    # Assertion 2: releasing the gate must let the `KILL` complete, with the drain park still armed
+    # and unreleased. The `KILL` thread is inside the parked shard's `cancel`, so nothing but that
+    # executor's own `was_cancelled_mutex` can delay it.
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_GATE"
+    kill_ok=0
     for _ in {1..100}; do
-        alive=$($CLICKHOUSE_CLIENT --query "
-            SELECT count() FROM system.processes WHERE query_id = '$query_id'")
-        if [ "$alive" = "0" ]; then
-            gone=1
+        if [ -f "$kill_done" ]; then
+            kill_ok=1
             break
         fi
         sleep 0.3
     done
-    if [ "$gone" -ne 1 ]; then
-        echo "query is still running after the failpoints were released"
+    if [ "$kill_ok" -ne 1 ]; then
+        echo "KILL QUERY did not return after the cancel gate was released"
         failed=1
     fi
 fi
 
-rm -f "$err"
+# `finish` never reaches the drain park on fixed code, so this disable is unconditional.
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_HOLD"
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_RECV"
+wait 2>/dev/null ||:
+
+if [ "$sync_ok" -eq 1 ]; then
+    assert_query_gone "$query_id_b"
+fi
+
+# Negative control: with nothing armed the same query still returns its row.
+$CLICKHOUSE_CLIENT --enable_parallel_replicas=0 --async_socket_for_remote=0 \
+    --max_block_size=1 --prefer_localhost_replica=0 \
+    --query "SELECT count() FROM (SELECT x FROM ${CLICKHOUSE_DATABASE}.dist LIMIT 1)"
+
+rm -f "$err" "$kill_done"
 
 # Separate liveness check: the server survived.
 $CLICKHOUSE_CLIENT --query "SELECT 'ok'"

@@ -78,6 +78,8 @@ namespace FailPoints
     extern const char remote_query_executor_receive_packet_pause[];
     extern const char remote_query_executor_finish_drain_pause[];
     extern const char remote_query_executor_finish_drain_hold[];
+    extern const char remote_query_executor_finish_entry_hold[];
+    extern const char remote_query_executor_cancel_gate_hold[];
 }
 
 ThrottlerPtr getThrottler(const ContextPtr & context)
@@ -930,6 +932,18 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
 
 void RemoteQueryExecutor::finish()
 {
+    /// Test-only. Guarded like the drain pause below, so a sibling shard cannot consume the one shot.
+    if (in_receive_packet_window)
+        FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_entry_hold);
+
+    {
+        std::lock_guard gate(finish_gate_mutex);
+        ++finish_in_progress;
+    }
+    /// Declared before `guard` so the decrement runs after `was_cancelled_mutex` is released: the gate
+    /// must never be taken while that mutex is held.
+    SCOPE_EXIT({ std::lock_guard gate(finish_gate_mutex); --finish_in_progress; });
+
     LockAndBlocker guard(was_cancelled_mutex);
 
     /** If one of:
@@ -1006,11 +1020,6 @@ void RemoteQueryExecutor::finish()
         return;
     }
 
-    /// Published only once the `tryCancel` above has returned, so a `cancel` that observes it has
-    /// nothing left to send.
-    drain_in_progress = true;
-    SCOPE_EXIT({ drain_in_progress = false; });
-
     FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_hold);
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
@@ -1085,12 +1094,23 @@ void RemoteQueryExecutor::finish()
 
 void RemoteQueryExecutor::cancel()
 {
-    /// While `finish` drains it has already sent the `Cancel` packet, and the external-table flags
-    /// `cancelUnlocked` sets have no reader until it releases `was_cancelled_mutex`.
-    if (drain_in_progress)
+    /// `finish` holds `was_cancelled_mutex` across an unbounded blocking read, and
+    /// `ExecutingGraph::cancel` drives this for every processor in turn under `processors_mutex`, so
+    /// this must not wait for it. Acquiring `was_cancelled_mutex` while still holding the gate is what
+    /// makes the check meaningful: a `finish` that owns that mutex has already incremented the counter.
+    UniqueLock gate(finish_gate_mutex);
+    if (finish_in_progress)
         return;
 
+    /// Test-only, guarded as in `finish`: `ExecutingGraph::cancel` reaches every source, including
+    /// finished siblings, and this sits before `cancelUnlocked`'s own `finished` check.
+    if (in_receive_packet_window)
+        FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_cancel_gate_hold);
+
     LockAndBlocker guard(was_cancelled_mutex);
+    /// Released before `cancelUnlocked`, whose `tryCancel` does socket writes: holding the gate across
+    /// them would make every concurrent `finish` wait for that I/O here instead.
+    gate.unlock();
     cancelUnlocked();
 }
 
