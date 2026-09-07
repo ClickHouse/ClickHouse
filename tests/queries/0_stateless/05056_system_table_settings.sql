@@ -7,7 +7,8 @@ DROP TABLE IF EXISTS lg;
 DROP TABLE IF EXISTS plain;
 DROP TABLE IF EXISTS kfk;
 
-CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4096;
+CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 4096, enable_block_number_column = 1;
 -- Engines that keep no settings struct of their own must still report their SETTINGS clause.
 CREATE TABLE jn (a UInt64, b UInt64) ENGINE = Join(ANY, LEFT, a) SETTINGS persistent = 0;
 CREATE TABLE lg (a UInt64) ENGINE = Log SETTINGS disk = 'default';
@@ -21,11 +22,14 @@ SELECT '-- structure';
 SELECT name, type FROM system.columns WHERE database = 'system' AND table = 'table_settings' ORDER BY position;
 
 SELECT '-- every engine reports what its definition states';
--- Only the settings each definition names: an engine that keeps a settings struct also reports
--- every other setting it has, and listing all of those would pin values this test is not about.
+-- Only the settings these definitions name. Not every row whose source is `definition`: the test
+-- harness randomizes MergeTree settings into the `CREATE` query, so that set is whatever it chose
+-- this run. `plain` names none and so contributes nothing, which is the point of listing it.
 SELECT table, engine, name, value, changed, source
 FROM system.table_settings
-WHERE database = currentDatabase() AND table IN ('mt', 'jn', 'lg', 'plain') AND source = 'definition'
+WHERE database = currentDatabase() AND table IN ('mt', 'jn', 'lg', 'plain')
+  AND source = 'definition'
+  AND name IN ('index_granularity', 'enable_block_number_column', 'persistent', 'disk')
 ORDER BY table, name;
 
 SELECT '-- an engine with a settings struct reports its defaults too, one without does not';

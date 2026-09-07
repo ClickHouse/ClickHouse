@@ -20,6 +20,7 @@ is_masked	UInt8
 -- every engine reports what its definition states
 jn	Join	persistent	0	1	definition
 lg	Log	disk	default	1	definition
+mt	MergeTree	enable_block_number_column	1	1	definition
 mt	MergeTree	index_granularity	4096	1	definition
 -- an engine with a settings struct reports its defaults too, one without does not
 jn	0
@@ -32,8 +33,8 @@ kafka_sasl_password	[HIDDEN]	1
 -- an engine with no secret settings masks nothing
 0
 -- a setting is findable by an alias, carrying the same values
-allow_experimental_block_number_column	0	default	enable_block_number_column
-enable_block_number_column	0	default	
+allow_experimental_block_number_column	1	definition	enable_block_number_column
+enable_block_number_column	1	definition	
 index_granularity	4096	definition	
 -- the columns shared with system.merge_tree_settings agree, except where the definition differs
 -- settings the engine makes read-only are reported as such
