@@ -148,6 +148,105 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
     return false;
 }
 
+QueryTreeNodePtr makeTupleElement(const QueryTreeNodePtr & tuple_node, size_t element_index, const ContextPtr & context)
+{
+    auto tuple_element_function_node = std::make_shared<FunctionNode>("tupleElement");
+    tuple_element_function_node->getArguments().getNodes()
+        = {tuple_node, std::make_shared<ConstantNode>(Field(static_cast<UInt64>(element_index)))};
+    resolveOrdinaryFunctionNodeByName(*tuple_element_function_node, "tupleElement", context);
+    return tuple_element_function_node;
+}
+
+QueryTreeNodePtr makeAccurateCast(const QueryTreeNodePtr & value_node, const DataTypePtr & target_type, const ContextPtr & context)
+{
+    auto accurate_cast_function_node = std::make_shared<FunctionNode>("accurateCast");
+    accurate_cast_function_node->getArguments().getNodes()
+        = {value_node, std::make_shared<ConstantNode>(target_type->getName())};
+    resolveOrdinaryFunctionNodeByName(*accurate_cast_function_node, "accurateCast", context);
+    return accurate_cast_function_node;
+}
+
+/// A complex-key dictionary with a single key column accepts both the bare key expression
+/// (`dictGet(..., k)`) and its one-element tuple wrapper (`dictGet(..., tuple(k))`). The
+/// rewrites compare the key expression with bare key values: scalar constants produced by
+/// `dictGetKeys` or a single-column `SELECT` from `dictionary(...)`. Unwrap the tuple,
+/// otherwise the rewrite pits `Tuple(T)` against `T` and fails with ILLEGAL_TYPE_OF_ARGUMENT.
+/// The tuple can also be `Nullable` (e.g. produced by `if(cond, tuple(k), NULL)`):
+/// `tupleElement` propagates the `NULL` to the extracted element, and a `NULL` key behaves
+/// the same on both sides of the rewrite (`dictGet` returns `NULL`, so the comparison is
+/// `NULL`; `NULL IN (...)` is `NULL` as well).
+/// Simple-key dictionaries are intentionally not affected: for them `dictGet` rejects the
+/// tuple form even without this optimization.
+void unwrapSingleColumnTupleKey(QueryTreeNodePtr & key_expr_node, const ContextPtr & context)
+{
+    const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
+    const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
+    if (!key_expr_tuple_type || key_expr_tuple_type->getElements().size() != 1)
+        return;
+
+    /// A syntactic wrapper: `tuple(k)` -> `k`. `tuple` produces one element per argument and
+    /// never returns `Nullable`, so a one-element tuple result means exactly one argument.
+    if (const auto * key_expr_function = key_expr_node->as<FunctionNode>();
+        key_expr_function && key_expr_function->getFunctionName() == "tuple")
+    {
+        chassert(key_expr_function->getArguments().getNodes().size() == 1);
+        key_expr_node = key_expr_function->getArguments().getNodes().front();
+        return;
+    }
+
+    /// Not a `tuple(...)` call, but still a (possibly `Nullable`) one-element tuple,
+    /// e.g. a column of type `Tuple(UUID)`: extract the element.
+    key_expr_node = makeTupleElement(key_expr_node, 1, context);
+}
+
+/// Whether comparing `expr_type` values against `key_col_type` values is equivalent to the
+/// conversion `dictGet` applies, so that no explicit cast is needed. The generic comparison
+/// converts both sides to their common supertype, which reproduces the converted lookup only
+/// when the key column type is itself that supertype - a provably total widening, e.g. a
+/// narrow integer expression against a wide key type. The criterion is total for
+/// integer-to-float pairs as well: `getLeastSupertype` refuses e.g. `Int64` with `Float64`
+/// (not enough mantissa bits), so an integer expression passes only when the float key type
+/// represents every its value exactly. It is the same criterion `canReplaceWithDictGetKeys`
+/// uses for the attribute side.
+bool keyConversionIsTotalWidening(const DataTypePtr & expr_type, const DataTypePtr & key_col_type)
+{
+    const DataTypePtr stripped_expr_type = removeLowCardinalityAndNullable(expr_type);
+    const DataTypePtr stripped_key_col_type = removeLowCardinalityAndNullable(key_col_type);
+    const DataTypePtr supertype = tryGetLeastSupertype(DataTypes{stripped_expr_type, stripped_key_col_type});
+    return supertype && supertype->equals(*stripped_key_col_type);
+}
+
+/// `dictGet` implicitly converts the key columns to the dictionary key types
+/// (`IDictionary::convertKeyColumns`, which uses `castColumnAccurate`), so e.g. a `String` key
+/// expression is valid for a `UUID` key column, and an `Int16` expression over a `UInt8` key
+/// column throws for values outside of `UInt8`. The rewrites compare the key expression with
+/// values of the key column types and convert via a common supertype instead, which both
+/// rejects valid lookups (`NO_COMMON_TYPE` for `String` against `UUID`) and silently returns
+/// false where `dictGet` throws. Mirror the conversion with `accurateCast`, which matches
+/// `castColumnAccurate` exactly, including the errors.
+///
+/// Expressions that need no cast are left untouched, which keeps them usable for index
+/// analysis. For a `Nullable` expression that does need one the rewrite is skipped instead:
+/// `dictGet` itself throws there regardless of the optimization (at `NULL` rows the nested
+/// column holds default values, and e.g. an empty string does not parse as `UUID`), so
+/// keeping the unoptimized query is the only behavior-preserving choice.
+///
+/// Returns false when the rewrite must be skipped entirely.
+bool mirrorImplicitKeyConversion(QueryTreeNodePtr & key_expr_node, const NamesAndTypes & key_cols, const ContextPtr & context)
+{
+    if (key_cols.size() != 1)
+        return true;
+
+    if (keyConversionIsTotalWidening(key_expr_node->getResultType(), key_cols.front().type))
+        return true;
+
+    if (isNullableOrLowCardinalityNullable(key_expr_node->getResultType()))
+        return false;
+
+    key_expr_node = makeAccurateCast(key_expr_node, key_cols.front().type, context);
+    return true;
+}
+
 bool isRewriteSemanticallySafe(
     const DataTypePtr & dict_attr_type,
     const DataTypePtr & dictget_result_type,
@@ -371,86 +470,15 @@ public:
         if (dict_structure.key && hasNullableComponentInComplexKey(dictget_function_info.key_expr_node))
             return;
 
-        if (key_cols.size() == 1)
-        {
-            auto & key_expr_node = dictget_function_info.key_expr_node;
+        /// A complex-key dictionary with a single key column also accepts the `tuple()`-wrapped
+        /// call form; normalize it to the bare key expression the rewrites compare against.
+        if (dict_structure.key && key_cols.size() == 1)
+            unwrapSingleColumnTupleKey(dictget_function_info.key_expr_node, getContext());
 
-            /// A complex-key dictionary with a single key column accepts both the bare key
-            /// expression (`dictGet(..., k)`) and its one-element tuple wrapper
-            /// (`dictGet(..., tuple(k))`). The rewrites below compare the key expression with
-            /// bare key values: scalar constants produced by `dictGetKeys` or a single-column
-            /// `SELECT` from `dictionary(...)`. Unwrap the tuple, otherwise the rewrite pits
-            /// `Tuple(T)` against `T` and fails with ILLEGAL_TYPE_OF_ARGUMENT.
-            /// The tuple can also be `Nullable` (e.g. produced by `if(cond, tuple(k), NULL)`):
-            /// `tupleElement` propagates the `NULL` to the extracted element, and a `NULL` key
-            /// behaves the same on both sides of the rewrite (`dictGet` returns `NULL`, so the
-            /// comparison is `NULL`; `NULL IN (...)` is `NULL` as well).
-            /// Simple-key dictionaries are intentionally not affected: for them `dictGet`
-            /// rejects the tuple form even without this optimization.
-            if (dict_structure.key)
-            {
-                const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
-                const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
-                if (key_expr_tuple_type && key_expr_tuple_type->getElements().size() == 1)
-                {
-                    const auto * key_expr_function = key_expr_node->as<FunctionNode>();
-                    if (key_expr_function && key_expr_function->getFunctionName() == "tuple"
-                        && key_expr_function->getArguments().getNodes().size() == 1)
-                    {
-                        /// A syntactic wrapper: `tuple(k)` -> `k`.
-                        key_expr_node = key_expr_function->getArguments().getNodes().front();
-                    }
-                    else
-                    {
-                        /// Not a `tuple(...)` call, but still a (possibly `Nullable`) one-element
-                        /// tuple, e.g. a column of type `Tuple(UUID)`: extract the element.
-                        auto tuple_element_function_node = std::make_shared<FunctionNode>("tupleElement");
-                        tuple_element_function_node->getArguments().getNodes()
-                            = {key_expr_node, std::make_shared<ConstantNode>(Field(static_cast<UInt64>(1)))};
-                        resolveOrdinaryFunctionNodeByName(*tuple_element_function_node, "tupleElement", getContext());
-                        key_expr_node = std::move(tuple_element_function_node);
-                    }
-                }
-            }
-
-            /// `dictGet` implicitly converts the key columns to the dictionary key types
-            /// (`IDictionary::convertKeyColumns`, which uses `castColumnAccurate`), so e.g.
-            /// a `String` key expression is valid for a `UUID` key column, and an `Int16`
-            /// expression over a `UInt8` key column throws on values outside of `UInt8`.
-            /// The rewrites below compare the key expression with values of the key column
-            /// type, and the generic comparison converts via a common supertype instead.
-            /// That is equivalent to the converted lookup only when the key column type is
-            /// itself the supertype (a total widening, e.g. a narrow integer column against
-            /// a wide key type) - keep such expressions untouched, which also keeps them
-            /// usable for index analysis (the same criterion `canReplaceWithDictGetKeys`
-            /// uses for the attribute side). The criterion is total for integer-to-float
-            /// pairs as well: `getLeastSupertype` refuses e.g. `Int64` with `Float64`
-            /// (not enough mantissa bits), so an integer expression stays on this fast path
-            /// only when the float key type represents every its value exactly. Otherwise mirror the `dictGet` conversion with
-            /// `accurateCast`: it makes `String` keys comparable with e.g. `UUID` columns
-            /// (the comparison alone throws NO_COMMON_TYPE) and preserves the throwing
-            /// behavior on lossy conversions where the comparison would silently return
-            /// false (e.g. `Int16` values outside of a `UInt8` key column).
-            /// For a `Nullable` expression that needs such a conversion `dictGet` itself
-            /// throws whenever the nested default value does not convert (at NULL rows the
-            /// nested column holds default values, and e.g. an empty string does not parse
-            /// as `UUID`) - skip the rewrite and keep the behavior of the unoptimized query.
-            const DataTypePtr & key_col_type = key_cols.front().type;
-            const DataTypePtr stripped_key_expr_type = removeLowCardinalityAndNullable(key_expr_node->getResultType());
-            const DataTypePtr stripped_key_col_type = removeLowCardinalityAndNullable(key_col_type);
-            const DataTypePtr key_supertype = tryGetLeastSupertype(DataTypes{stripped_key_expr_type, stripped_key_col_type});
-            if (!key_supertype || !key_supertype->equals(*stripped_key_col_type))
-            {
-                if (isNullableOrLowCardinalityNullable(key_expr_node->getResultType()))
-                    return;
-
-                auto accurate_cast_function_node = std::make_shared<FunctionNode>("accurateCast");
-                accurate_cast_function_node->getArguments().getNodes()
-                    = {key_expr_node, std::make_shared<ConstantNode>(key_col_type->getName())};
-                resolveOrdinaryFunctionNodeByName(*accurate_cast_function_node, "accurateCast", getContext());
-                key_expr_node = std::move(accurate_cast_function_node);
-            }
-        }
+        /// Mirror the key conversion `dictGet` performs, so the rewritten comparison keeps both
+        /// its results and its errors.
+        if (!mirrorImplicitKeyConversion(dictget_function_info.key_expr_node, key_cols, getContext()))
+            return;
 
         const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
 
