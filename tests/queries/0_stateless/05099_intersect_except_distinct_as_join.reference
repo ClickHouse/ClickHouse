@@ -49,10 +49,12 @@ ALL modes keep the set-operation step
 2
 plan
 Distinct (DISTINCT)
+Distinct (Preliminary DISTINCT)
 Join (JOIN FillRightFirst)
 Strictness: semi
 Join conditions: a <=> a AND tuple(b) <=> tuple(b)
 Distinct (DISTINCT)
+Distinct (Preliminary DISTINCT)
 Join (JOIN FillRightFirst)
 Strictness: anti
 Join conditions: a <=> a AND tuple(b) <=> tuple(b)
@@ -60,6 +62,7 @@ Distinct
 IntersectOrExcept
 IntersectOrExcept
 Distinct (DISTINCT)
+Distinct (Preliminary DISTINCT)
 Join (JOIN FillRightFirst)
 Strictness: semi
 Join conditions: a <=> a

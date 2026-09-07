@@ -9,6 +9,8 @@ parallel
   DistinctTransform × 4
     Resize × 4 4 → 1
       ScatterByPartitionTransform × 4 1 → 4
+        (Distinct)
+        DistinctTransform × 4
 disabled
   (Distinct)
   DistinctTransform
@@ -24,6 +26,8 @@ size limits keep the merge
 disjoint partition streams
   (Distinct)
   DistinctTransform × 8
+    (Distinct)
+    DistinctTransform × 8
 sorted input is not scattered
 (Distinct)
 DistinctSortedStreamTransform

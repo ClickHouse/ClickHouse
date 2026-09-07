@@ -76,9 +76,6 @@ struct QueryPlanOptimizationSettings
     bool force_window_partitions_independently;
     bool creating_set_partitions_independently;
     bool remove_redundant_distinct;
-
-    /// The final DISTINCT hash-partitions its input, which makes the preliminary DISTINCT before it redundant.
-    bool allow_parallel_final_distinct;
     bool try_use_vector_search;
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;

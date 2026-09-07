@@ -15,9 +15,6 @@ SET enable_parallel_replicas = 0;
 SET max_block_size = 512;
 SET max_threads = 4;
 
--- The parallel final `DISTINCT` removes the preliminary step under test.
-SET allow_parallel_final_distinct = 0;
-
 -- { echo }
 
 DROP TABLE IF EXISTS t_uniq;

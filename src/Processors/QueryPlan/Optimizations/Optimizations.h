@@ -355,9 +355,6 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
 /// carry the same key value).
 void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
-/// Remove the preliminary DISTINCT before a final DISTINCT that will hash-partition its input instead of merging the streams.
-void removePreliminaryDistinct(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
-
 /// Returns the name of used projection or nullopt if no projection is used.
 std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
