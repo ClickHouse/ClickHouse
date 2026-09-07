@@ -1,12 +1,10 @@
 #pragma once
 
 #include <Common/CurrentMetrics.h>
-#include <Common/ProfileEvents.h>
+#include "config.h"
 #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Server/IServer.h>
-
-#include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>
@@ -40,8 +38,7 @@ public:
         bool ssl_enabled_,
         bool secure_required_,
         Int32 connection_id_,
-        std::optional<String> default_session_user_,
-        VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
+        std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
@@ -68,12 +65,14 @@ private:
     bool ssl_enabled = false;
     bool secure_required = false;
     Int32 connection_id = 0;
-    Int32 secret_key = 0;
+    UInt32 secret_key = 0;
+    /// The public random component of the current statement's query ID.
+    UInt32 query_id_token = 0;
 
-    /// If set, overrides the `default_session_user` server setting for this listener.
-    std::optional<String> default_session_user;
+    /// Emit one `ReadyForQuery` at the next protocol boundary.
+    bool need_ready_for_query = false;
 
-    bool is_query_in_progress = false;
+    /// Discard extended-query messages through the next `Sync`.
     bool ignore_until_sync = false;
 
     std::shared_ptr<ReadBufferFromPocoSocket> in;
@@ -99,6 +98,13 @@ private:
     void sendParameterStatusData(PostgreSQLProtocol::Messaging::StartupMessage & start_up_message);
 
     void cancelRequest();
+
+    /// The query id the current statement runs under, which a cancel request resolves to.
+    String currentQueryId() const;
+    static String queryIdFor(Int32 connection_id_, UInt32 query_id_token_);
+
+    /// Give the statement that is about to run its own query id, and point cancellation at it.
+    void assignStatementQueryId(ContextMutablePtr query_context);
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> receiveStartupMessage(int payload_size);
 
@@ -128,9 +134,6 @@ private:
 
     static bool isEmptyQuery(const String & query);
     static Int32 parseNumberColumns(const std::vector<char> & output);
-
-    void initializeSystemTables(ContextMutablePtr query_context);
-    bool should_init_system_tables = true;
 };
 
 }

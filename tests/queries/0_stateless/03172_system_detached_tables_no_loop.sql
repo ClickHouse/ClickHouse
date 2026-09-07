@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-flaky-check
+-- Tags: no-parallel
 
 SELECT '-----------------------';
 SELECT 'detached table no loop';

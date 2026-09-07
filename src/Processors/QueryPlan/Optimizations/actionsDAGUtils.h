@@ -46,15 +46,7 @@ struct MatchedTrees
     using Matches = std::unordered_map<const ActionsDAG::Node *, Match>;
 };
 
-/// `max_size_for_sets_from_tuple_to_compare` bounds the cost of comparing `IN`-clause sets
-/// (`ColumnSet` wrapping a `FutureSetFromTuple`) by content hash. Zero disables content-hash
-/// comparison for such sets entirely — two sets are never considered equal. A non-zero value
-/// is the row-count limit above which both sets are treated as non-matching without hashing.
-MatchedTrees::Matches matchTrees(
-    const ActionsDAG::NodeRawConstPtrs & inner_dag,
-    const ActionsDAG & outer_dag,
-    bool check_monotonicity = true,
-    size_t max_size_for_sets_from_tuple_to_compare = 0);
+MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag, const ActionsDAG & outer_dag, bool check_monotonicity = true);
 
 /// Update SortDescription (inplace) by applying ActionsDAG.
 ///
@@ -101,15 +93,9 @@ void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * nod
 
 /// Here we check that partition key expression is a deterministic function of the reduced set of group by key nodes.
 /// No need to explicitly check that each function is deterministic, because it is a guaranteed property of partition key expression (checked on table creation).
-/// So it is left only to check that each key node depends only on the allowed set of nodes (`irreducible_nodes`).
-/// `key_nodes` are the actual partition/sharding key output nodes — those produced by `findInOutputs` on the key's
-/// `column_names`, not the raw `partition_actions.getOutputs()`. The storage-level DAG keeps source columns in `getOutputs()`,
-/// but they're not key values and shouldn't be checked here. For example:
-///   - `PARTITION BY toYYYYMM(date)`:   `getOutputs() = [toYYYYMM(date), date]` but `key_nodes = [toYYYYMM(date)]`. The `date` INPUT is excluded — it is a source column the key reads, not a key value.
-///   - `PARTITION BY date`:             `getOutputs() = [date]` but `key_nodes = [date]`. The `date` INPUT *is* the key.
-/// In both cases, `key_nodes` comes from `findInOutputs(column_names)`.
+/// So it is left only to check that each output node depends only on the allowed set of nodes (`irreducible_nodes`).
 bool allOutputsDependsOnlyOnAllowedNodes(
-    const ActionsDAG::NodeRawConstPtrs & key_nodes, const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches);
+    const ActionsDAG & partition_actions, const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches);
 bool allOutputsDependsOnlyOnAllowedNodes(
     const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches, const ActionsDAG::Node * node, NodeMap & visited);
 

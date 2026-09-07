@@ -135,7 +135,7 @@ struct TimeWindowImpl
 };
 
 template <TimeWindowFunctionName type>
-class FunctionTimeWindow final : public IFunction
+class FunctionTimeWindow : public IFunction
 {
 public:
     static constexpr auto name = TimeWindowImpl<type>::name;
@@ -427,21 +427,13 @@ struct TimeWindowImpl<HOP>
             wstart = static_cast<ToType>(AddTime<kind>::execute(wend, -window_num_units, time_zone));
             ToType wend_latest;
 
-            /// Subtracting a whole positive window must make the time strictly smaller: equality
-            /// means the span of the window wrapped around to a multiple of 2^32 seconds, which
-            /// would dodge the greater-than check.
-            if (wstart >= wend)
+            if (wstart > wend)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time overflow in function {}", name);
 
             do
             {
                 wend_latest = wend;
                 wend = static_cast<ToType>(AddTime<kind>::execute(wend, -hop_num_units, time_zone));
-
-                /// The subtraction of the hop wrapped around zero: no further iteration would ever
-                /// get below time_data[i], and the loop would spin forever.
-                if (wend > wend_latest)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time overflow in function {}", name);
             } while (wend > time_data[i]);
 
             end_data[i] = wend_latest;
@@ -503,11 +495,7 @@ struct TimeWindowImpl<WINDOW_ID>
 
         IntervalKind window_interval_kind = extractIntervalKind(arguments.at(1));
 
-        /// The 3rd argument may be either an `Interval` (hop) or a `String` (timezone).
-        /// Only compare interval kinds when the 3rd argument is actually an `Interval`,
-        /// otherwise `extractIntervalKind` would dereference a null `DataTypeInterval`.
-        if (arguments.size() >= 3 && isInterval(*arguments.at(2).type)
-            && window_interval_kind != extractIntervalKind(arguments.at(2)))
+        if (arguments.size() >= 3 && window_interval_kind != extractIntervalKind(arguments.at(2)))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal type of window and hop column of function {}, must be same",
                 function_name);
 
@@ -585,21 +573,13 @@ struct TimeWindowImpl<WINDOW_ID>
             ToType wend = static_cast<ToType>(AddTime<kind>::execute(wstart, hop_num_units, time_zone));
             ToType wend_latest;
 
-            /// Adding a whole positive hop must make the time strictly greater: equality means the
-            /// span of the hop wrapped around to a multiple of 2^32 seconds, which would dodge the
-            /// greater-than check.
-            if (wstart >= wend)
+            if (wstart > wend)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time overflow in function {}", name);
 
             do
             {
                 wend_latest = wend;
                 wend = static_cast<ToType>(AddTime<kind>::execute(wend, -gcd_num_units, time_zone));
-
-                /// The subtraction wrapped around zero: no further iteration would ever get below
-                /// time_data[i], and the loop would spin forever.
-                if (wend > wend_latest)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time overflow in function {}", name);
             } while (wend > time_data[i]);
 
             end_data[i] = wend_latest;
@@ -730,7 +710,7 @@ A tumbling time window assigns records to non-overlapping, continuous windows wi
         {"timezone", "Optional. Timezone name.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_tumble = {"Returns the inclusive lower and exclusive upper bound of the corresponding tumbling window.", {"Tuple(DateTime, DateTime)"}};
-    FunctionDocumentation::Examples examples_tumble = {{"Tumbling window", "SELECT tumble(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))", "('2026-01-02 00:00:00','2026-01-03 00:00:00')"}};
+    FunctionDocumentation::Examples examples_tumble = {{"Tumbling window", "SELECT tumble(now(), toIntervalDay('1'))", "('2024-07-04 00:00:00','2024-07-05 00:00:00')"}};
     FunctionDocumentation::IntroducedIn introduced_in_tumble = {21, 12};
     FunctionDocumentation::Category category_tumble = FunctionDocumentation::Category::TimeWindow;
     FunctionDocumentation documentation_tumble = {description_tumble, syntax_tumble, arguments_tumble, {}, returned_value_tumble, examples_tumble, introduced_in_tumble, category_tumble};
@@ -745,7 +725,7 @@ Returns the inclusive lower bound of the corresponding tumbling window.
         {"timezone", "Optional. Timezone name.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_tumble_start = {"Returns the inclusive lower bound of the corresponding tumbling window.", {"DateTime"}};
-    FunctionDocumentation::Examples examples_tumble_start = {{"Tumbling window start", "SELECT tumbleStart(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))", "2026-01-02 00:00:00"}};
+    FunctionDocumentation::Examples examples_tumble_start = {{"Tumbling window start", "SELECT tumbleStart(now(), toIntervalDay('1'))", "2024-07-04 00:00:00"}};
     FunctionDocumentation::IntroducedIn introduced_in_tumble_start = {22, 1};
     FunctionDocumentation::Category category_tumble_start = FunctionDocumentation::Category::TimeWindow;
     FunctionDocumentation documentation_tumble_start = {description_tumble_start, syntax_tumble_start, arguments_tumble_start, {}, returned_value_tumble_start, examples_tumble_start, introduced_in_tumble_start, category_tumble_start};
@@ -760,7 +740,7 @@ Returns the exclusive upper bound of the corresponding tumbling window.
         {"timezone", "Optional. Timezone name.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_tumble_end = {"Returns the exclusive upper bound of the corresponding tumbling window.", {"DateTime"}};
-    FunctionDocumentation::Examples examples_tumble_end = {{"Tumbling window end", "SELECT tumbleEnd(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))", "2026-01-03 00:00:00"}};
+    FunctionDocumentation::Examples examples_tumble_end = {{"Tumbling window end", "SELECT tumbleEnd(now(), toIntervalDay('1'))", "2024-07-05 00:00:00"}};
     FunctionDocumentation::IntroducedIn introduced_in_tumble_end = {22, 1};
     FunctionDocumentation::Category category_tumble_end = FunctionDocumentation::Category::TimeWindow;
     FunctionDocumentation documentation_tumble_end = {description_tumble_end, syntax_tumble_end, arguments_tumble_end, {}, returned_value_tumble_end, examples_tumble_end, introduced_in_tumble_end, category_tumble_end};
@@ -778,7 +758,7 @@ Since one record can be assigned to multiple hop windows, the function only retu
         {"timezone", "Optional. Timezone name.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_hop = {"Returns the inclusive lower and exclusive upper bound of the corresponding hopping window.", {"Tuple(DateTime, DateTime)"}};
-    FunctionDocumentation::Examples examples_hop = {{"Hopping window", "SELECT hop(toDateTime('2026-01-02 03:04:05', 'UTC'), INTERVAL '1' DAY, INTERVAL '2' DAY)", "('2026-01-01 00:00:00','2026-01-03 00:00:00')"}};
+    FunctionDocumentation::Examples examples_hop = {{"Hopping window", "SELECT hop(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)", "('2024-07-03 00:00:00','2024-07-05 00:00:00')"}};
     FunctionDocumentation::IntroducedIn introduced_in_hop = {21, 12};
     FunctionDocumentation::Category category_hop = FunctionDocumentation::Category::TimeWindow;
     FunctionDocumentation documentation_hop = {description_hop, syntax_hop, arguments_hop, {}, returned_value_hop, examples_hop, introduced_in_hop, category_hop};
@@ -796,7 +776,7 @@ Since one record can be assigned to multiple hop windows, the function only retu
         {"timezone", "Optional. Timezone name.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_hop_start = {"Returns the inclusive lower bound of the corresponding hopping window.", {"DateTime"}};
-    FunctionDocumentation::Examples examples_hop_start = {{"Hopping window start", "SELECT hopStart(toDateTime('2026-01-02 03:04:05', 'UTC'), INTERVAL '1' DAY, INTERVAL '2' DAY)", "2026-01-01 00:00:00"}};
+    FunctionDocumentation::Examples examples_hop_start = {{"Hopping window start", "SELECT hopStart(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)", "2024-07-03 00:00:00"}};
     FunctionDocumentation::IntroducedIn introduced_in_hop_start = {22, 1};
     FunctionDocumentation::Category category_hop_start = FunctionDocumentation::Category::TimeWindow;
     FunctionDocumentation documentation_hop_start = {description_hop_start, syntax_hop_start, arguments_hop_start, {}, returned_value_hop_start, examples_hop_start, introduced_in_hop_start, category_hop_start};
@@ -814,7 +794,7 @@ Since one record can be assigned to multiple hop windows, the function only retu
         {"timezone", "Optional. Timezone name.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_hop_end = {"Returns the exclusive upper bound of the corresponding hopping window.", {"DateTime"}};
-    FunctionDocumentation::Examples examples_hop_end = {{"Hopping window end", "SELECT hopEnd(toDateTime('2026-01-02 03:04:05', 'UTC'), INTERVAL '1' DAY, INTERVAL '2' DAY)", "2026-01-03 00:00:00"}};
+    FunctionDocumentation::Examples examples_hop_end = {{"Hopping window end", "SELECT hopEnd(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)", "2024-07-05 00:00:00"}};
     FunctionDocumentation::IntroducedIn introduced_in_hop_end = {22, 1};
     FunctionDocumentation::Category category_hop_end = FunctionDocumentation::Category::TimeWindow;
     FunctionDocumentation documentation_hop_end = {description_hop_end, syntax_hop_end, arguments_hop_end, {}, returned_value_hop_end, examples_hop_end, introduced_in_hop_end, category_hop_end};
@@ -836,7 +816,7 @@ This function can only be used with `WINDOW VIEW`.
         {"timezone", "Optional. Timezone name.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_window_id = {"Returns the window identifier of the corresponding window.", {"UInt32"}};
-    FunctionDocumentation::Examples examples_window_id = {{"Window ID", "SELECT windowID(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))", "1767398400"}};
+    FunctionDocumentation::Examples examples_window_id = {{"Window ID", "SELECT windowID(now(), toIntervalDay('1'))", ""}};
     FunctionDocumentation::IntroducedIn introduced_in_window_id = {22, 1};
     FunctionDocumentation::Category category_window_id = FunctionDocumentation::Category::TimeWindow;
     FunctionDocumentation documentation_window_id = {description_window_id, syntax_window_id, arguments_window_id, {}, returned_value_window_id, examples_window_id, introduced_in_window_id, category_window_id};
