@@ -78,45 +78,48 @@ std::vector<Float64> extractFloatKeys(const Chunk & chunk)
 TEST(DistinctSortedFilter, DeduplicatesWithinChunk)
 {
     auto filter = makeFilter();
-    auto result = filter.filter(makeChunk({1, 1, 2, 3, 3, 3}, {0, 0, 0, 0, 0, 0}), /*strip_flag=*/ false);
+    auto result = filter.filter(makeChunk({1, 1, 2, 3, 3, 3}, {0, 0, 0, 0, 0, 0}));
 
-    EXPECT_EQ(result.getNumColumns(), 2u);
+    EXPECT_EQ(result.getNumColumns(), 1u);
     EXPECT_EQ(extractKeys(result), (std::vector<UInt64>{1, 2, 3}));
 }
 
 TEST(DistinctSortedFilter, StripsFlagColumn)
 {
     auto filter = makeFilter();
-    auto result = filter.filter(makeChunk({1, 2}, {0, 0}), /*strip_flag=*/ true);
+    auto result = filter.filter(makeChunk({1, 2}, {0, 0}));
 
     EXPECT_EQ(result.getNumColumns(), 1u);
     EXPECT_EQ(extractKeys(result), (std::vector<UInt64>{1, 2}));
+}
+
+TEST(DistinctSortedFilter, EmptyInputPreservesKeyBoundaryAndOutputSchema)
+{
+    for (const UInt8 flag : {UInt8{0}, UInt8{1}})
+    {
+        auto filter = makeFilter();
+        auto first = filter.filter(makeChunk({1}, {flag}));
+        EXPECT_EQ(first.getNumRows(), flag == 0 ? 1u : 0u);
+
+        auto empty = filter.filter(makeChunk({}, {}));
+        EXPECT_EQ(empty.getNumRows(), 0u);
+        EXPECT_EQ(empty.getNumColumns(), 1u);
+
+        auto next = filter.filter(makeChunk({1, 2}, {0, 0}));
+        EXPECT_EQ(extractKeys(next), (std::vector<UInt64>{2}));
+    }
 }
 
 TEST(DistinctSortedFilter, ContinuesRangeAcrossChunks)
 {
     auto filter = makeFilter();
 
-    auto first = filter.filter(makeChunk({1, 2, 2}, {0, 0, 0}), /*strip_flag=*/ false);
+    auto first = filter.filter(makeChunk({1, 2, 2}, {0, 0, 0}));
     EXPECT_EQ(extractKeys(first), (std::vector<UInt64>{1, 2}));
 
     /// The first row continues the range of key 2, so it must be suppressed.
-    auto second = filter.filter(makeChunk({2, 3}, {0, 0}), /*strip_flag=*/ false);
+    auto second = filter.filter(makeChunk({2, 3}, {0, 0}));
     EXPECT_EQ(extractKeys(second), (std::vector<UInt64>{3}));
-}
-
-TEST(DistinctSortedFilter, ResetForgetsPreviousChunk)
-{
-    auto filter = makeFilter();
-
-    auto first = filter.filter(makeChunk({1, 2}, {0, 0}), /*strip_flag=*/ false);
-    EXPECT_EQ(extractKeys(first), (std::vector<UInt64>{1, 2}));
-
-    filter.reset();
-
-    /// Without reset the leading 2 would be treated as a continuation of the previous range.
-    auto second = filter.filter(makeChunk({2, 3}, {0, 0}), /*strip_flag=*/ false);
-    EXPECT_EQ(extractKeys(second), (std::vector<UInt64>{2, 3}));
 }
 
 TEST(DistinctSortedFilter, FlaggedRowSuppressesItsKey)
@@ -125,7 +128,7 @@ TEST(DistinctSortedFilter, FlaggedRowSuppressesItsKey)
 
     /// Key 1 was already emitted (flag on its first row): the whole group is suppressed.
     /// Key 2 was not: its first row is emitted once.
-    auto result = filter.filter(makeChunk({1, 1, 2, 2}, {1, 0, 0, 0}), /*strip_flag=*/ true);
+    auto result = filter.filter(makeChunk({1, 1, 2, 2}, {1, 0, 0, 0}));
     EXPECT_EQ(extractKeys(result), (std::vector<UInt64>{2}));
 }
 
@@ -133,10 +136,10 @@ TEST(DistinctSortedFilter, FlaggedRowSuppressesAcrossChunks)
 {
     auto filter = makeFilter();
 
-    auto first = filter.filter(makeChunk({1}, {1}), /*strip_flag=*/ true);
+    auto first = filter.filter(makeChunk({1}, {1}));
     EXPECT_EQ(first.getNumRows(), 0u);
 
-    auto second = filter.filter(makeChunk({1, 2}, {0, 0}), /*strip_flag=*/ true);
+    auto second = filter.filter(makeChunk({1, 2}, {0, 0}));
     EXPECT_EQ(extractKeys(second), (std::vector<UInt64>{2}));
 }
 
@@ -144,10 +147,10 @@ TEST(DistinctSortedFilter, EmptyOutputChunk)
 {
     auto filter = makeFilter();
 
-    auto first = filter.filter(makeChunk({7, 7}, {0, 0}), /*strip_flag=*/ false);
+    auto first = filter.filter(makeChunk({7, 7}, {0, 0}));
     EXPECT_EQ(extractKeys(first), (std::vector<UInt64>{7}));
 
-    auto second = filter.filter(makeChunk({7, 7, 7}, {0, 0, 0}), /*strip_flag=*/ false);
+    auto second = filter.filter(makeChunk({7, 7, 7}, {0, 0, 0}));
     EXPECT_EQ(second.getNumRows(), 0u);
 }
 
@@ -157,7 +160,7 @@ TEST(DistinctSortedFilter, SortEqualRowsCollapse)
     /// `DISTINCT` in order does), even though the in-memory hash `DISTINCT` distinguishes them by the
     /// binary representation.
     auto filter = makeFilter();
-    auto result = filter.filter(makeFloatChunk({-0., 0., 0.}, {0, 0, 0}), /*strip_flag=*/ false);
+    auto result = filter.filter(makeFloatChunk({-0., 0., 0.}, {0, 0, 0}));
     EXPECT_EQ(extractFloatKeys(result).size(), 1u);
 }
 
@@ -168,7 +171,7 @@ TEST(DistinctSortedFilter, NaNsCollapse)
     const Float64 nan2 = std::bit_cast<Float64>(std::bit_cast<UInt64>(nan1) ^ 1);
 
     auto filter = makeFilter();
-    auto result = filter.filter(makeFloatChunk({nan1, nan1, nan2}, {0, 0, 0}), /*strip_flag=*/ false);
+    auto result = filter.filter(makeFloatChunk({nan1, nan1, nan2}, {0, 0, 0}));
     EXPECT_EQ(result.getNumRows(), 1u);
 }
 
@@ -178,7 +181,7 @@ TEST(DistinctSortedFilter, FlagSuppressesWholeEqualRange)
     /// (a value class that was started before the spill keeps the in-memory result; classes first seen
     /// after the spill are deduplicated by the sort comparison).
     auto filter = makeFilter();
-    auto result = filter.filter(makeFloatChunk({-0., -0., 0.}, {1, 0, 0}), /*strip_flag=*/ true);
+    auto result = filter.filter(makeFloatChunk({-0., -0., 0.}, {1, 0, 0}));
     EXPECT_EQ(result.getNumRows(), 0u);
 }
 
@@ -337,7 +340,7 @@ TEST(DistinctSortedFilter, MergeSuppressionOrderKeepsFirstOrdinaryPayload)
                 prev_flag = flags[row];
             }
 
-            auto filtered = filter.filter(Chunk(block.getColumns(), block.rows()), /*strip_flag=*/ true);
+            auto filtered = filter.filter(Chunk(block.getColumns(), block.rows()));
             const auto & filtered_keys = assert_cast<const ColumnUInt64 &>(*filtered.getColumns()[0]).getData();
             const auto & payloads = assert_cast<const ColumnUInt64 &>(*filtered.getColumns()[1]).getData();
             for (size_t row = 0; row < filtered_keys.size(); ++row)
@@ -403,7 +406,7 @@ TEST(DistinctSortedFilter, SortEqualZerosCollapseThroughMerge)
         if (block.rows() == 0)
             continue;
 
-        auto filtered = filter.filter(Chunk(block.getColumns(), block.rows()), /*strip_flag=*/ false);
+        auto filtered = filter.filter(Chunk(block.getColumns(), block.rows()));
         if (filtered.hasRows())
         {
             const auto & keys = assert_cast<const ColumnFloat64 &>(*filtered.getColumns()[0]).getData();

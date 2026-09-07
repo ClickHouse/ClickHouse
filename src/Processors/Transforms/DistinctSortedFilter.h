@@ -18,12 +18,9 @@ class DistinctSortedFilter
 public:
     DistinctSortedFilter(ColumnNumbers key_columns_pos_, SortDescription description_, size_t flag_column_pos_);
 
-    /// Forgets the state from previous chunks before filtering an unrelated stream.
-    void reset();
-
     /// Keeps the first row of each equal-key range unless the range starts with an already-emitted
-    /// flag. The result can be empty. When `strip_flag` is set, removes the flag column from the result.
-    Chunk filter(Chunk chunk, bool strip_flag);
+    /// flag, and removes the flag column. The result can be empty.
+    Chunk filter(Chunk chunk);
 
 private:
     void saveLatestKey(const ColumnRawPtrs & key_columns, size_t row_pos);

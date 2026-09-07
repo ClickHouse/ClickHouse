@@ -6,6 +6,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Transforms/BufferingFileTransforms.h>
+#include <Processors/Transforms/DistinctSortedFilter.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/SortingTransform.h>
@@ -58,7 +59,7 @@ public:
     String getName() const override { return "MergedRunsDistinctTransform"; }
 
 protected:
-    void transform(Chunk & chunk) override { chunk = filter.filter(std::move(chunk), /*strip_flag=*/ true); }
+    void transform(Chunk & chunk) override { chunk = filter.filter(std::move(chunk)); }
 
 private:
     DistinctSortedFilter filter;
@@ -86,8 +87,6 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     , min_free_disk_space(min_free_disk_space_)
     , max_block_size_rows(max_block_size_rows_)
     , spill_layout(header_, distinct_set->getKeyColumnsPositions(), preserve_input_order_)
-    , run_dedup(
-          spill_layout.getKeyColumnsPositions(), spill_layout.getKeySortDescription(), spill_layout.getFlagColumnPosition())
 {
 }
 
@@ -173,13 +172,12 @@ void ExternalDistinctTransform::startSpillRun(Chunks run_chunks, size_t run_byte
     const size_t reserve_size = run_bytes + min_free_disk_space;
     TemporaryBlockStreamHolder tmp_stream(spill_header, tmp_data, reserve_size);
 
-    deduplicate_current_run = kind == RunKind::Input && run_chunks.size() > 1;
-    if (deduplicate_current_run)
-        run_dedup.reset();
-
-    /// Deduplication follows sorting, so applying the hint inside the sort could lose distinct values.
+    const auto mode = kind == RunKind::Input ? MergeSorter::Mode::MergeUniqueChunks : MergeSorter::Mode::PreserveRows;
+    const auto & description = kind == RunKind::Input
+        ? spill_layout.getKeySortDescription() : spill_layout.getRunSortDescription();
+    /// The final merge applies the hint after suppression, which can remove keys from ordinary runs.
     merge_sorter = std::make_unique<MergeSorter>(
-        spill_header, std::move(run_chunks), spill_layout.getRunSortDescription(), max_block_size_rows, /*limit=*/ 0);
+        spill_header, std::move(run_chunks), description, max_block_size_rows, /*limit=*/ 0, mode);
 
     auto sink = std::make_shared<BufferingToFileSink>(spill_header, std::move(tmp_stream), log);
     auto source = std::make_shared<BufferingFromFileSource>(spill_header, sink->getHolder(), log);
@@ -581,21 +579,14 @@ void ExternalDistinctTransform::consume(Chunk chunk)
 
 void ExternalDistinctTransform::serialize()
 {
-    /// The loop can process many blocks in one call when the deduplication filters whole blocks out
-    /// (heavily duplicated runs), so check for cancellation: ending the run stream early is harmless
-    /// when the pipeline is being torn down anyway.
+    /// Reads can consume only duplicates and return zero rows. Skip those chunks while retaining
+    /// cancellation checks between reads, and finish writing only when the merger is exhausted.
     while (!isCancelled())
     {
         current_chunk = merge_sorter->read();
         if (!current_chunk)
             break;
 
-        if (!deduplicate_current_run)
-            return;
-
-        /// Deduplicate the run locally. Pushing an empty chunk would end the temporary file stream
-        /// prematurely, so fully filtered out chunks are skipped.
-        current_chunk = run_dedup.filter(std::move(current_chunk), /*strip_flag=*/ false);
         if (current_chunk.hasRows())
             return;
     }

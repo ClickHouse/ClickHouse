@@ -3,7 +3,6 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
-#include <Processors/Transforms/DistinctSortedFilter.h>
 #include <Processors/Transforms/DistinctSpillLayout.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/logger_useful.h>
@@ -130,10 +129,6 @@ private:
 
     size_t temporary_files_num = 0;
     std::unique_ptr<MergeSorter> merge_sorter;
-    /// Removes duplicates across chunks while writing an ordinary run. Each chunk is already locally
-    /// deduplicated by `sortSpillChunk`, so single-chunk runs and suppression rows bypass this filter.
-    DistinctSortedFilter run_dedup;
-    bool deduplicate_current_run = false;
     std::shared_ptr<MergingSortedTransform> external_merging_sorted;
     std::optional<PendingPipelineUpdate> pending_pipeline_update;
 

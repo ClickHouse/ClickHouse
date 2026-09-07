@@ -14,11 +14,6 @@ DistinctSortedFilter::DistinctSortedFilter(ColumnNumbers key_columns_pos_, SortD
 {
 }
 
-void DistinctSortedFilter::reset()
-{
-    prev_chunk_latest_key.clear();
-}
-
 void DistinctSortedFilter::saveLatestKey(const ColumnRawPtrs & key_columns, size_t row_pos)
 {
     prev_chunk_latest_key.clear();
@@ -40,11 +35,14 @@ bool DistinctSortedFilter::isLatestKeyFromPrevChunk(const ColumnRawPtrs & key_co
     return true;
 }
 
-Chunk DistinctSortedFilter::filter(Chunk chunk, bool strip_flag)
+Chunk DistinctSortedFilter::filter(Chunk chunk)
 {
     const size_t num_rows = chunk.getNumRows();
     if (unlikely(num_rows == 0))
+    {
+        chunk.erase(flag_column_pos);
         return chunk;
+    }
 
     auto columns = chunk.detachColumns();
 
@@ -86,8 +84,7 @@ Chunk DistinctSortedFilter::filter(Chunk chunk, bool strip_flag)
             column = column->filter(filter_values, output_rows);
     }
 
-    if (strip_flag)
-        columns.erase(columns.begin() + flag_column_pos);
+    columns.erase(columns.begin() + flag_column_pos);
 
     return Chunk(std::move(columns), output_rows);
 }
