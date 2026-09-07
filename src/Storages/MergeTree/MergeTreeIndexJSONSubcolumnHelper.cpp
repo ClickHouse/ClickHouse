@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Common/FieldAccurateComparison.h>
 
 namespace DB
 {
@@ -141,7 +142,10 @@ bool isJSONPathFilterSafe(
     /// If comparing to the default, we cannot safely skip the granule.
     /// Convert value_field to the key expression type before comparing.
     auto converted = convertFieldToType(value_field, *key_expression_type);
-    if (converted == key_expression_type->getDefault())
+    /// A converted `Bool` field and its `UInt64` default have different tags but equal values.
+    /// Normalize nested fields too, since `accurateEquals` compares tuple elements by their tags.
+    normalizeBoolFields(converted);
+    if (accurateEquals(converted, key_expression_type->getDefault()))
         return false;
 
     return true;

@@ -24,6 +24,8 @@ public:
     String processConstant(const String & input) const;
 
     bool hasActions() const { return !original_actions.getActions().empty(); }
+    /// Applies the preprocessor to an already calculated index column.
+    const ActionsDAG & getIndexColumnPreprocessorDAG() const { return actions_for_index_column.getActionsDAG(); }
     const ActionsDAG & getOriginalActionsDAG() const { return original_actions.getActionsDAG(); }
 
     /// The preprocessor expression as an AST reading from an identifier named `col_name`, to splice into a larger expression.
