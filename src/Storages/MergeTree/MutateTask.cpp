@@ -685,6 +685,24 @@ static void splitAndModifyMutationCommands(
 
                 for_file_renames.push_back(command);
             }
+            else if (command.type == MutationCommand::Type::DROP_COLUMN && part_columns.hasNested(nameInPart(command.column_name)))
+            {
+                /// A DROP/CLEAR of a Nested parent matches no flattened column stored in the part
+                /// (`n` is stored as `n.x`, `n.y`, ...), so expand it to the member columns. Without
+                /// this their files are hardlinked into the new part and become readable again if
+                /// the same name is re-added to the table schema (see
+                /// 05059_re_add_column_if_not_exists_same_alter). The shared array-sizes stream is
+                /// kept while any member still uses it (`stream_counts` in collectFilesForRenames).
+                for (const auto & nested_member : part_columns.getNested(nameInPart(command.column_name)))
+                {
+                    auto member_command = command;
+                    member_command.column_name = nested_member.name;
+                    if (member_command.clear)
+                        for_interpreter.push_back(member_command);
+
+                    for_file_renames.push_back(member_command);
+                }
+            }
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
                 /// Marker-only DROP/CLEAR has the same logical effect as physical data.

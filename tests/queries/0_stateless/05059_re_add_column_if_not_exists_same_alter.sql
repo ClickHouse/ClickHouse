@@ -38,6 +38,44 @@ SELECT 'nested re-add data', a, n.x FROM re_add_ine_nested ORDER BY a;
 
 DROP TABLE re_add_ine_nested;
 
+-- Mirror shapes: the re-add direction is reversed, the snapshot must still track it. Dropping the
+-- only child un-exists the whole group, so re-adding the `Nested` group is a genuine re-add;
+-- dropping both children of a bigger group is the same; re-adding one child next to a surviving
+-- sibling reads back arrays of defaults sized by the shared offsets, like a plain ADD into the
+-- group would.
+DROP TABLE IF EXISTS re_add_ine_nested_mirror;
+CREATE TABLE re_add_ine_nested_mirror (a Int64, n Nested(x Int64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO re_add_ine_nested_mirror VALUES (1, [10]), (2, [11]);
+
+ALTER TABLE re_add_ine_nested_mirror (DROP COLUMN n.x), (ADD COLUMN IF NOT EXISTS n Nested(x Int64));
+SELECT 'mirror re-add columns', name FROM system.columns
+    WHERE database = currentDatabase() AND table = 're_add_ine_nested_mirror' ORDER BY name;
+SELECT 'mirror re-add data', a, n.x FROM re_add_ine_nested_mirror ORDER BY a;
+
+DROP TABLE re_add_ine_nested_mirror;
+
+DROP TABLE IF EXISTS re_add_ine_nested_mirror_two;
+CREATE TABLE re_add_ine_nested_mirror_two (a Int64, n Nested(x Int64, y Int64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO re_add_ine_nested_mirror_two VALUES (1, [10], [20]), (2, [11], [21]);
+
+ALTER TABLE re_add_ine_nested_mirror_two (DROP COLUMN n.x), (DROP COLUMN n.y), (ADD COLUMN IF NOT EXISTS n Nested(x Int64, y Int64));
+SELECT 'mirror two re-add columns', name FROM system.columns
+    WHERE database = currentDatabase() AND table = 're_add_ine_nested_mirror_two' ORDER BY name;
+SELECT 'mirror two re-add data', a, n.x, n.y FROM re_add_ine_nested_mirror_two ORDER BY a;
+
+DROP TABLE re_add_ine_nested_mirror_two;
+
+DROP TABLE IF EXISTS re_add_ine_nested_partial;
+CREATE TABLE re_add_ine_nested_partial (a Int64, n Nested(x Int64, y Int64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO re_add_ine_nested_partial VALUES (1, [10], [20]), (2, [11], [21]);
+
+ALTER TABLE re_add_ine_nested_partial (DROP COLUMN n.x), (ADD COLUMN IF NOT EXISTS `n.x` Array(Int64));
+SELECT 'partial re-add columns', name FROM system.columns
+    WHERE database = currentDatabase() AND table = 're_add_ine_nested_partial' ORDER BY name;
+SELECT 'partial re-add data', a, n.x, n.y FROM re_add_ine_nested_partial ORDER BY a;
+
+DROP TABLE re_add_ine_nested_partial;
+
 -- Rename: after `RENAME COLUMN x TO x_old` the name x is free by apply time, so a same-statement
 -- `ADD COLUMN IF NOT EXISTS x` is a genuine re-add and must not be skipped.
 DROP TABLE IF EXISTS re_add_ine_rename;

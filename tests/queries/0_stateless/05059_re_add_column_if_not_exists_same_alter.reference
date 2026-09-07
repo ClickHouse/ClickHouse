@@ -7,4 +7,18 @@ nested re-add columns	a
 nested re-add columns	n.x
 nested re-add data	1	[]
 nested re-add data	2	[]
+mirror re-add columns	a
+mirror re-add columns	n.x
+mirror re-add data	1	[]
+mirror re-add data	2	[]
+mirror two re-add columns	a
+mirror two re-add columns	n.x
+mirror two re-add columns	n.y
+mirror two re-add data	1	[]	[]
+mirror two re-add data	2	[]	[]
+partial re-add columns	a
+partial re-add columns	n.x
+partial re-add columns	n.y
+partial re-add data	1	[0]	[20]
+partial re-add data	2	[0]	[21]
 rename re-add	42	7	1
