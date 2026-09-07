@@ -3774,18 +3774,14 @@ public:
         return Base::executeImpl(arguments, result_type, input_rows_count);
     }
 
-    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
+    /// Answered from the operands captured at build time: they are this function's own arguments,
+    /// whatever a caller passes as `sample_columns`.
+    bool isInjective(const ColumnsWithTypeAndName &) const override
     {
         if constexpr (!IsOperation<Op>::plus && !IsOperation<Op>::minus)
             return false;
         else
-        {
-            /// When the caller supplies the arguments they describe the call being asked about; the
-            /// operands captured at build time are the fallback for the callers that pass nothing.
-            if (sample_columns.size() == 2)
-                return plusMinusWithConstantsIsInjective(sample_columns[0], sample_columns[1], return_type);
             return plusMinusWithConstantsIsInjective(left, right, return_type);
-        }
     }
 
     bool hasInformationAboutMonotonicity() const override
@@ -4339,33 +4335,11 @@ public:
         return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::create(context, arguments[0].type, arguments[1].type, division_by_nullable));
     }
 
-    /// Agrees with `FunctionBinaryArithmeticWithConstants::isInjective` on two-argument calls. An
-    /// unresolved function has no operands of its own to fall back on, so it declines whenever it is
-    /// not given both arguments.
+    /// Injectivity depends on the operand values, so only the built function can answer. Callers that
+    /// supply no arguments cannot be answered at all, and `build` would throw on that arity.
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
     {
-        if constexpr (!IsOperation<Op>::plus && !IsOperation<Op>::minus)
-            return false;
-        else
-        {
-            if (sample_columns.size() != 2)
-                return false;
-
-            /// `getReturnType` applies the `Nullable` and `LowCardinality` default implementations,
-            /// which `getReturnTypeImpl` throws on. It still throws for arguments this overload
-            /// rejects, and an undecidable case is not injective.
-            DataTypePtr return_type;
-            try
-            {
-                return_type = getReturnType(sample_columns);
-            }
-            catch (const Exception &)
-            {
-                return false;
-            }
-
-            return plusMinusWithConstantsIsInjective(sample_columns[0], sample_columns[1], return_type);
-        }
+        return sample_columns.size() == 2 && build(sample_columns)->isInjective(sample_columns);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
