@@ -39,11 +39,18 @@ FP_HOLD="remote_query_executor_finish_drain_hold"
 FP_ENTRY="remote_query_executor_finish_entry_hold"
 FP_GATE="remote_query_executor_cancel_gate_hold"
 
-function cleanup()
+# Every bare `wait` below must be reachable only with all parks released: a client left parked would
+# block it until the runner's timeout, with no diagnosis.
+function release_all()
 {
     for fp in "$FP_HOLD" "$FP_ENTRY" "$FP_GATE" "$FP_RECV"; do
         $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $fp" 2>/dev/null ||:
     done
+}
+
+function cleanup()
+{
+    release_all
     wait 2>/dev/null ||:
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.src" 2>/dev/null ||:
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.dist" 2>/dev/null ||:
@@ -81,7 +88,7 @@ function arm()
 function wait_pause()
 {
     local status
-    timeout 60 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $1 PAUSE" 2>"$err"
+    timeout 30 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $1 PAUSE" 2>"$err"
     status=$?
     if [ "$status" -eq 0 ]; then
         return 0
@@ -100,9 +107,10 @@ function wait_pause()
 # `enable_parallel_replicas=0` keeps `drain_was_skipped` false, which is what leads into the drain.
 # `--max_threads` is pinned: the interleaving needs both shards' readers runnable at once, so do not
 # let a randomized thread count decide whether the fixture is reachable.
+# Bounded so the bare `wait`s below cannot outlive the runner: 120 s is ~8x the whole test.
 function start_query()
 {
-    $CLICKHOUSE_CLIENT \
+    timeout 120 $CLICKHOUSE_CLIENT \
         --query_id "$1" \
         --enable_parallel_replicas=0 --async_socket_for_remote=0 \
         --max_block_size=1 --prefer_localhost_replica=0 --max_threads=2 \
@@ -154,8 +162,7 @@ if [ "$sync_ok" -eq 1 ]; then
 fi
 
 # Release the drain first, so the reader wakes onto connections that are already drained.
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_HOLD"
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_RECV"
+release_all
 
 # The query was killed, so a non-zero client status is the expected outcome here - not an assertion.
 wait 2>/dev/null ||:
@@ -213,7 +220,7 @@ if [ "$sync_ok" -eq 1 ]; then
     # The sentinel carries the client's status, and is renamed into place so that seeing the file
     # implies seeing a complete status: a `KILL` that fails fast returns too, and must not read as
     # one that completed.
-    ( $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$query_id_b' FORMAT Null" \
+    ( timeout 120 $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$query_id_b' FORMAT Null" \
         >/dev/null 2>&1; echo "$?" > "$kill_done.part"; mv "$kill_done.part" "$kill_done" ) &
 
     if ! wait_pause "$FP_GATE"; then
@@ -231,7 +238,7 @@ if [ "$sync_ok" -eq 1 ]; then
     # Assertion 1: `finish` must not reach its drain, because the gate `cancel` holds admits it only
     # after `cancel` owns `was_cancelled_mutex`. The drain park is executor-local, so only the parked
     # shard can satisfy this wait.
-    timeout 10 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_HOLD PAUSE" 2>"$err"
+    timeout 5 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP_HOLD PAUSE" 2>"$err"
     hold_status=$?
     if [ "$hold_status" -eq 0 ]; then
         echo "finish reached its drain while cancel held the gate"
@@ -266,8 +273,7 @@ if [ "$sync_ok" -eq 1 ]; then
 fi
 
 # `finish` never reaches the drain park on fixed code, so this disable is unconditional.
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_HOLD"
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP_RECV"
+release_all
 wait 2>/dev/null ||:
 
 if [ "$sync_ok" -eq 1 ]; then
