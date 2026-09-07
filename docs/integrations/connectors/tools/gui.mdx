@@ -498,6 +498,25 @@ Features:
 
 ## Commercial {#commercial}
 
+<Accordion title="ProbeDeck">
+
+[ProbeDeck](https://probedeck.app) is an iOS and iPadOS client for monitoring and querying ClickHouse.
+
+Features:
+
+- ProbeDeck shows running queries, replicas, parts, merges, mutations, disks, and server metrics.
+- You can stop queries with `KILL QUERY` and mutations with `KILL MUTATION`.
+- You can browse schemas and data or run SQL in the editor.
+- ProbeDeck connects over HTTP(S) through the device network or an SSH tunnel.
+- ProbeDeck stores credentials in the iOS Keychain and supports a read-only mode for each connection.
+- The app includes an offline demo with bundled data.
+
+Free users can monitor a server and run read-only SQL. They can save one connection. ProbeDeck Pro adds kill controls, writes, DDL, and unlimited saved connections.
+
+See [Connect ProbeDeck to ClickHouse](/integrations/connectors/sql-clients/probedeck) for connection instructions.
+
+</Accordion>
+
 <Accordion title="DataGrip">
 
 [DataGrip](https://www.jetbrains.com/datagrip/) is a database IDE from JetBrains with dedicated support for ClickHouse. It is also embedded in other IntelliJ-based tools: PyCharm, IntelliJ IDEA, GoLand, PhpStorm and others.
