@@ -132,8 +132,8 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
-    /// The types below are read from the TimeSeries table and from its tags target, so reaching them
-    /// requires what describing those two tables requires.
+    /// The types below are read from the TimeSeries table, so reaching them requires what describing that
+    /// table requires.
     checkAccessToTimeSeriesTable(time_series_storage_id, context, AccessType::SHOW_COLUMNS);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
@@ -141,14 +141,16 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
-    /// Before the lookup, because looking a name up reports whether it exists, and that is the target's
-    /// metadata rather than the TimeSeries table's.
+    /// Only the id column of the tags target is read below, and the rows this function returns come from a
+    /// query it generates, which authorizes that target per column. Checked before the lookup, because
+    /// looking a name up reports whether that target exists, which is its metadata and not the parent's.
     if (auto configured_tags_target_id = time_series_storage->tryGetConfiguredExternalTargetTableID(ViewTarget::Tags, context);
         !configured_tags_target_id.empty())
-        checkAccessToTimeSeriesTargetTableID(configured_tags_target_id, context, AccessType::SHOW_COLUMNS);
+        checkAccessToTimeSeriesTargetTableID(
+            configured_tags_target_id, context, AccessType::SHOW_COLUMNS, TimeSeriesColumnNames::ID);
 
     auto tags_target = time_series_storage->getTargetTable(ViewTarget::Tags, context);
-    checkAccessToTimeSeriesTargetTable(tags_target, context, AccessType::SHOW_COLUMNS);
+    checkAccessToTimeSeriesTargetTable(tags_target, context, AccessType::SHOW_COLUMNS, TimeSeriesColumnNames::ID);
     auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(context, false);
     DataTypePtr id_data_type = tags_target_metadata->columns.get(TimeSeriesColumnNames::ID).type;
 

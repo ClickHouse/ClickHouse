@@ -164,11 +164,14 @@ void checkAccessToTimeSeriesTable(const StorageID & time_series_storage_id, cons
 /// Checks that the current user is allowed to reach a target table of a TimeSeries table through a table
 /// function. An `Alias` target exposes the data and metadata of another table, which a grant on the alias
 /// itself does not cover.
-void checkAccessToTimeSeriesTargetTable(const StoragePtr & target_table, const ContextPtr & context, AccessType access_type);
+/// An empty `column` checks the target as a whole, naming one checks that column alone.
+void checkAccessToTimeSeriesTargetTable(
+    const StoragePtr & target_table, const ContextPtr & context, AccessType access_type, const String & column = {});
 
 /// Checks a target's configured identity before the catalog is consulted, so that whether that target exists
 /// is itself covered by the grant on it. Grant-only: the `Alias` leg needs the resolved storage and stays in
 /// checkAccessToTimeSeriesTargetTable, which authorizes the identity the name resolved to.
-void checkAccessToTimeSeriesTargetTableID(const StorageID & target_table_id, const ContextPtr & context, AccessType access_type);
+void checkAccessToTimeSeriesTargetTableID(
+    const StorageID & target_table_id, const ContextPtr & context, AccessType access_type, const String & column = {});
 
 }

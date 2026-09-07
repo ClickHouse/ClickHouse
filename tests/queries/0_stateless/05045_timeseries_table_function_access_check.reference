@@ -11,9 +11,24 @@ selector, prometheusQuery and the persistent tables over them
 3
 0
 3
+select under an always-true row policy
+1	42
 select again after the row policy is dropped
 1	42
 rows after the insert
 2
+selector with a column-scoped grant on the tags target
+id	UInt64					
+timestamp	DateTime64(3)					
+value	Float64					
+0
+and again with one of those columns revoked
+id	UInt64					
+timestamp	DateTime64(3)					
+value	Float64					
+selector over an Alias tags target, granted the id column on the alias and on its target
+id,timestamp,value
+selector over an inner tags target, granted its id column
+id,timestamp,value
 the target table still exists under its own name
 1

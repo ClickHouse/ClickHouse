@@ -825,12 +825,16 @@ void checkAccessToTimeSeriesTable(const StorageID & time_series_storage_id, cons
 }
 
 
-void checkAccessToTimeSeriesTargetTable(const StoragePtr & target_table, const ContextPtr & context, AccessType access_type)
+void checkAccessToTimeSeriesTargetTable(
+    const StoragePtr & target_table, const ContextPtr & context, AccessType access_type, const String & column)
 {
-    context->checkAccess(access_type, target_table->getStorageID());
+    if (column.empty())
+        context->checkAccess(access_type, target_table->getStorageID());
+    else
+        context->checkAccess(access_type, target_table->getStorageID(), column);
 
     if (const auto * alias = target_table->as<StorageAlias>();
-        alias && !alias->isTargetTableGranted(context, access_type, {}))
+        alias && !alias->isTargetTableGranted(context, access_type, column))
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "Not enough privileges to access the table that {} points to",
@@ -838,9 +842,13 @@ void checkAccessToTimeSeriesTargetTable(const StoragePtr & target_table, const C
 }
 
 
-void checkAccessToTimeSeriesTargetTableID(const StorageID & target_table_id, const ContextPtr & context, AccessType access_type)
+void checkAccessToTimeSeriesTargetTableID(
+    const StorageID & target_table_id, const ContextPtr & context, AccessType access_type, const String & column)
 {
-    context->checkAccess(access_type, target_table_id);
+    if (column.empty())
+        context->checkAccess(access_type, target_table_id);
+    else
+        context->checkAccess(access_type, target_table_id, column);
 }
 
 

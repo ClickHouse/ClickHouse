@@ -180,9 +180,13 @@ DESCRIBE timeSeriesSamples($db.ts) SETTINGS describe_include_virtual_columns = 1
 EOF
 
 # A row policy on the TimeSeries table cannot be enforced on the target table's rows, so the read fails
-# closed while the policy exists, and works again once it is dropped. The two siblings hold that contract
-# in their own read paths, so each is refused on its own; both tables are read successfully just above.
-${CLICKHOUSE_CLIENT} -q "CREATE ROW POLICY $policy ON $db.ts FOR SELECT USING 0 TO $user"
+# closed while such a policy hides rows, and works again once it is dropped. The two siblings hold that
+# contract in their own read paths, so each is refused on its own; both tables are read successfully above.
+# It is the effective filter that decides, not a policy existing: an always-true one hides nothing.
+${CLICKHOUSE_CLIENT} -q "CREATE ROW POLICY $policy ON $db.ts FOR SELECT USING 1 TO $user"
+echo 'select under an always-true row policy'
+${CLIENT_USER} -q "SELECT id, value FROM timeSeriesSamples($db.ts) ORDER BY id FORMAT TSV"
+${CLICKHOUSE_CLIENT} -q "ALTER ROW POLICY $policy ON $db.ts FOR SELECT USING 0"
 ${CLIENT_USER} <<EOF
 SELECT * FROM timeSeriesSamples($db.ts) FORMAT Null; -- { serverError ACCESS_DENIED }
 SELECT * FROM $db.sel_dst FORMAT Null; -- { serverError ACCESS_DENIED }
@@ -222,6 +226,71 @@ EOF
 # rather than hiding breakage from whoever may see it.
 ${CLICKHOUSE_CLIENT} -q "GRANT SHOW COLUMNS ON $db.samples_gone TO $user"
 ${CLIENT_USER} -q "DESCRIBE timeSeriesSamples($db.ts_gone) FORMAT Null; -- { serverError UNKNOWN_TABLE }"
+
+# timeSeriesSelector() reads one column of the tags target, its id, so a grant on that column is enough
+# for it: what the generated query reads is authorized by that query, per column, which the last arm here
+# pins by revoking a single column the query needs. No SHOW COLUMNS is granted on the tags target below;
+# SELECT on a column implies it for that column.
+user_tags_cols="user05045c_${CLICKHOUSE_DATABASE}_$RANDOM"
+${CLICKHOUSE_CLIENT} <<EOF
+DROP USER IF EXISTS $user_tags_cols;
+CREATE USER $user_tags_cols;
+GRANT CREATE TEMPORARY TABLE ON *.* TO $user_tags_cols;
+GRANT SELECT, SHOW COLUMNS ON $db.ts TO $user_tags_cols;
+GRANT SELECT, SHOW COLUMNS ON $db.ts_samples TO $user_tags_cols;
+GRANT SELECT(id, metric_name, tags, min_time, max_time) ON $db.ts_tags TO $user_tags_cols;
+EOF
+
+echo 'selector with a column-scoped grant on the tags target'
+${CLICKHOUSE_CLIENT} --user "$user_tags_cols" <<EOF
+DESCRIBE timeSeriesSelector($db.ts, 'up', 0, 9999999999) FORMAT TSV;
+SELECT count() FROM timeSeriesSelector($db.ts, 'up', 0, 9999999999) FORMAT TSV;
+EOF
+
+${CLICKHOUSE_CLIENT} -q "REVOKE SELECT(min_time) ON $db.ts_tags FROM $user_tags_cols"
+echo 'and again with one of those columns revoked'
+${CLICKHOUSE_CLIENT} --user "$user_tags_cols" <<EOF
+SELECT count() FROM timeSeriesSelector($db.ts, 'up', 0, 9999999999) FORMAT Null; -- { serverError ACCESS_DENIED }
+-- Describing it reads no row of the tags target, so it still works.
+DESCRIBE timeSeriesSelector($db.ts, 'up', 0, 9999999999) FORMAT TSV;
+EOF
+${CLICKHOUSE_CLIENT} -q "DROP USER $user_tags_cols"
+
+# An `Alias` tags target carries that same column through to the table it points at. Nothing grants on
+# tags_hidden until the last arm here, while the alias itself is granted throughout.
+${CLIENT_TS} <<EOF
+CREATE TABLE $db.tags_hidden (id UInt64, metric_name LowCardinality(String),
+    tags Map(LowCardinality(String), String), min_time DateTime64(3), max_time DateTime64(3))
+    ENGINE = MergeTree ORDER BY id;
+CREATE TABLE $db.ts_tags_alias ENGINE = Alias('$db', 'tags_hidden');
+CREATE TABLE $db.ts_via_tags_alias ENGINE = TimeSeries
+    DATA $db.ts_samples TAGS $db.ts_tags_alias METRICS $db.ts_metrics;
+EOF
+${CLICKHOUSE_CLIENT} <<EOF
+GRANT SHOW COLUMNS ON $db.ts_via_tags_alias TO $user;
+GRANT SELECT(id) ON $db.ts_tags_alias TO $user;
+EOF
+${CLIENT_USER} -q "DESCRIBE timeSeriesSelector($db.ts_via_tags_alias, 'up', 0, 9999999999) FORMAT Null; -- { serverError ACCESS_DENIED }"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT(id) ON $db.tags_hidden TO $user"
+echo 'selector over an Alias tags target, granted the id column on the alias and on its target'
+${CLIENT_USER} -q "DESCRIBE timeSeriesSelector($db.ts_via_tags_alias, 'up', 0, 9999999999) FORMAT TSV" | cut -f1 | paste -sd,
+
+# An inner target has no configured name of its own to authorize before the lookup, so there the identity
+# the lookup returns is what the check covers. Nothing grants on this table's inner targets until below.
+${CLIENT_TS} -q "CREATE TABLE $db.ts_inner ENGINE = TimeSeries"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT, SHOW COLUMNS ON $db.ts_inner TO $user"
+${CLIENT_USER} <<EOF
+DESCRIBE timeSeriesSamples($db.ts_inner) FORMAT Null; -- { serverError ACCESS_DENIED }
+DESCRIBE timeSeriesTags($db.ts_inner) FORMAT Null; -- { serverError ACCESS_DENIED }
+DESCRIBE timeSeriesSelector($db.ts_inner, 'up', 0, 9999999999) FORMAT Null; -- { serverError ACCESS_DENIED }
+EOF
+
+# An inner table is named after the UUID of the TimeSeries table it belongs to. Granting the tags one the
+# single column the selector reads there describes it, as it does for an external target.
+inner_tags=$(${CLICKHOUSE_CLIENT} -q "SELECT concat('.inner_id.tags.', toString(uuid)) FROM system.tables WHERE database = '$db' AND name = 'ts_inner'")
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT(id) ON $db.\`$inner_tags\` TO $user"
+echo 'selector over an inner tags target, granted its id column'
+${CLIENT_USER} -q "DESCRIBE timeSeriesSelector($db.ts_inner, 'up', 0, 9999999999) FORMAT TSV" | cut -f1 | paste -sd,
 
 # These three functions hand back a pre-existing table that stores data on disk, which cannot back a
 # persistent table.
