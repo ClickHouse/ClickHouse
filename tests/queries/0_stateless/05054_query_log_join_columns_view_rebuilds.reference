@@ -3,6 +3,7 @@ one join in a materialized view, an insert of several blocks
 1
 one join in a materialized view, with parallel_view_processing enabled
 10
+1
 two joins in a materialized view, an insert of several blocks
 10
 a join in each materialized view of a chain, an insert of several blocks

@@ -46,6 +46,18 @@ FROM system.part_log
 WHERE database = currentDatabase() AND table = 'dst_one' AND event_type = 'NewPart';
 
 SELECT 'one join in a materialized view, with parallel_view_processing enabled';
+-- `parallel_view_processing` lets several insert streams run the view at once, so the builds of its
+-- pipeline reach the deduplication from more than one thread and share the one set that is guarded by
+-- the mutex of the counters. What this case pins is that the count stays right under those settings: the
+-- join of the view is reported once, and the `system.part_log` check below proves that the pipeline
+-- really was built more than once while they were in force.
+--
+-- That the insert also fanned the view out over more than one stream is deliberately not asserted.
+-- `max_insert_threads` is a request and the scheduler decides, nothing here can force it, and there is no
+-- profile event that records it; a witness read from thread identifiers would fail on a machine that
+-- happens to run the builds one after another. The per-stream multiplication is not observable in this
+-- shape anyway: an insert of ten one-row blocks writes ten parts with these settings, one per block, just
+-- as it does without them.
 CREATE TABLE src_parallel (a UInt64) ENGINE = MergeTree ORDER BY a;
 CREATE TABLE dst_parallel (a UInt64) ENGINE = MergeTree ORDER BY a;
 CREATE MATERIALIZED VIEW mv_parallel TO dst_parallel AS
@@ -57,6 +69,11 @@ SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, min_insert_block_si
          log_comment = '05054_view_rebuilds_b_parallel_view_processing', join_algorithm = 'hash';
 
 SELECT count() FROM dst_parallel;
+
+SYSTEM FLUSH LOGS part_log;
+SELECT count() > 1 AS the_view_consumed_more_than_one_block
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 'dst_parallel' AND event_type = 'NewPart';
 
 SELECT 'two joins in a materialized view, an insert of several blocks';
 CREATE TABLE src_two (a UInt64) ENGINE = MergeTree ORDER BY a;
