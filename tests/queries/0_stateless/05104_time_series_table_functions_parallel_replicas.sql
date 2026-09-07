@@ -9,6 +9,7 @@
 SET allow_experimental_time_series_table = 1;
 SET enable_parallel_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'parallel_replicas', parallel_replicas_for_non_replicated_merge_tree = 1;
 SET parallel_replicas_local_plan = 0;
+SET automatic_parallel_replicas_mode = 0;
 
 DROP TABLE IF EXISTS ts;
 CREATE TABLE ts ENGINE = TimeSeries;
