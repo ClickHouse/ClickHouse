@@ -58,6 +58,38 @@ namespace ErrorCodes
     extern const int RESOURCE_ACCESS_DENIED;
 }
 
+namespace
+{
+/// Publish outside the scheduler lock, retaining the old timer destructor's nonthrowing contract.
+/// The owner keeps the counters alive if cancellation destroys `CPULeaseAllocation` after the unlock.
+class PendingWaitTime
+{
+public:
+    void capture(std::optional<Stopwatch> & timer, const std::shared_ptr<ThreadGroup> & owner_, ProfileEvents::Counters * counters_) noexcept
+    {
+        if (!timer)
+            return;
+
+        const auto elapsed = timer->elapsedMicroseconds();
+        owner = owner_;
+        counters = counters_;
+        elapsed_microseconds = elapsed;
+        timer.reset();
+    }
+
+    ~PendingWaitTime()
+    {
+        if (elapsed_microseconds)
+            counters->increment(ProfileEvents::ConcurrencyControlWaitMicroseconds, *elapsed_microseconds);
+    }
+
+private:
+    std::shared_ptr<ThreadGroup> owner;
+    ProfileEvents::Counters * counters = nullptr;
+    std::optional<UInt64> elapsed_microseconds;
+};
+}
+
 std::atomic<size_t> CPULeaseAllocation::lease_counter{0};
 
 CPULeaseAllocation::Lease::Lease(CPULeaseAllocationPtr && parent_, size_t slot_id_)
@@ -230,6 +262,8 @@ CPULeaseAllocation::~CPULeaseAllocation()
 
 void CPULeaseAllocation::free()
 {
+    /// Publish after the lock is released, including when cleanup exits exceptionally.
+    PendingWaitTime wait_time;
     std::unique_lock lock{mutex};
 
     if (shutdown)
@@ -237,7 +271,7 @@ void CPULeaseAllocation::free()
 
     shutdown = true;
     acquirable.store(false, std::memory_order_relaxed);
-    wait_timer.reset();
+    wait_time.capture(wait_timer, wait_thread_group, wait_counters);
 
     // Wake up all preempted threads
     while (true)
@@ -398,13 +432,29 @@ void CPULeaseAllocation::resetPreempted(size_t thread_num)
     LOG_EVENT(R);
 }
 
+void CPULeaseAllocation::publishWaitTime(std::unique_lock<std::mutex> & lock)
+{
+    chassert(requests.hasEnqueued());
+    if (!wait_timer)
+        return;
+
+    /// The request has already left its queue and cannot be canceled. Keep it marked
+    /// enqueued until publication completes so `free` waits and cannot miss the metric.
+    {
+        PendingWaitTime wait_time;
+        wait_time.capture(wait_timer, wait_thread_group, wait_counters);
+        lock.unlock();
+    }
+    lock.lock();
+}
+
 void CPULeaseAllocation::failed(const std::exception_ptr & ptr)
 {
     // This code runs in the scheduler thread, so we have to keep it fast and simple
     std::unique_lock lock{mutex};
+    publishWaitTime(lock);
     requests.scheduled();
     scheduled_increment.sub();
-    wait_timer.reset();
     exception = ptr;
 
     // Notify all preempted threads to wake and throw an exception
@@ -418,9 +468,9 @@ void CPULeaseAllocation::grant()
 {
     // This code runs in the scheduler thread, so we have to keep it fast and simple
     std::unique_lock lock{mutex};
+    publishWaitTime(lock);
     requests.scheduled();
     scheduled_increment.sub();
-    wait_timer.reset();
     grantImpl(lock);
 }
 
@@ -638,7 +688,7 @@ bool CPULeaseAllocation::schedule(std::unique_lock<std::mutex> &)
     if (requests.enqueue(cost, requested_ns))
     {
         scheduled_increment.add();
-        wait_timer.emplace(wait_counters->timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
+        wait_timer.emplace();
         LOG_EVENT(E);
         return true;
     }
