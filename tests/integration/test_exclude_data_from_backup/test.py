@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -1001,6 +1003,108 @@ def test_materialized_postgresql_nested_table_named_by_its_own_element_is_backed
         path.startswith("data/default/") and "_nested" in path
         for path in named_directly
     ), f"the nested table was backed up without its data: {named_directly}"
+
+    instance.query(f"DROP TABLE IF EXISTS default.{pg_table} SYNC")
+    pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
+
+
+def test_nested_table_named_by_its_own_element_beside_a_database_element_is_backed_up():
+    """A wider element in the same query must not decide the answer for the element beside it.
+
+    The trace from the review:
+
+        BACKUP DATABASE default, TABLE default.`<uuid>_nested` TO ...
+
+    A nested table is recognised through the outer table whose UUID its name is derived from, and the
+    `DATABASE` element is what brings that outer table into the enumeration. So adding the `DATABASE`
+    element is what made the nested table recognisable, and the table the user had named by hand was
+    dropped as an inner table and then reported as `UNKNOWN_TABLE` - the element naming it lost to an
+    element that had not named it at all.
+
+    A table named by an element of its own is backed up even when a wider element would drop it. That
+    is the rule `EXCEPT TABLES` already follows, and the invariant
+    `test_materialized_postgresql_nested_table_named_by_its_own_element_is_backed_up` pins down for
+    the single-element form; this is the same invariant with a `DATABASE` element beside it.
+    """
+    pg_table = "mpg_beside_db"
+
+    pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
+    pg_manager.create_postgres_table(pg_table)
+    instance.query(
+        f"INSERT INTO postgres_database.{pg_table} SELECT number, number FROM numbers(30)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS default.{pg_table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE default.{pg_table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', '{pg_table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        pg_table,
+        postgres_database=pg_manager.get_default_database(),
+        materialized_database="default",
+    )
+
+    nested_table = instance.query(
+        "SELECT toString(uuid) || '_nested' FROM system.tables "
+        f"WHERE database = 'default' AND name = '{pg_table}'"
+    ).strip()
+    assert nested_table.endswith("_nested"), nested_table
+
+    def backup_entries(backup_id):
+        """Every entry recorded in the backup, the deduplicated ones included.
+
+        Listing the files with `find` is not enough here. With `deduplicate_files` on - the default -
+        an entry whose content already appeared in the same backup is recorded as a reference and no
+        second file is written. The outer table backs up the very same parts as its nested table, so
+        whichever of the two paths is collected second has no files of its own and a `find` would
+        report it missing. `.backup` names both.
+        """
+        manifest = instance.exec_in_container(
+            ["bash", "-c", f"cat /backups/{backup_id}/.backup"]
+        )
+        return re.findall(r"<name>(.*?)</name>", manifest)
+
+    # 1. Control: the `DATABASE` element on its own still hides the nested table, so the difference
+    #    below is the second element and nothing else.
+    instance.query("BACKUP DATABASE default TO Disk('backups', 'mpg_beside_db_control/')")
+    control = backup_entries("mpg_beside_db_control")
+    assert not any(
+        "_nested" in path for path in control
+    ), f"nested table reached a DATABASE backup: {control}"
+
+    # 2. The reported trace. This used to fail with `UNKNOWN_TABLE`.
+    instance.query(
+        f"BACKUP DATABASE default, TABLE default.`{nested_table}` "
+        "TO Disk('backups', 'mpg_beside_db/')"
+    )
+    beside = backup_entries("mpg_beside_db")
+    assert any(
+        path.startswith("metadata/default/") and "_nested" in path for path in beside
+    ), f"the element naming the nested table did not back it up: {beside}"
+    assert any(
+        path.startswith("data/default/") and "_nested" in path for path in beside
+    ), f"the nested table was backed up without its data: {beside}"
+    # The outer table is still backed up by the `DATABASE` element, rows and all.
+    assert any(
+        path.startswith(f"data/default/{pg_table}/") for path in beside
+    ), f"outer table has no data: {beside}"
+
+    # 3. Keeping the table does not make the clause legal on it: its data is still excluded through
+    #    the outer table, so naming it here is still refused.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"BACKUP DATABASE default, TABLE default.`{nested_table}` "
+            f"EXCEPT DATA FROM TABLE default.`{nested_table}` TO {new_backup_name()}"
+        )
+    assert "INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION" in str(exc_info.value), str(
+        exc_info.value
+    )
 
     instance.query(f"DROP TABLE IF EXISTS default.{pg_table} SYNC")
     pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
