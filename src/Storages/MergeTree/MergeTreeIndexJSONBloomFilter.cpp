@@ -19,7 +19,10 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesCache.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -35,6 +38,8 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Common/FieldAccurateComparison.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
@@ -1368,6 +1373,16 @@ std::optional<JSONPathMatch> tryMatchJSONPath(const RPNBuilderTreeNode & node, c
     return map_match;
 }
 
+bool isJSONBloomPathFilterSafe(
+    const DataTypePtr & key_type, const Field & value, const FormatSettings & format_settings, bool indexes_missing_values)
+{
+    /// The generic field conversion does not support decimal-to-number conversions. Compare the
+    /// numeric default directly instead of introducing a conversion exception during index analysis.
+    if (Field::isDecimal(value.getType()) && isNativeNumber(*key_type))
+        return indexes_missing_values || !accurateEquals(value, key_type->getDefault());
+    return isJSONPathFilterSafe(key_type, value, format_settings, indexes_missing_values);
+}
+
 bool appendTypedProbe(
     std::vector<JSONBloomFilterProbe> & hashes,
     std::string_view path,
@@ -1379,7 +1394,24 @@ bool appendTypedProbe(
     bool require_presence = false)
 {
     target_type = removeJSONBloomWrappers(std::move(target_type));
-    const auto converted = tryConvertFieldToType(value, *target_type, source_type.get(), format_settings, /* strict= */ true);
+    Field converted;
+    if (Field::isDecimal(value.getType()) && WhichDataType(target_type).isNativeInteger())
+    {
+        /// Convert through a wide integer so neither fractional values nor out-of-range values
+        /// can become a matching token. `Int256` covers every decimal's whole part.
+        const Field integer = applyVisitor(FieldVisitorConvertToNumber<Int256>(), value);
+        if (!accurateEquals(value, integer))
+            return false;
+        if (isBool(target_type))
+        {
+            converted = tryConvertFieldToType(integer, DataTypeUInt64(), nullptr, format_settings, /* strict= */ true);
+            converted = tryConvertFieldToType(converted, *target_type, nullptr, format_settings, /* strict= */ true);
+        }
+        else
+            converted = tryConvertFieldToType(integer, *target_type, nullptr, format_settings, /* strict= */ true);
+    }
+    else
+        converted = tryConvertFieldToType(value, *target_type, source_type.get(), format_settings, /* strict= */ true);
     if (converted.isNull())
         return false;
 
@@ -1406,6 +1438,21 @@ bool comparisonUsesExactConversion(const IDataType & left, const IDataType & rig
     if ((WhichDataType(left).isDecimal() && WhichDataType(right).isNativeFloat())
         || (WhichDataType(right).isDecimal() && WhichDataType(left).isNativeFloat()))
         return false;
+    if (WhichDataType(left).isNativeInteger() && WhichDataType(right).isDecimal())
+    {
+        /// Execution scales the integer into the decimal's storage type. Keep types whose values
+        /// can overflow that representation, even when the constant has no matching token.
+        const auto common_type = tryGetLeastSupertype(DataTypes{left.getPtr(), right.getPtr()});
+        return common_type && common_type->getTypeId() == right.getTypeId();
+    }
+    if (WhichDataType(left).isDecimal() && WhichDataType(right).isDecimal() && getDecimalScale(right) > getDecimalScale(left))
+    {
+        /// Rescaling the column must fit for its entire storage range, including the signed minimum.
+        const UInt256 runtime_limit = UInt256(1) << (8 * left.getSizeOfValueInMemory() - 1);
+        const UInt256 comparison_limit = UInt256(1) << (8 * std::max(left.getSizeOfValueInMemory(), right.getSizeOfValueInMemory()) - 1);
+        const UInt256 multiplier = DecimalUtils::scaleMultiplier<Int256>(getDecimalScale(right) - getDecimalScale(left));
+        return runtime_limit <= comparison_limit / multiplier;
+    }
     return left.equals(right) || (is_number(left) && is_number(right));
 }
 
@@ -1422,7 +1469,11 @@ void appendDynamicProbe(
     const bool comparable = isNativeNumber(*runtime_type) || which.isDecimal() || which.isStringOrFixedString()
         || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isUUID() || which.isIPv4() || which.isIPv6();
     if (comparable && comparisonUsesExactConversion(*runtime_type, *removeJSONBloomWrappers(value_type)))
-        appendTypedProbe(hashes, path, role, value, value_type, runtime_type, format_settings, true);
+    {
+        /// A failed decimal conversion can mean that execution overflows, rather than proving inequality.
+        if (!appendTypedProbe(hashes, path, role, value, value_type, runtime_type, format_settings, true) && which.isDecimal())
+            hashes.push_back({dynamicTypePresenceHash(path, role, runtime_type->getName()), true});
+    }
     else
     {
         if (comparable && WhichDataType(removeJSONBloomWrappers(value_type)).isStringOrFixedString()
@@ -1480,8 +1531,12 @@ std::vector<JSONBloomFilterProbe> makeValueProbes(
         return hashes;
 
     const auto unwrapped_source_type = removeJSONBloomWrappers(source_type);
-    if ((WhichDataType(*target_type).isDecimal() && WhichDataType(*unwrapped_source_type).isNativeFloat())
-        || (WhichDataType(*unwrapped_source_type).isDecimal() && WhichDataType(*target_type).isNativeFloat()))
+    if ((WhichDataType(*target_type).isDecimal()
+            && !comparisonUsesExactConversion(*target_type, *unwrapped_source_type)
+            && !WhichDataType(*unwrapped_source_type).isStringOrFixedString())
+        || (WhichDataType(*unwrapped_source_type).isDecimal()
+            && (WhichDataType(*target_type).isNativeFloat()
+                || (WhichDataType(*target_type).isNativeInteger() && !comparisonUsesExactConversion(*target_type, *unwrapped_source_type)))))
         return hashes;
 
     appendTypedProbe(hashes, path, role, value, source_type, target_type, format_settings, require_presence);
@@ -1567,7 +1622,27 @@ void MergeTreeIndexGranuleJSONBloomFilter::prepareDynamicProbe(
         {
             ReadBufferFromString type_buffer(encoded_type);
             const auto runtime_type = decodeDataType(type_buffer);
-            if (dynamic.cast_type && !runtime_type->equals(*dynamic.cast_type))
+            /// `Bool` shares `UInt8`'s underlying type, but casting to it changes every nonzero value to one.
+            const bool changes_type = dynamic.cast_type
+                && (!runtime_type->equals(*dynamic.cast_type) || isBool(runtime_type) != isBool(dynamic.cast_type));
+            DataTypePtr common_type;
+            if (changes_type && isNativeNumber(*runtime_type) && isNativeNumber(*dynamic.cast_type) && !isBool(dynamic.cast_type))
+                common_type = tryGetLeastSupertype(DataTypes{runtime_type, dynamic.cast_type});
+            const bool widening_numeric_cast = common_type && common_type->equals(*dynamic.cast_type);
+            if (widening_numeric_cast && WhichDataType(removeJSONBloomWrappers(dynamic.value_type)).isStringOrFixedString())
+            {
+                /// Parse strings in the comparison's type before probing the original runtime type.
+                /// In particular, a wider type can parse constants that the original type cannot.
+                const auto converted = tryConvertFieldToType(
+                    dynamic.value, *dynamic.cast_type, dynamic.value_type.get(), format_settings, /* strict= */ true);
+                if (converted.isNull())
+                    it->second.push_back({dynamicTypePresenceHash(dynamic.path, role, runtime_type->getName()), true});
+                else
+                    appendDynamicProbe(it->second, dynamic.path, role, converted, dynamic.cast_type, runtime_type, format_settings);
+            }
+            else if (changes_type
+                && (!widening_numeric_cast
+                    || !comparisonUsesExactConversion(*dynamic.cast_type, *removeJSONBloomWrappers(dynamic.value_type))))
                 it->second.push_back({dynamicTypePresenceHash(dynamic.path, role, runtime_type->getName()), true});
             else
                 appendDynamicProbe(it->second, dynamic.path, role, dynamic.value, dynamic.value_type, runtime_type, format_settings);
@@ -2114,7 +2189,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
         {
             Field value;
             set_column->get(row, value);
-            if (!isJSONPathFilterSafe(key_node.getDAGNode()->result_type, value, comparison_format_settings, path->indexes_missing_values))
+            if (!isJSONBloomPathFilterSafe(key_node.getDAGNode()->result_type, value, comparison_format_settings, path->indexes_missing_values))
                 return false;
             auto probes = makeValueProbes(path->path, path->role, path->type, value, set_type, comparison_format_settings, path->typed_dynamic);
             out.hashes.insert(out.hashes.end(), probes.begin(), probes.end());
@@ -2144,7 +2219,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
 
     if (function_name == "equals")
     {
-        if (!isJSONPathFilterSafe(key_node->getDAGNode()->result_type, constant, comparison_format_settings, path->indexes_missing_values))
+        if (!isJSONBloomPathFilterSafe(key_node->getDAGNode()->result_type, constant, comparison_format_settings, path->indexes_missing_values))
             return false;
         if (path->cast_type)
         {
