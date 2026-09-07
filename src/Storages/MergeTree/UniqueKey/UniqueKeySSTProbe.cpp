@@ -92,7 +92,7 @@ namespace
                     *result = rocksdb::Slice(scratch, 0);
                     return rocksdb::IOStatus::OK();
                 }
-                n = std::min(n, file_size - offset);
+                n = std::min(n, static_cast<size_t>(file_size - offset));
 
                 size_t bytes_read = buffer->readBigAt(scratch, n, offset, {});
                 *result = rocksdb::Slice(scratch, bytes_read);
@@ -115,10 +115,15 @@ namespace
     class ReadBufferFileSystem : public rocksdb::FileSystem
     {
     public:
-        ReadBufferFileSystem(DataPartStoragePtr storage_, const ReadSettings & read_settings_)
+        ReadBufferFileSystem(DataPartStoragePtr storage_, ReadSettings read_settings_)
             : storage(std::move(storage_))
-            , read_settings(read_settings_)
+            , read_settings(std::move(read_settings_))
         {
+            /// RocksDB needs positional reads (`readBigAt`); the experimental
+            /// ReaderExecutor path (`use_reader_executor = 1`) does not expose
+            /// them, so use the legacy read pipeline for the sidecar.
+            /// TODO(unique-key): adapt to the ReaderExecutor path and drop this.
+            read_settings.reader_executor.enabled = false;
         }
 
         const char * Name() const override { return "ReadBufferFileSystem"; }
